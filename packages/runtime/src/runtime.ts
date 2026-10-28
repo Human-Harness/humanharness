@@ -4,7 +4,7 @@ import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
 import type { History, ReferenceFolder } from "@humanharness/workspace";
 import type { Event } from "./events";
 import type { Session } from "./transport";
-import { type SessionSlot, type SlotSendOptions, createWorkspace } from "./workspace";
+import { type HarnessWorkspace, type SessionSlot, type SlotSendOptions, createWorkspace } from "./workspace";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
@@ -93,6 +93,15 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
     await ws.close().catch(() => {});
     throw err;
   }
+  return runtimeOnSlot(ws, slot);
+}
+
+/**
+ * A workspace and one of its slots in `HarnessRuntime`'s shape: the turns run on the slot, the history and AGENTS.md
+ * are the workspace's, and closing closes the workspace (every slot). `createRuntime`'s, and the shell's `single` mode's
+ * (jobs without `parallel`: the task's `"main"` slot, job slots beside it).
+ */
+export function runtimeOnSlot(ws: HarnessWorkspace, slot: SessionSlot): HarnessRuntime {
   return {
     history: ws.history,
     send: (message, emit, options) => slot.send(message, emit, options),

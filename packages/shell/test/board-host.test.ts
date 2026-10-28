@@ -224,8 +224,12 @@ describe("hostMode (D7)", () => {
     expect(hostMode({ parallel: { tasks: 1, jobs: 1 } })).toBe("board");
   });
 
-  it("a harness with jobs but no parallel is not a board", () => {
-    expect(hostMode({ jobs: { sync: {} } } as { parallel?: unknown })).toBe("plain");
+  it("hostMode: single with jobs only; board with parallel (with or without jobs) (Decision 12)", () => {
+    expect(hostMode({ jobs: { s: {} } } as never)).toBe("single");
+    expect(hostMode({ parallel: { tasks: 2, jobs: 1 }, jobs: { s: {} } } as never)).toBe("board");
+    expect(hostMode({})).toBe("plain");
+    // An empty `jobs` declares none: plain (D0).
+    expect(hostMode({ jobs: {} })).toBe("plain");
   });
 
   it("D0: the chat move and the board host run only in board mode", () => {

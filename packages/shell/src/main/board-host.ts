@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ParallelCaps } from "@humanharness/harness-sdk";
+import { type ParallelCaps, hasJobs } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
 import { type AppConfig, type BlockAnswer, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
 import { type History, type HistoryTrailer, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
@@ -17,14 +17,16 @@ import { CONFLICT_MAX, type CurrentTask, TaskStore, emptyTasks, scopeOfTask } fr
 import { type ChatLogLike, type TurnDeps, type TurnOptions, TurnController, memoise } from "./turn-controller";
 import { TurnGate } from "./turn-gate";
 
-export type HostMode = "plain" | "board";
+export type HostMode = "plain" | "single" | "board";
 
 /**
- * Plain: today's single runtime and task (D7). Board: the harness declares `parallel`. Part 3 adds "single" for jobs;
- * until then a harness with jobs only stays plain (`isConcurrent` counts jobs, so it is not the test here).
+ * Plain: today's single runtime and task (D7). Board: the harness declares `parallel` (with or without jobs). Single:
+ * jobs without `parallel` (part 3 Decision 12): today's one task, on the `"main"` slot of a workspace that also runs
+ * the job slots.
  */
-export function hostMode(harness: { parallel?: unknown }): HostMode {
-  return harness.parallel !== undefined ? "board" : "plain";
+export function hostMode(harness: { parallel?: unknown; jobs?: Record<string, unknown> }): HostMode {
+  if (harness.parallel !== undefined) return "board";
+  return hasJobs(harness) ? "single" : "plain";
 }
 
 /** How many paths a conflict notice names; it counts the rest. */
@@ -727,6 +729,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     closeWorkspace,
     /** A workspace is open or opening. */
     workspaceOpen: (): boolean => workspace.peek() !== null,
+    /** The shared workspace, opened if needed (part 3: job slots run beside the lanes'); null when the engine CLI isn't installed. */
+    workspace: (): Promise<HarnessWorkspace | null> => workspace.get(),
     /** Quit (Decision 16): every lane's turn stops, its slot closes; tasks.json stays for the next start to end them. */
     async closeAll(): Promise<void> {
       await board.closeAll();

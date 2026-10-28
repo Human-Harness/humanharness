@@ -89,10 +89,12 @@ describe("index.ts: the app's own changes go through saveAppChange, board mode d
     expect(index).not.toMatch(/\?\.save\(`Material:/);
     expect(index).not.toMatch(/\?\.save\(`Note: \$\{title\}`/);
     expect(index).not.toMatch(/\?\.save\(`\$\{DATA_CHANGE_PREFIX\}\$\{SIDEKICK_COLLECTION\}`/);
-    expect([...index.matchAll(/saveAppChange\(await currentHistory\(\), host !== null, /g)]).toHaveLength(2);
-    expect(index).toMatch(/saveAppChange\(history, host !== null, materialOwn\(scope\), `Material: \$\{what\}`/);
+    // Own files only in board mode, or while a job runs beside the single task (part 3); plain mode never (D0).
+    expect(index).toMatch(/\nconst ownCommits = \(\): boolean => host !== null \|\| \(jobsHost\?\.running\(\) \?\? false\);\n/);
+    expect([...index.matchAll(/saveAppChange\(await currentHistory\(\), ownCommits\(\), /g)]).toHaveLength(2);
+    expect(index).toMatch(/saveAppChange\(history, ownCommits\(\), materialOwn\(scope\), `Material: \$\{what\}`/);
     expect(index).toMatch(/saveOwn: async \(paths, message, trailer\) => saveAppChange\(await currentHistory\(\), true, paths, message, trailer\)/);
-    // The person's data writes: board mode is the host's.
-    expect(index).toMatch(/\n  board: \(\) => host !== null,\n/);
+    // The person's data writes: board mode is the host's (and a running job's, part 3).
+    expect(index).toMatch(/\n  board: ownCommits,\n/);
   });
 });

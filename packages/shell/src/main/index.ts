@@ -19,6 +19,7 @@ import {
   allBlocks,
   choiceOptionSchema,
   dataCollections,
+  hasJobs,
   hasModes,
   hasPhases,
   hasProfiles,
@@ -36,7 +37,7 @@ import {
   stageTier,
 } from "@humanharness/harness-sdk";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
-import { type Event, type HarnessRuntime, type RuntimeOptions, SidekickSession, type SlotRef, createRuntime, createWorkspace, runSystemTask } from "@humanharness/runtime";
+import { type Event, type HarnessRuntime, type HarnessWorkspace, type RuntimeOptions, type SessionSlot, SidekickSession, type SlotRef, createRuntime, createWorkspace, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
@@ -126,7 +127,10 @@ import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
-import { materialOwn, saveAppChange } from "./app-change";
+import { materialOwn, notePath, saveAppChange } from "./app-change";
+import { type JobsHost, createJobsHost, isJobSlot, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import type { Turns } from "./gated-turns";
+import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
@@ -228,6 +232,22 @@ const pluginPanels = new PluginPanelsOnDemand<BrowserWindow>(
 let host: BoardHost | null = null;
 /** `host`, where a local name shadows it (the plugins' backend host). */
 const boardHost = (): BoardHost | null => host;
+/** The jobs' wiring (part 3), in `single` or board mode; null without jobs (D0). Built once the app is ready. */
+let jobsHost: JobsHost | null = null;
+/**
+ * `single` mode (jobs without `parallel`, Decision 12): the gate and the task's turns through its `tasks` cap; the
+ * runtime is a workspace's `"main"` slot with the job slots beside it. Null in plain and board mode.
+ */
+let single: { gate: TurnGate; turns: Turns } | null = null;
+/** `single` mode: each runtime's workspace and `"main"` slot (the job slots open in it; an engine held at one session sleeps the slot). */
+const singleParts = new WeakMap<HarnessRuntime, { workspace: HarnessWorkspace; slot: SessionSlot }>();
+/** The note the single task last wrote (folder-relative): while a job runs, its commit holds that file alone. */
+let singleNote: string | undefined;
+/**
+ * App changes commit only their own files (parallel spec §5.3): in board mode, and while a job runs beside the single
+ * task (its work is never filed under another trailer). Otherwise the whole folder, as always (D0).
+ */
+const ownCommits = (): boolean => host !== null || (jobsHost?.running() ?? false);
 /**
  * Board mode only (parallel spec §9.2, Decision 10): one Attention store per base, shared by the plugins and the waiting
  * tasks. Null in plain mode (D0): the plugins build their own store, as before, and no task raises anything.
@@ -635,6 +655,8 @@ async function arrivedInProfile(): Promise<void> {
   kickMaterial();
   // The new profile's Sidekick settings; the old base's sessions close.
   void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+  // A profile chosen for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
+  void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -754,14 +776,34 @@ async function runtimeOptions(
 const runtime = memoise<HarnessRuntime>(async () => {
   const p = await prepareEngine();
   if (!p) return null;
-  const rt = await createRuntime({
-    ...(await runtimeOptions(p, () => tasks.runningTask())),
-    onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
-  });
+  const rt = single
+    ? await openSingle(p)
+    : await createRuntime({
+        ...(await runtimeOptions(p, () => tasks.runningTask())),
+        onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
+      });
   // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
   kickMaterial();
   return rt;
 });
+
+/**
+ * `single` mode's runtime (Decision 12): a workspace whose `"main"` slot runs the task, as `createRuntime`'s; a data or
+ * material request from a job's slot is that run's, in its scope (P3), never the open task's.
+ */
+async function openSingle(p: NonNullable<Awaited<ReturnType<typeof prepareEngine>>>): Promise<HarnessRuntime> {
+  const ws = await createWorkspace(
+    await runtimeOptions(p, (slot) => {
+      const jobs = jobsHost;
+      return slot && jobs && isJobSlot(slot.key) ? Promise.resolve(jobs.runningOf(slot.key)) : tasks.runningTask();
+    }),
+  );
+  const { runtime: rt, slot } = await openSingleRuntime(ws, {
+    onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
+  });
+  singleParts.set(rt, { workspace: ws, slot });
+  return rt;
+}
 
 /**
  * Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). First
@@ -787,13 +829,28 @@ async function closeRuntime() {
 
 /** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
 async function dropRuntime() {
+  // Jobs (Decision 11): the runs queued or running are cancelled ("Cancelled"); the `every` timers stay.
+  jobsHost?.cancelRuns();
   // Board mode: every lane ends, the queues empty, the workspace closes; a new engine brings its caps (spec §10).
   if (host) {
     await host.dropAll();
     return closeRuntime();
   }
+  single?.gate.dropAll();
   await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
   await closeRuntime();
+  if (single) {
+    // A new engine brings its own hold: one session in all (tasks and jobs together) or two at once.
+    const c = await config.load();
+    single.gate.setCaps(singleCaps(c.engineId, c.parallel), engineHold(c.engineId));
+    single.gate.setBeforeStart(singleBeforeStart(c.engineId, singleMainSlot));
+  }
+}
+
+/** `single` mode: the running runtime's `"main"` slot, if one is open (never opens one). */
+async function singleMainSlot(): Promise<SessionSlot | null> {
+  const rt = await runtime.peek()?.catch(() => null);
+  return rt ? (singleParts.get(rt)?.slot ?? null) : null;
 }
 
 /** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
@@ -898,7 +955,15 @@ const taskDeps: TaskDeps = {
       if (c) await new TaskStore(baseOf(c), taskStoreOptions()).save(state);
     },
   },
-  turns,
+  // `single` mode: through the gate's `tasks` cap, apart from the job turns. A getter: the mode is known once the app is ready.
+  get turns() {
+    return single?.turns ?? turns;
+  },
+  // A task closed with its note saved: the jobs' `afterTask` (Decision 6). A getter: undefined without jobs (D0).
+  get taskClosed() {
+    const jobs = jobsHost;
+    return jobs ? (t: { id: string; action?: string; scope: string }) => jobs.taskClosed(t) : undefined;
+  },
   get actions() {
     return harness.actions;
   },
@@ -1021,6 +1086,7 @@ const taskDeps: TaskDeps = {
     const c = await validConfig();
     if (!c) throw new Error("The app is not set up yet");
     await writeNote(baseOf(c), slug, note, meta, notesPrefix(scoped(), scope));
+    if (single) singleNote = notePath(scoped(), scope, slug);
   },
   noteExists: async (slug, scope) => {
     const c = await validConfig();
@@ -1031,6 +1097,10 @@ const taskDeps: TaskDeps = {
     await rt?.endSession();
   },
   saveHistory: async (message, trailer) => {
+    const own = singleNote;
+    singleNote = undefined;
+    // `single` mode while a job runs: the note's file alone, never the run's work (parallel spec §5.3).
+    if (jobsHost?.running()) return saveAppChange(await currentHistory(), true, own ? [own] : [], message, trailer);
     await (await currentHistory())?.save(message, trailer);
   },
   changed: (view) => sendToWindow("hh:tasks", view),
@@ -1176,7 +1246,7 @@ async function buildMaterial(): Promise<MaterialService | null> {
       kickMaterial();
       const history = await currentHistory();
       // Board mode: only this scope's material, never another task's running work (parallel spec §5.3).
-      await saveAppChange(history, host !== null, materialOwn(scope), `Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) =>
+      await saveAppChange(history, ownCommits(), materialOwn(scope), `Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) =>
         console.error("Could not record the material change", err),
       );
     },
@@ -1270,7 +1340,14 @@ function buildBoardHost(c: AppConfig): BoardHost {
       openWorkspace: async (runningTask) => {
         const p = await prepareEngine();
         if (!p) return null;
-        const ws = await createWorkspace(await runtimeOptions(p, (slot) => (slot ? runningTask(slot) : Promise.resolve(null))));
+        const ws = await createWorkspace(
+          await runtimeOptions(p, (slot) => {
+            // A job run's slot: that run, in its scope (P3); never a lane's task.
+            const jobs = jobsHost;
+            if (slot && jobs && isJobSlot(slot.key)) return Promise.resolve(jobs.runningOf(slot.key));
+            return slot ? runningTask(slot) : Promise.resolve(null);
+          }),
+        );
         // A new workspace: the material queue goes on (in this base), as with a new runtime.
         kickMaterial();
         return ws;
@@ -1294,6 +1371,64 @@ function buildBoardHost(c: AppConfig): BoardHost {
     },
     { engineId: c.engineId, parallel: c.parallel },
   );
+}
+
+/**
+ * The jobs' wiring (part 3) over the app's own: the brief from the harness folder, the task deps' notes, data and
+ * material for the first message, the active scopes. `workspace` is single mode's or the board's.
+ */
+function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace>): JobsHost {
+  return createJobsHost({
+    jobs: harness.jobs ?? {},
+    actions: harness.actions,
+    readBrief: (job) => fs.readFile(resolveInHarness(harness, job.prompt), "utf8"),
+    workspace: async () => {
+      if (quitting) throw new Error("The app is closing");
+      const blocked = turnBlocked();
+      if (blocked) throw new Error(blocked);
+      await checkTurn();
+      // As a lane's turn: a run never edits a file an undo is putting back.
+      while (restores.turnBlocked()) await new Promise((r) => setTimeout(r, 50));
+      return workspace();
+    },
+    gate,
+    base: currentBase,
+    taskDeps,
+    scoped,
+    scopes: async () => {
+      const c = await validConfig();
+      if (!c) return [];
+      if (!scoped()) return [MAIN_SCOPE];
+      return (await scopeStoreFor(baseOf(c)).list()).filter((sc) => !sc.archived).map((sc) => sc.id);
+    },
+    scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
+    engine: async () => (await config.load()).engineId ?? "",
+  });
+}
+
+/**
+ * `single` mode (Decision 12): the gate (tasks 1, the jobs' cap beside), today's TurnController through its `tasks` cap,
+ * and the jobs host on the runtime's workspace.
+ */
+function buildSingleJobs(c: AppConfig): JobsHost {
+  const gate = singleGate(c.engineId, c.parallel);
+  gate.setBeforeStart(singleBeforeStart(c.engineId, singleMainSlot));
+  single = { gate, turns: singleTurns(gate, turns, emit) };
+  return buildJobsHost(gate, async () => {
+    const rt = await runtime.get();
+    const parts = rt ? singleParts.get(rt) : undefined;
+    if (!parts) throw new Error("The engine isn't installed");
+    return parts.workspace;
+  });
+}
+
+/** Jobs (Decision 7): once the app is set up in this process, the `start` runs and the `every` timers; once only. */
+async function jobsReady(): Promise<void> {
+  const jobs = jobsHost;
+  if (!jobs || quitting || !(await validConfig())) return;
+  // A scoped harness's earlier work is in `main` first: "each" runs in the scopes as they are.
+  await scopesSettled();
+  await jobs.appReady();
 }
 
 /**
@@ -1384,8 +1519,8 @@ const personData = personDataRequests({
   chatScope: () => tasks.chatScope(),
   trailer: () => tasks.trailerNow(),
   history: () => currentHistory(),
-  // Board mode: a write commits only its collection's file (parallel spec §5.3).
-  board: () => host !== null,
+  // Board mode, or a job running beside the single task: a write commits only its collection's file (parallel spec §5.3).
+  board: ownCommits,
   blocked: () => (quitting ? "The app is closing" : turnBlocked()),
   // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
   scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
@@ -1438,6 +1573,8 @@ function registerIpc() {
     }
     // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
+    // Set up for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
+    void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
     // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
@@ -2103,7 +2240,7 @@ if (loaded) {
       let slug = first;
       for (let i = 2; await exists(slug); i++) slug = `${first}-${i}`;
       await writeNote(base, slug, { title, summary: [decision], decisions: [decision], files: [], open: [] }, { ...(action ? { action } : {}), date: new Date().toISOString(), engine: c.engineId }, prefix);
-      await saveAppChange(await currentHistory(), host !== null, [`${prefix}${slug}.md`], `Note: ${title}`, await tasks.trailerNow());
+      await saveAppChange(await currentHistory(), ownCommits(), [`${prefix}${slug}.md`], `Note: ${title}`, await tasks.trailerNow());
     },
     // Learning (sidekick spec §6.4): Sidekick's own items, written as the app after a task closes, in one `Data: sidekick` commit.
     writeApp: async (base, requests) => {
@@ -2118,7 +2255,7 @@ if (loaded) {
       const store = sidekickStoreFor(base);
       for (const r of requests) await runDataRequest(store, r, { who: "app", scope: APP_SCOPE });
       const own = [dataPath(store.scopeFor(SIDEKICK_COLLECTION, APP_SCOPE), SIDEKICK_COLLECTION)];
-      await saveAppChange(await currentHistory(), host !== null, own, `${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) =>
+      await saveAppChange(await currentHistory(), ownCommits(), own, `${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) =>
         console.error("Could not record Sidekick's learning", err),
       );
     },
@@ -2291,6 +2428,17 @@ if (primary) {
       host = board;
       tasks = board.board;
     }
+    // Jobs (part 3): beside the board's lanes, or beside the single task (Decision 12). Without jobs, nothing (D0).
+    if (hasJobs(harness)) {
+      const board = host;
+      jobsHost = board
+        ? buildJobsHost(board.gate, async () => {
+            const ws = await board.workspace();
+            if (!ws) throw new Error("The engine isn't installed");
+            return ws;
+          })
+        : buildSingleJobs(await config.load());
+    }
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
     const preselect = devEngine(process.env, app.isPackaged, offered().map((e) => e.id));
     if (preselect && !(await config.load()).engineId) await config.save({ engineId: preselect });
@@ -2324,6 +2472,8 @@ if (primary) {
       void plugins.start().catch((err: unknown) => pluginLog("Could not start the plugins", err));
       powerMonitor.on("resume", () => plugins.resumed());
     }
+    // Jobs: the `start` runs and `every` timers, once the app is set up (now, or when setup or a profile finishes).
+    void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
     // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
     void sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
@@ -2334,6 +2484,9 @@ if (primary) {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
+    // Jobs (Decision 11): no run starts from now on; the running ones are cancelled, the queued ones dropped.
+    jobsHost?.stopAll();
+    single?.gate.dropAll();
     // Board mode: every lane's turn stops now and its slot closes (Decision 16); never an interrupt, which would reopen them.
     const boardClosed = host?.closeAll().catch((err: unknown) => console.error("Could not close the open tasks", err));
     if (!host) {

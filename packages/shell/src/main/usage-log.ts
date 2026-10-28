@@ -21,8 +21,9 @@ interface ProfileFields {
  * quiet note before the cap), `phase-change` (the brief of the phase the task enters) and `wrap-up` (the time box's
  * last turn before the close phase). Not the task's phase: that is `taskPhase`. `material`: an AI stage of material
  * processing, not a task's turn (material spec §11). `sidekick`: a Sidekick turn (sidekick spec §8), not a task's turn.
+ * `job`: a background job run's turn (parallel spec §10, part 3 Decision 2).
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "sidekick";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "sidekick" | "job";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -63,6 +64,8 @@ export interface UsageRecord extends ProfileFields {
   process?: "sidekick";
   moment?: SidekickUsageMoment;
   sidekick?: string;
+  /** Job lines only (parallel spec §10, part 3 Decision 2): the job's id; `task` is the run's id. */
+  job?: string;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
   ok: boolean;
@@ -186,6 +189,11 @@ export function sidekickRecord(
     ...(o.usage ? { usage: o.usage } : {}),
     ...(o.limits ? { limits: o.limits } : {}),
   };
+}
+
+/** One job run's usage event (part 3 Decision 2): `phase: "job"`, the job's id, and the run's id as `task`. */
+export function jobRecord(o: { engine: string; job: string; task: string; scope?: string; usage: TurnUsage }, at: string = new Date().toISOString()): UsageRecord {
+  return { at, engine: o.engine, task: o.task, ...(o.scope ? { scope: o.scope } : {}), phase: "job", job: o.job, ok: true, usage: o.usage };
 }
 
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */

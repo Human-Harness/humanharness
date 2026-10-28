@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { type ReactElement, useState } from "react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createI18n } from "@humanharness/i18n";
 import type { AppState } from "../src/client";
 import { EngineTab } from "../src/EngineTab";
 import { FakeClient } from "./fake-client";
@@ -565,5 +567,60 @@ describe("EngineTab: OpenCode", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByRole("alert");
     expect(client.terminalOpened).toBe(0);
+  });
+});
+
+describe("EngineTab: legal texts in another language", () => {
+  /** Spanish with a cached translation, as HarnessApp builds it after a switch; legal keys never come from the cache. */
+  const renderEs = async (ui: ReactElement) => {
+    const i18n = await createI18n("es", {}, { "core:language.legalEnglish": "Los textos legales se muestran en inglés.", "core:engine.data": "Datos" });
+    return render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
+  };
+
+  it("in another language, legal text stays English with a line saying so (spec §8)", async () => {
+    const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    await renderEs(<Tab client={client} />);
+    await screen.findByText("Datos");
+    expect(screen.getByText(/this app is not responsible for what the AI writes/).getAttribute("lang")).toBe("en");
+    expect(screen.getByText("Los textos legales se muestran en inglés.").className).toBe("hh-caption hh-legal-english");
+  });
+
+  it("D0: in English there is no legal line", async () => {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    const { container } = await renderIn("en", <Tab client={client} />);
+    await screen.findByText("Claude is ready ✓");
+    expect(screen.getByText(/this app is not responsible for what the AI writes/).hasAttribute("lang")).toBe(false);
+    expect(screen.queryByText("Legal texts are shown in English.")).toBeNull();
+    expect(container.querySelector(".hh-legal-english")).toBeNull();
+  });
+
+  it("D0: a saved language with no translation shows English, with no legal line", async () => {
+    const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    const { container } = await renderIn("es", <Tab client={client} />);
+    await screen.findByText("Claude is ready ✓");
+    expect(container.querySelector(".hh-legal-english")).toBeNull();
+  });
+
+  it("the engine notice keeps its legal text in English, with the line right under it", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, noticeAccepted: false };
+    await renderEs(<Tab client={client} />);
+    await screen.findByRole("heading", { name: "Before using Claude" });
+    const content = screen.getByText(/this app is not responsible for what the AI writes/);
+    expect(content.nextElementSibling).toBe(screen.getByText("Los textos legales se muestran en inglés."));
+    // The English blocks are marked English for screen readers; the line itself is in the screen's language.
+    expect(content.getAttribute("lang")).toBe("en");
+    expect(screen.getByRole("heading", { name: "Before using Claude" }).getAttribute("lang")).toBe("en");
+    expect(screen.getByText("I understand and accept").getAttribute("lang")).toBe("en");
+    expect(content.nextElementSibling?.hasAttribute("lang")).toBe(false);
+  });
+
+  it("D0: the engine notice in English has no legal line", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, noticeAccepted: false };
+    const { container } = await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("heading", { name: "Before using Claude" });
+    expect(container.querySelector(".hh-legal-english")).toBeNull();
+    expect(container.querySelector("[lang]")).toBeNull();
   });
 });

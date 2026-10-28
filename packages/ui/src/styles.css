@@ -766,3 +766,5 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langoffer { display: flex; flex-direction: column; gap: 6px; min-width: min(320px, 100%); max-width: 460px; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-sheet); text-align: left; }
 .hh-langoffer h2 { margin: 0; font-size: 15px; }
 .hh-langoffer p { margin: 0; }
+.hh-legal-english { margin-top: 4px; font-style: italic; }
+.hh-setup-language { margin-top: 4px; }

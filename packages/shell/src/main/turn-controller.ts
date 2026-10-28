@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
-import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, fail } from "@humanharness/runtime";
+import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, type TurnScope, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
@@ -102,6 +102,11 @@ export interface TurnDeps {
   sessionExpired?: (engineId: string) => Promise<void>;
   /** The configured engine, read when the turn starts: the one `sessionExpired` is told about. */
   engineId?: () => Promise<string | undefined>;
+  /**
+   * The linked folders a turn of a task in `scope` reaches (hatches spec §3.3), read for each turn from the turn's own
+   * scope (L5). Undefined: none. Absent without linked folders (D0): the turn's options are today's.
+   */
+  scopeAccess?: (scope: string) => Promise<TurnScope | undefined>;
 }
 
 /** The task's own work, whose input blocks get ids (input-blocks spec §4): never the closing or checkpoint turn. */
@@ -258,6 +263,15 @@ export class TurnController {
       }
       if (current.cancelled) return await finish(fail("cancelled") as Done);
       if (!rt) return await finish(fail("engine-not-installed") as Done);
+      // The task's scope's folders, read now (an unlink reaches the next turn). One that can't be read: none, logged.
+      const access =
+        scope !== undefined && this.deps.scopeAccess
+          ? await this.deps.scopeAccess(scope).catch((err: unknown) => {
+              console.error("Could not read the scope's folders", err);
+              return undefined;
+            })
+          : undefined;
+      if (current.cancelled) return await finish(fail("cancelled") as Done);
 
       let finished: Promise<void> = Promise.resolve();
       current.running = rt.send(message, (raw) => {
@@ -279,7 +293,7 @@ export class TurnController {
             this.emit(forWindow(e));
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}), ...(onAttribution ? { onAttribution } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}), ...(onAttribution ? { onAttribution } : {}), ...(access ? { scope: access } : {}) });
       await current.running.done;
       await finished;
     } finally {

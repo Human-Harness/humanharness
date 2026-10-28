@@ -117,6 +117,20 @@ const oneLine = (s: string) =>
     .replace(HIDDEN, "")
     .replace(/`/g, "'");
 
+/**
+ * The "Folders of this scope" part (hatches spec §3.3): its heading, intro and one line per folder. The managed section
+ * and board mode's first message (each task's own scope, Decision 6) print it the same way.
+ */
+export function linkedFolderLines(linked: readonly LinkedFolderLine[]): string[] {
+  return [
+    TEXT.linked,
+    "",
+    TEXT.linkedIntro,
+    "",
+    ...linked.map((l) => `- \`${oneLine(l.key)}\` (${oneLine(l.label)}, ${l.mode === "write" ? "read and write" : "read only"}): \`${oneLine(l.path)}\``),
+  ];
+}
+
 function toolSchema(schema: Block["schema"]): string {
   const { $schema: _omit, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
   return JSON.stringify(rest);
@@ -192,12 +206,7 @@ export function managedSection(opts: {
     lines.push("", t.references, "", t.referencesIntro, "");
     for (const r of references) lines.push(`- ${r.label}: \`${r.path}\``);
   }
-  if (linked.length > 0) {
-    lines.push("", t.linked, "", t.linkedIntro, "");
-    for (const l of linked) {
-      lines.push(`- \`${oneLine(l.key)}\` (${oneLine(l.label)}, ${l.mode === "write" ? "read and write" : "read only"}): \`${oneLine(l.path)}\``);
-    }
-  }
+  if (linked.length > 0) lines.push("", ...linkedFolderLines(linked));
   // Only a harness with material gets this part (material spec D0).
   if (opts.material) lines.push("", t.material, "", ...t.materialRules.map((r) => `- ${r}`));
   lines.push(...writingLines(opts.writing));

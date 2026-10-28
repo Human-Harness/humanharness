@@ -842,3 +842,51 @@ describe("context record fields stay in main (context-panel spec, D0)", () => {
     expect(JSON.stringify(entries)).not.toContain("secretserver");
   });
 });
+
+describe("TurnController: the turn's scope's linked folders (hatches L5)", () => {
+  const linked = [{ path: "/code/app", mode: "write" as const, tracked: true }];
+  const withAccess = (scopeAccess: TurnDeps["scopeAccess"]) => {
+    const fake = fakeRuntime();
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      ...(scopeAccess ? { scopeAccess } : {}),
+    });
+    return { fake, controller };
+  };
+  const run = async (t: ReturnType<typeof withAccess>, options: TurnOptions) => {
+    const sent = t.controller.send("hi", options);
+    await vi.waitFor(() => expect(t.fake.send).toHaveBeenCalled());
+    t.fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    return t.fake.send.mock.calls[0][2];
+  };
+
+  it("a turn of a task in a scope with folders carries them, read from the turn's own scope", async () => {
+    const scopeAccess = vi.fn(async (scope: string) => (scope === "app" ? { linked } : undefined));
+    const t = withAccess(scopeAccess);
+    expect(await run(t, { task: "t1", scope: "app" })).toEqual({ trailer: { task: "t1", scope: "app" }, scope: { linked } });
+    expect(scopeAccess).toHaveBeenCalledWith("app");
+  });
+
+  it("a scope with none, or no scope, passes no scope key", async () => {
+    const scopeAccess = vi.fn(async (scope: string) => (scope === "app" ? { linked } : undefined));
+    expect(await run(withAccess(scopeAccess), { task: "t1", scope: "other" })).toEqual({ trailer: { task: "t1", scope: "other" } });
+    expect(await run(withAccess(scopeAccess), { task: "t1" })).toEqual({ trailer: { task: "t1" } });
+    expect(scopeAccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("a scope access that fails runs the turn without folders", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const t = withAccess(async () => Promise.reject(new Error("disk gone")));
+    expect(await run(t, { task: "t1", scope: "app" })).toEqual({ trailer: { task: "t1", scope: "app" } });
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("D0: without the dep the options are exactly today's", async () => {
+    expect(await run(withAccess(undefined), { task: "t1", scope: "app", action: "a" })).toEqual({ trailer: { task: "t1", action: "a", scope: "app" } });
+  });
+});

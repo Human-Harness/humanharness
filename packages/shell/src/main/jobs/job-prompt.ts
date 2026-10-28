@@ -37,6 +37,8 @@ export async function jobFirstMessage(o: {
   notesIndex(scope: string): Promise<string>;
   dataContext?(scope: string): Promise<string>;
   materialContext?(scope: string): Promise<string>;
+  /** The run's scope's linked folders (hatches spec §3.3), after the material; "" for none. Absent: D0. */
+  linkedContext?(scope: string): Promise<string>;
   /** The actions a needs-you result may name: id → label. */
   actions: Record<string, string>;
 }): Promise<string> {
@@ -57,6 +59,6 @@ export async function jobFirstMessage(o: {
       ? `With needs-you, name the action the person should start, one of: ${named.join(", ")}.`
       : "With needs-you, leave action out: this harness has no action to name.",
   ].join("\n");
-  const parts = [briefOf(o.brief), await load("notes", o.notesIndex), await load("data", o.dataContext), await load("material", o.materialContext), end];
+  const parts = [briefOf(o.brief), await load("notes", o.notesIndex), await load("data", o.dataContext), await load("material", o.materialContext), await load("linked folders", o.linkedContext), end];
   return parts.filter((p) => p.trim()).join("\n\n");
 }

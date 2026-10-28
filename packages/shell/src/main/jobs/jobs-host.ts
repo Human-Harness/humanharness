@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type HarnessJob, hasJobs } from "@humanharness/harness-sdk";
-import { type Event, type HarnessRuntime, type HarnessWorkspace, type Session, type SessionSlot, runtimeOnSlot } from "@humanharness/runtime";
+import { type Event, type HarnessRuntime, type HarnessWorkspace, type Session, type SessionSlot, type TurnScope, runtimeOnSlot } from "@humanharness/runtime";
 import type { AppConfig, JobSummary, JobsInfo } from "@humanharness/ui/client";
 import { APP_SCOPE, ATTENTION_LIMITS, type AttentionStore, MAIN_SCOPE } from "@humanharness/workspace";
 import { type Turns, gatedTurns } from "../gated-turns";
@@ -91,6 +91,11 @@ export interface JobsHostDeps {
   /** The active scopes (scope "each"); ["main"] without scopes. */
   scopes(): Promise<string[]>;
   scopeExists(scope: string): Promise<boolean>;
+  /**
+   * A scoped run's linked folders (hatches spec §3.3): its access and its first message's section, as a task's in that
+   * scope. Absent without linked folders (D0).
+   */
+  linked?: { access(scope: string): Promise<TurnScope | undefined>; section(scope: string): Promise<string> };
   /** Settings › Jobs' raw entry for job `id` (cleaned here). Absent: none. */
   settings?(id: string): unknown;
   /** The engine the usage lines name. */
@@ -144,6 +149,7 @@ export function createJobsHost(d: JobsHostDeps) {
       scoped: d.scoped(),
       ...(d.taskDeps.dataContext ? { dataContext: d.taskDeps.dataContext } : {}),
       ...(d.taskDeps.materialContext ? { materialContext: d.taskDeps.materialContext } : {}),
+      ...(d.linked ? { linkedContext: d.linked.section } : {}),
       actions: d.actions,
     })(id, scope);
 
@@ -212,6 +218,7 @@ export function createJobsHost(d: JobsHostDeps) {
           newId: () => runId,
           // Queued for one folder or profile, let in after a switch: dropped, never run against the new one.
           stillValid: async () => (await d.base()) === base,
+          ...(d.linked ? { scopeAccess: d.linked.access } : {}),
           ...(d.maxMs !== undefined ? { maxMs: d.maxMs } : {}),
         },
         id,

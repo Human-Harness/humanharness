@@ -148,6 +148,11 @@ export interface TaskDeps {
   folder?(): Promise<string | null>;
   /** The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0). */
   materialContext?(scope: string): Promise<string>;
+  /**
+   * Board mode's "Folders of this scope" for a task in `scope`, after the material (hatches Decision 6: AGENTS.md is
+   * shared by lanes in different scopes, so each task's first message names its own); "" for none. Absent: D0.
+   */
+  linkedContext?(scope: string): Promise<string>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
   endSession(): Promise<void>;
   /** Records the folder in the local history (a note was written), tagged with the task it belongs to. */
@@ -970,6 +975,14 @@ export class TaskManager {
       });
       parts.push(material);
       if (material) items.push({ id: "material", kind: "material", label: "Material", tokens: approxTokens(material.length) });
+    }
+    if (this.d.linkedContext) {
+      const linked = await this.d.linkedContext(scope).catch((err: unknown) => {
+        console.error("Could not load the scope's folders for the task", err);
+        return "";
+      });
+      parts.push(linked);
+      if (linked) items.push({ id: "linked", kind: "linked-folders", label: "Folders of this scope", tokens: approxTokens(linked.length) });
     }
     return { text: parts.filter(Boolean).join("\n\n"), items };
   }

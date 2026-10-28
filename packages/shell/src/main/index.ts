@@ -196,7 +196,8 @@ import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
-import { pruneUnlinked } from "./linked-history";
+import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
+import { LinkedInstructions, type ScopeAccess, createScopeAccess } from "./scope-access";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -256,6 +257,10 @@ let window: BrowserWindow | null = null;
 let quitting = false;
 /** Codex can't take linked folders (hatches Decision 15): set once its transport says so. */
 let linkedUnsupported = false;
+/** Linked folders (hatches): the IPC's deps, the turns' access and AGENTS.md's rewrite. Null without them (D0). */
+let linkedParts: { access: ScopeAccess; instructions: LinkedInstructions } | null = null;
+/** The linked-folder channels' deps, made once when they are registered (hasLinkedFolders only). */
+let linkedDeps: LinkedIpcDeps | null = null;
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** The first web address the running step printed, for a screen that reopens while it runs. */
@@ -806,6 +811,8 @@ async function arrivedInProfile(): Promise<void> {
   await interruptTasks();
   settingsCtl?.forget();
   await settingsCtl?.changed();
+  // The new profile's open scope and links reach AGENTS.md (hatches). Nothing without linked folders.
+  void linked_()?.instructions.changed();
   await settleScopes();
   await scopesChanged();
   if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
@@ -932,6 +939,8 @@ async function runtimeOptions(
     ...(settings || plugins
       ? { instructionSettings: async () => [...(settings ? await settings.sentences() : []), ...(plugins ? await plugins.sentences() : [])] }
       : {}),
+    // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
+    ...linkedRuntimeOptions(),
     onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
   };
@@ -1123,6 +1132,11 @@ const turnDeps: TurnDeps = {
   sessionExpired: async (engineId) => {
     await shared.update(engineId, { verifiedAt: null });
   },
+  // The turn's own task scope's linked folders, checked each turn (hatches L5). A getter: undefined without them (D0).
+  get scopeAccess() {
+    const linked = linked_();
+    return linked ? (scope: string) => linked.access.access(scope) : undefined;
+  },
 };
 const turns = new TurnController(turnDeps);
 /** Every turn ended and its chat writes settled: today's one, or in board mode each lane's. */
@@ -1229,6 +1243,12 @@ const taskDeps: TaskDeps = {
       return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
     };
   },
+  // Board mode only (hatches Decision 6): AGENTS.md is shared by lanes in different scopes, so each task's first message
+  // names its own scope's folders. A getter: undefined without linked folders (D0) or outside board mode.
+  get linkedContext() {
+    const linked = linked_();
+    return linked && host ? (scope: string) => linked.access.section(scope) : undefined;
+  },
   get path() {
     return harness.path ?? [];
   },
@@ -1237,9 +1257,12 @@ const taskDeps: TaskDeps = {
     const settings = settingsCtl;
     const sidekick = sidekickCtl;
     const plugins = pluginsCtl;
-    if (!settings && !sidekick && !plugins) return undefined;
+    const linked = linked_();
+    if (!settings && !sidekick && !plugins && !linked) return undefined;
     return async () => {
       await settings?.betweenTasks();
+      // A link change a running turn kept from AGENTS.md, or another scope opened since it was written.
+      await linked?.instructions.betweenTasks();
       await sidekick?.betweenTasks();
       // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
       await plugins?.betweenTasks();
@@ -1746,6 +1769,10 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
       return (await scopeStoreFor(baseOf(c)).list()).filter((sc) => !sc.archived).map((sc) => sc.id);
     },
     scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
+    // A scoped run reaches its own scope's linked folders, checked as a task's turn (hatches). None without (D0).
+    ...(hasLinkedFolders(harness)
+      ? { linked: { access: async (sc: string) => linked_()?.access.access(sc), section: async (sc: string) => (await linked_()?.access.section(sc)) ?? "" } }
+      : {}),
     engine: async () => (await config.load()).engineId ?? "",
     // Settings › Jobs, read at each trigger: a change applies from the next one, without a restart.
     settings: (id) => jobSettings?.[id],
@@ -1819,12 +1846,14 @@ function buildTaskAttention(): TaskAttention {
 
 /** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
 function linkedIpcDeps(): LinkedIpcDeps {
+  // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
+  if (linkedDeps) return linkedDeps;
   const userData = app.getPath("userData");
   // Histories unlinked over 30 days ago go to the Trash first: no link handler runs before, so a relink never races it.
   const ready = pruneUnlinked(userData, new Date(), (d) => shell.trashItem(d)).catch((err: unknown) =>
     console.error("Could not prune the linked folders' histories", err),
   );
-  return {
+  linkedDeps = {
     linkedFolders: harness.linkedFolders ?? {},
     store: scopeStore,
     // Links are signed per profile id (never its folder's path, so a move keeps them); "" without profiles.
@@ -1864,15 +1893,68 @@ function linkedIpcDeps(): LinkedIpcDeps {
     ready,
     changed: async () => {
       await scopesChanged();
-      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks.
-      void tasks
-        .whenNoTask(async () => {
-          if (host) await host.refreshInstructions();
-          else await (await runtime.peek()?.catch(() => null))?.refreshInstructions();
-        })
-        .catch((err: unknown) => console.error("Could not rewrite AGENTS.md after a link change", err));
+      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks (never lost).
+      void linked_()?.instructions.changed();
     },
     unsupported: () => linkedUnsupported,
+  };
+  return linkedDeps;
+}
+
+/**
+ * The linked-folder parts, made on first use once the channels' deps exist: only a harness that declares
+ * `linkedFolders` registers them (D0: null, and nothing of it runs). The IPC and the turns share one signing (one
+ * writer of the live set).
+ */
+function linked_(): typeof linkedParts {
+  if (linkedParts || !linkedDeps) return linkedParts;
+  const deps = linkedDeps;
+  const instructions = new LinkedInstructions({
+    whenNoTask: (fn) => tasks.whenNoTask(fn),
+    // Peek, never get (as the settings'). Board mode lists no folders in AGENTS.md (Decision 6): nothing to write.
+    refresh: async () => {
+      if (host) return false;
+      const rt = await runtime.peek()?.catch(() => null);
+      if (!rt) return false;
+      const wrote = await rt.refreshInstructions();
+      // `single` mode: a job's turn on the same workspace refused it; kept stale for the next gap.
+      if (!wrote && singleParts.get(rt)?.workspace.anyRunning()) throw new Error("A turn is running: AGENTS.md waits for a gap");
+      return wrote;
+    },
+    openScope: () => tasks.currentScope(),
+  });
+  linkedParts = { access: createScopeAccess(deps), instructions };
+  return linkedParts;
+}
+
+/** The runtime's linked-folder options (hatches): none without linked folders (D0). */
+function linkedRuntimeOptions(): Pick<RuntimeOptions, "instructionLinked" | "linkedGitdir"> & { onLinkedUnsupported?: () => void } {
+  const linked = linked_();
+  if (!linked) return {};
+  const userData = app.getPath("userData");
+  return {
+    // Only a turn's checked access names a folder here (scope-access.ts): its history continues, never pruned.
+    linkedGitdir: async (real: string) => {
+      const dir = linkedHistoryDir(userData, real);
+      await markRelinked(dir);
+      return dir;
+    },
+    onLinkedUnsupported: () => {
+      linkedUnsupported = true;
+    },
+    // The open scope's folders (plain and single mode); board mode lists none (Decision 6). A failure lists none.
+    instructionLinked: async () => {
+      if (host) return [];
+      try {
+        const scope = await tasks.currentScope();
+        const lines = await linked.access.lines(scope);
+        linked.instructions.wrote(scope);
+        return lines;
+      } catch (err) {
+        console.error("Could not read the open scope's folders for AGENTS.md", err);
+        return [];
+      }
+    },
   };
 }
 
@@ -2176,6 +2258,14 @@ function registerIpc() {
     if (id !== null && !isScopeId(id)) throw new Error("Unknown scope");
     const opened = await tasks.switchScope(id);
     await scopesChanged();
+    // Linked folders: a folder that gained or lost git is marked (Decision 13); AGENTS.md lists the new scope's folders.
+    const linked = linked_();
+    if (linked && opened) {
+      void (async () => {
+        if (id !== null) await linked.access.checkGit(id).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
+        await linked.instructions.changed();
+      })();
+    }
     return opened;
   });
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).

@@ -300,7 +300,9 @@ export type ContextItemKind =
   | "data"
   | "material"
   | "pinned"
-  | "pinned-title";
+  | "pinned-title"
+  /** A board-mode task's linked folders (hatches Decision 6): its first message lists them. */
+  | "linked-folders";
 
 /** One part of what the app loaded into a task, with its approximate size. */
 export interface ContextItem {

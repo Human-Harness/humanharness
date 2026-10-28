@@ -155,6 +155,34 @@ describe("JobRunner (parallel spec §8)", () => {
     expect(r).toMatchObject({ scope: null, trigger: "start", status: "ok" });
   });
 
+  it("a scoped run gets its own scope's linked folders, as a task's turn there (hatches spec §3.3)", async () => {
+    const linked = [{ path: "/code/acme", mode: "write" as const, tracked: true }];
+    const scopeAccess = vi.fn(async (scope: string) => (scope === "acme" ? { linked } : undefined));
+    const s = setup(events(result({ status: "ok", summary: "done" }), ok), { scopeAccess });
+    await runJob(s.d, "sync", job(), "acme", "manual");
+    expect(scopeAccess).toHaveBeenCalledWith("acme");
+    expect(s.sent[0].options).toMatchObject({ scope: { linked } });
+  });
+
+  it("an app-wide run, a scope with none, or a failing access: no scope key, the run still runs", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const scopeAccess = vi.fn(async (scope: string) => (scope === "boom" ? Promise.reject(new Error("disk")) : undefined));
+    for (const scope of [null, "other", "boom"]) {
+      const s = setup(events(result({ status: "ok", summary: "done" }), ok), { scopeAccess });
+      const r = await runJob(s.d, "sync", job(), scope, "manual");
+      expect(s.sent[0].options).not.toHaveProperty("scope");
+      expect(r?.status).toBe("ok");
+    }
+    expect(scopeAccess.mock.calls.map((c) => c[0])).toEqual(["other", "boom"]);
+    err.mockRestore();
+  });
+
+  it("D0: without the dep the send options are today's", async () => {
+    const s = setup(events(result({ status: "ok", summary: "done" }), ok));
+    await runJob(s.d, "sync", job(), "acme", "manual");
+    expect(Object.keys(s.sent[0].options ?? {}).sort()).toEqual(["profile", "trailer"]);
+  });
+
   it("startedAt is the run's start, though the line is written at its end (Decision 9)", async () => {
     const s = setup(events(result({ status: "ok", summary: "x" }), ok));
     const log = new JobLog(fs.mkdtempSync(path.join(root, "log-")));
@@ -523,6 +551,17 @@ describe("jobMessageFor (the job prompt's wiring)", () => {
     await plain("sync", null);
     expect(plainAsked).toEqual([undefined]);
     expect(plainData).toHaveBeenCalledWith(MAIN_SCOPE, undefined);
+  });
+
+  it("a scoped run's first message carries its folders after the material; an app-wide run asks none", async () => {
+    const linkedContext = vi.fn(async (scope: string) => `### Folders of this scope\n\n- (${scope})`);
+    const materialContext = vi.fn(async () => "## Material");
+    const m = jobMessageFor({ jobs: { sync: job() }, readBrief: async () => "Brief.", notes: async () => [], scoped: true, materialContext, linkedContext, actions: {} });
+    const text = await m("sync", "acme");
+    expect(text.indexOf("## Material")).toBeLessThan(text.indexOf("### Folders of this scope\n\n- (acme)"));
+    expect(text.indexOf("### Folders of this scope")).toBeLessThan(text.indexOf("This is a background job"));
+    await m("sync", null);
+    expect(linkedContext.mock.calls.map((c) => c[0])).toEqual(["acme"]);
   });
 
   it("an unknown job id is refused", async () => {

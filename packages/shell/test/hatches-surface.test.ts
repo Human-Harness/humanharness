@@ -79,6 +79,24 @@ describe("hatches IPC surface (hatches D0)", () => {
     expect(view).toContain(".map(({ linked: _linked, ...s }) => s)");
   });
 
+  it("D0: turns, AGENTS.md, histories and jobs reach linked folders only through the registered deps", async () => {
+    const index = await read("index.ts");
+    // The deps are made only by linkedIpcDeps (called only under hasLinkedFolders); linked_ answers null without them.
+    expect(count(index, /\blinkedDeps = /)).toBe(1);
+    expect(group(index, index.indexOf("function linkedIpcDeps(): LinkedIpcDeps"), /\{/)).toContain("linkedDeps = {");
+    const parts = group(index, index.indexOf("function linked_()"), /\{/);
+    expect(parts).toContain("if (linkedParts || !linkedDeps) return linkedParts;");
+    expect(count(index, /\bcreateScopeAccess\(/)).toBe(count(parts, /\bcreateScopeAccess\(/));
+    // The runtime's options: none at all without them (no instructionLinked, linkedGitdir or onLinkedUnsupported key).
+    const from = index.indexOf("function linkedRuntimeOptions()");
+    const runtime = index.slice(from, index.indexOf("\n}\n", from));
+    expect(runtime).toContain("if (!linked) return {};");
+    for (const key of [/\binstructionLinked:/, /\blinkedGitdir:/, /\bonLinkedUnsupported:/]) expect(count(index, key), String(key)).toBe(count(runtime, key));
+    // The turn's access and board mode's first-message section are getters that give undefined without them.
+    expect(group(index, index.indexOf("get scopeAccess()"), /\{/)).toContain("return linked ? ");
+    expect(group(index, index.indexOf("get linkedContext()"), /\{/)).toContain("return linked && host ? ");
+  });
+
   it("en.json has one sentence per refusal reason, and the window's reasons cover the picker's", async () => {
     const union = (text: string, name: string) => {
       const at = text.indexOf(`export type ${name} =`);

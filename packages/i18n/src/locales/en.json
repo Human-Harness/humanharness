@@ -1332,6 +1332,7 @@
     "leaveToGit": "Leave to its own git",
     "notCovered": "Undo doesn't cover this folder: it has its own git.",
     "codexUnsupported": "Linked folders don't work with this version of Codex yet.",
+    "contextLinked": "Folders of this scope",
     "refused": {
       "engine-home": "This folder holds an app's settings or keys, so it can't be linked.",
       "home": "Your whole home folder can't be linked. Choose a folder inside it.",

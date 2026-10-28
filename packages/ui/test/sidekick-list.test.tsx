@@ -24,6 +24,10 @@ describe("Settings › Sidekicks (spec §8)", () => {
     expect(rows.map((r) => r.querySelector("strong")?.textContent)).toEqual(["Sidekick", "Rulo"]);
     expect(rows[0]!.textContent).toContain("Prompt coach · Focus");
     expect(screen.queryByRole("button", { name: "Move Sidekick up" })).toBeNull();
+    // The rows can be on screen before their commit's effects ran (the list's focus effect among them). Clicked then,
+    // React runs that stale effect after the click set where focus goes, and focus lands on the old Move up. Rulo's
+    // re-import check runs in the same commit's effects: once it was asked, they all ran.
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["checkOriginal", "rulo"]));
     fireEvent.click(screen.getByRole("button", { name: "Move Rulo up" }));
     // Generous waits (and test timeout): under the full suite's load the reorder, the reload and the focus can each take over a second.
     const slow = { timeout: 5_000 };

@@ -7,18 +7,18 @@ A harness that declares `parallel` lets the person keep several tasks open at on
 The shell picks a mode once, when it loads the harness: `hostMode(harness)` (`packages/shell/src/main/board-host.ts`) is `"board"` when the manifest declares `parallel` (`isConcurrent`), otherwise `"plain"`.
 
 - **Plain** is the app as it was: `createRuntime`, one `TaskManager`, one `TurnController`. No part-2 code runs.
-- **Board** builds one `HarnessWorkspace`, a `TaskBoard` (`task-board.ts`), a `TurnGate` (`turn-gate.ts`) and one lane per open task. `index.ts` only branches where it builds the runtime, the turns and the tasks (`host` is null in plain mode).
+- **Board** builds one `HarnessWorkspace`, a `TaskBoard` (`task-board.ts`), a `TurnGate` (`turn-gate.ts`) and one lane per open task. `index.ts` branches on `host` (null in plain mode) where it builds the runtime, the turns and the tasks, and in the few handlers whose board behaviour differs: `hh:restoreTask`, the move's checkpoint, the caps save (`capsChanged`), `dropRuntime` and `interruptTasks`.
 - `parallel: { tasks: 1 }` still uses the board: several tasks stay open, one turn runs at a time, so turns never overlap and every commit equals the plain app's (spec §5.4). A harness that wants today's app declares nothing.
 
 **D0.** A harness without `parallel` is byte for byte today's app:
 
 | What stays as before | Pinned by |
 |---|---|
-| Mode is plain | `board-host.test.ts`: `hostMode` is `"plain"` for the demo and notes fixtures |
+| Mode is plain | `packages/shell/test/board-host.test.ts`: `hostMode({})` is `"plain"`; `packages/harness-sdk/test/parallel.test.ts`: a manifest without `parallel` parses as before and `isConcurrent` is false |
 | tasks.json: no `lanes`, `focus`, `tokens`, `conflict` | `task-store.test.ts`: a file without `lanes` round-trips to the same bytes |
 | Chats: `chats/<scope>.jsonl`, no migration | `chat-log.test.ts` (no task → today's path), `chat-migration.test.ts`, `board-host.test.ts` |
-| `AppState` has no `parallel` field | the app-state test |
-| No inbox button, no task strip, ChatView key unchanged | `packages/ui/test/inbox.test.tsx` |
+| `AppState` has no `parallel` field | `packages/shell/test/parallel-config.test.ts`: `parallelInfo` is undefined without `parallel` (`index.ts` adds the field only when defined) |
+| No inbox button, no task strip, ChatView key unchanged | `packages/ui/test/inbox.test.tsx`, `packages/ui/test/parallel-chat.test.tsx` |
 | The Dock badge is never set | `task-attention.test.ts` |
 | config.json gets `parallel`/`notifyWaiting` only when the person sets them; Settings shows the section only in board mode | `config.test.ts`, `packages/ui/test/settings.test.tsx` |
 | Commits and prompts | `packages/runtime/test/runtime-d0.test.ts`, the e2e golden in `packages/e2e/tests/history.spec.ts` |
@@ -38,13 +38,13 @@ A lane is today's single-task machinery, reused unchanged: a `TaskManager`, its 
 
 ## Focus and events
 
-- The window talks to the **focused** lane: the board forwards each per-task call (`send`, `choose`, `finish`, `cancel`, phases, time box, `view`) to it, or to the idle lane at the start view. A lane without a method answers "This task can't X".
+- The window talks to the **focused** lane: the board forwards each per-task call (`ask`, `choose`, `finish`, `cancel`, phases, time box, `view`) to it, or to the idle lane at the start view. A lane without a method answers "This task can't X".
 - `board.focus(id)` takes only an open lane's id (`isLaneId`, then `Map.get`; threat model P1). `hh:tasksFocus` checks the id is a string of 1 to 200 characters first (`tasks-ipc.ts`). `focus(null)` is the start view.
 - Only the focused lane's events reach the window (`laneEmit`). Every lane's events also go to a `LiveBuffer` (`live-buffer.ts`): from its last user line to its `done`, at most 2,000 events and about 2 M characters, oldest dropped, consecutive text deltas merged, `edits` stripped (`forWindow`) before they are kept.
 - **Replay.** `hh:loadChat` in board mode loads the focused task's chat file and, when its turn is still running, `ChatLoad.live` (read last, after every await). The window dispatches the `resume` action and replays the buffered events. A user line not yet written to the file comes from the buffer.
 - The window remounts the chat (ChatView key `${engineId}:${profile}:${openScope}:${epoch}`, `useFocusEpoch`) when main's pushed state focuses another listed task, or after its own `focus(null)` resolves. A message put back from a cancelled queued turn survives that remount once (`draftKeep`); nothing else carries from one task's box to another's.
 - **The task strip** (`TaskStrip.tsx`) over the chat names the focused task, its phase and a "New task" button.
-- **Data requests** (P3): `data(request, slot)` attributes a write to `board.runningTaskOf(slot.key)`, the lane whose socket asked; never a task id from the request.
+- **Data requests** (P3): `data(request, slot)` attributes a write to the host's `runningTaskOf(slot.key)` (that lane's `manager.runningTask()`), the lane whose socket asked; never a task id from the request.
 
 **Sidekick hears only the focused task.** Each lane's `turnStarting`, `turnEnded` and `phaseMoved` reach Sidekick only while that lane is focused:
 
@@ -78,7 +78,7 @@ A "Parallel tasks" section (`SettingsSheet.tsx`, `ParallelSection`) shows only i
 ## Per-task chats
 
 - A task's chat is `.harness/chats/<scope>/<task id>.jsonl` (`taskChatFile`, `ChatLog`'s optional fourth argument). The scope folder is checked by real path, appends use `O_NOFOLLOW`. A scope named `archive` is reserved. The start view has no chat.
-- **Migration** (`chat-migration.ts`, Decision 8), once per folder, at the first board start, before any lane writes (`host.interrupt`): each `chats/<scope>.jsonl` is copied (atomically) to its scope's last task's file when that task is still open (tasks.json's `current` first, then the lanes), then archived by rename to `chats/archive/`. A file is archived only after its copy succeeded; a task chat that already has lines of its own is kept as it is and the scope chat only archived (`kept`, logged). A scope chat that is a link or a hard link is never read, only archived. A `.per-task` marker, written last, makes it run once; every step can be repeated after a crash.
+- **Migration** (`chat-migration.ts`, Decision 8), once per folder, at the first board start, before any lane writes (`host.interrupt`): each `chats/<scope>.jsonl` is copied (atomically) to the file of the first open task of that scope (tasks.json's `current` first, then the lanes in file order), then archived by rename to `chats/archive/`. A file is archived only after its copy succeeded; a task chat that already has lines of its own is kept as it is and the scope chat only archived (`kept`, logged). A scope chat that is a link or a hard link is never read, only archived. A `.per-task` marker, written last, makes it run once; every step can be repeated after a crash.
 - Archived chats have no viewer: they stay readable JSONL files.
 - An engine change archives the per-task chats too (`ChatLog.taskChatsIn`).
 
@@ -93,8 +93,8 @@ A "Parallel tasks" section (`SettingsSheet.tsx`, `ParallelSection`) shows only i
 
 ## The inbox
 
-- **`client.tasks`** (`TasksClient`, preload channels `hh:tasksList`, `hh:tasksFocus`, `hh:tasksCancelQueued`, `hh:tasksResume`, push `hh:tasksChange`): `list()` answers `TasksState` (`tasks: TaskSummary[]`, oldest first; `paused?`; `caps`), `onChange`, `focus(id | null)`, `cancelQueued(id)`, `resumeQueues()`. A `TaskSummary` carries the id, scope, action, label (the action's label or the first 60 characters of the question, as the history names it), state (`running`, `waiting`, `queued`, `closing`, `checkpoint`), `waitingFor` (`message`, `answer`, `phase`), phase, start, tokens, conflict and `focused`. Nothing else of the task leaves main.
-- **The core inbox** (`packages/ui/src/parallel/Inbox.tsx`, `useTasks.ts`): a button in the chat's top bar, "Inbox, N waiting", that opens a popover with the pause line (and Resume when out of quota), then the sections Waiting for you, Working, Queued (each row with Cancel) and Jobs (empty until part 3), and "New task" (the start view). A row focuses its task. It shows on the work screen, not on Home.
+- **`client.tasks`** (`TasksClient`, preload channels `hh:tasksList`, `hh:tasksFocus`, `hh:tasksCancelQueued`, `hh:tasksResume`, push `hh:tasksChange`): `list()` answers `TasksState` (`tasks: TaskSummary[]`, oldest first; `paused?`; `caps`), `onChange`, `focus(id | null)`, `cancelQueued(id)`, `resumeQueues()`. A `TaskSummary` carries the id, scope, action, label (the action's label or the first 60 characters of the question, as the history names it), state (`running`, `waiting`, `queued`, `closing`, `checkpoint`), `waitingFor` (`message`, `answer`, `phase`), phase, `startedAt`, tokens, conflict and `focused`. Nothing else of the task leaves main.
+- **The core inbox** (`packages/ui/src/parallel/Inbox.tsx`, `useTasks.ts`): a button in the chat's top bar, "Inbox" with a count badge (its label for screen readers: "Inbox, N waiting"), that opens a popover with the pause line (and Resume when out of quota), then the sections Waiting for you, Working, Queued (each row with Cancel) and Jobs (empty until part 3), and "New task" (the start view). A row focuses its task. It shows on the work screen, not on Home.
 - **`inbox: false`** (a top-level manifest key, since `ui` is already the custom-UI path) hides the core inbox and its button. `client.tasks` stays, for a harness that draws its own panel.
 - **Attention items** (`task-attention.ts`, Decision 10): a task entering `waiting` raises `{ kind: "task", id }` with key `waiting`, severity `action`, its label as the title and target `{ panel: "task", focus: id }`, in the base's shared `AttentionStore` (`attention-stores.ts`, the plugins' store, HMAC-tagged; `known` for a task origin = an open lane). Leaving `waiting` or the open tasks resolves it. The task inbox reads `client.tasks`, never the items' `read` flag.
 - **Dock badge**: the waiting count plus the plugins' count (`app.dock.setBadge`), set on change only. Board mode only.

@@ -48,6 +48,17 @@ function Sheet({ c, tab: first = "jobs", onStartAction }: { c: FakeClient; tab?:
   );
 }
 
+/** Holds every saveConfig until the returned release: the replies come back after later changes were made. */
+function gateSaves(c: FakeClient): () => void {
+  const waiting: (() => void)[] = [];
+  const save = c.saveConfig.bind(c);
+  vi.spyOn(c, "saveConfig").mockImplementation(async (patch) => {
+    await new Promise<void>((resolve) => waiting.push(resolve));
+    return save(patch);
+  });
+  return () => waiting.splice(0).forEach((resolve) => resolve());
+}
+
 /** The group of one job in the tab: its heading's section. */
 const group = (label: string) => screen.getByRole("heading", { name: label }).closest("section")!;
 
@@ -124,6 +135,48 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     await waitFor(() => expect(within(group("Digest")).queryByRole("alert")).toBeNull());
   });
 
+  it("two changes saved before the first comes back both stay (main merges only the top level)", async () => {
+    const c = client();
+    const release = gateSaves(c);
+    await renderIn("en", <Sheet c={c} />);
+    const cap = within(group("Digest")).getByLabelText("Daily token cap");
+    fireEvent.change(cap, { target: { value: "20000" } });
+    fireEvent.blur(cap);
+    fireEvent.click(within(group("Digest")).getByRole("checkbox", { name: "On" }));
+    // Another job's change, still before any reply.
+    fireEvent.click(within(group("Sync inbox")).getByRole("checkbox", { name: "On" }));
+    await waitFor(() => expect(c.saveConfig).toHaveBeenCalledTimes(3));
+    release();
+    await waitFor(() => expect(c.state.config.jobs).toEqual({ digest: { dailyTokens: 20_000, off: true }, sync: { off: true } }));
+    expect((within(group("Digest")).getByLabelText("Daily token cap") as HTMLInputElement).value).toBe("20000");
+  });
+
+  it("a save that fails says so", async () => {
+    const c = client();
+    c.saveError = new Error("disk full");
+    await renderIn("en", <Sheet c={c} />);
+    fireEvent.click(within(group("Sync inbox")).getByRole("checkbox", { name: "On" }));
+    expect(await screen.findByText("Couldn't save the change.")).toHaveProperty("role", "alert");
+  });
+
+  it("an unchanged cap is not checked again (one set by hand under the minimum), and an emptied one goes back to the manifest's", async () => {
+    const c = client();
+    c.state.config = { ...c.state.config, jobs: { digest: { dailyTokens: 500 } } };
+    const save = vi.spyOn(c, "saveConfig");
+    await renderIn("en", <Sheet c={c} />);
+    const cap = within(group("Digest")).getByLabelText("Daily token cap") as HTMLInputElement;
+    expect(cap.value).toBe("500");
+    fireEvent.focus(cap);
+    fireEvent.blur(cap);
+    expect(within(group("Digest")).queryByRole("alert")).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.change(cap, { target: { value: "" } });
+    fireEvent.blur(cap);
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith({ jobs: {} }));
+    await waitFor(() => expect((within(group("Digest")).getByLabelText("Daily token cap") as HTMLInputElement).value).toBe("50000"));
+    expect(within(group("Digest")).queryByRole("alert")).toBeNull();
+  });
+
   it("Run now only for manual jobs, with the row's scope; none while running or off", async () => {
     const c = client([
       { id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: false },
@@ -195,5 +248,19 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
     expect(c.sent.at(-1)).toBe("Implement");
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  });
+});
+
+describe("Settings › General's parallel caps (part 2), saved twice before a reply", () => {
+  it("the tasks cap and then the jobs cap both stay", async () => {
+    const c = new FakeClient(ready);
+    c.state.parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+    const release = gateSaves(c);
+    await renderIn("en", <Sheet c={c} tab="general" />);
+    fireEvent.change(screen.getByLabelText("Tasks at once"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Jobs at once"), { target: { value: "2" } });
+    await waitFor(() => expect(c.saveConfig).toHaveBeenCalledTimes(2));
+    release();
+    await waitFor(() => expect(c.state.config.parallel).toEqual({ tasks: 3, jobs: 2 }));
   });
 });

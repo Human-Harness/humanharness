@@ -7,6 +7,7 @@ import { type AppConfig, type AppState, type Appearance, type HarnessClient, typ
 import { EngineTab } from "./EngineTab";
 import { HarnessSettingsTab } from "./HarnessSettingsTab";
 import { ownName, systemLanguage } from "./language";
+import { useLatestConfig } from "./latest-config";
 import { ModelsTab } from "./ModelsTab";
 import { JobsTab } from "./parallel/JobsTab";
 import { PluginsTab } from "./plugins/PluginsTab";
@@ -357,6 +358,8 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
   const info = state.parallel!;
   const held = info.heldReason === "engine";
   const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
+  // The other cap may still be on its way to main: each save builds on the last one asked for, not on `state`.
+  const latest = useLatestConfig(state.config.parallel);
   const cap = (key: "tasks" | "jobs", label: string) => (
     <div className="hh-row">
       <label className="hh-row-label" htmlFor={`${id}-${key}`}>
@@ -367,7 +370,7 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
         value={info.caps[key]}
         disabled={held}
         aria-describedby={held ? `${id}-held` : undefined}
-        onChange={(e) => void save({ parallel: { ...state.config.parallel, [key]: Number(e.target.value) } })}
+        onChange={(e) => void latest.save({ ...latest.get(), [key]: Number(e.target.value) }, (parallel) => save({ parallel }))}
       >
         {CAP_CHOICES.map((n) => (
           <option key={n} value={n}>

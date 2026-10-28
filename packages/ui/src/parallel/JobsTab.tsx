@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppConfig, AppState, HarnessClient, JobSettings, JobSummary, JobsInfo } from "../client";
+import { useLatestConfig } from "../latest-config";
 import { shownLanguage } from "../language";
 import { useJobs } from "./useJobs";
 
@@ -49,17 +50,22 @@ export function JobsTab({
   }, [client, hasScopes]);
 
   const settings = state.config.jobs ?? {};
-  const save = (id: string, entry: JobSettings) => {
-    const others = { ...settings };
-    delete others[id];
-    const patch: AppConfig = { jobs: Object.keys(entry).length > 0 ? { ...others, [id]: entry } : others };
-    return client.saveConfig(patch).then(onChange, () => {});
+  /** The `jobs` the last change asked for: a save still in flight isn't in `state` yet, and the next one sends it whole. */
+  const latest = useLatestConfig(settings);
+  const [saveFailed, setSaveFailed] = useState(false);
+  /** Changes one job's entry (`change` gets its latest) and saves every job's. */
+  const save = (id: string, change: (entry: JobSettings) => JobSettings) => {
+    setSaveFailed(false);
+    const all = { ...latest.get() };
+    const entry = change({ ...all[id] });
+    delete all[id];
+    const next = Object.keys(entry).length > 0 ? { ...all, [id]: entry } : all;
+    return latest.save(next, (jobs) => client.saveConfig({ jobs } satisfies AppConfig)).then(onChange, () => setSaveFailed(true));
   };
-  const setOn = (id: string, on: boolean) => {
-    const rest = { ...settings[id] };
-    delete rest.off;
-    void save(id, on ? rest : { ...rest, off: true });
-  };
+  const setOn = (id: string, on: boolean) =>
+    void save(id, ({ off: _off, ...rest }) => (on ? rest : { ...rest, off: true }));
+  const setCap = (id: string, cap: number | undefined) =>
+    save(id, ({ dailyTokens: _cap, ...rest }) => (cap === undefined ? rest : { ...rest, dailyTokens: cap }));
 
   /** A time today alone; another day with its weekday. */
   const when = (iso: string): string => {
@@ -126,7 +132,7 @@ export function JobsTab({
   return (
     <div className="hh-tab">
       {state.jobs!.jobs.map((job) => (
-        <JobGroup key={job.id} job={job} entry={settings[job.id] ?? {}} onOn={(on) => setOn(job.id, on)} onCap={(cap) => save(job.id, { ...settings[job.id], dailyTokens: cap })}>
+        <JobGroup key={job.id} job={job} entry={settings[job.id] ?? {}} onOn={(on) => setOn(job.id, on)} onCap={(cap) => setCap(job.id, cap)}>
           {(labelId) => {
             const own = runs.filter((r) => r.id === job.id);
             return (
@@ -138,6 +144,7 @@ export function JobsTab({
           }}
         </JobGroup>
       ))}
+      {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
     </div>
   );
 }
@@ -153,7 +160,8 @@ function JobGroup({
   job: JobsInfo["jobs"][number];
   entry: JobSettings;
   onOn: (on: boolean) => void;
-  onCap: (cap: number) => Promise<unknown>;
+  /** undefined: back to the manifest's cap. */
+  onCap: (cap: number | undefined) => Promise<unknown>;
   children: (labelId: string) => ReactNode;
 }) {
   const { t, i18n } = useTranslation();
@@ -165,8 +173,17 @@ function JobGroup({
   // A save (or another window's) moves the field to what is stored.
   useEffect(() => setDraft(saved === undefined ? "" : String(saved)), [saved]);
   const commit = () => {
+    // Unchanged (even a cap under the minimum set by hand in the config): nothing to check or save.
+    if (draft === (saved === undefined ? "" : String(saved))) return setTooLow(false);
+    // Emptied: the person's cap goes, and the manifest's is back.
+    if (draft.trim() === "") {
+      setTooLow(false);
+      if (entry.dailyTokens !== undefined) void onCap(undefined);
+      else setDraft(saved === undefined ? "" : String(saved));
+      return;
+    }
     const cap = Number(draft);
-    if (draft.trim() === "" || !Number.isSafeInteger(cap) || cap < DAILY_CAP_MIN) {
+    if (!Number.isSafeInteger(cap) || cap < DAILY_CAP_MIN) {
       setTooLow(true);
       return;
     }

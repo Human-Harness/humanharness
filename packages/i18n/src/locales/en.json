@@ -1014,6 +1014,7 @@
     "dailyCap": "Daily token cap",
     "dailyCapHint": "Runs on a timer pause until tomorrow once today's runs used this many tokens.",
     "dailyCapMin": "The daily cap is at least {{min}} tokens.",
-    "notRunYet": "Not run yet"
+    "notRunYet": "Not run yet",
+    "saveFailed": "Couldn't save the change."
   }
 }

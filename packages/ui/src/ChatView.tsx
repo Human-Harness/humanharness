@@ -843,13 +843,14 @@ export function ChatView({
   /** A needs-you job's action (part 3): only a declared one, in the job's scope when it has one. */
   const startFromInbox = (id: string, scope: string | null): boolean =>
     Object.hasOwn(state.actions, id) ? send(labelOf(id), { action: id, ...(scope !== null ? { scope } : {}) }) : false;
-  if (startRef) startRef.current = startFromInbox;
-  useEffect(
-    () => () => {
-      if (startRef) startRef.current = null;
-    },
-    [startRef],
-  );
+  // Every commit: the latest start, set after an old view's cleanup (a key change) so it is never left null.
+  useLayoutEffect(() => {
+    if (!startRef) return;
+    startRef.current = startFromInbox;
+    return () => {
+      startRef.current = null;
+    };
+  });
   const resume = (note: NoteView) => {
     setNotesPanel(null);
     if (note.action && state.actions[note.action]) startTopic(note.action);

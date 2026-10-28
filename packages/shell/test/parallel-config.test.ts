@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveCaps, engineHold, parallelInfo } from "../src/main/parallel-config";
+import { cleanCaps, effectiveCaps, engineHold, parallelInfo } from "../src/main/parallel-config";
 
 describe("effectiveCaps (parallel spec §7)", () => {
   it("the person's value wins, clamped to 1..8; else the manifest's", () => {
@@ -54,5 +54,14 @@ describe("parallelInfo", () => {
       notifyWaiting: false,
       heldReason: "engine",
     });
+  });
+});
+
+describe("cleanCaps", () => {
+  it("keeps whole numbers 1..8 under tasks and jobs and drops every other entry; nothing valid is undefined", () => {
+    expect(cleanCaps({ tasks: 3, jobs: 1 })).toEqual({ tasks: 3, jobs: 1 });
+    expect(cleanCaps({ tasks: 12, jobs: 2 })).toEqual({ jobs: 2 });
+    expect(cleanCaps({ tasks: 8, other: 1 })).toEqual({ tasks: 8 });
+    for (const bad of [{ tasks: 0 }, { tasks: 9 }, { jobs: 1.5 }, { tasks: "2" }, [], null, 3, undefined]) expect(cleanCaps(bad)).toBeUndefined();
   });
 });

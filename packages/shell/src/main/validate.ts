@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PARALLEL_MAX, canonicalLanguage } from "@humanharness/harness-sdk";
+import { canonicalLanguage } from "@humanharness/harness-sdk";
 import { type AppConfig, type FolderProblem, isTextSize } from "@humanharness/ui/client";
 
 /** Home folders the user keeps other things in: too broad to hand to an agent as a whole (~/Library is PROTECTED). */
@@ -101,13 +101,6 @@ export interface ValidationContext {
 
 export type ConfigProblem = FolderProblem | "invalid" | "engine-unavailable" | "language-unavailable";
 
-/** Settings › General's caps (parallel spec §7): only `tasks` and `jobs`, each a whole number 1..PARALLEL_MAX. */
-function validCaps(v: unknown): boolean {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
-  const cap = (n: unknown) => n === undefined || (Number.isInteger(n) && (n as number) >= 1 && (n as number) <= PARALLEL_MAX);
-  return Object.keys(v).every((k) => k === "tasks" || k === "jobs") && cap((v as Record<string, unknown>).tasks) && cap((v as Record<string, unknown>).jobs);
-}
-
 /** Checks the fields present in `c`. Returns why it's invalid, or null. */
 export async function configProblem(c: AppConfig, ctx: ValidationContext): Promise<ConfigProblem | null> {
   if (typeof c !== "object" || c === null) return "invalid";
@@ -122,7 +115,6 @@ export async function configProblem(c: AppConfig, ctx: ValidationContext): Promi
   if (c.textSize !== undefined && !isTextSize(c.textSize)) return "invalid";
   if (c.models !== undefined && (typeof c.models !== "object" || c.models === null || Array.isArray(c.models))) return "invalid";
   if (c.backupDismissed !== undefined && typeof c.backupDismissed !== "boolean") return "invalid";
-  if (c.parallel !== undefined && !validCaps(c.parallel)) return "invalid";
   if (c.notifyWaiting !== undefined && typeof c.notifyWaiting !== "boolean") return "invalid";
   if (c.folder !== undefined) return checkFolder(c.folder, ctx.home, ctx.realpath);
   return null;

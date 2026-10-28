@@ -115,6 +115,17 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
   });
 
+  it("a half-typed follow-up for one task never shows up in another's box when the chat remounts on it", async () => {
+    const c = client(true, tasksOf("a", "a", "b"));
+    const load = vi.spyOn(c, "loadChat");
+    await open(c);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    fireEvent.change(box(), { target: { value: "half a follow-up for a" } });
+    act(() => c.tasks.set(tasksOf("b", "a", "b")));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(box().value).toBe("");
+  });
+
   it("a queued message the inbox put back stays in the box when the chat then remounts on another task", async () => {
     const c = client(true, { tasks: [summary("a", { focused: true, state: "queued" }), summary("b")], caps: { tasks: 1, jobs: 1 } });
     api(c).cancelQueued.mockResolvedValueOnce("Draft the intro");

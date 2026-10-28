@@ -120,10 +120,11 @@ export function ChatView({
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
-   * Board mode: the box's text outlives this view, which remounts on every change of task shown (a message the inbox
-   * put back stays). Absent: the box starts empty, as always.
+   * Board mode: this view remounts on every change of task shown, and the box starts empty as always, except for a
+   * message the inbox put back (Decision 7): that text, and what is typed after it, goes to the next view once. Absent:
+   * nothing is carried.
    */
-  draftKeep?: { current: string };
+  draftKeep?: { current: string | null };
   /** Harnesses with scopes: the open scope (its chat is the one on screen). */
   openScope?: string | null;
   onHome?: () => void;
@@ -146,11 +147,20 @@ export function ChatView({
   // shows its proposal, through the tasks.
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
   const [draft, setDraft] = useState(() => draftKeep?.current ?? "");
+  /** The inbox put a message back in this box: from then on its text is kept for the next view. */
+  const keepDraft = useRef(false);
+  // Taken once: a later remount (another task) starts empty unless a refill armed the keep again.
   useEffect(() => {
-    if (draftKeep) draftKeep.current = draft;
+    if (draftKeep) draftKeep.current = null;
+  }, [draftKeep]);
+  useEffect(() => {
+    if (draftKeep && keepDraft.current) draftKeep.current = draft || null;
   }, [draftKeep, draft]);
   /** A cancelled queued message (parallel Decision 7): back in the box, after whatever is typed there. */
-  const refillDraft = useCallback((text: string) => setDraft((d) => (d.trim() ? `${d}\n${text}` : text)), []);
+  const refillDraft = useCallback((text: string) => {
+    keepDraft.current = true;
+    setDraft((d) => (d.trim() ? `${d}\n${text}` : text));
+  }, []);
   const [showHistory, setShowHistory] = useState(false);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
   const [announcement, setAnnouncement] = useState("");

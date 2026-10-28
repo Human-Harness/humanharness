@@ -125,7 +125,7 @@ import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { TaskAttention } from "./task-attention";
-import { engineHold, parallelInfo } from "./parallel-config";
+import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { restoreTaskArgs, tasksIpc } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
@@ -1416,7 +1416,11 @@ function registerIpc() {
     const problem = await configProblem(input, validation());
     if (problem) throw new Error(problem);
     // Spec §7: a bad entry under models is dropped, never stored.
-    const patch: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
+    const cleaned: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
+    // Parallel spec §7: the same for the caps; with none valid the key goes (the saved caps stay).
+    const { parallel: caps, ...rest } = cleaned;
+    const kept = caps !== undefined ? cleanCaps(caps) : undefined;
+    const patch: AppConfig = caps === undefined ? cleaned : { ...rest, ...(kept ? { parallel: kept } : {}) };
     const before = await config.load();
     const baseBefore = pluginsCtl ? await currentBase() : null;
     // Spec §9: an engine is only used once its notice is accepted.

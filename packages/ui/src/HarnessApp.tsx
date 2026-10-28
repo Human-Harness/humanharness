@@ -110,9 +110,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   }, [client, hasSetupSteps, folder, profile, screen]);
   /** A harness that declares `parallel`: its open tasks (spec §9.1). Plain mode asks nothing (D0). */
   const tasksState = useTasks(client, Boolean(state?.parallel));
-  /** Board mode: the chat remounts on each change of the task shown (`epoch`); the box's text outlives it. */
+  /** Board mode: the chat remounts on each change of the task shown (`epoch`); only a message put back outlives it. */
   const { epoch, toStart } = useFocusEpoch(tasksState);
-  const draftKeep = useRef("");
+  const draftKeep = useRef<string | null>(null);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.

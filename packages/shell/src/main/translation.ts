@@ -50,6 +50,8 @@ const MAX_KEYS = 5000;
 const MAX_SAVE_KEYS = 150;
 /** Refusals named in the tool's answer. */
 const MAX_REFUSALS = 20;
+/** What the agent reads once the cache can't be written: neutral, no path. */
+const STORE_FAILED = "The app could not store this batch. Stop now.";
 
 /** English and its variants (en-GB) never get generated strings: the app's own English shows. */
 const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
@@ -82,6 +84,8 @@ export class TranslationService {
   private running: Promise<void> | null = null;
   /** The last state sent, the fallback when a fresh one can't be read. */
   private last: LanguageState | null = null;
+  /** Bumped by cancel() and stop(): a start whose engine was still being prepared then never runs. */
+  private generation = 0;
 
   constructor(private readonly d: TranslationDeps) {}
 
@@ -132,7 +136,10 @@ export class TranslationService {
     if (this.running) return { ok: false, reason: "busy" };
     const can = await this.d.available().catch(() => "no-engine" as const);
     if (can !== true) return { ok: false, reason: can };
+    const generation = this.generation;
     const ready = await this.d.prepare().catch(() => null);
+    // A cancel or stop came while the engine was being prepared: the run doesn't start.
+    if (generation !== this.generation) return { ok: false, reason: "failed" };
     if (!ready) return { ok: false, reason: "no-engine" };
     // Another start may have won while the engine was being prepared.
     if (this.running) return { ok: false, reason: "busy" };
@@ -147,12 +154,14 @@ export class TranslationService {
   }
 
   async cancel(): Promise<{ ok: boolean }> {
+    this.generation++;
     this.controller?.abort();
     return { ok: true };
   }
 
   /** Quitting or an engine change: the run stops, what it saved stays. */
   async stop(): Promise<void> {
+    this.generation++;
     this.controller?.abort();
     await this.running;
   }
@@ -198,6 +207,24 @@ export class TranslationService {
     // (after its turn ended, or after the run) is refused instead of landing in the next batch.
     let current: Map<string, TranslateItem> | null = null;
     let answered = new Set<string>();
+    // A cache write that fails (disk full, no permission, the size cap) ends the run as failed: the language never
+    // switches to a translation that isn't on disk. `halt` stops the session without counting as the person's cancel.
+    let writeFailed = false;
+    const halt = new AbortController();
+    const runSignal = AbortSignal.any([signal, halt.signal]);
+    const store = async (): Promise<boolean> => {
+      if (writeFailed) return false;
+      try {
+        await this.d.cache.save(file);
+        return true;
+      } catch (err) {
+        console.error("Could not save the translation", err);
+        writeFailed = true;
+        current = null;
+        halt.abort();
+        return false;
+      }
+    };
     this.run = { tag, done: 0, total: batches.length, status: "running" };
     await this.push(items);
 
@@ -218,7 +245,7 @@ export class TranslationService {
         this.run = { ...this.run!, total: planned };
         batch = batches.shift();
       }
-      if (!batch || signal.aborted) return null;
+      if (!batch || runSignal.aborted) return null;
       current = new Map(batch.map((it) => [it.key, it]));
       answered = new Set();
       const map = Object.fromEntries(batch.map((it) => [it.key, it.en]));
@@ -230,6 +257,7 @@ export class TranslationService {
     const handle = async (request: unknown): Promise<unknown> => {
       const r = typeof request === "object" && request !== null ? (request as { op?: unknown; strings?: unknown }) : {};
       if (r.op !== "save" || typeof r.strings !== "object" || r.strings === null || Array.isArray(r.strings)) throw new Error("Unknown request");
+      if (writeFailed) return STORE_FAILED;
       const open = current;
       if (!open) throw new Error("No batch is open: this translation turn has ended.");
       const entries = Object.entries(r.strings as Record<string, unknown>).slice(0, MAX_SAVE_KEYS);
@@ -241,7 +269,10 @@ export class TranslationService {
           refused.push(`${key.slice(0, 80)} (not in this batch)`);
           continue;
         }
-        if (answered.has(key)) continue;
+        if (answered.has(key)) {
+          refused.push(`${key} (already answered)`);
+          continue;
+        }
         answered.add(key);
         const c = checkTranslation(item, value, forms);
         if (c.ok) {
@@ -253,7 +284,8 @@ export class TranslationService {
           refused.push(`${key} (${c.reason})`);
         }
       }
-      if (kept > 0 || refused.length > 0) await this.d.cache.save(file);
+      // The fs error (it names the userData path) is logged, never handed to the agent.
+      if ((kept > 0 || refused.length > 0) && !(await store())) return STORE_FAILED;
       const more = refused.length > MAX_REFUSALS ? ` and ${refused.length - MAX_REFUSALS} more` : "";
       return refused.length === 0 ? `Saved ${kept}.` : `Saved ${kept}. Not kept: ${refused.slice(0, MAX_REFUSALS).join(", ")}${more}.`;
     };
@@ -262,28 +294,29 @@ export class TranslationService {
       const open = current;
       current = null;
       // A failed turn leaves its unanswered keys missing: "Try again" sends them (Q6).
-      if (!open || !result.ok) return;
+      if (!open || !result.ok || writeFailed) return;
       // A key the agent left out counts as a failure, like a refused one.
       for (const [key, item] of open) if (!answered.has(key)) fail(key, item);
-      await this.d.cache.save(file).catch((err: unknown) => console.error("Could not save the translation", err));
+      if (!(await store())) return;
       this.run = { ...this.run!, done: this.run!.done + 1 };
       await this.push(items);
     };
 
     let outcome: Awaited<ReturnType<Runner>>;
     try {
-      outcome = batches.length === 0 ? { ok: true, turns: 0 } : await run({ next, handle, onTurn, signal, tag });
+      outcome = batches.length === 0 ? { ok: true, turns: 0 } : await run({ next, handle, onTurn, signal: runSignal, tag });
     } catch (err) {
       console.error("The translation run failed", err);
       outcome = { ok: false, turns: 0, error: { code: "agent-crashed" } };
     }
     current = null;
-    if (outcome.ok && !signal.aborted) {
+    if (outcome.ok && !runSignal.aborted && !writeFailed) {
       await this.d.saveLanguage(tag).catch((err: unknown) => console.error("Could not save the language", err));
       this.run = { ...this.run!, status: "done" };
     } else {
       const code = outcome.error?.code;
-      const cancelled = signal.aborted || code === "cancelled";
+      // Only the person's cancel (or stop) is "cancelled": a turn timeout also reports code "cancelled", and is a failure.
+      const cancelled = signal.aborted && !writeFailed;
       this.run = { ...this.run!, status: cancelled ? "cancelled" : "failed", ...(cancelled ? {} : { reason: code === "out-of-quota" ? "quota" : "engine" }) };
     }
     await this.push(items);

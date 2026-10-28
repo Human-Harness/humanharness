@@ -38,18 +38,18 @@ function runner(answer: (batch: Record<string, unknown>, forms: string[]) => Rec
 const pseudo = (b: Record<string, unknown>, forms: string[]) =>
   Object.fromEntries(Object.entries(b).map(([k, v]) => [k, typeof v === "string" ? `~${v}` : Object.fromEntries(forms.map((f) => [f, `~${(v as Record<string, string>).other}`]))]));
 
-function make(o: { language?: string; run?: Runner; available?: true | "no-engine" | "mock"; batchSize?: number; core?: Record<string, string> } = {}) {
+function make(o: { language?: string; run?: Runner; available?: true | "no-engine" | "mock"; batchSize?: number; core?: Record<string, string>; cache?: (dir: string) => TranslationCache; prepare?: () => Promise<{ engineName: string; run: Runner } | null> } = {}) {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-translation-"));
   let saved = o.language ?? "en";
   const sent: LanguageState[] = [];
   const svc = new TranslationService({
-    cache: new TranslationCache(dir),
+    cache: o.cache ? o.cache(dir) : new TranslationCache(dir),
     core: o.core ?? CORE,
     tone: "warm",
     language: async () => saved,
     saveLanguage: async (tag) => void (saved = tag),
     available: async () => o.available ?? true,
-    prepare: async () => (o.run ? { engineName: "Claude", run: o.run } : null),
+    prepare: o.prepare ?? (async () => (o.run ? { engineName: "Claude", run: o.run } : null)),
     engineName: async () => "Claude",
     send: (s) => void sent.push(s),
     batchSize: o.batchSize ?? 2,
@@ -190,8 +190,69 @@ describe("TranslationService (language spec §4–§6, §9)", () => {
     await t.svc.translate("es", HARNESS);
     await t.svc.cancel();
     await t.svc.settled();
-    expect(t.sent.at(-1)!.run?.status === "cancelled" || t.sent.at(-1)!.run?.status === "done").toBe(true);
+    expect(t.sent.at(-1)!.run?.status).toBe("cancelled");
     expect(t.saved()).toBe("en");
+  });
+
+  it("a cache write that fails ends the run as failed, keeps the language and tells the agent no path", async () => {
+    class Broken extends TranslationCache {
+      override save(): Promise<void> {
+        return Promise.reject(new Error("EACCES: permission denied, open '/secret/userData/locales/es.json'"));
+      }
+    }
+    const answers: unknown[] = [];
+    const r = runner((b, f) => pseudo(b, f));
+    const spy: Runner = (o) => r({ ...o, handle: async (q) => answers.push(await o.handle(q)) });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const t = make({ run: spy, cache: (d) => new Broken(d) });
+    await t.svc.translate("es", HARNESS);
+    await t.svc.settled();
+    vi.restoreAllMocks();
+    expect(t.sent.at(-1)!.run).toMatchObject({ status: "failed", reason: "engine" });
+    expect(t.saved()).toBe("en");
+    expect(r.prompts).toHaveLength(1);
+    expect(answers).toEqual(["The app could not store this batch. Stop now."]);
+  });
+
+  it("a turn that times out (code cancelled, no stop asked) is failed, not cancelled", async () => {
+    const r: Runner = async ({ next, onTurn }) => {
+      await next(0);
+      await onTurn({ ok: false, error: { code: "cancelled" } }, 0);
+      return { ok: false, turns: 1, error: { code: "cancelled" } };
+    };
+    const t = make({ run: r });
+    await t.svc.translate("es", HARNESS);
+    await t.svc.settled();
+    expect(t.sent.at(-1)!.run).toMatchObject({ status: "failed", reason: "engine" });
+  });
+
+  it("a cancel while the engine is being prepared is not lost: the run never starts", async () => {
+    let ready!: (v: { engineName: string; run: Runner }) => void;
+    const run = vi.fn<Runner>(async () => ({ ok: true, turns: 0 }));
+    const t = make({ prepare: () => new Promise((r) => (ready = r)) });
+    const started = t.svc.translate("es", HARNESS);
+    await vi.waitFor(() => expect(ready).toBeTypeOf("function"));
+    await t.svc.cancel();
+    ready({ engineName: "Claude", run });
+    expect(await started).toEqual({ ok: false, reason: "failed" });
+    await t.svc.settled();
+    expect(run).not.toHaveBeenCalled();
+    expect(t.saved()).toBe("en");
+  });
+
+  it("a key answered twice in one turn is refused the second time, with the reason", async () => {
+    const answers: unknown[] = [];
+    const r: Runner = async ({ next, handle, onTurn }) => {
+      await next(0);
+      answers.push(await handle({ op: "save", strings: { "core:chat.send": "~Send" } }));
+      answers.push(await handle({ op: "save", strings: { "core:chat.send": "~Send again" } }));
+      await onTurn({ ok: true }, 0);
+      return { ok: false, turns: 1, error: { code: "cancelled" } };
+    };
+    const t = make({ run: r, batchSize: 100 });
+    await t.svc.translate("es", HARNESS);
+    await t.svc.settled();
+    expect(answers).toEqual(["Saved 1.", "Saved 0. Not kept: core:chat.send (already answered)."]);
   });
 
   it("a runner that throws ends the run as failed, never as done", async () => {

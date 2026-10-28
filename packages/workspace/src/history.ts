@@ -455,40 +455,82 @@ export class History {
     }
     // Removing and pruning changed folders: check them afresh.
     inside.clear();
-    for (const [file, { mode, oid }] of target) {
-      const absolute = path.join(this.folder, file);
-      const parent = path.dirname(absolute);
-      if (!(await staysInside(parent))) {
-        skip(file, "its folder leads outside the folder");
-        continue;
-      }
-      try {
-        const { blob } = await git.readBlob({ ...this.repo(), oid });
-        const wanted = Buffer.from(blob);
-        const existing = await fs.promises.lstat(absolute).catch(() => null);
-        if (existing?.isDirectory()) {
-          skip(file, "a folder is in its place");
-          continue;
-        }
-        if (mode === LINK_MODE) {
-          if (existing?.isSymbolicLink() && wanted.equals(await fs.promises.readlink(absolute, { encoding: "buffer" }))) continue;
-        } else if (existing?.isFile() && wanted.equals(await fs.promises.readFile(absolute))) continue;
-        // unlink removes a link itself, never its target.
-        if (existing) await fs.promises.unlink(absolute);
-        await fs.promises.mkdir(parent, { recursive: true });
-        // mkdir follows links: check again, as close to the write as possible.
-        if (!(await resolvesInside(root, parent))) {
-          inside.delete(parent);
-          skip(file, "its folder leads outside the folder");
-          continue;
-        }
-        if (mode === LINK_MODE) await fs.promises.symlink(wanted.toString(), absolute);
-        else await writeNoFollow(absolute, wanted, mode & 0o111 ? 0o777 : 0o666);
-      } catch (err) {
-        skip(file, err);
-      }
-    }
+    for (const [file, entry] of target) await this.writeEntry(root, file, entry, staysInside, (dir) => inside.delete(dir), skip);
     return { sha: await this.saveNow(message), skipped };
+  }
+
+  /**
+   * Writes one entry of a restore point (never through a link): a link entry as a link, a file with O_NOFOLLOW; its
+   * parent's real path checked before and again right after `mkdir`. False when it was skipped.
+   */
+  private async writeEntry(
+    root: string,
+    file: string,
+    { mode, oid }: { mode: number; oid: string },
+    staysInside: (dir: string) => Promise<boolean>,
+    forget: (dir: string) => void,
+    skip: (file: string, why: unknown) => void,
+  ): Promise<boolean> {
+    const absolute = path.join(this.folder, file);
+    const parent = path.dirname(absolute);
+    if (!(await staysInside(parent))) {
+      skip(file, "its folder leads outside the folder");
+      return false;
+    }
+    try {
+      const { blob } = await git.readBlob({ ...this.repo(), oid });
+      const wanted = Buffer.from(blob);
+      const existing = await fs.promises.lstat(absolute).catch(() => null);
+      if (existing?.isDirectory()) {
+        skip(file, "a folder is in its place");
+        return false;
+      }
+      if (mode === LINK_MODE) {
+        if (existing?.isSymbolicLink() && wanted.equals(await fs.promises.readlink(absolute, { encoding: "buffer" }))) return true;
+      } else if (existing?.isFile() && wanted.equals(await fs.promises.readFile(absolute))) return true;
+      // unlink removes a link itself, never its target.
+      if (existing) await fs.promises.unlink(absolute);
+      await fs.promises.mkdir(parent, { recursive: true });
+      // mkdir follows links: check again, as close to the write as possible.
+      if (!(await resolvesInside(root, parent))) {
+        forget(parent);
+        skip(file, "its folder leads outside the folder");
+        return false;
+      }
+      if (mode === LINK_MODE) await fs.promises.symlink(wanted.toString(), absolute);
+      else await writeNoFollow(absolute, wanted, mode & 0o111 ? 0o777 : 0o666);
+      return true;
+    } catch (err) {
+      skip(file, err);
+      return false;
+    }
+  }
+
+  /**
+   * Brings `file` back to how it was at `sha`, and nothing else (file-timeline spec §5): the commit stages only that
+   * path, so the person's other edits wait for the next commit. Untagged, like every restore.
+   */
+  restoreFile(file: string, sha: string, message: string): Promise<RestoreResult> {
+    return this.serialize(async () => {
+      if (!this.tracked(file)) throw new Error("That file is not tracked");
+      const entry = await this.entryAt(sha, file);
+      if (!entry) throw new Error("That file is not in that version");
+      const root = await fs.promises.realpath(this.folder);
+      const skipped: string[] = [];
+      const written = await this.writeEntry(
+        root,
+        file,
+        entry,
+        (dir) => resolvesInside(root, dir),
+        () => undefined,
+        (f, why) => {
+          console.error(`Restore skipped ${f}`, why);
+          skipped.push(f);
+        },
+      );
+      if (!written) return { sha: null, skipped };
+      return { sha: await this.saveNow(withTrailer(message), new Set([file])), skipped };
+    });
   }
 
   /** The tracked files of `sha` with their mode and blob id. */

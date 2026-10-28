@@ -31,7 +31,8 @@ describe("scopeAccessFor (L5)", () => {
     expect(scopeAccessFor(entries, "app", decl)).toEqual({
       linked: [
         { path: "/code/app", mode: "write", tracked: false },
-        { path: "/notes", mode: "write", tracked: true },
+        // notes is marked gitChanged: untracked for turns until the person answers (L7).
+        { path: "/notes", mode: "write", tracked: false },
       ],
     });
   });
@@ -373,8 +374,8 @@ describe("createScopeAccess: only signed, live, still valid links (L1, L2, L5)",
     fs.writeFileSync(path.join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
     expect(await s.access.checkGit("app")).toBe(true);
     expect(s.readFile().scopes[0].linked![0].gitChanged).toBe(true);
-    // Still signed (gitChanged is not part of the tag): the turn keeps it, tracked until the person confirms.
-    expect(await s.access.access("app")).toEqual({ linked: [{ path: repo, mode: "write", tracked: true }] });
+    // Still signed (gitChanged is not part of the tag): the turn keeps it, untracked until the person confirms (L7).
+    expect(await s.access.access("app")).toEqual({ linked: [{ path: repo, mode: "write", tracked: false }] });
   });
 });
 

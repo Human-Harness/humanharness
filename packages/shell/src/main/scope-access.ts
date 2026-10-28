@@ -21,10 +21,11 @@ function current(entries: ScopeEntry[], scope: string | null, decl: Record<strin
 
 /**
  * What a turn of a task in `scope` reaches (L5), from entries already checked (`ScopeAccess.usable`): undefined when
- * nothing, so the turn's options are today's (D0). A read folder is never tracked (Decision 2), whatever was stored.
+ * nothing, so the turn's options are today's (D0). A read folder is never tracked (Decision 2), whatever was stored,
+ * and neither is one marked `gitChanged` until the person answers (L7: the app never writes into a git folder).
  */
 export function scopeAccessFor(entries: ScopeEntry[], scope: string, decl: Record<string, LinkedFolderDecl>): TurnScope | undefined {
-  const linked = current(entries, scope, decl).map((l) => ({ path: l.path, mode: l.mode, tracked: l.mode === "write" && l.tracked }));
+  const linked = current(entries, scope, decl).map((l) => ({ path: l.path, mode: l.mode, tracked: l.mode === "write" && l.tracked && !l.gitChanged }));
   return linked.length > 0 ? { linked } : undefined;
 }
 
@@ -191,7 +192,7 @@ export function createScopeAccess(d: ScopeAccessDeps) {
     checkGit: async (scope: string): Promise<boolean> => {
       if (!isScopeId(scope)) return false;
       const store = await d.store();
-      const s = (await store.list()).find((e) => e.id === scope);
+      const s = (await store.list()).find((e) => e.id === scope && !e.archived);
       if (!s?.linked?.length) return false;
       const profile = await d.profile();
       const signed = await linkChecker(d.signing);

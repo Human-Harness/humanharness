@@ -851,5 +851,16 @@
       "notice": "Finish setting up {{engine}}",
       "notice-required": "Review {{engine}}'s notice"
     }
+  },
+  "plugins": {
+    "attention": {
+      "title": "Attention",
+      "unread_one": "{{count}} unread",
+      "unread_other": "{{count}} unread",
+      "empty": "Nothing needs you now.",
+      "dismiss": "Dismiss",
+      "unreadItem": "Unread",
+      "severity": { "info": "Info", "warn": "Warning", "action": "Needs you" }
+    }
   }
 }

@@ -37,6 +37,8 @@ import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
+import { AttentionInbox } from "./plugins/AttentionInbox";
+import { useAttention } from "./plugins/usePlugins";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
 import { FirstOpenOffer } from "./sidekick/PresetOffer";
@@ -182,6 +184,8 @@ export function ChatView({
   const [skRefresh, setSkRefresh] = useState(0);
   const skEnabled = state.sidekick !== undefined && !slim;
   const sidekick = useSidekick(client, skEnabled, skRefresh);
+  // The Attention inbox (plugins spec §6): only when main sends `state.plugins`, never in slim mode (D0).
+  const attention = useAttention(client, state.plugins !== undefined && !slim);
   /** Under 720 px the panel can't show: no paid review the person can't see (styles.css). */
   const narrow = useNarrow();
   const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
@@ -1063,6 +1067,7 @@ export function ChatView({
               }}
             />
           )}
+          {attention?.show && <AttentionInbox client={client} view={attention} />}
           <button
             onClick={() => {
               // One panel at a time: Escape closes the one on screen.

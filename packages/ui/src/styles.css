@@ -550,3 +550,22 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 /* `useNarrow` (sidekick/useNarrow.ts) mirrors this width: no review, and the harness side panel shows as before. */
 @media (max-width: 720px) { .hh-sk-panel, .hh-sk-rail { display: none; } }
 .hh-sk-fieldset { border: none; margin: 12px 0 0; padding: 0; min-width: 0; }
+/* Plugins */
+.hh-pl-inbox { position: relative; display: flex; }
+.hh-pl-inbox > .hh-icon-button { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.hh-pl-badge { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 0.7rem; line-height: 16px; text-align: center; }
+.hh-pl-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 340px; max-width: calc(100vw - 24px); max-height: 60vh; overflow-y: auto; box-sizing: border-box; padding: 6px; background: var(--hh-sheet); border: 1px solid var(--hh-line); border-radius: 10px; color: var(--hh-ink); -webkit-app-region: no-drag; user-select: text; }
+.hh-pl-empty { margin: 10px; color: var(--hh-muted); }
+.hh-pl-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.hh-pl-item { display: flex; align-items: flex-start; gap: 4px; border-radius: 8px; }
+.hh-pl-item:hover { background: var(--hh-segment); }
+.hh-pl-item-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 8px; border: none; background: transparent; color: inherit; font: inherit; text-align: left; }
+.hh-pl-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--hh-muted); }
+.hh-pl-dot[data-severity="warn"] { background: var(--hh-warn); }
+.hh-pl-dot[data-severity="action"] { background: var(--hh-ink); }
+.hh-pl-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.hh-pl-item-meta { display: flex; gap: 8px; color: var(--hh-muted); font-size: 0.8rem; }
+.hh-pl-item-title { white-space: pre-wrap; }
+.hh-pl-item[data-unread="true"] .hh-pl-item-title { font-weight: 600; }
+.hh-pl-item-body { color: var(--hh-slate); font-size: 0.85rem; white-space: pre-wrap; }
+.hh-pl-dismiss { flex: none; margin: 6px 6px 0 0; font-size: 0.8rem; }

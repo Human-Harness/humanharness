@@ -52,9 +52,11 @@ describe("PluginsController: starting and reviews", () => {
     await bundled(t.root, "oncall", { data: { queues: QUEUES } });
     await t.ctl.start();
     expect(t.host.started).toEqual(["oncall"]);
-    await until(async () => (await files(t.base)).length > 0);
+    // The store writes a temp file and renames it: wait for the record itself, not for any file.
+    const queues = path.join(".harness", "plugin-data", "oncall", "_app", "queues.json");
+    await until(async () => (await files(t.base)).includes(queues));
     expect(ran).toEqual(["s"]);
-    expect(await files(t.base)).toContain(path.join(".harness", "plugin-data", "oncall", "_app", "queues.json"));
+    expect(await files(t.base)).toContain(queues);
     // The approval lives in the app's folder, never in the base (B8).
     expect((await files(t.appDir)).some((f) => f.startsWith("plugin-state"))).toBe(true);
     expect((await t.ctl.view()).plugins[0]).toMatchObject({ status: "on" });
@@ -343,7 +345,8 @@ describe("PluginsController: crashes and the run limit", () => {
     }
     t.gone("oncall");
     vi.useRealTimers();
-    await until(async () => (await t.ctl.view()).plugins[0].status === "crashed");
+    // The turn-off writes the state ("crashed") before it raises the item: wait for the item too.
+    await until(async () => (await t.ctl.view()).plugins[0].status === "crashed" && (await t.ctl.attention.view()).items.length > 0);
     expect(t.ctl.channelOf("oncall")).toBeNull();
     const att = await t.ctl.attention.view();
     expect(att.items).toMatchObject([{ plugin: "oncall", key: "crashed", severity: "action", title: "On-call was turned off" }]);
@@ -366,7 +369,8 @@ describe("PluginsController: crashes and the run limit", () => {
     }
     t.gone("devp");
     vi.useRealTimers();
-    await until(async () => (await t.ctl.view()).plugins[0].status === "crashed");
+    // The turn-off writes the state ("crashed") before it raises the item: wait for the item too.
+    await until(async () => (await t.ctl.view()).plugins[0].status === "crashed" && (await t.ctl.attention.view()).items.length > 0);
     // Opening Settings › Plugins rescans: the plugin must not start again.
     const starts = t.host.started.length;
     await t.ctl.rescan();

@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
 import type { AppConfig, ChatEntry, ChatNotice, TaskSummary, TasksState } from "@humanharness/ui/client";
 import { type BoardHostDeps, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
+import { type InputBlock, defineBlock, z } from "@humanharness/harness-sdk";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
 import { TaskStore } from "../src/main/task-store";
@@ -184,6 +185,36 @@ describe("a lane's note goes into the history alone (parallel spec §5.3)", () =
     expect(writeNote).toHaveBeenCalledWith("write", expect.anything(), expect.anything());
     expect(saveHistory).not.toHaveBeenCalled();
     expect(saveOwn).toHaveBeenCalledWith([".harness/notes/write.md"], "Note: Halves", expect.objectContaining({ task: t.turns[0].slot, action: "write" }));
+  });
+});
+
+describe("an answer to an input block is marked in the task's own chat (input-blocks spec §8, parallel spec §6)", () => {
+  it("respond: the per-task chat's block gets the answer; the old scope chat is never touched", async () => {
+    const commit = defineBlock({
+      description: "Commit.",
+      visible: true,
+      schema: z.object({ question: z.string() }),
+      input: z.object({ why: z.string().min(1) }),
+      inputUi: { why: { label: "Why" } },
+      example: { question: "q" },
+    }) as InputBlock;
+    const plain = vi.fn(async () => false);
+    const t = host({ tasks: 2, taskDeps: { inputBlocks: { commit_answer: commit }, markAnswered: plain } });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const id = t.turns[0].slot;
+    t.turns[0].end([{ type: "block", name: "commit_answer", data: { question: "Why?" }, id: `${id}:0:0` }, ok]);
+    await a;
+    const { accepted, done } = t.h.board.respond(`${id}:0:0`, { why: "because" });
+    expect(await accepted).toMatchObject({ ok: true });
+    await until(() => t.turns.length === 2);
+    t.turns[1].end();
+    await done;
+    expect(plain).not.toHaveBeenCalled();
+    const entries = await t.chat("main", id);
+    const block = entries.flatMap((e) => e.blocks ?? []).find((b) => b.id === `${id}:0:0`);
+    expect(block?.input).toMatchObject({ blockId: `${id}:0:0`, value: { why: "because" } });
   });
 });
 

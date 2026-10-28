@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type ParallelCaps, isConcurrent } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
-import { type AppConfig, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
+import { type AppConfig, type BlockAnswer, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
 import { type History, type HistoryTrailer, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
 import { notePath } from "./app-change";
 import { ChatLog } from "./chat-log";
@@ -68,7 +68,7 @@ export interface BoardHostDeps {
   /** Throws why a turn can't start now (an engine change, a notice to accept), as today's `ensureRuntime` checks. */
   checkTurn(): Promise<void>;
   /** A task's chat log (`chat`: its scope); null before the app is set up. As today's, with the task's own file. */
-  chatLog(chat: string | undefined, task: string): Promise<ChatLogLike | null>;
+  chatLog(chat: string | undefined, task: string): Promise<(ChatLogLike & { markAnswered?(answer: BlockAnswer): Promise<boolean> }) | null>;
   /**
    * Today's TaskManager deps, getters kept (they are read when used); each lane overrides `store`, `turns`, `newId`,
    * `changed`, `emit`, `endSession`, `successor` and wraps `betweenTasks`.
@@ -118,6 +118,8 @@ interface Lane {
    * (`run`). Its end is heard only then, and only if the lane is still focused: never an end without its start.
    */
   heard: { send: boolean; run: boolean };
+  /** The rewrites and appends of the lane's chat file outside its turns (answers, notices): one at a time. */
+  chatOps: Promise<unknown>;
   /** The note this lane's task last wrote (folder-relative), for its history commit. */
   notePath?: string;
   /** The latest phase move Sidekick didn't hear (the lane wasn't focused): it hears it when the lane is focused. */
@@ -287,7 +289,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
 
   function newLane(id: string): Lane {
     const emit = laneEmit(id, buffer, { isFocused: (x) => board.isFocused(x), toWindow: (e) => d.emit(e) });
-    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve(), heard: { send: false, run: false } } as unknown as Lane;
+    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve(), chatOps: Promise.resolve(), heard: { send: false, run: false } } as unknown as Lane;
     lane.slot = memoise<SessionSlot>(async () => {
       const ws = await workspace.get();
       if (!ws) return null;
@@ -383,6 +385,20 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         const fn = d.taskDeps.betweenTasks;
         return fn ? () => refreshSoon(fn) : undefined;
       },
+    });
+    // An answer goes on its block in this task's own chat file (the scope's file is archived in board mode), never while
+    // a notice is appended to it. A getter: undefined without input blocks, as the plain deps (D0).
+    Object.defineProperty(deps, "markAnswered", {
+      get: () =>
+        d.taskDeps.markAnswered
+          ? (chat: string, answer: BlockAnswer) =>
+              chatOp(lane, async () => {
+                await migrated.catch(() => undefined);
+                const log = await d.chatLog(chat, id);
+                if (!log?.markAnswered) throw new Error("No valid configuration: the chat log can't be found");
+                return log.markAnswered(answer);
+              })
+          : undefined,
     });
     // Sidekick follows only the focused task (its cards are about the chat on screen). Getters, as in the plain app:
     // undefined until its controller exists (D0).
@@ -519,11 +535,18 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     await migrated.catch(() => undefined);
     for (const n of notices) {
       try {
-        await (await d.chatLog(n.scope, x.id))?.append(n.entry);
+        await chatOp(x, async () => (await d.chatLog(n.scope, x.id))?.append(n.entry));
       } catch (err) {
         console.error("Could not save a notice in the task's chat", err);
       }
     }
+  }
+
+  /** Runs `fn` on lane `l`'s chat file once its earlier rewrite or append ended: an append never lands mid-rewrite. */
+  function chatOp<T>(l: Lane, fn: () => Promise<T>): Promise<T> {
+    const run = l.chatOps.then(fn, fn);
+    l.chatOps = run.catch(() => undefined);
+    return run;
   }
 
   /** A lane's TaskManager `changed`: the window's view when it is the focused one, the inbox, the idle sleep, settling. */

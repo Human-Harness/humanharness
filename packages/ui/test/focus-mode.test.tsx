@@ -44,6 +44,16 @@ describe("focus mode (review spec §6.2)", () => {
     expect(client.focus.current()).toEqual({ on: false });
   });
 
+  it("Esc leaves focus mode even when focus fell to the page (the button pressed went away)", async () => {
+    const client = await chat(true);
+    const reader = await openReader();
+    fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
+    expect(document.querySelector(".hh-focus")).not.toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(document.querySelector(".hh-focus")).toBeNull();
+    expect(client.focus.current()).toEqual({ on: false });
+  });
+
   it("hides the contents and the column; a margin marker opens only its card, and Esc closes it first", async () => {
     const client = await chat(true);
     const review: Review = {

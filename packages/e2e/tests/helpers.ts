@@ -91,13 +91,13 @@ export async function launch(
 /** The demo's recordings (harnesses/demo/mock). */
 export const demoMockDir = path.resolve(here, "../../../harnesses/demo/mock");
 
-/** Launches the built shell in mock mode (spec 3e): fake-claude replays `mockDir`; Codex isn't offered. */
-export async function launchMock(s: Sandbox, mockDir: string = demoMockDir): Promise<{ app: ElectronApplication; page: Page }> {
+/** Launches the built shell (or the build at `app`, a main/index.js) in mock mode (spec 3e): fake-claude replays `mockDir`; Codex isn't offered. */
+export async function launchMock(s: Sandbox, mockDir: string = demoMockDir, app: string = shellDir): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = { claude: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: mockDir, HH_FAKE_MOCK_STATE: path.join(s.root, "mock-state.json") } } };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
     // English as the system language: the screens are English (plan 5a); a fresh app saves the system's tag.
-    args: [shellDir, "--lang=en"],
+    args: [app, "--lang=en"],
     env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), HH_TEST_MOCK: "1" },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };

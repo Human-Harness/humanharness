@@ -29,13 +29,24 @@ export interface Play {
 export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "wrap-up" | "reply" {
   if (prompt.startsWith("We are closing this topic.")) return "close";
   if (prompt.startsWith("Checkpoint:")) return "checkpoint";
-  if (prompt.startsWith("Next part of this task:")) return "phase";
+  if (phasePrompt(prompt) !== undefined) return "phase";
   if (prompt.startsWith("Time is almost up:")) return "wrap-up";
   return "reply";
 }
 
+const PHASE_START = "Next part of this task:";
+/**
+ * The phase change prompt in `prompt`: at its start, or after the lines the app kept for the task (review spec
+ * §5.4), which are one block of single lines followed by a blank line.
+ */
+function phasePrompt(prompt: string): string | undefined {
+  if (prompt.startsWith(PHASE_START)) return prompt;
+  const gap = prompt.indexOf("\n\n");
+  return gap !== -1 && prompt.startsWith(PHASE_START, gap + 2) ? prompt.slice(gap + 2) : undefined;
+}
+
 /** The phase id a phase change prompt names: its first line ends with (`<id>`). */
-const phaseOfPrompt = (prompt: string): string | undefined => /^Next part of this task: .*\(`([a-z][a-z0-9_-]{0,63})`\)/.exec(prompt)?.[1];
+const phaseOfPrompt = (prompt: string): string | undefined => /^Next part of this task: .*\(`([a-z][a-z0-9_-]{0,63})`\)/.exec(phasePrompt(prompt) ?? "")?.[1];
 
 const defaultNote = (action: string): MockNote => ({ title: action, summary: ["Recorded test run"], decisions: [], files: [], open: [] });
 /** A setPhase or timeUp turn answers the app's own prompt, never a first message or a reply. */

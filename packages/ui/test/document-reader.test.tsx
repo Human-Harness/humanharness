@@ -422,6 +422,28 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     expect(await screen.findByText("How slow?")).toBeTruthy();
   });
 
+  it("a selection that runs past the end of the text (a triple click on the last paragraph) keeps the part inside it", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    const para = screen.getByText("Slow calls.");
+    const box = para.closest(".hh-review-text")!;
+    const range = document.createRange();
+    range.setStart(para.firstChild!, 0);
+    range.setEndAfter(box);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "How slow?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "comment")).toBeTruthy());
+    const inside = document.createRange();
+    inside.setStart(para.firstChild!, 0);
+    inside.setEndAfter(box.lastChild!);
+    expect(client.reviewCalls.find((c) => c.op === "comment")?.args[1]).toMatchObject({ selected: inside.toString(), heading: "context" });
+  });
+
   it("a selection the document doesn't hold says so; Escape closes the pick before the reader", async () => {
     const { client, props } = setup({ review: true });
     await screen.findByRole("region", { name: "Comments" });

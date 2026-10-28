@@ -138,6 +138,16 @@ export function DocumentReader({
   // A new visit to focus mode starts with no card open.
   useEffect(() => setPeek(null), [focus]);
   const inFocus = review === true && focus;
+  // Focus can fall to the page (the Approve button goes once pressed): Esc still leaves focus mode. A key the
+  // reader already handled (its own onKeyDown prevents the default) is left alone.
+  useEffect(() => {
+    if (!inFocus || !onFocus) return;
+    const leave = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) onFocus(false);
+    };
+    window.addEventListener("keydown", leave);
+    return () => window.removeEventListener("keydown", leave);
+  }, [inFocus, onFocus]);
   /** What the footer bar is in the middle of (a reason being typed): kept here, since the bar moves on a mode switch. */
   const barDraft = useState<BarDraft>(NO_BAR_DRAFT);
   const setBarDraft = barDraft[1];
@@ -313,9 +323,14 @@ export function DocumentReader({
     const box = textRef.current;
     const scroller = scrollRef.current;
     if (!review || !sel || sel.isCollapsed || sel.rangeCount === 0 || !box || !scroller) return setPick(null);
-    const r = sel.getRangeAt(0);
-    if (!box.contains(r.commonAncestorContainer)) return setPick(null);
-    const selected = sel.toString();
+    let r = sel.getRangeAt(0);
+    if (!box.contains(r.commonAncestorContainer)) {
+      // A triple click on the last paragraph selects up to the start of what follows the text: keep the part inside it.
+      if (!box.contains(r.startContainer)) return setPick(null);
+      r = r.cloneRange();
+      r.setEnd(box, box.childNodes.length);
+    }
+    const selected = r.toString();
     if (!selected.trim() || selected.length > 20_000) return setPick(null);
     const rect = r.getBoundingClientRect();
     const host = scroller.getBoundingClientRect();

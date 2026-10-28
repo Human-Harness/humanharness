@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ContextItem, ContextRead } from "@humanharness/ui/client";
 import { PINS_MAX, loadContext, saveContext } from "@humanharness/workspace";
-import { ContextService, type ContextDeps } from "../src/main/context";
+import { ContextService, type ContextDeps, shown } from "../src/main/context";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-ctxs-"));
 const AT = "2026-10-28T10:00:00.000Z";
@@ -30,6 +30,7 @@ function setup(
   const commits: { message: string; trailer: unknown }[] = [];
   const changed: string[] = [];
   const added: [string, string][] = [];
+  const titleReads: string[] = [];
   const start: ContextItem[] = [{ id: "brief", kind: "brief", label: "Task brief", tokens: 300, compacted: true }];
   const reads: ContextRead[] = [{ kind: "read", label: "conv.md", path: "conv.md", firstAt: "2026-10-28T10:00:00.000Z", count: 1 }];
   const scoped = opts.scoped ?? false;
@@ -40,7 +41,10 @@ function setup(
     budget: async () => 3000,
     record: async (taskId) => (taskId === "t1" ? { id: "t1", scope: scoped ? "fracciones" : "main", start, startTokens: 6300, reads } : null),
     openTask: async () => "t1",
-    noteTitles: async () => new Map([[".harness/notes/q-a.md", "A"]]),
+    noteTitles: async (scope) => {
+      titleReads.push(scope);
+      return new Map([[".harness/notes/q-a.md", "A"]]);
+    },
     history: async () => ({ save: async (message: string, trailer?: unknown) => void commits.push({ message, trailer }) }),
     trailer: async () => ({ task: "t1" }),
     blocked: () => (typeof opts.blocked === "function" ? opts.blocked() : (opts.blocked ?? null)),
@@ -53,7 +57,7 @@ function setup(
     pickFile: opts.pickFile ?? (async () => (opts.picked === undefined ? path.join(base, "conv.md") : opts.picked)),
     changed: (id) => void changed.push(id),
   };
-  return { service: new ContextService(deps), base, commits, changed, added };
+  return { service: new ContextService(deps), base, commits, changed, added, titleReads };
 }
 
 describe("ContextService (context-panel spec §4, §5.2)", () => {
@@ -76,6 +80,14 @@ describe("ContextService (context-panel spec §4, §5.2)", () => {
       },
     });
     expect(await t.service.get("t7")).toEqual({ ok: false, reason: "no-task" });
+  });
+
+  it("D0: get on a folder that pins and excludes nothing reads no notes and writes nothing", async () => {
+    const t = setup();
+    const got = await t.service.get("t1");
+    expect(got).toMatchObject({ ok: true, context: { pins: [], excluded: [] } });
+    expect(t.titleReads).toEqual([]);
+    expect(fs.existsSync(path.join(t.base, ".harness", "context"))).toBe(false);
   });
 
   it("pin: checked, stored once, committed with the open task's trailer, told to the panel", async () => {
@@ -175,6 +187,15 @@ describe("ContextService (context-panel spec §4, §5.2)", () => {
     fs.symlinkSync(real, link);
     const t = setup({ folderAs: link, pickFile: async () => path.join(fs.realpathSync(real), "conv.md") });
     expect(await t.service.pick()).toEqual({ ok: true, path: "conv.md" });
+  });
+
+  it("a quoted name escapes every character Add now refuses, so the commit subject is one visible line", () => {
+    expect(shown("a.md")).toBe("a.md");
+    expect(shown("a`b.md")).toBe('"a`b.md"');
+    expect(shown("a\nb.md")).toBe('"a\\nb.md"');
+    for (const [c, esc] of [["\u202e", "\\u202e"], ["\u2066", "\\u2066"], ["\u200b", "\\u200b"], ["\ufeff", "\\ufeff"], ["\u2028", "\\u2028"], ["\u2029", "\\u2029"], ["\u0085", "\\u0085"], ["\u007f", "\\u007f"]]) {
+      expect(shown(`a${c}b.md`)).toBe(`"a${esc}b.md"`);
+    }
   });
 
   it("pick: one dialog at a time", async () => {

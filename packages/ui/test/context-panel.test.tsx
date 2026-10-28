@@ -73,6 +73,9 @@ describe("ContextPanel (context-panel spec §5.1)", () => {
     const { panel, client } = await show();
     const pinned = within(panel).getByRole("region", { name: "Pinned" });
     expect(within(pinned).getByText("title only")).toBeTruthy();
+    // Only a whole pin shows its size: a title-only one costs a line, not the file's 9,000.
+    expect(within(pinned).getByText("approx. 500 tokens")).toBeTruthy();
+    expect(within(pinned).queryByText(/9,000/)).toBeNull();
     expect(within(pinned).getByText("gone.md").closest(".hh-ctxp-gone")).toBeTruthy();
     fireEvent.click(within(pinned).getByRole("button", { name: "Remove gone.md" }));
     await waitFor(() => expect(client.contextCalls).toContainEqual({ op: "unpin", args: ["main", "gone.md"] }));

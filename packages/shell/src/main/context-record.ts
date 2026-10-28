@@ -32,8 +32,13 @@ type Activity = Extract<Event, { type: "activity" }>;
 /** Longest label kept for a read or tool. */
 export const LABEL_MAX = 200;
 
+/** The label a search gets: where it looked, never with a `path` (it is usually a folder: no Pin, no open). */
+const searchLabel = (where: string): string => `Search · ${where}`.slice(0, LABEL_MAX);
+
 /**
  * What an activity's start says the agent read (Read, Grep, Glob; Codex read and search) or which MCP tool it used.
+ * Only a read (Claude's `Read`, Codex's `read`) keeps a `path`; a search (Grep, Glob, Codex's `search`) names a folder
+ * or a pattern's root, so it is a label only: "Search · src", "Search · whole folder".
  * `base` may be several spellings of the folder (as given and its real path): an engine reports paths under the real
  * one when the folder sits behind a link (macOS's /var → /private/var); the first that holds the path wins.
  */
@@ -45,6 +50,10 @@ export function readsOf(e: Activity, base: string | readonly string[] | null): S
   return e.paths.slice(0, PATHS_PER_EVENT).map((p): SeenRead => {
     let rel: string | null = null;
     for (const b of bases) if (rel === null) rel = folderPath(b, p);
+    if (e.kind === "search") {
+      const isFolder = bases.some((b) => path.resolve(b, p) === path.resolve(b));
+      return { kind: "read", label: searchLabel(rel ?? (isFolder ? "whole folder" : path.basename(p) || p)) };
+    }
     return rel ? { kind: "read", label: rel.slice(0, LABEL_MAX), path: rel } : { kind: "read", label: (path.basename(p) || p).slice(0, LABEL_MAX) };
   });
 }

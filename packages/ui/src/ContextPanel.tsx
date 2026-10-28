@@ -336,7 +336,8 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                   {p.scope === "_app" && scoped && <span className="hh-caption">{t("context.wholeApp")}</span>}
                   {p.state === "title" && <span className="hh-caption">{t("context.titleOnly")}</span>}
                   {gone && <span className="hh-caption">{t(p.state === "missing" ? "context.missing" : "context.binary")}</span>}
-                  {!gone && <span className="hh-ctxp-size">{t("context.approx", { tokens: fmt(p.tokens) })}</span>}
+                  {/* A title-only pin costs one line, not the file: its size would read as what the task gets. */}
+                  {p.state === "full" && <span className="hh-ctxp-size">{t("context.approx", { tokens: fmt(p.tokens) })}</span>}
                   {!readOnly && (
                     <button type="button" aria-label={t("context.removeName", { name: p.path })} onClick={() => void run(() => client.context.unpin(p.scope, p.path), focusOn(pinnedHead))}>
                       {t("context.remove")}

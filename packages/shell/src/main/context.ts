@@ -18,7 +18,7 @@ import { checkPinPath, pinnedContext, pinsOf } from "./context-pins";
 import { folderPath } from "./context-record";
 import type { CurrentTask } from "./task-store";
 import type { PersonContext } from "./task-manager";
-import { addablePath } from "./task-prompts";
+import { addablePath, refusedChar } from "./task-prompts";
 
 export interface ContextDeps {
   /** The agent's working folder (the active profile's); null when the app isn't set up. */
@@ -48,8 +48,20 @@ export interface ContextDeps {
 
 const no = (reason: ContextRefusal): { ok: false; reason: ContextRefusal } => ({ ok: false, reason });
 
-/** A path as a commit subject shows it: as it is, or quoted when a hand-edited file left an odd character in it. */
-const shown = (p: string): string => (addablePath(p) ? p : JSON.stringify(p));
+/**
+ * A path as a commit subject shows it: as it is, or quoted when a hand-edited file left an odd character in it. The
+ * quote escapes every character `addablePath` refuses (JSON.stringify leaves DEL, C1, U+2028/9, bidi and zero-width
+ * characters as they are), as `\uXXXX`, so the subject is one visible line.
+ */
+export function shown(p: string): string {
+  if (addablePath(p)) return p;
+  let out = "";
+  for (const ch of JSON.stringify(p)) {
+    const code = ch.charCodeAt(0);
+    out += code >= 0x7f && refusedChar(code) ? `\\u${code.toString(16).padStart(4, "0")}` : ch;
+  }
+  return out;
+}
 
 type Change = { file: ContextFile; message: string } | { ok: false; reason: ContextRefusal } | null;
 
@@ -88,8 +100,11 @@ export class ContextService {
     const budget = await this.d.budget();
     const excluded: ExcludedView[] = [];
     for (const scope of scopes) {
+      // Sent on every record change, panel open or not: a scope that excludes nothing reads no notes (D0 stays cheap).
+      const file = await loadContext(base, scope);
+      if (file.excluded.length === 0) continue;
       const titles = await this.d.noteTitles(scope).catch(() => new Map<string, string>());
-      for (const e of (await loadContext(base, scope)).excluded) {
+      for (const e of file.excluded) {
         const title = titles.get(e.note);
         excluded.push({ scope, note: e.note, at: e.at, ...(title !== undefined ? { title } : {}) });
       }

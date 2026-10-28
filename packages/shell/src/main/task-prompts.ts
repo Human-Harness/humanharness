@@ -88,12 +88,13 @@ const hiddenChar = (code: number): boolean =>
  */
 export function addablePath(file: string): boolean {
   if (file.length === 0 || file.length > 1000) return false;
-  for (let i = 0; i < file.length; i++) {
-    const code = file.charCodeAt(i);
-    if (code === 96 || code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || hiddenChar(code)) return false;
-  }
+  for (let i = 0; i < file.length; i++) if (refusedChar(file.charCodeAt(i))) return false;
   return true;
 }
+
+/** A character `addablePath` refuses: a backtick, a control character (C0, DEL, C1), a line or paragraph separator, a hidden one. */
+export const refusedChar = (code: number): boolean =>
+  code === 96 || code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || hiddenChar(code);
 
 /** Said after a free question that tasks.json kept cut (it was longer than QUESTION_MAX). */
 export const QUESTION_CUT = "(The question was longer; it was cut here.)";

@@ -40,7 +40,13 @@ describe("readsOf", () => {
       { kind: "read", label: "a.md", path: "a.md" },
       { kind: "read", label: "ref.pdf" },
     ]);
-    expect(readsOf(activity({ kind: "search", paths: [path.join(base, "src")] }), base)).toEqual([{ kind: "read", label: "src", path: "src" }]);
+  });
+
+  it("a search (Grep, Glob, Codex search) is a label without a path: it usually names a folder", () => {
+    expect(readsOf(activity({ kind: "search", paths: [path.join(base, "src")] }), base)).toEqual([{ kind: "read", label: "Search · src" }]);
+    expect(readsOf(activity({ kind: "search", paths: ["."] }), base)).toEqual([{ kind: "read", label: "Search · whole folder" }]);
+    expect(readsOf(activity({ kind: "search", paths: [base] }), base)).toEqual([{ kind: "read", label: "Search · whole folder" }]);
+    expect(readsOf(activity({ kind: "search", paths: ["/elsewhere/refs"] }), base)).toEqual([{ kind: "read", label: "Search · refs" }]);
   });
 
   it("tries each spelling of the folder: a path under its real path is still a folder path", () => {

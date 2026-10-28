@@ -1,5 +1,6 @@
 // zod for the review record (§3): main and the CLI only; the screens import `./review`, which has no zod.
 import { z } from "zod";
+import { isMarkdownPath, refusedShape } from "./documents";
 import { MAX_OTHER } from "./review";
 
 /** A comment id: `c1`, `c2`… (a short id: the only kind of text a regex here tests). */
@@ -42,13 +43,29 @@ const commentSchema = z
     }
   });
 
+/**
+ * A document's path as the store keys it: a plain relative Markdown path in one spelling, with no "", "." or ".."
+ * part (so no leading, trailing or doubled slash). Case is the store's to fold.
+ */
+const canonicalPath = (p: string): boolean =>
+  !refusedShape(p) && isMarkdownPath(p) && p.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+
 /** `.harness/reviews/<path>.json` (§3). A file that fails this is "broken" (a hand edit). */
-export const reviewSchema = z.strictObject({
-  path: z.string().min(1).max(1000),
-  task: z.string().max(200).nullable(),
-  scope: z.string().max(64).optional(),
-  comments: z.array(commentSchema).max(500),
-  approvals: z
-    .array(z.strictObject({ blob: z.string().regex(/^[0-9a-f]{40}$/), at, reason: z.string().min(1).max(500).optional() }))
-    .max(200),
-});
+export const reviewSchema = z
+  .strictObject({
+    path: z.string().min(1).max(1000).refine(canonicalPath, "Not a canonical Markdown path"),
+    task: z.string().max(200).nullable(),
+    scope: z.string().max(64).optional(),
+    comments: z.array(commentSchema).max(500),
+    approvals: z
+      .array(z.strictObject({ blob: z.string().regex(/^[0-9a-f]{40}$/), at, reason: z.string().min(1).max(500).optional() }))
+      .max(200),
+  })
+  .superRefine((r, ctx) => {
+    // An id names one comment: replies, answers and the window's actions find it by id.
+    const seen = new Set<string>();
+    r.comments.forEach((c, i) => {
+      if (seen.has(c.id)) ctx.addIssue({ code: "custom", path: ["comments", i, "id"], message: "Another comment has this id" });
+      seen.add(c.id);
+    });
+  });

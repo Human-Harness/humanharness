@@ -101,6 +101,16 @@ describe("reviewSchema", () => {
     expect(reviewSchema.safeParse(withComment(open)).success).toBe(true);
   });
 
+  it("refuses two comments with one id", () => {
+    expect(reviewSchema.safeParse({ ...ok, comments: [question, { ...comment, id: "c1" }] }).success).toBe(false);
+  });
+
+  it("takes only a canonical Markdown path", () => {
+    for (const path of ["specs/a.md", "a.MD", "x y/b c.md"]) expect(reviewSchema.safeParse({ ...ok, path }).success).toBe(true);
+    for (const path of ["", "specs/a.txt", "/specs/a.md", "./specs/a.md", "specs//a.md", "specs/./a.md", "x/../specs/a.md", "../a.md", "specs/a.md/", "specs\\a.md", "C:/a.md"])
+      expect(reviewSchema.safeParse({ ...ok, path }).success, path).toBe(false);
+  });
+
   it("refuses options or an answer on a comment", () => {
     expect(reviewSchema.safeParse(withComment({ ...comment, options: question.options })).success).toBe(false);
     expect(reviewSchema.safeParse(withComment({ ...comment, answer: { other: "z" } })).success).toBe(false);

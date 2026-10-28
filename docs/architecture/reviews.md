@@ -17,10 +17,10 @@ The pure logic lives in `packages/harness-sdk/src/review.ts` (subpath `@humanhar
 
 `.harness/reviews/<document path>.json` (`packages/workspace/src/reviews.ts`), one file per document:
 
-- `path`: the document, relative to the folder, in its canonical spelling (`canonicalDocumentPath`: the real path, with the case the disk has). The record, its lock and `path` all use this one key. A record that names another spelling is refused.
+- `path`: the document, relative to the folder, in its canonical spelling (`canonicalDocumentPath`: the real path, with the case the disk has). The record, its lock and `path` all use this one key. A record that names another spelling is refused, and the schema refuses a path with an empty, `.` or `..` part or one that isn't Markdown.
 - `task`: the task that was open when the record was made (by the agent's first question or the person's first comment), or `null`. `scope` (optional): that task's scope. A new "Review <title>" task opens in this scope.
 - `comments`: up to 500. Each one has:
-  - `id`: `c1`, `c2`, … (one more than the highest).
+  - `id`: `c1`, `c2`, … (one more than the highest). Two comments with one id make the record broken.
   - `author` (`agent` or `person`) and `kind` (`question` or `comment`).
   - `anchor`, `text`, `replies` (up to 200) and `at`.
   - A question also has `options` (`{ label, text }`), `blocking`, `answer` (`{ option }` or `{ other }`) and `original` (the passage before the first swap). `unapplied: true` marks an answer the app could not swap in.

@@ -13,7 +13,7 @@ import {
   sidekickTips,
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
   MAIN_SCOPE,
@@ -29,7 +29,7 @@ import {
 } from "@humanharness/workspace";
 import { candidates, pickSpeaker } from "./sidekick-route";
 import type { SidekickStore } from "./sidekick-store";
-import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, afterParts, afterReplyPrompt, dailyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
+import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { PhaseMoved, TurnEnd } from "./task-manager";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
@@ -58,6 +58,8 @@ const ROUTE_BRIEF = "# Route\n\nYou pick which sidekick of the app should speak.
 const DAILY_ID = "daily";
 const DAILY_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** What a before-approve check answers whenever Sidekick has nothing to show: the approval goes ahead. */
+const APPROVE: SidekickApproveCheck = { kind: "approve" };
 
 /** A date's local calendar day (YYYY-MM-DD): the daily card runs once per one (plan Decision 12). */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -209,6 +211,8 @@ export class SidekickController {
   private learning: AbortController | null = null;
   /** The running daily turn (spec §2a.2 daily-summary); turning off, a profile switch or closing drops it. */
   private dailyRun: AbortController | null = null;
+  /** The running before-approve check (spec §2a.2); a newer one, the approval answered, turning off, a profile switch or closing drops it. */
+  private approving: AbortController | null = null;
   /** The running learning turn's promise (never rejects), for `learned`. */
   private learnRun: Promise<void> | null = null;
   /** The task open at the last betweenTasks (or seen open since): learning runs only when it closes (spec §6.4). */
@@ -291,6 +295,7 @@ export class SidekickController {
       this.dropAfter();
       this.learning?.abort();
       this.dailyRun?.abort();
+      this.approving?.abort();
       this.guard?.abort();
       this.abortRouting();
       this.card = null;
@@ -457,6 +462,7 @@ export class SidekickController {
       this.dropAfter();
       this.learning?.abort();
       this.dailyRun?.abort();
+      this.approving?.abort();
       this.guard?.abort();
       this.abortRouting();
       this.card = null;
@@ -635,6 +641,7 @@ export class SidekickController {
     this.dropAfter();
     this.learning?.abort();
     this.dailyRun?.abort();
+    this.approving?.abort();
     this.guard?.abort();
     this.abortRouting();
     await this.closeSessions(() => true);
@@ -934,6 +941,98 @@ export class SidekickController {
     }
   }
 
+  /**
+   * Before approve (spec §2a.2, plan Decision 10): a process-guard (or a custom purpose with the moment) on in the
+   * open task's scope reads the document once; what it lacks comes back as a card (also left in the panel) shown
+   * next to Approve. The approval is never blocked: Sidekick off (D0: nothing runs, nothing written), no such
+   * sidekick, its kind muted, past the cap, without a CLI, a failure, the person's wait passed (a `timeout` event),
+   * a newer check, the approval answered (cancelApprove), turning off, a profile switch or closing: `approve`.
+   */
+  async beforeApprove(doc: { title: string; text: string }): Promise<SidekickApproveCheck> {
+    const settings = await this.d.store.settings().catch(() => null);
+    if (this.closed || !settings?.on) return APPROVE;
+    this.approving?.abort();
+    const controller = new AbortController();
+    this.approving = controller;
+    // Who would speak and where, once known: a timeout's event names them.
+    const seen: { speaker?: SidekickDef; ctx?: { task: OpenTask | null; base: string } } = {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waited = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), (this.d.waitMs ?? defaultWaitMs)(settings.wait));
+    });
+    const dropped = new Promise<"dropped">((resolve) => controller.signal.addEventListener("abort", () => resolve("dropped"), { once: true }));
+    try {
+      const check = this.approveCheck(doc, settings, controller, seen).catch((err: unknown) => {
+        if (!controller.signal.aborted) console.error("Sidekick's before-approve check failed", err);
+        return APPROVE;
+      });
+      const r = await Promise.race([check, waited, dropped]);
+      if (r === "dropped") return APPROVE;
+      if (r === "timeout") {
+        controller.abort();
+        // A learning signal (spec §6.1), written behind the answer: the approval never waits for it.
+        if (seen.speaker && seen.ctx)
+          void this.event(seen.ctx.base, { at: new Date().toISOString(), ...taskFields(seen.ctx.task), sidekick: seen.speaker.id, moment: eventMoment("before-approve"), kind: "missing", outcome: "timeout" });
+        return APPROVE;
+      }
+      return r;
+    } finally {
+      clearTimeout(timer);
+      if (this.approving === controller) this.approving = null;
+    }
+  }
+
+  /** The approval was answered or withdrawn: a running before-approve check stops (it answers `approve`). */
+  cancelApprove(): void {
+    this.approving?.abort();
+  }
+
+  private async approveCheck(
+    doc: { title: string; text: string },
+    settings: SidekickSettings,
+    controller: AbortController,
+    seen: { speaker?: SidekickDef; ctx?: { task: OpenTask | null; base: string } },
+  ): Promise<SidekickApproveCheck> {
+    const live = () => !controller.signal.aborted && !this.closed;
+    const task = await this.d.task().catch(() => null);
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return APPROVE;
+    const list = await this.candidatesFor("before-approve", task?.scope);
+    if (list.length === 0 || !live()) return APPROVE;
+    if (await this.pastCap(setup.base, task, settings)) return APPROVE;
+    seen.ctx = { task, base: setup.base };
+    seen.speaker = list[0];
+    const engine = this.d.engine(setup.engineId);
+    const speaker = await this.pick(list, "before-approve", `${doc.title}\n\n${doc.text}`, { base: setup.base, task, signal: controller.signal, live });
+    seen.speaker = speaker;
+    // Its only kind muted: the turn would show nothing.
+    if (!live() || mutedOf(settings, speaker.id).includes("missing")) return APPROVE;
+    const session = await this.sessionFor(setup.base, engine, speaker, task?.id ?? NO_TASK, task?.id, live);
+    if (!session || !live()) return APPROVE;
+    const open = this.d.phases(task?.action).find((p) => p.id === task?.phase);
+    const prompt = approvePrompt({
+      harness: { name: this.d.harness.name },
+      title: doc.title,
+      text: doc.text,
+      ...(open ? { phase: { label: open.label, ...(await this.briefOf(task, open)) } } : {}),
+      uiLanguage: await this.d.uiLanguage().catch(() => "English"),
+      ...(await this.purposeText(task?.scope, speaker.id)),
+    });
+    if (!live()) return APPROVE;
+    const answer = await session.ask(prompt, controller.signal);
+    await this.logTurn(setup.base, engine, session, task, "before-approve", answer, speaker.id);
+    if (!live() || !answer.ok) return APPROVE;
+    const guard = parseGuard(answer.text);
+    if (!guard?.missing.length) return APPROVE;
+    // Settings may have changed while the turn ran.
+    const now = await this.d.store.settings();
+    if (!now.on || mutedOf(now, speaker.id).includes("missing") || !live()) return APPROVE;
+    const card: SidekickCard = { id: randomUUID(), moment: eventMoment("before-approve"), speaker: infoOf(speaker), kind: "missing", prompt: "", flags: [], issues: [], confidence: 1, guard: { missing: guard.missing }, at: new Date().toISOString() };
+    this.cards.push({ card, ctx: { task, base: setup.base } });
+    await this.push();
+    return { kind: "card", card };
+  }
+
   /** The task's heads-up signals; another task starts them afresh. */
   private signalsFor(task: string) {
     if (this.signals.task !== task) this.signals = { task, context: false, topics: new Map(), drift: 0 };
@@ -1025,7 +1124,7 @@ export class SidekickController {
     engine: EngineDef,
     session: SidekickLike,
     task: OpenTask | null,
-    moment: "pre" | "after" | "learn" | "route" | "phase-change" | "daily",
+    moment: "pre" | "after" | "learn" | "route" | "phase-change" | "daily" | "before-approve",
     answer: SidekickAnswer,
     sidekick: string = SIDEKICK_ID,
   ): Promise<void> {

@@ -917,6 +917,13 @@ export interface HarnessClient {
     forgetAll(): Promise<void>;
     /** Edits from the person: their items become `source: "person"` (learning never changes them again). */
     editLearned(changes: { id: string; text: string }[]): Promise<void>;
+    /**
+     * For the document-review flow: call before approving; on a card, show it next to Approve (approve anyway stays
+     * possible). Never waits longer than the person's wait setting; any failure answers `approve`.
+     */
+    beforeApprove(doc: { title: string; text: string }): Promise<SidekickApproveCheck>;
+    /** The approval was answered or withdrawn: a running before-approve check stops (its answer is `approve`). */
+    cancelApprove(): Promise<void>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1090,4 +1097,6 @@ export interface SidekickState {
  * sent at once or the review was replaced).
  */
 export type SidekickReview = { kind: "send" } | { kind: "card"; card: SidekickCard } | { kind: "timeout" } | { kind: "error" } | { kind: "cancelled" };
+/** What the document-review flow does before approving (spec §2a.2): approve, or show the card next to Approve. */
+export type SidekickApproveCheck = { kind: "approve" } | { kind: "card"; card: SidekickCard };
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";

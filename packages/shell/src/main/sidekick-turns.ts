@@ -345,3 +345,35 @@ export function dailyPrompt(i: DailyInput & { harness: { name: string }; uiLangu
     "Answer in at most 4 short sentences, plain text: what got done, what's open, one suggestion for today.",
   ].join("\n");
 }
+
+/** The first line of every before-approve turn (mock mode and the e2e scripts match on it). */
+export const SIDEKICK_APPROVE_MARK = "Sidekick: before approve";
+
+export interface ApproveInput {
+  harness: { name: string };
+  /** The document's title and text (its text is cut like a reply). */
+  title: string;
+  text: string;
+  /** The open phase, its brief's text (never the file's path) when it has one. */
+  phase?: { label: string; brief?: string };
+  uiLanguage: string;
+  /** The scope's purpose text for this sidekick (§2a.4): the rules the document is checked against. */
+  purposeText?: string;
+}
+
+/** The before-approve turn (spec §2a.2 process-guard): what the document lacks before the person approves it. */
+export function approvePrompt(i: ApproveInput): string {
+  return [
+    SIDEKICK_APPROVE_MARK,
+    "",
+    `App: ${i.harness.name}`,
+    ...(i.phase ? [`Open phase: ${i.phase.label}${i.phase.brief ? ` — ${i.phase.brief.split("\n")[0]}` : ""}`] : []),
+    ...purposeLine(i.purposeText),
+    `UI language: ${i.uiLanguage}`,
+    `<document title="${i.title.replace(/\s+/g, " ").replace(/"/g, "'")}">`,
+    cutReply(i.text),
+    "</document>",
+    "",
+    'The person is about to approve this document. Answer with the JSON object only: {"missing":[string]}. What it lacks against the phase and the scope purpose, one short line each; [] when it is fine.',
+  ].join("\n");
+}

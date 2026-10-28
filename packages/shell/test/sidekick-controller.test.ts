@@ -1614,3 +1614,119 @@ describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
     expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "daily" })]);
   });
 });
+
+describe("before approve (spec §2a.2, Decision 10)", () => {
+  const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" as const }], order: 1 };
+  const DOC = { title: "Spec: login", text: "# Login\nUsers sign in." };
+  const APPROVE = { kind: "approve" };
+
+  it("returns what's missing and leaves a card; approval itself is never blocked", async () => {
+    const h = harness({ record: on, extra: [GUARD], answers: [json({ missing: ["No acceptance criteria"] })] });
+    const r = await h.ctl.beforeApprove(DOC);
+    expect(r).toEqual({ kind: "card", card: expect.objectContaining({ moment: "before-approve", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "🛡️" }, guard: { missing: ["No acceptance criteria"] } }) });
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "before-approve" })]);
+    expect(h.logged[0]).toMatchObject({ sidekick: "guard", moment: "before-approve", task: "t1" });
+    expect(h.sessions).toEqual(["guard"]);
+  });
+
+  it("nothing missing, no guard, Sidekick off, or past the wait: approve", async () => {
+    expect(await harness({ record: on, extra: [GUARD], answers: [json({ missing: [] })] }).ctl.beforeApprove({ title: "x", text: "y" })).toEqual(APPROVE);
+    expect(await harness({ record: on }).ctl.beforeApprove({ title: "x", text: "y" })).toEqual(APPROVE);
+    expect(await harness({ extra: [GUARD] }).ctl.beforeApprove({ title: "x", text: "y" })).toEqual(APPROVE);
+  });
+
+  it("the document is cut like a reply", async () => {
+    const h = harness({ record: on, extra: [GUARD], answers: [json({ missing: [] })] });
+    await h.ctl.beforeApprove({ title: "x", text: "# A\n" + "a ".repeat(20000) });
+    expect(h.asked[0]!.length).toBeLessThan(12000);
+  });
+
+  it("the prompt carries the title, the open phase's brief text (never its path) and the scope purpose", async () => {
+    const phases = [{ id: "spec", label: "Spec", brief: "phases/spec.md" }];
+    const h = harness({
+      record: on,
+      extra: [GUARD, { id: "s-main-guard", type: "scope", scope: "main", sidekick: "guard", on: true, purposeText: "Every spec\nlists its risks." }],
+      task: { id: "t1", action: "feature", scope: "main", phase: "spec" },
+      phases,
+      phaseBriefs: { spec: "Write the spec.\nWith criteria." },
+      answers: [json({ missing: [] })],
+    });
+    await h.ctl.beforeApprove({ title: 'The "login" spec', text: "Users sign in." });
+    expect(h.asked[0]?.startsWith("Sidekick: before approve")).toBe(true);
+    expect(h.asked[0]).toContain(`<document title="The 'login' spec">`);
+    expect(h.asked[0]).toContain("Open phase: Spec — Write the spec. With criteria.");
+    expect(h.asked[0]).not.toContain("phases/spec.md");
+    expect(h.asked[0]).toContain("Scope purpose: Every spec lists its risks.");
+  });
+
+  it("D0: Sidekick off → approve, no turn, no event, no write", async () => {
+    const h = harness({ extra: [GUARD], answers: [json({ missing: ["x"] })] });
+    expect(await h.ctl.beforeApprove(DOC)).toEqual(APPROVE);
+    expect(h.asked).toEqual([]);
+    expect(h.opened).toEqual([]);
+    expect(h.briefs).toEqual([]);
+    expect(h.logged).toEqual([]);
+    expect(h.events).toEqual([]);
+    expect(h.writes).toEqual([]);
+    expect(h.states).toEqual([]);
+  });
+
+  it("past the cap, or its kind muted: approve without a turn", async () => {
+    const capped = harness({ record: { ...on, cap: 20_000 as const }, spent: 20_000, extra: [GUARD] });
+    expect(await capped.ctl.beforeApprove(DOC)).toEqual(APPROVE);
+    expect(capped.asked).toEqual([]);
+    const muted = harness({ record: { ...on, muted: { guard: ["missing"] } }, extra: [GUARD] });
+    expect(await muted.ctl.beforeApprove(DOC)).toEqual(APPROVE);
+    expect(muted.asked).toEqual([]);
+  });
+
+  it("a hung turn: approve at the wait, a timeout event, and no card even if the answer comes late", async () => {
+    let answer!: (a: SidekickAnswer) => void;
+    const h = harness({ record: on, extra: [GUARD], waitMs: 30, answers: [() => new Promise<SidekickAnswer>((r) => (answer = r))] });
+    expect(await h.ctl.beforeApprove(DOC)).toEqual(APPROVE);
+    await vi.waitFor(() => expect(h.events).toEqual([expect.objectContaining({ sidekick: "guard", moment: "before-approve", kind: "missing", outcome: "timeout", task: "t1" })]));
+    answer({ ok: true, text: json({ missing: ["late"] }) });
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("a failing turn or a broken answer: approve", async () => {
+    const thrown = harness({ record: on, extra: [GUARD], answers: [async () => Promise.reject(new Error("boom"))] });
+    expect(await thrown.ctl.beforeApprove(DOC)).toEqual(APPROVE);
+    const broken = harness({ record: on, extra: [GUARD], answers: ["not json"] });
+    expect(await broken.ctl.beforeApprove(DOC)).toEqual(APPROVE);
+    expect((await broken.ctl.state()).cards).toEqual([]);
+  });
+
+  it("the approval answered (cancelApprove), turning off, a refresh with Sidekick off, or closing: approve at once, no card", async () => {
+    const stops = [
+      (h: ReturnType<typeof harness>) => h.ctl.cancelApprove(),
+      (h: ReturnType<typeof harness>) => h.ctl.set({ on: false }),
+      (h: ReturnType<typeof harness>) => (h.setRecord({ ...on, on: false }), h.ctl.refresh()),
+      (h: ReturnType<typeof harness>) => h.ctl.close(),
+    ];
+    for (const stop of stops) {
+      let answer!: (a: SidekickAnswer) => void;
+      const h = harness({ record: on, extra: [GUARD], waitMs: 60_000, answers: [() => new Promise<SidekickAnswer>((r) => (answer = r))] });
+      const run = h.ctl.beforeApprove(DOC);
+      await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+      await stop(h);
+      expect(await run).toEqual(APPROVE);
+      answer({ ok: true, text: json({ missing: ["x"] }) });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(h.ctl["cards"]).toEqual([]);
+    }
+  });
+
+  it("a newer check replaces the running one", async () => {
+    let first!: (a: SidekickAnswer) => void;
+    const h = harness({ record: on, extra: [GUARD], waitMs: 60_000, answers: [() => new Promise<SidekickAnswer>((r) => (first = r)), json({ missing: ["Risks"] })] });
+    const old = h.ctl.beforeApprove(DOC);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    const now = h.ctl.beforeApprove({ ...DOC, text: "v2" });
+    expect(await old).toEqual(APPROVE);
+    first({ ok: true, text: json({ missing: ["Old"] }) });
+    expect(await now).toMatchObject({ kind: "card", card: { guard: { missing: ["Risks"] } } });
+    expect((await h.ctl.state()).cards).toHaveLength(1);
+  });
+});

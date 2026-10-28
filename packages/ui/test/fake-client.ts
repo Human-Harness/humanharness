@@ -39,6 +39,7 @@ import type {
   SetupStep,
   SetupStepResult,
   SetupStepsState,
+  SidekickApproveCheck,
   SidekickLearned,
   SidekickOutcome,
   SidekickReview,
@@ -575,6 +576,8 @@ export class FakeClient implements HarnessClient {
   sidekickLearned: SidekickLearned[] = [];
   /** When set, forget, forgetAll and editLearned reject with this message. */
   sidekickLearnedFails: string | null = null;
+  /** What sidekick.beforeApprove answers; null: `approve`. */
+  sidekickApprove: SidekickApproveCheck | null = null;
   /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
@@ -621,6 +624,11 @@ export class FakeClient implements HarnessClient {
       const next = new Map(changes.map((c) => [c.id, c.text]));
       this.sidekickLearned = this.sidekickLearned.map((i) => (next.has(i.id) ? { ...i, text: next.get(i.id) ?? i.text, source: "person" } : i));
     },
+    beforeApprove: async (doc: { title: string; text: string }): Promise<SidekickApproveCheck> => {
+      this.sidekickCalls.push(["beforeApprove", doc]);
+      return this.sidekickApprove ?? { kind: "approve" };
+    },
+    cancelApprove: async () => void this.sidekickCalls.push(["cancelApprove"]),
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);
       return () => void this.sidekickListeners.delete(l);

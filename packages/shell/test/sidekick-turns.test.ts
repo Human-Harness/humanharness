@@ -3,6 +3,7 @@ import { SIDEKICK_PURPOSE_TEXT_MAX } from "@humanharness/harness-sdk";
 import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
 import {
   SIDEKICK_AFTER_MARK,
+  SIDEKICK_APPROVE_MARK,
   SIDEKICK_DAILY_MARK,
   SIDEKICK_LEARN_MARK,
   SIDEKICK_PHASE_MARK,
@@ -10,6 +11,7 @@ import {
   SIDEKICK_ROUTE_CHOICES,
   SIDEKICK_ROUTE_MARK,
   afterReplyPrompt,
+  approvePrompt,
   cutReply,
   dailyPrompt,
   learnPrompt,
@@ -170,7 +172,7 @@ describe("after the reply (spec §4.2)", () => {
   });
 
   it("fake-agent's mock knows the real marks and answers an after-reply turn with nothing to show", () => {
-    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK, phase: SIDEKICK_PHASE_MARK, daily: SIDEKICK_DAILY_MARK });
+    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK, phase: SIDEKICK_PHASE_MARK, daily: SIDEKICK_DAILY_MARK, approve: SIDEKICK_APPROVE_MARK });
     const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     const after = parseAfter(mockSidekickReply(p));
@@ -340,5 +342,17 @@ describe("daily turn (spec §2a.2 daily-summary, plan Decision 12)", () => {
     const p = dailyPrompt({ harness: { name: "E" }, day: "2026-10-26", notes: ["a"], tokens: { tasks: 1, sidekick: 0 }, open: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     expect(mockSidekickReply(p)).toMatch(/^[^{]/);
+  });
+});
+
+describe("before-approve turn (spec §2a.2, plan Decision 10)", () => {
+  it("names the document, the open phase and the scope purpose; the mock finds nothing missing", () => {
+    const p = approvePrompt({ harness: { name: "Dev" }, title: 'Spec\n"login"', text: "# Login", phase: { label: "Spec", brief: "Write it." }, uiLanguage: "English", purposeText: "Lists\nrisks." });
+    expect(p.startsWith(SIDEKICK_APPROVE_MARK)).toBe(true);
+    expect(p).toContain(`<document title="Spec 'login'">\n# Login\n</document>`);
+    expect(p).toContain("Open phase: Spec — Write it.");
+    expect(p).toContain("Scope purpose: Lists risks.");
+    expect(isMockSidekickTurn(p)).toBe(true);
+    expect(parseGuard(mockSidekickReply(p))).toEqual({ missing: [] });
   });
 });

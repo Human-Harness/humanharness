@@ -115,3 +115,37 @@ describe("sidekick IPC", () => {
     expect(off.calls).toEqual([]);
   });
 });
+
+describe("sidekick IPC: before approve", () => {
+  function approveWire(available = true) {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const calls: unknown[][] = [];
+    const ctl = {
+      beforeApprove: async (doc: unknown) => (calls.push(["beforeApprove", doc]), { kind: "card", card: { id: "c1" } }),
+      cancelApprove: () => void calls.push(["cancelApprove"]),
+    };
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => (available ? (ctl as never) : null),
+    );
+    const call = (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+    return { call, calls };
+  }
+
+  it("hh:sidekickBeforeApprove passes a valid document through", async () => {
+    const w = approveWire();
+    expect(await w.call("hh:sidekickBeforeApprove", { title: "Spec", text: "# Spec", extra: 1 })).toEqual({ kind: "card", card: { id: "c1" } });
+    await w.call("hh:sidekickApproveCancel");
+    expect(w.calls).toEqual([["beforeApprove", { title: "Spec", text: "# Spec" }], ["cancelApprove"]]);
+  });
+
+  it("hh:sidekickBeforeApprove ignores bad input", async () => {
+    const w = approveWire();
+    for (const bad of [{ title: 1, text: "x" }, { title: "x" }, { title: "x".repeat(201), text: "x" }, { title: "x", text: "x".repeat(200_001) }, { title: "x", text: "   " }, null, "doc"]) {
+      expect(await w.call("hh:sidekickBeforeApprove", bad)).toEqual({ kind: "approve" });
+    }
+    expect(w.calls).toEqual([]);
+    expect(await approveWire(false).call("hh:sidekickBeforeApprove", { title: "x", text: "y" })).toEqual({ kind: "approve" });
+    await approveWire(false).call("hh:sidekickApproveCancel");
+  });
+});

@@ -5,6 +5,7 @@ import type {
   ChoiceOption,
   DataKey,
   DataRecord,
+  DocumentKind,
   InputField,
   InputIssue,
   InputSpec,
@@ -15,7 +16,7 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
@@ -47,6 +48,23 @@ export function stepTextSize(current: TextSize | undefined, step: "in" | "out" |
   return TEXT_SIZE_ORDER[Math.min(Math.max(i + (step === "in" ? 1 : -1), 0), TEXT_SIZE_ORDER.length - 1)];
 }
 
+/** The reader's look (document-reader spec §5.2): global app preferences. */
+export interface ReaderPrefs {
+  font?: "sans" | "serif";
+  size?: "normal" | "large";
+}
+
+/** The valid part of saved reading preferences; null when nothing is valid. */
+export function cleanReaderPrefs(value: unknown): ReaderPrefs | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const out: ReaderPrefs = {
+    ...(v.font === "sans" || v.font === "serif" ? { font: v.font } : {}),
+    ...(v.size === "normal" || v.size === "large" ? { size: v.size } : {}),
+  };
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export interface AppConfig {
   language?: Language;
   folder?: string;
@@ -55,6 +73,8 @@ export interface AppConfig {
   appearance?: Appearance;
   /** Settings → General → Text size. Absent means normal. */
   textSize?: TextSize;
+  /** The reader's font and text size. Absent until the person changes one (D0). */
+  reader?: ReaderPrefs;
   /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
@@ -219,6 +239,8 @@ export interface AppState {
   profiles?: ProfilesInfo;
   /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
   material?: MaterialInfo;
+  /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
+  documents?: { kinds: Record<string, DocumentKind> };
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -282,6 +304,8 @@ export interface ChatEntry {
   timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
+  /** The `.md` files this turn added or changed (document-reader spec §5.1). Absent: none. */
+  documents?: DocumentCard[];
 }
 
 /** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
@@ -363,6 +387,11 @@ export interface FolderPick {
   folder: string;
   problem: FolderProblem | null;
 }
+
+/** `hh:readDocument` (document-reader spec §5.3). Main never writes; a refusal is data. */
+export type DocumentRead =
+  | { ok: true; text: string; mtime: string; size: number }
+  | { ok: false; reason: "outside" | "missing" | "not-markdown" | "too-large" | "not-ready"; size?: number };
 
 export interface EngineStatus {
   engineId: string;
@@ -851,6 +880,18 @@ export interface HarnessClient {
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** A Markdown document inside the folder or a reference folder (document-reader spec §5.3). Never writes. */
+  readDocument(path: string): Promise<DocumentRead>;
+  /** A local image (png, jpeg, gif, webp) inside the folder or a reference folder, as a data: URL; null when refused. */
+  readImage(path: string): Promise<string | null>;
+  /** Whether each path is still there (a card of a moved or deleted file is struck through). */
+  documentsExist(paths: string[]): Promise<boolean[]>;
+  /** Calls `listener` after each change to the document; returns the unsubscribe. */
+  watchDocument(path: string, listener: () => void): () => void;
+  /** Opens a document in the reader panel, at the heading `anchor` when given (the harness's own UI may call it). */
+  openDocument(path: string, anchor?: string): void;
+  /** Every `openDocument`, whoever called it: the chat opens the panel. */
+  onOpenDocument(listener: (path: string, anchor?: string) => void): () => void;
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;
@@ -933,4 +974,5 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
+export type { DocumentCard } from "@humanharness/runtime";
 export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };

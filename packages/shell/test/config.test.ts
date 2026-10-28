@@ -66,6 +66,23 @@ describe("ConfigStore", () => {
     expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", textSize: "larger" });
   });
 
+  it("keeps valid reading preferences and drops bad ones (document-reader §5.2)", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", reader: { font: "serif", size: "huge" } }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", reader: { font: "serif" } });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", reader: "big" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x" });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", reader: { font: "mono" } }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x" });
+  });
+
+  it("D0: a save that does not touch the reader never writes reading preferences", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    await store.save({ folder: "/x", textSize: "large" });
+    expect("reader" in JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8"))).toBe(false);
+  });
+
   it("drops a hand-edited language that isn't a canonical tag, keeping the rest", async () => {
     const dir = fs.mkdtempSync(path.join(root, "c-"));
     for (const bad of ["pt-br", 5]) {

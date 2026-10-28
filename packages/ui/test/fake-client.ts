@@ -8,6 +8,7 @@ import type {
   DataKey,
   DataQuery,
   DataRecord,
+  DocumentRead,
   EngineError,
   EngineStatus,
   Event,
@@ -417,6 +418,44 @@ export class FakeClient implements HarnessClient {
   async revealPath(file: string) {
     this.revealedFiles.push(file);
     return this.openResult;
+  }
+  /** Documents by path (relative to the folder); readDocument answers from here. */
+  documents: Record<string, string> = {};
+  documentMtime = "2026-10-27T10:00:00.000Z";
+  /** Images by path, as data: URLs. */
+  images: Record<string, string> = {};
+  private documentWatchers = new Map<string, Set<() => void>>();
+  private documentOpeners = new Set<(path: string, anchor?: string) => void>();
+  async readDocument(file: string): Promise<DocumentRead> {
+    if (file.startsWith("../") || file.startsWith("/")) return { ok: false, reason: "outside" };
+    if (!Object.hasOwn(this.documents, file)) return { ok: false, reason: "missing" };
+    const text = this.documents[file];
+    return { ok: true, text, mtime: this.documentMtime, size: new TextEncoder().encode(text).length };
+  }
+  async readImage(file: string) {
+    return Object.hasOwn(this.images, file) ? this.images[file] : null;
+  }
+  async documentsExist(paths: string[]) {
+    return paths.map((p) => Object.hasOwn(this.documents, p));
+  }
+  watchDocument(file: string, listener: () => void) {
+    const set = this.documentWatchers.get(file) ?? new Set();
+    set.add(listener);
+    this.documentWatchers.set(file, set);
+    return () => void set.delete(listener);
+  }
+  /** Rewrites (or with null deletes) a document and tells its watchers, as main does after a change. */
+  changeDocument(file: string, text: string | null) {
+    if (text === null) delete this.documents[file];
+    else this.documents[file] = text;
+    for (const l of [...(this.documentWatchers.get(file) ?? [])]) l();
+  }
+  openDocument(file: string, anchor?: string) {
+    for (const l of [...this.documentOpeners]) l(file, anchor);
+  }
+  onOpenDocument(listener: (path: string, anchor?: string) => void) {
+    this.documentOpeners.add(listener);
+    return () => void this.documentOpeners.delete(listener);
   }
   async openPath(file: string) {
     this.opened.push(file);

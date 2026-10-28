@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { canonicalLanguage } from "@humanharness/harness-sdk";
-import { type AppConfig, isTextSize } from "@humanharness/ui/client";
+import { type AppConfig, cleanReaderPrefs, isTextSize } from "@humanharness/ui/client";
 import { isProfileId } from "@humanharness/workspace";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
@@ -23,15 +23,17 @@ export class ConfigStore {
     try {
       const saved = JSON.parse(await fs.readFile(this.file, "utf8")) as AppConfig;
       if (!saved || typeof saved !== "object") return saved;
-      // Like a bad entry under models: a hand-edited backupDismissed, textSize or language of the wrong kind is dropped,
-      // never a reason to treat the whole config as invalid.
-      const { backupDismissed, textSize, language, profile, ...rest } = saved;
+      // Like a bad entry under models: a hand-edited backupDismissed, textSize, language or reader of the wrong kind is
+      // dropped (the reader only its bad fields), never a reason to treat the whole config as invalid.
+      const { backupDismissed, textSize, language, profile, reader, ...rest } = saved;
+      const readerPrefs = cleanReaderPrefs(reader);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
         ...(isTextSize(textSize) ? { textSize } : {}),
         ...(typeof language === "string" && canonicalLanguage(language) === language ? { language } : {}),
         ...(isProfileId(profile) ? { profile } : {}),
+        ...(readerPrefs ? { reader: readerPrefs } : {}),
       };
     } catch {
       return {};

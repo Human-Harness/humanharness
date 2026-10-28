@@ -26,6 +26,18 @@ export interface LimitWindow {
   resetsAt: string;
 }
 
+/** A Markdown file a turn added or changed (document-reader spec §5.1): what its card shows. */
+export interface DocumentCard {
+  /** Relative to the folder, forward slashes. */
+  path: string;
+  title: string;
+  /** Front-matter `kind`, when there is one. */
+  kind?: string;
+  change: "new" | "updated";
+  /** Words in the body; the window turns them into a reading time. */
+  words: number;
+}
+
 /** Normalized events every transport emits. Each turn ends with exactly one `done`. */
 export type Event =
   | { type: "text"; delta: string }
@@ -51,6 +63,8 @@ export type Event =
   | { type: "context"; used: number; size?: number }
   /** The engine compacted the conversation during the turn. */
   | { type: "compaction" }
+  /** The turn's added or changed `.md` files, sent right before a successful `done`. Never empty. */
+  | { type: "documents"; documents: DocumentCard[] }
   | { type: "done"; ok: true }
   | { type: "done"; ok: false; error: EngineError };
 

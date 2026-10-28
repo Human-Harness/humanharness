@@ -132,8 +132,9 @@ test("a harness's setup steps: Home waits for the interview, then forms, a compo
     await expect
       .poll(() => json(path.join(harnessDir, "setup.json"))?.steps)
       .toMatchObject({ conocerte: { state: "done" }, estilo: { state: "skipped" }, goal: { state: "done" }, ready: { state: "done" } });
-    expect(json(path.join(harnessDir, "setup.json")).finishedAt).toEqual(expect.any(String));
-    expect(json(path.join(harnessDir, "data", "_app", "profile.json"))).toMatchObject({ name: "Sofi", goal: "Pass maths in June" });
+    // The app writes these files after the screen moves on: wait for them instead of reading once.
+    await expect.poll(() => json(path.join(harnessDir, "setup.json"))?.finishedAt).toEqual(expect.any(String));
+    await expect.poll(() => json(path.join(harnessDir, "data", "_app", "profile.json"))).toMatchObject({ name: "Sofi", goal: "Pass maths in June" });
 
     // The work screen: the interview is no topic.
     await page.getByRole("button", { name: "Start Tutor" }).click();

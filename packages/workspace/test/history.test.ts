@@ -172,6 +172,22 @@ describe("History", () => {
   });
 });
 
+describe("History.changes", () => {
+  it("lists what changed between two commits; null from: all added (document-reader §5.1)", async () => {
+    write("a.md", "a");
+    const first = (await history.save("one"))!;
+    write("a.md", "a2");
+    write("b.md", "b");
+    write(".harness/notes/x.md", "ignored");
+    const second = (await history.save("two"))!;
+    expect(await history.changes(first, second)).toEqual([
+      { path: "a.md", kind: "modified" },
+      { path: "b.md", kind: "added" },
+    ]);
+    expect(await history.changes(null, first)).toEqual([{ path: "a.md", kind: "added" }]);
+  });
+});
+
 describe("History trailers", () => {
   it("writes the task and the action as trailers and reads them back", async () => {
     write("a.md", "1");

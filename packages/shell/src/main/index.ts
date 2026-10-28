@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
+import { BrowserWindow, type IpcMainInvokeEvent, type WebContents, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell, webContents } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import {
@@ -34,6 +34,7 @@ import { type Event, type HarnessRuntime, createRuntime, runSystemTask } from "@
 import {
   type AppConfig,
   type AppState,
+  type DocumentRead,
   type ChatLoad,
   type ConfiguredApp,
   type FolderPick,
@@ -99,6 +100,8 @@ import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
+import { DocumentSessions } from "./document-sessions";
+import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
@@ -292,6 +295,38 @@ async function backupView(folder: string | undefined): Promise<NonNullable<AppSt
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;
 
+/**
+ * The reader's open documents (document-reader spec §5.3), by window: main tells the window that asked for a watch
+ * when its document changes, and only that window; and when a watch ends without the window asking, so it watches again.
+ */
+const documentSessions: DocumentSessions = new DocumentSessions(
+  new DocumentWatchers((id) => {
+    const owner = documentSessions.ownerOf(id);
+    if (owner !== null) sendToContents(owner, "hh:documentChanged", id);
+  }),
+  (owner, id) => sendToContents(owner, "hh:documentWatchEnded", id),
+);
+
+/** Sends to one window by its webContents id, when it is still there. */
+function sendToContents(id: number, channel: string, value: unknown) {
+  try {
+    const to = webContents.fromId(id);
+    if (to && !to.isDestroyed()) to.send(channel, value);
+  } catch (err) {
+    console.error("Could not send to the window", err);
+  }
+}
+
+/**
+ * Where documents and images may be read, from the config only: the person's folder (checked by `validConfig`), then
+ * the reference folders that resolved (protected folders already refused) and are usable with it; null before setup.
+ */
+async function documentRoots(): Promise<string[] | null> {
+  const c = await validConfig();
+  if (!c) return null;
+  return openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
+}
+
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
@@ -398,6 +433,8 @@ async function appState(): Promise<AppState> {
     ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
     // Only a harness with material sends what it takes (material D0).
     ...materialAppState(harness),
+    // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
+    ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -517,6 +554,8 @@ async function scopesChanged(): Promise<void> {
  * read afresh, the scopes migrate and are sent, and the setup steps and tasks of the new folder reach the window.
  */
 async function arrivedInProfile(): Promise<void> {
+  // Another profile is another folder: the reader's watches were checked against the old one.
+  documentSessions.closeAll();
   await tasks.interrupt();
   settingsCtl?.forget();
   await settingsCtl?.changed();
@@ -1014,9 +1053,14 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
 
 /** Registers an IPC handler that only answers the app's own page. */
 function handle(channel: string, fn: (...args: never[]) => unknown) {
+  handleFrom(channel, (_sender, ...args) => fn(...(args as never[])));
+}
+
+/** `handle`, also told which window asked (whatever is kept per window, such as the reader's watches). */
+function handleFrom(channel: string, fn: (sender: WebContents, ...args: unknown[]) => unknown) {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!event.senderFrame || !appUrl(event.senderFrame.url)) throw new Error("Unexpected sender");
-    return fn(...(args as never[]));
+    return fn(event.sender, ...args);
   });
 }
 
@@ -1099,6 +1143,8 @@ function registerIpc() {
       saveConfigPatch(patch, before),
     );
     if (patch.folder !== undefined && patch.folder !== before.folder) {
+      // The reader's watches were checked against the old folder.
+      documentSessions.closeAll();
       if (before.folder) dropDataStoresUnder(before.folder);
       await settleScopes()
         .then(scopesChanged)
@@ -1308,6 +1354,46 @@ function registerIpc() {
     if (!target) return false;
     return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));
   });
+  // The reader (document-reader spec §5.3): it only ever reads, inside the folder or a reference folder. Every input
+  // is untrusted (documents.ts checks its shape first) and every failure is an answer, never a thrown error.
+  handle("hh:readDocument", async (rel: unknown): Promise<DocumentRead> => {
+    try {
+      const roots = await documentRoots();
+      if (!roots) return { ok: false, reason: "not-ready" };
+      return await readDocument(rel, roots);
+    } catch (err) {
+      console.error("Could not read the document", err);
+      return { ok: false, reason: "missing" };
+    }
+  });
+  handle("hh:readImage", async (rel: unknown): Promise<string | null> => {
+    try {
+      const roots = await documentRoots();
+      return roots ? await readImage(rel, roots) : null;
+    } catch {
+      return null;
+    }
+  });
+  handle("hh:documentsExist", async (paths: unknown): Promise<boolean[]> => {
+    if (!Array.isArray(paths)) return [];
+    // Too many to check: none counts as there (one answer per path, as the window expects).
+    if (paths.length > MAX_EXIST_PATHS) return paths.map(() => false);
+    try {
+      const roots = await documentRoots();
+      return roots ? await documentsExist(paths, roots) : paths.map(() => false);
+    } catch {
+      return paths.map(() => false);
+    }
+  });
+  handleFrom("hh:watchDocument", async (sender, rel): Promise<number | null> => {
+    try {
+      const roots = await documentRoots();
+      return roots ? await documentSessions.watch(sender.id, rel, roots) : null;
+    } catch {
+      return null;
+    }
+  });
+  handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
@@ -1508,6 +1594,8 @@ function registerIpc() {
       result = await run;
     } finally {
       moving = null;
+      // The reader's watches were checked against the folder as it was.
+      documentSessions.closeAll();
     }
     // The window always gets the state as it is now, whatever happened.
     const state = await appState().catch((err: unknown) => {
@@ -1535,9 +1623,14 @@ async function createWindow() {
     webPreferences: { preload: path.join(here, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
   });
   window = win;
+  // Read now: once closed, the window's webContents can no longer be asked.
+  const contentsId = win.webContents.id;
   win.on("closed", () => {
     if (window === win) window = null;
+    documentSessions.closeOwner(contentsId);
   });
+  // A reload starts a new page with no watches of its own: the old page's go.
+  win.webContents.on("did-navigate", () => documentSessions.closeOwner(contentsId));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };

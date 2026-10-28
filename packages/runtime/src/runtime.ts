@@ -20,6 +20,7 @@ import {
 } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
+import { turnDocuments } from "./documents";
 import type { Event } from "./events";
 import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 
@@ -110,7 +111,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const settings = await opts.instructionSettings?.();
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}), ...withMaterial });
+  // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4).
+  const writing = { kinds: harness.documents?.kinds ?? {} };
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing, ...(settings ? { settings } : {}), ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -198,8 +201,17 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
             );
             emitCurrent = null;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-            if (f.type === "done" && f.ok) await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
-            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
+            if (f.type === "done" && f.ok) {
+              const after = await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
+              // A card for each .md the turn added or changed (document-reader spec §5.1); none: no event at all.
+              if (after) {
+                const documents = await turnDocuments(history, before, after).catch((err: unknown) => {
+                  console.error("Could not list the turn's documents", err);
+                  return [];
+                });
+                if (documents.length > 0) emitOnce({ type: "documents", documents });
+              }
+            } else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
             else await history.save(`${STOPPED_PREFIX}${message.slice(0, 60)}`, options.trailer);
             emitOnce(f);
           } catch (err) {
@@ -226,7 +238,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         if (closing) return Promise.resolve(false);
         const run = async () => {
           const now = await opts.instructionSettings?.();
-          return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+          return refreshInstructions({ folder, base, language: opts.language, blocks, references, writing, ...(now ? { settings: now } : {}), ...withMaterial });
         };
         refreshing = refreshing.catch(() => false).then(run);
         return refreshing;

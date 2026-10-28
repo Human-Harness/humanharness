@@ -4,6 +4,7 @@ import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
+import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
@@ -22,6 +23,7 @@ export * from "./phases";
 export * from "./setup";
 export * from "./profiles";
 export * from "./material";
+export * from "./documents";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -146,6 +148,32 @@ const blockSchema = z.custom<Block>(
 /** The core's MCP servers (packages/blocks): a harness's own servers can't take these names. */
 const RESERVED_MCP_NAMES = ["ui", "data"];
 
+/** One line of kind text: a line break would turn the rest into live Markdown in `AGENTS.md`. */
+const oneLine = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(/^[^\r\n]*$/, "Use one line, without line breaks");
+/** One kind of document the harness's agent writes (document-reader spec §4.2). */
+const documentKindSchema = z.object({
+  when: oneLine(300),
+  sections: z.array(oneLine(120)).min(1).max(20),
+  status: z.array(oneLine(40)).min(1).max(10).optional(),
+});
+/** At most this many kinds: each one adds its template to the agent's `AGENTS.md`. */
+const MAX_DOCUMENT_KINDS = 20;
+/** Document kinds with a template of required `##` sections. Absent: only the base writing guide (D0). */
+const documentsSchema = z.object({
+  kinds: z
+    .record(
+      z.string().max(64, "A kind id has at most 64 characters").regex(DOCUMENT_KIND_ID, "A kind id is lowercase letters, digits and -"),
+      documentKindSchema,
+    )
+    .refine((k) => Object.keys(k).length <= MAX_DOCUMENT_KINDS, { message: `At most ${MAX_DOCUMENT_KINDS} document kinds` }),
+});
+
 const manifestSchema = z.object({
   id: z.string().regex(HARNESS_ID),
   name: text,
@@ -175,6 +203,8 @@ const manifestSchema = z.object({
   profiles: profilesSchema.optional(),
   /** The person's own files, cut into small fragments the agent fetches on demand (material spec). Absent: none (D0). */
   material: materialSchema.optional(),
+  /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
+  documents: documentsSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -399,6 +429,21 @@ const manifestSchema = z.object({
     for (const key of MATERIAL_STAGE_KEYS) {
       if (Object.hasOwn(m.actions, key)) ctx.addIssue({ code: "custom", path: ["actions", key], message: `"${key}" is reserved for a material stage: use another action id` });
     }
+  }
+  // Document kinds (document-reader spec §4.2): a section named twice could never be told apart by the check.
+  for (const [id, kind] of Object.entries(m.documents?.kinds ?? {})) {
+    const seen = new Set<string>();
+    kind.sections.forEach((s, i) => {
+      const key = s.trim().toLowerCase();
+      if (seen.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "sections", i], message: `"${s}" is listed twice` });
+      seen.add(key);
+    });
+    const statuses = new Set<string>();
+    kind.status?.forEach((s, i) => {
+      const key = s.toLowerCase();
+      if (statuses.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "status", i], message: `"${s}" is listed twice` });
+      statuses.add(key);
+    });
   }
 });
 

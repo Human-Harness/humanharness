@@ -16,6 +16,7 @@ import type {
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
+import { documentWatcher } from "./document-watch";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -25,6 +26,9 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 
 /** Told of every mode switch, whoever called `chooseMode` (the window or the harness's own UI). */
 const modeSwitches = new Set<(s: ModeSwitch) => void>();
+
+/** Told of every `openDocument`, from the window or the harness's own UI (document-reader spec §5.1). */
+const documentOpeners = new Set<(path: string, anchor?: string) => void>();
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -75,6 +79,17 @@ const client: HarnessClient = {
   onTaskTurn: (listener) => subscribe<TaskTurnNotice>("hh:taskTurn", listener),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
+  readDocument: (file) => ipcRenderer.invoke("hh:readDocument", file),
+  readImage: (file) => ipcRenderer.invoke("hh:readImage", file),
+  documentsExist: (paths) => ipcRenderer.invoke("hh:documentsExist", paths),
+  watchDocument: documentWatcher(ipcRenderer),
+  openDocument: (file, anchor) => {
+    for (const l of [...documentOpeners]) l(file, anchor);
+  },
+  onOpenDocument: (listener) => {
+    documentOpeners.add(listener);
+    return () => void documentOpeners.delete(listener);
+  },
   scopes: {
     list: () => ipcRenderer.invoke("hh:scopes"),
     create: (title) => ipcRenderer.invoke("hh:scopeCreate", title),

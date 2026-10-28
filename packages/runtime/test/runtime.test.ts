@@ -86,12 +86,24 @@ describe("createRuntime", () => {
     expect(agents()).not.toContain("patient");
   });
 
-  it("D0: without settings, AGENTS.md is the base and today's managed section, and a refresh writes nothing", async () => {
+  it("without settings, AGENTS.md is the base, today's managed section and the writing guide; a refresh writes nothing", async () => {
     const { runtime, folder } = await setup({ steps: [] });
     const harness = await loadHarness(FIXTURE);
     const base = fs.readFileSync(resolveInHarness(harness, harness.instructions), "utf8");
-    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(`${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness) })}`);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(
+      `${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness), writing: { kinds: {} } })}`,
+    );
     expect(await runtime.refreshInstructions()).toBe(false);
+  });
+
+  it("a harness's declared document kinds reach AGENTS.md (document-reader §4.2)", async () => {
+    const harness = await loadHarness(FIXTURE);
+    const withKinds = { ...harness, documents: { kinds: { adr: { when: "A decision with real alternatives.", sections: ["Status", "Decision"] } } } };
+    const { folder } = await setup({ steps: [] }, undefined, { harness: withKinds });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("### Document kinds");
+    expect(agents).toContain("- `adr`: A decision with real alternatives.");
+    expect(agents).toContain("      ## Decision");
   });
 
   it("a closed runtime never rewrites AGENTS.md, and close waits for a running refresh", async () => {
@@ -188,6 +200,47 @@ describe("createRuntime", () => {
     turn.cancel();
     await turn.done;
     expect(fs.existsSync(path.join(folder, "kept.md"))).toBe(true);
+  }, 10_000);
+
+  it("sends a documents event before done for the .md files the turn wrote (document-reader §5.1)", async () => {
+    const { runtime } = await setup({
+      steps: [
+        { write: { path: "docs/plan.md", content: "---\ntitle: The plan\n---\nGo." } },
+        { write: { path: "src/a.ts", content: "x" } },
+        ...claudeTextLines("ok"),
+        claudeResultLine(true),
+      ],
+    });
+    const events = await send(runtime, "plan it");
+    expect(events.at(-2)).toEqual({ type: "documents", documents: [{ path: "docs/plan.md", title: "The plan", change: "new", words: 1 }] });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
+  it("a failure listing the turn's documents still ends the turn well, with no documents event", async () => {
+    const { runtime } = await setup({ steps: [{ write: { path: "plan.md", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
+    const changes = vi.spyOn(runtime.history, "changes").mockRejectedValue(new Error("boom"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events = await send(runtime);
+    expect(changes).toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith("Could not list the turn's documents", expect.any(Error));
+    expect(events.some((e) => e.type === "documents")).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    changes.mockRestore();
+    logged.mockRestore();
+  });
+
+  it("D0: a turn that changes no .md sends no documents event; neither does a stopped one", async () => {
+    const quiet = await setup({ steps: [{ write: { path: "src/a.ts", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
+    expect((await send(quiet.runtime)).some((e) => e.type === "documents")).toBe(false);
+    await quiet.runtime.close();
+    runtime = undefined;
+    const stopped = await setup({ steps: [{ write: { path: "kept.md", content: "x" } }, { sleep: 10_000 }] });
+    const events: Event[] = [];
+    const turn = stopped.runtime.send("hi", (e) => events.push(e));
+    while (!fs.existsSync(path.join(stopped.folder, "kept.md"))) await new Promise((r) => setTimeout(r, 50));
+    turn.cancel();
+    await turn.done;
+    expect(events.some((e) => e.type === "documents")).toBe(false);
   }, 10_000);
 
   it("tags the turn's commits with the task it belongs to", async () => {

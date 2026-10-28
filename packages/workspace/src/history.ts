@@ -444,6 +444,11 @@ export class History {
     }
   }
 
+  /** What changed between two commits (tracked files only); `from` null: everything in `to` counts as added. */
+  changes(from: string | null, to: string): Promise<FileChange[]> {
+    return this.diff(from, to);
+  }
+
   private async parentOf(sha: string, cache: object = {}): Promise<string | null> {
     const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
     return commit.parent[0] ?? null;

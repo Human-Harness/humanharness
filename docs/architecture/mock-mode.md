@@ -69,7 +69,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `text`: streamed in about eight chunks over `delayMs` (default 600 ms, up to 60 s).
 - `blocks`: MCP calls on the app's `ui` server by tool name (`show_choices`, `show_<block>`). The app validates them as it does for a real engine.
 - `note`: a `save_note` call (`title` required, the rest as the app's note fields).
-- `writes`: file writes in the work folder. `content: null` deletes the file. Paths are relative, with no `..`.
+- `writes`: file writes in the work folder. `content: null` deletes the file. Paths are relative, with no `..`. A written `.md` becomes a document card, as in a real turn (`docs/architecture/documents.md`); `packages/e2e/fixtures/reader-mock` records one.
 - `usage`: feeds the usage and context meters (400 in, 20 out when missing).
 - `next`: reply to next turn id. A key is the label of a choice the turn offers, or `*` for anything else. A turn with no `next` ends the script.
 - `respond`: recorded answers to an input block the turn shows, each `{ "block", "value", "next" }`. An answer whose JSON equals `value` (key order aside) plays `next`; any other answer follows the turn's `next["*"]`, then the fallback.

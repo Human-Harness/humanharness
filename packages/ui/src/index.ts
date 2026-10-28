@@ -9,3 +9,5 @@ export type { BlockActions, BlockProps, InputContext, InputProps } from "./Messa
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";
 export type { StartViewCopy } from "./StartView";
 export type { SendFn } from "./ChatView";
+export { Markdown, type MarkdownProps } from "./markdown";
+export { DocumentContext, type DocumentHost } from "./documents-context";

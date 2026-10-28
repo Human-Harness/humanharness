@@ -87,6 +87,31 @@ export interface ParallelInfo {
   heldReason?: "engine";
 }
 
+/** One open task as the inbox and a harness's own panel see it (parallel spec §9.1). No paths, no chat content. */
+export interface TaskSummary {
+  id: string;
+  scope: string;
+  action: string | null;
+  label: string;
+  state: "running" | "waiting" | "queued" | "closing" | "checkpoint";
+  /** message: the agent finished its turn · answer: an open choices/input block · phase: a phase proposal. */
+  waitingFor?: "message" | "answer" | "phase";
+  phase?: string;
+  startedAt: string;
+  tokens: number;
+  /** Paths (relative to the folder, as the chat's notice names them) another task also changed (spec §5.3). */
+  conflict?: string[];
+  /** The focused task (the one the window shows). */
+  focused?: true;
+}
+
+/** What `tasks.list` answers: the open tasks, the queue pause, and the caps. */
+export interface TasksState {
+  tasks: TaskSummary[];
+  paused?: { reason: "out-of-quota" | "folder-move"; resetsAt?: string };
+  caps: ParallelCaps;
+}
+
 export interface EngineOption {
   id: string;
   name: string;
@@ -348,6 +373,8 @@ export interface ChatLoad {
   entries: ChatEntry[];
   /** Set when the folder's last session ran on another engine: that chat was archived. */
   switchedFrom?: string;
+  /** Board mode: the focused task's turn still running, to replay (parallel spec Decision 6). Its user line is in `entries`. */
+  live?: { user: { text: string; at: string }; events: Event[] };
 }
 
 export interface HistoryItem {
@@ -1086,6 +1113,20 @@ export interface HarnessClient {
   material: MaterialClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
+  /** Open tasks (parallel spec §9.1). Only with `state.parallel`: a main without it registers none of these channels (D0). */
+  tasks?: TasksClient;
+}
+
+/** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */
+export interface TasksClient {
+  list(): Promise<TasksState>;
+  onChange(listener: (state: TasksState) => void): () => void;
+  /** null: the start view. */
+  focus(id: string | null): Promise<void>;
+  /** Takes a queued message out; its text, for the box (Decision 7). Null when it already started. */
+  cancelQueued(id: string): Promise<string | null>;
+  /** Resumes the queues paused by an out-of-quota end (spec §7). */
+  resumeQueues(): Promise<void>;
 }
 
 /** A config with everything a turn needs (appearance and text size stay optional). */

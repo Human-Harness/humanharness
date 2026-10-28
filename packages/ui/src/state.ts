@@ -45,13 +45,21 @@ export type ChatAction =
   /** A local assistant message that the UI shows but never saves. */
   | { type: "notice"; text: string; at: string }
   /** The person's line put on screen at `at` for a start main then refused (a prepared task): it goes, with its turn. */
-  | { type: "withdrawn"; at: string };
+  | { type: "withdrawn"; at: string }
+  /**
+   * Board mode: the focused task's turn already runs and its user line is in the loaded entries: a live turn starts
+   * without a new entry, and the replayed events fill it (parallel spec Decision 6).
+   */
+  | { type: "resume"; at: string };
 
 export function initialChat(entries: ChatEntry[], stateBlocks: string[] = []): ChatState {
   return { entries, live: null, blockState: {}, stateBlocks: new Set(stateBlocks), limits: null };
 }
 
 const newId = () => Math.random().toString(36).slice(2);
+
+/** An answer that starts empty, as a turn's first event finds it. */
+const newLive = (): LiveTurn => ({ id: newId(), text: "", blocks: [], parts: [], activities: [] });
 
 export function reduceChat(state: ChatState, action: ChatAction): ChatState {
   const live = state.live;
@@ -91,8 +99,10 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             ...(action.timeUp ? { timeUp: true as const } : {}),
           },
         ],
-        live: { id: newId(), text: "", blocks: [], parts: [], activities: [] },
+        live: newLive(),
       };
+    case "resume":
+      return { ...state, live: newLive() };
     case "text":
       return live ? { ...state, live: { ...live, text: live.text + action.delta, parts: addText(live.parts, action.delta) } } : state;
     case "paragraph":

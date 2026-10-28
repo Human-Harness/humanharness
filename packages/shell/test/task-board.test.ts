@@ -561,3 +561,66 @@ describe("board edge cases (parallel spec §10)", () => {
   });
 });
 
+
+describe("summaries (parallel spec §9.1)", () => {
+  it("lists every open task with its state; queued wins over running", async () => {
+    const { board } = harness();
+    await board.start("intro");
+    await board.start("plan");
+    board.setQueued((id) => id === "t2");
+    const list = await board.summaries({ label: (t) => t.action ?? "Question" });
+    expect(list).toEqual([
+      expect.objectContaining({ id: "t1", state: "waiting", waitingFor: "message", action: "intro", label: "intro", tokens: 0, scope: "main" }),
+      expect.objectContaining({ id: "t2", state: "queued", action: "plan", focused: true }),
+    ]);
+    expect(list[0]).not.toHaveProperty("focused");
+    expect(list[1]).not.toHaveProperty("waitingFor");
+  });
+
+  it("names what a waiting task waits for, its phase, tokens and conflicts, and nothing else of the task", async () => {
+    const lanes = [
+      task("c", { startedAt: "2026-10-28T10:02:00Z", status: "running", scope: "s1", tokens: 1200, conflict: ["spec.md"] }),
+      task("a", {
+        startedAt: "2026-10-28T10:00:00Z",
+        action: undefined,
+        question: "a secret question",
+        session: { id: "sess", engine: "claude" } as never,
+        pendingInput: { blockId: "b", name: "choices" } as never,
+        phase: { id: "draft", startedAt: "2026-10-28T10:00:00Z" },
+      }),
+      task("b", { startedAt: "2026-10-28T10:01:00Z", phaseProposal: { to: "review", reason: "done" } }),
+    ];
+    const { board } = harness({ lanes, focus: "b" });
+    await board.restore();
+    const list = await board.summaries({ label: (t) => t.action ?? "Question" });
+    expect(list.map((s) => s.id)).toEqual(["a", "b", "c"]);
+    expect(list[0]).toEqual({ id: "a", scope: "main", action: null, label: "Question", state: "waiting", waitingFor: "answer", phase: "draft", startedAt: "2026-10-28T10:00:00Z", tokens: 0 });
+    expect(list[1]).toMatchObject({ waitingFor: "phase", focused: true });
+    expect(list[2]).toEqual({ id: "c", scope: "s1", action: "intro", label: "intro", state: "running", startedAt: "2026-10-28T10:02:00Z", tokens: 1200, conflict: ["spec.md"] });
+    expect(JSON.stringify(list)).not.toMatch(/secret|sess/);
+  });
+
+  it("leaves out a lane the board no longer holds and a lane with no task yet", async () => {
+    const { board, file, store, holds } = harness();
+    await board.start("intro");
+    let release!: () => void;
+    holds.set("plan", new Promise<void>((r) => (release = r)));
+    const starting = board.start("plan");
+    await vi.waitFor(() => expect(board.laneIds()).toEqual(["t1", "t2"]));
+    // t2's task isn't in tasks.json yet; a stray lane the board doesn't hold is ignored too.
+    await store.save({ ...file(), lanes: [...(file().lanes ?? []), task("stray")] });
+    expect((await board.summaries({ label: () => "x" })).map((s) => s.id)).toEqual(["t1"]);
+    release();
+    await starting;
+    expect((await board.summaries({ label: () => "x" })).map((s) => s.id)).toEqual(["t1", "t2"]);
+  });
+
+  it("isFocused names only the focused lane; none at the start view", async () => {
+    const { board } = harness();
+    await board.start("intro");
+    await board.start("plan");
+    expect([board.isFocused("t1"), board.isFocused("t2")]).toEqual([false, true]);
+    await board.focus(null);
+    expect([board.isFocused("t1"), board.isFocused("t2")]).toEqual([false, false]);
+  });
+});

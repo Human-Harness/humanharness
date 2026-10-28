@@ -68,6 +68,8 @@ import type {
   SidekickState,
   SidekickView,
   TaskTurnNotice,
+  TasksClient,
+  TasksState,
   TaskView,
   TestResult,
   TextSize,
@@ -166,7 +168,28 @@ export class FakeClient implements HarnessClient {
   moved: string[] = [];
   /** What moveFolder answers; default: success with the current state. */
   moveResult: MoveResult | null = null;
-  tasks: TaskView = { current: null, actions: {}, notes: [] };
+  private taskView: TaskView = { current: null, actions: {}, notes: [] };
+  /** What `tasks.list` answers (parallel spec §9.1). */
+  tasksState: TasksState = { tasks: [], caps: { tasks: 1, jobs: 1 } };
+  /** What `tasks.focus` was asked, in order. */
+  focusedTasks: (string | null)[] = [];
+  private readonly tasksApi: TasksClient = {
+    list: async () => this.tasksState,
+    onChange: () => () => undefined,
+    focus: async (id) => void this.focusedTasks.push(id),
+    cancelQueued: async () => null,
+    resumeQueues: async () => undefined,
+  };
+  /**
+   * The task view tests set and read (`getTasks`), which is also `client.tasks` (parallel spec §9.1): its methods sit on
+   * the prototype, so spreading it copies only the view.
+   */
+  get tasks(): TaskView & TasksClient {
+    return Object.assign(Object.create(this.tasksApi) as TasksClient, this.taskView);
+  }
+  set tasks(view: TaskView) {
+    this.taskView = view;
+  }
   chosen: ChoiceOption[] = [];
   /** The task each pick was sent for. */
   chosenTasks: string[] = [];
@@ -351,11 +374,11 @@ export class FakeClient implements HarnessClient {
     return this.moveResult ?? { ok: true as const, state: this.state };
   }
   emitTasks(view: TaskView) {
-    this.tasks = view;
+    this.taskView = view;
     for (const l of this.taskListeners) l(view);
   }
   async getTasks() {
-    return this.tasks;
+    return this.taskView;
   }
   onTasks(listener: (v: TaskView) => void) {
     this.taskListeners.add(listener);
@@ -382,10 +405,10 @@ export class FakeClient implements HarnessClient {
     if (this.respondError) throw this.respondError;
     const result: RespondResult = this.respondResult ?? { ok: true, display: "answered", value, answeredAt: "2026-10-25T10:00:00.000Z" };
     // Like the main process: a taken answer clears the task's pending question before `accepted` resolves.
-    const current = this.tasks.current;
+    const current = this.taskView.current;
     if (result.ok && current?.pendingInput === blockId) {
       const { pendingInput: _, ...rest } = current;
-      this.emitTasks({ ...this.tasks, current: rest });
+      this.emitTasks({ ...this.taskView, current: rest });
     }
     return result;
   }

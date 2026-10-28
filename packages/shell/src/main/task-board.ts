@@ -1,10 +1,10 @@
 import type { ParallelCaps } from "@humanharness/harness-sdk";
-import type { TaskView } from "@humanharness/ui/client";
+import type { TaskSummary, TaskView } from "@humanharness/ui/client";
 import { APP_SCOPE, isScopeId } from "@humanharness/workspace";
 import { type TasksFileStore, withTasksFile } from "./lane-store";
 import type { EngineHold } from "./parallel-config";
 import type { TaskManager } from "./task-manager";
-import { LANES_MAX, type TasksFile, interrupted, interruptedLanes, isLaneId, scopeOfTask } from "./task-store";
+import { type CurrentTask, LANES_MAX, type TasksFile, interrupted, interruptedLanes, isLaneId, scopeOfTask } from "./task-store";
 import type { TurnGate } from "./turn-gate";
 
 /** TaskManager methods a lane forwards as they are; the board's tests leave out the ones they don't use. */
@@ -83,6 +83,8 @@ export class TaskBoard {
   private readonly sleepTimers = new Map<string, unknown>();
   /** The board paused the queues for a folder move (and so lifts that pause, never another). */
   private movePaused = false;
+  /** Whether a lane's turn waits in the gate's queue (the host sets it to `gate.isQueued`). */
+  private queued: (id: string) => boolean = () => false;
 
   constructor(private readonly d: BoardDeps) {
     this.hold = { ...d.hold };
@@ -126,6 +128,16 @@ export class TaskBoard {
   /** The focused task's id; null at the start view. */
   focusedId(): string | null {
     return this.focusId;
+  }
+
+  /** Lane `id` is the one the window shows: only its events reach the window (Decision 6). */
+  isFocused(id: string): boolean {
+    return this.focusId !== null && this.focusId === id;
+  }
+
+  /** How `summaries` tells a queued turn (the host passes `gate.isQueued`). */
+  setQueued(fn: (id: string) => boolean): void {
+    this.queued = fn;
   }
 
   /** The lane the window shows, or the idle lane (start view). */
@@ -456,9 +468,39 @@ export class TaskBoard {
     this.sleepTimers.delete(id);
   }
 
-  /** The open tasks' ids, oldest first. Task 8 gives the full summaries. */
+  /** The open tasks' ids, in the order they opened. */
   async list(): Promise<{ id: string }[]> {
     return [...this.lanes.keys()].map((id) => ({ id }));
+  }
+
+  /**
+   * Every open task as the inbox sees it (parallel spec §9.1), oldest first. Only the board's lanes that have a task
+   * (a lane that closed, or whose task isn't saved yet, has none). `label`: the task's name (its action's label, or the
+   * start of its question), as the history names it. Nothing else of the task goes to the window.
+   */
+  async summaries(o: { label: (t: CurrentTask) => string }): Promise<TaskSummary[]> {
+    const lanes = ((await this.d.file.load()).lanes ?? []).filter((t) => this.lanes.has(t.id));
+    return lanes
+      .map((t, i) => ({ t, i }))
+      .sort((a, b) => Date.parse(a.t.startedAt) - Date.parse(b.t.startedAt) || a.i - b.i)
+      .map(({ t }) => this.summary(t, o.label));
+  }
+
+  private summary(t: CurrentTask, label: (t: CurrentTask) => string): TaskSummary {
+    const state: TaskSummary["state"] = this.queued(t.id) ? "queued" : t.status;
+    return {
+      id: t.id,
+      scope: scopeOfTask(t),
+      action: t.action ?? null,
+      label: label(t),
+      state,
+      ...(state === "waiting" ? { waitingFor: t.pendingInput ? "answer" : t.phaseProposal ? "phase" : "message" } : {}),
+      ...(t.phase ? { phase: t.phase.id } : {}),
+      startedAt: t.startedAt,
+      tokens: t.tokens ?? 0,
+      ...(t.conflict?.length ? { conflict: [...t.conflict] } : {}),
+      ...(this.isFocused(t.id) ? { focused: true as const } : {}),
+    };
   }
 
   private idleLane(): LaneHandle {

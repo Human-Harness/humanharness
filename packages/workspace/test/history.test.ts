@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, parseCommitMessage, withTrailer } from "../src";
+import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, appHistoryKeep, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -90,6 +90,24 @@ describe("History", () => {
     write(".harness/sidekick/events.jsonl", '{"outcome":"used"}\n{"outcome":"dismissed"}\n');
     await history.restore(before, "undo");
     expect(read(".harness/sidekick/events.jsonl")).toBe('{"outcome":"used"}\n{"outcome":"dismissed"}\n');
+  });
+
+  it("never tracks plugin state, plugin data or the attention inbox (plugins spec §3.3)", async () => {
+    const app = new History(folder, gitdir, [".harness/", "AGENTS.md"], appHistoryKeep(false));
+    write(".harness/plugins/oncall/state.json", '{"on":true}');
+    write(".harness/plugin-data/oncall/_app/queues.json", "[]");
+    write(".harness/attention.json", "[]");
+    write("a.md", "1");
+    const before = (await app.save("before"))!;
+    write(".harness/plugins/oncall/state.json", '{"on":false}');
+    write(".harness/plugin-data/oncall/_app/queues.json", '[{"key":"x"}]');
+    write(".harness/attention.json", '[{"key":"y"}]');
+    write("a.md", "2");
+    await app.restore(before, "undo");
+    expect(read("a.md")).toBe("1");
+    expect(read(".harness/plugins/oncall/state.json")).toBe('{"on":false}');
+    expect(read(".harness/plugin-data/oncall/_app/queues.json")).toBe('[{"key":"x"}]');
+    expect(read(".harness/attention.json")).toBe('[{"key":"y"}]');
   });
 
   it("lists entries newest first", async () => {

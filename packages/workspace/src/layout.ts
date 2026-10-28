@@ -49,7 +49,8 @@ export const DATA_PREFIX = ".harness/data/";
 /** When each record last changed (for "most recently changed", spec §4.4). Never tracked. */
 export const DATA_META_PREFIX = ".harness/data-meta/";
 
-function collectionName(name: string): string {
+/** `name` when it is a collection name; throws otherwise (it names a file). */
+export function collectionName(name: string): string {
   if (!COLLECTION_NAME.test(name)) throw new Error(`Invalid collection: "${name}"`);
   return name;
 }

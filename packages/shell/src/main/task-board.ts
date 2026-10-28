@@ -574,7 +574,12 @@ export class TaskBoard {
     }
   }
 
-  /** On an engine held at one session, a turn first puts every other idle lane's process to sleep; otherwise no hook. */
+  /**
+   * On an engine held at one session, a turn first puts every other lane's process to sleep; otherwise no hook. The
+   * gate runs one turn in all there and holds the slot while the hook runs, so no other lane is in a turn: one busy with
+   * an operation is between two of its turns (a checkpoint and the follow-up, a hand-over), and its process must go too.
+   * Its next turn waits for the sleep in flight (the host's ensureRuntime).
+   */
   private syncSleepHook(): void {
     const cfg = this.sleepCfg;
     if (!this.d.gate) return;
@@ -583,7 +588,7 @@ export class TaskBoard {
         ? async ({ id }) => {
             // One at a time; a failure fails the turn: two engine processes must never run at once.
             for (const l of [...this.lanes.values()]) {
-              if (l.id === id || l.isBusy()) continue;
+              if (l.id === id) continue;
               this.laneActive(l.id);
               await cfg.sleep(l.id);
             }

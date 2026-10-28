@@ -581,7 +581,7 @@ describe("board edge cases (parallel spec §10)", () => {
     board.laneWaiting("nope");
     expect(clock.armed.size).toBe(0);
   });
-  it("on an engine held at one session, a turn first puts every other idle lane to sleep, never a busy one", async () => {
+  it("on an engine held at one session, a turn first puts every other lane to sleep, one between two turns of an operation too", async () => {
     const gate = new TurnGate({ tasks: 2, jobs: 1 }, { hold: { singleSession: true } });
     const { board, made } = harness({}, { gate, hold: { singleSession: true } });
     const slept: string[] = [];
@@ -589,9 +589,10 @@ describe("board edge cases (parallel spec §10)", () => {
     await board.start("a");
     await board.start("b");
     await board.start("c");
+    // t3 is busy with an operation (a checkpoint ran, its follow-up comes next) but holds no slot: not in a turn.
     made[2].status = "running";
     const release = await gate.acquire("tasks", { id: "t1" });
-    expect(slept).toEqual(["t2"]);
+    expect(slept).toEqual(["t2", "t3"]);
     release();
     // A sleep that fails fails the turn: two engine processes must never run at once.
     board.setIdleSleep({ ms: 600_000, timer: heldTimers().timer, sleep: async () => Promise.reject(new Error("still running")) });

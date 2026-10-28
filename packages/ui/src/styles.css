@@ -725,3 +725,20 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-review-chip-warn { background: var(--hh-callout-warning); color: var(--hh-warn); }
 .hh-doc-card-missing { opacity: 0.6; cursor: default; }
 .hh-doc-card-missing .hh-doc-card-title { text-decoration: line-through; }
+/* The context panel (context-panel spec §5.1): the reader's slot; over the chat on narrow windows. */
+.hh-ctxp { display: flex; flex-direction: column; gap: 12px; min-width: 0; flex: 0 0 55%; box-sizing: border-box; padding: 12px 16px 24px; overflow-y: auto; border-left: 1px solid var(--hh-line); background: var(--hh-surface); }
+.hh-ctxp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-ctxp-head h2 { margin: 0; font-family: var(--hh-display); font-size: 17px; font-weight: 600; }
+.hh-ctxp-section h3 { margin: 8px 0 4px; font-size: 13px; color: var(--hh-slate); }
+.hh-ctxp-list, .hh-ctxp-notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.hh-ctxp-notes { margin: 2px 0 6px 16px; }
+.hh-ctxp-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.hh-ctxp-size { margin-left: auto; color: var(--hh-muted); font-size: 12px; white-space: nowrap; }
+.hh-ctxp-faint { opacity: 0.55; }
+.hh-ctxp-gone { text-decoration: line-through; color: var(--hh-muted); }
+.hh-ctxp-add { display: flex; flex-direction: column; gap: 6px; }
+.hh-ctxp-menu { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-ctxp-picked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.hh-ctxp-meter { display: inline-flex; padding: 2px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.hh-ctxp-meter:focus-visible { outline: 2px solid var(--hh-slate); outline-offset: 1px; }
+@media (max-width: 899px) { .hh-ctxp { position: fixed; inset: 52px 0 0 0; z-index: 5; border-left: 0; } }

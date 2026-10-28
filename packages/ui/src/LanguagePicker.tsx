@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, languageName, offeredLanguage, pickerLanguages } from "@humanharness/harness-sdk/language";
 import type { LanguageState } from "./client";
 import { ownName } from "./language";
-import { trapTab } from "./SettingsSheet";
+import { useDialogKeys } from "./focus";
 
 /** English and its variants (en-GB) need no translation: main answers them with the bundled English. */
 const isEnglish = (tag: Language) => tag === DEFAULT_LANGUAGE || tag.startsWith(`${DEFAULT_LANGUAGE}-`);
@@ -73,6 +73,7 @@ export function LanguagePicker({
       if (opener?.isConnected && opener.closest("[inert]") === null) opener.focus();
     };
   }, []);
+  useDialogKeys(dialog, onClose);
 
   const use = () => {
     if (pendingRef.current || !canUse) return;
@@ -96,16 +97,6 @@ export function LanguagePicker({
         aria-modal="true"
         aria-labelledby={`${id}-title`}
         aria-busy={pending || undefined}
-        onKeyDown={(e) => {
-          if (e.key === "Tab" && dialog.current) {
-            e.stopPropagation();
-            trapTab(dialog.current, e.nativeEvent);
-          }
-          if (e.key !== "Escape") return;
-          e.preventDefault();
-          e.stopPropagation();
-          onClose();
-        }}
       >
         <h2 id={`${id}-title`}>{t("language.pickTitle")}</h2>
         <input ref={search} type="search" aria-label={t("language.search")} placeholder={t("language.search")} value={query} onChange={(e) => setQuery(e.target.value)} />

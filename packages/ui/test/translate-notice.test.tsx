@@ -78,4 +78,29 @@ describe("TranslateNotice (spec §4)", () => {
     expect(document.activeElement).toBe(opener);
     opener.remove();
   });
+
+  it("Tab and Escape still work once focus has left the dialog, and never reach a document listener below", async () => {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    const below = vi.fn();
+    document.addEventListener("keydown", below);
+    const onCancel = vi.fn();
+    await renderIn("en", <TranslateNotice tag="es" harnessName="Demo" engineName="Claude Code" onTranslate={() => {}} onCancel={onCancel} />);
+    outside.focus();
+    fireEvent.keyDown(outside, { key: "Tab" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    outside.focus();
+    fireEvent.keyDown(outside, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(below).not.toHaveBeenCalled();
+    document.removeEventListener("keydown", below);
+    outside.remove();
+  });
+
+  it("a name with & round-trips unchanged", async () => {
+    await renderIn("en", <TranslateNotice tag="es" harnessName="R&D" engineName="A&B" onTranslate={() => {}} onCancel={() => {}} />);
+    const d = screen.getByRole("alertdialog");
+    expect(d.textContent).toContain("To show R&D in Español, your AI engine (A&B) will translate");
+    expect(d.textContent).not.toContain("&amp;");
+  });
 });

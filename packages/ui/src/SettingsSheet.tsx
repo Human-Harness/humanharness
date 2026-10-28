@@ -4,6 +4,7 @@ import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolder
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
+import { trapTab } from "./focus";
 import { HarnessSettingsTab } from "./HarnessSettingsTab";
 import { type Language, languageName } from "@humanharness/harness-sdk/language";
 import { ownName, systemLanguage } from "./language";
@@ -270,27 +271,6 @@ function LanguageRow({ state, language }: { state: AppState; language?: Language
       {language && open && <LanguageChooser control={language} start={open} harnessName={state.harness.name} onClose={() => setOpen(null)} />}
     </>
   );
-}
-
-const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/** Keeps Tab and Shift+Tab cycling inside the sheet (it is modal); the go-back confirmation uses it too. */
-export function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
-  const items = [...sheet.querySelectorAll<HTMLElement>(FOCUSABLE)];
-  if (items.length === 0) return;
-  const first = items[0];
-  const last = items[items.length - 1];
-  const active = document.activeElement;
-  if (!sheet.contains(active)) {
-    e.preventDefault();
-    first.focus();
-  } else if (e.shiftKey && active === first) {
-    e.preventDefault();
-    last.focus();
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault();
-    first.focus();
-  }
 }
 
 function GeneralTab({

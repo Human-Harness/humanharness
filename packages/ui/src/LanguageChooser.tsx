@@ -4,7 +4,7 @@ import type { Language } from "@humanharness/harness-sdk/language";
 import type { LanguageRun } from "./client";
 import type { LanguageControl } from "./language-control";
 import { LanguagePicker } from "./LanguagePicker";
-import { trapTab } from "./SettingsSheet";
+import { useDialogKeys } from "./focus";
 import { TranslateNotice } from "./TranslateNotice";
 
 /**
@@ -127,6 +127,7 @@ function RunProgress({ run, onCancel, onClose }: { run: LanguageRun; onCancel: (
       if (opener?.isConnected && opener.closest("[inert]") === null) opener.focus();
     };
   }, []);
+  useDialogKeys(dialog, onClose);
   return (
     <div className="hh-langpick-backdrop" onMouseDown={(e) => e.target === e.currentTarget && e.preventDefault()}>
       <div
@@ -135,16 +136,6 @@ function RunProgress({ run, onCancel, onClose }: { run: LanguageRun; onCancel: (
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${id}-title`}
-        onKeyDown={(e) => {
-          if (e.key === "Tab" && dialog.current) {
-            e.stopPropagation();
-            trapTab(dialog.current, e.nativeEvent);
-          }
-          if (e.key !== "Escape") return;
-          e.preventDefault();
-          e.stopPropagation();
-          onClose();
-        }}
       >
         <h2 id={`${id}-title`}>{t("language.pickTitle")}</h2>
         <p className="hh-langpick-progress" role="status">

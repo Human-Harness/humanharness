@@ -135,4 +135,19 @@ describe("LanguagePicker (spec §2, §3)", () => {
     document.body.removeEventListener("keydown", sheetKey);
     opener.remove();
   });
+
+  it("Tab and Escape still work after focus left the dialog (a backdrop click)", async () => {
+    const onClose = vi.fn();
+    const sheetKey = vi.fn();
+    document.addEventListener("keydown", sheetKey);
+    await renderIn("en", <LanguagePicker current="en" view={view} onPick={() => {}} onClose={onClose} />);
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(document.activeElement).toBe(screen.getByRole("searchbox"));
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(sheetKey).not.toHaveBeenCalled();
+    document.removeEventListener("keydown", sheetKey);
+  });
 });

@@ -2,7 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk/language";
 import { ownName } from "./language";
-import { trapTab } from "./SettingsSheet";
+import { useDialogKeys } from "./focus";
 
 /**
  * The notice before a translation run (spec §4, D3): what will run, on whose engine, and that legal texts stay English.
@@ -44,6 +44,7 @@ export function TranslateNotice({
       if (opener?.isConnected && opener.closest("[inert]") === null) opener.focus();
     };
   }, []);
+  useDialogKeys(dialog, onCancel);
   return (
     <div className="hh-langnotice-backdrop" onMouseDown={(e) => e.target === e.currentTarget && e.preventDefault()}>
       <div
@@ -54,16 +55,6 @@ export function TranslateNotice({
         aria-labelledby={`${id}-title`}
         aria-describedby={`${id}-text`}
         aria-busy={busy || undefined}
-        onKeyDown={(e) => {
-          if (e.key === "Tab" && dialog.current) {
-            e.stopPropagation();
-            trapTab(dialog.current, e.nativeEvent);
-          }
-          if (e.key !== "Escape") return;
-          e.preventDefault();
-          e.stopPropagation();
-          onCancel();
-        }}
       >
         <p id={`${id}-title`}>
           <strong>{t("language.noticeTitle")}</strong>

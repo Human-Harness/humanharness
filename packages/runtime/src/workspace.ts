@@ -127,6 +127,15 @@ function harnessMcpServers(harness: LoadedHarness, launcher: Launcher): McpServe
 /** The one stable spelling of a folder's real path: links resolved, the on-disk case (macOS). */
 const realNative = promisify(realpathCb.native);
 
+/** `inner` is `outer` or inside it. */
+function within(outer: string, inner: string): boolean {
+  const rel = path.relative(outer, inner);
+  return rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+/** The same folder, or one holds the other. */
+const overlaps = (a: string, b: string): boolean => within(a, b) || within(b, a);
+
 interface LinkedRepo {
   history: History;
   ledger: TurnLedger;
@@ -167,18 +176,24 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
 
   /** One history and ledger per tracked linked folder, by its real path, opened on the first turn that names it (hatches spec §3.4). */
   const linkedRepos = new Map<string, Promise<LinkedRepo>>();
+  // The main folder as given and as its real path: no linked history may overlap it.
+  const mainRoots = [...new Set([path.resolve(folder), await realNative(folder)])];
   async function linkedRepo(dir: string, gitdirOf: NonNullable<WorkspaceOptions["linkedGitdir"]>): Promise<LinkedRepo> {
+    // A stored link is its real path already: one that now leads elsewhere (swapped for a link) is refused, never followed.
     const real = await realNative(dir);
+    if (real !== path.resolve(dir)) throw new Error("A linked folder is no longer at its real path");
     // Checked and set with no await between: two slots opening the same folder share one repo.
     let repo = linkedRepos.get(real);
     if (!repo) {
+      // One history per file: a root that is, holds or sits inside the main folder or another linked history's root
+      // would let one turn's whole-folder restore undo another's committed work.
+      if (mainRoots.some((m) => overlaps(m, real))) throw new Error("A linked folder overlaps the work folder");
+      if ([...linkedRepos.keys()].some((k) => overlaps(k, real))) throw new Error("A linked folder overlaps another linked folder");
       repo = (async () => {
         const h = new History(real, await gitdirOf(real), [], []);
         await h.init();
         await h.save(START);
-        // An engine may name the folder as given or by its real path (TurnLedger.forFolder).
-        const given = path.resolve(dir);
-        return { history: h, ledger: new TurnLedger(given === real ? [real] : [real, given]) };
+        return { history: h, ledger: new TurnLedger([real]) };
       })();
       linkedRepos.set(real, repo);
       // A failed open is retried by the next turn.
@@ -327,13 +342,14 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
               emitOnce(fail("cancelled"));
               return;
             }
+            // Each tracked linked folder's history is opened before any window: one that can't be opened (gone, moved
+            // behind a link, overlapping another history) fails the turn before anything is committed, since its changes
+            // could never be undone. Fail closed, never a turn that silently goes untracked.
+            const repos: LinkedRepo[] = [];
+            for (const p of new Set(tracked.map((l) => l.path))) repos.push(await linkedRepo(p, gitdirOf!));
             w = await beginTurn(history, ledger, o.key, options.trailer);
-            // The same windows and trailer in each tracked linked folder, after the main folder's and before the engine
-            // runs. A folder that can't be opened fails the turn: its changes could never be undone.
-            for (const l of tracked) {
-              const repo = await linkedRepo(l.path, gitdirOf!);
-              linkedWindows.push({ repo, w: await beginTurn(repo.history, repo.ledger, o.key, options.trailer) });
-            }
+            // The same windows and trailer in each tracked linked folder, after the main folder's.
+            for (const repo of repos) linkedWindows.push({ repo, w: await beginTurn(repo.history, repo.ledger, o.key, options.trailer) });
             let final: Event | undefined;
             emitCurrent = emitOnce;
             await transport.turn(
@@ -347,7 +363,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
                   // Each ledger keeps only the paths inside its own folder.
                   if (e.type === "activity" && e.edits) {
                     ledger.noteEdits(o.key, e.edits, e.id);
-                    for (const { repo } of linkedWindows) repo.ledger.noteEdits(o.key, e.edits, e.id);
+                    // A relative path is the main folder's: linked ledgers get absolute paths only.
+                    const absolute = e.edits.filter((p) => path.isAbsolute(p));
+                    if (absolute.length > 0) for (const { repo } of linkedWindows) repo.ledger.noteEdits(o.key, absolute, e.id);
                   }
                   if (e.type === "activity" && e.state === "end") {
                     ledger.noteEditEnd(o.key, e.id, e.error === true);
@@ -362,15 +380,20 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             );
             emitCurrent = null;
             const f = (final ?? { type: "done", ok: false, error: { code: "agent-crashed" } }) as Extract<Event, { type: "done" }>;
-            const a = await endTurn(history, ledger, w, f, message, options.trailer);
-            // Only the main folder's attribution reaches onAttribution; a linked folder's conflicts are logged (Decision 11).
-            for (const { repo, w: lw } of linkedWindows) {
-              try {
-                const la = await endTurn(repo.history, repo.ledger, lw, f, message, options.trailer);
-                if (la?.conflicts.length) console.error("Conflicting changes in a linked folder", la.conflicts.length);
-              } catch (err) {
-                if (repo.ledger.running().includes(lw)) repo.ledger.close(o.key);
-                console.error("Could not record a linked folder's turn", err);
+            let a: TurnAttribution | null;
+            try {
+              a = await endTurn(history, ledger, w, f, message, options.trailer);
+            } finally {
+              // Even when the main folder's end failed: each linked folder still commits or restores its own turn.
+              // Only the main folder's attribution reaches onAttribution; a linked folder's conflicts are logged (Decision 11).
+              for (const { repo, w: lw } of linkedWindows) {
+                try {
+                  const la = await endTurn(repo.history, repo.ledger, lw, f, message, options.trailer);
+                  if (la?.conflicts.length) console.error("Conflicting changes in a linked folder", la.conflicts.length);
+                } catch (err) {
+                  if (repo.ledger.running().includes(lw)) repo.ledger.close(o.key);
+                  console.error("Could not record a linked folder's turn", err);
+                }
               }
             }
             // A card for each .md a turn that ran alone added or changed (document-reader spec §5.1), between its

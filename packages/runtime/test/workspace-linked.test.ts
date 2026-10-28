@@ -180,6 +180,91 @@ describe("tracked linked folders (hatches spec §3.4)", () => {
     expect(fs.existsSync(path.join(L, "b.md"))).toBe(false);
   });
 
+  it("a tracked folder inside another open linked history fails the turn; that history's work stays (probe E)", async () => {
+    const { ws, L, linkedGitdir, linkedDir } = await setup(({ L }) => ({
+      steps: [claudeResultLine(true)],
+      turns: [
+        { match: "^parent", steps: [{ write: { path: path.join(L, "p.md"), content: "P" } }, claudeResultLine(true)] },
+        { match: "^child", steps: [{ write: { path: path.join(L, "child", "y.md"), content: "Y" } }, claudeResultLine(true)] },
+        { match: "^crash", steps: [{ write: { path: path.join(L, "z.md"), content: "Z" } }, { signal: "SIGKILL" }] },
+      ],
+    }));
+    fs.mkdirSync(path.join(L, "child"));
+    // Lane A (scope X) tracks L; lane B (scope Y) tracks L/child: two histories over the same files.
+    const a = await ws.openSlot({ key: "t1" });
+    const b = await ws.openSlot({ key: "t2" });
+    await a.send("parent", () => {}, { trailer: { task: "t1" }, scope: { linked: [tracked(L)] } }).done;
+    const eb: Event[] = [];
+    await b.send("child", (e) => eb.push(e), { trailer: { task: "t2" }, scope: { linked: [tracked(path.join(L, "child"))] } }).done;
+    expect(eb.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed", detail: "A linked folder overlaps another linked folder" } });
+    // Refused before the engine ran: nothing written, no second history.
+    expect(fs.existsSync(path.join(L, "child", "y.md"))).toBe(false);
+    expect(linkedGitdir).toHaveBeenCalledTimes(1);
+    // A's crash restores only what its own history knows.
+    fs.writeFileSync(path.join(L, "child", "mine.md"), "M");
+    await a.send("crash", () => {}, { trailer: { task: "t1" }, scope: { linked: [tracked(L)] } }).done;
+    expect(fs.existsSync(path.join(L, "z.md"))).toBe(false);
+    expect(fs.readFileSync(path.join(L, "child", "mine.md"), "utf8")).toBe("M");
+    expect((await messages(linkedDir)).map((m) => m.split("\n")[0])).toEqual(["Start", "Turn: parent", "Before message"]);
+  });
+
+  it("a tracked folder that is, holds or sits inside the work folder fails the turn", async () => {
+    const { ws, folder, linkedGitdir } = await setup({ steps: [claudeResultLine(true)] });
+    const slot = await ws.openSlot({ key: "main" });
+    for (const p of [folder, path.dirname(folder), path.join(folder, "sub")]) {
+      fs.mkdirSync(p, { recursive: true });
+      const events: Event[] = [];
+      await slot.send("one", (e) => events.push(e), { trailer, scope: { linked: [tracked(p)] } }).done;
+      expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed", detail: "A linked folder overlaps the work folder" } });
+    }
+    expect(linkedGitdir).not.toHaveBeenCalled();
+  });
+
+  it("a stored folder swapped for a link fails the turn; no history opens at its target (probe D)", async () => {
+    const { ws, base, L, linkedGitdir } = await setup(({ L }) => ({ steps: [{ write: { path: path.join(L, "b.md"), content: "B" } }, claudeResultLine(true)] }));
+    const target = path.join(base, "Target");
+    fs.mkdirSync(target);
+    fs.rmSync(L, { recursive: true });
+    fs.symlinkSync(target, L);
+    const slot = await ws.openSlot({ key: "main" });
+    const events: Event[] = [];
+    await slot.send("one", (e) => events.push(e), { trailer, scope: { linked: [tracked(L)] } }).done;
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed", detail: "A linked folder is no longer at its real path" } });
+    expect(linkedGitdir).not.toHaveBeenCalled();
+    expect(fs.readdirSync(target)).toEqual([]);
+  });
+
+  it("a folder that can't be opened fails the turn before the engine runs", async () => {
+    const { ws, base, folder } = await setup({ steps: [{ write: { path: "a.md", content: "A" } }, claudeResultLine(true)] });
+    const slot = await ws.openSlot({ key: "main" });
+    const events: Event[] = [];
+    await slot.send("one", (e) => events.push(e), { trailer, scope: { linked: [tracked(path.join(base, "Gone"))] } }).done;
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+    expect(fs.existsSync(path.join(folder, "a.md"))).toBe(false);
+  });
+
+  it("a linked folder's failed recording is only logged: the turn ends ok, the main folder commits", async () => {
+    const { ws, L, gitdir } = await setup(({ L }) => ({
+      steps: [claudeResultLine(true)],
+      turns: [
+        { match: "^one", steps: [{ write: { path: path.join(L, "b.md"), content: "B" } }, claudeResultLine(true)] },
+        { match: "^two", steps: [{ write: { path: "a.md", content: "A" } }, { write: { path: path.join(L, "b.md"), content: "B2" } }, claudeResultLine(true)] },
+      ],
+    }));
+    const slot = await ws.openSlot({ key: "main" });
+    const scope = { linked: [tracked(L)] };
+    await slot.send("one", () => {}, { trailer, scope }).done;
+    const linked = (await ws.linkedHistory(L))!;
+    const save = linked.save.bind(linked);
+    vi.spyOn(linked, "save").mockImplementation((m, t) => (m.startsWith("Turn:") ? Promise.reject(new Error("disk full")) : save(m, t)));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events: Event[] = [];
+    await slot.send("two", (e) => events.push(e), { trailer, scope }).done;
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(logged).toHaveBeenCalledWith("Could not record a linked folder's turn", expect.any(Error));
+    expect((await messages(gitdir)).at(-1)).toBe(`Turn: two\n\n${T}`);
+  });
+
   it("two slots in the same scope share one linked history and ledger (attribution per folder)", async () => {
     const { ws, L, linkedGitdir, linkedDir } = await setup(({ L }) => ({
       steps: [claudeResultLine(true)],

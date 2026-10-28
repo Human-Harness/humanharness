@@ -18,6 +18,35 @@ An engine is an official AI command-line tool the person already uses. Human Har
 
   Every bash, edit and web call then comes as `session/request_permission`, and `decidePermission` answers it from the manifest, as for Codex. Sources: `anomalyco/opencode` v1.19.4 `packages/opencode/src/config/config.ts:482-489,559-561` and `packages/opencode/src/effect/runtime-flags.ts:24,28`; `dev` (2.x) `packages/cli/src/server-process.ts:128-133` and `packages/core/src/config/normalize.ts:180`; `opencode.ai/docs/cli` (environment variables). Known gaps: a tool rule inside one of the person's own OpenCode agents (`agent.<name>.permission`) applies after these and can loosen them; OpenCode reports `websearch` as kind `other`, so `exec` (not `web`) decides it.
 
+## Transports per slot
+
+- Each `SessionSlot` has its own transport (`packages/runtime/src/workspace.ts`, `turn.md`).
+- Slots never share an ACP adapter, even with the same profile. One slot's `session/cancel` or crash can't touch another.
+- Claude needs nothing new. Each turn is already its own `claude -p` process.
+- `slot.sleep()` closes an idle ACP adapter process (`AcpTransport.close()`) and keeps the session id. The next turn starts a new process and calls `session/load`. For Claude, `sleep()` does nothing.
+- When `session/load` fails, `openSession` falls back to `session/new`. Only an expired login is an error. The new session is reported through `onSession`. The earlier conversation is then lost, and nothing tells the person yet (part 2).
+- `AcpTransport` sets its event sink only after `openSession`. A history that `session/load` replays never reaches the window or the turn's `edits`. Keep that order.
+
+### Spike facts (PT-S1…S5)
+
+Source: `docs/spikes/2026-10-28-parallel-tasks.md`.
+
+- **PT-S1.** Two `claude -p` turns run at once in one folder. Each keeps its own session.
+- **PT-S1.** Claude names an edited file by its absolute real path. A folder opened through a link (`/tmp` on macOS) matches only after `realpath`. The ledger accepts both forms.
+- **PT-S2.** In `-p`, a tool call that needs approval is denied at once. The turn goes on to its end. Read-only shell commands run without approval.
+- **PT-S3.** Two Codex adapters run at once, in one folder or two.
+- **PT-S3.** A Codex edit names its path only in `content[].diff.path`. Its `locations` is empty. The path has the form of the `cwd` Codex was given, not the real path.
+- **PT-S3.** Codex often writes files through the shell. A shell write names no path. Those changes count as shared, never as an error.
+- **PT-S3.** One adapter uses about 0.3 GB of memory. `initialize` answers 2.2–2.6 s after spawn.
+- **PT-S4.** A Codex session survives its adapter process. A new process's `session/load` resumes it in about 2–3 s.
+
+### Spike limits
+
+- **PT-S4** was tested on the happy path only: three short runs. A long idle, a large session and a failed load were not tested.
+- **PT-S5** did not run: OpenCode was not installed. Two OpenCode processes at once are unverified. Part 2 caps OpenCode at one open slot until a spike shows it works.
+- **Codex edit paths** come only from `content[].diff.path`. Shell writes are unnamed, so with Codex `edits` misses many changes.
+- The spike ran the adapter through `npx`, not the copy the app bundles. Its timings and memory figures were read from stdout and not saved.
+
 ## Getting an engine ready
 
 Settings → Engine walks the steps in order; `engineProblem` (`packages/ui/src/client.ts`) picks the first one left from the status check (`detectEngine` in `packages/shell/src/main/engine-status.ts`): the legal notice, install (the official installer), update when below `minVersion`, sign in (the tool's own login, in the browser), and a tiny test prompt (`engine-check.ts`). The app finds the tool through the login shell's `PATH` (`engine-command.ts`), then in the folders official installers use (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/.opencode/bin` for OpenCode's installer, searched only for `opencode`); Codex runs from the copy bundled with the adapter. `~/.humanharness/engines.json` (`shared-config.ts`) keeps the accepted notice, the version and the last successful test, never credentials.

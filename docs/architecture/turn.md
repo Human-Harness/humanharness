@@ -4,9 +4,55 @@ A turn is one message from the person and the agent's complete answer. It crosse
 
 1. **Screen** (`packages/ui`): `ChatView` sends the message through the `HarnessClient` contract (`client.send`, or `client.choose` for an option of a `choices` block). The preload (`packages/shell/src/preload/index.ts`) turns each call into IPC.
 2. **Main process** (`packages/shell/src/main`): the IPC handler (`index.ts`) passes it to the `TaskManager` (`task-manager.ts`), which decides whether it starts a task or follows up the current one and builds a new task's first message (`task-prompts.ts`). `TurnController` (`turn-controller.ts`) logs the message, starts the runtime if needed and runs the turn.
-3. **Runtime** (`packages/runtime/src/runtime.ts`): saves the folder in the history, then runs the turn through the engine's transport. It opens a private local socket (the bridge) for blocks.
+3. **Runtime** (`packages/runtime/src/runtime.ts`): saves the folder in the history, then runs the turn through the engine's transport. It opens a private local socket (the bridge) for blocks. It is a workspace with one slot (below).
 4. **Engine tool**: `claude -p` or Codex through ACP. When the agent calls one of our tools, the `ui` MCP server (`packages/blocks/src/ui-server.ts`) checks it and forwards it over the bridge.
 5. **Back as events** (`packages/runtime/src/events.ts`): `text`, `paragraph`, `activity`, `block`, `limits`, `usage`, and exactly one `done`. The main process sends each event to the window as it comes; at the end it saves the answer in `.harness/chats/main.jsonl` (`chat-log.ts`) and the tokens in `.harness/usage.jsonl` (`usage-log.ts`), then sends `done`.
+
+## The workspace and its slots
+
+Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §4. Part 1 builds the split. The app still opens one slot.
+
+- `createWorkspace` (`packages/runtime/src/workspace.ts`) sets up the folder once. It runs `prepareFolder`, writes the instructions, opens the `History`, commits "Start" and opens the folder's `TurnLedger`.
+- `workspace.openSlot({ key, session, onSession, kind, permissions })` opens a `SessionSlot`. One slot runs one task's engine connection.
+- `createRuntime` keeps its signature and its `HarnessRuntime` shape. It is a workspace with one slot, keyed `"main"`. The CLI's `humanharness run` and the shell use it unchanged.
+- Slot keys are opaque to the runtime. Part 2 keys task slots by task id. Part 3 keys job slots `job:<run id>`.
+- One slot per task. Two windows of the same task would own each other's paths. A second turn of a task that already runs a turn throws "A turn of task X is already running".
+
+| Shared, one per folder | Per slot |
+|---|---|
+| The folder, `prepareFolder`, `AGENTS.md` and its refresh | The transport (a Claude `-p` process per turn, or an ACP adapter process) |
+| `History` and its one queue | The engine session |
+| The `TurnLedger` of running turns | The block bridge (`openBridge`) |
+| The `data` and `material` handlers | The data and material RPC sockets |
+| The harness's MCP server specs | The current turn's `AbortController` |
+
+**Per-slot sockets, shared handlers.**
+- Each slot opens its own bridge and its own data and material sockets.
+- Every socket calls the workspace's one `data` or `material` handler, with the slot's `SlotRef` (`{ key }`).
+- The socket decides the `SlotRef`. A request can't claim another slot's identity.
+- The data write lock stays the `DataStore`'s one queue.
+
+**A slot's calls.**
+- `send` keeps today's contract: one turn at a time per slot, and "A turn is already running" per slot.
+- `send` wraps the turn in `beginTurn` and `endTurn` (see `history.md`, "Parallel turns").
+- `onAttribution` gets what an overlapped turn owned, shared and collided with. It is never called for a turn that ran alone.
+- `endSession` ends the engine session. It refuses while a turn runs.
+- `sleep()` closes an idle ACP adapter process and keeps the session id. The next turn reconnects and `session/load`s it. For Claude it does nothing. Part 2 calls it after a task has waited 10 minutes.
+- `close()` cancels a running turn, waits for it, and closes the transport and the sockets. It frees the slot's key.
+- After `close()`, `send` and `endSession` throw "The slot is closed" and `sleep` does nothing. A closed ACP slot never reconnects.
+- One slot's cancel or crash never touches another slot.
+
+**Job slots.** `kind: "job"` sets `HH_JOB=1` on that slot's `ui` server. Its `permissions` go through `narrowPermissions`, so they only ever narrow the harness's. A task slot's specs are exactly today's.
+
+**Instructions refresh.** `workspace.refreshInstructions()` returns false while any slot runs a turn. It checks again after reading the settings. Part 2 schedules the retry.
+
+**Edits on activity events.**
+- An `activity` start event can carry `edits`: the paths the turn's edit tools named.
+- Claude: the `file_path` of `Edit`, `Write` and `MultiEdit`, and the `notebook_path` of `NotebookEdit`.
+- ACP: `locations` and the `diff` content's `path` of `edit`, `delete` and `move` calls. At most 50 paths per event.
+- Both parsers drop a path longer than 4096 characters (`EDIT_PATH_MAX`).
+- The slot passes them to `TurnLedger.noteEdits`. They are a hint, not a full list.
+- `forWindow` (`packages/shell/src/main/turn-controller.ts`) strips `edits` before an event reaches the window or the chat log. Any other event passes as is. The window's events are what they were.
 
 ## Turns the app starts
 
@@ -20,5 +66,5 @@ Input blocks get ids in these turns too, as in a run turn (`takesInputs` in `tur
 ## When it goes wrong
 
 - `done` carries an error code (`engine-not-installed`, `session-expired`, `out-of-quota`, `agent-crashed`, `cancelled`, `outdated-version`, `notice-required`); the screen shows a card with a way to fix it (`packages/ui/src/ErrorCard.tsx`).
-- If the agent crashes mid-turn, the runtime puts the folder back as it was before the message.
+- If the agent crashes mid-turn, the runtime puts the folder back as it was before the message. A turn that overlapped another puts back only its own paths (`history.md`, "Parallel turns").
 - Stop cancels the turn: Claude's process group gets SIGTERM, then SIGKILL after 3 seconds; Codex gets `session/cancel`.

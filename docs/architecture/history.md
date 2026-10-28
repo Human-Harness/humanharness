@@ -8,7 +8,7 @@
 ## History
 
 - Every change is recorded in an invisible local git history kept outside the folder (`packages/workspace/src/history.ts`, built on isomorphic-git). Its data lives in the app's data folder, one per folder (`historyDir` in `packages/shell/src/main/config.ts`), so cloud sync never touches it. In a harness with profiles each profile has its own (`historyDir(userData, <folder>/<profile>)`) and none tracks the root; deleting a profile puts its history in the system Trash after its folder (`docs/architecture/profiles.md`).
-- The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …". A person's data write is committed as "Data: <collection>" (see `data.md`).
+- The runtime (`packages/runtime/src/runtime.ts`, a workspace with one slot, see `turn.md`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …", committed only when the restore changed something; see "Parallel turns" below). A saved note is committed as "Note: …". A person's data write is committed as "Data: <collection>" (see `data.md`).
 - The history skips `.harness/` except `.harness/notes/` and `.harness/data/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
 - Symlinks are recorded as links (git mode 120000, the blob is the target path), never as what they point to. A restore never writes through a link: it removes a link in its way (the link, not its target), recreates a link entry as a link, writes regular files with `O_NOFOLLOW` where the OS has it, and skips (and logs) any entry whose parent folder resolves outside the folder through a linked folder. It checks the parent's real path before and again right after creating it, just before the write. An entry it can't write safely (outside the folder, a folder in its place, a link the OS won't create, such as on Windows without Developer Mode) is skipped and the rest of the restore goes on; `History.restoreReport` returns the skipped paths with the new commit.
 
@@ -38,6 +38,96 @@ An answer's `saveTo` write has no commit of its own: it lands in the follow-up t
 - "Go back here" restores one entry; it shows when the entry is hovered or focused. "Undo this task", under the entries, restores the group's `start`. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live, with a line saying why; the main process refuses them while a task operation runs or turns are held.
 - Going back resets every tracked file, `.harness/notes` included, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`) and lists them with their files (the task being undone first), and undoing a task names the count on its button ("Undo 3 tasks").
 - The open task's row says "In progress" (`currentTask`, the id of `TaskView.current`, which is the id in the commits' `Task:` trailer).
+
+### Parallel turns
+
+Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §5. Part 1 builds the history side. Nothing in the app runs two turns at once yet.
+
+**Turn windows.**
+- Each running turn has a `TurnWindow` in the folder's `TurnLedger` (`packages/runtime/src/turn-ledger.ts`).
+- A window opens before the turn's first await. Two turns that start together never both think they are alone.
+- A window is `alone` when no other window is open as it starts.
+- A window becomes `overlapped` once another window is open at any moment of its life.
+- `beginTurn` and `endTurn` (`packages/runtime/src/turn-commit.ts`) wrap every turn of a slot.
+
+**The alone path is today's.**
+- A window that never overlapped runs exactly the code the runtime ran before.
+- It snapshots "Before message" at the start.
+- At the end it commits "Turn: …" or "Stopped: …". On `agent-crashed` it restores its "Before message" point.
+- With one runtime no window ever overlaps.
+- With one runtime a crashed turn usually makes no "Undo: …" commit. Its restore point is its "Before message" snapshot. When nothing else committed during the turn, that snapshot is the last commit. The restored tree then equals it, and there is nothing to commit.
+
+**A turn that starts beside another.**
+- It takes no "Before message" snapshot. That commit would put the running turn's in-flight files under the new turn's trailer.
+- Its `before` is the queue head (`history.last()`), read before anything else.
+- It records `startDirty` instead: each dirty tracked path and its blob id (`History.dirtyState`).
+- An overlapped window stays in the ledger until its own commits are done. A turn that starts meanwhile is then not alone either.
+
+**Ownership by edit events.**
+- Activity start events carry `edits`: the paths the turn's edit tools named (see `turn.md`).
+- `TurnLedger.noteEdits` keeps only paths inside the folder. It accepts the folder as given and its real path. It stores folder-relative paths in NFC form.
+- `edits` is only a hint. An engine can change a file without naming it, for example Codex through the shell.
+- At the end, `History.changedSince(startDirty)` lists the paths that changed during the turn. A path dirty at the start counts only if its blob id changed.
+- `attribute()` (`packages/workspace/src/attribution.ts`) gives each changed path an owner:
+  - a path this turn named is owned, even when another turn named it too;
+  - a path only another running turn named is left for that turn;
+  - every other changed path is shared, including paths no turn named.
+- The ending turn's own task never counts among the others.
+- Paths compare in NFC form, so a macOS NFD name matches its edit event.
+
+**Commits of an overlapped turn.**
+- `History.commitPaths(paths, message, trailer)` commits only the listed paths on top of the queue head. It returns null when nothing changed.
+- The owned paths go first, as "Turn: …" or "Stopped: …".
+- The shared paths follow in a second commit, "Shared: …" (`SHARED_PREFIX`). It carries the same `Task:` trailer and one `Shared: <task id>` line per other running task, at most 8.
+- No shared path means no second commit.
+- Other tasks' in-flight changes stay in the working tree, uncommitted.
+
+**Crash restore with overlap.**
+- `History.restorePaths(paths, sha, message, trailer)` puts back only the listed paths from `sha`. It uses the same `writeEntry` and link checks as `restore`. It ignores non-canonical paths. It deletes a path absent at `sha` only when the folder has that exact name.
+- A crashed overlapped turn restores from "HEAD", resolved inside the restore's own queue entry. A commit another turn made meanwhile is kept.
+- It restores only owned paths that no other running window named and that were not dirty at its start.
+- Owned paths it keeps are logged ("Crash restore left paths others also hold"). Shared paths are left alone and logged too.
+- A crashed turn may therefore leave partial edits on shared or start-dirty paths.
+
+**Conflicts.**
+- After its commits, `endTurn` looks at the commits since `before` (at most 200, `History.commitsSince`).
+- A path is a conflict when this turn committed it and another task's commit changed it in that span.
+- The check is best effort. A failure is logged ("Conflict check failed") and reports no conflict.
+- The slot's `onAttribution` gets `{ owned, shared, with, conflicts }`. It is called only for an overlapped turn. Part 2 shows it.
+
+**One queue.**
+- Every new method goes through `History`'s one `serialize` queue: `commitPaths`, `restorePaths`, `dirtyState`, `changedSince`, `commitsSince`.
+- `changedSince`, the commits and `commitsSince` are separate queue entries. Another turn's commit can land between them.
+
+**Trailers.**
+- A job's commit adds `Job: <job id>` (part 3 writes it).
+- `withTrailer` drops a `Shared:` line naming the commit's own task, and duplicates.
+- Without `job` and `shared`, `withTrailer` writes exactly what it did before.
+
+**A task's own changes.**
+- `History.tasks(depth)` without options is unchanged.
+- `History.tasks(depth, { ownCommits: true })` builds each task's changes from its own commits only. Changes other tasks committed between them don't count.
+- It combines the commits oldest first: added then changed is added, added then deleted is nothing, deleted then added is changed.
+- It skips the task's opening "Before message" commit. That commit holds the person's edits, not the task's.
+- On a history with no overlap, both modes return the same changes.
+
+**Undo by paths.**
+- `packages/workspace/src/undo-paths.ts` has helpers for "Undo this task" with parallel tasks. Part 2 wires them.
+- A task's owned paths come from its commits without `Shared:` lines. Its shared paths come from its `Shared:` commits.
+- Both skip the task's start commit and non-canonical paths.
+- `laterChangesSharing(commits, task, paths)` finds later changes to the same paths. It is pure.
+- It decides by commit order, not by dates.
+- It counts every commit that is not the task's own and touches one of the paths.
+- It returns `{ tasks, outside }`. `outside` lists the commits outside any task.
+- `laterChangesOf(history, task, paths)` runs it over `commitsSince(task.start)`.
+- It doesn't see uncommitted changes in the working tree. Part 2 has to check those.
+- Part 2 refuses or warns about later changes before an undo.
+- Part 2 passes only these helpers' paths to `restorePaths`.
+
+**D0.**
+- A harness without `parallel` or `jobs` writes the same commits as before: subjects, trailers, trees and order.
+- `packages/runtime/test/runtime-d0.test.ts` pins them through `createRuntime`: ok, stopped, crashed and no-change turns, with every tree as path → content.
+- `packages/e2e/tests/history.spec.ts` pins the demo flow's commit messages end to end.
 
 ## Backup
 
@@ -94,6 +184,7 @@ What under `.harness/` names a place: only notes' `files:` (agent-provided paths
 
 - A history the root kept before the harness added profiles is not moved by a folder move: no history tracks the root any more.
 - No size limit for the history yet: a folder with large media inflates it in the app's data folder.
+- Parallel turns: a turn's `edits` set has no size limit. A turn that reverts another running turn's change to HEAD drops it from that turn's `changedSince` with no conflict. `saveNow` still throws if a file vanishes between `statusMatrix` and `git.add`.
 - A restore's skipped paths (`RestoreResult.skipped`) are only logged: the History panel doesn't tell the person yet.
 - A restore checks a file's parent folder right before writing, but another process could still swap that folder for a link between the check and the write. Where the OS has no `O_NOFOLLOW` (Windows), the last path part isn't protected that way either; only the `lstat` check before the write is.
 - A move whose history couldn't follow and whose config couldn't be put back leaves its journal, and the app runs on the copy until the next start. History writes meanwhile go to a new history at the new place, which `recoverMove` then sets aside (`<history>.replaced-<ms>`, kept 30 days) to move the old one in: those commits are only in the set-aside history.

@@ -28,7 +28,7 @@
     "done": "Done",
     "tabs": { "general": "General", "setup": "Setup", "engine": "Engine", "models": "Models", "usage": "Usage" },
     "language": "Language",
-    "languageHint": "The app's texts are in English for now. The AI answers in this language.",
+    "languageHint": "The AI always thinks in English and writes to you in this language.",
     "appearance": "Appearance",
     "appearanceSystem": "Automatic",
     "appearanceLight": "Light",
@@ -59,6 +59,32 @@
       "failed": "That didn't save. Try again."
     }
   },
+  "language": {
+    "change": "Change…",
+    "pickTitle": "Language",
+    "search": "Search languages",
+    "noMatch": "No language matches.",
+    "use": "Use",
+    "cancel": "Cancel",
+    "close": "Close",
+    "ready": "Ready",
+    "needsEngine": "Connect an AI engine to translate the app.",
+    "noticeTitle": "Translate the app?",
+    "notice": "To show {{name}} in <b>{{language}}</b>, your AI engine ({{engine}}) will translate the app's texts. It runs once, takes a minute or two and uses a little of your plan. Legal texts stay in English.",
+    "translate": "Translate",
+    "progress": "Translating… {{done}} of {{total}}",
+    "stopped": "The translation stopped. What it finished is kept.",
+    "stoppedQuota": "Your plan's limit was reached. Try again later.",
+    "tryAgain": "Try again",
+    "newTexts": "Some texts are new. Translate them?",
+    "notYet": "The app's texts aren't in {{language}} yet.",
+    "offerTitle": "Use {{name}} in another language?",
+    "offerSuggested": "Suggested: {{language}}",
+    "offerChoose": "Choose language",
+    "offerLater": "Not now",
+    "legalEnglish": "Legal texts are shown in English.",
+    "failed": "That didn't work. Try again."
+  },
   "setup": {
     "language": "Language",
     "folder": "Your folder",
@@ -87,14 +113,8 @@
     "version": "Installed version",
     "signOut": "Sign out",
     "signingOut": "Signing out…",
-    "noticeTitle": "Before using {{engine}}",
-    "noticeProvider": "{{engine}} is a service of {{provider}}. What you write here, and the files in your folder that the AI reads, are sent to {{where}}.",
-    "noticeTraining": "Training on your data: {{trains}}",
-    "noticeAccount": "You use your own {{provider}} account ({{plan}}) under their terms. This app is not made or endorsed by {{provider}}.",
-    "noticeContent": "Answers are written by {{provider}}'s AI with your account. Check what matters: this app is not responsible for what the AI writes.",
     "terms": "{{provider}} terms",
     "privacy": "{{provider}} privacy policy",
-    "accept": "I understand and accept",
     "continue": "Continue",
     "cancel": "Cancel",
     "checking": "Checking {{engine}} on this computer…",
@@ -113,7 +133,6 @@
     "copied": "Copied",
     "copyFailed": "I couldn't copy it. Select the command above and copy it.",
     "openTerminal": "Open Terminal",
-    "noticeUserProvider": "You choose the provider in {{engine}}. Its terms and privacy rules apply between you and that provider.",
     "providerTitle": "Choose a provider in {{engine}}",
     "providerText": "{{engine}} works with the provider you pick: an API key you have, or a model on this computer. You set it up in {{engine}} itself; the app never sees your key.",
     "providerStep1": "Open Terminal and paste the command.",
@@ -155,6 +174,17 @@
     "checkFailed": "I couldn't check {{engine}} on this computer.",
     "details": "Details",
     "timedOut": "This took too long, so I stopped it. Try again."
+  },
+  "legal": {
+    "engine": {
+      "noticeTitle": "Before using {{engine}}",
+      "noticeProvider": "{{engine}} is a service of {{provider}}. What you write here, and the files in your folder that the AI reads, are sent to {{where}}.",
+      "noticeTraining": "Training on your data: {{trains}}",
+      "noticeAccount": "You use your own {{provider}} account ({{plan}}) under their terms. This app is not made or endorsed by {{provider}}.",
+      "noticeContent": "Answers are written by {{provider}}'s AI with your account. Check what matters: this app is not responsible for what the AI writes.",
+      "noticeUserProvider": "You choose the provider in {{engine}}. Its terms and privacy rules apply between you and that provider.",
+      "accept": "I understand and accept"
+    }
   },
   "usage": {
     "byScope": "Usage by {{plural}}",
@@ -606,7 +636,8 @@
     "readyTitle": "All set",
     "readyFolder": "Folder",
     "readyEngine": "Engine",
-    "readyHint": "You can change all of this whenever you like in Settings."
+    "readyHint": "You can change all of this whenever you like in Settings.",
+    "languageLater": "You can choose the app's language once it's set up."
   },
   "setupSteps": {
     "skip": "Skip",

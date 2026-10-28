@@ -4,6 +4,12 @@ export * from "./usage";
 export { ScopePicker } from "./ScopePicker";
 export { PhaseStepper } from "./PhaseStepper";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
+export { LanguagePicker } from "./LanguagePicker";
+export { TranslateNotice } from "./TranslateNotice";
+export { LanguageChooser } from "./LanguageChooser";
+export { type LanguageControl, useLanguage } from "./language-control";
+// A harness's own legal blocks (keys under `legal.`, Decision 13) use these: lang="en" and the "shown in English" line.
+export { LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
 export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
 export { ContextPanel, type ContextPanelProps } from "./ContextPanel";

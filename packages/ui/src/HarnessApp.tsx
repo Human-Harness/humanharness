@@ -10,6 +10,7 @@ import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow,
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import { shownLanguage, systemLanguage } from "./language";
+import { type LanguageControl, useLanguage } from "./language-control";
 import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
@@ -116,7 +117,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     void (async () => {
       try {
         const s = await client.getState();
-        const instance = await createI18n(s.config.language ?? systemLanguage(), localesRef.current);
+        const lang = s.config.language ?? systemLanguage();
+        // Plan 5b: the saved language's cached translation; English and its variants ask for nothing (D0).
+        const english = lang === "en" || lang.startsWith("en-");
+        const strings = !english && client.language ? await client.language.strings(lang, localesRef.current?.en ?? {}).catch(() => ({})) : {};
+        const instance = await createI18n(lang, localesRef.current, strings);
         if (cancelled) return;
         setI18n(instance);
         setState(s);
@@ -134,7 +139,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   useEffect(() => {
     if (!i18n) return;
-    // The language the text is shown in: English until plan 5b translates the app.
+    // The language the text is shown in: the saved one once its translation is loaded.
     const apply = () => {
       document.documentElement.lang = shownLanguage(i18n);
     };
@@ -144,6 +149,22 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       i18n.off("languageChanged", apply);
     };
   }, [i18n]);
+
+  /** Language on demand (plan 5b): asks main for nothing until the Language row, the picker or the offer card loads it. */
+  // Main also saves `languageOffered` when a non-English language is chosen or its run starts; the window's copy follows,
+  // so Home's offer card stays answered (and stops asking for the state) without a reload.
+  const english = (tag: string) => tag === "en" || tag.startsWith("en-");
+  const control = useLanguage(client, i18n, locales?.en ?? {}, (tag) =>
+    setState((s) => s && { ...s, config: { ...s.config, language: tag, ...(english(tag) ? {} : { languageOffered: true }) } }),
+  );
+  const language: LanguageControl = {
+    ...control,
+    translate: async (tag) => {
+      const ok = await control.translate(tag);
+      if (ok) setState((s) => s && { ...s, config: { ...s.config, languageOffered: true } });
+      return ok;
+    },
+  };
 
   // ⌘+, ⌘− and ⌘0 change the text size in the main process: Settings shows the new one.
   useEffect(() => client.onTextSize((textSize) => setState((s) => s && { ...s, config: { ...s.config, textSize } })), [client]);
@@ -284,6 +305,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onEngine={() => setSettings("engine")}
             move={move}
             onAddProfile={addProfile}
+            language={client.language ? language : undefined}
           />
         )}
       </div>
@@ -301,6 +323,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             openSetup(step ? { step, only: true, back } : {});
           }}
           move={move}
+          language={client.language ? language : undefined}
         />
       )}
     </I18nextProvider>

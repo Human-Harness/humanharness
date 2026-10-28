@@ -19,9 +19,14 @@ import type {
   EngineStatus,
   Event,
   FolderPick,
+  GeneratedStrings,
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  LanguageChoose,
+  LanguageClient,
+  LanguageStart,
+  LanguageState,
   MaterialAddResult,
   MaterialChoice,
   MaterialResult,
@@ -1018,6 +1023,56 @@ export class FakeClient implements HarnessClient {
       this.materialListeners.add(l);
       return () => {
         this.materialListeners.delete(l);
+      };
+    },
+  };
+
+  /** client.language (plan 5b): what state() answers, calls made, and listeners. Every answer is data. */
+  languageState: LanguageState = { language: "en", cached: [], missing: 0, canTranslate: true, engineName: "Claude Code", run: null };
+  languageStrings: Record<string, GeneratedStrings> = {};
+  languageCalls: { op: string; args: unknown[] }[] = [];
+  chooseAnswer: LanguageChoose | null = null;
+  translateAnswer: LanguageStart = { ok: true };
+  /** Holds state() and strings() answers until it resolves (to test late answers). */
+  languageGate: Promise<void> | null = null;
+  languageListeners = new Set<(s: LanguageState) => void>();
+  pushLanguage(s: Partial<LanguageState>) {
+    this.languageState = { ...this.languageState, ...s };
+    for (const l of this.languageListeners) l(this.languageState);
+  }
+  language: LanguageClient = {
+    state: async (harness) => {
+      this.languageCalls.push({ op: "state", args: [harness] });
+      const answer = this.languageState;
+      if (this.languageGate) await this.languageGate;
+      return answer;
+    },
+    choose: async (tag, harness) => {
+      this.languageCalls.push({ op: "choose", args: [tag, harness] });
+      if (this.chooseAnswer) return this.chooseAnswer;
+      const complete = tag === "en" || this.languageState.cached.some((c) => c.tag === tag && c.complete);
+      if (!complete) return { ok: false, reason: "needs-translation" };
+      this.languageState = { ...this.languageState, language: tag };
+      return { ok: true, language: tag, strings: this.languageStrings[tag] ?? {} };
+    },
+    translate: async (tag, harness) => {
+      this.languageCalls.push({ op: "translate", args: [tag, harness] });
+      return this.translateAnswer;
+    },
+    cancel: async () => {
+      this.languageCalls.push({ op: "cancel", args: [] });
+      return { ok: true };
+    },
+    strings: async (tag, harness) => {
+      this.languageCalls.push({ op: "strings", args: [tag, harness] });
+      const answer = this.languageStrings[tag] ?? {};
+      if (this.languageGate) await this.languageGate;
+      return answer;
+    },
+    onChange: (l) => {
+      this.languageListeners.add(l);
+      return () => {
+        this.languageListeners.delete(l);
       };
     },
   };

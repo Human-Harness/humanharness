@@ -2,7 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileRestorePrompt } from "./client";
 import { authorName, timeAgo } from "./FileTimeline";
-import { trapTab } from "./SettingsSheet";
+import { trapTab } from "./focus";
 
 /**
  * The core's "go back?" (file-timeline spec §5): says which file, to whose version and when, and that nothing else in

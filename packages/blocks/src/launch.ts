@@ -64,3 +64,19 @@ export function dataServerSpec(opts: {
     env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token },
   };
 }
+
+/** The `translate` MCP server (language spec §5): `save_translation` asks the app over `rpc`. */
+export function translateServerSpec(opts: {
+  rpc: { path: string; token: string };
+  launcher: Launcher;
+  /** Built entry for the translate server (app); defaults to the TS source (dev). */
+  entry?: string;
+}): McpServerSpec {
+  const entry = opts.entry ?? fileURLToPath(new URL("./translate-server-bin.ts", import.meta.url));
+  return {
+    name: "translate",
+    command: opts.launcher.command,
+    args: [...opts.launcher.args, entry],
+    env: { ...opts.launcher.env, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token },
+  };
+}

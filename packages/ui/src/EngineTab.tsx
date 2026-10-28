@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EngineIcon } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
-import { EngineOnboarding } from "./EngineOnboarding";
+import { EngineOnboarding, LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
 export function errorDetail(err: unknown): string {
@@ -30,6 +30,7 @@ export function EngineTab({
   onSelection?: (engineId: string, ready: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const legalLang = useLegalLang();
   const current = state.config.engineId;
   const [selected, setSelected] = useState(current ?? state.engines[0]?.id);
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
@@ -230,7 +231,8 @@ export function EngineTab({
                   <span>{status.version}</span>
                 </div>
               </div>
-              <p className="hh-caption">{t("engine.noticeContent", { provider: engine.provider })}</p>
+              <p className="hh-caption" lang={legalLang}>{t("legal.engine.noticeContent", { provider: engine.provider })}</p>
+              <LegalInEnglish />
             </>
           )}
         </>

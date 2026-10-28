@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, type WebContents, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell, webContents } from "electron";
-import { electronLauncher } from "@humanharness/blocks";
+import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import {
   DEFAULT_LANGUAGE,
@@ -29,8 +29,9 @@ import {
   settingsView,
   stageTier,
 } from "@humanharness/harness-sdk";
+import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
-import { type Event, type HarnessRuntime, createRuntime, runSystemTask } from "@humanharness/runtime";
+import { type Event, type HarnessRuntime, type SystemTaskResult, createRuntime, runSystemSession, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
@@ -94,6 +95,7 @@ import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, pinnedBudget, resolveProfile } from "./models";
 import { ContextService } from "./context";
 import { contextHandlers } from "./context-ipc";
+import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
@@ -107,7 +109,18 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
+import {
+  type UsageRecord,
+  UsageLog,
+  compactionRecord,
+  measuredMaterialCosts,
+  profileMeta,
+  profilesUsage,
+  summarizeUsage,
+  translateRecord,
+  usageRecord,
+  withSpent,
+} from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { DocumentSessions } from "./document-sessions";
@@ -119,6 +132,8 @@ import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
+import { TranslationCache } from "./translation-cache";
+import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
@@ -976,6 +991,115 @@ const materialStageDeps: MaterialStageDeps = {
   log: (base, record) => new UsageLog(base).append(record),
 };
 
+/** The model key of a translation run (language spec §5): not listed in Settings › Models, so always the light tier. */
+const TRANSLATE_KEY = "_translate";
+/** How long an engine check is reused: the language state is read on every push, and a run pushes every turn. */
+const ENGINE_CHECK_MS = 30_000;
+
+/** Language on demand (plan 5b); built once the harness is loaded. Nothing is written until a run saves (D0). */
+let translation: TranslationService | null = null;
+let engineCheck: { id: string; at: number; ready: Promise<boolean> } | null = null;
+
+/**
+ * Whether the engine could run a translation now: installed, not outdated, not signed out (the runtime's own start
+ * checks). A fake engine (tests, mock mode) always can. Reused for ENGINE_CHECK_MS unless `fresh`.
+ */
+function engineReady(engine: EngineDef, fresh = false): Promise<boolean> {
+  if (hooks.engines?.[engine.id]) return Promise.resolve(true);
+  const now = Date.now();
+  if (!fresh && engineCheck?.id === engine.id && now - engineCheck.at < ENGINE_CHECK_MS) return engineCheck.ready;
+  const ready = detectEngine(engine, commandDeps, shared).then(
+    (s) => s.installed && !s.outdated && s.loggedIn !== false,
+    () => false,
+  );
+  engineCheck = { id: engine.id, at: now, ready };
+  return ready;
+}
+
+/**
+ * The set-up engine when a run could use it (the app is set up, its notice accepted), else null. It reads the
+ * saved config, not validConfig(): with profiles and no active profile there is no base, but the engine is ready.
+ */
+async function translateEngine(fresh = false): Promise<EngineDef | null> {
+  const c = await config.load();
+  if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
+  const engine = getEngine(c.engineId);
+  return (await engineReady(engine, fresh)) ? engine : null;
+}
+
+function buildTranslation(): TranslationService {
+  return new TranslationService({
+    cache: new TranslationCache(app.getPath("userData")),
+    core: CORE_EN,
+    ...(harness.tone ? { tone: harness.tone } : {}),
+    language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
+    saveLanguage: async (tag) => {
+      await config.save({ language: tag });
+    },
+    answerOffer: async () => {
+      await config.save({ languageOffered: true });
+    },
+    // Spec §3: "no-engine" also covers an engine with a problem; mock mode never translates.
+    available: async () => {
+      if (hooks.mock) return "mock";
+      return (await translateEngine()) ? true : "no-engine";
+    },
+    engineName: async () => {
+      const c = await config.load();
+      return isConfigured(c) ? getEngine(c.engineId).name : undefined;
+    },
+    prepare: async () => {
+      if (hooks.mock) return null;
+      const engine = await translateEngine(true);
+      if (!engine) return null;
+      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps).catch(() => null));
+      if (!cmd) return null;
+      const models = cleanModels((await config.load()).models);
+      const saved = await savedOffer(engine.id);
+      const profile = await supportedEffort(
+        firstOffered(resolveProfile({ engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models }), models, saved.models),
+        saved,
+      );
+      const launcher = electronLauncher(process.execPath);
+      // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
+      // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
+      // batch is 1-based.
+      const log = async (r: SystemTaskResult, turn: number, tag: string) => {
+        const c = await validConfig();
+        if (!c) return;
+        const record = translateRecord({
+          engine: engine.id,
+          language: tag,
+          batch: turn + 1,
+          profile,
+          ok: r.ok,
+          ...(r.ok && r.usage ? { usage: r.usage } : {}),
+          ...(r.limits ? { limits: r.limits } : {}),
+        });
+        await new UsageLog(baseOf(c)).append(record);
+      };
+      const run: Runner = (o) =>
+        runSystemSession({
+          engine,
+          command: cmd.command,
+          env: cmd.env,
+          server: (rpc) => translateServerSpec({ rpc, launcher, entry: path.join(here, "translate-server.js") }),
+          parent: path.join(app.getPath("userData"), "translate-work"),
+          handle: o.handle,
+          next: o.next,
+          signal: o.signal,
+          profile,
+          onTurn: async (r, turn) => {
+            await log(r, turn, o.tag).catch((err: unknown) => console.error("Could not record the translation turn", err));
+            await o.onTurn(r, turn);
+          },
+        });
+      return { engineName: engine.name, run };
+    },
+    send: (state) => sendToWindow("hh:language", state),
+  });
+}
+
 /** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
 async function buildMaterial(): Promise<MaterialService | null> {
   const m = harness.material;
@@ -1056,6 +1180,8 @@ function buildMaterialJobs(svc: MaterialService): MaterialJobs<Job> {
 async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
   if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
     const engineId = patch.engineId;
+    // A translation run belongs to the old engine: it stops, what it saved stays (plan Decision 12).
+    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
     await guards.switchEngine(
       {
         // A profile switch counts too: once its task has closed nothing runs, yet its runtime and profile are pending.
@@ -1523,6 +1649,8 @@ function registerIpc() {
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
   for (const [channel, fn] of Object.entries(fileHandlers(fileTimelines))) handle(channel, fn);
   for (const [channel, fn] of Object.entries(contextHandlers(contextSvc))) handle(channel, fn);
+  // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
+  if (translation) for (const [channel, fn] of Object.entries(languageHandlers(translation))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
@@ -1660,6 +1788,8 @@ function registerIpc() {
     await new Promise<void>((resolve, reject) => execFile(terminal.command, terminal.args, (err) => (err ? reject(err) : resolve())));
   });
   handle("hh:resetSharedConfig", async () => {
+    // A reset drops the engine set-up: a translation run must not keep using it.
+    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
     await shared.reset();
   });
   handle("hh:revealFolder", async () => {
@@ -1876,6 +2006,7 @@ if (loaded) {
   }
   materialSvc = await buildMaterial();
   materialJobs = materialSvc ? buildMaterialJobs(materialSvc) : null;
+  translation = buildTranslation();
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -1956,6 +2087,8 @@ if (primary) {
       // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
       await moving?.catch(() => undefined);
       await Promise.all([setupStopped, testStopped]);
+      // A translation run stops; the batches it saved stay.
+      await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
       try {
         await dropRuntime();
       } catch (err) {

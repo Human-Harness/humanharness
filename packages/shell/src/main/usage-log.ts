@@ -21,9 +21,9 @@ interface ProfileFields {
  * quiet note before the cap), `phase-change` (the brief of the phase the task enters) and `wrap-up` (the time box's
  * last turn before the close phase). Not the task's phase: that is `taskPhase`. `material`: an AI stage of material
  * processing, not a task's turn (material spec §11). `context-add`: the "Add now" turn of the context panel
- * (context-panel spec §4.1).
+ * (context-panel spec §4.1). `translate`: one batch of a translation run (language spec §5), not a task's turn.
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -57,6 +57,9 @@ export interface UsageRecord extends ProfileFields {
   source?: string;
   /** Material lines only: the fragments the stage handled (its prompt listed). */
   fragments?: number;
+  /** Translate lines only: the target language and the batch's number in its run, 1-based (the first batch is 1). */
+  language?: string;
+  batch?: number;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
   ok: boolean;
@@ -160,6 +163,27 @@ export function materialRecord(
   };
 }
 
+/** One batch of a translation run (language spec §5). */
+export function translateRecord(
+  o: { engine: string; language: string; batch: number; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return {
+    at,
+    engine: o.engine,
+    phase: "translate",
+    language: o.language,
+    batch: o.batch,
+    ...profileMeta(o.profile),
+    ok: o.ok,
+    ...(o.usage ? { usage: o.usage } : {}),
+    ...(o.limits ? { limits: o.limits } : {}),
+  };
+}
+
+/** Lines that are no task's turn: material stages and translation batches. */
+const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate";
+
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */
 const QUESTIONS = "questions";
 /** Estimates and tokens average each action's latest tasks, so a change of model or plan settles in after a few uses. */
@@ -212,8 +236,8 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out, and so are material stages (not tasks; their windows still
- * count as the latest limits).
+ * Checkpoint turns and compaction lines are left out, and so are material stages and translation batches (not tasks;
+ * their windows still count as the latest limits).
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
   const all = records.filter((r) => r.kind !== "compaction");
@@ -222,7 +246,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
   for (let i = 0; i < all.length; i++) {
     const r = all[i];
-    if (r.phase === "close" || r.phase === "material" || r.kind) continue;
+    if (r.phase === "close" || notTask(r) || r.kind) continue;
     const action = r.action ?? QUESTIONS;
     const key = r.task ? `task:${r.task}` : `line:${i}`;
     const task = tasks.get(key) ?? { action, total: 0, measured: true, tokens: 0, counted: true };
@@ -230,8 +254,8 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     const before = window(r);
     const next = all[i + 1];
     const after = window(next);
-    // A material stage right after the turn would be charged to it: the turn can't be measured.
-    if (!before || !after || before.resetsAt !== after.resetsAt || next?.phase === "material") task.measured = false;
+    // A material stage or translation batch right after the turn would be charged to it: the turn can't be measured.
+    if (!before || !after || before.resetsAt !== after.resetsAt || notTask(next)) task.measured = false;
     else task.total += Math.max(0, after.utilization - before.utilization);
     if (r.usage) task.tokens += turnTokens(r.usage);
     else task.counted = false;
@@ -244,7 +268,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   }
   // Settings › Uso per scope (spec §3.3): every turn's tokens, close and checkpoint turns included.
   const perScope = new Map<string, number>();
-  for (const r of all) if (r.scope && r.phase !== "material") perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
+  for (const r of all) if (r.scope && !notTask(r)) perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
   // Material processing's own total (material spec §11); absent when no stage ever ran, so D0 keeps its summary.
   const material = all.filter((r) => r.phase === "material" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   const spent = spentUsd(all, now);

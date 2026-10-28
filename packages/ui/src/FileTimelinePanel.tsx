@@ -4,7 +4,7 @@ import { CloseIcon } from "./chrome";
 import type { HarnessClient, TimelineEntry } from "./client";
 import { EntryDiff } from "./EntryDiff";
 import { FileTimeline } from "./FileTimeline";
-import { trapTab } from "./SettingsSheet";
+import { trapTab } from "./focus";
 
 /**
  * A file's timeline outside the reader (file-timeline spec §6.2): any file but a `.md` the reader can open, and a

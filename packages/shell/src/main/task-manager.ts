@@ -335,6 +335,8 @@ export class TaskManager {
   private readonly timers: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
+  /** Each open task's language, read when it began (language spec §7): a change applies from the next task. In memory. */
+  private readonly taskLanguages = new Map<string, Language>();
   private readonly now: () => Date;
   private readonly newId: () => string;
 
@@ -549,6 +551,7 @@ export class TaskManager {
       await this.begin(
         { ...keptQuestion(`Review ${oneLine(r.title)}\n\n${r.message}`), review: r.path },
         scope,
+        language,
         (notesIndex) => fillPrompt(REVIEW_PROMPT, { language, notesIndex, question: r.message }),
         r.message,
         undefined,
@@ -981,6 +984,7 @@ export class TaskManager {
     await this.begin(
       { action, ...inMode, ...inPhase, ...(suspended ? { suspendedMode: suspended } : {}), ...inTimeBox },
       where,
+      language,
       (notesIndex) => {
         const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language, timeLeft })] : [];
         const box = timeLeft ? [`Time left: ${timeLeft}.`] : [];
@@ -1167,7 +1171,7 @@ export class TaskManager {
     take({ ok: true, switched: "turn" });
     return this.endsInWindow(async () => {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
-      const language = await this.d.language();
+      const language = await this.languageOf(c.id);
       // Read again: a checkpoint just taken here saved the note this line carries.
       const after = (await this.d.store.load()).current;
       const soFar = (after?.id === c.id ? after : c).checkpointNote ? await this.checkpointSummary(c) : undefined;
@@ -1372,6 +1376,7 @@ export class TaskManager {
     await this.begin(
       keptQuestion(text),
       this.scopeFor(await this.d.store.load(), undefined),
+      language,
       (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: text }),
       display ?? text,
     );
@@ -1414,7 +1419,7 @@ export class TaskManager {
         return refuse("refused", [{ path: "", message: err instanceof Error ? err.message : String(err) }]);
       }
     }
-    const language = await this.d.language();
+    const language = await this.languageOf(c.id);
     const display = answerDisplay(pending.block, block, parsed.value, language);
     const answer: BlockAnswer = { blockId, value: parsed.value, answeredAt: this.now().toISOString() };
     await this.update((s) => {
@@ -1468,7 +1473,7 @@ export class TaskManager {
   /** The first message of a resumed task's new session (its old session ends first). */
   private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
     await this.endSession();
-    const language = await this.d.language();
+    const language = await this.languageOf(c.id);
     let brief: string | undefined;
     try {
       brief = this.known(c.action) ? await this.d.readPrompt(c.action) : undefined;
@@ -1555,6 +1560,7 @@ export class TaskManager {
       review?: string;
     },
     scope: string,
+    language: Language,
     message: (notesIndex: string) => string,
     display: string,
     floor?: Tier,
@@ -1590,10 +1596,14 @@ export class TaskManager {
       ...(below ? { belowMinTier: true as const } : {}),
       start,
     };
+    // The language its first message was built in, which the task keeps; one task is open at a time, so none other stays.
+    this.taskLanguages.clear();
+    this.taskLanguages.set(current.id, language);
     await this.update((s) => ({ ...s, engine, current }));
     this.changedContext(current.id);
     // Checked again with no await before the send: a Stop while the session ended or the notes were read.
     if (this.cancelRequested) {
+      this.taskLanguages.delete(current.id);
       await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
       return this.stopped();
     }
@@ -1603,7 +1613,10 @@ export class TaskManager {
       done = await this.firstTurn(current, first, { display, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       // Nothing ran: the task goes away without marking its topic.
-      if (err instanceof TurnNotStarted) await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
+      if (err instanceof TurnNotStarted) {
+        this.taskLanguages.delete(current.id);
+        await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
+      }
       throw unwrap(err);
     } finally {
       this.recordStart = null;
@@ -1813,7 +1826,7 @@ export class TaskManager {
       const { fields } = await this.modesOnEntry(c, to);
       return { message: null, ...(fields ? { modes: fields } : {}) };
     }
-    const language = await this.d.language();
+    const language = await this.languageOf(c.id);
     const text = await this.phaseText(c.action!, to);
     const previous = this.phaseOf(c);
     const vars = { language, back, ...(previous ? { previous: oneLine(previous.label) } : {}), ...(c.timeBox ? { timeLeft: this.timeLeft(c) } : {}) };
@@ -2034,7 +2047,7 @@ export class TaskManager {
       let done: Done;
       try {
         // `display` always goes with `wrapUp`: the chat shows the system line, never the prompt.
-        done = await this.runTurn(now, wrapUpPrompt(await this.d.language()), {
+        done = await this.runTurn(now, wrapUpPrompt(await this.languageOf(c.id)), {
           display: "Time is almost up",
           ...(c.action ? { action: c.action } : {}),
           followUp: true,
@@ -2183,7 +2196,13 @@ export class TaskManager {
     }
   }
 
+  /** The language of task `id`: the one it began in, else (a task from before a restart) the saved one. */
+  private async languageOf(id: string): Promise<Language> {
+    return this.taskLanguages.get(id) ?? this.d.language();
+  }
+
   private async endTask(id: string, outcome: ActionStatus): Promise<void> {
+    this.taskLanguages.delete(id);
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;

@@ -29,6 +29,7 @@ Plan 3f (spec `2026-10-14-setup-flow-design.md` §4) shows the faked engine as w
 - **Its details.** Engine (and the setup step) show "Test model", answers recorded in the harness's `mock/`, data that stays on this computer and a plan that is not spent. There is no sign out, plan, version or legal line. The usage line on the work screen and Settings › Usage say "Test mode: uses none of your plan." instead of "doesn't report the limits" (the last reply's tokens still show).
 - **No notice.** The engine is ready at once: there is no notice to accept, nothing to install and no sign-in.
 - **The test model.** `ModelsView` offers one model, `{ id: "mock", name: "Test model" }`, and every tier defaults to it (effort and cap as they are). Settings › Models shows "Test model" for each level. `fake-claude` ignores `--model`.
+- **Language.** Mock mode never translates (the language state answers `mock`): the picker opens, says "Connect an AI engine to translate the app." and offers only English and complete cached languages; every other language is disabled. The Home offer doesn't show. The e2e runs that translate use `fake-claude`'s `pseudoTranslate` step outside mock mode (`docs/architecture/language.md`).
 
 ## The format
 
@@ -148,4 +149,5 @@ The agent's review tools are recorded the same way. In a harness whose agent may
 - A recording keeps only the first visit of an action in a run.
 - Harness settings work in mock mode (the tab saves, `AGENTS.md` follows), but a recording plays the same whatever the settings.
 - `run --record` does not capture reads: a recording from a real engine has no `reads`; add them by hand.
+- Mock mode can't run a translation, so a tester sees the screens in English.
 - Task modes: `m <id>` under `run --record` is recorded like a typed follow-up (the `*` link), even when nothing switched. Replay plays a switch as any other reply, so a recording can't branch by mode.

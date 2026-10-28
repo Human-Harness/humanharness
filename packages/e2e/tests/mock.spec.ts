@@ -57,6 +57,7 @@ test("a fresh mock app walks the setup flow, then starts the demo on the test en
 
     // 1. The folder: stay on this computer, so the folder is the sandbox's (synced places would leave it).
     await expect(page.getByRole("heading", { name: "Where should we keep your work?" })).toBeVisible();
+    await expect(page.getByText("You can choose the app's language once it's set up.")).toBeVisible();
     const local = page.getByRole("radio", { name: "Only on this computer" });
     if (await local.count()) await local.check();
     await expect(page.getByText(s.folder, { exact: true })).toBeVisible();

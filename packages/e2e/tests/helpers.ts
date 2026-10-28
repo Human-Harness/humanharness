@@ -44,11 +44,17 @@ export function makeFreshSandbox(name: string): Sandbox {
   return s;
 }
 
-/** A configured app (saved language "es", Claude, plus `config`) with every engine's notice accepted, in packages/e2e/.tmp/. */
+/**
+ * A configured app (saved language "es", Claude, plus `config`) with every engine's notice accepted and the
+ * language offer already answered (plan 5b), in packages/e2e/.tmp/.
+ */
 export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
   const s = makeFreshSandbox(name);
   fs.mkdirSync(s.folder, { recursive: true });
-  fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", ...config }));
+  fs.writeFileSync(
+    path.join(s.userData, "config.json"),
+    JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", languageOffered: true, ...config }),
+  );
   const now = new Date().toISOString();
   const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
   fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { claude: ready, codex: ready, opencode: ready } }));
@@ -74,6 +80,8 @@ export async function launch(
   app: string = shellDir,
   /** More test hooks (HH_TEST_* only; the shell ignores the rest). */
   extraEnv: Record<string, string> = {},
+  /** More Electron switches, e.g. `--lang=en` for an English system language. */
+  extraArgs: string[] = [],
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = {
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
@@ -82,7 +90,7 @@ export async function launch(
   };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
-    args: [app],
+    args: [app, ...extraArgs],
     env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), ...extraEnv },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };

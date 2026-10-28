@@ -23,13 +23,14 @@ export class ConfigStore {
     try {
       const saved = JSON.parse(await fs.readFile(this.file, "utf8")) as AppConfig;
       if (!saved || typeof saved !== "object") return saved;
-      // Like a bad entry under models: a hand-edited backupDismissed, textSize, language or reader of the wrong kind is
-      // dropped (the reader only its bad fields), never a reason to treat the whole config as invalid.
-      const { backupDismissed, textSize, language, profile, reader, ...rest } = saved;
+      // Like a bad entry under models: a hand-edited backupDismissed, languageOffered, textSize, language or reader of the
+      // wrong kind is dropped (the reader only its bad fields), never a reason to treat the whole config as invalid.
+      const { backupDismissed, languageOffered, textSize, language, profile, reader, ...rest } = saved;
       const readerPrefs = cleanReaderPrefs(reader);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
+        ...(typeof languageOffered === "boolean" ? { languageOffered } : {}),
         ...(isTextSize(textSize) ? { textSize } : {}),
         ...(typeof language === "string" && canonicalLanguage(language) === language ? { language } : {}),
         ...(isProfileId(profile) ? { profile } : {}),

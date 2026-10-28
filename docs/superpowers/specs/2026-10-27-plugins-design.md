@@ -1,6 +1,6 @@
 # Plugins — design
 
-Status: approved by Marco on 2026-10-27, section by section. Not in the roadmap yet: it goes after the specs in flight (plans 5–9). Comes from Marco's wish to bring docs-cockpit features (on-call, daily, releases) to the dev harness without building them into it, and from the dev-vs-core analysis (`docs/discovery/2026-10-26-dev-vs-core.md` on `worktree-harness-discovery`).
+Status: approved by Marco on 2026-10-27, section by section. Not in the roadmap yet: it goes after the specs in flight (plans 5–9). Comes from Marco's wish to bring docs-cockpit features (on-call, daily, releases) to the dev harness without building them into it, and from the dev-vs-core analysis (`docs/discovery/2026-10-26-dev-vs-core.md` on `worktree-harness-discovery`). Plan 1 (runtime) implemented on `feat/plugins` (`docs/architecture/plugins.md`).
 
 ## 1. Why
 

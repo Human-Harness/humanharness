@@ -25,6 +25,12 @@ export interface TurnWindow {
  */
 export const samePath = (p: string): string => p.normalize("NFC");
 
+/**
+ * At most this many paths in one window's `edits`: past it, a turn records no more. A path no turn named counts as
+ * shared (spec §5.2), so a turn over the cap only shares more, never owns another's path.
+ */
+export const MAX_EDITS = 10_000;
+
 /** The turns running in one folder now (parallel spec §5.2). Opening and closing are synchronous: no await between check and mark. */
 export class TurnLedger {
   private readonly open_ = new Map<string, TurnWindow>();
@@ -69,12 +75,13 @@ export class TurnLedger {
   /**
    * Records the paths an edit event of `key`'s turn named, as canonical folder-relative paths. Only paths inside the
    * folder (by any of its roots) count; the folder itself, `..` escapes, absolute outsiders and any name git couldn't
-   * track by that spelling are dropped (T3). A key with no open window is ignored.
+   * track by that spelling are dropped (T3). A key with no open window is ignored; past `MAX_EDITS` paths, so is the rest.
    */
   noteEdits(key: string, paths: readonly string[]): void {
     const w = this.open_.get(key);
     if (!w) return;
     for (const p of paths) {
+      if (w.edits.size >= MAX_EDITS) return;
       const rel = this.relative(p);
       if (rel !== null) w.edits.add(rel);
     }

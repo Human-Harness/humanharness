@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { TurnLedger } from "../src/turn-ledger";
+import { MAX_EDITS, TurnLedger } from "../src/turn-ledger";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-ledger-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -24,6 +24,17 @@ describe("TurnLedger (parallel spec §5.2, T3)", () => {
     const c = l.open("C");
     expect(c.alone).toBe(true);
     expect(c.overlapped).toBe(false);
+  });
+
+  it("a window's edits stop growing at MAX_EDITS", () => {
+    const l = new TurnLedger(["/w"]);
+    const w = l.open("A", "t1");
+    l.noteEdits("A", Array.from({ length: MAX_EDITS + 5 }, (_, i) => `/w/f${i}.md`));
+    expect(w.edits.size).toBe(MAX_EDITS);
+    expect(w.edits.has("f0.md")).toBe(true);
+    expect(w.edits.has(`f${MAX_EDITS}.md`)).toBe(false);
+    l.noteEdits("A", ["/w/late.md"]);
+    expect(w.edits.size).toBe(MAX_EDITS);
   });
 
   it("a key can't hold two windows", () => {

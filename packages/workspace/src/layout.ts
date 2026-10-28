@@ -1,5 +1,5 @@
 import path from "node:path";
-import { COLLECTION_NAME } from "@humanharness/harness-sdk";
+import { COLLECTION_NAME, PLUGIN_ID } from "@humanharness/harness-sdk";
 
 // Every path under `<base>/.harness/` comes from here. `base` is the configured folder today; the profiles
 // plan makes it the active profile's folder (scopes-and-data spec §7.1) by changing only what callers pass.
@@ -93,3 +93,16 @@ export const MATERIAL_KEEP = {
   match: /^\.harness\/material\/[a-z0-9][a-z0-9-]{0,63}\/(sources\.json|conflicts\.md|grounding\.json)$/,
   depth: 1,
 } as const;
+
+/** `id` when it is a plugin id; throws otherwise (it names a folder). */
+function pluginId(id: string): string {
+  if (!PLUGIN_ID.test(id)) throw new Error(`Invalid plugin: "${id}"`);
+  return id;
+}
+
+/** A plugin's on/off, approval, settings and error log (plugins spec §3.3). Never tracked. */
+export const pluginStateDir = (base: string, id: string): string => path.join(base, ".harness", "plugins", pluginId(id));
+/** A plugin's data: a rebuildable cache (plugins spec D10). Never tracked. */
+export const pluginDataDir = (base: string, id: string): string => path.join(base, ".harness", "plugin-data", pluginId(id));
+/** The Attention inbox (plugins spec §6). Never tracked. */
+export const attentionFile = (base: string): string => path.join(base, ".harness", "attention.json");

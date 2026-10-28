@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_SCOPE, MAIN_SCOPE, MATERIAL_KEEP, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, materialDir, materialReadsFile, materialStoreDir, notesPrefix, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
+import { APP_SCOPE, MAIN_SCOPE, MATERIAL_KEEP, NOTES_PREFIX, attentionFile, chatFile, chatsDir, isScopeDir, isScopeId, materialDir, materialReadsFile, materialStoreDir, notesPrefix, pluginDataDir, pluginStateDir, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
 
 describe("layout", () => {
   it("keeps today's places for a harness without scopes", () => {
@@ -71,5 +71,19 @@ describe("material paths (material spec §4)", () => {
     expect(keeps(".harness/material/main/fragments/sources.json")).toBe(false);
     expect(keeps(".harness/material/main/sources.json.1234.tmp")).toBe(false);
     expect(keeps(".harness/material/_app/sources.json")).toBe(false);
+  });
+});
+
+describe("plugin paths (plugins spec §3.3, §6)", () => {
+  it("state, data and the inbox live under .harness/", () => {
+    expect(pluginStateDir("/w", "oncall")).toBe(path.join("/w", ".harness", "plugins", "oncall"));
+    expect(pluginDataDir("/w", "oncall")).toBe(path.join("/w", ".harness", "plugin-data", "oncall"));
+    expect(attentionFile("/w")).toBe(path.join("/w", ".harness", "attention.json"));
+  });
+
+  it("an id that isn't a plugin id names no folder", () => {
+    expect(() => pluginStateDir("/w", "../x")).toThrow(/plugin/);
+    expect(() => pluginDataDir("/w", "")).toThrow(/plugin/);
+    expect(() => pluginStateDir("/w", "Oncall")).toThrow(/plugin/);
   });
 });

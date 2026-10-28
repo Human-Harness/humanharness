@@ -6,7 +6,7 @@ import type { SidekickEvent } from "@humanharness/workspace";
 import { createHash } from "node:crypto";
 import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
 import { joinImportFiles, readImportFiles } from "../src/main/sidekick-import";
-import { SidekickStore } from "../src/main/sidekick-store";
+import { type SidekickInput, SidekickStore } from "../src/main/sidekick-store";
 import type { DailyInput } from "../src/main/sidekick-turns";
 import { type UsageRecord, sidekickRecord } from "../src/main/usage-log";
 
@@ -2068,5 +2068,40 @@ describe("import (spec §2a.6)", () => {
     expect(await h.ctl.checkSidekick("nobody")).toBe("none");
     expect(await h.ctl.pickFiles()).toEqual({ token: expect.any(String), files: ["a.md"] });
     expect(h.imported).toEqual(["/n/a.md"]);
+  });
+
+  it("saveSidekick writes the draft with its source and the learned items as the person's; works with Sidekick off", async () => {
+    const h = harness({ answers: [json(RULO)], files: { "/n/a.md": "You are Rulo." }, picked: ["/n/a.md"] });
+    const d = await h.ctl.importDraft({ kind: "files", token: (await h.ctl.pickFiles())!.token });
+    if (!d.ok) throw new Error("no draft");
+    // The IPC checks the draft as a record before it reaches the controller.
+    const draft = d.draft as SidekickInput;
+    const info = await h.ctl.saveSidekick(draft, d.learned);
+    expect(info).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
+    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", id: "rulo", source: { kind: "files", paths: ["/n/a.md"], hash: sha256("You are Rulo.") } }));
+    expect(h.records().filter((r) => r.type === "learned")).toEqual([expect.objectContaining({ text: "Prefers short answers.", level: "you", source: "person" })]);
+    // Saving it again (the original changed, the person brought the changes) never doubles a learned item.
+    await h.ctl.saveSidekick({ ...draft, id: "rulo", personality: "Blunt." }, d.learned);
+    expect(h.records().filter((r) => r.type === "learned")).toHaveLength(1);
+    expect(h.records()).toContainEqual(expect.objectContaining({ id: "rulo", personality: "Blunt." }));
+    expect(h.states.length).toBeGreaterThan(0);
+  });
+
+  it("saveSidekick refuses a files source this app never read (the renderer can't plant paths to check later)", async () => {
+    const h = harness({ record: on });
+    const planted = { name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], source: { kind: "files" as const, paths: ["/etc/hosts"], hash: sha256("x") } };
+    await expect(h.ctl.saveSidekick(planted)).rejects.toThrow();
+    expect(h.writes).toEqual([]);
+    // A paste has nothing to check: saved as given.
+    await h.ctl.saveSidekick({ ...planted, source: { kind: "paste" } });
+    expect(h.records()).toContainEqual(expect.objectContaining({ id: "rulo", source: { kind: "paste" } }));
+  });
+
+  it("saveSidekick keeps a stored files source on an edit of that sidekick", async () => {
+    const source = { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") };
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source };
+    const h = harness({ record: on, extra: [rulo] });
+    await h.ctl.saveSidekick({ id: "rulo", name: "Rulo", mark: "🦊", personality: "Calm.", purposes: [{ id: "mentor" }], source });
+    expect(h.records()).toContainEqual(expect.objectContaining({ id: "rulo", personality: "Calm.", source }));
   });
 });

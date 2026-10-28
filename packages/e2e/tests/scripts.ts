@@ -138,6 +138,11 @@ const approveTurn = { match: `^${MOCK_SIDEKICK_MARKS.approve}`, steps: sidekickR
 const dailyTurn = { match: `^${MOCK_SIDEKICK_MARKS.daily}`, steps: [...claudeTextLines(""), result] };
 /** Sidekick's place turn (sidekick spec §2a.5): a short plain-text answer. */
 const placeTurn = { match: `^${MOCK_SIDEKICK_MARKS.place}`, steps: [...claudeTextLines("Nothing needs your attention."), result] };
+/** Sidekick's import turn (sidekick spec §2a.6): a mentor draft, one thing it knows, tool permissions skipped. */
+const importTurn = {
+  match: `^${MOCK_SIDEKICK_MARKS.import}`,
+  steps: sidekickReply({ name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] }),
+};
 
 /** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */
 export const sidekickScript: ClaudeScript = {
@@ -159,11 +164,12 @@ export const sidekickScript: ClaudeScript = {
     dailyTurn,
     approveTurn,
     placeTurn,
+    importTurn,
   ],
 };
 
 /** Sidekick's turn never answers in time: the prompt goes as typed after the wait. */
 export const slowSidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
-  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn, phaseTurn, dailyTurn, approveTurn, placeTurn],
+  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn, phaseTurn, dailyTurn, approveTurn, placeTurn, importTurn],
 };

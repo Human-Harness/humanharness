@@ -219,6 +219,49 @@ describe("sidekick IPC: presets", () => {
   });
 });
 
+describe("sidekick IPC: saveSidekick", () => {
+  function saveWire() {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const calls: unknown[][] = [];
+    const ctl = { saveSidekick: async (def: unknown, learned: unknown) => (calls.push([def, learned]), { id: "rulo", name: "Rulo", mark: "🦊" }) };
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => ctl as never,
+    );
+    return { call: (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args), calls };
+  }
+  const DEF = { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" } };
+
+  it("passes a valid def (only a sidekick's fields) and bounded learned items", async () => {
+    const w = saveWire();
+    expect(await w.call("hh:sidekickSave", { ...DEF, id: "rulo", tier: "light", defaultOn: false, order: 3, on: true, text: "x" }, [{ text: " Short answers. ", level: "you" }])).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
+    await w.call("hh:sidekickSave", DEF);
+    expect(w.calls).toEqual([
+      [{ ...DEF, id: "rulo", tier: "light", defaultOn: false }, [{ text: "Short answers.", level: "you" }]],
+      [DEF, []],
+    ]);
+  });
+
+  it("refuses a malformed def or learned list before the controller", async () => {
+    const w = saveWire();
+    const bad: unknown[][] = [
+      [null],
+      [{ ...DEF, name: "" }],
+      [{ ...DEF, purposes: [] }],
+      [{ ...DEF, purposes: [{ id: "boss" }] }],
+      [{ ...DEF, source: { kind: "files", paths: ["/n/a.md"], hash: "nope" } }],
+      [{ ...DEF, id: "x".repeat(81) }],
+      [{ ...DEF, id: "settings" }],
+      [DEF, "x"],
+      [DEF, [{ text: "", level: "you" }]],
+      [DEF, [{ text: "x", level: "boss" }]],
+      [DEF, Array.from({ length: 51 }, () => ({ text: "x", level: "you" }))],
+    ];
+    for (const args of bad) await expect(w.call("hh:sidekickSave", ...args)).rejects.toThrow();
+    expect(w.calls).toEqual([]);
+  });
+});
+
 describe("sidekick IPC: import", () => {
   const TOKEN = "a1".repeat(16);
   function importWire(available = true) {

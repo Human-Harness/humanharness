@@ -40,8 +40,10 @@ import type {
   SetupStepResult,
   SetupStepsState,
   SidekickApproveCheck,
+  SidekickDraftDef,
   SidekickImportInput,
   SidekickImportResult,
+  SidekickInfo,
   SidekickOriginal,
   SidekickPlaceAnswer,
   SidekickPreset,
@@ -596,6 +598,8 @@ export class FakeClient implements HarnessClient {
   sidekickPicked: string[] = [];
   /** What sidekick.checkOriginal answers. */
   sidekickOriginal: SidekickOriginal = "none";
+  /** When set, sidekick.saveSidekick rejects with this message. */
+  sidekickSaveFails: string | null = null;
   /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
@@ -667,6 +671,11 @@ export class FakeClient implements HarnessClient {
     checkOriginal: async (id: string): Promise<SidekickOriginal> => {
       this.sidekickCalls.push(["checkOriginal", id]);
       return this.sidekickOriginal;
+    },
+    saveSidekick: async (def: SidekickDraftDef & { id?: string }, learned?: { text: string; level: "you" | "harness" }[]): Promise<SidekickInfo> => {
+      this.sidekickCalls.push(["saveSidekick", def, learned]);
+      if (this.sidekickSaveFails) throw new Error(this.sidekickSaveFails);
+      return { id: def.id ?? def.name.toLowerCase(), name: def.name, mark: def.mark };
     },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);

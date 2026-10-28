@@ -742,6 +742,38 @@
       "yours": "Yours"
     },
     "presets": { "title": "Suggested by the harness", "add": "Add {{name}}", "notNow": "Not now", "failed": "Could not add {{name}}." },
+    "purposes": { "prompt-coach": "Prompt coach", "focus": "Focus", "process-guard": "Process guard", "mentor": "Mentor", "daily-summary": "Daily summary", "custom": "Custom", "customText": "Custom: {{text}}" },
+    "import": {
+      "title": "Import",
+      "paste": "Paste instructions",
+      "choose": "Choose files",
+      "run": "Import",
+      "working": "Reading…",
+      "preview": "Imported sidekick",
+      "skipped": "Not imported: {{list}}",
+      "learned": "What they learned about you",
+      "learnedApp": "What they learned about this app",
+      "copy": "It's a copy: changes to the original won't reach it.",
+      "ack": "I understand it's a copy",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saveFailed": "Could not save {{name}}. Try again.",
+      "changed": "The original changed",
+      "bring": "Bring the changes",
+      "errors": {
+        "engine-settings": "These files are in an engine's own settings folder, and this app never reads those folders. Copy what you need and paste it here instead.",
+        "too-many": "Choose at most 4 files.",
+        "too-big": "{{file}} is larger than 64 KB.",
+        "too-big-paste": "The pasted text is larger than 64 KB.",
+        "type": "{{file}} isn't a .md or .txt file.",
+        "unreadable": "{{file}} couldn't be read.",
+        "empty": "There's nothing to import: the text is empty.",
+        "unavailable": "Importing needs an AI engine that is set up and ready. Check Settings › Engine.",
+        "failed": "The import didn't work. Try again or paste less.",
+        "cancelled": "The import stopped before it finished. Try again.",
+        "expired": "That choice of files is too old. Choose the files again."
+      }
+    },
     "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },
     "usage": "Sidekick: about {{tokens}} tokens"
   },

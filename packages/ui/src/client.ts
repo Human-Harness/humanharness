@@ -948,6 +948,12 @@ export interface HarnessClient {
     importDraft(input: SidekickImportInput): Promise<SidekickImportResult>;
     /** Whether an imported sidekick's files changed since ("The original changed"); `none` when it wasn't imported from files. */
     checkOriginal(sidekickId: string): Promise<SidekickOriginal>;
+    /**
+     * Saves a sidekick as the person: new without `def.id`, else every field of that one is replaced (send the full
+     * def, `source` too). `learned`: the import's items, written as the person's. A files `source` must come from an
+     * import (or be the one it already has). Rejects when it can't be written.
+     */
+    saveSidekick(def: SidekickDraftDef & { id?: string }, learned?: { text: string; level: "you" | "harness" }[]): Promise<SidekickInfo>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1154,6 +1160,17 @@ export interface SidekickDraft {
   personality: string;
   purposes: SidekickPurposeView[];
   source: SidekickSource;
+}
+/** A sidekick to save: an import's draft, or the editor's full definition. */
+export interface SidekickDraftDef {
+  name: string;
+  mark: string;
+  personality: string;
+  purposes: SidekickPurposeView[];
+  source?: SidekickSource;
+  tier?: "light" | "standard" | "deep";
+  preset?: string;
+  defaultOn?: boolean;
 }
 /**
  * Why an import gave no draft: a file in an engine's settings folder, too many files, one too big (paste too), not

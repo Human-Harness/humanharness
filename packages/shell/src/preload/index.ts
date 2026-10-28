@@ -125,6 +125,7 @@ const client: HarnessClient = {
     pickFiles: () => ipcRenderer.invoke("hh:sidekickPickFiles"),
     importDraft: (input) => ipcRenderer.invoke("hh:sidekickImportDraft", input),
     checkOriginal: (id) => ipcRenderer.invoke("hh:sidekickCheckOriginal", id),
+    saveSidekick: (def, learned) => ipcRenderer.invoke("hh:sidekickSave", def, learned),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

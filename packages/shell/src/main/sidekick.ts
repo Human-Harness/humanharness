@@ -30,7 +30,7 @@ import {
 } from "@humanharness/workspace";
 import { IMPORT_MAX_BYTES, type ImportRead } from "./sidekick-import";
 import { candidates, pickSpeaker } from "./sidekick-route";
-import type { SidekickStore } from "./sidekick-store";
+import type { SidekickInput, SidekickStore } from "./sidekick-store";
 import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { PhaseMoved, TurnEnd } from "./task-manager";
 import { type SidekickUsageMoment, type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
@@ -73,6 +73,10 @@ const IMPORT_BRIEF = "# Import\n\nYou turn a person's instructions for another a
 const IMPORT_MS = 60_000;
 /** How long a pick's token stays good: the import that follows the picker uses it once, within this. */
 const PICK_MS = 10 * 60_000;
+/** How many recent imports' files sources Save accepts. */
+const ISSUED_MAX = 8;
+/** A files source as one comparable string. */
+const sourceKey = (s: { paths: string[]; hash: string }) => JSON.stringify([s.paths, s.hash]);
 
 /** A date's local calendar day (YYYY-MM-DD): the daily card runs once per one (plan Decision 12). */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -249,6 +253,8 @@ export class SidekickController {
   private filePick: { token: string; paths: string[]; at: number; base: string | undefined } | null = null;
   /** Bumped by every import: one that finished reading its files after a newer one started never runs. */
   private imports = 0;
+  /** The files sources (paths and hash) imports read lately: Save may store only one of these, never paths the renderer made up. */
+  private issued: string[] = [];
   /** The last place turn's end: the next one waits for it (one at a time in the shared `place` folder). */
   private placeTurns: Promise<void> = Promise.resolve();
   /** The running learning turn's promise (never rejects), for `learned`. */
@@ -454,6 +460,30 @@ export class SidekickController {
   }
 
   /**
+   * The import preview's Save (and the editor's): `def` replaces every field of the sidekick `def.id` (new without it),
+   * then each learned item not already there is written as the person's (they saved it). Works with Sidekick off. A
+   * files source is kept only when an import here read it, or the sidekick already has it: checkOriginal reads those
+   * paths later, so the renderer never chooses them. Throws when anything can't be written.
+   */
+  async saveSidekick(def: SidekickInput, learned: { text: string; level: "you" | "harness" }[] = []): Promise<SidekickInfo> {
+    if (def.source?.kind === "files") {
+      const key = sourceKey(def.source);
+      const stored = def.id !== undefined ? (await this.d.store.sidekicks()).find((k) => k.id === def.id)?.source : undefined;
+      if (!this.issued.includes(key) && !(stored?.kind === "files" && sourceKey(stored) === key)) throw new Error("Not a source an import read");
+    }
+    const saved = await this.d.store.saveSidekick(def);
+    const have = new Set((await this.learnedRecords()).map((r) => `${r.level}\n${r.text}`));
+    const now = new Date().toISOString();
+    for (const l of learned) {
+      if (have.has(`${l.level}\n${l.text}`)) continue;
+      have.add(`${l.level}\n${l.text}`);
+      await this.d.store.put({ id: `l-${randomBytes(4).toString("hex")}`, type: "learned", text: l.text, level: l.level, source: "person", updatedAt: now });
+    }
+    await this.push();
+    return { id: saved.id, name: saved.name, mark: saved.mark };
+  }
+
+  /**
    * "Choose files" for an import: the picker's paths stay here, the renderer gets a token for them and their names
    * (null when cancelled). Nothing is read: refusal and reading happen in importDraft. A newer pick replaces this one.
    */
@@ -534,6 +564,7 @@ export class SidekickController {
       if (!live()) return { ok: false, reason: "cancelled" };
       const r = answer.ok ? parseImport(answer.text) : null;
       if (!r) return { ok: false, reason: "failed" };
+      if (source.kind === "files") this.issued = [...this.issued.filter((k) => k !== sourceKey(source)), sourceKey(source)].slice(-ISSUED_MAX);
       return { ok: true, draft: { name: r.name, mark: r.mark, personality: r.personality, purposes: r.purposes, source }, learned: r.learned, skipped: r.skipped };
     } catch (err) {
       if (!controller.signal.aborted) console.error("Sidekick's import turn failed", err);

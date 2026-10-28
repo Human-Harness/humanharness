@@ -1,5 +1,7 @@
-import type { SidekickApproveCheck, SidekickImportInput, SidekickImportResult, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
+import { sidekickRecordSchema } from "@humanharness/harness-sdk";
+import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
+import type { SidekickInput } from "./sidekick-store";
 import { IMPORT_MAX_BYTES } from "./sidekick-import";
 import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
 
@@ -32,7 +34,7 @@ function importInput(v: unknown): SidekickImportInput | null {
 }
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 /** Edits to the learned items: at most MAX_EDITS, each an id and a text of 1..MAX_LEARNED characters (not blank). */
@@ -46,6 +48,32 @@ const isEdits = (v: unknown): v is { id: string; text: string }[] =>
     const { id, text } = c as { id?: unknown; text?: unknown };
     return isId(id) && typeof text === "string" && text.trim().length > 0 && text.length <= MAX_LEARNED;
   });
+
+/** A sidekick's own fields (its order changes only by reordering); anything else in the request is dropped. */
+const DEF_FIELDS = ["id", "name", "mark", "personality", "purposes", "tier", "source", "preset", "defaultOn"] as const;
+/** A sidekick to save, checked as the record it becomes; null when malformed. */
+function sidekickInput(v: unknown): SidekickInput | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const picked = Object.fromEntries(DEF_FIELDS.filter((f) => Object.hasOwn(v, f)).map((f) => [f, (v as Record<string, unknown>)[f]]));
+  if (picked.id !== undefined && !isId(picked.id)) return null;
+  const r = sidekickRecordSchema.safeParse({ ...picked, id: picked.id ?? "draft", type: "sidekick", order: 0 });
+  if (!r.success) return null;
+  const { id: _id, type: _type, order: _order, ...def } = r.data;
+  return { ...(picked.id !== undefined ? { id: r.data.id } : {}), ...def } as SidekickInput;
+}
+/** Learned items saved with a sidekick: at most MAX_EDITS, each a text of 1..MAX_LEARNED characters (trimmed) and a level. */
+function learnedInput(v: unknown): { text: string; level: "you" | "harness" }[] | null {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > MAX_EDITS) return null;
+  const out: { text: string; level: "you" | "harness" }[] = [];
+  for (const l of v as unknown[]) {
+    if (typeof l !== "object" || l === null) return null;
+    const { text, level } = l as { text?: unknown; level?: unknown };
+    if (typeof text !== "string" || !text.trim() || text.trim().length > MAX_LEARNED || (level !== "you" && level !== "harness")) return null;
+    out.push({ text: text.trim(), level });
+  }
+  return out;
+}
 
 /** Sidekick's channels (sidekick spec §7). A malformed request never reaches the controller; a bad review sends as typed. */
 export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void {
@@ -127,6 +155,15 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     const c = ctl();
     if (!c || !isId(id)) return "none";
     return c.checkSidekick(id).catch(() => "none" as const);
+  });
+  // The import preview's Save (spec §2a.6), as the person: a malformed sidekick or learned list never reaches the controller.
+  handle("hh:sidekickSave", async (def: unknown, learned: unknown): Promise<SidekickInfo> => {
+    const c = ctl();
+    if (!c) throw new Error("Sidekick is not available");
+    const d = sidekickInput(def);
+    const l = learnedInput(learned);
+    if (!d || !l) throw new Error("Not a sidekick to save");
+    return c.saveSidekick(d, l);
   });
   handle("hh:sidekickEditLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;

@@ -65,11 +65,17 @@ export function useLanguage(client: HarnessClient, i18n: I18n | null, harness: R
   useEffect(() => {
     if (!lang) return;
     let live = true;
+    /** Whether the last push showed a run going: only its end (running → done) loads the new strings. */
+    let running = false;
     const off = lang.onChange((s) => {
       if (!live) return;
       viewSeq.current++;
       setView(s);
-      if (s.run?.status === "done" && s.language === s.run.tag && i18n && i18n.language !== s.language) void switchTo(s.language);
+      const ended = running && s.run?.status === "done";
+      running = s.run?.status === "running";
+      // Always load at a run's end, even when i18next already names the language: a saved language with no
+      // cache starts as `lng` with English resources, and a run for new texts must add them.
+      if (ended && s.run && s.language === s.run.tag && i18n) void switchTo(s.language);
     });
     return () => {
       live = false;

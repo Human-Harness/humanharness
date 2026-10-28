@@ -45,10 +45,28 @@ describe("useLanguage", () => {
     const { result } = renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
     await act(async () => expect(await result.current.choose("fr")).toBe("needs-translation"));
     await act(async () => expect(await result.current.translate("fr")).toBe(true));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 0, total: 1, status: "running" } }));
     await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
     await waitFor(() => expect(i18n.t("chat.send")).toBe("Envoyer"));
     expect(result.current.view?.language).toBe("fr");
     expect(changed).toEqual(["fr"]);
+  });
+
+  it("a run's end loads the strings even when i18next already names the saved language (no cache at start)", async () => {
+    const client = new FakeClient();
+    client.languageStrings.es = { "core:chat.send": "Enviar" };
+    // A saved "es" with no cache starts as lng "es" on English resources.
+    const i18n = await createI18n("es");
+    const changed: string[] = [];
+    renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+    // A finished run seen without its running part (an old state) loads nothing.
+    await act(async () => client.pushLanguage({ language: "es", run: { tag: "es", done: 1, total: 1, status: "done" } }));
+    expect(client.languageCalls.filter((c) => c.op === "strings")).toEqual([]);
+    await act(async () => client.pushLanguage({ language: "es", run: { tag: "es", done: 0, total: 1, status: "running" } }));
+    await act(async () => client.pushLanguage({ language: "es", run: { tag: "es", done: 1, total: 1, status: "done" } }));
+    await waitFor(() => expect(i18n.t("chat.send")).toBe("Enviar"));
+    expect(i18n.resolvedLanguage).toBe("es");
+    expect(changed).toEqual(["es"]);
   });
 
   it("a translate answered failed (e.g. cancelled while preparing) means nothing started", async () => {
@@ -92,6 +110,7 @@ describe("useLanguage", () => {
     const i18n = await createI18n("en");
     const changed: string[] = [];
     const { result } = renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 0, total: 1, status: "running" } }));
     await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
     await act(async () => expect(await result.current.choose("en")).toBe("switched"));
     await act(async () => open());

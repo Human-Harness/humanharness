@@ -844,6 +844,7 @@ describe("HarnessApp language on demand (plan 5b)", () => {
     expect(screen.getByRole("dialog", { name: "Language" })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Language" }), { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    act(() => client.pushLanguage({ language: "es", run: { tag: "es", done: 0, total: 1, status: "running" } }));
     act(() => client.pushLanguage({ language: "es", cached: [{ tag: "es", complete: true }], run: { tag: "es", done: 1, total: 1, status: "done" } }));
     expect(await screen.findByRole("button", { name: "Empezar Demo" })).toBeTruthy();
   });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
-import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir } from "@humanharness/workspace";
+import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, taskChatFile } from "@humanharness/workspace";
 import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow } from "@humanharness/runtime";
 import { type AnswerPart, type ChatEntry, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
@@ -14,11 +14,27 @@ export class ChatLog {
    * scope's chat (`chats/<scope>.jsonl`); `main`, the default, is also the chat of a harness without scopes.
    */
   constructor(
-    folder: string,
+    private readonly folder: string,
     private readonly engine?: string,
     private readonly scope: string = MAIN_SCOPE,
+    /** Board mode (parallel spec §6): the task's own chat, `chats/<scope>/<task>.jsonl`. Absent: the scope's chat, as before. */
+    private readonly task?: string,
   ) {
-    this.file = chatFile(folder, scope);
+    this.file = task === undefined ? chatFile(folder, scope) : taskChatFile(folder, scope, task);
+  }
+
+  /**
+   * A task chat sits in a folder of its own, which a symlink could point elsewhere: its folder must resolve to
+   * `chats/<scope>/` and the file must not be a link. Throws otherwise. A scope's chat is not checked (as before).
+   */
+  private async checkInside(): Promise<void> {
+    if (this.task === undefined) return;
+    const dir = path.dirname(this.file);
+    const [real, chats] = await Promise.all([fs.realpath(dir), fs.realpath(chatsDir(this.folder))]);
+    const file = await fs.lstat(this.file).catch(() => null);
+    if (real !== path.join(chats, path.basename(dir)) || (file && !file.isFile())) {
+      throw new Error(`The chat of task "${this.task}" is outside the chats folder`);
+    }
   }
 
   /** The scopes that have a chat file in `folder` (`_app` included), sorted. */
@@ -33,12 +49,16 @@ export class ChatLog {
 
   async append(entry: ChatEntry): Promise<void> {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.appendFile(this.file, JSON.stringify(this.engine ? { ...entry, engine: this.engine } : entry) + "\n");
+    const line = JSON.stringify(this.engine ? { ...entry, engine: this.engine } : entry) + "\n";
+    if (this.task === undefined) return fs.appendFile(this.file, line);
+    await this.checkInside();
+    await fs.appendFile(this.file, line, { flag: constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW });
   }
 
   async load(limit = 200): Promise<ChatEntry[]> {
     let raw: string;
     try {
+      await this.checkInside();
       raw = await fs.readFile(this.file, "utf8");
     } catch {
       return [];
@@ -66,6 +86,7 @@ export class ChatLog {
   async markAnswered(answer: BlockAnswer): Promise<boolean> {
     let raw: string;
     try {
+      await this.checkInside();
       raw = await fs.readFile(this.file, "utf8");
     } catch {
       return false;
@@ -97,16 +118,20 @@ export class ChatLog {
     return true;
   }
 
-  /** Moves the conversation to `chats/archive/<time>-<label>.jsonl`. Null when there was none. */
+  /**
+   * Moves the conversation to `chats/archive/<time>-<label>.jsonl` (a task's chat: `<time>-<scope>-<task>-<label>`).
+   * Null when there was none.
+   */
   async archive(label: string): Promise<string | null> {
     try {
       await fs.access(this.file);
     } catch {
       return null;
     }
-    const dir = path.join(path.dirname(this.file), "archive");
+    await this.checkInside();
+    const dir = path.join(chatsDir(this.folder), "archive");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const scope = this.scope === MAIN_SCOPE ? "" : `${this.scope}-`;
+    const scope = this.task !== undefined ? `${this.scope}-${this.task}-` : this.scope === MAIN_SCOPE ? "" : `${this.scope}-`;
     const target = path.join(dir, `${stamp}-${scope}${label.replace(/[^a-z0-9-]/gi, "")}.jsonl`);
     await fs.mkdir(dir, { recursive: true });
     await fs.rename(this.file, target);

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_SCOPE, MAIN_SCOPE, MATERIAL_KEEP, NOTES_PREFIX, attentionFile, chatFile, chatsDir, isScopeDir, isScopeId, materialDir, materialReadsFile, materialStoreDir, notesPrefix, pluginDataDir, pluginStateDir, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
+import { APP_SCOPE, MAIN_SCOPE, MATERIAL_KEEP, NOTES_PREFIX, attentionFile, chatFile, chatsDir, isScopeDir, isScopeId, isTaskId, taskChatFile, materialDir, materialReadsFile, materialStoreDir, notesPrefix, pluginDataDir, pluginStateDir, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
 
 describe("layout", () => {
   it("keeps today's places for a harness without scopes", () => {
@@ -85,5 +85,23 @@ describe("plugin paths (plugins spec §3.3, §6)", () => {
     expect(() => pluginStateDir("/w", "../x")).toThrow(/plugin/);
     expect(() => pluginDataDir("/w", "")).toThrow(/plugin/);
     expect(() => pluginStateDir("/w", "Oncall")).toThrow(/plugin/);
+  });
+});
+
+describe("per-task chats (parallel spec §6)", () => {
+  it("taskChatFile: chats/<scope>/<task>.jsonl", () => {
+    expect(taskChatFile("/b", "main", "t1")).toBe(path.join("/b", ".harness", "chats", "main", "t1.jsonl"));
+    expect(taskChatFile("/b", "_app", "0b6c2d1e-8f3a-4c5d-9e7f-1a2b3c4d5e6f")).toBe(
+      path.join("/b", ".harness", "chats", "_app", "0b6c2d1e-8f3a-4c5d-9e7f-1a2b3c4d5e6f.jsonl"),
+    );
+  });
+
+  it("refuses a task id that could leave the scope's folder, and a bad scope", () => {
+    for (const bad of ["../x", "..", ".", "a/b", "a\\b", "", "_x", "-x", "__proto__", "a.b", "t1\0", "x".repeat(201)]) {
+      expect(() => taskChatFile("/b", "main", bad), bad).toThrow(/task/);
+      expect(isTaskId(bad)).toBe(false);
+    }
+    expect(isTaskId("x".repeat(200))).toBe(true);
+    expect(() => taskChatFile("/b", "../x", "t1")).toThrow(/scope/);
   });
 });

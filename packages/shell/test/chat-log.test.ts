@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { ChatLog, TurnRecorder } from "../src/main/chat-log";
+import { isLaneId } from "../src/main/task-store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -165,5 +166,68 @@ describe("a chat per scope", () => {
     expect(await ChatLog.scopesIn(folder)).toEqual(["_app", "main"]);
     expect(() => new ChatLog(folder, undefined, "../x")).toThrow(/scope/);
     fs.rmSync(folder, { recursive: true, force: true });
+  });
+});
+
+describe("per-task chats (parallel spec §6)", () => {
+  const entry = (text: string) => ({ id: text, role: "user" as const, text, blocks: [], activities: [], at: "t" });
+
+  it("D0: without a task, the scope's file as before", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    await new ChatLog(base, "claude", "main").append(entry("hi"));
+    expect(fs.readFileSync(path.join(base, ".harness", "chats", "main.jsonl"), "utf8")).toBe(JSON.stringify({ ...entry("hi"), engine: "claude" }) + "\n");
+    expect(fs.readdirSync(path.join(base, ".harness", "chats"))).toEqual(["main.jsonl"]);
+  });
+
+  it("with a task: chats/<scope>/<task>.jsonl, which scopesIn ignores", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    await new ChatLog(base, "claude", "main", "t1").append(entry("hi"));
+    await new ChatLog(base, "claude", "main", "t2").append(entry("other"));
+    expect(fs.existsSync(path.join(base, ".harness", "chats", "main", "t1.jsonl"))).toBe(true);
+    expect((await new ChatLog(base, undefined, "main", "t1").load()).map((e) => e.text)).toEqual(["hi"]);
+    expect(await new ChatLog(base).load()).toEqual([]);
+    expect(await ChatLog.scopesIn(base)).toEqual([]);
+  });
+
+  it("a task chat answers blocks and archives to chats/archive/<stamp>-<scope>-<task>-<label>.jsonl", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    const log = new ChatLog(base, undefined, "main", "t1");
+    await log.append({ ...entry("q"), role: "assistant", blocks: [{ name: "choice", id: "b1", data: {} }] });
+    expect(await log.markAnswered({ blockId: "b1", value: { pick: "yes" }, answeredAt: "t" })).toBe(true);
+    expect((await log.load())[0].blocks[0]).toMatchObject({ input: { blockId: "b1" } });
+    const target = await log.archive("done");
+    expect(path.dirname(target!)).toBe(path.join(base, ".harness", "chats", "archive"));
+    expect(path.basename(target!)).toMatch(/^.+-main-t1-done\.jsonl$/);
+    expect(await log.load()).toEqual([]);
+  });
+
+  it("refuses a task id that is not a lane id, and accepts every lane id", () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    for (const bad of ["../x", "a/b", "..", "", "_p", "x".repeat(201)]) {
+      expect(isLaneId(bad)).toBe(false);
+      expect(() => new ChatLog(base, undefined, "main", bad), bad).toThrow(/task/);
+    }
+    for (const good of ["t1", "0b6c2d1e-8f3a-4c5d-9e7f-1a2b3c4d5e6f", "A_b-9", "x".repeat(200)]) {
+      expect(isLaneId(good)).toBe(true);
+      expect(() => new ChatLog(base, undefined, "main", good)).not.toThrow();
+    }
+  });
+
+  it("never follows a symlinked scope folder or chat file out of the chats folder", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    const outside = fs.mkdtempSync(path.join(root, "out-"));
+    const chats = path.join(base, ".harness", "chats");
+    fs.mkdirSync(chats, { recursive: true });
+    fs.symlinkSync(outside, path.join(chats, "main"));
+    await expect(new ChatLog(base, undefined, "main", "t1").append(entry("x"))).rejects.toThrow(/outside/);
+    expect(await new ChatLog(base, undefined, "main", "t1").load()).toEqual([]);
+    expect(fs.readdirSync(outside)).toEqual([]);
+
+    fs.mkdirSync(path.join(chats, "s1"));
+    fs.writeFileSync(path.join(outside, "secret.jsonl"), JSON.stringify(entry("secret")) + "\n");
+    fs.symlinkSync(path.join(outside, "secret.jsonl"), path.join(chats, "s1", "t1.jsonl"));
+    await expect(new ChatLog(base, undefined, "s1", "t1").append(entry("x"))).rejects.toThrow(/outside/);
+    expect(await new ChatLog(base, undefined, "s1", "t1").load()).toEqual([]);
+    expect(fs.readFileSync(path.join(outside, "secret.jsonl"), "utf8")).toBe(JSON.stringify(entry("secret")) + "\n");
   });
 });

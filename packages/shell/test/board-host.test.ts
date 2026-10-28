@@ -34,7 +34,9 @@ interface FakeTurn {
  * A host over a temp folder whose workspace is a fake: each slot's `send` waits until the test ends its turn. Lanes are
  * real TaskManagers and TurnControllers over the folder's tasks.json and per-task chats.
  */
-function host(o: { tasks?: number; engineId?: string; config?: Partial<AppConfig>; onSession?: (key: string, o: SlotOptions) => void } = {}) {
+function host(
+  o: { tasks?: number; engineId?: string; config?: Partial<AppConfig>; onSession?: (key: string, o: SlotOptions) => void; chatLogNull?: () => boolean } = {},
+) {
   const base = fs.mkdtempSync(path.join(root, "b-"));
   fs.mkdirSync(path.join(base, ".harness"), { recursive: true });
   const turns: FakeTurn[] = [];
@@ -122,7 +124,7 @@ function host(o: { tasks?: number; engineId?: string; config?: Partial<AppConfig
     },
     turnDeps: { ensureRuntime: async () => null, chatLog: async () => null, stateBlocks: () => new Set(), emit: () => {} },
     checkTurn: async () => {},
-    chatLog: async (chat, task) => new ChatLog(base, config.engineId, chat, task),
+    chatLog: async (chat, task) => (o.chatLogNull?.() ? null : new ChatLog(base, config.engineId, chat, task)),
     taskDeps,
     scoped: () => false,
     scopeExists: async () => true,
@@ -540,5 +542,72 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     const lanes = (await t.file()).lanes ?? [];
     expect(lanes.find((l) => l.id === t.turns[0].slot)?.tokens).toBe(10);
     expect(lanes.find((l) => l.id === queued)?.tokens).toBeUndefined();
+  });
+
+  it("a session the lane ended itself (a fallback, a resume from the notes) starts anew without the resume notice", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const id = t.turns[0].slot;
+    const opts = t.slots.get(id)!.options;
+    opts.onSession?.({ id: "s1", started: true });
+    t.turns[0].end();
+    await a;
+    // The lane's TaskManager ends its session (its `endSession` dep), then a new one starts.
+    const deps = (t.h.lane(id)!.manager as unknown as { d: TaskDeps }).d;
+    await deps.endSession();
+    const follow = t.h.board.ask("More");
+    await until(() => t.turns.length === 2);
+    opts.onSession?.({ id: "s2", started: true });
+    expect(t.window.some((e) => e.type === "activity" && e.detail === RESUME_FAILED)).toBe(false);
+    t.turns[1].end();
+    await follow;
+  });
+
+  it("quit: closeAll waits for a cancelled turn's reply to be written, though its lane already left the board", async () => {
+    const t = host();
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const id = t.turns[0].slot;
+    let closed = false;
+    const closing = t.h.closeAll().then(() => (closed = true));
+    await until(() => t.h.board.laneIds().length === 0);
+    await flush();
+    expect(closed).toBe(false);
+    t.turns[0].end([{ type: "text", delta: "Half done" }, { type: "done", ok: false, error: { code: "cancelled" } }]);
+    await closing;
+    await a.catch(() => undefined);
+    const entries = await t.chat("main", id);
+    expect(entries.map((e) => e.role)).toEqual(["user", "assistant"]);
+    expect(entries[1].text).toBe("Half done");
+  });
+
+  it("a failed start whose send was refused before it ran never fails the lane's next turn", async () => {
+    let refuse = false;
+    const t = host({ engineId: "opencode", chatLogNull: () => refuse });
+    await t.h.interrupt();
+    let hookFails = false;
+    t.h.gate.setBeforeStart(async () => {
+      if (hookFails) throw new Error("sleep failed");
+    });
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end();
+    await a;
+    // The hook fails, and the failed start's own send is refused before its ensureRuntime runs (no chat log).
+    hookFails = true;
+    refuse = true;
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await t.h.board.ask("Again").catch(() => undefined);
+    log.mockRestore();
+    hookFails = false;
+    refuse = false;
+    const follow = t.h.board.ask("More");
+    await until(() => t.turns.length === 2);
+    t.turns[1].end();
+    await follow;
+    expect(t.turns[1].message).toContain("More");
   });
 });

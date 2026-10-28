@@ -117,6 +117,8 @@ export type BoardHost = ReturnType<typeof createBoardHost>;
  */
 export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | undefined; parallel: AppConfig["parallel"] }) {
   const lanes = new Map<string, Lane>();
+  /** Every lane's TurnController until its writes settled: a lane that closed (quit) may still be writing its reply. */
+  const controllers = new Set<TurnController>();
   const buffer = new LiveBuffer();
   let engineId = initial.engineId;
   let hold: EngineHold = engineHold(engineId);
@@ -243,7 +245,10 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       emit,
       startFailed: (message, options) => {
         lane.startFailed = true;
-        return lane.controller.send(message, options);
+        // A send refused before its ensureRuntime ran never takes the flag: the next turn must not fail with it.
+        return lane.controller.send(message, options).finally(() => {
+          lane.startFailed = false;
+        });
       },
       onAttribution: (a) => conflicted(lane, a),
     });
@@ -273,6 +278,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       changed: (view) => laneChanged(id, view),
       emit,
       endSession: async () => {
+        // The lane ends its own session (a model fallback, a resume from the notes): the next one is new on purpose.
+        lane.known = null;
         const slot = await lane.slot.peek()?.catch(() => null);
         await slot?.endSession();
       },
@@ -298,9 +305,14 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       const slot = await lane.slot.peek()?.catch(() => null);
       lane.slot.clear();
       await slot?.close();
+      // Kept for `flush` until its last reply is written.
+      void lane.controller.flush().then(() => {
+        if (lanes.get(id) !== lane) controllers.delete(lane.controller);
+      });
     };
     lane.manager = Object.assign(manager, { id, close });
     lanes.set(id, lane);
+    controllers.add(lane.controller);
     return lane;
   }
 
@@ -461,6 +473,14 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     });
   }
 
+  /** Every lane's turn ended and its chat writes settled, the lanes that closed meanwhile included. */
+  async function flush(): Promise<void> {
+    const all = [...controllers];
+    await Promise.all(all.map((c) => c.flush()));
+    const open = new Set([...lanes.values()].map((l) => l.controller));
+    for (const c of all) if (!open.has(c) && !c.isBusy()) controllers.delete(c);
+  }
+
   /** Closes the workspace (every lane's slot); the lanes stay open and their next turns open new slots. */
   async function closeWorkspace(): Promise<void> {
     workspaceStale = false;
@@ -556,11 +576,10 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     async closeAll(): Promise<void> {
       await board.closeAll();
       await closeWorkspace().catch((err: unknown) => console.error("Could not close the agent cleanly", err));
+      // A cancelled turn still writes its reply: the lanes are gone from the board, their controllers are not.
+      await flush();
     },
-    /** Every lane's turn ended and its chat writes settled. */
-    async flush(): Promise<void> {
-      await Promise.all([...lanes.values()].map((l) => l.controller.flush()));
-    },
+    flush,
     /** The focused task's chat (the start view has none), and its turn still running to replay (Decision 6). */
     async loadChat(base: string): Promise<Pick<ChatLoad, "entries" | "live">> {
       const id = board.focusedId();

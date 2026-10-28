@@ -8,7 +8,7 @@ export const PLUGIN_API = 1;
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** Ids inside a plugin: sources, panels, chips, actions, secrets. */
 export const PLUGIN_LOCAL_ID = /^[a-z][a-z0-9_-]{0,39}$/;
-/** A slot id (part 2 declares the harness's slots; the manifest only checks the shape here). */
+/** A slot id: the core's (`DEFAULT_SLOTS`) or one the harness declares (`slots`). */
 export const SLOT_ID = /^[a-z][a-z0-9-]{0,39}$/;
 /** A command name for `exec`: a bare name, never a path (Decision 9). */
 export const EXEC_CMD = /^[A-Za-z0-9._-]{1,64}$/;
@@ -259,8 +259,9 @@ export const pluginManifestSchema = z
     }),
     sources: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), ttl: z.number().int().min(10).max(604_800), workHoursOnly: z.boolean().default(false) })).max(10).default([]),
     data: z.record(z.string().regex(COLLECTION_NAME), pluginCollectionSchema).default({}),
-    panels: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID), title: shown(text.max(40)) })).max(5).default([]),
-    chips: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID) })).max(5).default([]),
+    /** `slot` left out, unknown to the harness or of the other kind: the core's slot of that kind (`slotFor`). */
+    panels: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID).optional(), title: shown(text.max(40)) })).max(5).default([]),
+    chips: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID).optional() })).max(5).default([]),
     settings: z
       .strictObject({
         tab: shown(text.max(40)).optional(),
@@ -336,3 +337,100 @@ export type HarnessPlugins = z.output<typeof harnessPluginsSchema>;
 
 /** The harness takes plugins at all (D1, D0): a bundled one or local ones. */
 export const pluginsAccepted = (h: { plugins?: HarnessPlugins }): boolean => !!h.plugins && (h.plugins.bundled.length > 0 || h.plugins.local);
+
+export type SlotKind = "panel" | "chip";
+export interface SlotDef {
+  id: string;
+  label: string;
+  kind: SlotKind;
+}
+/** The core's slots (spec §3.4): a "Plugins" section in the side panel, chips next to the usage meter. Always present. */
+export const DEFAULT_SLOTS: readonly SlotDef[] = [
+  { id: "plugins", label: "Plugins", kind: "panel" },
+  { id: "chips", label: "Status", kind: "chip" },
+];
+const RESERVED_SLOTS = new Set(DEFAULT_SLOTS.map((s) => s.id));
+
+/** The harness's own slots (§3.4, Decision 1): never a core id, each id once. */
+export const harnessSlotsSchema = z
+  .array(z.strictObject({ id: z.string().regex(SLOT_ID), label: shown(text.max(40)), kind: z.enum(["panel", "chip"]) }))
+  .max(10)
+  .superRefine((slots, ctx) => {
+    const seen = new Set<string>();
+    slots.forEach((s, i) => {
+      if (RESERVED_SLOTS.has(s.id)) ctx.addIssue({ code: "custom", path: [i, "id"], message: `"${s.id}" is reserved for the core's slot` });
+      else if (seen.has(s.id)) ctx.addIssue({ code: "custom", path: [i, "id"], message: `"${s.id}" is declared twice` });
+      seen.add(s.id);
+    });
+  });
+
+/** Every slot the harness offers: the core's first, then its own. */
+export const harnessSlots = (h: { slots?: SlotDef[] }): SlotDef[] => [...DEFAULT_SLOTS, ...(h.slots ?? [])];
+
+/** Where a panel or chip goes (§3.4): the slot it names when the harness has it with that kind, else the core's of that kind. */
+export function slotFor(h: { slots?: SlotDef[] }, kind: SlotKind, requested: string | undefined): string {
+  const hit = requested === undefined ? undefined : harnessSlots(h).find((s) => s.id === requested && s.kind === kind);
+  return hit ? hit.id : kind === "panel" ? "plugins" : "chips";
+}
+
+type ManifestInput = z.input<typeof pluginManifestSchema>;
+type ZodObj = z.ZodObject<z.ZodRawShape>;
+/** A plugin's source definition (spec §3.1, Decision 16): plugin.json with zod where plugin.json has JSON Schemas. */
+export interface PluginDefinition {
+  id: string;
+  name: string;
+  version: string;
+  harness: string;
+  permissions?: ManifestInput["permissions"];
+  sources?: ManifestInput["sources"];
+  data?: Record<string, Omit<z.input<typeof pluginCollectionSchema>, "schema"> & { schema: ZodObj }>;
+  panels?: ManifestInput["panels"];
+  chips?: ManifestInput["chips"];
+  settings?: Omit<NonNullable<ManifestInput["settings"]>, "fields"> & {
+    fields: Record<string, Omit<z.input<typeof settingFieldJson>, "schema"> & { schema: z.ZodType }>;
+  };
+  actions?: (Omit<NonNullable<ManifestInput["actions"]>[number], "vars"> & { vars?: ZodObj })[];
+}
+/** Typed identity: `plugin.config.ts` exports `definePlugin({...})`; `build` turns it into plugin.json (`pluginJson`). */
+export const definePlugin = (d: PluginDefinition): PluginDefinition => d;
+
+/** Drops the bounds zod's `.int()` adds on its own (±MAX_SAFE_INTEGER): noise in plugin.json, not the author's limit. */
+function dropSafeIntBounds(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(dropSafeIntBounds);
+  if (!isNode(v)) return v;
+  const out: SchemaNode = {};
+  for (const [k, x] of Object.entries(v)) {
+    if (v.type === "integer" && ((k === "maximum" && x === Number.MAX_SAFE_INTEGER) || (k === "minimum" && x === Number.MIN_SAFE_INTEGER))) continue;
+    out[k] = dropSafeIntBounds(x);
+  }
+  return out;
+}
+
+/**
+ * A zod schema as allowlisted JSON Schema, without `$schema`; throws when it can't be one (a transform, a regex: B11).
+ * The output side (zod's default `io`): a `z.object` gives `additionalProperties: false`, and a transform throws.
+ */
+function toJson(s: z.ZodType): Record<string, unknown> {
+  const json = z.toJSONSchema(s, { target: "draft-2020-12", unrepresentable: "throw" });
+  const { $schema: _drop, ...rest } = dropSafeIntBounds(json) as Record<string, unknown>;
+  const why = checkSchemaSubset(rest);
+  if (why) throw new Error(why);
+  return rest;
+}
+
+/** plugin.json as `build` writes it (Decision 16): plain data, checked by the same parser the app uses. */
+export function pluginJson(d: PluginDefinition): ManifestInput {
+  const raw = {
+    ...d,
+    api: PLUGIN_API,
+    permissions: d.permissions ?? {},
+    data: Object.fromEntries(Object.entries(d.data ?? {}).map(([n, c]) => [n, { ...c, schema: toJson(c.schema) }])),
+    ...(d.settings
+      ? { settings: { ...d.settings, fields: Object.fromEntries(Object.entries(d.settings.fields).map(([n, f]) => [n, { ...f, schema: toJson(f.schema) }])) } }
+      : {}),
+    actions: (d.actions ?? []).map((a) => ({ ...a, vars: a.vars ? toJson(a.vars) : { type: "object", properties: {} } })),
+  };
+  const json = JSON.parse(JSON.stringify(raw)) as ManifestInput;
+  parsePluginManifest(json);
+  return json;
+}

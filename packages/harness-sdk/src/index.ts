@@ -7,7 +7,7 @@ import { dataSchema } from "./data";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
-import { harnessPluginsSchema } from "./plugin";
+import { harnessPluginsSchema, harnessSlotsSchema } from "./plugin";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
@@ -184,6 +184,8 @@ const manifestSchema = z.object({
   sidekick: sidekickSchema.optional(),
   /** Plugins the harness ships and whether the person may add their own (plugins spec §3.4). Absent: none (D0). */
   plugins: harnessPluginsSchema.optional(),
+  /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */
+  slots: harnessSlotsSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */

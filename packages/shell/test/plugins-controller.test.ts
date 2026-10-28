@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -314,6 +315,44 @@ describe("PluginsController: settings, keys, test", () => {
     const detail = await t.ctl.detail("oncall");
     expect(JSON.stringify(detail)).not.toContain("secret-value-123");
     expect(detail?.errors[0]).toMatchObject({ source: "s", message: "bad token [redacted]" });
+  });
+
+  it("B6: a key the service echoes in a form redact misses never reaches the error log, from a log line or an error", async () => {
+    const KEY = "secret/value+123";
+    const forms = [
+      KEY.replace(/\//g, "\\/"),
+      [...KEY].map((ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`).join(""),
+      Buffer.from(`x${KEY}`).toString("base64"),
+      Buffer.from(KEY).toString("hex"),
+      Buffer.from(`ab:${KEY}`).toString("base64"),
+    ];
+    let calls = 0;
+    const t = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      // The first run (at start, before the key is stored) succeeds; later ones log and throw the echoed forms.
+      backends: {
+        oncall: {
+          s: async (ctx) => {
+            if (calls++ === 0) return;
+            for (const f of forms) await ctx.call("log", "error", `echo ${f}`);
+            throw new Error(`bad ${forms.join(" ")}`);
+          },
+        },
+      },
+    });
+    await bundled(t.root, "oncall", { permissions: { secrets: [{ id: "tok", label: "Token" }] } });
+    await t.ctl.start();
+    await until(async () => (await t.ctl.detail("oncall"))!.sources[0].lastOk !== undefined);
+    expect(await t.ctl.setSecret("oncall", "tok", KEY)).toEqual({ ok: true });
+    const [r] = await t.ctl.test("oncall");
+    expect(r).toMatchObject({ ok: false });
+    const detail = await t.ctl.detail("oncall");
+    expect(detail?.errors.length).toBeGreaterThanOrEqual(forms.length + 1);
+    // Every text shown or kept, as text (JSON.stringify would escape the \\ of the escaped forms).
+    const shown = [r.error, detail?.row.lastError, ...(detail?.sources ?? []).map((x) => x.lastError), ...(detail?.errors ?? []).map((e) => e.message)].join("\n");
+    expect(shown).toContain("(a line held a key; not shown)");
+    for (const f of forms) expect(shown).not.toContain(f);
+    expect(shown.toLowerCase()).not.toContain(Buffer.from(KEY).toString("hex"));
   });
 
   it("refresh is refused for a plugin that is off or a source it doesn't declare", async () => {

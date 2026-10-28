@@ -18,7 +18,6 @@ import {
   pluginSettings,
   pluginsAccepted,
   preparedTitle,
-  redact,
   sameSetting,
   settingsSentences,
   settingsValues,
@@ -26,7 +25,7 @@ import {
   slotFor,
   withSetting,
 } from "@humanharness/harness-sdk";
-import { type FixtureExchange, fixtureTransport, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
+import { type FixtureExchange, fixtureTransport, hideSecrets, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
 import type {
   AttentionItemView,
   AttentionView,
@@ -464,7 +463,8 @@ export class PluginsController {
         else r.chips.delete(chip);
         this.pushSurface();
       },
-      log: (level, message) => this.appendError(c, id, { message: level === "error" ? message : `${level}: ${message}` }),
+      // The line may echo a key the service sent back: hidden before the error log (and the detail view) see it (B6).
+      log: async (level, message) => this.appendError(c, id, { message: await this.hidden(r, level === "error" ? message : `${level}: ${message}`) }),
       fetch: this.d.fetch,
       // A host check may look names up (network): fixture mode has nothing to look up.
       ...(this.d.allowHost && !this.d.fixtures ? { allowHost: this.d.allowHost } : {}),
@@ -668,9 +668,14 @@ export class PluginsController {
     });
   }
 
-  private async redacted(r: Running, text: string): Promise<string> {
+  /** `text` with every form of the plugin's keys hidden; a line that still holds one is withheld whole (B6). */
+  private async hidden(r: Running, text: string): Promise<string> {
     const values = Object.values(await this.secretValues(r, [...r.approvedSecrets]));
-    return (values.length > 0 ? redact(text, values) : text).slice(0, 500) || "The sync failed";
+    return hideSecrets(text, values);
+  }
+
+  private async redacted(r: Running, text: string): Promise<string> {
+    return (await this.hidden(r, text)).slice(0, 500) || "The sync failed";
   }
 
   private async settingsAnswer(c: BaseCtx, r: Running): Promise<Record<string, unknown>> {

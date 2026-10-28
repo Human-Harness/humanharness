@@ -2027,6 +2027,34 @@ describe("import (spec §2a.6)", () => {
     expect(h.imported).toEqual(["/n/a.md"]);
   });
 
+  it("original: only a stored source with a content hash is read again; an extensionless path only when picked this session", async () => {
+    const def = (id: string, source: unknown) => ({ id, type: "sidekick" as const, name: id, mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: source as never });
+    // The agent can edit sidekick.json: no hash, a bad hash, a relative path, too many paths or a key with no extension.
+    const planted = [
+      def("nohash", { kind: "files", paths: ["/n/a.md"] }),
+      def("badhash", { kind: "files", paths: ["/n/a.md"], hash: "x" }),
+      def("relative", { kind: "files", paths: ["n/a.md"], hash: sha256("v1") }),
+      def("many", { kind: "files", paths: ["/n/a.md", "/n/a.md", "/n/a.md", "/n/a.md", "/n/a.md"], hash: sha256("v1") }),
+      def("key", { kind: "files", paths: ["/n/id_ed25519"], hash: sha256("v1", "id_ed25519") }),
+    ];
+    const h = harness({ record: on, extra: planted, answers: [json(RULO), json(RULO)], files: { "/n/a.md": "v1", "/n/id_ed25519": "secret", "/n/notes": "You are Rulo." }, picked: ["/n/notes"] });
+    for (const k of planted) {
+      expect(await h.ctl.importDraft({ kind: "original", sidekickId: k.id })).toEqual({ ok: false, reason: "failed" });
+      expect(await h.ctl.checkSidekick(k.id)).toBe("none");
+    }
+    expect(h.imported).toEqual([]);
+    expect(h.opened).toEqual([]);
+    // An extensionless file the person picked: its own import and its check this session read it.
+    const d = await h.ctl.importDraft({ kind: "files", token: (await h.ctl.pickFiles())!.token });
+    if (!d.ok) throw new Error("no draft");
+    expect(await h.ctl.checkOriginal(d.draft.source)).toBe("unchanged");
+    expect(h.imported).toEqual(["/n/notes", "/n/notes"]);
+    // Another session (a new controller) doesn't read it again from the stored source alone.
+    const later = harness({ record: on, extra: [def("notes", d.draft.source)], files: { "/n/notes": "You are Rulo." } });
+    expect(await later.ctl.checkSidekick("notes")).toBe("none");
+    expect(later.imported).toEqual([]);
+  });
+
   it("a hung file read ends with the import's timeout", async () => {
     const h = harness({ record: on, picked: ["/n/a.md"], importMs: 20 });
     (h.deps as { importFiles: SidekickDeps["importFiles"] }).importFiles = (_paths, signal) => new Promise((ok) => signal.addEventListener("abort", () => ok({ ok: false, reason: "unreadable", file: "a.md" })));

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -104,12 +104,28 @@ describe("refusal by identity and env (compliance)", () => {
     expect(await refusedPath(join(dataAlias(home), "notes", "me.md"), at(home))).toBe(false);
   });
 
-  it("refuses engine folders the env moved (CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_CONFIG_HOME, XDG_DATA_HOME)", async () => {
+  it.skipIf(process.platform !== "darwin")("refuses a file in an engine folder through its /System/Volumes/Data name, by identity alone", async () => {
+    // A real (link-free) fake home: the alias below is the only other name, and no path comparison sees it.
+    const home = realpathSync(fakeHome());
+    write(home, join(".claude", "x.md"), "secret");
+    const alias = join("/System/Volumes/Data", home, ".claude", "x.md");
+    const link = join(home, "notes", "x.md");
+    symlinkSync(alias, link);
+    for (const p of [alias, link]) {
+      expect(await refusedPath(p, at(home))).toBe(true);
+      const io = { read: vi.fn(async () => "x"), stat: vi.fn(async () => ({ id: "x", size: 1, file: true })) };
+      expect(await readImportFiles([p], at(home), io)).toEqual({ ok: false, reason: "engine-settings" });
+      expect(io.stat).not.toHaveBeenCalled();
+      expect(io.read).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses engine folders the env moved (CLAUDE_CONFIG_DIR, CODEX_HOME, OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME, XDG_DATA_HOME)", async () => {
     const home = fakeHome();
     const elsewhere = mkdtempSync(join(tmpdir(), "hh-env-"));
-    for (const d of ["claude-cfg", "codex-home", join("cfg", "opencode"), join("data", "opencode"), join("cfg", "other")]) mkdirSync(join(elsewhere, d), { recursive: true });
-    const env = { CLAUDE_CONFIG_DIR: join(elsewhere, "claude-cfg"), CODEX_HOME: join(elsewhere, "codex-home"), XDG_CONFIG_HOME: join(elsewhere, "cfg"), XDG_DATA_HOME: join(elsewhere, "data") };
-    for (const d of ["claude-cfg", "codex-home", join("cfg", "opencode"), join("data", "opencode")]) {
+    for (const d of ["claude-cfg", "codex-home", "opencode-cfg", join("cfg", "opencode"), join("data", "opencode"), join("cfg", "other")]) mkdirSync(join(elsewhere, d), { recursive: true });
+    const env = { CLAUDE_CONFIG_DIR: join(elsewhere, "claude-cfg"), CODEX_HOME: join(elsewhere, "codex-home"), OPENCODE_CONFIG_DIR: join(elsewhere, "opencode-cfg"), XDG_CONFIG_HOME: join(elsewhere, "cfg"), XDG_DATA_HOME: join(elsewhere, "data") };
+    for (const d of ["claude-cfg", "codex-home", "opencode-cfg", join("cfg", "opencode"), join("data", "opencode")]) {
       expect(await refusedPath(join(elsewhere, d, "x.md"), at(home, env))).toBe(true);
       expect(await refusedPath(join(elsewhere, d, "x.md"), at(home))).toBe(false);
     }
@@ -131,10 +147,10 @@ describe("reading a checked file only (TOCTOU)", () => {
     const stat = vi.fn(importFileIo.stat);
     const io: ImportIo = {
       stat,
-      read: async (p, expected, signal) => {
+      read: async (p, expected, signal, recheck) => {
         // While a.md is read, the env's config folder appears as a link to b.md's folder.
         symlinkSync(join(home, "later"), join(home, "cfg"));
-        return importFileIo.read(p, expected, signal);
+        return importFileIo.read(p, expected, signal, recheck);
       },
     };
     expect(await readImportFiles([a, b], at(home, env), io)).toEqual({ ok: false, reason: "engine-settings" });
@@ -158,6 +174,52 @@ describe("reading a checked file only (TOCTOU)", () => {
     rmSync(p, { force: true });
     write(home, join("notes", "a.md"), "A");
     expect(await readImportFiles([p], at(home), swap((q) => renameSync(other, q)))).toEqual({ ok: false, reason: "unreadable", file: "a.md" });
+  });
+
+  it("a folder on the way swapped for a link into an engine folder after the last check: refused once open, before any byte is read", async () => {
+    const home = realpathSync(fakeHome());
+    mkdirSync(join(home, "notes", "sub"));
+    const p = write(home, join("notes", "sub", "a.md"), "A");
+    write(home, join(".claude", "a.md"), "secret");
+    const read = vi.fn(importFileIo.read);
+    const io: ImportIo = {
+      // Right after the re-check, before the file is looked up and opened: lstat and open both follow the new link.
+      stat: async (q) => {
+        renameSync(join(home, "notes", "sub"), join(home, "notes", "old"));
+        symlinkSync(join(home, ".claude"), join(home, "notes", "sub"));
+        return importFileIo.stat(q);
+      },
+      read,
+    };
+    expect(await readImportFiles([p], at(home), io)).toEqual({ ok: false, reason: "engine-settings" });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("a folder swapped for a link elsewhere after the last check: the opened file's path moved, so it is unreadable", async () => {
+    const home = realpathSync(fakeHome());
+    mkdirSync(join(home, "notes", "sub"));
+    mkdirSync(join(home, "notes", "other"));
+    const p = write(home, join("notes", "sub", "a.md"), "A");
+    write(home, join("notes", "other", "a.md"), "B");
+    const io: ImportIo = {
+      stat: async (q) => {
+        renameSync(join(home, "notes", "sub"), join(home, "notes", "old"));
+        symlinkSync(join(home, "notes", "other"), join(home, "notes", "sub"));
+        return importFileIo.stat(q);
+      },
+      read: importFileIo.read,
+    };
+    expect(await readImportFiles([p], at(home), io)).toEqual({ ok: false, reason: "unreadable", file: "a.md" });
+  });
+
+  it("a file with another hard link is refused: its other name may be in an engine folder", async () => {
+    const home = fakeHome();
+    const inside = write(home, join(".claude", "secret.md"), "secret");
+    const p = join(home, "notes", "a.md");
+    linkSync(inside, p);
+    expect(await readImportFiles([p], at(home))).toEqual({ ok: false, reason: "engine-settings" });
+    const plain = write(home, join("notes", "b.md"), "B");
+    expect(await readImportFiles([plain], at(home))).toMatchObject({ ok: true });
   });
 
   it("a FIFO picked as is is never opened", async () => {

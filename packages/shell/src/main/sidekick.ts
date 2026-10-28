@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { basename, isAbsolute } from "node:path";
+import { basename, extname, isAbsolute } from "node:path";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import {
   DEFAULT_SIDEKICK,
@@ -28,7 +28,7 @@ import {
   usedShare,
   whyShown,
 } from "@humanharness/workspace";
-import { IMPORT_MAX_BYTES, type ImportRead } from "./sidekick-import";
+import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportRead } from "./sidekick-import";
 import { candidates, pickSpeaker } from "./sidekick-route";
 import type { SidekickInput, SidekickStore } from "./sidekick-store";
 import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
@@ -77,6 +77,10 @@ const PICK_MS = 10 * 60_000;
 const ISSUED_MAX = 8;
 /** A files source as one comparable string. */
 const sourceKey = (s: { paths: string[]; hash: string }) => JSON.stringify([s.paths, s.hash]);
+/** A stored original's content hash (sha256, hex): a source without one is never read again. */
+const SOURCE_HASH = /^[0-9a-f]{64}$/;
+/** What a stored original's paths may end in to be read again without this session's import: plain text, named so. */
+const ORIGINAL_EXTS = new Set([".md", ".txt"]);
 
 /** A date's local calendar day (YYYY-MM-DD): the daily card runs once per one (plan Decision 12). */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -540,8 +544,7 @@ export class SidekickController {
         let paths: string[] | null;
         if (input.kind === "files") paths = await this.takePick(input.token);
         else {
-          const stored = (await this.d.store.sidekicks()).find((k) => k.id === input.sidekickId)?.source;
-          paths = stored?.kind === "files" ? stored.paths : null;
+          paths = this.originalPaths((await this.d.store.sidekicks()).find((k) => k.id === input.sidekickId)?.source);
         }
         if (!paths) return { ok: false, reason: input.kind === "files" ? "expired" : "failed" };
         const read = await this.d.importFiles(paths, signal);
@@ -581,10 +584,27 @@ export class SidekickController {
    * hash: unchanged; another: changed; refused, missing or over the limits: gone. A paste has no original.
    */
   async checkOriginal(source: SidekickSource): Promise<SidekickOriginal> {
-    if (source.kind !== "files") return "none";
-    const read = await this.d.importFiles(source.paths, AbortSignal.timeout(this.d.importMs ?? IMPORT_MS)).catch(() => null);
+    const paths = this.originalPaths(source);
+    if (!paths || source.kind !== "files") return "none";
+    const read = await this.d.importFiles(paths, AbortSignal.timeout(this.d.importMs ?? IMPORT_MS)).catch(() => null);
     if (!read?.ok) return "gone";
     return read.hash === source.hash ? "unchanged" : "changed";
+  }
+
+  /**
+   * A stored sidekick's original files, when they may be read again (null otherwise). Its source sits in a file the
+   * agent can edit, so only one that looks like an import's own qualifies: 1 to IMPORT_MAX_FILES absolute paths and
+   * a content hash. A path without a `.md`/`.txt` extension (a key, a dotfile) qualifies only when an import read this
+   * same source in this session (the person picked it); each path is refused again inside an engine's settings
+   * folder before any byte is read (importFiles).
+   */
+  private originalPaths(source: SidekickSource | undefined): string[] | null {
+    if (source?.kind !== "files" || typeof source.hash !== "string" || !SOURCE_HASH.test(source.hash)) return null;
+    const paths: unknown = source.paths;
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > IMPORT_MAX_FILES) return null;
+    if (!paths.every((p): p is string => typeof p === "string" && isAbsolute(p) && !p.includes("\0"))) return null;
+    if (this.issued.includes(sourceKey(source))) return [...paths];
+    return paths.every((p) => ORIGINAL_EXTS.has(extname(p).toLowerCase())) ? [...paths] : null;
   }
 
   /** checkOriginal for a stored sidekick, by id: the renderer never passes paths to check. `none` without files. */

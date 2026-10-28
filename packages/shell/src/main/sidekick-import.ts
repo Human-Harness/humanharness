@@ -16,7 +16,7 @@ const EXTS = new Set([".md", ".txt", ""]);
 export const ENGINE_DIRS: readonly string[] = [".claude", ".codex", ".gemini", join(".config", "opencode"), join(".local", "share", "opencode")];
 /**
  * Where the engines' settings folders are: under `home`, plus where the environment moved them (CLAUDE_CONFIG_DIR,
- * CODEX_HOME, $XDG_CONFIG_HOME/opencode, $XDG_DATA_HOME/opencode). Tests pass a fake home and env.
+ * CODEX_HOME, OPENCODE_CONFIG_DIR, $XDG_CONFIG_HOME/opencode, $XDG_DATA_HOME/opencode). Tests pass a fake home and env.
  */
 export interface ImportPlace {
   home: string;
@@ -58,7 +58,7 @@ export async function resolvedPath(p: string, depth = 0): Promise<string> {
 function engineFolders(where: ImportPlace): string[] {
   const dirs = ENGINE_DIRS.map((d) => resolve(where.home, d));
   const env = (k: string) => (where.env[k] ? resolve(where.env[k]!) : null);
-  for (const d of [env("CLAUDE_CONFIG_DIR"), env("CODEX_HOME")]) if (d) dirs.push(d);
+  for (const d of [env("CLAUDE_CONFIG_DIR"), env("CODEX_HOME"), env("OPENCODE_CONFIG_DIR")]) if (d) dirs.push(d);
   for (const [k, rel] of [["XDG_CONFIG_HOME", "opencode"], ["XDG_DATA_HOME", "opencode"]] as const) {
     const base = env(k);
     if (base) dirs.push(join(base, rel));
@@ -139,25 +139,32 @@ export interface ImportIo {
   stat(p: string): Promise<ImportStat>;
   /**
    * The file's text, opened without following a link or blocking, and checked before any byte is read: a regular
-   * file, at most IMPORT_MAX_BYTES (else ImportTooBig), and the same file `expected` described (else it throws).
+   * file with no other hard link (else ImportRefused), at most IMPORT_MAX_BYTES (else ImportTooBig), the same file
+   * `expected` described, and `recheck` passing once it is open (it throws ImportRefused or another error).
    */
-  read(p: string, expected: ImportStat, signal: AbortSignal): Promise<string>;
+  read(p: string, expected: ImportStat, signal: AbortSignal, recheck: () => Promise<void>): Promise<string>;
 }
 
 /** A file that grew past IMPORT_MAX_BYTES after its size was read. */
 export class ImportTooBig extends Error {}
+/** A file refused once open: it moved into an engine's settings folder, or has another name (a hard link) that may be in one. */
+export class ImportRefused extends Error {}
 
 const statId = (s: { dev: bigint; ino: bigint }) => `${s.dev}:${s.ino}`;
 
 /** Reads at most IMPORT_MAX_BYTES bytes (more throws ImportTooBig) of the file `expected` described, and only that one. */
-async function boundedRead(p: string, expected: ImportStat, signal: AbortSignal): Promise<string> {
+async function boundedRead(p: string, expected: ImportStat, signal: AbortSignal, recheck: () => Promise<void>): Promise<string> {
   // O_NONBLOCK: a FIFO swapped in opens without waiting for a writer, and is refused below.
   const fh = await open(p, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const s = await fh.stat({ bigint: true });
     if (!s.isFile()) throw new Error("Not a file");
     if (statId(s) !== expected.id) throw new Error("Not the file that was checked");
+    // Another name for the same file can't be checked by path: it may be inside an engine's settings folder.
+    if (s.nlink > 1n) throw new ImportRefused("A hard link");
     if (s.size > BigInt(IMPORT_MAX_BYTES)) throw new ImportTooBig();
+    // A folder on the way swapped for a link after the last check: the opened file's path is checked again now.
+    await recheck();
     const buf = Buffer.alloc(IMPORT_MAX_BYTES + 1);
     let n = 0;
     while (n < buf.length) {
@@ -199,8 +206,9 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
  * The picked files for an import (spec §2a.6): refused when one is in an engine's settings folder (by path and by
  * identity, every file checked before any is looked at further), when there are too many, one isn't plain text or one
  * is too big. Then each file, in turn: refusal checked again first, then its size and identity looked up, then opened
- * and checked to be that same regular file before any byte is read. An abort (the import's timeout or cancel) ends it
- * as unreadable. `hash` lets the import notice a changed original.
+ * and checked to be that same regular file with one name only, its path still resolving to the same place and still
+ * not refused, before any byte is read. An abort (the import's timeout or cancel) ends it as unreadable. `hash` lets
+ * the import notice a changed original.
  */
 export async function readImportFiles(paths: readonly string[], where: ImportPlace, io: ImportIo = importFileIo, signal: AbortSignal = new AbortController().signal): Promise<ImportRead> {
   if (paths.length === 0) return { ok: false, reason: "unreadable" };
@@ -223,10 +231,15 @@ export async function readImportFiles(paths: readonly string[], where: ImportPla
     const info = await io.stat(real[i]).catch(() => null);
     if (!info?.file) return { ok: false, reason: "unreadable", file: basename(p) };
     if (info.size > IMPORT_MAX_BYTES) return { ok: false, reason: "too-big", file: basename(p) };
+    const recheck = async () => {
+      if (await refusedPath(real[i], where)) throw new ImportRefused("An engine's settings");
+      if ((await resolvedPath(real[i])) !== real[i]) throw new Error("The path moved");
+    };
     let text: string;
     try {
-      text = await abortable(io.read(real[i], info, signal), signal);
+      text = await abortable(io.read(real[i], info, signal, recheck), signal);
     } catch (err) {
+      if (err instanceof ImportRefused) return { ok: false, reason: "engine-settings" };
       // It may have grown since its size was read.
       return { ok: false, reason: err instanceof ImportTooBig ? "too-big" : "unreadable", file: basename(p) };
     }

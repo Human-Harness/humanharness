@@ -682,15 +682,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-review-approved { color: var(--hh-ok); }
 .hh-review-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
 .hh-review-ask textarea { flex: 1 1 100%; min-height: 3em; }
-/* "See what changed" (§5.4): text only; the sign says what each line is without its colour. */
+/* "See what changed" (§5.4): the box around the timeline's diff, which draws the changes. */
 .hh-diff { max-width: 72ch; margin: 0 auto 16px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; }
-.hh-diff ol { margin: 0; padding: 0; list-style: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.hh-diff-added { background: var(--hh-callout-tip); }
-.hh-diff-added::before { content: "+ "; }
-.hh-diff-removed { background: var(--hh-error-bg); text-decoration: line-through; }
-.hh-diff-removed::before { content: "− "; }
-.hh-diff-same::before { content: "  "; }
-.hh-diff-gap { color: var(--hh-muted); }
+.hh-reader-is-full .hh-diff { max-width: none; }
 /* Narrow: only the review column moves under the body; the contents list stays beside it. */
 @container (max-width: 900px) {
   .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }

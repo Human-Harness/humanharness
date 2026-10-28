@@ -22,6 +22,8 @@ export interface FileDiffProps {
   to: string | "current";
   /** The layout to start with; the person can switch. */
   layout?: DiffLayout;
+  /** Change it to ask for the diff again (the file now may have changed); the drawn diff stays until the new one comes. */
+  refresh?: unknown;
 }
 
 /** The changed items and up to CONTEXT unchanged ones around each; null marks a gap ("…") between kept runs. */
@@ -361,7 +363,7 @@ function useNarrow(ref: RefObject<HTMLElement | null>): boolean {
 }
 
 /** What changed in a file between two versions (file-timeline spec §4), inline or side by side. Text only, never HTML. */
-export function FileDiff({ client, path, from, to, layout: initial = "inline" }: FileDiffProps) {
+export function FileDiff({ client, path, from, to, layout: initial = "inline", refresh }: FileDiffProps) {
   const { t } = useTranslation();
   const [diff, setDiff] = useState<FileDiffResult | null>(null);
   const [layout, setLayout] = useState<DiffLayout>(initial);
@@ -369,10 +371,12 @@ export function FileDiff({ client, path, from, to, layout: initial = "inline" }:
   const box = useRef<HTMLElement>(null);
   const narrow = useNarrow(box);
   useEffect(() => {
-    let live = true;
     setDiff(null);
     // Another pair of versions starts on the drawn view.
     setSource(false);
+  }, [path, from, to]);
+  useEffect(() => {
+    let live = true;
     client.files.diff(path, from, to).then(
       (d) => live && setDiff(d),
       () => live && setDiff({ ok: false, reason: "failed" }),
@@ -380,7 +384,7 @@ export function FileDiff({ client, path, from, to, layout: initial = "inline" }:
     return () => {
       live = false;
     };
-  }, [client, path, from, to]);
+  }, [client, path, from, to, refresh]);
   // Narrow: inline whatever was picked; the choice stays for when the box widens (§4.3, Q12).
   const shown: DiffLayout = layout === "side" && narrow ? "inline" : layout;
   let body: ReactNode;

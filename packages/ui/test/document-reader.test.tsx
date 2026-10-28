@@ -534,20 +534,57 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     expect(diff.textContent).toBe("The approved version can't be read any more, so there is nothing to compare.");
   });
 
-  it("'See what changed' shows the lines added and removed since the approval", async () => {
+  it("'See what changed' shows what changed since the approval, with the timeline's diff", async () => {
     const { client } = setup({ review: true });
     await screen.findByRole("button", { name: "Approve" });
     client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
     client.currentBlobs["docs/cache.md"] = "1".repeat(40);
-    client.approvedTexts["docs/cache.md"] = ANALYSIS.replace("Slow calls.", "Fast calls.");
+    const approved = "c".repeat(40);
+    client.timelines["docs/cache.md"] = [
+      { kind: "approval", author: { kind: "person", label: "You" }, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: approved, version: 1, commits: [{ id: approved, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
+    ];
+    client.diffs[`docs/cache.md|${approved}|current`] = {
+      ok: true,
+      kind: "markdown",
+      same: false,
+      truncated: false,
+      blocks: [{ type: "paragraph", status: "changed", before: "Slow calls.", after: "Fast calls.", parts: [{ kind: "del", text: "Slow" }, { kind: "ins", text: "Fast" }, { kind: "same", text: " calls." }] }],
+      source: [],
+    };
     act(() => client.emitReviewChanged("docs/cache.md"));
     fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
     const diff = await screen.findByRole("region", { name: "Changes since the approval" });
-    expect(within(diff).getByText("Fast calls.").closest("li")?.className).toContain("hh-diff-removed");
-    expect(within(diff).getByText("Slow calls.").closest("li")?.className).toContain("hh-diff-added");
-    // Only the change and two lines around it: the front-matter's first line is far away.
-    expect(within(diff).queryByText("---")).toBeNull();
+    await waitFor(() => expect(diff.querySelector("ins")?.textContent).toBe("Fast"));
+    expect(diff.querySelector("del")?.textContent).toBe("Slow");
     fireEvent.click(screen.getByRole("button", { name: "Hide changes" }));
     expect(screen.queryByRole("region", { name: "Changes since the approval" })).toBeNull();
+  });
+
+  it("'See what changed' asks again when the document changes while it shows", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = "1".repeat(40);
+    const approved = "c".repeat(40);
+    client.timelines["docs/cache.md"] = [
+      { kind: "approval", author: { kind: "person", label: "You" }, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: approved, version: 1, commits: [{ id: approved, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
+    ];
+    const key = `docs/cache.md|${approved}|current`;
+    const said = (after: string) => ({
+      ok: true as const,
+      kind: "markdown" as const,
+      same: false,
+      truncated: false,
+      blocks: [{ type: "paragraph" as const, status: "added" as const, after }],
+      source: [],
+    });
+    client.diffs[key] = said("First edit.");
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
+    const diff = await screen.findByRole("region", { name: "Changes since the approval" });
+    await within(diff).findByText("First edit.");
+    client.diffs[key] = said("Second edit.");
+    await act(async () => client.changeDocument("docs/cache.md", `${ANALYSIS}\n\nSecond edit.`));
+    await within(screen.getByRole("region", { name: "Changes since the approval" })).findByText("Second edit.");
   });
 });

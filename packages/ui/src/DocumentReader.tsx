@@ -614,7 +614,7 @@ export function DocumentReader({
               {notice}
             </p>
           )}
-          {review && diffOpen && !picked && doc?.ok && !source && <ApprovedDiff client={client} path={path} current={doc.text} />}
+          {review && diffOpen && !picked && doc?.ok && !source && <ApprovedDiff client={client} path={path} refresh={doc} />}
           {picked ? (
             <EntryDiff client={client} path={path} entry={picked} busy={busy} onBack={leaveDiff} />
           ) : (

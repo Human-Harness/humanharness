@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskContext } from "../src/client";
 import { ContextPanel } from "../src/ContextPanel";
@@ -161,6 +162,82 @@ describe("ContextPanel (context-panel spec §5.1)", () => {
     expect(within(panel).queryByRole("button", { name: "Choose a file…" })).toBeNull();
     expect(document.activeElement).toBe(add);
     expect(within(panel).getByRole("heading", { name: "At the start" })).toBeTruthy();
+  });
+
+  it("another task: nothing of the previous one carries over; a no-task answer clears the view", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    client.contexts.t1 = CTX;
+    client.contexts.t2 = { ...CTX, task: "t2", reads: [{ kind: "read", label: "src/two.ts", path: "src/two.ts", firstAt: AT, count: 1 }] };
+    client.pickAnswer = { ok: true, path: "docs/conv.md" };
+    const { rerender, i18n } = await renderIn("en", <ContextPanel client={client} taskId="t1" />);
+    const wrap = (id: string) => (
+      <I18nextProvider i18n={i18n}>
+        <ContextPanel client={client} taskId={id} />
+      </I18nextProvider>
+    );
+    await screen.findByText("src/app.ts");
+    fireEvent.click(screen.getByRole("button", { name: "Add…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose a file…" }));
+    await screen.findByText("docs/conv.md");
+    rerender(wrap("t2"));
+    await screen.findByText("src/two.ts");
+    expect(screen.queryByText("src/app.ts")).toBeNull();
+    expect(screen.queryByText("docs/conv.md")).toBeNull();
+    expect(screen.queryByRole("button", { name: "For this task" })).toBeNull();
+    rerender(wrap("t9"));
+    expect(await screen.findByText("No task is open.")).toBeTruthy();
+    expect(screen.queryByText("src/two.ts")).toBeNull();
+  });
+
+  it("a late answer for the previous task is dropped", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    client.contexts.t1 = CTX;
+    client.contexts.t2 = { ...CTX, task: "t2", reads: [{ kind: "read", label: "src/two.ts", path: "src/two.ts", firstAt: AT, count: 1 }] };
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    client.context.pin = async () => {
+      await gate;
+      return { ok: false, reason: "binary" };
+    };
+    const { rerender, i18n } = await renderIn("en", <ContextPanel client={client} taskId="t1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pin src/app.ts" }));
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <ContextPanel client={client} taskId="t2" />
+      </I18nextProvider>,
+    );
+    await screen.findByText("src/two.ts");
+    await act(async () => release());
+    expect(screen.queryByText("Text files only")).toBeNull();
+    expect(screen.getByText("src/two.ts")).toBeTruthy();
+  });
+
+  it("after Exclude, Remove or Include again, focus lands on the section, or on Add… when the section goes", async () => {
+    const { panel } = await show();
+    fireEvent.click(within(panel).getByRole("button", { name: "Exclude We use Redux" }));
+    await waitFor(() => expect(document.activeElement).toBe(within(panel).getByRole("heading", { name: "At the start" })));
+    fireEvent.click(within(panel).getByRole("button", { name: "Remove gone.md" }));
+    await waitFor(() => expect(document.activeElement).toBe(within(panel).getByRole("heading", { name: "Pinned" })));
+    fireEvent.click(within(panel).getByRole("button", { name: "Include again Old idea" }));
+    await waitFor(() => expect(document.activeElement).toBe(within(panel).getByRole("button", { name: "Add…" })));
+  });
+
+  it("keeps the status region mounted, empty until something waits", async () => {
+    const { panel } = await show();
+    expect(within(panel).getByRole("status").textContent).toBe("");
+  });
+
+  it("two reads with the same name outside the folder both show, with no key clash", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const reads = [
+      { kind: "read" as const, label: "notes.md", firstAt: "2026-10-28T10:01:00.000Z", count: 1 },
+      { kind: "read" as const, label: "notes.md", firstAt: "2026-10-28T10:02:00.000Z", count: 1 },
+    ];
+    const { panel } = await show({}, { ...CTX, reads });
+    const during = within(panel).getByRole("region", { name: "During the task" });
+    expect(within(during).getAllByText("notes.md")).toHaveLength(2);
+    expect(errors.mock.calls.some((c) => String(c[0]).includes("same key"))).toBe(false);
+    errors.mockRestore();
   });
 
   it("says when there is no open task", async () => {

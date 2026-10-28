@@ -30,7 +30,9 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   const duringId = useId();
   const pinnedId = useId();
   const excludedId = useId();
-  const [ctx, setCtx] = useState<TaskContext | null>(null);
+  const [loaded, setCtx] = useState<TaskContext | null>(null);
+  // Only the open task's record is ever drawn, even for the one render before a new task's reset runs.
+  const ctx = loaded?.task === taskId ? loaded : null;
   const [failed, setFailed] = useState<ContextRefusal | null>(null);
   const [menu, setMenu] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
@@ -40,6 +42,21 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   const addRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const pickedRef = useRef<HTMLDivElement>(null);
+  const startHead = useRef<HTMLHeadingElement>(null);
+  const pinnedHead = useRef<HTMLHeadingElement>(null);
+  const excludedHead = useRef<HTMLHeadingElement>(null);
+  // The task the panel shows now, and whether it is still mounted: an answer for another task, or one that arrives
+  // after the panel closed, is dropped.
+  const shownTask = useRef(taskId);
+  shownTask.current = taskId;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const current = (id: string) => mounted.current && shownTask.current === id;
   const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
 
   // Focus follows the "Add…" flow: into the menu when it opens, onto the picked file's choices once one is picked.
@@ -60,6 +77,13 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   };
 
   useEffect(() => {
+    // Another task: nothing of the previous one's panel (record, pick, notice, menu, wait) carries over.
+    setCtx(null);
+    setFailed(null);
+    setMenu(false);
+    setPicked(null);
+    setWaiting(false);
+    setNotice(null);
     let live = true;
     client.context.get(taskId).then(
       (r) => {
@@ -96,23 +120,27 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
     };
   }, [client, scoped, scope]);
 
-  const refresh = () =>
-    client.context.get(taskId).then(
+  const refresh = (id: string) =>
+    client.context.get(id).then(
       (r) => {
-        if (r.ok) setCtx(r.context);
+        if (r.ok && current(id)) setCtx(r.context);
       },
       () => {},
     );
   const run = async (call: () => Promise<ContextResult>, after?: () => void) => {
+    const id = taskId;
     setNotice(null);
     const r = await call().catch((): ContextResult => ({ ok: false, reason: "failed" }));
+    if (!current(id)) return;
     if (!r.ok) {
       setNotice(t(`context.refused.${r.reason}`));
       return;
     }
     after?.();
-    await refresh();
+    await refresh(id);
   };
+  /** A row's action took its button away: focus goes to its section's heading (or "Add…" when the section goes too). */
+  const focusOn = (el: { current: HTMLElement | null }) => () => (el.current ?? addRef.current)?.focus();
 
   const head = (
     <div className="hh-ctxp-head">
@@ -149,8 +177,9 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   };
   const total = ctx.start.reduce((n, i) => n + i.tokens, 0);
   const reads = [...ctx.reads].sort((a, b) => b.firstAt.localeCompare(a.firstAt));
-  const readRow = (r: ContextRead) => (
-    <li key={`${r.kind}:${r.path ?? r.label}`} className={r.compacted ? "hh-ctxp-row hh-ctxp-faint" : "hh-ctxp-row"}>
+  // Two reads outside the folder can share a file name: the key adds the time and the position.
+  const readRow = (r: ContextRead, n: number) => (
+    <li key={`${r.kind}:${r.path ?? r.label}:${r.firstAt}:${n}`} className={r.compacted ? "hh-ctxp-row hh-ctxp-faint" : "hh-ctxp-row"}>
       {r.path ? open(r.path) : <span>{r.label}</span>}
       {r.count > 1 && <span className="hh-ctxp-size">{t("context.times", { count: r.count })}</span>}
       {r.compacted && <span className="hh-caption">{t("context.faint")}</span>}
@@ -187,8 +216,10 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
               <button
                 type="button"
                 onClick={async () => {
+                  const id = taskId;
                   closeMenu();
                   const r = await client.context.pick().catch(() => ({ ok: false as const, reason: "failed" as const }));
+                  if (!current(id)) return;
                   if (r.ok) setPicked(r.path);
                   else if (r.reason !== "cancelled") setNotice(t(`context.refused.${r.reason}`));
                 }}
@@ -217,9 +248,10 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                 type="button"
                 disabled={waiting}
                 onClick={async () => {
+                  const id = taskId;
                   setWaiting(true);
-                  await run(() => client.context.add(taskId, picked), settled);
-                  setWaiting(false);
+                  await run(() => client.context.add(id, picked), settled);
+                  if (current(id)) setWaiting(false);
                 }}
               >
                 {t("context.forTask")}
@@ -234,7 +266,10 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
               )}
             </div>
           )}
-          {waiting && <p role="status">{t("context.waiting")}</p>}
+          {/* Always there, so a screen reader hears the text when it appears. */}
+          <p role="status" className="hh-caption">
+            {waiting ? t("context.waiting") : ""}
+          </p>
         </div>
       )}
       {notice && (
@@ -244,7 +279,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
       )}
 
       <section className="hh-ctxp-section" aria-labelledby={startId}>
-        <h3 id={startId}>{t("context.start")}</h3>
+        <h3 id={startId} ref={startHead} tabIndex={-1}>{t("context.start")}</h3>
         <ul className="hh-ctxp-list">
           {ctx.start.map((i) => (
             <li key={i.id} className={i.compacted ? "hh-ctxp-faint" : undefined}>
@@ -265,7 +300,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                           <button
                             type="button"
                             aria-label={t("context.excludeName", { name: n.title })}
-                            onClick={() => void run(() => client.context.exclude(i.kind === "app-notes-index" ? "_app" : ctx.scope, n.path))}
+                            onClick={() => void run(() => client.context.exclude(i.kind === "app-notes-index" ? "_app" : ctx.scope, n.path), focusOn(startHead))}
                           >
                             {t("context.exclude")}
                           </button>
@@ -288,7 +323,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
       </section>
 
       <section className="hh-ctxp-section" aria-labelledby={pinnedId}>
-        <h3 id={pinnedId}>{t("context.pinned")}</h3>
+        <h3 id={pinnedId} ref={pinnedHead} tabIndex={-1}>{t("context.pinned")}</h3>
         {ctx.pins.length === 0 ? (
           <p className="hh-caption">{t("context.nothingPinned")}</p>
         ) : (
@@ -303,7 +338,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                   {gone && <span className="hh-caption">{t(p.state === "missing" ? "context.missing" : "context.binary")}</span>}
                   {!gone && <span className="hh-ctxp-size">{t("context.approx", { tokens: fmt(p.tokens) })}</span>}
                   {!readOnly && (
-                    <button type="button" aria-label={t("context.removeName", { name: p.path })} onClick={() => void run(() => client.context.unpin(p.scope, p.path))}>
+                    <button type="button" aria-label={t("context.removeName", { name: p.path })} onClick={() => void run(() => client.context.unpin(p.scope, p.path), focusOn(pinnedHead))}>
                       {t("context.remove")}
                     </button>
                   )}
@@ -316,13 +351,13 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
 
       {ctx.excluded.length > 0 && (
         <section className="hh-ctxp-section" aria-labelledby={excludedId}>
-          <h3 id={excludedId}>{t("context.excluded")}</h3>
+          <h3 id={excludedId} ref={excludedHead} tabIndex={-1}>{t("context.excluded")}</h3>
           <ul className="hh-ctxp-list">
             {ctx.excluded.map((e) => (
               <li key={`${e.scope}:${e.note}`} className="hh-ctxp-row">
                 {e.title ? open(e.note, e.title) : <span className="hh-ctxp-gone">{fileName(e.note)}</span>}
                 {!readOnly && (
-                  <button type="button" aria-label={t("context.includeName", { name: e.title ?? fileName(e.note) })} onClick={() => void run(() => client.context.include(e.scope, e.note))}>
+                  <button type="button" aria-label={t("context.includeName", { name: e.title ?? fileName(e.note) })} onClick={() => void run(() => client.context.include(e.scope, e.note), focusOn(ctx.excluded.length > 1 ? excludedHead : addRef))}>
                     {t("context.include")}
                   </button>
                 )}

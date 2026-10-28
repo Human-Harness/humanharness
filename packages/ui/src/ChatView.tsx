@@ -1276,6 +1276,7 @@ export function ChatView({
               onClose={closeReader}
               onOpen={openDoc}
               onMissing={recheckDocs}
+              review={state.review === true}
             />
           )}
         </div>

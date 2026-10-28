@@ -1,9 +1,12 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
-import type { DocumentRead, HarnessClient, ReaderPrefs } from "./client";
+import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
+import type { DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewView } from "./client";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { Markdown, documentOutline } from "./markdown";
+import { ReviewColumn } from "./ReviewColumn";
+import { type MarkSpec, clearMarks, paintMarks } from "./review-marks";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
 export interface ReaderTarget {
@@ -62,6 +65,7 @@ export function DocumentReader({
   onClose,
   onOpen,
   onMissing,
+  review,
 }: {
   client: HarnessClient;
   target: ReaderTarget;
@@ -76,6 +80,8 @@ export function DocumentReader({
   onOpen: (path: string, anchor?: string) => void;
   /** The document is not there (moved or deleted): the chat checks its cards again. */
   onMissing?: () => void;
+  /** The harness's agent may edit the folder: the review column and marks (review spec §6.1). Absent: none (D0). */
+  review?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [doc, setDoc] = useState<DocumentRead | null>(null);
@@ -99,12 +105,25 @@ export function DocumentReader({
   const path = typeof target.path === "string" ? target.path : "";
   const refused = refusedShape(target.path);
   const anchor = typeof target.anchor === "string" && target.anchor ? target.anchor : undefined;
+  /** Reads the drawn document again (set by the read effect): a review change may have swapped a passage. */
+  const reread = useRef<(() => void) | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const [rv, setRv] = useState<ReviewView | null>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [ranges, setRanges] = useState<Map<string, Range>>(() => new Map());
 
   useEffect(() => {
     loaded.current = null;
     setDoc(null);
     setSource(false);
     setCurrent(null);
+    setRv(null);
+    setActive(null);
+    setWaiting(null);
+    setFailed(false);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
       return;
@@ -126,11 +145,34 @@ export function DocumentReader({
       restore.current = headingAtTop(scrollRef.current);
       read();
     });
+    reread.current = () => {
+      restore.current = headingAtTop(scrollRef.current);
+      read();
+    };
     return () => {
       live = false;
+      reread.current = null;
       off();
     };
   }, [client, path, refused]);
+
+  // A review change: the record again, and the document too (an answer may have swapped a passage).
+  useEffect(() => {
+    if (nonce > 0) reread.current?.();
+  }, [nonce]);
+  const loadReview = useCallback(() => {
+    if (!review || refused) return;
+    client.documents.view(path).then(setRv, () => setRv({ ok: false, reason: "not-ready" }));
+  }, [client, path, review, refused]);
+  useEffect(() => {
+    if (!review || refused) return;
+    loadReview();
+    return client.documents.onChange((p) => {
+      if (p !== path) return;
+      loadReview();
+      setNonce((n) => n + 1);
+    });
+  }, [client, path, review, refused, loadReview]);
 
   // Declared after the read: on a path change `loaded` is already reset, so the anchor waits for the new text.
   // Also a new anchor (or the same one opened again) in the document already drawn: go there now.
@@ -166,6 +208,36 @@ export function DocumentReader({
   // The whole text, not only the part drawn: the reading time is the document's.
   const minutes = useMemo(() => readingMinutes(wordCount(text)), [text]);
   const check = checkTemplate(kinds, front, sections);
+  const record = review && rv?.ok ? rv.review : null;
+  // Marks are drawn on the rendered body only, once it is in the DOM (CSS Custom Highlight API: no DOM change).
+  useLayoutEffect(() => {
+    const box = textRef.current;
+    if (!box || !record || !doc?.ok || source) {
+      setRanges((r) => (r.size ? new Map() : r));
+      return;
+    }
+    const marks: MarkSpec[] = [];
+    for (const c of record.comments) {
+      const m = markOccurrence(shown, c.anchor);
+      if (m) marks.push({ id: c.id, want: m.want, nth: m.nth, tone: c.state === "resolved" ? "done" : c.kind === "question" ? "question" : "comment" });
+    }
+    setRanges(paintMarks(box, marks, active));
+    return clearMarks;
+  }, [record, doc, shown, source, active]);
+  const act = async (call: () => Promise<ReviewResult>, id?: string) => {
+    if (id) setWaiting(id);
+    const r = await call().catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
+    if (id) setWaiting(null);
+    setFailed(!r.ok);
+    loadReview();
+  };
+  const answer = (id: string, pick: AnswerPick) => act(() => client.documents.answer(path, id, pick), id);
+  const editDraft = (id: string, value: string | null) => act(() => client.documents.editDraft(path, id, value));
+  const reopen = (id: string) => act(() => client.documents.reopen(path, id));
+  const pickCard = (id: string, scroll?: boolean) => {
+    setActive(id);
+    if (scroll) ranges.get(id)?.startContainer.parentElement?.scrollIntoView?.({ block: "center" });
+  };
   const host = useMemo<DocumentHost>(
     () => ({ open: onOpen, image: (p) => client.readImage(p).catch(() => null), ...(kinds ? { kinds } : {}) }),
     [client, kinds, onOpen],
@@ -217,7 +289,13 @@ export function DocumentReader({
           </h1>
         )}
         <DocumentContext.Provider value={host}>
-          <Markdown source={shown} document path={path} idPrefix="" />
+          {review ? (
+            <div className="hh-review-text" ref={textRef}>
+              <Markdown source={shown} document path={path} idPrefix="" />
+            </div>
+          ) : (
+            <Markdown source={shown} document path={path} idPrefix="" />
+          )}
         </DocumentContext.Provider>
         {big && (
           <p className="hh-reader-truncated" role="note">
@@ -311,6 +389,30 @@ export function DocumentReader({
         <div className="hh-reader-scroll" ref={scrollRef} tabIndex={-1} onScroll={() => setCurrent(headingAtTop(scrollRef.current))}>
           <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
         </div>
+        {review && doc?.ok && !source && rv?.ok && (
+          <ReviewColumn
+            review={rv.review ?? { path, task: null, comments: [], approvals: [] }}
+            text={doc.text}
+            agent={target.agent ?? ""}
+            locked={rv.summary.status === "approved"}
+            waiting={waiting}
+            active={active}
+            onActive={pickCard}
+            onAnswer={answer}
+            onEditDraft={editDraft}
+            onReopen={reopen}
+          />
+        )}
+        {review && rv && !rv.ok && rv.reason === "broken" && (
+          <p className="hh-reader-problem" role="alert">
+            {t("review.broken", { file: `.harness/reviews/${path}.json` })}
+          </p>
+        )}
+        {review && failed && (
+          <p className="hh-warn" role="alert">
+            {t("review.failed")}
+          </p>
+        )}
       </div>
     </aside>
   );

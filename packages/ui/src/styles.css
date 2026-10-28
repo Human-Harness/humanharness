@@ -30,6 +30,10 @@
   --hh-callout-summary: #efedf8;
   --hh-callout-decision: #e6f2f1;
   --hh-callout-question: #fbf3dc;
+  --hh-review-question: #fbefc4;
+  --hh-review-comment: #dde8f8;
+  --hh-review-done: #e9ebe6;
+  --hh-review-active: #f6d77a;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-family: var(--hh-font);
@@ -68,6 +72,10 @@
     --hh-callout-summary: #29253a;
     --hh-callout-decision: #1c302e;
     --hh-callout-question: #3a321c;
+    --hh-review-question: #5a4a16;
+    --hh-review-comment: #243a5a;
+    --hh-review-done: #30332e;
+    --hh-review-active: #7a5f12;
     color-scheme: dark;
   }
 }
@@ -584,6 +592,29 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 @media (max-width: 999px) { .hh-reader:not(.hh-reader-is-full) .hh-reader-toc { display: none; } }
 /* The reader beside the chat: the harness's own side panel hides (three columns don't fit 1100 px); full screen hides the chat too. */
 .hh-with-reader .hh-side { display: none; }
+/* Review marks (review spec §6.1): drawn with the CSS Custom Highlight API, so the document's DOM never changes. */
+::highlight(hh-review-question) { background-color: var(--hh-review-question); }
+::highlight(hh-review-comment) { background-color: var(--hh-review-comment); }
+::highlight(hh-review-done) { background-color: var(--hh-review-done); }
+::highlight(hh-review-active) { background-color: var(--hh-review-active); }
+/* The reader is the container: a container query can't restyle the element that is the container. */
+.hh-reader { container-type: inline-size; }
+.hh-review-column { flex: 0 0 280px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hh-line); display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.hh-review-card { padding: 10px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-sheet); }
+.hh-review-card p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.hh-review-card-active { border-color: var(--hh-line-strong); box-shadow: 0 0 0 2px var(--hh-review-active); }
+.hh-review-card-head { display: flex; gap: 6px; align-items: center; color: var(--hh-muted); font-size: 12px; }
+.hh-review-state { margin-left: auto; }
+.hh-review-badge { padding: 0 6px; border-radius: 999px; border: 1px solid var(--hh-warn); color: var(--hh-warn); }
+.hh-review-quote { margin: 6px 0; padding-left: 8px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-slate); overflow-wrap: anywhere; }
+.hh-review-options { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; padding: 0; margin: 6px 0 0; }
+.hh-review-edit { display: flex; flex-direction: column; gap: 4px; align-self: stretch; }
+.hh-review-replies { margin: 6px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
+.hh-review-actions { display: flex; gap: 6px; margin-top: 6px; }
+@container (max-width: 900px) {
+  .hh-reader-columns { flex-direction: column; }
+  .hh-review-column { flex: 0 1 auto; max-height: 40%; border-left: 0; border-top: 1px solid var(--hh-line); }
+}
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }
 .hh-doc-cards { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }

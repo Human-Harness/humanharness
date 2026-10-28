@@ -315,3 +315,48 @@ describe("cutToBytes", () => {
     expect(shown.length).toBe(100 * 1024);
   });
 });
+
+describe("review in the reader (review spec §6.1, D0)", () => {
+  it("without `review` there is no column and no review call (D0)", async () => {
+    const { client } = setup();
+    await screen.findByRole("heading", { level: 1, name: "Search cache" });
+    expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+    expect(client.reviewCalls).toEqual([]);
+  });
+
+  it("with `review` it shows the record's cards and draws again on a change", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    client.reviews["docs/cache.md"] = {
+      path: "docs/cache.md",
+      task: null,
+      approvals: [],
+      comments: [{ id: "c1", author: "agent", kind: "question", anchor: { quote: "Slow calls.", heading: "context", occurrence: 0 }, text: "How slow?", options: [{ label: "A", text: "Slow calls." }, { label: "B", text: "Very slow calls." }], state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" }],
+    };
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    expect(await screen.findByText("How slow?")).toBeTruthy();
+  });
+
+  it("an answer swaps the passage: the reader reads the document again", async () => {
+    const { client } = setup({ review: true });
+    client.reviews["docs/cache.md"] = {
+      path: "docs/cache.md",
+      task: null,
+      approvals: [],
+      comments: [{ id: "c1", author: "agent", kind: "question", anchor: { quote: "Slow calls.", heading: "context", occurrence: 0 }, text: "How slow?", options: [{ label: "A", text: "Slow calls." }, { label: "B", text: "Very slow calls." }], state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" }],
+    };
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("radio", { name: "B" }));
+    const doc = document.querySelector(".hh-review-text")!;
+    await waitFor(() => expect(doc.textContent).toContain("Very slow calls."));
+    expect(client.reviewCalls.some((c) => c.op === "answer")).toBe(true);
+  });
+
+  it("a record that can't be read shows a note and no column", async () => {
+    const { client } = setup({ review: true });
+    client.documents.view = async () => ({ ok: false, reason: "broken" });
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    expect((await screen.findByRole("alert")).textContent).toBe("The review of this document can't be read. Fix or delete .harness/reviews/docs/cache.md.json.");
+    expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+  });
+});

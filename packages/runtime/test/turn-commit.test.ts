@@ -166,18 +166,97 @@ describe("two turns at once (parallel spec §5.2, T1, T2)", () => {
     await history.save("seed spec");
     const a = await beginTurn(history, ledger, "A", { task: "t1" });
     const b = await beginTurn(history, ledger, "B", { task: "t2" });
-    write("spec.md", "from B");
-    ledger.noteEdits("B", [abs("spec.md")]);
+    write("spec.md", "from A");
     ledger.noteEdits("A", [abs("spec.md")]);
-    // B commits after A decided to restore, right before the restore runs.
+    // Another task commits spec.md as it is after A decided to restore, right before the restore runs.
     const restorePaths = history.restorePaths.bind(history);
     vi.spyOn(history, "restorePaths").mockImplementationOnce(async (...args) => {
-      await history.commitPaths(["spec.md"], "Turn: B", { task: "t2" });
+      await history.commitPaths(["spec.md"], "Turn: other", { task: "t9" });
       return restorePaths(...args);
     });
     await endTurn(history, ledger, a, crashed, "A", { task: "t1" });
-    expect(read("spec.md")).toBe("from B");
-    expect(await treeOf(gitdir, await head())).toEqual({ "seed.md": "s", "spec.md": "from B" });
+    expect(read("spec.md")).toBe("from A");
+    expect(await treeOf(gitdir, await head())).toEqual({ "seed.md": "s", "spec.md": "from A" });
+    await endTurn(history, ledger, b, ok, "B", { task: "t2" });
+  });
+
+  it("a crash leaves a path another running turn also named: its in-flight edit survives (P1)", async () => {
+    write("spec.md", "0");
+    await history.save("seed spec");
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    write("spec.md", "A+B work");
+    write("a.md", "a");
+    ledger.noteEdits("A", [abs("spec.md"), abs("a.md")]);
+    ledger.noteEdits("B", [abs("spec.md")]);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const ra = await endTurn(history, ledger, a, crashed, "A", { task: "t1" });
+    expect(err).toHaveBeenCalledWith("Crash restore left paths others also hold", ["spec.md"]);
+    err.mockRestore();
+    expect(ra?.owned).toEqual(["a.md", "spec.md"]);
+    expect(read("spec.md")).toBe("A+B work");
+    expect(exists("a.md")).toBe(false);
+    await endTurn(history, ledger, b, ok, "B", { task: "t2" });
+    expect(await treeOf(gitdir, await head())).toEqual({ "seed.md": "s", "spec.md": "A+B work" });
+  });
+
+  it("a crash leaves a path already dirty when the turn opened beside another: earlier edits survive (P2)", async () => {
+    write("spec.md", "0");
+    await history.save("seed spec");
+    const x = await beginTurn(history, ledger, "X", { task: "t0" });
+    write("spec.md", "person edit");
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    expect(a.startDirty?.has("spec.md")).toBe(true);
+    write("spec.md", "person edit + A half");
+    write("a.md", "a");
+    ledger.noteEdits("A", [abs("spec.md"), abs("a.md")]);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await endTurn(history, ledger, a, crashed, "A", { task: "t1" });
+    expect(err).toHaveBeenCalledWith("Crash restore left paths others also hold", ["spec.md"]);
+    err.mockRestore();
+    expect(read("spec.md")).toBe("person edit + A half");
+    expect(exists("a.md")).toBe(false);
+    await endTurn(history, ledger, x, ok, "X", { task: "t0" });
+  });
+
+  it("with no trailer, the Shared commit carries none either, like the owned one", async () => {
+    const a = await beginTurn(history, ledger, "A");
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    write("a.md", "a");
+    ledger.noteEdits("A", [abs("a.md")]);
+    write("loose.md", "?");
+    expect(await endTurn(history, ledger, a, ok, "A")).toMatchObject({ owned: ["a.md"], shared: ["loose.md"], with: ["t2"] });
+    expect((await subjects()).slice(-2)).toEqual(["Turn: A", "Shared: A"]);
+    await endTurn(history, ledger, b, ok, "B", { task: "t2" });
+  });
+
+  it("a failing conflict check is logged; the turn's end still resolves with its commits", async () => {
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    write("a.md", "a");
+    ledger.noteEdits("A", [abs("a.md")]);
+    vi.spyOn(history, "commitsSince").mockRejectedValueOnce(new Error("log broke"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await endTurn(history, ledger, a, ok, "A", { task: "t1" })).toEqual({ owned: ["a.md"], shared: [], with: [], conflicts: [] });
+    expect(err).toHaveBeenCalledWith("Conflict check failed", expect.any(Error));
+    err.mockRestore();
+    expect((await subjects()).at(-1)).toBe("Turn: A\n\nTask: t1");
+    expect(ledger.running().map((w) => w.key)).toEqual(["B"]);
+    await endTurn(history, ledger, b, ok, "B", { task: "t2" });
+  });
+
+  it("a start beyond the look-back depth still reports the conflicts of the commits seen (history only appends)", async () => {
+    write("spec.md", "0");
+    await history.save("seed spec");
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    for (let i = 0; i < 200; i++) {
+      write("spec.md", `t9 #${i}`);
+      await history.commitPaths(["spec.md"], `Turn: ${i}`, { task: "t9" });
+    }
+    write("spec.md", "from A");
+    ledger.noteEdits("A", [abs("spec.md")]);
+    expect((await endTurn(history, ledger, a, ok, "A", { task: "t1" }))?.conflicts).toEqual([{ path: "spec.md", tasks: ["t9"] }]);
     await endTurn(history, ledger, b, ok, "B", { task: "t2" });
   });
 

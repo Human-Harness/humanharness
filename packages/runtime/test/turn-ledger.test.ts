@@ -79,4 +79,17 @@ describe("TurnLedger (parallel spec §5.2, T3)", () => {
     l.noteEdits("A", ["/w/café.md", "/w/café.md"]);
     expect([...a.edits]).toEqual(["café.md"]);
   });
+
+  it("a folder named in NFD still takes edits reported in NFC (and the reverse)", () => {
+    const nfdFolder = path.join(fs.realpathSync(root), "cafe\u0301");
+    fs.mkdirSync(nfdFolder);
+    const l = TurnLedger.forFolder(nfdFolder);
+    const a = l.open("A");
+    l.noteEdits("A", [path.join(fs.realpathSync(root), "caf\u00e9", "a.md"), path.join(nfdFolder, "b.md")]);
+    expect([...a.edits].sort()).toEqual(["a.md", "b.md"]);
+    const n = new TurnLedger(["/w/caf\u00e9"]);
+    const b = n.open("B");
+    n.noteEdits("B", ["/w/cafe\u0301/x.md"]);
+    expect([...b.edits]).toEqual(["x.md"]);
+  });
 });

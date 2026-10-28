@@ -81,11 +81,14 @@ export class TurnLedger {
   }
 
   private relative(p: string): string | null {
-    // A relative path resolves against the folder as given (the first root).
-    for (const root of this.roots) {
-      const rel = path.relative(root, path.resolve(root, p));
+    // A relative path resolves against the folder as given (the first root). Both sides in NFC: a folder named NFD
+    // and an engine reporting NFC (or the reverse) still match.
+    const name = samePath(p);
+    for (const given of this.roots) {
+      const root = samePath(given);
+      const rel = path.relative(root, path.resolve(root, name));
       if (rel === "" || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) continue;
-      const posix = samePath(rel.split(path.sep).join("/"));
+      const posix = rel.split(path.sep).join("/");
       return isCanonicalPath(posix) ? posix : null;
     }
     return null;

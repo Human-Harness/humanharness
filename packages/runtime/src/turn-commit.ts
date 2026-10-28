@@ -86,19 +86,30 @@ export async function endTurn(
     const shared = a.shared.flatMap((p) => names.get(p) ?? []);
     let first: string | null;
     if (crashed) {
+      // Only what is this turn's alone goes back: a path another running turn also named holds that turn's in-flight
+      // work too, and a path already dirty when this turn opened (no snapshot then, Decision 2) holds earlier edits
+      // HEAD doesn't have. Both stay as they are, like the shared paths.
+      const othersNamed = (p: string) => others.some((o) => o.edits.has(samePath(p)));
+      const restore = owned.filter((p) => !othersNamed(p) && !(w.startDirty?.has(p) ?? false));
+      const kept = owned.filter((p) => !restore.includes(p));
       // "HEAD" resolves inside restorePaths' own queue entry: the head as it is then, not as it was a step ago, so a
       // commit another turn made in between is never undone. With one turn's own paths that is usually no commit.
-      first = (await history.restorePaths(owned, "HEAD", `${UNDO_PREFIX}the turn did not finish`, trailer)).sha;
+      first = (await history.restorePaths(restore, "HEAD", `${UNDO_PREFIX}the turn did not finish`, trailer)).sha;
+      if (kept.length > 0) console.error("Crash restore left paths others also hold", kept);
       if (shared.length > 0) console.error("Crash restore left shared paths", shared);
     } else {
       const subject = (done.ok ? TURN_PREFIX : STOPPED_PREFIX) + message.slice(0, 60);
       first = await history.commitPaths(owned, subject, trailer);
       if (shared.length > 0) {
-        const s = await history.commitPaths(shared, `${SHARED_PREFIX}${message.slice(0, 60)}`, { ...(trailer ?? { task: w.key }), shared: a.with });
+        const s = await history.commitPaths(shared, `${SHARED_PREFIX}${message.slice(0, 60)}`, trailer && { ...trailer, shared: a.with });
         first ??= s;
       }
     }
-    const conflicts = await conflictsSince(history, w.before, first, [...owned, ...shared], trailer?.task);
+    // Best effort: the commits have landed; a failed look back must not turn the turn's end into an error.
+    const conflicts = await conflictsSince(history, w.before, first, [...owned, ...shared], trailer?.task).catch((err: unknown) => {
+      console.error("Conflict check failed", err);
+      return [];
+    });
     return { owned, shared, with: a.with, conflicts };
   } finally {
     ledger.close(w.key);
@@ -118,8 +129,8 @@ function byPathForm(changed: readonly string[]): Map<string, string[]> {
 /**
  * Other tasks' commits since `before` that changed `paths` (spec §5.3). Read after this turn's own commits so every
  * commit that landed between its queue entries is seen; the commits after `first` (this turn's own first commit) came
- * after its end and don't count. When `before` lies beyond the depth, `commitsSince` returns the whole window and
- * which commits came after the start is unknown: no conflict is reported rather than false ones.
+ * after its end and don't count. History only appends, so when `before` lies beyond the depth every commit
+ * `commitsSince` returns still came after it: the conflicts are read from those (older ones are not seen).
  */
 async function conflictsSince(
   history: History,
@@ -130,7 +141,6 @@ async function conflictsSince(
 ): Promise<TurnAttribution["conflicts"]> {
   if (before === null || paths.length === 0) return [];
   const commits = await history.commitsSince(before, CONFLICT_DEPTH);
-  if (commits.length >= CONFLICT_DEPTH) return [];
   const mine = first === null ? -1 : commits.findIndex((c) => c.sha === first);
   return conflictsOf(paths, mine >= 0 ? commits.slice(mine + 1) : commits, ownTask);
 }

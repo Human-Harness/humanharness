@@ -1279,7 +1279,7 @@ describe("decidePermission with linked folders", () => {
     expect(pick(decidePermission(req("read", "/manuscript/ch1.md") as never, p))).toBe("y");
   });
 
-  it.each([".git/hooks/pre-commit", ".codex/config.toml", ".agents/skills/x/SKILL.md", ".opencode/x", ".claude/settings.json"])(
+  it.each([".git/hooks/pre-commit", ".codex/config.toml", ".agents/skills/x/SKILL.md", ".opencode/x", ".claude/settings.json", ".GIT/hooks/pre-commit", ".Git/config", ".Claude/settings.json"])(
     "refuses an edit to <write root>/%s (L3)",
     (sub) => {
       expect(pick(decidePermission(req("edit", `/code/app/${sub}`) as never, policy({ writeRoots: ["/code/app"] })))).toBe("n");
@@ -1291,6 +1291,35 @@ describe("decidePermission with linked folders", () => {
     expect(pick(decidePermission(req("edit", "/code/app/../other/a.ts") as never, p))).toBe("n");
     expect(pick(decidePermission(req("delete", "/code/app/.git") as never, p))).toBe("n");
     expect(pick(decidePermission(req("edit", "/code/application/a.ts") as never, p))).toBe("n");
+  });
+
+  it("refuses an edit or delete of the write root itself", () => {
+    const p = policy({ writeRoots: ["/code/app"] });
+    expect(pick(decidePermission(req("delete", "/code/app") as never, p))).toBe("n");
+    expect(pick(decidePermission(req("edit", "/code/app/") as never, p))).toBe("n");
+  });
+
+  it("with overlapping roots, refuses a path that is config of any containing root", () => {
+    const p = policy({ writeRoots: ["/code", "/code/app"] });
+    expect(pick(decidePermission(req("edit", "/code/app/.git/config") as never, p))).toBe("n");
+    expect(pick(decidePermission(req("edit", "/code/app/src/a.ts") as never, p))).toBe("y");
+  });
+
+  it("refuses an edit through a link to the root's config or out of the root", () => {
+    const base = fs.mkdtempSync(path.join(root, "links-"));
+    const app = path.join(base, "app");
+    const elsewhere = path.join(base, "elsewhere");
+    fs.mkdirSync(path.join(app, ".git", "hooks"), { recursive: true });
+    fs.mkdirSync(path.join(app, "src"));
+    fs.mkdirSync(elsewhere);
+    fs.symlinkSync(path.join(app, ".git"), path.join(app, "g"));
+    fs.symlinkSync(elsewhere, path.join(app, "out"));
+    fs.symlinkSync(path.join(base, "missing"), path.join(app, "dangling"));
+    const p = policy({ writeRoots: [app] });
+    expect(pick(decidePermission(req("edit", path.join(app, "g", "hooks", "pre-commit")) as never, p))).toBe("n");
+    expect(pick(decidePermission(req("edit", path.join(app, "out", "x.md")) as never, p))).toBe("n");
+    expect(pick(decidePermission(req("edit", path.join(app, "dangling")) as never, p))).toBe("n");
+    expect(pick(decidePermission(req("edit", path.join(app, "src", "new", "a.ts")) as never, p))).toBe("y");
   });
 
   it("D0: without roots, today's answers", () => {

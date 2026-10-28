@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -79,12 +80,53 @@ function inside(folder: string, target: string): boolean {
 /** A write root's own config and git: never edited by the agent (hatches spec §3.3, L3). */
 const ROOT_CONFIG = [".git", ".codex", ".agents", ".opencode", ".claude"];
 
+/** `target` is strictly under `root` and not in its config (L3); compared without case, as APFS and NTFS do. */
+function underNotConfig(root: string, target: string): boolean {
+  if (!inside(root, target)) return false;
+  const rel = path.relative(path.resolve(root), path.resolve(root, target));
+  // The root itself is never edited, moved or deleted.
+  return rel !== "" && !ROOT_CONFIG.includes(rel.split(path.sep)[0].toLowerCase());
+}
+
+/** A link whose target is missing: writing through it would create a file wherever it points. */
+function dangling(p: string): boolean {
+  try {
+    fs.lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `p` with its deepest existing part resolved through links (what the engine would write); null when that fails. */
+function realDeepest(p: string): string | null {
+  let head = path.resolve(p);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(head), ...tail);
+    } catch (err) {
+      const parent = path.dirname(head);
+      if ((err as { code?: unknown }).code !== "ENOENT" || parent === head || dangling(head)) return null;
+      tail.unshift(path.basename(head));
+      head = parent;
+    }
+  }
+}
+
 function editAllowed(policy: PermissionPolicy, target: string): boolean {
   if (inside(policy.folder, target)) return true;
-  const root = (policy.writeRoots ?? []).find((r) => inside(r, target));
-  if (!root) return false;
-  const rel = path.relative(path.resolve(root), path.resolve(root, target));
-  return !ROOT_CONFIG.includes(rel.split(path.sep)[0]);
+  const roots = (policy.writeRoots ?? []).filter((r) => inside(r, target));
+  if (roots.length === 0) return false;
+  // Every containing root (they may overlap), as written and through links: `app/g -> .git` or `app/out -> /elsewhere` is refused.
+  const real = realDeepest(target);
+  return (
+    real !== null &&
+    roots.every((r) => {
+      const realRoot = realDeepest(r);
+      return underNotConfig(r, target) && realRoot !== null && underNotConfig(realRoot, real);
+    })
+  );
 }
 
 /** Answers ACP permission requests from the harness manifest, without asking the user. Never picks "always" options. */
@@ -346,7 +388,7 @@ export class AcpTransport implements Transport {
   private dirsCap = false;
   /** The turn's linked folders (hatches); empty without a scope (D0). */
   private linked: LinkedAccess[] = [];
-  /** The write folders the open session was opened with, joined (null: no session yet). */
+  /** The write folders the open session was opened with, as JSON (null: no session yet). */
   private sessionDirs: string | null = null;
   /** `onLinkedUnsupported` was called already (once per process of the app). */
   private warnedLinked = false;
@@ -364,9 +406,9 @@ export class AcpTransport implements Transport {
     };
   }
 
-  /** The write folders the session is opened with: none without the capability (hatches spec §3.3). */
+  /** The write folders the session is opened with: none without the capability or edit "folder" (hatches spec §3.3). */
   private writeDirs(): string[] {
-    if (!this.dirsCap) return [];
+    if (!this.dirsCap || this.o.permissions.edit !== "folder") return [];
     return this.linked.filter((l) => l.mode === "write").map((l) => l.path);
   }
 
@@ -388,7 +430,7 @@ export class AcpTransport implements Transport {
       return;
     }
     this.policy.readRoots = [...references, ...this.linked.map((l) => l.path)];
-    const writes = this.o.permissions.edit === "folder" ? this.writeDirs() : [];
+    const writes = this.writeDirs();
     if (writes.length > 0) this.policy.writeRoots = writes;
     else delete this.policy.writeRoots;
   }
@@ -515,7 +557,7 @@ export class AcpTransport implements Transport {
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
-    this.sessionDirs = this.writeDirs().join("\n");
+    this.sessionDirs = JSON.stringify(this.writeDirs());
     if (this.o.sessionMode) {
       await agent.request("session/set_mode", { sessionId: this.sessionId, modeId: this.o.sessionMode });
     }
@@ -755,7 +797,7 @@ export class AcpTransport implements Transport {
       if (!this.conn || !this.sessionId) {
         if (!this.conn) await this.connect(config);
         await this.openSession();
-      } else if (this.writeDirs().join("\n") !== this.sessionDirs) {
+      } else if (JSON.stringify(this.writeDirs()) !== this.sessionDirs) {
         await this.reopenWithDirs(config);
       }
       this.applyLinked();

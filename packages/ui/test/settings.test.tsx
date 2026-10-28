@@ -182,11 +182,11 @@ describe("SettingsSheet", () => {
     expect(screen.getByRole("link", { name: "Support" }).getAttribute("href")).toBe("https://example.com/donate");
   });
 
-  it("shows the saved language by its own name, with the English-for-now hint", async () => {
+  it("shows the saved language by its own name, with the AI-thinks-in-English hint", async () => {
     const client = new FakeClient({ ...ready, language: "es" });
     await renderIn("en", <Sheet client={client} />);
     expect(screen.getByText("Español")).toBeTruthy();
-    expect(screen.getByText("The app's texts are in English for now. The AI answers in this language.")).toBeTruthy();
+    expect(screen.getByText("The AI always thinks in English and writes to you in this language.")).toBeTruthy();
     expect(screen.queryByRole("group", { name: "Language" })).toBeNull();
     expect(screen.queryByRole("button", { name: "English" })).toBeNull();
   });

@@ -18,7 +18,7 @@ describe("createI18n", () => {
     expect(en.t("models.changed", { tier: "Standard" })).toBe("Changed · recommended: Standard");
     expect(en.t("notes.keyPoints", { count: 1 })).toBe("1 key point");
     expect(en.t("notes.keyPoints", { count: 2 })).toBe("2 key points");
-    expect(en.t("settings.languageHint")).toBe("The app's texts are in English for now. The AI answers in this language.");
+    expect(en.t("settings.languageHint")).toBe("The AI always thinks in English and writes to you in this language.");
   });
 
   it("shows English for a language with no strings", async () => {
@@ -31,5 +31,20 @@ describe("createI18n", () => {
   it("adds the harness's own English strings under the harness namespace", async () => {
     const i18n = await createI18n("es", { en: { title: "Notes" } });
     expect(i18n.t("harness:title")).toBe("Notes");
+  });
+});
+
+describe("legal strings (spec §8)", () => {
+  const en = CORE_LOCALES.en as Record<string, any>;
+  it("live under legal., and the engine block keeps no notice text of its own", () => {
+    expect(Object.keys(en.legal.engine).sort()).toEqual(["accept", "noticeAccount", "noticeContent", "noticeProvider", "noticeTitle", "noticeTraining", "noticeUserProvider"]);
+    expect(Object.keys(en.engine).filter((k) => k.startsWith("notice") || k === "accept")).toEqual([]);
+  });
+
+  it("the language strings exist, and the notice bolds one word with <b>", () => {
+    expect(en.language.notice).toContain("<b>{{language}}</b>");
+    expect(en.language.legalEnglish).toBe("Legal texts are shown in English.");
+    expect(en.language.needsEngine).toBe("Connect an AI engine to translate the app.");
+    expect(en.setupFlow.languageLater).toBe("You can choose the app's language once it's set up.");
   });
 });

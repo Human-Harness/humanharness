@@ -230,7 +230,7 @@ export function EngineTab({
                   <span>{status.version}</span>
                 </div>
               </div>
-              <p className="hh-caption">{t("engine.noticeContent", { provider: engine.provider })}</p>
+              <p className="hh-caption">{t("legal.engine.noticeContent", { provider: engine.provider })}</p>
             </>
           )}
         </>

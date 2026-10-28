@@ -265,17 +265,17 @@ export function EngineOnboarding({
   if (problem === "notice") {
     body = (
       <>
-        <h3>{t("engine.noticeTitle", v)}</h3>
-        <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
-        <p>{t("engine.noticeTraining", { trains: engine.trainsOnData })}</p>
-        <p>{t("engine.noticeAccount", { ...v, plan: engine.requires })}</p>
-        {engine.userProvider && <p>{t("engine.noticeUserProvider", v)}</p>}
-        <p>{t("engine.noticeContent", v)}</p>
+        <h3>{t("legal.engine.noticeTitle", v)}</h3>
+        <p>{t("legal.engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
+        <p>{t("legal.engine.noticeTraining", { trains: engine.trainsOnData })}</p>
+        <p>{t("legal.engine.noticeAccount", { ...v, plan: engine.requires })}</p>
+        {engine.userProvider && <p>{t("legal.engine.noticeUserProvider", v)}</p>}
+        <p>{t("legal.engine.noticeContent", v)}</p>
         <p>
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
         </p>
         <label>
-          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> {t("engine.accept")}
+          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> {t("legal.engine.accept")}
         </label>
         <button className="hh-primary" disabled={!accepted || busy !== null} onClick={() => void accept()}>
           {t("engine.continue")}

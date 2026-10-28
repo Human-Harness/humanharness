@@ -59,3 +59,33 @@ describe("the preload's tasks namespace", () => {
     expect(host).toContain('d.send("hh:tasksChange"');
   });
 });
+
+/** `client.jobs` (parallel spec §9.1, part 3): a thin pass-through; main checks ids and scopes (J4) and refuses without jobs (D0). */
+describe("the preload's jobs namespace", () => {
+  it("invokes main's jobs channels with the id and scope as given", async () => {
+    electron.invoke.mockClear();
+    await client.jobs.list();
+    await client.jobs.run("sync");
+    await client.jobs.run("sync", "physics");
+    expect(electron.invoke.mock.calls).toEqual([["hh:jobsList"], ["hh:jobsRun", "sync", undefined], ["hh:jobsRun", "sync", "physics"]]);
+  });
+
+  it("passes main's answer and refusal through unchanged", async () => {
+    electron.invoke.mockResolvedValueOnce(false);
+    expect(await client.jobs.run("sync")).toBe(false);
+    electron.invoke.mockRejectedValueOnce(new Error("No jobs"));
+    await expect(client.jobs.list()).rejects.toThrow("No jobs");
+  });
+
+  it("onChange listens on hh:jobsChange and unsubscribes the same handler", () => {
+    const heard: unknown[] = [];
+    const off = client.jobs.onChange((s) => heard.push(s));
+    const [channel, handler] = electron.on.mock.calls.at(-1)!;
+    expect(channel).toBe("hh:jobsChange");
+    const rows = [{ id: "sync", label: "Sync", scope: null, manual: true, running: false }];
+    (handler as (e: unknown, v: unknown) => void)({}, rows);
+    expect(heard).toEqual([rows]);
+    off();
+    expect(electron.removeListener).toHaveBeenCalledWith("hh:jobsChange", handler);
+  });
+});

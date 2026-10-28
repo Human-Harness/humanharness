@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
 import { type ModelProfile, getEngine } from "@humanharness/engines";
 import { AcpTransport, type PermissionPolicy, acpEditPaths, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp";
 import type { Event } from "../src/events";
-import { type Session, type TransportOptions, acpFields } from "../src/transport";
+import { type Session, type TransportOptions, type TurnScope, acpFields } from "../src/transport";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -22,7 +22,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: Partial<Pick<TransportOptions, "minAdapterVersion" | "references" | "onModels" | "profileMethod" | "engineEnv" | "sessionMode">> = {},
+  extra: Partial<Pick<TransportOptions, "minAdapterVersion" | "references" | "onModels" | "profileMethod" | "engineEnv" | "sessionMode" | "onLinkedUnsupported">> = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -1148,5 +1148,153 @@ describe("acpExtras (context-panel spec §3.2)", () => {
       { type: "activity", id: "m1", kind: "exec", detail: "mcp.notes.search", tool: { server: "notes", name: "search" }, state: "start" },
       { type: "activity", id: "m1", kind: "exec", detail: "mcp.notes.search", state: "end", error: false },
     ]);
+  });
+});
+
+describe("linked folders on ACP (hatches spec §3.3, S1)", () => {
+  const scope: TurnScope = {
+    linked: [
+      { path: "/Users/me/code/app", mode: "write", tracked: false },
+      { path: "/Users/me/manuscript", mode: "read", tracked: false },
+    ],
+  };
+  const turnWith = async (t: AcpTransport, s?: TurnScope) => {
+    const events: Event[] = [];
+    await t.turn("hi", (e) => events.push(e), new AbortController().signal, undefined, s);
+    return events;
+  };
+  const between = (log: { method: string; params: any }[]) => {
+    const prompts = log.flatMap((l, i) => (l.method === "session/prompt" ? [i] : []));
+    return log.slice(prompts[0] + 1, prompts[1]);
+  };
+  const edit = (p: string) => ({ permission: { toolCall: { toolCallId: "e", kind: "edit", locations: [{ path: p }] } } });
+  const outcomes = (log: { method: string; params: any }[]) => log.filter((l) => l.method === "permission-outcome").map((l) => l.params.optionId);
+
+  it("sends only write folders as additionalDirectories on session/new", async () => {
+    const { transport: t, log } = setup({ additionalDirectories: true, loadSession: true, turns: [[chunk("a")]] });
+    const events = await turnWith(t, scope);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().find((l) => l.method === "session/new")!.params.additionalDirectories).toEqual(["/Users/me/code/app"]);
+  });
+
+  it("sends the list again on every session/load (it replaces the old one)", async () => {
+    const { transport: t, log } = setup({ additionalDirectories: true, loadSession: true, turns: [[chunk("a")]] }, { id: "old-1", started: true });
+    await turnWith(t, scope);
+    const load = log().find((l) => l.method === "session/load")!;
+    expect(load.params.sessionId).toBe("old-1");
+    expect(load.params.additionalDirectories).toEqual(["/Users/me/code/app"]);
+    expect(log().some((l) => l.method === "session/new")).toBe(false);
+  });
+
+  it("a changed list reloads the open session before the prompt (L6)", async () => {
+    const { transport: t, log } = setup({ additionalDirectories: true, loadSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await turnWith(t, scope);
+    await turnWith(t, { linked: [] });
+    const reload = between(log()).filter((l) => l.method === "session/load");
+    expect(reload).toHaveLength(1);
+    expect(reload[0].params.sessionId).toBe("s");
+    expect("additionalDirectories" in reload[0].params).toBe(false);
+    // The reloaded session gets its mode again, as openSession sets it.
+    expect(between(log()).some((l) => l.method === "session/set_mode")).toBe(true);
+    expect(log().filter((l) => l.method === "session/prompt").map((l) => l.params.sessionId)).toEqual(["s", "s"]);
+  });
+
+  it("the same list on the next turn does not reload the session", async () => {
+    const { transport: t, log } = setup({ additionalDirectories: true, loadSession: true, turns: [[chunk("a")], [chunk("b")]] });
+    await turnWith(t, scope);
+    await turnWith(t, { linked: [...scope.linked] });
+    expect(between(log())).toEqual([]);
+  });
+
+  it("without loadSession, a changed list starts a new session with the new list (Decision 9)", async () => {
+    const { transport: t, log, started } = setup({ additionalDirectories: true, closeSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await turnWith(t, { linked: [] });
+    const events = await turnWith(t, scope);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    const news = log().filter((l) => l.method === "session/new");
+    expect(news).toHaveLength(2);
+    expect("additionalDirectories" in news[0].params).toBe(false);
+    expect(news[1].params.additionalDirectories).toEqual(["/Users/me/code/app"]);
+    expect(started.map((s) => s.id)).toEqual(["s", "s-2"]);
+  });
+
+  it("an adapter without the capability gets no folder and reports it once", async () => {
+    const spy = vi.fn();
+    const { transport: t, log } = setup({ loadSession: true, turns: [[chunk("a")], [chunk("b")]] }, undefined, { onLinkedUnsupported: spy });
+    await turnWith(t, scope);
+    await turnWith(t, scope);
+    expect("additionalDirectories" in log().find((l) => l.method === "session/new")!.params).toBe(false);
+    expect(log().some((l) => l.method === "session/load")).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("an adapter without the capability is not reported when the scope links nothing", async () => {
+    const spy = vi.fn();
+    const { transport: t } = setup({ turns: [[chunk("a")]] }, undefined, { onLinkedUnsupported: spy });
+    await turnWith(t, { linked: [] });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("the policy allows edits in a write folder and refuses them in a read folder", async () => {
+    const { transport: t, log } = setup({
+      additionalDirectories: true,
+      turns: [[edit("/Users/me/code/app/a.ts"), edit("/Users/me/manuscript/ch1.md"), edit("/Users/me/code/app/.git/config")]],
+    });
+    await turnWith(t, scope);
+    expect(outcomes(log())).toEqual(["allow", "reject", "reject"]);
+  });
+
+  it("without the capability the policy grants nothing under a linked folder", async () => {
+    const { transport: t, log } = setup({
+      turns: [[edit("/Users/me/code/app/a.ts"), { permission: { toolCall: { toolCallId: "r", kind: "read", locations: [{ path: "/Users/me/code/app/a.ts" }] } } }]],
+    });
+    await turnWith(t, scope);
+    expect(outcomes(log())).toEqual(["reject", "reject"]);
+  });
+
+  it("an unlinked folder loses its permissions on the next turn (L6)", async () => {
+    const { transport: t, log } = setup({ additionalDirectories: true, loadSession: true, turns: [[edit("/Users/me/code/app/a.ts")], [edit("/Users/me/code/app/a.ts")]] });
+    await turnWith(t, scope);
+    await turnWith(t, { linked: [] });
+    expect(outcomes(log())).toEqual(["allow", "reject"]);
+  });
+});
+
+describe("decidePermission with linked folders", () => {
+  const policy = (extra = {}) => ({ folder: "/w", permissions: { edit: "folder" as const, exec: false, web: false }, mcpServers: ["ui"], lookup: () => undefined, ...extra });
+  const req = (kind: string, p: string) => ({
+    sessionId: "s",
+    toolCall: { toolCallId: "1", kind, locations: [{ path: p }] },
+    options: [
+      { optionId: "y", kind: "allow_once", name: "Allow" },
+      { optionId: "n", kind: "reject_once", name: "Reject" },
+    ],
+  });
+  const pick = (r: ReturnType<typeof decidePermission>) => (r.outcome.outcome === "selected" ? r.outcome.optionId : "cancelled");
+
+  it("allows edits under a write root, refuses them under a read root", () => {
+    const p = policy({ writeRoots: ["/code/app"], readRoots: ["/code/app", "/manuscript"] });
+    expect(pick(decidePermission(req("edit", "/code/app/src/a.ts") as never, p))).toBe("y");
+    expect(pick(decidePermission(req("edit", "/manuscript/ch1.md") as never, p))).toBe("n");
+    expect(pick(decidePermission(req("read", "/manuscript/ch1.md") as never, p))).toBe("y");
+  });
+
+  it.each([".git/hooks/pre-commit", ".codex/config.toml", ".agents/skills/x/SKILL.md", ".opencode/x", ".claude/settings.json"])(
+    "refuses an edit to <write root>/%s (L3)",
+    (sub) => {
+      expect(pick(decidePermission(req("edit", `/code/app/${sub}`) as never, policy({ writeRoots: ["/code/app"] })))).toBe("n");
+    },
+  );
+
+  it("refuses an edit that climbs out of a write root, or names the root's config folder itself", () => {
+    const p = policy({ writeRoots: ["/code/app"] });
+    expect(pick(decidePermission(req("edit", "/code/app/../other/a.ts") as never, p))).toBe("n");
+    expect(pick(decidePermission(req("delete", "/code/app/.git") as never, p))).toBe("n");
+    expect(pick(decidePermission(req("edit", "/code/application/a.ts") as never, p))).toBe("n");
+  });
+
+  it("D0: without roots, today's answers", () => {
+    expect(pick(decidePermission(req("edit", "/w/a.md") as never, policy()))).toBe("y");
+    expect(pick(decidePermission(req("edit", "/elsewhere/a.md") as never, policy()))).toBe("n");
   });
 });

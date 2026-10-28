@@ -25,6 +25,8 @@ export interface WorkspaceOptions extends Omit<RuntimeOptions, "session" | "onSe
   data?: (request: unknown, slot: SlotRef) => Promise<unknown>;
   /** Answers the `material` server's tools for the asking slot; `entry` as in `RuntimeOptions`. */
   material?: { request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
+  /** ACP: the adapter can't take a scope's linked folders (hatches §3.3, Decision 15). */
+  onLinkedUnsupported?: () => void;
 }
 
 export interface SlotOptions {
@@ -209,6 +211,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
       env: opts.env,
       onModels: opts.onModels,
+      onLinkedUnsupported: opts.onLinkedUnsupported,
       onSessionStarted: (s) => {
         try {
           o.onSession?.(s);

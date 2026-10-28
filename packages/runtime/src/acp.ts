@@ -7,7 +7,7 @@ import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isMo
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { Transport, TransportOptions, TurnScope } from "./transport";
+import type { LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {
@@ -27,6 +27,8 @@ export interface PermissionPolicy {
   folder: string;
   /** Reference folders: reads and searches there are allowed, never edits. */
   readRoots?: string[];
+  /** Linked write folders (hatches §3.3): edits allowed there, except in their own config (L3). */
+  writeRoots?: string[];
   permissions: Permissions;
   /** No reading or searching at all, even inside the folder (see `TransportOptions.mcpOnly`). */
   mcpOnly?: boolean;
@@ -74,6 +76,17 @@ function inside(folder: string, target: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
+/** A write root's own config and git: never edited by the agent (hatches spec §3.3, L3). */
+const ROOT_CONFIG = [".git", ".codex", ".agents", ".opencode", ".claude"];
+
+function editAllowed(policy: PermissionPolicy, target: string): boolean {
+  if (inside(policy.folder, target)) return true;
+  const root = (policy.writeRoots ?? []).find((r) => inside(r, target));
+  if (!root) return false;
+  const rel = path.relative(path.resolve(root), path.resolve(root, target));
+  return !ROOT_CONFIG.includes(rel.split(path.sep)[0]);
+}
+
 /** Answers ACP permission requests from the harness manifest, without asking the user. Never picks "always" options. */
 export function decidePermission(params: PermissionRequest, policy: PermissionPolicy): PermissionResponse {
   const { toolCallId, kind, locations, rawInput } = params.toolCall;
@@ -84,7 +97,6 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
     const server = recorded;
     allow = server !== undefined && policy.mcpServers.includes(server);
   } else {
-    const allInside = (locations ?? []).every((l) => inside(policy.folder, l.path));
     switch (kind) {
       case "read":
       case "search":
@@ -94,7 +106,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "edit":
       case "delete":
       case "move":
-        allow = policy.permissions.edit === "folder" && (locations ?? []).length > 0 && allInside;
+        allow = policy.permissions.edit === "folder" && (locations ?? []).length > 0 && (locations ?? []).every((l) => editAllowed(policy, l.path));
         break;
       case "fetch":
         allow = policy.permissions.web;
@@ -330,8 +342,71 @@ export class AcpTransport implements Transport {
   private costBaseline: number | undefined;
   /** A cost arrived in this turn (a turn without one records no cost and keeps the baseline). */
   private costSeen = false;
+  /** The adapter takes `additionalDirectories` on session/new|load (hatches spec §3.3). */
+  private dirsCap = false;
+  /** The turn's linked folders (hatches); empty without a scope (D0). */
+  private linked: LinkedAccess[] = [];
+  /** The write folders the open session was opened with, joined (null: no session yet). */
+  private sessionDirs: string | null = null;
+  /** `onLinkedUnsupported` was called already (once per process of the app). */
+  private warnedLinked = false;
+  /** Answers permission requests; its roots are replaced on every turn (L6). */
+  private readonly policy: PermissionPolicy;
 
-  constructor(private readonly o: TransportOptions) {}
+  constructor(private readonly o: TransportOptions) {
+    this.policy = {
+      folder: o.folder,
+      permissions: o.permissions,
+      readRoots: [...(o.references ?? [])],
+      ...(o.mcpOnly ? { mcpOnly: true } : {}),
+      mcpServers: o.mcp.map((s) => s.name),
+      lookup: (id) => this.calls.get(id),
+    };
+  }
+
+  /** The write folders the session is opened with: none without the capability (hatches spec §3.3). */
+  private writeDirs(): string[] {
+    if (!this.dirsCap) return [];
+    return this.linked.filter((l) => l.mode === "write").map((l) => l.path);
+  }
+
+  /** `session/new|load` params: today's, plus `additionalDirectories` only when there is one (D0). */
+  private dirsParam(): { additionalDirectories?: string[] } {
+    const dirs = this.writeDirs();
+    return dirs.length > 0 ? { additionalDirectories: dirs } : {};
+  }
+
+  /**
+   * The policy's roots for this turn's linked folders: every one is read, only write folders are edited, and only
+   * when the adapter took them (without the capability the engine's sandbox can't reach them: the policy grants nothing).
+   */
+  private applyLinked(): void {
+    const references = this.o.references ?? [];
+    if (!this.dirsCap) {
+      this.policy.readRoots = [...references];
+      delete this.policy.writeRoots;
+      return;
+    }
+    this.policy.readRoots = [...references, ...this.linked.map((l) => l.path)];
+    const writes = this.o.permissions.edit === "folder" ? this.writeDirs() : [];
+    if (writes.length > 0) this.policy.writeRoots = writes;
+    else delete this.policy.writeRoots;
+  }
+
+  /**
+   * The turn's write folders differ from the open session's (L6): `session/load` with the new list replaces the old
+   * one (a load that fails starts a new session, as openSession does); an agent that can't load gets a new session
+   * with it (Decision 9: the conversation is lost).
+   */
+  private async reopenWithDirs(config: string | undefined): Promise<void> {
+    if (this.loadable) this.sessionId = undefined;
+    else {
+      await this.endSession();
+      if (!this.conn) await this.connect(config);
+    }
+    await this.openSession();
+  }
+
 
   private get byConfigOption(): boolean {
     return this.o.profileMethod === "config-option";
@@ -368,14 +443,7 @@ export class AcpTransport implements Transport {
       this.stderrTail = (this.stderrTail + d.toString()).slice(-STDERR_KEEP);
     });
 
-    const policy: PermissionPolicy = {
-      folder: this.o.folder,
-      permissions: this.o.permissions,
-      readRoots: this.o.references ?? [],
-      ...(this.o.mcpOnly ? { mcpOnly: true } : {}),
-      mcpServers: this.o.mcp.map((s) => s.name),
-      lookup: (id) => this.calls.get(id),
-    };
+    const policy = this.policy;
     const stream = acp.ndJsonStream(
       Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
@@ -396,6 +464,7 @@ export class AcpTransport implements Transport {
     }
     this.loadable = Boolean(init.agentCapabilities?.loadSession);
     this.closable = Boolean(init.agentCapabilities?.sessionCapabilities?.close);
+    this.dirsCap = Boolean(init.agentCapabilities?.sessionCapabilities?.additionalDirectories);
   }
 
   private mcpServers() {
@@ -420,7 +489,7 @@ export class AcpTransport implements Transport {
     if (this.o.session.started && this.loadable) {
       let loaded: { configOptions?: unknown; models?: { currentModelId?: unknown } | null } | undefined;
       try {
-        loaded = (await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers })) as typeof loaded;
+        loaded = (await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers, ...this.dirsParam() })) as typeof loaded;
         this.sessionId = this.o.session.id;
       } catch (e) {
         // An expired login must surface; any other load failure (lost session) falls back to a fresh one.
@@ -434,7 +503,7 @@ export class AcpTransport implements Transport {
       }
     }
     if (!this.sessionId) {
-      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as {
+      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers, ...this.dirsParam() })) as {
         sessionId: string;
         configOptions?: unknown;
         models?: { currentModelId?: unknown } | null;
@@ -446,6 +515,7 @@ export class AcpTransport implements Transport {
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
+    this.sessionDirs = this.writeDirs().join("\n");
     if (this.o.sessionMode) {
       await agent.request("session/set_mode", { sessionId: this.sessionId, modeId: this.o.sessionMode });
     }
@@ -557,6 +627,7 @@ export class AcpTransport implements Transport {
     this.appliedModel = undefined;
     this.child = undefined;
     this.sessionId = undefined;
+    this.sessionDirs = null;
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
@@ -652,7 +723,7 @@ export class AcpTransport implements Transport {
     }
   }
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, _scope?: TurnScope): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, scope?: TurnScope): Promise<void> {
     let config: string | undefined;
     try {
       config = profile && !this.byConfigOption ? codexConfig(profile) : undefined;
@@ -678,10 +749,23 @@ export class AcpTransport implements Transport {
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
+    // Built per turn from the task's scope (L5, L6): an unlinked folder is gone from this turn on.
+    this.linked = scope?.linked ?? [];
     try {
       if (!this.conn || !this.sessionId) {
         if (!this.conn) await this.connect(config);
         await this.openSession();
+      } else if (this.writeDirs().join("\n") !== this.sessionDirs) {
+        await this.reopenWithDirs(config);
+      }
+      this.applyLinked();
+      if (this.linked.length > 0 && !this.dirsCap && !this.warnedLinked) {
+        this.warnedLinked = true;
+        try {
+          this.o.onLinkedUnsupported?.();
+        } catch (err) {
+          console.error("Could not report the adapter's missing linked folders", err);
+        }
       }
       await this.applyProfile();
     } catch (e) {

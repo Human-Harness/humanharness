@@ -70,6 +70,8 @@ export interface AcpScript {
   loadReplay?: Record<string, unknown>[];
   /** Advertise `sessionCapabilities.close` and answer `session/close`. */
   closeSession?: boolean;
+  /** Advertise `sessionCapabilities.additionalDirectories` (hatches spec §3.3: the session takes linked write folders). */
+  additionalDirectories?: boolean;
   /** Never answer `session/close` (an agent stuck on it). */
   hangClose?: boolean;
   /** Returned as `configOptions` by session/new and session/load (the models and efforts the agent offers). */

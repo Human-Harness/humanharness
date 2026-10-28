@@ -46,6 +46,8 @@ export interface TransportOptions {
   onSessionStarted: (session: Session) => void;
   /** ACP only: the models and efforts the agent offered at session/new (saved for Settings › Modelos). */
   onModels?: (offer: { models: ModelChoice[]; efforts: Effort[] }) => void;
+  /** ACP: the adapter can't take linked folders (hatches §3.3); called once per transport. */
+  onLinkedUnsupported?: () => void;
 }
 
 /** A folder of the turn's scope the agent may reach (hatches spec §3.3). `path` is absolute and real. */

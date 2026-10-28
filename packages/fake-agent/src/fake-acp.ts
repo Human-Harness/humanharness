@@ -66,7 +66,14 @@ acp
       protocolVersion: acp.PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: Boolean(script.loadSession),
-        ...(script.closeSession ? { sessionCapabilities: { close: {} } } : {}),
+        ...(script.closeSession || script.additionalDirectories
+          ? {
+              sessionCapabilities: {
+                ...(script.closeSession ? { close: {} } : {}),
+                ...(script.additionalDirectories ? { additionalDirectories: {} } : {}),
+              },
+            }
+          : {}),
       },
       ...(script.agentVersion ? { agentInfo: { name: "fake-acp", version: script.agentVersion } } : {}),
     };

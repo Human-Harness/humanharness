@@ -371,7 +371,8 @@ describe("createRuntime", () => {
     expect(agents).toContain("`save_note`");
     expect(agents).toContain(`- Source: \`${ref}\``);
     await send(runtime);
-    expect(args()[args().indexOf("--add-dir") + 1]).toBe(ref);
+    expect(args()).not.toContain("--add-dir");
+    expect(JSON.parse(args()[args().indexOf("--settings") + 1])).toEqual({ permissions: { additionalDirectories: [ref] } });
   });
 
   it("delivers a save_note call as a block event", async () => {

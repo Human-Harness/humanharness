@@ -6,7 +6,6 @@ import type {
   DataChangeView,
   Event,
   FileDiffResult,
-  FileRestorePrompt,
   FileTimelineResult,
   FocusState,
   HarnessClient,
@@ -46,8 +45,6 @@ const focusOpeners = new Set<(path: string) => void>();
 /** Focus mode as the chat set it last, and who listens. */
 let focusState: FocusState = { on: false };
 const focusListeners = new Set<(state: FocusState) => void>();
-/** The core's chat answers "go back?" for every `files.restore` (file-timeline spec §6.3); null while none is on screen. */
-let restoreConfirm: ((prompt: FileRestorePrompt) => Promise<boolean>) | null = null;
 const fileInvoke = (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args);
 
 /** Every `files.onChange`, on one `hh:fileCommits` listener. */
@@ -150,14 +147,9 @@ const client: HarnessClient = {
   files: {
     timeline: (file) => askFile<FileTimelineResult>(fileInvoke, "hh:fileTimeline", file),
     diff: (file, from, to) => askFile<FileDiffResult>(fileInvoke, "hh:fileDiff", file, from, to),
-    restore: (file, commit) => restoreFlow(fileInvoke, restoreConfirm, file, commit),
+    // Main asks with its native dialog before the file goes back; no code in the window can answer for the person.
+    restore: (file, commit) => restoreFlow(fileInvoke, file, commit),
     onChange: (file, listener) => fileCommits.onChange(file, listener),
-    hostConfirm: (confirm) => {
-      restoreConfirm = confirm;
-      return () => {
-        if (restoreConfirm === confirm) restoreConfirm = null;
-      };
-    },
   },
   scopes: {
     list: () => ipcRenderer.invoke("hh:scopes"),

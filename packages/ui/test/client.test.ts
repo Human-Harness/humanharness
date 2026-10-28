@@ -223,7 +223,7 @@ describe("documents and focus (review spec §5.6)", () => {
 });
 
 describe("files (file-timeline spec §6.3)", () => {
-  it("the fake answers like main and confirms through the core's host", async () => {
+  it("the fake answers like main and confirms through main's dialog", async () => {
     const c = new FakeClient();
     const entry = {
       kind: "task" as const,
@@ -237,10 +237,11 @@ describe("files (file-timeline spec §6.3)", () => {
     c.timelines["specs/a.md"] = [entry];
     expect(await c.files.timeline("specs/a.md")).toEqual({ ok: true, entries: [entry] });
     expect(await c.files.timeline("other.md")).toEqual({ ok: false, reason: "untracked" });
+    c.confirmGoBack = async () => false;
     expect(await c.files.restore("specs/a.md", entry.to)).toBe("cancelled");
-    const off = c.files.hostConfirm(async () => true);
+    c.confirmGoBack = async () => true;
     expect(await c.files.restore("specs/a.md", entry.to)).toBe("restored");
-    off();
+    expect(c.goBackAsks).toHaveLength(2);
     const seen: string[] = [];
     c.files.onChange("specs/a.md", () => seen.push("a"));
     c.emitFileCommit(["specs/a.md", "b.md"]);

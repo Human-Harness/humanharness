@@ -73,9 +73,10 @@ Main (`FileTimelineService`) keeps up to 32 timelines per history, each keyed on
 
 `client.files.restore(path, commit)`, where `commit` is an entry's `to` (§5):
 
-1. The preload (`restoreFlow` in `packages/shell/src/preload/file-restore.ts`) asks main for the prompt (`hh:fileRestorePrompt`). Main checks the path and that `commit` is the `to` of an entry of this path's timeline; a `deleted` entry is refused. An invoke that rejects (no handler, a closing window) answers `{ refused: "failed" }`, never a throw.
-2. It asks the confirmer the core's chat registered (`files.hostConfirm`). `ChatView` draws `RestoreConfirm` (`role="alertdialog"`, Cancel focused, Esc says no, Tab trapped): "Go back {{file}} to how it was after {{author}} ({{ago}})? The rest of the folder doesn't change." (or "to v{{version}}, the version you approved" for an approval). Without a confirmer, on a no or a throw, nothing goes back: `"cancelled"`. A go-back never happens unconfirmed.
-3. Main (`hh:fileRestore`) checks again, then runs `History.restoreFile` through the existing `RestoreGuard`: one at a time, turns held meanwhile.
+1. The preload (`restoreFlow` in `packages/shell/src/preload/file-restore.ts`) makes one call, `hh:fileRestore`. An invoke that rejects (no handler, a closing window) answers `{ refused: "failed" }`, never a throw.
+2. Main (`goBackHandlers` in `packages/shell/src/main/go-back.ts`) asks `FileTimelineService.restorePrompt` first: it checks the path and that `commit` is the `to` of an entry of this path's timeline; a `deleted` entry is refused, and so is a go-back while busy. A refusal asks nothing.
+3. Main asks with a **native dialog**, a sheet on the window that asked (`dialog.showMessageBox`; see "Every go-back asks in main" in `history.md`): "Go back to this version?", then "Go back {{file}} to how it was after {{author}} ({{ago}})? The rest of the folder doesn't change." (or "to v{{version}}, the version you approved" for an approval). The buttons are "Go back" and "Cancel"; Cancel is the default and the cancel id. A Cancel, or any failure to ask, answers `{ ok: false, reason: "cancelled" }`, which the client turns into `"cancelled"`; `EntryDiff` treats it quietly, as no change. A go-back never happens unconfirmed.
+4. Main (`FileTimelineService.restore`) checks again, then runs `History.restoreFile` through the existing `RestoreGuard`: one at a time, turns held meanwhile.
 
 `History.restoreFile` writes one file with the restore's link checks (`history.md`): `O_NOFOLLOW` where the OS has it, the parent's real path checked before and right after `mkdir`. A file that is a symbolic or hard link to an outside file is replaced, and the outside file never changes; the commit that deleted the file is not a version to go back to. A path it can't write safely is skipped and the answer is `unsafe`. The commit is `Go back: <path> to <target>`, where `<target>` is `v2` for an approval and `the version of <ISO time>` otherwise. It is untagged, like every restore, and stages only that path, so the person's other uncommitted edits wait for the next commit. The go-back is itself an entry and can be undone the same way.
 
@@ -84,7 +85,7 @@ Main (`FileTimelineService`) keeps up to 32 timelines per history, each keyed on
 - After a go-back main tells the settings, as the other restores do (a `.harness/data/` file may have gone back).
 - A reviewed document that goes back becomes stale ("Changed since approval") unless it went back to the approved version. Its record stays as it is.
 
-**Trust (Q4, for Marco to decide).** The confirmation lives in the window. Harness UI code runs in the core's own realm (one bundle, one frame), so a harness could register its own confirmer with `files.hostConfirm(async () => true)` and go back without asking. No in-window fix exists. The same holds already for `hh:restore` and `hh:restoreTask`, which have no confirmation in main at all. Harness code is trusted today; sandboxed plugins are a different boundary. The alternative is a native dialog shown by main: unforgeable, at the cost of the app's look and harder end-to-end tests.
+**Trust (Q4, decided by Marco on 2026-10-28).** Harness UI code runs in the core's own realm (one bundle, one frame), so a confirmation drawn in the window could be answered by harness code. The confirmation is therefore main's native dialog, for this go-back and for the whole-folder and task go-backs (`history.md`). Nothing in the window can answer it. The in-window confirmation (`files.hostConfirm`, `RestoreConfirm`) is gone; no harness used it.
 
 ## For harness views
 
@@ -92,9 +93,8 @@ Main (`FileTimelineService`) keeps up to 32 timelines per history, each keyed on
 
 - `timeline(path)` → `{ ok: true, entries } | { ok: false, reason }` (plan Conflicts 5).
 - `diff(path, from, to)` → `FileDiffView | { ok: false, reason }`; `from` null is "nothing before", `to` a commit or `"current"`. It takes any two commits that are the `from` or `to` of an entry on that path's timeline.
-- `restore(path, commit)` → `"restored" | "cancelled" | { refused }`. The core always confirms.
+- `restore(path, commit)` → `"restored" | "cancelled" | { refused }`. Main always confirms with its native dialog; `"cancelled"` means the person said no.
 - `onChange(path, listener)`: a commit touched the path. Main sends `hh:fileCommits` with each commit's paths, or null for a commit that changed more than 200 (`MAX_ANNOUNCED_PATHS`, a big `Start`): then every watched path hears it. The preload keeps one ipc listener for all of them (`fileCommitListeners`).
-- `hostConfirm(confirm)`: the core's chat only.
 
 Main checks every path: `refusedShape` first, then inside the person's folder (a `.md` in its canonical spelling) and tracked. Reference folders are never read or written here. Components, which take the client like `MaterialPanel`:
 
@@ -134,13 +134,12 @@ What the person sees that is new (the reader's "File history" button, the Histor
 - **The delayed index write blocks main once per burst.** Serialising a 92 MB index takes about 170 ms on Electron main, a second after the last commit of a burst. Smaller indexes take a few ms.
 - **The reader's own parse.** The plan-10 reader parses with the same `remark` in the window, without this plan's pre-scan, so an adversarial `.md` can stall the reader's renderer. That predates this plan.
 - **Version numbers shift** when older approvals fall outside the 1,000-commit window, and an approval older than that window can't be paired: "See what changed" then says there is nothing to compare.
-- **The harness confirmer (Q4).** A harness's UI code could register its own confirmer; see "Trust" above. For Marco to decide.
-- **`hostConfirm` has a single slot.** The last chat to register is the one asked; the slim chat and the main chat never mount together today.
+- **The native dialog's look.** It is the system's, not the app's, and its text is the core's in the person's language (the cached translation, else English).
 - **A path whose subject reads short.** `namedPath` cuts an answer's path at the first " · ", so the index lists a shorter path that doesn't exist for a document whose name holds it. The document's own timeline is right (`classifyCommit` matches the whole path).
 
 ## Where to look
 
 - `packages/workspace/src/subjects.ts` (`ANSWER_PREFIX`, `ANSWER_SEPARATOR`, `APPROVED_PREFIX`, `FILE_RESTORE_PREFIX`), `file-timeline.ts` (`namedPath`, `classifyCommit`, `groupTimeline`), `file-index.ts`, `history.ts` (`tracks`, `onCommit`, `fileCommits`, `fileTimeline`, `readBytesAt`, `restoreFile`), `file-diff.ts`, `safe-read.ts` (`readPrefix`).
-- `packages/shell/src/main/file-timeline.ts` (`FileTimelineService`), `file-ipc.ts`, `diff-runner.ts`, `diff-worker.ts`, `index.ts` (wiring, `hh:fileCommits`), `reviews.ts`; `packages/shell/src/preload/file-restore.ts`, `file-commits.ts`, `index.ts`.
-- `packages/ui/src/client.ts` (`HarnessClient.files`), `FileTimeline.tsx`, `FileDiff.tsx`, `EntryDiff.tsx`, `RestoreConfirm.tsx`, `FileTimelinePanel.tsx`, `ApprovedDiff.tsx`, `DocumentReader.tsx`, `HistoryPanel.tsx`, `ChatView.tsx`, `styles.css`; `packages/i18n/src/locales/en.json` (`timeline.*`).
-- Tests: `packages/workspace/test/file-timeline.test.ts`, `file-index.test.ts`, `history-index.test.ts`, `history-timeline.test.ts`, `history-restore-file.test.ts`, `file-diff.test.ts`, `file-diff-markdown.test.ts`, `file-diff-parse-error.test.ts`; `packages/shell/test/file-timeline.test.ts`, `file-ipc.test.ts`, `file-restore.test.ts`, `file-commits.test.ts`; the `packages/ui/test` timeline, diff and reader tests; `packages/e2e/tests/review.spec.ts`.
+- `packages/shell/src/main/file-timeline.ts` (`FileTimelineService`), `file-ipc.ts`, `go-back.ts` (`hh:fileRestore` and its native dialog), `diff-runner.ts`, `diff-worker.ts`, `index.ts` (wiring, `hh:fileCommits`), `reviews.ts`; `packages/shell/src/preload/file-restore.ts`, `file-commits.ts`, `index.ts`.
+- `packages/ui/src/client.ts` (`HarnessClient.files`), `FileTimeline.tsx`, `FileDiff.tsx`, `EntryDiff.tsx`, `FileTimelinePanel.tsx`, `ApprovedDiff.tsx`, `DocumentReader.tsx`, `HistoryPanel.tsx`, `ChatView.tsx`, `styles.css`; `packages/i18n/src/locales/en.json` (`timeline.*`).
+- Tests: `packages/workspace/test/file-timeline.test.ts`, `file-index.test.ts`, `history-index.test.ts`, `history-timeline.test.ts`, `history-restore-file.test.ts`, `file-diff.test.ts`, `file-diff-markdown.test.ts`, `file-diff-parse-error.test.ts`; `packages/shell/test/file-timeline.test.ts`, `file-ipc.test.ts`, `file-restore.test.ts`, `go-back.test.ts`, `file-commits.test.ts`; the `packages/ui/test` timeline, diff and reader tests; `packages/e2e/tests/review.spec.ts`.

@@ -404,15 +404,8 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 /* "Go back here" shows on the entry under the pointer or focus; it stays in the tab order. */
 .hh-history-point-back { flex: none; height: 26px; padding: 0 10px; font-size: 12px; opacity: 0; }
 .hh-history-entries > li:hover .hh-history-point-back, .hh-history-point-back:focus-visible { opacity: 1; }
-.hh-history-entries > li .hh-history-confirm { flex: 1; }
 .hh-history-undo { justify-self: start; background: transparent; }
-.hh-history-confirm { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: start; border-color: var(--hh-warn); }
-.hh-history-confirm > svg { color: var(--hh-warn); margin-top: 1px; }
-.hh-history-confirm p { margin: 4px 0 0; color: var(--hh-slate); line-height: 1.45; flex-basis: auto; }
 .hh-history-chip.open { color: var(--hh-slate); }
-.hh-history-undone { grid-column: 1 / -1; list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 4px; border-radius: 6px; background: var(--hh-sheet); }
-.hh-history-undone li { display: flex; justify-content: space-between; gap: 8px; }
-.hh-history-confirm-buttons { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 
 /* File timeline (file-timeline spec §6.1). */
 .hh-timeline { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
@@ -457,9 +450,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-timeline-panel { position: fixed; inset: 52px 0 0 auto; width: min(560px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 10px 12px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .hh-timeline-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 8px; }
 .hh-timeline-panel-head h2 { margin: 0; min-width: 0; font-family: var(--hh-display); font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
-.hh-restore-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: var(--hh-backdrop); }
-.hh-restore-confirm { max-width: 440px; padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
-.hh-restore-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }

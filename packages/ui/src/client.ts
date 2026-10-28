@@ -977,11 +977,18 @@ export interface HarnessClient {
   send(message: string, options?: SendOptions): Promise<void>;
   cancel(): Promise<void>;
   onEvent(listener: (event: Event) => void): () => void;
-  restore(sha: string): Promise<void>;
+  /**
+   * Makes the whole folder look as it did at `sha`, after main's native confirmation; recorded outside any task.
+   * `cancelled`: the person said no, nothing changed.
+   */
+  restore(sha: string): Promise<GoBackResult>;
   /** The history grouped by task, newest first; the group of commits outside any task last. */
   historyTasks(): Promise<HistoryTaskView[]>;
-  /** Makes the folder look as it did before the task started (later tasks are undone too); recorded outside any task. */
-  restoreTask(taskId: string): Promise<void>;
+  /**
+   * Makes the folder look as it did before the task started (later tasks are undone too), after main's native
+   * confirmation; recorded outside any task. `cancelled`: the person said no, nothing changed.
+   */
+  restoreTask(taskId: string): Promise<GoBackResult>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */
@@ -1093,18 +1100,16 @@ export interface HarnessClient {
     /** The core's chat only. */
     set(state: FocusState): void;
   };
-  /** File timelines (file-timeline spec §6.3). Every call answers with data; the core always confirms a go-back. */
+  /** File timelines (file-timeline spec §6.3). Every call answers with data; main always confirms a go-back natively. */
   files: {
     /** The file's entries, newest first. */
     timeline(path: string): Promise<FileTimelineResult>;
     /** What changed between two commits, or from a commit to the file now ("current"); `from` null: nothing before. */
     diff(path: string, from: string | null, to: string | "current"): Promise<FileDiffResult>;
-    /** Brings the file back to `commit` (an entry's `to`) after the core's confirmation; nothing else changes. */
+    /** Brings the file back to `commit` (an entry's `to`) after main's native confirmation; nothing else changes. */
     restore(path: string, commit: string): Promise<FileRestoreResult>;
     /** A commit touched `path`: its timeline has a new entry. Returns the unsubscribe. */
     onChange(path: string, listener: () => void): () => void;
-    /** The core's chat only: answers the confirmation every `restore` shows. Returns the unregister. */
-    hostConfirm(confirm: (prompt: FileRestorePrompt) => Promise<boolean>): () => void;
   };
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
@@ -1249,7 +1254,7 @@ export type { DiffPart, FileDiffView, LineChange, MdBlockType, MdDiffBlock, Time
 export type FileRefusal = "not-ready" | "outside" | "untracked" | "bad-input" | "not-found" | "deleted" | "busy" | "unsafe" | "failed";
 export type FileTimelineResult = { ok: true; entries: TimelineEntry[] } | { ok: false; reason: FileRefusal };
 export type FileDiffResult = FileDiffView | { ok: false; reason: FileRefusal };
-/** What the core's confirmation says before a file goes back (§5). */
+/** What main's native confirmation says before a file goes back (§5). */
 export interface FileRestorePrompt {
   path: string;
   author: TimelineAuthor;
@@ -1258,6 +1263,35 @@ export interface FileRestorePrompt {
   version?: number;
 }
 export type FileRestorePromptResult = { ok: true; prompt: FileRestorePrompt } | { ok: false; reason: FileRefusal };
-export type FileRestoreAnswer = { ok: true } | { ok: false; reason: FileRefusal };
-/** `client.files.restore`'s answer: done, the person said no (or no core is there to ask), or refused. */
+/** `hh:fileRestore`'s answer; `cancelled`: the person said no to main's confirmation. */
+export type FileRestoreAnswer = { ok: true } | { ok: false; reason: FileRefusal | "cancelled" };
+/** `client.files.restore`'s answer: done, the person said no, or refused. */
 export type FileRestoreResult = "restored" | "cancelled" | { refused: FileRefusal };
+/** A whole-folder or task go-back (`restore`, `restoreTask`): done, or the person said no to main's confirmation. */
+export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
+
+/** Who made a timeline entry, as the go-back confirmation and the timeline say it. */
+export function authorName(t: (key: string) => string, a: TimelineAuthor): string {
+  if (a.kind === "person") return t("timeline.you");
+  if (a.kind === "outside") return t("timeline.outsideAuthor");
+  return a.action ? a.label : t("history.question");
+}
+
+/** "20 minutes ago", "now", "3 days ago"; "" for a date that doesn't parse. */
+export function timeAgo(iso: string, language: string, now = Date.now()): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms) || !Number.isFinite(now)) return "";
+  const seconds = Math.round((ms - now) / 1000);
+  const f = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  const abs = Math.abs(seconds);
+  if (abs < 60) return f.format(0, "second");
+  if (abs < 3600) return f.format(Math.round(seconds / 60), "minute");
+  if (abs < 86_400) return f.format(Math.round(seconds / 3600), "hour");
+  return f.format(Math.round(seconds / 86_400), "day");
+}
+
+/** The tasks other than `own` that changed something after `after` (an ISO date), newest first: going back undoes them too. */
+export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): HistoryTaskView[] {
+  const t = Date.parse(after);
+  return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t);
+}

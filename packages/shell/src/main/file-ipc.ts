@@ -29,12 +29,15 @@ export function commitAnnouncer(send: (paths: string[] | null) => void) {
   };
 }
 
-export const FILE_CHANNELS = ["hh:fileTimeline", "hh:fileDiff", "hh:fileRestorePrompt", "hh:fileRestore"] as const;
+export const FILE_CHANNELS = ["hh:fileTimeline", "hh:fileDiff"] as const;
 export type FileChannel = (typeof FILE_CHANNELS)[number];
 
 const failed = { ok: false as const, reason: "failed" as const };
 
-/** The `hh:file*` handlers (file-timeline spec §6.3). Every answer is data; a throw is a bug, logged, answered `failed`. */
+/**
+ * The `hh:file*` read handlers (file-timeline spec §6.3; the go-back, `hh:fileRestore`, is in go-back.ts). Every
+ * answer is data; a throw is a bug, logged, answered `failed`.
+ */
 export function fileHandlers(svc: FileTimelineService): Record<FileChannel, (...args: unknown[]) => Promise<unknown>> {
   const call = (fn: () => unknown): Promise<unknown> =>
     Promise.resolve()
@@ -46,7 +49,5 @@ export function fileHandlers(svc: FileTimelineService): Record<FileChannel, (...
   return {
     "hh:fileTimeline": (file) => call(() => svc.timeline(file)),
     "hh:fileDiff": (file, from, to) => call(() => svc.diff(file, from, to)),
-    "hh:fileRestorePrompt": (file, commit) => call(() => svc.restorePrompt(file, commit)),
-    "hh:fileRestore": (file, commit) => call(() => svc.restore(file, commit)),
   };
 }

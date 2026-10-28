@@ -1,8 +1,11 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import type { FileTimelineResult, HarnessClient, TimelineAuthor, TimelineEntry } from "./client";
+import { authorName, type FileTimelineResult, type HarnessClient, type TimelineEntry, timeAgo } from "./client";
 import { entryLabel } from "./HistoryPanel";
+
+// Shared with main's native go-back confirmation, so both say who and when the same way.
+export { authorName, timeAgo };
 
 export interface FileTimelineProps {
   client: HarnessClient;
@@ -12,26 +15,6 @@ export interface FileTimelineProps {
   selected?: string;
   /** Picking an entry; absent: the list is read-only. */
   onPick?: (entry: TimelineEntry) => void;
-}
-
-/** Who made an entry, in the window's language (§3.1). */
-export function authorName(t: TFunction, a: TimelineAuthor): string {
-  if (a.kind === "person") return t("timeline.you");
-  if (a.kind === "outside") return t("timeline.outsideAuthor");
-  return a.action ? a.label : t("history.question");
-}
-
-/** "20 minutes ago", "now", "3 days ago"; "" for a date that doesn't parse. */
-export function timeAgo(iso: string, language: string, now = Date.now()): string {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms) || !Number.isFinite(now)) return "";
-  const seconds = Math.round((ms - now) / 1000);
-  const f = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
-  const abs = Math.abs(seconds);
-  if (abs < 60) return f.format(0, "second");
-  if (abs < 3600) return f.format(Math.round(seconds / 60), "minute");
-  if (abs < 86_400) return f.format(Math.round(seconds / 3600), "hour");
-  return f.format(Math.round(seconds / 86_400), "day");
 }
 
 /** The date and time, or "" for a date that doesn't parse. */

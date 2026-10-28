@@ -29,6 +29,7 @@ import {
   settingsView,
   stageTier,
 } from "@humanharness/harness-sdk";
+import { createI18n } from "@humanharness/i18n";
 import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
 import { type Event, type HarnessRuntime, type SystemTaskResult, createRuntime, runSystemSession, runSystemTask } from "@humanharness/runtime";
@@ -103,6 +104,7 @@ import { reviewHandlers } from "./review-ipc";
 import { workerDiff } from "./diff-runner";
 import { commitAnnouncer, fileHandlers } from "./file-ipc";
 import { FileTimelineService } from "./file-timeline";
+import { type GoBackAsk, askNatively, goBackHandlers, goBackText } from "./go-back";
 import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -143,7 +145,7 @@ import { baseFor, isInsideFolder } from "./profile-base";
 import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
 import { ProfileSwitch } from "./profile-switch";
 import { holds } from "./holds";
-import { historyView, isSha } from "./history-view";
+import { historyView } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
 import { textSizeShortcut, trafficLightY } from "./text-size";
@@ -1001,6 +1003,24 @@ let translation: TranslationService | null = null;
 let engineCheck: { id: string; at: number; ready: Promise<boolean> } | null = null;
 
 /**
+ * Asks before a go-back, with a native dialog on the window that asked (go-back.ts). The words are the core's, in the
+ * person's language: the cached translation when there is one, else English. Any failure to ask is a no.
+ */
+async function confirmGoBack(sender: WebContents, ask: GoBackAsk): Promise<boolean> {
+  try {
+    const language = (await config.load()).language ?? DEFAULT_LANGUAGE;
+    const generated = translation ? await translation.strings(language, {}).catch(() => ({})) : {};
+    const i18n = await createI18n(language, {}, generated);
+    const t = (key: string, values?: Record<string, unknown>) => String(i18n.t(key, values ?? {}));
+    const text = goBackText(t, ask, harness.actions, i18n.resolvedLanguage ?? "en");
+    return await askNatively(dialog, BrowserWindow.fromWebContents(sender), text);
+  } catch (err) {
+    console.error("Could not ask before going back", err);
+    return false;
+  }
+}
+
+/**
  * Whether the engine could run a translation now: installed, not outdated, not signed out (the runtime's own start
  * checks). A fake engine (tests, mock mode) always can. Reused for ENGINE_CHECK_MS unless `fresh`.
  */
@@ -1653,24 +1673,28 @@ function registerIpc() {
   if (translation) for (const [channel, fn] of Object.entries(languageHandlers(translation))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
-  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
-  handle("hh:restore", (sha: unknown) => {
-    if (!isSha(sha)) throw new Error("Invalid point");
-    // A restore changes tracked files with no data event: the settings may have changed.
-    return restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => void settingsCtl?.changed());
-  });
-  handle("hh:historyTasks", async () => {
+  const historyGroups = async () => {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
+  };
+  // Every go-back (one file, the whole folder, one task) asks first with main's native dialog (go-back.ts).
+  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
+  // A restore changes tracked files with no data event: the settings may have changed.
+  const goBacks = goBackHandlers<WebContents>({
+    confirm: confirmGoBack,
+    blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
+    groups: historyGroups,
+    restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => void settingsCtl?.changed()),
+    restoreTask: (taskId) =>
+      restoreWith(async (history) => {
+        const group = (await history.tasks()).find((g) => g.taskId === taskId);
+        if (!group?.start) throw new Error("Nothing to go back to");
+        await history.restore(group.start, RESTORE_TASK);
+      }).then(() => void settingsCtl?.changed()),
+    file: fileTimelines,
   });
-  handle("hh:restoreTask", (taskId: unknown) =>
-    restoreWith(async (history) => {
-      if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
-      const group = (await history.tasks()).find((g) => g.taskId === taskId);
-      if (!group?.start) throw new Error("Nothing to go back to");
-      await history.restore(group.start, RESTORE_TASK);
-    }).then(() => void settingsCtl?.changed()),
-  );
+  for (const [channel, fn] of Object.entries(goBacks)) handleFrom(channel, fn);
+  handle("hh:historyTasks", historyGroups);
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));

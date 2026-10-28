@@ -7,23 +7,16 @@ describe("file timeline IPC handlers", () => {
     const calls: unknown[][] = [];
     const svc = {
       timeline: async (...a: unknown[]) => (calls.push(["timeline", ...a]), { ok: true, entries: [] }),
-      diff: async () => {
-        throw new Error("boom");
-      },
-      restorePrompt: () => {
+      diff: () => {
         throw new Error("sync boom");
       },
-      restore: async (...a: unknown[]) => (calls.push(["restore", ...a]), { ok: true }),
     } as unknown as FileTimelineService;
     const h = fileHandlers(svc);
     expect(Object.keys(h).sort()).toEqual([...FILE_CHANNELS].sort());
+    // The go-back is not here: main's native confirmation guards it (go-back.ts).
+    expect(FILE_CHANNELS).not.toContain("hh:fileRestore");
     expect(await h["hh:fileTimeline"]("a.md")).toEqual({ ok: true, entries: [] });
     expect(await h["hh:fileDiff"]("a.md", null, "current")).toEqual({ ok: false, reason: "failed" });
-    expect(await h["hh:fileRestorePrompt"]("a.md", "x")).toEqual({ ok: false, reason: "failed" });
-    expect(await h["hh:fileRestore"]("a.md", "c".repeat(40))).toEqual({ ok: true });
-    expect(calls).toEqual([
-      ["timeline", "a.md"],
-      ["restore", "a.md", "c".repeat(40)],
-    ]);
+    expect(calls).toEqual([["timeline", "a.md"]]);
   });
 });

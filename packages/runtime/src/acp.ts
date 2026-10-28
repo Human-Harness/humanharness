@@ -148,6 +148,29 @@ export function activityDetail(call: { kind?: unknown; title?: unknown; location
   return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
 }
 
+const EDIT_KINDS = new Set(["edit", "delete", "move"]);
+/** The most paths kept from one tool call. */
+const EDITS_MAX = 50;
+
+/**
+ * The files an ACP edit, delete or move call names: its `locations` and its `diff` contents' paths (parallel spec §5.2).
+ * Codex gives no `locations` for an edit: the path is only in `content[].diff.path`, absolute and in the form of the
+ * `cwd` it was given, not its real path; and Codex often writes through the shell (`execute`), naming no path at all
+ * (spike PT-S3, docs/spikes/2026-10-28-parallel-tasks.md). So this is a hint, never the full list of changed files.
+ */
+export function acpEditPaths(call: { kind?: unknown; locations?: unknown; content?: unknown }): string[] {
+  if (typeof call.kind !== "string" || !EDIT_KINDS.has(call.kind)) return [];
+  const out = new Set<string>();
+  const add = (p: unknown) => {
+    if (typeof p === "string" && p && out.size < EDITS_MAX) out.add(p);
+  };
+  if (Array.isArray(call.locations)) for (const l of call.locations) add((l as { path?: unknown } | null)?.path);
+  if (Array.isArray(call.content)) {
+    for (const c of call.content) if ((c as { type?: unknown } | null)?.type === "diff") add((c as { path?: unknown }).path);
+  }
+  return [...out];
+}
+
 /**
  * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
  * written; `model` is left out for the engine's default model. Checked again here before it is used.
@@ -576,7 +599,8 @@ export class AcpTransport implements Transport {
         const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
-        emit({ type: "activity", id: u.toolCallId, ...activity, state: "start" });
+        const edits = acpEditPaths(u);
+        emit({ type: "activity", id: u.toolCallId, ...activity, ...(edits.length > 0 ? { edits } : {}), state: "start" });
         return;
       }
       case "tool_call_update": {

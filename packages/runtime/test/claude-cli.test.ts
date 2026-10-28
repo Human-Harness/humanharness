@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
+import { ClaudeCliTransport, StreamJsonReader, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -479,5 +479,35 @@ describe("claudeArgs noTools (sidekick spec §5)", () => {
   it("refuses MCP servers or reference folders with noTools", () => {
     expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [uiServer], permissions, noTools: true })).toThrow(/no-tools/);
     expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/x"], noTools: true })).toThrow(/no-tools/);
+  });
+});
+
+describe("edit paths (parallel spec §5.2)", () => {
+  it("Edit, Write, MultiEdit and NotebookEdit name their file; nothing else does", () => {
+    expect(editPaths("Edit", { file_path: "/w/a.md" })).toEqual(["/w/a.md"]);
+    expect(editPaths("Write", { file_path: "/w/b.md" })).toEqual(["/w/b.md"]);
+    expect(editPaths("MultiEdit", { file_path: "/w/c.md" })).toEqual(["/w/c.md"]);
+    expect(editPaths("NotebookEdit", { notebook_path: "/w/n.ipynb" })).toEqual(["/w/n.ipynb"]);
+    expect(editPaths("Read", { file_path: "/w/a.md" })).toEqual([]);
+    expect(editPaths("Bash", { command: "rm x" })).toEqual([]);
+    expect(editPaths("Edit", { file_path: 3 })).toEqual([]);
+    expect(editPaths("Edit", { file_path: "" })).toEqual([]);
+    expect(editPaths("toString", { file_path: "/w/a.md" })).toEqual([]);
+  });
+  it("puts them on the start event only", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "/w/a.md" } }] } }));
+    reader.feed(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "w1" }] } }));
+    expect(events).toEqual([
+      { type: "activity", id: "w1", kind: "edit", detail: "a.md", edits: ["/w/a.md"], state: "start" },
+      { type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "end", error: false },
+    ]);
+  });
+  it("D0: a Read activity carries nothing new", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/w/a.md" } }] } }));
+    expect(events).toEqual([{ type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start" }]);
   });
 });

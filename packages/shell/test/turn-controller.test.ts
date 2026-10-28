@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
-import { EngineUnavailable, TurnController, type TurnOptions, memoise } from "../src/main/turn-controller";
+import { EngineUnavailable, TurnController, type TurnOptions, forWindow, memoise } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 
 type Emit = (e: Event) => void;
@@ -765,5 +765,30 @@ describe("TurnController: phases (task-phases spec §4.4, §5, §6)", () => {
     for (const key of ["phase", "timeUp"]) expect(t.entries[0]).not.toHaveProperty(key);
     expect(t.metas[0]).not.toHaveProperty("taskPhase");
     expect(t.rt.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", action: "quiz" } });
+  });
+});
+
+describe("edit paths stay in main (parallel spec D7)", () => {
+  it("forWindow strips edits and returns any other event as is", () => {
+    const start: Event = { type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "start", edits: ["/home/me/w/a.md"] };
+    expect(forWindow(start)).toEqual({ type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "start" });
+    expect(start.edits).toEqual(["/home/me/w/a.md"]);
+    const plain: Event = { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start" };
+    expect(forWindow(plain)).toBe(plain);
+    const text: Event = { type: "text", delta: "hi" };
+    expect(forWindow(text)).toBe(text);
+  });
+  it("the turn's listener gets the edits; the window and the chat log don't", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const heard: Event[] = [];
+    const sent = controller.send("hi", { onEvent: (e) => heard.push(e) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "start", edits: ["/home/me/w/a.md"] }, { type: "done", ok: true }]);
+    await sent;
+    expect(heard[0]).toMatchObject({ edits: ["/home/me/w/a.md"] });
+    expect(events.find((e) => e.type === "activity")).toEqual({ type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "start" });
+    expect(entries.find((e) => e.role === "assistant")?.activities).toEqual([{ kind: "edit", detail: "a.md" }]);
+    expect(JSON.stringify(entries)).not.toContain("/home/me");
   });
 });

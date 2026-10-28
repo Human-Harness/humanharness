@@ -30,7 +30,12 @@ export interface LimitWindow {
 export type Event =
   | { type: "text"; delta: string }
   | { type: "paragraph" }
-  | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean }
+  /**
+   * `edits`: the files an edit tool named (absolute or as the engine wrote them), on the start event only. For the
+   * history's attribution (parallel spec §5.2); the window and the chat log never get them (shell `forWindow`).
+   * Only a hint: an engine that writes through the shell names no file.
+   */
+  | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean; edits?: string[] }
   /** `id`: set by the app on a block the person answers (input-blocks spec §4), never by an engine. */
   | { type: "block"; name: string; data: unknown; id?: string }
   | { type: "limits"; status: string; windows: LimitWindow[] }

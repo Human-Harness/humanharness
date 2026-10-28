@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { HARNESS_ID, HIDDEN_CHARS, PLUGIN_ID } from "@humanharness/harness-sdk";
+import { findBrand } from "./check";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { pluginAgentsFile, pluginSkillFile, readGuide } from "./guide";
 import { CORE_DIR, cliDirOf, pluginGuideFileOf, pluginTemplateDirOf } from "./paths";
@@ -26,8 +27,9 @@ export interface PluginInitOptions {
   log?: (line: string) => void;
 }
 
-/** The template's placeholders, replaced in every text file it copies. */
+/** The template's placeholders, replaced in every text file it copies, in one pass (a value holding one stays literal). */
 const PLACEHOLDERS = ["__ID__", "__NAME__", "__HARNESS__"] as const;
+const PLACEHOLDER = /__(?:ID|NAME|HARNESS)__/g;
 
 /** "my-items" → "My items". */
 export const nameFromId = (id: string) => {
@@ -43,6 +45,8 @@ function checkName(name: string): string {
   const trimmed = name.trim();
   if (trimmed.length === 0 || trimmed.length > 60) throw new UsageError("--name: the plugin's name is 1 to 60 characters.");
   if (HIDDEN_CHARS.test(trimmed) || /["\\]/.test(trimmed)) throw new UsageError('--name: the plugin\'s name can\'t hold quotes ("), backslashes or hidden characters.');
+  const brand = findBrand(trimmed);
+  if (brand) throw new UsageError(`--name: a plugin's name can't name a provider or model ("${brand}").`);
   return trimmed;
 }
 
@@ -62,8 +66,13 @@ export async function initPlugin(o: PluginInitOptions): Promise<{ dir: string; i
   if (!(await fs.stat(path.join(cliDirOf(core), "package.json")).catch(() => null))) throw new UsageError(`${core} is not a Human Harness checkout (it has no packages/cli).`);
   const entries = await fs.readdir(dir).catch((err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") return [];
+    if (err.code === "ENOTDIR") throw new UsageError(`${dir} is a file: plugin init only writes into a new or empty folder.`);
     throw err;
   });
+  // A link to nothing reads as missing, and mkdir would then fail on it.
+  if (entries.length === 0 && (await fs.lstat(dir).catch(() => null))?.isSymbolicLink() && !(await fs.stat(dir).catch(() => null))) {
+    throw new UsageError(`${dir} is a link to nothing: plugin init only writes into a new or empty folder.`);
+  }
   if (entries.length > 0) throw new UsageError(`${dir} is not empty: plugin init only writes into a new or empty folder.`);
   const guide = await readGuide(pluginGuideFileOf(core));
 
@@ -106,8 +115,7 @@ function fill(bytes: Buffer, values: Record<string, string>): Buffer | string {
   } catch {
     return bytes;
   }
-  for (const [placeholder, value] of Object.entries(values)) text = text.replaceAll(placeholder, () => value);
-  return text;
+  return text.replace(PLACEHOLDER, (placeholder) => values[placeholder]);
 }
 
 export async function pluginInitCommand(args: string[], io: Io): Promise<number> {

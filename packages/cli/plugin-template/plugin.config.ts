@@ -20,7 +20,7 @@ export default definePlugin({
       tier: "light",
       scope: "none",
       vars: z.object({ id: z.string() }),
-      prompt: "Summarize item {{id}} in two sentences.",
+      prompt: "Summarize item {{id}} in two sentences. Only read: change nothing outside the app without asking.",
     },
   ],
 });

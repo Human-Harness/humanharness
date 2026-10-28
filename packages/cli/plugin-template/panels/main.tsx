@@ -12,7 +12,7 @@ export default function Main() {
       columns={[{ key: "title", label: "Item" }]}
       rows={rows ?? []}
       empty="No items yet."
-      action={{ label: "Summarize", onClick: (item) => void requestAction("summarize", { id: item.id }) }}
+      action={{ label: "Summarize", onClick: (item) => requestAction("summarize", { id: item.id }).catch(() => {}) }}
     />
   );
 }

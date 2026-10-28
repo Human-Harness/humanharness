@@ -36,6 +36,8 @@ describe("humanharness plugin init: the fresh template", () => {
     expect(config).toContain('id: "my-items"');
     expect(config).toContain('name: "My items"');
     expect(config).toContain('harness: "*"');
+    // The example every /new-plugin agent copies: an action proposes, and writes nothing without the person's yes.
+    expect(config).toContain("change nothing outside the app without asking");
     expect(read(dir, "PLUGIN.md")).toMatch(/^# My items\n/);
     for (const f of files(dir)) expect(read(dir, f), f).not.toMatch(/__(ID|NAME|HARNESS)__/);
     expect(files(dir)).toEqual(
@@ -114,7 +116,26 @@ describe("humanharness plugin init: options and refusals", () => {
     await expect(initPlugin({ dir: path.join(root, "n2"), name: "a‮b" })).rejects.toThrow(UsageError);
     await expect(initPlugin({ dir: path.join(root, "n3"), name: "x".repeat(61) })).rejects.toThrow(UsageError);
     await expect(initPlugin({ dir: path.join(root, "n4"), name: "  " })).rejects.toThrow(UsageError);
+    await expect(initPlugin({ dir: path.join(root, "n5"), name: "Claude helper" })).rejects.toThrow(/provider or model/);
+    for (const n of ["n1", "n2", "n3", "n4", "n5"]) expect(fs.existsSync(path.join(root, n))).toBe(false);
     for (const d of ["h1", "n1", "n2", "n3", "n4"]) expect(fs.existsSync(path.join(root, d))).toBe(false);
+  });
+
+  it("a placeholder in the name stays literal: one pass", async () => {
+    const dir = path.join(root, "one-pass");
+    await initPlugin({ dir, name: "My __HARNESS__ __ID__" });
+    expect(read(dir, "plugin.config.ts")).toContain('name: "My __HARNESS__ __ID__"');
+  });
+
+  it("refuses a file or a link to nothing as the folder, with a usage error, and writes nothing", async () => {
+    const file = path.join(root, "a-file");
+    fs.writeFileSync(file, "keep");
+    await expect(initPlugin({ dir: file })).rejects.toThrow(UsageError);
+    expect(fs.readFileSync(file, "utf8")).toBe("keep");
+    const link = path.join(root, "dangling");
+    fs.symlinkSync(path.join(root, "nowhere"), link);
+    await expect(initPlugin({ dir: link })).rejects.toThrow(UsageError);
+    expect(fs.existsSync(path.join(root, "nowhere"))).toBe(false);
   });
 
   it("takes exactly one folder", async () => {

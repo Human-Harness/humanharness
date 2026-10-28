@@ -870,11 +870,12 @@ const tasks = new TaskManager({
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
-  profileFor: async (action, floor) => {
+  profileFor: async (action, floor, tier) => {
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
-    const manifestTier = action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier;
+    // `tier`: a core review task's (review spec §11.3); otherwise the action's, or the free questions'.
+    const manifestTier = tier ?? (action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier);
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
     const profile = resolveProfile({ engine, action, manifestTier, models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).

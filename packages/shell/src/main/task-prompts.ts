@@ -10,6 +10,17 @@ export const QUESTION_PROMPT = [
   "{{question}}",
 ].join("\n");
 
+/** The first message of a core "Review <title>" task (review spec §5.3). */
+export const REVIEW_PROMPT = [
+  "The person is reviewing a document and sent you a review round. Answer in {{language}}.",
+  "Edit the document for each item, then answer every item with `reply_to_comment` (resolve it when it is done). Call `read_review` for the rest of the review: open questions, answers and approval.",
+  "",
+  "{{notesIndex}}",
+  "",
+  "## Review round",
+  "{{question}}",
+].join("\n");
+
 /** The fixed core prompt of a task's closing turn. */
 export const CLOSE_PROMPT =
   "We are closing this topic. Call the `save_note` tool once with what this conversation made clear: a short title, at most 5 summary points, the decisions taken, the files that back them and the questions left open. Write the note in English. Do not write any file yourself and do not call `show_choices`. Then reply with one short sentence.";

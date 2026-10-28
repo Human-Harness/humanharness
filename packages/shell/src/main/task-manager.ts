@@ -17,6 +17,7 @@ import {
   answerMessage,
   answerRecords,
   defaultModeOf,
+  matchGlob,
   parseAnswer,
   phaseModes,
   saveNoteSchema,
@@ -37,12 +38,13 @@ import {
   type TimeBoxView,
   nextInPath,
 } from "@humanharness/ui/client";
-import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
+import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeDir, isScopeId, noteSlug } from "@humanharness/workspace";
 import {
   CHECKPOINT_PROMPT,
   type ModeText,
   type PhaseText,
   QUESTION_PROMPT,
+  REVIEW_PROMPT,
   closePrompt,
   fillPrompt,
   interviewSection,
@@ -58,6 +60,7 @@ import {
 } from "./task-prompts";
 import {
   type CurrentTask,
+  NOTICES_MAX,
   PHASE_LOG_MAX,
   type PendingInput,
   type PhaseBy,
@@ -124,9 +127,10 @@ export interface TaskDeps {
   emit?(e: Event): void;
   /**
    * The model profile a new task runs on, resolved once when it starts (resources spec §5). `floor`: a mode's `minTier`
-   * the new task must reach (task-modes spec §5.3), passed only when there is one. Absent: the engine's defaults.
+   * the new task must reach (task-modes spec §5.3), passed only when there is one. `tier`: a core review task's tier
+   * (review spec §11.3), passed only for one. Absent: the engine's defaults.
    */
-  profileFor?(action: string | undefined, floor?: Tier): Promise<ModelProfile>;
+  profileFor?(action: string | undefined, floor?: Tier, tier?: Tier): Promise<ModelProfile>;
   /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
   fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
   /**
@@ -424,6 +428,56 @@ export class TaskManager {
       },
     );
     return { accepted, done };
+  }
+
+  /**
+   * A review round (review spec §5.3): to the task that waits, as the person's message; with no task open, a new core
+   * "Review <title>" task in the record's scope (the open scope without one) at `r.tier`. Refused while a turn runs.
+   */
+  reviewRound(r: { path: string; title: string; message: string; scope?: string; tier: Tier }): Promise<"open" | "new"> {
+    return this.op(async () => {
+      const c = await this.storedCurrent();
+      if (c?.status === "waiting") {
+        await this.askNow(r.message);
+        return "open" as const;
+      }
+      if (c) throw new Error("A turn is already running");
+      const state = await this.d.store.load();
+      const scope = this.d.scoped && r.scope !== undefined && isScopeDir(r.scope) ? r.scope : this.scopeFor(state, undefined);
+      const language = await this.d.language();
+      await this.begin(
+        { ...keptQuestion(`Review ${oneLine(r.title)}\n\n${r.message}`), review: r.path },
+        scope,
+        (notesIndex) => fillPrompt(REVIEW_PROMPT, { language, notesIndex, question: r.message }),
+        r.message,
+        undefined,
+        r.tier,
+      );
+      return "new" as const;
+    });
+  }
+
+  /**
+   * The person approved `a.path` (review spec §5.4). The document's task, when it is the open one, gets a line before its
+   * next message. When the open task waits and its current phase has an `approve` glob matching the path, the task moves
+   * to its next phase as if the person had picked it (§5.5). Never from the last phase (the close phase is always last):
+   * there an approval only leaves the line, and a stale document never moves the task back.
+   */
+  async documentApproved(a: { path: string; task: string | null; reason?: string }): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c) return;
+    if (a.task === c.id) {
+      const line = `The person approved ${a.path}${a.reason ? `, with reason: ${oneLine(a.reason)}` : ""}.`;
+      await this.update((s) => (s.current?.id === c.id ? { ...s, current: { ...s.current, notices: [...(s.current.notices ?? []), line].slice(-NOTICES_MAX) } } : s));
+    }
+    const phases = this.phasesOf(c.action);
+    const here = phases.findIndex((p) => p.id === c.phase?.id);
+    if (here < 0 || here + 1 >= phases.length || phases[here].close || c.status !== "waiting") return;
+    const glob = phases[here].approve;
+    if (!glob || !matchGlob(glob, a.path)) return;
+    const { accepted, done } = this.setPhase(phases[here + 1].id, c.id);
+    accepted.catch(() => undefined);
+    await done.catch((err: unknown) => console.error("The approval could not move the task on", err));
   }
 
   /**
@@ -1063,13 +1117,27 @@ export class TaskManager {
     return { ...c, profile };
   }
 
+  /** The lines kept for the task's next message, before `text`; the state drops them (review spec §5.4). */
+  private async withNotices(c: CurrentTask, text: string): Promise<string> {
+    const notes = c.notices ?? [];
+    if (notes.length === 0) return text;
+    await this.update((s) => {
+      if (s.current?.id !== c.id) return s;
+      const { notices: _n, ...rest } = s.current;
+      return { ...s, current: rest };
+    });
+    return `${notes.join("\n")}\n\n${text}`;
+  }
+
   private async askNow(text: string, display?: string): Promise<void> {
     const c = await this.storedCurrent();
     if (c?.status === "waiting") {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       // After the session was lost a new one starts, told what the task is and what the notes hold; the
-      // chat still shows what was typed.
-      const message = c.resume ? await this.resumeMessageFor(c, text) : text;
+      // chat still shows what was typed. Lines kept for this message (review spec §5.4) go before it, unshown.
+      const hasNotices = (c.notices?.length ?? 0) > 0;
+      const said = await this.withNotices(c, text);
+      const message = c.resume ? await this.resumeMessageFor(c, said) : said;
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.
       if (this.cancelRequested) {
@@ -1079,7 +1147,7 @@ export class TaskManager {
       let done: Done;
       try {
         const options = {
-          ...(display || c.resume ? { display: display ?? text } : {}),
+          ...(display || c.resume || hasNotices ? { display: display ?? text } : {}),
           ...(c.action ? { action: c.action } : {}),
           followUp: true,
         };
@@ -1270,11 +1338,13 @@ export class TaskManager {
       phase?: { id: string; startedAt: string };
       phases?: { id: string; at: string; by: PhaseBy }[];
       timeBox?: TimeBoxState;
+      review?: string;
     },
     scope: string,
     message: (notesIndex: string) => string,
     display: string,
     floor?: Tier,
+    tier?: Tier,
   ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
@@ -1283,7 +1353,13 @@ export class TaskManager {
     const context = await this.contextFor(scope, task.action);
     const engine = await this.d.engine();
     // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3).
-    const profile = floor !== undefined ? await this.d.profileFor?.(task.action, floor) : await this.d.profileFor?.(task.action);
+    // Only the defined arguments are passed: callers compare the call's arguments.
+    const profile =
+      tier !== undefined
+        ? await this.d.profileFor?.(task.action, floor, tier)
+        : floor !== undefined
+          ? await this.d.profileFor?.(task.action, floor)
+          : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
     const current: CurrentTask = {
@@ -1545,9 +1621,10 @@ export class TaskManager {
       await this.setStatus(c.id, "waiting");
       return this.stopped();
     }
+    const message = await this.withNotices(now, plan.message);
     let done: Done;
     try {
-      done = await this.runTurn(now, plan.message, {
+      done = await this.runTurn(now, message, {
         display: `— ${oneLine(to.label)} —`,
         ...(c.action ? { action: c.action } : {}),
         followUp: true,

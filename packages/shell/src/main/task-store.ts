@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
-import { BLOCK_ID, MODE_ID, PHASE_ID } from "@humanharness/harness-sdk";
+import { BLOCK_ID, MODE_ID, PHASE_ID, refusedShape } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
@@ -83,6 +83,10 @@ export interface CurrentTask {
   timeBox?: TimeBoxState;
   /** A mode the current phase doesn't allow, kept to come back (modes spec §7). Never next to `mode`. */
   suspendedMode?: string;
+  /** A core "Review <title>" task: the document it reviews (review spec §5.3). */
+  review?: string;
+  /** Lines the app puts before the task's next message (review spec §5.4 "the document's task is told"). */
+  notices?: string[];
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -116,6 +120,10 @@ export const MODES_MAX = 50;
 export const PHASE_LOG_MAX = 200;
 /** The longest time box a task can reach with "+5 min": a bound on a hand-edited file. */
 export const TIME_BOX_MINUTES_MAX = 24 * 60;
+/** How many lines for the next message a task keeps (review spec §5.4): a bound on a hand-edited file. */
+export const NOTICES_MAX = 10;
+/** How long one of those lines can be in tasks.json. */
+const NOTICE_MAX = 600;
 const PHASE_BY: readonly string[] = ["agent", "person", "app"];
 
 /** What the manifest declares, when known: mode ids, and each action's phase ids. */
@@ -189,6 +197,12 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
   const p = c.phaseProposal;
   const proposal = phase && isObject(p) && isPhase(p.to) && typeof p.reason === "string" ? { to: p.to, reason: p.reason.slice(0, 300) } : undefined;
   const timeBox = cleanTimeBox(c.timeBox);
+  const notices = Array.isArray(c.notices)
+    ? c.notices
+        .filter((n): n is string => typeof n === "string" && n.length > 0)
+        .map((n) => n.slice(0, NOTICE_MAX))
+        .slice(-NOTICES_MAX)
+    : [];
   return {
     id: c.id,
     ...(typeof c.action === "string" ? { action: c.action } : {}),
@@ -215,6 +229,8 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     ...(proposal ? { phaseProposal: proposal } : {}),
     ...(timeBox ? { timeBox } : {}),
     ...(!mode && isMode(c.suspendedMode) ? { suspendedMode: c.suspendedMode } : {}),
+    ...(typeof c.review === "string" && !refusedShape(c.review) ? { review: c.review } : {}),
+    ...(notices.length > 0 ? { notices } : {}),
   };
 }
 

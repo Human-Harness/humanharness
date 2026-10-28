@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { type ClaudeScript, claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
+import { type AcpScript, type ClaudeScript, claudeResultLine, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type HarnessJob, jobSchema, loadHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessWorkspace, type SessionSlot, type SlotOptions, type SlotSendOptions, createWorkspace } from "@humanharness/runtime";
 import { APP_SCOPE, MAIN_SCOPE, type Note } from "@humanharness/workspace";
@@ -243,6 +243,54 @@ describe("JobRunner (parallel spec §8)", () => {
     expect(s.closed).toEqual(["job:r1"]);
   });
 
+  it("an abort while the run gets ready (its first message pending) cancels it before anything is sent", async () => {
+    let gave: (m: string) => void = () => {};
+    const s = setup(events(result({ status: "ok", summary: "x" }), ok), {
+      firstMessage: () =>
+        new Promise<string>((resolve) => {
+          gave = resolve;
+        }),
+    });
+    const ac = new AbortController();
+    const p = runJob(s.d, "sync", job(), null, "manual", ac.signal);
+    await vi.waitFor(() => expect(s.opened).toHaveLength(1));
+    ac.abort();
+    expect(await p).toMatchObject({ status: "failed", summary: "Cancelled" });
+    expect(s.sent).toHaveLength(0);
+    expect(s.closed).toEqual(["job:r1"]);
+    expect(s.gate.running("jobs")).toBe(0);
+    // The message that comes late is never sent.
+    gave("late");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(s.sent).toHaveLength(0);
+  });
+
+  it("the time limit covers getting ready: a first message that never comes, a slot that opens late", async () => {
+    const a = setup(events(ok), { firstMessage: () => new Promise<string>(() => {}), maxMs: 30 });
+    expect(await runJob(a.d, "sync", job(), null, "manual")).toMatchObject({ status: "failed", summary: "Timed out" });
+    expect(a.sent).toHaveLength(0);
+    expect(a.closed).toEqual(["job:r1"]);
+    expect(a.gate.running("jobs")).toBe(0);
+
+    let openNow: () => void = () => {};
+    const late = new Promise<void>((resolve) => {
+      openNow = resolve;
+    });
+    const b = setup(events(ok), { maxMs: 30 });
+    const inner = b.ws;
+    const ws = { openSlot: async (o: SlotOptions) => late.then(() => inner.openSlot(o)) } as unknown as HarnessWorkspace;
+    expect(await runJob({ ...b.d, workspace: async () => ws }, "sync", job(), null, "manual")).toMatchObject({
+      status: "failed",
+      summary: "Timed out",
+    });
+    expect(b.gate.running("jobs")).toBe(0);
+    // The slot that opens after the run gave up is closed at once: its key is not left behind.
+    openNow();
+    await vi.waitFor(() => expect(b.closed).toEqual(["job:r1"]));
+    expect(b.sent).toHaveLength(0);
+    expect(b.open.size).toBe(0);
+  });
+
   it("an engine's own cancelled end reads 'Cancelled'", async () => {
     const s = setup(events({ type: "done", ok: false, error: { code: "cancelled" } }));
     expect(await runJob(s.d, "sync", job(), null, "manual")).toMatchObject({ status: "failed", summary: "Cancelled" });
@@ -372,7 +420,45 @@ describe("JobRunner on a real workspace (Decision 5 addendum)", () => {
     // The slot's key is free again: it was closed.
     const again = await w.openSlot({ key: "job:r1", kind: "job" });
     await again.close();
+  }, 30_000);
+});
+
+describe("JobRunner on a Codex workspace (spec §8: a job cannot ask for permission)", () => {
+  let ws: HarnessWorkspace | undefined;
+  afterEach(async () => {
+    await ws?.close();
+    ws = undefined;
   });
+
+  it("an exec: false job's command permission request is rejected by the slot's policy, never asked; its job_result still ends the run", async () => {
+    const base = fs.mkdtempSync(path.join(root, "acp-"));
+    const log = path.join(base, "acp.jsonl");
+    const script: AcpScript = {
+      turns: [
+        [
+          { permission: { toolCall: { toolCallId: "x1", title: "Run command", kind: "execute", rawInput: { command: "ls" } } } },
+          { mcp: { server: "ui", tool: "job_result", args: { status: "ok", summary: "Synced" } } },
+          { stop: "end_turn" },
+        ],
+      ],
+    };
+    ws = await createWorkspace({
+      // The harness allows commands; the job turns them off.
+      harness: { ...(await loadHarness(FIXTURE)), permissions: { edit: "folder", exec: true, web: false } },
+      engine: getEngine("codex"),
+      folder: path.join(base, "Work"),
+      gitdir: path.join(base, "h.git"),
+      language: "en",
+      command: fakeAcpCommand(),
+      env: { HH_FAKE_SCRIPT: writeScript(base, script), HH_FAKE_LOG: log },
+    });
+    const w = ws;
+    const s = setup(events(), { workspace: async () => w, profileFor: undefined });
+    const r = await runJob(s.d, "sync", job({ permissions: { exec: false } }), null, "manual");
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { method?: string; params?: unknown });
+    expect(lines.filter((l) => l.method === "permission-outcome").map((l) => l.params)).toEqual([{ outcome: "selected", optionId: "reject" }]);
+    expect(r).toMatchObject({ status: "ok", summary: "Synced" });
+  }, 30_000);
 });
 
 describe("jobMessageFor (the job prompt's wiring)", () => {

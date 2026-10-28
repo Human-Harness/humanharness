@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { HIDDEN_CHARS, type HarnessJob, type JobResult, jobResultSchema, JOB_RESULT_TOOL } from "@humanharness/harness-sdk";
-import type { Event, HarnessWorkspace } from "@humanharness/runtime";
-import { APP_SCOPE, MAIN_SCOPE } from "@humanharness/workspace";
+import type { Event, HarnessWorkspace, SessionSlot } from "@humanharness/runtime";
+import { APP_SCOPE, MAIN_SCOPE, type Note } from "@humanharness/workspace";
 import { pauseOutOfQuota, resetOf } from "../gated-turns";
-import { type TaskDeps, notesIndexFor } from "../task-manager";
+import { notesIndexFor } from "../notes-index";
 import { Dropped, type TurnGate } from "../turn-gate";
 import { capTokens } from "../usage-log";
 import type { JobLog, JobRunRecord, JobTrigger } from "./job-log";
 import { jobFirstMessage } from "./job-prompt";
+
+/** A run's setup step lost the race with its time limit or an abort. */
+class Halted extends Error {}
 
 /** A run's time limit (Decision 8): past it the run is cancelled and logged failed, "Timed out". */
 export const JOB_RUN_MAX_MS = 15 * 60_000;
@@ -42,9 +45,9 @@ const oneLine = (t: string) => {
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
     .replace(HIDDEN, "")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, SUMMARY_CHARS);
-  return line || "No summary";
+    .trim();
+  // Cut by code points: a cut never splits a surrogate pair.
+  return Array.from(line).slice(0, SUMMARY_CHARS).join("").trim() || "No summary";
 };
 
 /**
@@ -102,11 +105,39 @@ export async function runJob(
 
   async function turn(): Promise<typeof outcome> {
     let end: typeof outcome = "done";
-    const profile = await d.profileFor?.(job);
-    const ws = await d.workspace();
-    const slot = await ws.openSlot({ key, kind: "job", ...(job.permissions ? { permissions: job.permissions } : {}) });
+    let cancelTurn: (() => void) | null = null;
+    let stop: () => void = () => {};
+    const stopped = new Promise<void>((resolve) => {
+      stop = resolve;
+    });
+    /** The time limit or an abort: from the first setup step on, a run that hasn't started never starts. */
+    const halt = (why: "timeout" | "cancelled") => {
+      if (end === "done") end = why;
+      stop();
+      cancelTurn?.();
+    };
+    const timer = setTimeout(() => halt("timeout"), d.maxMs ?? JOB_RUN_MAX_MS);
+    const onAbort = () => halt("cancelled");
+    signal?.addEventListener("abort", onAbort);
+    if (signal?.aborted) halt("cancelled");
+    /** A setup step raced with the halt: one that hangs (a slot that never opens) can't hold the jobs slot. */
+    const step = <T>(p: Promise<T>) =>
+      new Promise<T>((resolve, reject) => {
+        p.then(resolve, reject);
+        void stopped.then(() => reject(new Halted()));
+      });
+    let slot: SessionSlot | undefined;
     try {
-      const message = await d.firstMessage(id, scope);
+      const profile = await step(Promise.resolve(d.profileFor?.(job)));
+      const ws = await step(d.workspace());
+      const opening = ws.openSlot({ key, kind: "job", ...(job.permissions ? { permissions: job.permissions } : {}) });
+      slot = await step(opening).catch((err: unknown) => {
+        // Halted while it opened: it is closed once it does, so its key and sockets are never left behind.
+        if (err instanceof Halted) void opening.then((s) => s.close()).catch((e: unknown) => console.error("Could not close a job's slot", e));
+        throw err;
+      });
+      const message = await step(d.firstMessage(id, scope));
+      if (end !== "done") return end;
       let resetsAt: string | undefined;
       const running = slot.send(
         message,
@@ -130,23 +161,14 @@ export async function runJob(
         },
         { ...(profile ? { profile } : {}), trailer: { task: run, job: id, ...(scope ? { scope } : {}) } },
       );
-      const timer = setTimeout(() => {
-        if (end === "done") end = "timeout";
-        running.cancel();
-      }, d.maxMs ?? JOB_RUN_MAX_MS);
-      const onAbort = () => {
-        if (end === "done") end = "cancelled";
-        running.cancel();
-      };
-      signal?.addEventListener("abort", onAbort);
-      try {
-        await running.done;
-      } finally {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-      }
+      cancelTurn = running.cancel;
+      await running.done;
+    } catch (err) {
+      if (!(err instanceof Halted)) throw err;
     } finally {
-      await slot.close().catch((err: unknown) => console.error("Could not close a job's slot", err));
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      await slot?.close().catch((err: unknown) => console.error("Could not close a job's slot", err));
     }
     return end;
   }
@@ -182,10 +204,11 @@ export function jobMessageFor(o: {
   jobs: Record<string, HarnessJob>;
   /** The text of the job's brief (its prompt file). */
   readBrief(job: HarnessJob): Promise<string>;
-  notes: TaskDeps["notes"];
+  /** TaskDeps' getters, as index.ts builds them. */
+  notes(scope?: string): Promise<Note[]>;
   scoped: boolean;
-  dataContext?: TaskDeps["dataContext"];
-  materialContext?: TaskDeps["materialContext"];
+  dataContext?(scope: string, action: string | undefined): Promise<string>;
+  materialContext?(scope: string): Promise<string>;
   actions: Record<string, { label: string }>;
 }): (id: string, scope: string | null) => Promise<string> {
   const labels = Object.fromEntries(Object.entries(o.actions).map(([id, a]) => [id, a.label]));
@@ -198,7 +221,7 @@ export function jobMessageFor(o: {
     return jobFirstMessage({
       brief: await o.readBrief(job),
       scope: where,
-      notesIndex: (s) => notesIndexFor(o.notes, o.scoped, s),
+      notesIndex: (s) => notesIndexFor((n) => o.notes(n), o.scoped, s),
       ...(data ? { dataContext: (s: string) => data(s, undefined) } : {}),
       ...(material ? { materialContext: (s: string) => material(s) } : {}),
       actions: labels,

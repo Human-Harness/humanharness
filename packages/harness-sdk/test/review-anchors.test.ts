@@ -39,11 +39,29 @@ describe("sections", () => {
   it("deduplicates slugs like the reader", () => {
     expect(sections("## A\n## A\n").map((x) => x.slug)).toEqual([null, "a", "a-1"]);
   });
+
+  it("reads setext headings, from the paragraph's first line", () => {
+    const text = "Intro\n\nTitle\none\n===\n\nbody\n\nSub\n--- \n\n## Title one\n";
+    const s = sections(text);
+    expect(s.map((x) => [x.slug, x.title, x.level])).toEqual([[null, "", 0], ["title-one", "Title one", 1], ["sub", "Sub", 2], ["title-one-1", "Title one", 2]]);
+    expect(s[1].start).toBe(text.indexOf("Title\n"));
+    expect(s[2].start).toBe(text.indexOf("Sub"));
+  });
+
+  it("a --- after a blank line, a list item, a quote, a table, code or a heading is no setext heading", () => {
+    expect(sections("---\na\n\n---\n- item\n---\n> quote\n---\n| a |\n---\n    code\n---\n## H\n---\n").map((x) => x.slug)).toEqual([null, "h"]);
+    expect(sections("```\na\n---\n```\n").map((x) => x.slug)).toEqual([null]);
+  });
 });
 
 describe("plainInline", () => {
   it("drops emphasis, code and link syntax, keeps snake_case", () => {
     expect(plainInline("The **size** `filter` [docs](a.md) snake_case \\*x")).toBe("The size filter docs snake_case *x");
+  });
+
+  it("keeps the text after a ]( that never closes", () => {
+    expect(plainInline("[a](b [c](d) e")).toBe("a e");
+    expect(plainInline("[a](b c")).toBe("a(b c");
   });
 });
 
@@ -103,6 +121,33 @@ describe("no backtracking on document text", () => {
     project(text);
     anchorForSelection(text, "y", "a");
     expect(performance.now() - t0).toBeLessThan(500);
+  });
+
+  it("stays linear on many equal headings and on ]( that never closes", () => {
+    const t0 = performance.now();
+    expect(sections("#\n".repeat(50_000))).toHaveLength(50_001);
+    plainInline("](".repeat(100_000));
+    sections(`x\n${"=".repeat(50_000)}\n${"a\n".repeat(50_000)}---\n`);
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+
+  it("project stays linear on link destinations that never close", () => {
+    const t0 = performance.now();
+    project("[a](b\n".repeat(200_000));
+    project("[](".repeat(100_000));
+    expect(performance.now() - t0).toBeLessThan(1000);
+  });
+});
+
+describe("blanks and overlapping selections", () => {
+  it("NBSP is blank in the source and in the selection", () => {
+    expect(anchorForSelection("## s\n\nkeep\u00a0this\n", "keep this", "s")).toEqual({ quote: "keep\u00a0this", heading: "s", occurrence: 0 });
+    expect(anchorForSelection("## s\n\nkeep this\n", "keep\u00a0this", null)).toEqual({ quote: "keep this", heading: "s", occurrence: 0 });
+  });
+
+  it("matches of a selection don't overlap", () => {
+    // Rendered "a a a": "a a" matches at 0 and, overlapping, at 2 (in section a). Without overlap only at 0 counts.
+    expect(anchorForSelection("a\n\n## a\n\na\n", "a a", "a")).toEqual({ quote: "a\n\n## a", heading: null, occurrence: 0 });
   });
 });
 

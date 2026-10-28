@@ -1,5 +1,5 @@
 // No Node imports and no zod here: the screens import this file (`@humanharness/harness-sdk/review`).
-// No regex runs on document text: every scan is a loop or indexOf (a timing test holds this).
+// No regex scans document text: every scan is a loop or indexOf, and regexes only test single characters (timing tests hold this).
 import { createSlugger, refusedShape, splitFrontMatter } from "./documents";
 
 /** The agent's review tools (spec §4): reserved names, like the core blocks. */
@@ -73,6 +73,8 @@ const isWordChar = (c: string | undefined): boolean => c !== undefined && /^[\p{
 /** A heading's or a passage's inline text as the reader shows it: emphasis, code and link syntax left out. */
 export function plainInline(s: string): string {
   let out = "";
+  // The first `)` at or after the last search; -1 once there is none left (each `](` would search again: quadratic).
+  let close = -2;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === "\\" && i + 1 < s.length) {
@@ -82,8 +84,8 @@ export function plainInline(s: string): string {
     if (c === "*" || c === "`" || c === "~" || c === "[") continue;
     if (c === "_" && !(isWordChar(s[i - 1]) && isWordChar(s[i + 1]))) continue;
     if (c === "]") {
-      if (s[i + 1] === "(") {
-        const close = s.indexOf(")", i + 2);
+      if (s[i + 1] === "(" && close !== -1) {
+        if (close < i + 2) close = s.indexOf(")", i + 2);
         if (close >= 0) i = close;
       }
       continue;
@@ -137,11 +139,59 @@ function* lines(text: string, from: number): Generator<{ start: number; end: num
 /** Where the body starts (after the front-matter block). */
 export const bodyStart = (text: string): number => text.length - splitFrontMatter(text).body.length;
 
-/** The document's sections, in order. The first is the part before any heading (maybe empty). */
+/** A setext underline (`===` or `---`, up to three spaces in, trailing blanks allowed): its level; 0 otherwise. */
+function setextLevel(line: string): number {
+  let i = 0;
+  while (i < 3 && line[i] === " ") i++;
+  const c = line[i];
+  if (c !== "=" && c !== "-") return 0;
+  while (line[i] === c) i++;
+  while (line[i] === " " || line[i] === "\t") i++;
+  return i === line.length ? (c === "=" ? 1 : 2) : 0;
+}
+
+/** A thematic break of `*` or `_` (three or more, spaces between allowed). */
+function isBreak(line: string): boolean {
+  let n = 0;
+  let mark = "";
+  for (const c of line) {
+    if (c === " " || c === "\t") continue;
+    if ((c !== "*" && c !== "_") || (mark && c !== mark)) return false;
+    mark = c;
+    n++;
+  }
+  return n >= 3;
+}
+
+/** A line that opens a block other than a paragraph (a list item, a quote, a table, HTML, indented code). */
+function opensOtherBlock(line: string): boolean {
+  if (line.startsWith("    ") || line[0] === "\t") return true;
+  const t = line.trimStart();
+  const c = t[0];
+  if (c === ">" || c === "|" || c === "<") return true;
+  if ((c === "-" || c === "*" || c === "+") && (t.length === 1 || t[1] === " " || t[1] === "\t")) return true;
+  let i = 0;
+  while (i < 9 && t[i] >= "0" && t[i] <= "9") i++;
+  return i > 0 && (t[i] === "." || t[i] === ")") && (t.length === i + 1 || t[i + 1] === " " || t[i + 1] === "\t");
+}
+
+/**
+ * The document's sections, in order. The first is the part before any heading (maybe empty). Top-level ATX
+ * (`#`–`####`) and setext (`===` or `---` under a paragraph) headings count. Limit: a heading inside a blockquote or a
+ * list item gets an id in the reader but starts no section here, so the reader's `-1` numbering of later equal slugs
+ * may differ; an anchor whose heading isn't found falls back to a search of the whole text.
+ */
 export function sections(text: string): Section[] {
   const slugger = createSlugger();
   const out: Section[] = [{ slug: null, title: "", level: 0, start: 0, end: text.length }];
+  const push = (raw: string, level: number, start: number) => {
+    out[out.length - 1].end = start;
+    const title = plainInline(raw).trim();
+    out.push({ slug: slugger(title), title, level, start, end: text.length });
+  };
   let fence: { char: string; length: number } | null = null;
+  // The open paragraph a setext underline would turn into a heading: its first line's start and its lines.
+  let para: { start: number; lines: string[] } | null = null;
   for (const l of lines(text, bodyStart(text))) {
     const line = text.slice(l.start, l.end);
     if (fence) {
@@ -152,13 +202,27 @@ export function sections(text: string): Section[] {
     const f = fenceOf(line);
     if (f) {
       fence = f;
+      para = null;
       continue;
     }
     const h = atxHeading(line);
-    if (!h) continue;
-    out[out.length - 1].end = l.start;
-    const title = plainInline(h.text).trim();
-    out.push({ slug: slugger(title), title, level: h.level, start: l.start, end: text.length });
+    if (h) {
+      push(h.text, h.level, l.start);
+      para = null;
+      continue;
+    }
+    const setext = setextLevel(line);
+    if (setext && para) {
+      push(para.lines.join(" "), setext, para.start);
+      para = null;
+      continue;
+    }
+    if (setext === 2 || line.trim() === "" || isBreak(line) || (!para && opensOtherBlock(line))) {
+      para = null;
+      continue;
+    }
+    if (para) para.lines.push(line.trim());
+    else para = { start: l.start, lines: [line.trim()] };
   }
   return out;
 }
@@ -232,7 +296,8 @@ export interface Projection {
   map: number[];
 }
 
-const isBlank = (c: string): boolean => c === " " || c === "\t" || c === "\n" || c === "\r" || c === "|";
+// NBSP is blank here and in `collapse`: a selection's text and the source may each carry it.
+const isBlank = (c: string): boolean => c === " " || c === "\t" || c === "\n" || c === "\r" || c === "\u00a0" || c === "|";
 
 /** The offset after a line's block markers: `#`s, `>`, list bullets and numbers, a task box. One pass, no regex. */
 function afterMarkers(text: string, i: number, end: number): number {
@@ -308,6 +373,9 @@ export function project(text: string, opts: { frontMatter?: boolean } = {}): Pro
       space(l.end);
       continue;
     }
+    // The `)` that closes a link destination on this line (-1: none found yet), and where a failed search ends.
+    let close = -1;
+    let openFrom = 0;
     for (let i = afterMarkers(text, l.start, l.end); i < l.end; i++) {
       const c = text[i];
       if (isBlank(c)) {
@@ -322,9 +390,18 @@ export function project(text: string, opts: { frontMatter?: boolean } = {}): Pro
       if (c === "*" || c === "`" || c === "~" || c === "[") continue;
       if (c === "_" && !(isWordChar(text[i - 1]) && isWordChar(text[i + 1]))) continue;
       if (c === "]") {
-        if (text[i + 1] === "(") {
-          const close = text.indexOf(")", i + 2);
-          if (close >= 0 && close < l.end) i = close;
+        if (text[i + 1] === "(" && i + 2 >= openFrom) {
+          // Only this line is searched, and no part twice: a `)` found is kept, a failed search marks the rest.
+          if (close < i + 2) {
+            close = -1;
+            for (let k = i + 2; k < l.end; k++)
+              if (text[k] === ")") {
+                close = k;
+                break;
+              }
+            if (close < 0) openFrom = l.end;
+          }
+          if (close >= 0) i = close;
         }
         continue;
       }
@@ -340,7 +417,7 @@ function collapse(s: string): string {
   let out = "";
   let gap = false;
   for (const c of s) {
-    if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === " ") gap = out.length > 0;
+    if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === "\u00a0") gap = out.length > 0;
     else {
       if (gap) out += " ";
       gap = false;
@@ -374,7 +451,7 @@ export function anchorForSelection(source: string, selected: string, heading: st
   const region = heading === null ? null : (secs.find((s) => s.slug === heading) ?? null);
   let first = -1;
   let inside = -1;
-  for (let at = p.plain.indexOf(want); at >= 0; at = p.plain.indexOf(want, at + 1)) {
+  for (let at = p.plain.indexOf(want); at >= 0; at = p.plain.indexOf(want, at + want.length)) {
     if (first < 0) first = at;
     const start = p.map[at];
     if (!region || (start >= region.start && start < region.end)) {
@@ -452,6 +529,8 @@ export function answerQuestion(text: string, c: ReviewComment, pick: AnswerPick)
     return { ok: true, text: null, comment: { ...bare(c), answer: { other }, state: "answered" } };
   }
   const secs = sections(text);
+  // "No answer" to a question never answered changes nothing (and must not become an unapplied answer).
+  if (pick === null && c.answer === undefined && !c.unapplied) return { ok: true, text: null, comment: c };
   const where = c.unapplied ? null : locate(text, c.anchor, { strict: true, secs });
   if (!where) {
     const answer = pick === null ? {} : { answer: { option: pick } };
@@ -533,8 +612,10 @@ const quoted = (s: string, max: number) => JSON.stringify(cut(collapse(s), max))
 
 function answerLine(c: ReviewComment): string {
   if (c.answer && "other" in c.answer) return JSON.stringify(c.answer.other);
-  if (c.answer && "option" in c.answer && c.options) {
-    const o = c.options[c.answer.option];
+  if (c.answer && "option" in c.answer) {
+    const o = c.options?.[c.answer.option];
+    // An option index the record doesn't hold (a hand edit): say so rather than throw.
+    if (!o) return "picked an option the review no longer has: check the passage";
     return `picked ${JSON.stringify(o.label)}, but the passage changed: write it as ${quoted(o.text, 400)}`;
   }
   return "took the answer back, but the passage changed: check it";
@@ -579,6 +660,13 @@ export const MAX_DIFF_LINES = 2000;
 /** Over this many characters on either side, the same: checked before the text is split. */
 export const MAX_DIFF_CHARS = 1_000_000;
 
+/** A text's lines: a final newline ends the last line and adds no empty one ("" has none). */
+function diffLines(text: string): string[] {
+  const out = text.split("\n");
+  if (out.at(-1) === "") out.pop();
+  return out;
+}
+
 /**
  * A line diff (longest common subsequence) between the approved text and the current one; null when too long.
  * The work is bounded: at most MAX_DIFF_CHARS to split and number, then at most MAX_DIFF_LINES² cells of the
@@ -586,8 +674,8 @@ export const MAX_DIFF_CHARS = 1_000_000;
  */
 export function lineDiff(before: string, after: string): DiffLine[] | null {
   if (before.length > MAX_DIFF_CHARS || after.length > MAX_DIFF_CHARS) return null;
-  const a = before.split("\n");
-  const b = after.split("\n");
+  const a = diffLines(before);
+  const b = diffLines(after);
   if (a.length > MAX_DIFF_LINES || b.length > MAX_DIFF_LINES) return null;
   const ids = new Map<string, number>();
   const idOf = (line: string): number => {
@@ -651,11 +739,12 @@ function matchPart(p: string, s: string): boolean {
 
 /**
  * Whether `path` matches the phase's `approve` glob (§5.5): `*` and `?` within a part, `**` across parts.
+ * Case is ignored, like the `.md` check in `validApproveGlob` (macOS disks are case-insensitive).
  * A table over (pattern part, path part), filled from the end without recursion: O(parts × parts) part matches.
  */
 export function matchGlob(pattern: string, path: string): boolean {
-  const ps = pattern.split("/");
-  const xs = path.split("/");
+  const ps = pattern.toLowerCase().split("/");
+  const xs = path.toLowerCase().split("/");
   const n = xs.length;
   // next[j]: whether ps[i + 1:] matches xs[j:].
   let next = new Uint8Array(n + 1);

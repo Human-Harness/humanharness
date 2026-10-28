@@ -17,9 +17,13 @@ describe("lineDiff", () => {
       { kind: "same", text: "a" },
       { kind: "same", text: "b" },
     ]);
-    expect(lineDiff("", "x")).toEqual([
-      { kind: "removed", text: "" },
-      { kind: "added", text: "x" },
+    expect(lineDiff("", "x")).toEqual([{ kind: "added", text: "x" }]);
+  });
+
+  it("a final newline adds no empty line", () => {
+    expect(lineDiff("a\n", "a\nb\n")).toEqual([
+      { kind: "same", text: "a" },
+      { kind: "added", text: "b" },
     ]);
   });
 
@@ -56,6 +60,7 @@ describe("matchGlob", () => {
     ["**", "a/b/c.md", true],
     ["a*b*c.md", "aXbYc.md", true],
     ["a*b*c.md", "aXbY.md", false],
+    ["tickets/*/SPEC.MD", "Tickets/a/spec.md", true],
   ])("%s ~ %s → %s", (p, path, want) => expect(matchGlob(p, path)).toBe(want));
 
   it("is fast on many stars", () => {

@@ -60,6 +60,12 @@ describe("answerQuestion", () => {
     expect(isUnsent(r.comment)).toBe(true);
   });
 
+  it("'no answer' to a question never answered changes nothing, even when the passage moved", () => {
+    const q = question();
+    expect(answerQuestion("## Scope\n\nSomething else.\n", q, null)).toEqual({ ok: true, text: null, comment: q });
+    expect(answerQuestion(TEXT, q, null)).toEqual({ ok: true, text: null, comment: q });
+  });
+
   it("refuses a bad option, a comment, a resolved question", () => {
     expect(answerQuestion(TEXT, question(), 5)).toEqual({ ok: false, reason: "bad-option" });
     expect(answerQuestion(TEXT, question(), { other: "  " })).toEqual({ ok: false, reason: "bad-option" });
@@ -112,6 +118,11 @@ describe("the batch", () => {
     const b = batchMessage("a.md", review([question({ answer: { option: 1 }, unapplied: true, state: "answered" })]), TEXT);
     expect(b?.message).toContain('- c1 "Which filter?": picked "Size and colour", but the passage changed: write it as "Filter by size and colour."');
     expect(batchMessage("a.md", review([question()]), TEXT)).toBeNull();
+  });
+
+  it("an answer naming an option the record lacks says so instead of throwing", () => {
+    const b = batchMessage("a.md", review([question({ answer: { option: 9 }, unapplied: true, state: "answered" })]), TEXT);
+    expect(b?.message).toContain('- c1 "Which filter?": picked an option the review no longer has: check the passage');
   });
 
   it("markSent moves the listed items to sent, and ids go up", () => {

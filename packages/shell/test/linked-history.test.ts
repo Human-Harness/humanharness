@@ -73,6 +73,73 @@ describe("linked histories (hatches spec §3.2, Decision 5)", () => {
     fs.rmSync(own, { recursive: true, force: true });
   });
 
+  describe("never trashes outside linked-history/ (links are not followed)", () => {
+    const old = "2020-01-01T00:00:00.000Z";
+    const fresh = () => fs.mkdtempSync(path.join(root, "safe-"));
+
+    it("a linked-history folder that is a link prunes nothing", async () => {
+      const ud = fresh();
+      const out = fresh();
+      fs.mkdirSync(path.join(out, "0123456789abcdef"));
+      fs.writeFileSync(path.join(out, "0123456789abcdef", "unlinked-at"), old);
+      fs.symlinkSync(out, path.join(ud, "linked-history"));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const trash = vi.fn(async () => {});
+      await pruneUnlinked(ud, new Date(), trash);
+      expect(trash).not.toHaveBeenCalled();
+    });
+
+    it("a history entry that is a link to an outside folder is skipped", async () => {
+      const ud = fresh();
+      const out = fresh();
+      fs.writeFileSync(path.join(out, "unlinked-at"), old);
+      fs.mkdirSync(path.join(ud, "linked-history"));
+      fs.symlinkSync(out, path.join(ud, "linked-history", "0123456789abcdef"));
+      const trash = vi.fn(async () => {});
+      await pruneUnlinked(ud, new Date(), trash);
+      expect(trash).not.toHaveBeenCalled();
+    });
+
+    it("an unlink mark that is a link is not followed", async () => {
+      const ud = fresh();
+      const d = path.join(ud, "linked-history", "0123456789abcdef");
+      fs.mkdirSync(d, { recursive: true });
+      const target = path.join(fresh(), "x");
+      fs.writeFileSync(target, old);
+      fs.symlinkSync(target, path.join(d, "unlinked-at"));
+      const trash = vi.fn(async () => {});
+      await pruneUnlinked(ud, new Date(), trash);
+      expect(trash).not.toHaveBeenCalled();
+    });
+
+    it("a lenient date like \"1\" is logged and kept, not read as 2001", async () => {
+      const ud = fresh();
+      const d = path.join(ud, "linked-history", "0123456789abcdef");
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "unlinked-at"), "1");
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const trash = vi.fn(async () => {});
+      await pruneUnlinked(ud, new Date(), trash);
+      expect(trash).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(expect.stringContaining(d));
+    });
+
+    it("names that aren't 16 lowercase hex, and plain files, are skipped", async () => {
+      const ud = fresh();
+      const b = path.join(ud, "linked-history");
+      fs.mkdirSync(b);
+      for (const n of ["0123456789ABCDEF", "0123456789abcdef0", "x"]) {
+        fs.mkdirSync(path.join(b, n));
+        fs.writeFileSync(path.join(b, n, "unlinked-at"), old);
+      }
+      fs.writeFileSync(path.join(ud, "unlinked-at"), old); // what ".." would reach
+      fs.writeFileSync(path.join(b, "fedcba9876543210"), "a file, not a history");
+      const trash = vi.fn(async () => {});
+      await pruneUnlinked(ud, new Date(), trash);
+      expect(trash).not.toHaveBeenCalled();
+    });
+  });
+
   it("without a linked-history folder there is nothing to prune", async () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), "hh-lh-empty-"));
     const trash = vi.fn(async () => {});

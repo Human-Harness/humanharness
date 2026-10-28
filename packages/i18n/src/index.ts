@@ -26,6 +26,8 @@ export async function createI18n(language: Language, harnessLocales: Locales = {
     defaultNS: "core",
     ns: ["core", "harness"],
     interpolation: { escapeValue: false },
+    // <Trans> turns only the tags its `components` name into elements; any other tag (even <strong>, <br>) shows as text.
+    react: { transKeepBasicHtmlNodesFor: [] },
     resources: { en: { core: CORE_LOCALES.en, harness: harnessLocales.en ?? {} }, ...extra },
   });
   return instance;

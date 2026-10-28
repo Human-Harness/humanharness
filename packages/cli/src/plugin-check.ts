@@ -177,7 +177,8 @@ async function sourceFindings(dir: string, m: PluginManifest): Promise<PluginFin
     for (const hit of text.matchAll(URL_HOST)) {
       // host[:port], dots before the port or at the end dropped: the broker matches the port too.
       const host = hit[2].toLowerCase().replace(/\.+(?=:|$)/, "");
-      if (host === "" || host.startsWith(":")) continue;
+      // An XML namespace (an inline SVG's xmlns) names a vocabulary; nothing fetches it.
+      if (host === "" || host.startsWith(":") || host === "www.w3.org") continue;
       const line = lineOf(text, hit.index);
       if (isLocal(host)) {
         if (once(`host:${host}`)) out.push(warning("host-local", `${host}: the broker refuses localhost and IP addresses, even when declared.`, file, line));

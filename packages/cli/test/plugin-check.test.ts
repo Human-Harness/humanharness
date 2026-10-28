@@ -372,6 +372,11 @@ describe("plugin check: warnings", () => {
     expect(rules(r.findings)).toEqual(["warning:http-url"]);
     expect(r.findings[0]).toMatchObject({ file: "backend.ts", line: 12 });
   });
+
+  it("an XML namespace (an inline SVG's xmlns) is a name, not a host", async () => {
+    const r = await check(fixture({ files: { "backend.ts": `${BACKEND}const svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';\n` } }));
+    expect(r.findings).toEqual([]);
+  });
 });
 
 describe("humanharness plugin check", () => {

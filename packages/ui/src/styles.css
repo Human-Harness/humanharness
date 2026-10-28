@@ -240,6 +240,9 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-steps li { position: relative; }
 .hh-steps li > .hh-context-meter { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
 .hh-steps li:has(> .hh-context-meter) button { padding-right: 34px; }
+/* As the context panel's button (context-panel spec §5.1) the ring keeps its place, not the step buttons' look. */
+.hh-steps li > .hh-ctxp-meter { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: auto; padding: 2px; border-color: transparent; background: none; }
+.hh-steps li:has(> .hh-ctxp-meter) button:not(.hh-ctxp-meter) { padding-right: 34px; }
 .hh-flow-question { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
 .hh-fallback { margin: 4px 0; }
 .hh-model-engine { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
@@ -739,6 +742,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-ctxp-add { display: flex; flex-direction: column; gap: 6px; }
 .hh-ctxp-menu { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
 .hh-ctxp-picked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
-.hh-ctxp-meter { display: inline-flex; padding: 2px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.hh-ctxp-meter { display: inline-flex; height: auto; padding: 2px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
 .hh-ctxp-meter:focus-visible { outline: 2px solid var(--hh-slate); outline-offset: 1px; }
 @media (max-width: 899px) { .hh-ctxp { position: fixed; inset: 52px 0 0 0; z-index: 5; border-left: 0; } }

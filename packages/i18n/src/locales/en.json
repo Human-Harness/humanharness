@@ -358,6 +358,10 @@
     "fallbackDefault": "Your plan doesn't include {{model}}; we used the engine's default model.",
     "context": "Context in use",
     "contextTitle": "{{used}} of {{cap}} tokens",
+    "pinned": "Pinned files budget",
+    "pinnedOption": "{{tokens}} tokens",
+    "pinnedSuggested": "{{tokens}} tokens (suggested)",
+    "pinnedHint": "How much of the files you pin every new task gets whole. The rest go in as their title, and the AI opens them when it needs them.",
     "saveFailed": "Couldn't save. Try again."
   },
   "choices": {

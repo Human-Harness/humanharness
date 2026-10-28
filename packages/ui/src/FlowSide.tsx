@@ -4,13 +4,16 @@ import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
 import { shownLanguage } from "./language";
 
-/** A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
-export function ContextMeter({ used, cap }: { used: number; cap: number }) {
+/**
+ * A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). With
+ * `onOpen`, a button that opens the context panel (context-panel spec §5.1).
+ */
+export function ContextMeter({ used, cap, onOpen }: { used: number; cap: number; onOpen?: () => void }) {
   const { t, i18n } = useTranslation();
   if (!(cap > 0)) return null;
   const pct = Math.max(0, Math.min(100, Math.round((used / cap) * 100)));
   const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
-  return (
+  const ring = (
     <span
       className={pct >= 80 ? "hh-context-meter warn" : "hh-context-meter"}
       role="meter"
@@ -27,6 +30,12 @@ export function ContextMeter({ used, cap }: { used: number; cap: number }) {
       </svg>
     </span>
   );
+  if (!onOpen) return ring;
+  return (
+    <button type="button" className="hh-ctxp-meter" aria-label={t("context.open")} onClick={onOpen}>
+      {ring}
+    </button>
+  );
 }
 
 /** Flow mode's left panel: the guided path, the notes so far and the read-only reference folders. */
@@ -37,6 +46,7 @@ export function FlowSide({
   onStart,
   onOpenNote,
   material,
+  onContext,
 }: {
   state: AppState;
   tasks: TaskView;
@@ -45,6 +55,8 @@ export function FlowSide({
   onOpenNote: (slug: string) => void;
   /** The scope's material panel, after the notes (only with `state.material`). */
   material?: ReactNode;
+  /** Opens the context panel from the meter. */
+  onContext?: () => void;
 }) {
   const { t } = useTranslation();
   const pathId = useId();
@@ -57,7 +69,7 @@ export function FlowSide({
       {tasks.current && !tasks.current.action && tasks.current.context && (
         <p className="hh-flow-question">
           {t("models.questions")}
-          <ContextMeter {...tasks.current.context} />
+          <ContextMeter {...tasks.current.context} onOpen={onContext} />
         </p>
       )}
       {path.length > 0 && (
@@ -83,7 +95,7 @@ export function FlowSide({
                     {state.actions[id].label}
                     {done && <span className="hh-sr-only"> {t("flow.seen")}</span>}
                   </button>
-                  {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} />}
+                  {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} onOpen={onContext} />}
                 </li>
               );
             })}

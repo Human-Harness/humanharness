@@ -58,6 +58,14 @@ describe("ConfigStore", () => {
     expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", backupDismissed: false });
   });
 
+  it("keeps languageOffered only when it is a boolean", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ language: "es", languageOffered: "yes" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ language: "es" });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ language: "es", languageOffered: true }));
+    expect(await new ConfigStore(dir).load()).toEqual({ language: "es", languageOffered: true });
+  });
+
   it("drops a hand-edited text size it doesn't know, keeping the rest", async () => {
     const dir = fs.mkdtempSync(path.join(root, "c-"));
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", textSize: "huge" }));

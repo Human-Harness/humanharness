@@ -182,6 +182,11 @@ describe("configProblem", () => {
     expect(await configProblem({ backupDismissed: false }, ctx)).toBeNull();
     expect(await configProblem({ backupDismissed: "yes" as never }, ctx)).toBe("invalid");
   });
+
+  it("refuses a languageOffered that isn't a boolean", async () => {
+    expect(await configProblem({ languageOffered: "yes" } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ languageOffered: true }, ctx)).toBeNull();
+  });
 });
 
 describe("isAppUrl", () => {

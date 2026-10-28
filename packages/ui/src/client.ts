@@ -32,6 +32,7 @@ import type {
   TimelineKind,
 } from "@humanharness/workspace";
 import type { AnswerPick, Review, ReviewSummary } from "@humanharness/harness-sdk/review";
+import type { GeneratedStrings } from "@humanharness/i18n";
 
 export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
@@ -84,6 +85,8 @@ export interface AppConfig {
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
   backupDismissed?: boolean;
+  /** The person answered the language offer on Home (spec §3): it never shows again. */
+  languageOffered?: boolean;
   /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
   profile?: string;
 }
@@ -890,6 +893,49 @@ export interface MaterialInfo {
   maxPages: number;
 }
 
+/** A translation run (language spec §5): its language, batches done of all, and how it stands. */
+export interface LanguageRun {
+  tag: Language;
+  done: number;
+  total: number;
+  status: "running" | "done" | "failed" | "cancelled";
+  /** `failed` only: the engine's quota, or anything else. */
+  reason?: "quota" | "engine";
+}
+
+/** What Settings › General, the offer card and the picker need (spec §3, §6). */
+export interface LanguageState {
+  /** The saved language: the AI writes in it, the screens show its cached translation. */
+  language: Language;
+  /** Languages with a cache; `complete`: every key translated (or given up) for this app's English. */
+  cached: { tag: Language; complete: boolean }[];
+  /** Keys of the saved language still in English that a run would send; 0 for English. */
+  missing: number;
+  /** Whether a translation can run now, else why not (spec §3: no ready engine, mock mode). */
+  canTranslate: true | "no-engine" | "mock";
+  /** The engine that would translate (the notice names it). */
+  engineName?: string;
+  run: LanguageRun | null;
+}
+
+export type { GeneratedStrings };
+export type LanguageChoose =
+  | { ok: true; language: Language; strings: GeneratedStrings }
+  | { ok: false; reason: "needs-translation" | "invalid" | "busy" | "failed" };
+export type LanguageStart = { ok: true } | { ok: false; reason: "invalid" | "busy" | "no-engine" | "mock" | "failed" };
+
+/** `client.language` (language spec). Every answer is data; `harness` is the harness's English map (`locales.en`). */
+export interface LanguageClient {
+  state(harness: Record<string, unknown>): Promise<LanguageState | null>;
+  /** English, or a language with a complete translation: saved and switched at once. */
+  choose(tag: Language, harness: Record<string, unknown>): Promise<LanguageChoose>;
+  /** Starts the run (after the notice); its progress comes through `onChange`. */
+  translate(tag: Language, harness: Record<string, unknown>): Promise<LanguageStart>;
+  cancel(): Promise<{ ok: boolean }>;
+  strings(tag: Language, harness: Record<string, unknown>): Promise<GeneratedStrings>;
+  onChange(listener: (state: LanguageState) => void): () => void;
+}
+
 export type MaterialResult = { ok: true } | { ok: false; reason: "not-ready" | "unknown-scope" | "unknown-source" | "invalid" | "fetch" };
 export type MaterialAddResult =
   | { ok: true; added: string[]; refused: { name: string; message: string }[] }
@@ -1133,6 +1179,8 @@ export interface HarnessClient {
   material: MaterialClient;
   /** What the agent takes into account (context-panel spec §5.2). */
   context: ContextClient;
+  /** Language on demand (plan 5b). Absent in a client that predates it: the Language row stays read-only (D0). */
+  language?: LanguageClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

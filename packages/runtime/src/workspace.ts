@@ -126,13 +126,14 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
   const blocks = allBlocks(harness);
   const settings = await opts.instructionSettings?.();
+  const linked = (await opts.instructionLinked?.()) ?? [];
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
   const review = opts.review && harness.permissions.edit === "folder" ? reviewHandler(opts.review) : undefined;
   // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4); the review
   // lines only with the review tools (review spec §4).
   const guide = { kinds: harness.documents?.kinds ?? {}, ...(review ? { review: true } : {}) };
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing: guide, ...(settings ? { settings } : {}), ...withMaterial });
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing: guide, ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -386,10 +387,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // Checked again when its queue turn comes: a turn may have started meanwhile.
         if (ledger.anyRunning()) return false;
         const now = await opts.instructionSettings?.();
+        const nowLinked = (await opts.instructionLinked?.()) ?? [];
         // And again after the settings arrive: a turn may have started while they were read. (A refresh under way when
         // close begins still writes: close waits for it.)
         if (ledger.anyRunning()) return false;
-        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, writing: guide, ...(now ? { settings: now } : {}), ...withMaterial });
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, writing: guide, ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...withMaterial });
         writing = write;
         try {
           return await write;

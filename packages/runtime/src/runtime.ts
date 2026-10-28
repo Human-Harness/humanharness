@@ -1,7 +1,7 @@
 import type { Launcher } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice } from "@humanharness/engines";
 import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
-import type { History, ReferenceFolder } from "@humanharness/workspace";
+import type { History, LinkedFolderLine, ReferenceFolder } from "@humanharness/workspace";
 import type { Event } from "./events";
 import type { Session } from "./transport";
 import { type HarnessWorkspace, type SessionSlot, type SlotSendOptions, createWorkspace } from "./workspace";
@@ -52,6 +52,11 @@ export interface RuntimeOptions {
    * on every `refreshInstructions`. Absent: no settings section (D0).
    */
   instructionSettings?: () => Promise<string[]>;
+  /**
+   * The open scope's linked folders for AGENTS.md (hatches spec §3.3), asked when the runtime starts and on every
+   * `refreshInstructions`. Absent: none (D0).
+   */
+  instructionLinked?: () => Promise<LinkedFolderLine[]>;
   /** The engine session to continue (the dev CLI). Default: a new one. */
   session?: Session;
   /** Called when the engine starts a session. */

@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeEditLine, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
+import type { LinkedFolderLine } from "@humanharness/workspace";
 import type { Event } from "../src/events";
 import type { TurnAttribution } from "../src/turn-commit";
 import { TurnLedger } from "../src/turn-ledger";
@@ -26,7 +27,12 @@ afterEach(async () => {
 
 async function setup(
   script: ClaudeScript,
-  extra: { fixture?: string; data?: (r: unknown, slot: SlotRef) => Promise<unknown>; instructionSettings?: () => Promise<string[]> } = {},
+  extra: {
+    fixture?: string;
+    data?: (r: unknown, slot: SlotRef) => Promise<unknown>;
+    instructionSettings?: () => Promise<string[]>;
+    instructionLinked?: () => Promise<LinkedFolderLine[]>;
+  } = {},
 ) {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const folder = path.join(base, "Work");
@@ -41,6 +47,7 @@ async function setup(
     env: { HH_FAKE_SCRIPT: writeScript(base, script), HH_FAKE_PROMPTS: path.join(base, "prompts.jsonl") },
     ...(extra.data ? { data: extra.data } : {}),
     ...(extra.instructionSettings ? { instructionSettings: extra.instructionSettings } : {}),
+    ...(extra.instructionLinked ? { instructionLinked: extra.instructionLinked } : {}),
   });
   return { ws, folder, gitdir };
 }
@@ -319,5 +326,32 @@ describe("Workspace and slots (parallel spec §4)", () => {
     expect(again.key).toBe("A");
     await ws.close();
     await expect(ws.openSlot({ key: "B" })).rejects.toThrow("The workspace is closing");
+  });
+});
+
+describe("linked folders in AGENTS.md (hatches spec §3.3)", () => {
+  it("writes the open scope's folders at create and rewrites them on refreshInstructions only when they change", async () => {
+    let linked: LinkedFolderLine[] = [{ key: "repos", label: "Repos", path: "/r", mode: "write" }];
+    const { ws, folder } = await setup({ steps: [] }, { instructionLinked: async () => linked });
+    const agents = () => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents()).toContain("### Folders of this scope");
+    expect(agents()).toContain("- `repos` (Repos, read and write): `/r`");
+    expect(await ws.refreshInstructions()).toBe(false);
+    linked = [{ key: "repos", label: "Repos", path: "/other", mode: "read" }];
+    expect(await ws.refreshInstructions()).toBe(true);
+    expect(agents()).toContain("- `repos` (Repos, read only): `/other`");
+    expect(agents()).not.toContain("`/r`");
+    linked = [];
+    expect(await ws.refreshInstructions()).toBe(true);
+    expect(agents()).not.toContain("### Folders of this scope");
+  });
+
+  it("D0: an empty answer writes the same AGENTS.md as no option", async () => {
+    const { folder: without } = await setup({ steps: [] });
+    const plain = fs.readFileSync(path.join(without, "AGENTS.md"), "utf8");
+    await ws?.close();
+    ws = undefined;
+    const { folder } = await setup({ steps: [] }, { instructionLinked: async () => [] });
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(plain);
   });
 });

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { buildPlugin } from "./plugin-build";
+import { checkPlugin, formatPluginFindings } from "./plugin-check";
 
 type Command = (args: string[], io: Io) => Promise<number>;
 
@@ -9,6 +10,8 @@ export const PLUGIN_USAGE = [
   "",
   "Commands:",
   "  build [--plugin <dir>] [--out <dir>]     Build the plugin into dist/: plugin.json, backend.js and the panels",
+  "  check [--json] [--harness <dir>] [--no-build]",
+  "                                           Build, then check the plugin, its sources, fixtures and PLUGIN.md",
   "",
   "Each command works on the plugin in the current folder unless --plugin <dir> names another.",
   "",
@@ -18,6 +21,14 @@ export const BUILD_USAGE = [
   "Usage: humanharness plugin build [--plugin <dir>] [--out <dir>]",
   "",
   "Builds plugin.config.ts, backend.ts and panels/<id>.tsx into dist/ (or --out), replacing it.",
+  "",
+].join("\n");
+
+export const CHECK_USAGE = [
+  "Usage: humanharness plugin check [--plugin <dir>] [--json] [--harness <dir>] [--no-build]",
+  "",
+  "Builds the plugin, then checks dist/plugin.json, the sources, the fixtures and PLUGIN.md. Errors exit with 1.",
+  "--harness <dir> also checks that the slots the panels and chips name exist in that harness.",
   "",
 ].join("\n");
 
@@ -37,9 +48,30 @@ async function buildCommand(args: string[], io: Io): Promise<number> {
   return 0;
 }
 
+async function checkCommand(args: string[], io: Io): Promise<number> {
+  if (wantsHelp(args)) {
+    io.stdout.write(CHECK_USAGE);
+    return 0;
+  }
+  const { values, positionals } = parseCommand(args, {
+    plugin: { type: "string" },
+    json: { type: "boolean" },
+    harness: { type: "string" },
+    "no-build": { type: "boolean" },
+  });
+  if (positionals.length > 0) throw new UsageError(CHECK_USAGE.trim());
+  const { findings } = await checkPlugin(path.resolve(io.cwd, values.plugin ?? "."), {
+    build: !values["no-build"],
+    ...(values.harness ? { harness: path.resolve(io.cwd, values.harness) } : {}),
+  });
+  io.stdout.write(values.json ? `${JSON.stringify({ findings }, null, 2)}\n` : formatPluginFindings(findings));
+  return findings.some((f) => f.severity === "error") ? 1 : 0;
+}
+
 /** The plugin commands, by name. Later tasks add theirs (init, check, record, test, dev). */
 const PLUGIN_COMMANDS: Record<string, Command> = {
   build: buildCommand,
+  check: checkCommand,
 };
 
 /** `humanharness plugin <command>` (plugins spec §9): the authoring tools. */

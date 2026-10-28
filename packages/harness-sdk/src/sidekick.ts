@@ -79,7 +79,7 @@ export const sidekickSchema = z
     checks: z.strictObject({ minWords: z.number().int().min(1).max(50).optional() }).optional(),
     /** Places a sidekick can be asked about (spec §2a.5); ids unique. */
     places: z.array(placeSchema).max(12).optional(),
-    /** Ready-made sidekicks offered to the person (spec §2a.7). */
+    /** Ready-made sidekicks offered to the person (spec §2a.7); names unique (adopting one finds it by name). */
     presets: z.array(presetSchema).max(8).optional(),
   })
   .superRefine((s, ctx) => {
@@ -88,7 +88,10 @@ export const sidekickSchema = z
       if (ids.has(p.id)) ctx.addIssue({ code: "custom", path: ["places", i, "id"], message: `Place ids must be unique: "${p.id}"` });
       ids.add(p.id);
     }
+    const names = new Set<string>();
     for (const [i, preset] of (s.presets ?? []).entries()) {
+      if (names.has(preset.name)) ctx.addIssue({ code: "custom", path: ["presets", i, "name"], message: `Preset names must be unique: "${preset.name}"` });
+      names.add(preset.name);
       for (const [j, purpose] of preset.purposes.entries()) {
         if (purpose.id !== "custom") continue;
         for (const m of purpose.moments) {

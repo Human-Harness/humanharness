@@ -128,6 +128,12 @@ describe("several sidekicks (spec §2a)", () => {
     expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, personality: "x".repeat(1501) }] } })).toThrow();
   });
 
+  it("presets: names unique (adopting one finds it by name)", () => {
+    const p = { name: "Guard", mark: "x", personality: "", purposes: [{ id: "focus" as const }] };
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, mark: "y" }] } })).toThrow(/unique/);
+    expect(defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, name: "Guard 2" }] } }).sidekick?.presets).toHaveLength(2);
+  });
+
   it("purpose moments and speaksAt", () => {
     expect(purposeMoments({ id: "prompt-coach" })).toEqual(["pre-send", "after-reply"]);
     expect(purposeMoments({ id: "custom", text: "x", moments: ["daily"] })).toEqual(["daily"]);

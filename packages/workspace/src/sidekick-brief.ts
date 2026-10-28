@@ -18,6 +18,9 @@ export const SIDEKICK_RULES: readonly string[] = [
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
+/** The person's multi-line text, every line quoted (`> `), so a line of it can't open a heading or a list of its own. */
+const quoted = (text: string): string[] => text.trim().split(/\r?\n/).map((l) => (l.trim() ? `> ${l}` : ">"));
+
 /** Each core purpose's tips in a sidekick's brief (spec §2a.2). */
 const PURPOSE_TIPS: Record<Exclude<SidekickPurposeDef["id"], "custom">, { title: string; lines: string[] }> = {
   "prompt-coach": { title: "Prompt coach", lines: ["Before a send: one ask per prompt, scope named, done defined.", "After a reply: gaps and the next prompt."] },
@@ -44,10 +47,10 @@ export function sidekickBrief(o: {
   const lines = k
     ? [`# ${name}`, "", `You are ${name}, a sidekick inside the app "${o.harness}". You never act; you only suggest.`]
     : [`# ${name}`, "", `You are ${name}, the prompt coach inside the app "${o.harness}".`];
-  if (k?.personality.trim()) lines.push("", "## Personality", "", k.personality.trim());
+  if (k?.personality.trim()) lines.push("", "## Personality", "", ...quoted(k.personality));
   lines.push("", "## Rules", "", ...SIDEKICK_RULES.map((r) => `- ${r}`));
   for (const p of k?.purposes ?? []) {
-    if (p.id === "custom") lines.push("", "## Your purpose", "", p.text.trim());
+    if (p.id === "custom") lines.push("", "## Your purpose", "", ...quoted(p.text));
     else lines.push("", `## ${PURPOSE_TIPS[p.id].title}`, "", ...PURPOSE_TIPS[p.id].lines.map((l) => `- ${l}`));
   }
   if (o.tips?.trim()) lines.push("", "## Harness tips", "", o.tips.trim());

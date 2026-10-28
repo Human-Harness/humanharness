@@ -31,11 +31,21 @@ export function jobOriginKnown(jobs: Record<string, HarnessJob>): (id: string) =
   };
 }
 
-/** A needs-you summary as an item's title: cut by code points to the inbox's limit, the whole one in the body when cut. */
+/**
+ * `t` cut to `max` UTF-16 units, the length the Attention store checks on every read (a longer field drops the item),
+ * never splitting a surrogate pair.
+ */
+function cutUnits(t: string, max: number): string {
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  return /[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+/** A needs-you summary as an item's title: cut to the inbox's limit, the whole one (to the body's limit) in the body when cut. */
 function resultText(summary: string, label: string): { title: string; body?: string } {
-  const points = [...summary];
-  const title = points.slice(0, ATTENTION_LIMITS.titleChars).join("").trim() || label.slice(0, ATTENTION_LIMITS.titleChars).trim() || "Job";
-  return points.length > ATTENTION_LIMITS.titleChars ? { title, body: summary.slice(0, ATTENTION_LIMITS.bodyChars) } : { title };
+  const max = ATTENTION_LIMITS.titleChars;
+  const title = cutUnits(summary, max).trim() || cutUnits(label, max).trim() || "Job";
+  return summary.length > max ? { title, body: cutUnits(summary, ATTENTION_LIMITS.bodyChars) } : { title };
 }
 
 /**
@@ -266,11 +276,18 @@ export function createJobsHost(d: JobsHostDeps) {
     running: (): boolean => runs.size > 0,
     /** The base's shared log (the Jobs section, Task 9). */
     log: logFor,
-    /** The declared jobs' scopes whose last run needs the person, in the current base (the Dock badge); 0 before setup. */
+    /**
+     * The declared jobs' scopes whose last run needs the person, in the current base (the Dock badge); 0 before setup.
+     * A job turned off in Settings › Jobs and an archived (or gone) scope don't count.
+     */
     needsYou: async (): Promise<number> => {
       const base = await d.base();
       if (!base) return 0;
-      return [...(await logFor(base).lastRuns()).values()].filter((r) => r.status === "needs-you" && Object.hasOwn(d.jobs, r.job)).length;
+      const waiting = [...(await logFor(base).lastRuns()).values()].filter(
+        (r) => r.status === "needs-you" && Object.hasOwn(d.jobs, r.job) && !cleanJobSettings(d.settings?.(r.job)).off,
+      );
+      const open = await Promise.all(waiting.map((r) => (r.scope === null ? true : d.scopeExists(r.scope).catch(() => false))));
+      return open.filter(Boolean).length;
     },
   };
 }

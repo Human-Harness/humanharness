@@ -349,6 +349,43 @@ describe("job results in the Attention inbox (part 3 Task 8)", () => {
     expect(item.body).toBe(long);
   });
 
+  it("a summary of emoji is cut by UTF-16 units, as the store reads it: the item stays listed, no pair split", async () => {
+    const t = attended();
+    const fire = "🔥".repeat(100);
+    await runOnce(t, { status: "needs-you", summary: fire });
+    const items = await t.items();
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe("🔥".repeat(60));
+    expect(items[0].body).toBe(fire);
+    // An odd limit never ends on half a pair.
+    await runOnce(t, { status: "needs-you", summary: `a${fire}` });
+    const [item] = await t.items();
+    expect(item.title).toBe(`a${"🔥".repeat(59)}`);
+  });
+
+  it("needsYou leaves out a job turned off in Settings › Jobs and an archived scope", async () => {
+    let off = false;
+    const open = new Set(["main", "physics"]);
+    const stores = attentionStores({ tagKey: async () => Buffer.from("test key"), log: () => {} });
+    stores.registerKnown("job", jobOriginKnown({ sync: job({ scope: "trigger" }) }));
+    const t = host({
+      jobs: { sync: job({ scope: "trigger" }) },
+      deps: { scoped: () => true, scopeExists: async (s) => open.has(s), attention: (b) => stores.forBase(b, true), settings: () => ({ off }) },
+    });
+    for (const scope of ["main", "physics"]) {
+      const before = t.fake.turns.length;
+      await t.h.runManual("sync", scope);
+      await until(() => t.fake.turns.length === before + 1);
+      t.fake.turns[before].end([result({ status: "needs-you", summary: "Look" }), { type: "done", ok: true }]);
+      await until(() => !t.h.running());
+    }
+    expect(await t.h.needsYou()).toBe(2);
+    open.delete("physics");
+    expect(await t.h.needsYou()).toBe(1);
+    off = true;
+    expect(await t.h.needsYou()).toBe(0);
+  });
+
   it("an undeclared action never becomes a target (J3), even if the runner let one through", async () => {
     const t = attended();
     // `ghost` isn't an action: the runner drops it, and the host checks again before it leads anywhere.

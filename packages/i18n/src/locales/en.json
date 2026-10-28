@@ -952,7 +952,8 @@
       "cancel": "Cancel",
       "needScope": "Open a {{scope}} first",
       "closes": "Starting it closes the open task.",
-      "tier": "Model tier: {{tier}}"
+      "tier": "Model tier: {{tier}}",
+      "announce": "Prepared task from {{name}}"
     }
   }
 }

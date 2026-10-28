@@ -293,6 +293,26 @@ describe("Attention inbox", () => {
       expect(c.pluginCalls).toEqual([["attention.open", "oncall", "k1"]]);
     });
 
+    it("a double click on a target asks main once", async () => {
+      const c = client(view([targetItem()]));
+      let resolve!: () => void;
+      const spy = vi.spyOn(c.attention, "open").mockImplementation(
+        () => new Promise((r) => (resolve = () => r({ kind: "none" }))),
+      );
+      await open(c);
+      fireEvent.click(await bell());
+      const dialog = await screen.findByRole("dialog", { name: "Attention" });
+      const row = within(dialog).getByRole("button", { name: /INC-42 needs a look/ });
+      fireEvent.click(row);
+      fireEvent.click(row);
+      expect(spy).toHaveBeenCalledTimes(1);
+      await act(async () => resolve());
+      expect(await within(dialog).findByText("This item can't be opened any more")).toBeTruthy();
+      // Answered: a later click asks again.
+      fireEvent.click(row);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
     it("a target that is gone says so and keeps the list open", async () => {
       const c = client(view([targetItem()]));
       c.attentionTarget = { kind: "none" };

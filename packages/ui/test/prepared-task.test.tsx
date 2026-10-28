@@ -1,13 +1,19 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { PluginSurfaceView, PreparedTaskView } from "../src/client";
+import { PREPARED_ARM_MS } from "../src/plugins/PreparedTask";
 import { FakeClient } from "./fake-client";
 
+// Fake timers that still follow real time (so findBy/waitFor work); `arm` jumps over Start's arming delay.
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 
@@ -45,6 +51,8 @@ async function open(c: FakeClient) {
 }
 const card = () => screen.queryByRole("region", { name: "Prepared task" });
 const startButton = (r: HTMLElement) => within(r).getByRole("button", { name: "Start" }) as HTMLButtonElement;
+/** Lets Start's arming delay pass. */
+const arm = () => act(() => vi.advanceTimersByTime(PREPARED_ARM_MS));
 const starts = (c: FakeClient) => c.pluginCalls.filter((x) => x[0] === "startPrepared");
 /** The main column's children, by tag and class: what sits around the composer. */
 const mainShape = () => [...(document.querySelector(".hh-main")?.children ?? [])].map((e) => `${e.tagName}.${e.className}`);
@@ -97,6 +105,7 @@ describe("prepared-task card", () => {
     const spy = vi.spyOn(c.plugins, "startPrepared").mockImplementation(
       () => new Promise((r2) => (resolve = () => r2({ ok: true }))),
     );
+    arm();
     const b = startButton(r);
     fireEvent.click(b);
     fireEvent.click(b);
@@ -115,6 +124,7 @@ describe("prepared-task card", () => {
     c.pluginResults = [{ ok: false, message: "Wait until the answer ends" }];
     await open(c);
     const r = await screen.findByRole("region", { name: "Prepared task" });
+    arm();
     fireEvent.click(startButton(r));
     expect((await within(r).findByRole("alert")).textContent).toBe("Wait until the answer ends");
     expect(card()).toBe(r);
@@ -135,6 +145,7 @@ describe("prepared-task card", () => {
     const c = makeClient({ view: surface({ prepared: prepared() }) });
     await open(c);
     const r = await screen.findByRole("region", { name: "Prepared task" });
+    arm();
     expect(startButton(r).disabled).toBe(false);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -152,14 +163,16 @@ describe("prepared-task card", () => {
     c.openScope = "fracciones";
     act(() => c.emitScopes());
     // The chat (and the card with it) may be drawn afresh for the scope: read it again.
-    await waitFor(() => expect(startButton(card() as HTMLElement).disabled).toBe(false));
-    expect(within(card() as HTMLElement).queryByText("Open a topic first")).toBeNull();
+    await waitFor(() => expect(within(card() as HTMLElement).queryByText("Open a topic first")).toBeNull());
+    arm();
+    expect(startButton(card() as HTMLElement).disabled).toBe(false);
   });
 
   it("an app-wide card in a harness with scopes needs no open scope", async () => {
     const c = makeClient({ scopes: true, view: surface({ prepared: prepared({ scope: "app" }) }) });
     await open(c);
     const r = await screen.findByRole("region", { name: "Prepared task" });
+    arm();
     expect(startButton(r).disabled).toBe(false);
     expect(within(r).queryByText("Open a topic first")).toBeNull();
   });
@@ -178,6 +191,7 @@ describe("prepared-task card", () => {
     c.pluginResults = [{ ok: false, message: "This task is no longer prepared" }];
     await open(c);
     const r = await screen.findByRole("region", { name: "Prepared task" });
+    arm();
     fireEvent.click(startButton(r));
     await within(r).findByRole("alert");
     const other = "fedcba9876543210fedcba9876543210";
@@ -185,5 +199,46 @@ describe("prepared-task card", () => {
     const r2 = await screen.findByRole("region", { name: "Prepared task" });
     await waitFor(() => expect(r2.querySelector("pre")?.textContent).toBe("Another"));
     expect(within(r2).queryByRole("alert")).toBeNull();
+  });
+
+  it("P6/P13: Start arms only a moment after a card appears, and a replacing card arms afresh", async () => {
+    const c = makeClient();
+    await open(c);
+    act(() => c.emitSurface(surface({ prepared: prepared() })));
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    expect(startButton(r).disabled).toBe(true);
+    fireEvent.click(startButton(r));
+    act(() => vi.advanceTimersByTime(PREPARED_ARM_MS - 50));
+    expect(startButton(r).disabled).toBe(true);
+    act(() => vi.advanceTimersByTime(50));
+    expect(startButton(r).disabled).toBe(false);
+    // The plugin swaps in another prompt: Start is off again under the pointer, and arms after the same delay.
+    const other = "fedcba9876543210fedcba9876543210";
+    act(() => c.emitSurface(surface({ prepared: prepared({ token: other, prompt: "Another" }) })));
+    await waitFor(() => expect(card()?.querySelector("pre")?.textContent).toBe("Another"));
+    const r2 = card() as HTMLElement;
+    expect(startButton(r2).disabled).toBe(true);
+    fireEvent.click(startButton(r2));
+    arm();
+    expect(startButton(r2).disabled).toBe(false);
+    expect(starts(c)).toEqual([]);
+  });
+
+  it("a new card is announced politely, and focus stays in the composer: Enter there starts nothing", async () => {
+    const c = makeClient();
+    await open(c);
+    const box = screen.getByRole("textbox");
+    box.focus();
+    expect(document.activeElement).toBe(box);
+    act(() => c.emitSurface(surface({ prepared: prepared() })));
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    const status = within(r).getByRole("status");
+    await waitFor(() => expect(status.textContent).toBe("Prepared task from ⁨On this day⁩"));
+    arm();
+    expect(document.activeElement).toBe(box);
+    fireEvent.keyDown(box, { key: "Enter" });
+    await act(async () => {});
+    expect(document.activeElement).toBe(box);
+    expect(starts(c)).toEqual([]);
   });
 });

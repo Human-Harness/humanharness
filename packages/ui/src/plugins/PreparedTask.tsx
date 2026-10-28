@@ -1,6 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, PreparedTaskView } from "../client";
+
+/**
+ * How long a card is on screen before Start can be clicked. Main lets a plugin replace the waiting card, so without this
+ * a different prompt could slide in under the pointer just before a click; a click must mean consent to what was read.
+ */
+export const PREPARED_ARM_MS = 800;
 
 /**
  * The prepared task a plugin proposed (plugins part 2, Decision 10): its title, who proposed it, the full prompt and the
@@ -30,9 +36,20 @@ export function PreparedTask({
   /** Set at once on click (before any render), so a double click starts nothing twice. */
   const starting = useRef(false);
   const token = prepared.token;
+  /** Start can be clicked: false for PREPARED_ARM_MS after this card mounts (the card is keyed by its token). */
+  const [armed, setArmed] = useState(false);
+  /** The polite live line, filled after mount so the region is already there when it speaks; focus is never moved. */
+  const [announce, setAnnounce] = useState("");
+
+  useEffect(() => {
+    setAnnounce(t("plugins.prepared.announce", { name: `⁨${prepared.pluginName}⁩` }));
+    const timer = setTimeout(() => setArmed(true), PREPARED_ARM_MS);
+    return () => clearTimeout(timer);
+    // Once per card: a new token is a new mount.
+  }, []);
 
   const start = async () => {
-    if (starting.current) return;
+    if (starting.current || !armed) return;
     starting.current = true;
     setBusy(true);
     setError(null);
@@ -72,13 +89,16 @@ export function PreparedTask({
       </pre>
       {closesTask && <p className="hh-pl-prepared-note">{t("plugins.prepared.closes")}</p>}
       {needScope !== null && <p className="hh-pl-prepared-note">{t("plugins.prepared.needScope", { scope: needScope })}</p>}
+      <span className="hh-sr-only" role="status">
+        {announce}
+      </span>
       {error !== null && (
         <p className="hh-pl-prepared-error" role="alert" dir="auto">
           {error}
         </p>
       )}
       <div className="hh-pl-actions">
-        <button type="button" className="hh-primary" disabled={busy || blocked || needScope !== null} onClick={() => void start()}>
+        <button type="button" className="hh-primary" disabled={!armed || busy || blocked || needScope !== null} onClick={() => void start()}>
           {t("plugins.prepared.start")}
         </button>
         <button type="button" disabled={busy} onClick={cancel}>

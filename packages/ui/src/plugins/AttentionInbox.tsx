@@ -48,6 +48,8 @@ export function AttentionInbox({
   const refocus = useRef<number | null>(null);
   /** The item whose target main said is gone (its row says so), keyed like the rows. */
   const [gone, setGone] = useState<string | null>(null);
+  /** An open is on its way to main: a second click (a double click) asks nothing more. */
+  const opening = useRef(false);
   const lastBadge = useRef(view.badge);
   const id = useId();
   const language = shownLanguage(i18n);
@@ -91,12 +93,16 @@ export function AttentionInbox({
     close();
   };
   const openTarget = async (item: AttentionItemView, rowKey: string) => {
+    if (opening.current) return;
+    opening.current = true;
     setGone(null);
     let target;
     try {
       target = await client.attention.open(item.plugin, item.key);
     } catch {
       target = { kind: "none" } as const;
+    } finally {
+      opening.current = false;
     }
     if (target.kind === "panel" && onOpenPanel) {
       onOpenPanel(target.plugin, target.panel, target.focus);

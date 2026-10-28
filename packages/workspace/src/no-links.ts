@@ -17,6 +17,14 @@ export class LinkRefused extends Error {
   }
 }
 
+/** A file over its size cap: refused on read, or a write that would pass it. Not a link problem: the file may be cleared. */
+export class TooLarge extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TooLarge";
+  }
+}
+
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const NONBLOCK = constants.O_NONBLOCK ?? 0;
 
@@ -67,33 +75,55 @@ export async function readNoLinks(root: string, file: string, maxBytes: number):
     const st = await handle.stat();
     // A hard link (nlink > 1) could be another file anywhere on the disk.
     if (!st.isFile() || st.nlink > 1) throw new LinkRefused(`${path.relative(root, file)} is not a plain file`);
-    if (st.size > maxBytes) throw new LinkRefused(`${path.relative(root, file)} is too large`);
-    const buf = Buffer.alloc(maxBytes + 1);
+    const tooLarge = () => new TooLarge(`${path.relative(root, file)} is too large`);
+    if (st.size > maxBytes) throw tooLarge();
+    // Room for the file as it was, plus one byte to notice it grew; grows (up to the cap) only if it did.
+    let buf = Buffer.alloc(Math.min(st.size, maxBytes) + 1);
     let size = 0;
     for (;;) {
+      if (size === buf.length) {
+        if (size > maxBytes) throw tooLarge();
+        const bigger = Buffer.alloc(Math.min(buf.length * 2, maxBytes + 1));
+        buf.copy(bigger);
+        buf = bigger;
+      }
       const { bytesRead } = await handle.read(buf, size, buf.length - size, size);
       if (bytesRead === 0) break;
       size += bytesRead;
-      if (size > maxBytes) throw new LinkRefused(`${path.relative(root, file)} is too large`);
     }
+    if (size > maxBytes) throw tooLarge();
     return buf.subarray(0, size).toString("utf8");
   } finally {
     await handle.close();
   }
 }
 
-/** Refuses when `file` exists and isn't a regular file (a link, a folder, a pipe). */
-async function plainOrMissing(root: string, file: string): Promise<boolean> {
+/** Refuses when `file` exists and isn't a regular file (a link, a folder, a pipe); its size, or null when missing. */
+async function plainOrMissing(root: string, file: string): Promise<number | null> {
   const st = await fs.lstat(file).catch((err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") return null;
     throw err;
   });
   if (st && (!st.isFile() || st.nlink > 1)) throw new LinkRefused(`${path.relative(root, file)} is not a plain file`);
-  return st !== null;
+  return st ? st.size : null;
 }
 
-/** Writes `text` to `file` atomically (a new temp file, then a rename), creating real folders, never through a link. */
-export async function writeNoLinks(root: string, file: string, text: string): Promise<void> {
+function shownBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${+(n / 1024 / 1024).toFixed(1)} MB`;
+  return n >= 1024 ? `${+(n / 1024).toFixed(1)} KB` : `${n} bytes`;
+}
+
+/**
+ * Writes `text` to `file` atomically (a new temp file, then a rename), creating real folders, never through a link.
+ * Text over `maxBytes` is refused before anything is written, unless it is no larger than the file it replaces (so
+ * a file already over the cap can still shrink).
+ */
+export async function writeNoLinks(root: string, file: string, text: string, maxBytes = Number.POSITIVE_INFINITY): Promise<void> {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes > maxBytes) {
+    const was = (await checkFolders(root, file)) ? await plainOrMissing(root, file) : null;
+    if (was === null || bytes > was) throw new TooLarge(`${path.relative(root, file)} would be too large (at most ${shownBytes(maxBytes)})`);
+  }
   await checkFolders(root, file, true);
   await plainOrMissing(root, file);
   const tmp = `${file}.${randomUUID()}.tmp`;
@@ -116,5 +146,5 @@ export async function writeNoLinks(root: string, file: string, text: string): Pr
 /** Removes the one file `file` (never a folder, never recursively); a link there is refused, not followed. */
 export async function removeNoLinks(root: string, file: string): Promise<void> {
   if (!(await checkFolders(root, file))) return;
-  if (await plainOrMissing(root, file)) await fs.rm(file, { force: true });
+  if ((await plainOrMissing(root, file)) !== null) await fs.rm(file, { force: true });
 }

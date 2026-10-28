@@ -17,7 +17,7 @@ export interface CollectionDiff extends RecordDiff {
 const isObject = (v: unknown): v is DataRecord => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** JSON with object keys sorted, so two records compare equal whatever their key order. */
-function stable(v: unknown): string {
+export function stable(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
   if (isObject(v)) return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
   return JSON.stringify(v);

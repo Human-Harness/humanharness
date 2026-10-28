@@ -83,12 +83,76 @@ describe("replaceAll (§4.2)", () => {
     seen.length = 0;
     await s.replaceAll("items", [{ id: "same", n: 1 }, { id: "changed", n: 4 }, { id: "new", n: 5 }], app);
     expect(seen).toEqual([
+      [null, { id: "gone", n: 2 }],
       [{ id: "changed", n: 4 }, { id: "changed", n: 3 }],
       [{ id: "new", n: 5 }, null],
-      [null, { id: "gone", n: 2 }],
     ]);
     await expect(s.replaceAll("items", [{ id: "x", n: 99 }], app)).rejects.toThrow(/too big/);
     expect((await s.readAll("items", APP_SCOPE)).records.map((r) => r.id)).toEqual(["changed", "new", "same"]);
+  });
+  it("checks the removals first, so a record can take over a removed one's unique value", async () => {
+    const unique = {
+      items: collectionSchema.parse({
+        scoped: false,
+        key: "id",
+        agent: "read",
+        schema: z.object({ id: z.string(), n: z.number() }),
+        rules: (next: { id: string; n: number } | null, _prev: unknown, ctx: { records: (n: string) => { id: string; n: number }[] }) =>
+          next === null || !ctx.records("items").some((r) => r.id !== next.id && r.n === next.n) || "n is taken",
+      }),
+    };
+    const s = new DataStore(await tmp(), unique);
+    await s.put("items", { id: "a", n: 1 }, app);
+    await s.replaceAll("items", [{ id: "b", n: 1 }], app);
+    expect((await s.readAll("items", APP_SCOPE)).records).toEqual([{ id: "b", n: 1 }]);
+  });
+  it("leaves an unchanged record's stamp alone whatever its key order", async () => {
+    const loose = { items: collectionSchema.parse({ scoped: false, key: "id", agent: "read", schema: z.object({ id: z.string(), m: z.record(z.string(), z.number()) }) }) };
+    const base = await tmp();
+    let now = new Date("2026-01-01T00:00:00Z");
+    const s = new DataStore(base, loose, { now: () => now });
+    await s.put("items", { id: "a", m: { y: 2, x: 1 } }, app);
+    now = new Date("2026-02-01T00:00:00Z");
+    await s.replaceAll("items", [{ id: "a", m: { x: 1, y: 2 } }], app);
+    expect(await s.changedAt("items", APP_SCOPE)).toEqual({ a: "2026-01-01T00:00:00.000Z" });
+  });
+});
+
+describe("caps of a store with its own folder (B11)", () => {
+  const big = (n: number) => ({ id: "a", n: 1, pad: "x".repeat(n) });
+  const padded = { items: collectionSchema.parse({ scoped: false, key: "id", agent: "read", schema: z.looseObject({ id: z.string(), n: z.number() }) }) };
+  it("refuses a record over maxRecordBytes as parsed, defaults included", async () => {
+    const withDefault = { items: collectionSchema.parse({ scoped: false, key: "id", agent: "read", schema: z.object({ id: z.string(), b: z.string().default("x".repeat(500)) }) }) };
+    const base = await tmp();
+    const s = new DataStore(base, withDefault, { dir: path.join(base, "own"), maxRecordBytes: 100 });
+    await expect(s.put("items", { id: "a" }, app)).rejects.toMatchObject({ code: "invalid", message: expect.stringMatching(/too large/) });
+    await expect(fs.access(path.join(base, "own"))).rejects.toThrow();
+  });
+  it("refuses, before writing, a file whose text would pass maxFileBytes", async () => {
+    const base = await tmp();
+    const s = new DataStore(base, padded, { dir: path.join(base, "own"), maxFileBytes: 200 });
+    await s.put("items", big(50), app);
+    const file = path.join(base, "own", "_app", "items.json");
+    const before = await fs.readFile(file, "utf8");
+    await expect(s.put("items", big(300), app)).rejects.toMatchObject({ code: "invalid", message: expect.stringMatching(/too large/) });
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    expect(await fs.readdir(path.dirname(file))).toEqual(["items.json"]);
+  });
+  it("recovers from a file over the cap: shrinking writes pass, replaceAll([]) clears even an unreadable one", async () => {
+    const base = await tmp();
+    const dir = path.join(base, "own");
+    await fs.mkdir(path.join(dir, "_app"), { recursive: true });
+    const file = path.join(dir, "_app", "items.json");
+    const recs = [{ id: "a", n: 1, pad: "x".repeat(150) }, { id: "b", n: 2, pad: "x".repeat(150) }];
+    await fs.writeFile(file, JSON.stringify(recs, null, 2));
+    const s = new DataStore(base, padded, { dir, maxFileBytes: 250 });
+    expect((await s.readAll("items", APP_SCOPE)).records).toHaveLength(2);
+    await s.delete("items", "a", app);
+    expect((await s.readAll("items", APP_SCOPE)).records.map((r) => r.id)).toEqual(["b"]);
+    await fs.writeFile(file, JSON.stringify([...recs, { id: "c", n: 3, pad: "x".repeat(400) }], null, 2));
+    await expect(s.readAll("items", APP_SCOPE)).rejects.toThrow(/too large/);
+    await s.replaceAll("items", [], app);
+    expect((await s.readAll("items", APP_SCOPE)).records).toEqual([]);
   });
 });
 

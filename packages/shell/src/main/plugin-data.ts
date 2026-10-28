@@ -16,16 +16,6 @@ export const PLUGIN_DATA_LIMITS = { records: 2000, recordBytes: 64 * 1024, fileB
 
 const APP = { who: "app" as const, scope: APP_SCOPE };
 
-function sizeOf(value: unknown): number {
-  let text: string | undefined;
-  try {
-    text = JSON.stringify(value);
-  } catch {
-    throw new DataError("invalid", "A record is plain JSON data");
-  }
-  return Buffer.byteLength(text ?? "", "utf8");
-}
-
 /**
  * One plugin's collections in one base (plugins spec §4.2 `ctx.data`, D10): a rebuildable cache under
  * `.harness/plugin-data/<id>/`, never tracked by the history, read and written without following links (the agent
@@ -40,8 +30,10 @@ export class PluginData {
   constructor(base: string, manifest: PluginManifest, opts: { log?: (message: string) => void } = {}) {
     this.store = new DataStore(base, pluginCollections(manifest), {
       dir: pluginDataDir(base, manifest.id),
-      // Pretty-printed records take more room than their JSON: room for the cap plus indentation.
-      maxFileBytes: PLUGIN_DATA_LIMITS.fileBytes * 2,
+      // Measured on what is stored: each record after the schema's defaults, the file as written (pretty-printed).
+      // A file already over the cap can still shrink, and replaceAll clears one too large to read.
+      maxFileBytes: PLUGIN_DATA_LIMITS.fileBytes,
+      maxRecordBytes: PLUGIN_DATA_LIMITS.recordBytes,
       ...(opts.log ? { log: opts.log } : {}),
     });
   }
@@ -61,25 +53,17 @@ export class PluginData {
   put(collection: string, record: DataRecord): Promise<void> {
     return this.serialize(async () => {
       const c = this.store.collection(collection);
-      this.checkRecord(record);
-      const current = await this.readAll(collection);
-      const key = c.single ? undefined : record[c.key!];
-      const others = c.single ? [] : current.filter((r) => r[c.key!] !== key);
-      this.checkCollection([...others, record]);
+      if (!c.single) {
+        const current = await this.readAll(collection);
+        const key = record?.[c.key!];
+        if (!current.some((r) => r[c.key!] === key) && current.length >= PLUGIN_DATA_LIMITS.records) throw this.tooMany();
+      }
       await this.store.put(collection, record, APP);
     });
   }
 
   patch(collection: string, key: DataKey | undefined, patch: DataRecord): Promise<void> {
     return this.serialize(async () => {
-      const c = this.store.collection(collection);
-      const current = await this.readAll(collection);
-      const prev = c.single ? current[0] : current.find((r) => r[c.key!] === key);
-      if (prev) {
-        const next = { ...prev, ...patch };
-        this.checkRecord(next);
-        this.checkCollection(current.map((r) => (r === prev ? next : r)));
-      }
       await this.store.patch(collection, key, patch, APP);
     });
   }
@@ -93,9 +77,8 @@ export class PluginData {
   replaceAll(collection: string, records: DataRecord[]): Promise<void> {
     return this.serialize(async () => {
       this.store.collection(collection);
+      if (!Array.isArray(records)) throw new DataError("invalid", "replaceAll takes a list of records");
       if (records.length > PLUGIN_DATA_LIMITS.records) throw this.tooMany();
-      for (const r of records) this.checkRecord(r);
-      this.checkCollection(records);
       await this.store.replaceAll(collection, records, APP);
     });
   }
@@ -108,15 +91,6 @@ export class PluginData {
 
   onChange(listener: (change: DataChange) => void): () => void {
     return this.store.onChange(listener);
-  }
-
-  private checkRecord(record: unknown): void {
-    if (sizeOf(record) > PLUGIN_DATA_LIMITS.recordBytes) throw new DataError("invalid", "The record is too large (at most 64 KB)");
-  }
-
-  private checkCollection(records: DataRecord[]): void {
-    if (records.length > PLUGIN_DATA_LIMITS.records) throw this.tooMany();
-    if (sizeOf(records) > PLUGIN_DATA_LIMITS.fileBytes) throw new DataError("invalid", "The collection is too large (at most 2 MB)");
   }
 
   private tooMany(): DataError {

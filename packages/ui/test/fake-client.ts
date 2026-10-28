@@ -75,10 +75,19 @@ import type {
   TextSize,
   UsageSummary,
 } from "../src/client";
+import { type Mock, vi } from "vitest";
 import { hearsDataChange } from "../src/client";
 
 /** The token FakeClient's sidekick.pickFiles answers. */
 export const FAKE_PICK_TOKEN = "0".repeat(32);
+
+/** `client.tasks` with spies on the person's actions, and `set` to change what `list` answers and tell `onChange`. */
+export interface FakeTasks extends TasksClient {
+  focus: Mock<TasksClient["focus"]>;
+  cancelQueued: Mock<TasksClient["cancelQueued"]>;
+  resumeQueues: Mock<TasksClient["resumeQueues"]>;
+  set(state: TasksState): void;
+}
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -169,23 +178,29 @@ export class FakeClient implements HarnessClient {
   /** What moveFolder answers; default: success with the current state. */
   moveResult: MoveResult | null = null;
   private taskView: TaskView = { current: null, actions: {}, notes: [] };
-  /** What `tasks.list` answers (parallel spec §9.1). */
+  /** What `tasks.list` answers (parallel spec §9.1); `tasks.set` changes it. */
   tasksState: TasksState = { tasks: [], caps: { tasks: 1, jobs: 1 } };
-  /** What `tasks.focus` was asked, in order. */
-  focusedTasks: (string | null)[] = [];
-  private readonly tasksApi: TasksClient = {
+  private tasksStateListeners = new Set<(s: TasksState) => void>();
+  private readonly tasksApi: FakeTasks = {
     list: async () => this.tasksState,
-    onChange: () => () => undefined,
-    focus: async (id) => void this.focusedTasks.push(id),
-    cancelQueued: async () => null,
-    resumeQueues: async () => undefined,
+    onChange: (listener) => {
+      this.tasksStateListeners.add(listener);
+      return () => void this.tasksStateListeners.delete(listener);
+    },
+    focus: vi.fn(async (_id: string | null) => undefined),
+    cancelQueued: vi.fn(async (_id: string): Promise<string | null> => null),
+    resumeQueues: vi.fn(async () => undefined),
+    set: (state) => {
+      this.tasksState = state;
+      for (const l of this.tasksStateListeners) l(state);
+    },
   };
   /**
-   * The task view tests set and read (`getTasks`), which is also `client.tasks` (parallel spec §9.1): its methods sit on
-   * the prototype, so spreading it copies only the view.
+   * The task view tests set and read (`getTasks`, `emitTasks`), which is also `client.tasks` (parallel spec §9.1): its
+   * methods sit on the prototype, so spreading it copies only the view.
    */
-  get tasks(): TaskView & TasksClient {
-    return Object.assign(Object.create(this.tasksApi) as TasksClient, this.taskView);
+  get tasks(): TaskView & FakeTasks {
+    return Object.assign(Object.create(this.tasksApi) as FakeTasks, this.taskView);
   }
   set tasks(view: TaskView) {
     this.taskView = view;

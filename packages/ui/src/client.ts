@@ -1128,8 +1128,8 @@ export interface HarnessClient {
   material: MaterialClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
-  /** Open tasks (parallel spec §9.1). Only with `state.parallel`: a main without it registers none of these channels (D0). */
-  tasks?: TasksClient;
+  /** Open tasks (parallel spec §9.1). Only with `state.parallel`: in plain mode main refuses every call and sends no change (D0). */
+  tasks: TasksClient;
 }
 
 /** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */

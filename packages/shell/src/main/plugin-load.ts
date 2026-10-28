@@ -43,6 +43,8 @@ const DIST_MAX_ENTRIES = 500;
 const DIST_MAX_BYTES = 50 * 1024 * 1024;
 const DIST_MAX_DEPTH = 32;
 const TOO_LARGE = "dist is too large";
+/** A hard link may share its bytes with a file outside `dist/`, and realpath can't tell: none are allowed. */
+const hardLinked = (rel: string) => `${rel}: hard links are not allowed`;
 
 interface Walked {
   files: { rel: string; real: string; size: number }[];
@@ -73,6 +75,7 @@ async function walk(root: string): Promise<Walked | string> {
       if (st.isDirectory()) {
         stack.push({ dir: full, rel: r, depth: depth + 1 });
       } else if (st.isFile()) {
+        if (st.nlink > 1) return hardLinked(r);
         bytes += st.size;
         out.files.push({ rel: r, real: full, size: st.size });
       } else if (st.isSymbolicLink()) {
@@ -86,6 +89,7 @@ async function walk(root: string): Promise<Walked | string> {
         const target = await fs.stat(real);
         if (target.isDirectory()) out.folderLinks.push({ rel: r, target: path.relative(root, real) });
         else if (target.isFile()) {
+          if (target.nlink > 1) return hardLinked(r);
           bytes += target.size;
           out.files.push({ rel: r, real, size: target.size });
         } else return `${r} is not a regular file`;
@@ -98,12 +102,17 @@ async function walk(root: string): Promise<Walked | string> {
   return out;
 }
 
-/** At most `max + 1` bytes of a regular file, never following a link and never blocking on a pipe. */
-async function readCapped(file: string, max: number): Promise<Buffer> {
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+/**
+ * At most `max + 1` bytes of a regular file, never blocking on a pipe; by default never following a link at
+ * the last step and refusing a hard link (checked again on the open file, after the walk's lstat).
+ */
+async function readCapped(file: string, max: number, o: { follow?: boolean } = {}): Promise<Buffer> {
+  const flags = constants.O_RDONLY | (o.follow ? 0 : (constants.O_NOFOLLOW ?? 0)) | (constants.O_NONBLOCK ?? 0);
   const h = await fs.open(file, flags);
   try {
-    if (!(await h.stat()).isFile()) throw new Error(`${path.basename(file)} is not a regular file`);
+    const st = await h.stat();
+    if (!st.isFile()) throw new Error(`${path.basename(file)} is not a regular file`);
+    if (!o.follow && st.nlink > 1) throw new Error(hardLinked(path.basename(file)));
     const buf = Buffer.alloc(max + 1);
     let n = 0;
     while (n < buf.length) {
@@ -156,7 +165,20 @@ async function readDistOrThrow(dist: string, harnessId: string): Promise<DistRea
   if (!backend) return { ok: false, error: "backend.js is missing" };
   if (backend.size > BACKEND_MAX_BYTES) return { ok: false, error: "backend.js is over 5 MB" };
 
-  const text = await readCapped(json.real, PLUGIN_JSON_MAX_BYTES);
+  // A folder on the way may have been swapped for a link since the walk: every read re-checks its real path.
+  const readInside = async (f: { rel: string; real: string }, max: number): Promise<Buffer | string> => {
+    let real: string;
+    try {
+      real = await fs.realpath(f.real);
+    } catch {
+      return `${f.rel} changed while it was read`;
+    }
+    if (!inside(real, root)) return `${f.rel} points outside the plugin's dist folder`;
+    return readCapped(real, max);
+  };
+
+  const text = await readInside(json, PLUGIN_JSON_MAX_BYTES);
+  if (typeof text === "string") return { ok: false, error: text };
   if (text.length > PLUGIN_JSON_MAX_BYTES) return { ok: false, error: "plugin.json is over 256 KB" };
   let raw: unknown;
   try {
@@ -185,9 +207,12 @@ async function readDistOrThrow(dist: string, harnessId: string): Promise<DistRea
     return { ok: false, error: `settings: ${firstIssue(err)}` };
   }
 
+  // distHash is what the person's approval binds to, and the backend runner executes the very bytes it
+  // hashed (Task 15), so each byte hashed here must come from inside dist/ at the moment it is read.
   const lines: string[] = [];
   for (const f of walked.files) {
-    const content = await readCapped(f.real, f.size);
+    const content = await readInside(f, f.size);
+    if (typeof content === "string") return { ok: false, error: content };
     if (content.length !== f.size) return { ok: false, error: `${f.rel} changed while it was read` };
     lines.push(`${f.rel}\0${f.size}\0${createHash("sha256").update(content).digest("hex")}\n`);
   }
@@ -218,6 +243,8 @@ export interface PluginPointer {
 }
 
 const FOLDER_MAX = 4096;
+/** Far more than any real list of pointers; a bigger file is treated as corrupt. */
+const POINTERS_MAX_BYTES = 1024 * 1024;
 const validPointer = (id: unknown, folder: unknown): boolean =>
   typeof id === "string" && PLUGIN_ID.test(id) && typeof folder === "string" && folder.length <= FOLDER_MAX && path.isAbsolute(folder);
 
@@ -230,7 +257,7 @@ export class PluginPointers {
 
   constructor(private readonly file: string) {}
 
-  /** A missing file is empty; a broken one reads as empty and is set aside on the next write. */
+  /** A missing file is empty; a broken or oversized one reads as empty and is set aside on the next write. */
   async list(): Promise<PluginPointer[]> {
     return (await this.read()).list;
   }
@@ -246,16 +273,17 @@ export class PluginPointers {
   }
 
   private async read(): Promise<{ list: PluginPointer[]; broken: boolean }> {
-    let text: string;
+    let buf: Buffer;
     try {
-      text = await fs.readFile(this.file, "utf8");
+      buf = await readCapped(this.file, POINTERS_MAX_BYTES, { follow: true });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return { list: [], broken: false };
       throw err;
     }
+    if (buf.length > POINTERS_MAX_BYTES) return { list: [], broken: true };
     let raw: unknown;
     try {
-      raw = JSON.parse(text);
+      raw = JSON.parse(buf.toString("utf8"));
     } catch {
       return { list: [], broken: true };
     }
@@ -337,7 +365,14 @@ export async function loadPlugins(o: {
   }
 
   if (plugins.local) {
-    for (const p of await o.pointers.list()) {
+    let pointers: PluginPointer[] = [];
+    try {
+      pointers = await o.pointers.list();
+    } catch (err) {
+      // An unreadable pointers file (a missing one lists as empty) costs the local plugins, not the load.
+      console.error("Could not read the local plugins list", err);
+    }
+    for (const p of pointers) {
       if (seen.has(p.id)) continue;
       const dist = await distFolderOf(p.folder);
       if (!dist) push({ id: p.id, origin: "local", dist: p.folder, folder: p.folder, manifest: null, error: "There is no plugin in this folder any more" });

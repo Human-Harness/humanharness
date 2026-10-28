@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { promises as fsp } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
 import { PluginPointers, distFolderOf, loadPlugins, readDist } from "../src/main/plugin-load";
 
 /** Writes a plugin folder `<root>/<name>/dist/` with plugin.json (from `over`) and backend.js. */
@@ -147,6 +148,39 @@ describe("readDist (plugins spec §3.1, §7 Add from folder step 1)", () => {
     expect(await readDist(path.join(root, "link"), "dev")).toMatchObject({ ok: true });
   });
 
+  it("B3: a hard link to a file outside dist is refused, walked directly or through a symlink", async () => {
+    const root = await tmp();
+    const d1 = await writePlugin(root, "a");
+    await fs.writeFile(path.join(root, "secret.txt"), "nope");
+    await fs.link(path.join(root, "secret.txt"), path.join(d1, "data.json"));
+    expect(await readDist(d1, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/data\.json.*hard links are not allowed/) });
+    const d2 = await writePlugin(root, "b");
+    await fs.writeFile(path.join(root, "secret2.txt"), "nope");
+    await fs.mkdir(path.join(d2, "x"));
+    await fs.link(path.join(root, "secret2.txt"), path.join(d2, "x", "h.txt"));
+    await fs.symlink(path.join(d2, "x", "h.txt"), path.join(d2, "alias.txt"));
+    expect(await readDist(d2, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/hard links are not allowed/) });
+  });
+
+  it("B3: a folder swapped for a link to outside after the walk is refused before it is hashed", async () => {
+    const root = await tmp();
+    const dist = await writePlugin(root, "a", {}, { "ui/panel.js": "inside" });
+    await fs.mkdir(path.join(root, "evil"));
+    await fs.writeFile(path.join(root, "evil", "panel.js"), "INSIDE"); // Same size: only the path check can catch it.
+    const open = fsp.open.bind(fsp);
+    // The first file opened is plugin.json, after the walk: swap ui/ for a link out right then.
+    const spy = vi.spyOn(fsp, "open").mockImplementationOnce(async (...args: Parameters<typeof fsp.open>) => {
+      await fs.rename(path.join(dist, "ui"), path.join(root, "ui-old"));
+      await fs.symlink(path.join(root, "evil"), path.join(dist, "ui"));
+      return open(...args);
+    });
+    try {
+      expect(await readDist(dist, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/ui\/panel\.js.*outside/) });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("refuses special files (a named pipe) without opening them", async () => {
     const dist = await writePlugin(await tmp(), "a");
     execFileSync("mkfifo", [path.join(dist, "pipe")]);
@@ -242,6 +276,17 @@ describe("PluginPointers (§3.3, B13)", () => {
     expect((await fs.readdir(path.dirname(file))).some((f) => f.startsWith("plugins.json.corrupt-"))).toBe(true);
     expect(await p.list()).toEqual([{ id: "a", folder: "/x" }]);
   });
+
+  it("a pointers file over 1 MB reads as empty and is set aside on the next write", async () => {
+    const file = path.join(await tmp(), "plugins.json");
+    await fs.writeFile(file, JSON.stringify([{ id: "a", folder: "/a" }]));
+    await fs.appendFile(file, " ".repeat(1024 * 1024));
+    const p = new PluginPointers(file);
+    expect(await p.list()).toEqual([]);
+    await p.add("b", "/b");
+    expect((await fs.readdir(path.dirname(file))).some((f) => f.startsWith("plugins.json.corrupt-"))).toBe(true);
+    expect(await p.list()).toEqual([{ id: "b", folder: "/b" }]);
+  });
 });
 
 describe("loadPlugins", () => {
@@ -310,6 +355,15 @@ describe("loadPlugins", () => {
     expect(list.map((e) => [e.id, e.origin, e.manifest])).toEqual([["gone", "local", null], ["mine", "local", null], ["broken", "local", null]]);
     expect(list.every((e) => typeof e.error === "string")).toBe(true);
     expect(list[0].folder).toBe(path.join(local, "gone"));
+  });
+
+  it("a pointers file that can't be read (not a missing one) loses the local plugins, not the load", async () => {
+    const root = await tmp();
+    await writePlugin(path.join(root, "plugins"), "oncall");
+    const file = path.join(root, "plugins.json");
+    await fs.mkdir(file);
+    const list = await loadPlugins({ harness: { id: "dev", root, plugins: { bundled: ["oncall"], on: [], local: true } }, pointers: new PluginPointers(file), devDirs: [] });
+    expect(list.map((e) => [e.id, e.origin])).toEqual([["oncall", "bundled"]]);
   });
 
   it("a broken dev folder shows under its folder name only when that is a valid id", async () => {

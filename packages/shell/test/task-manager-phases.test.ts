@@ -311,6 +311,31 @@ describe("TaskManager: modes by phase (task-modes spec §7)", () => {
   });
 });
 
+describe("TaskManager: the open task keeps its language (language spec §7)", () => {
+  it("changing the language with an open task leaves that task in its language", async () => {
+    let lang = "es";
+    const t = setup({ extra: { language: async () => lang } });
+    await t.manager.start("session");
+    expect(t.turns[0].message).toContain("Brief of warmup in Spanish.");
+    lang = "fr";
+    const r = t.manager.setPhase("main", "t1");
+    await r.accepted;
+    await r.done;
+    expect(t.turns.at(-1)!.message).toContain("Brief of main in Spanish.");
+    // The next task starts in the new language.
+    await t.manager.finish();
+    await t.manager.start("quiz");
+    expect(t.turns.at(-1)!.message).not.toContain("Spanish");
+  });
+
+  it("a resumed task from before a restart reads the saved language, as before", async () => {
+    const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 2, phase: { id: "main", startedAt: NOW }, resume: true as const };
+    const t = setup({ state: { version: 1, actions: {}, current }, extra: { language: async () => "fr" } });
+    await t.manager.ask("Hi");
+    expect(t.turns[0].message).toContain("Brief of main in French.");
+  });
+});
+
 describe("TaskManager: the close phase is the core closing (task-phases spec D5)", () => {
   it("the person's Finish in the close phase runs the closing turn and ends the task", async () => {
     const t = setup({ script: [[ok], [ok], [saveNote, ok]] });

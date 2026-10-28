@@ -43,6 +43,12 @@ describe("design tokens", () => {
 });
 
 describe("styles", () => {
+  it("gives the timeline's chips their own classes: the start view's .hh-chip rule is the only one (D0)", () => {
+    expect(css.match(/^\.hh-chip[\s,{-]/gm)).toEqual([".hh-chip "]);
+    expect(css).toMatch(/^\.hh-chip\s*{\s*height:\s*30px;/m);
+    for (const c of ["", "-amber", "-green", "-grey"]) expect(css).toMatch(new RegExp(`^\\.hh-timeline-chip${c}\\s*{`, "m"));
+  });
+
   it("makes the top bar the window's drag region, except its controls", () => {
     expect(css).toMatch(/\.hh-topbar\s*{[^}]*-webkit-app-region:\s*drag/);
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);

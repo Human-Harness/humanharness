@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TimelineEntry } from "../src/client";
-import { FileTimeline, timeAgo } from "../src/FileTimeline";
+import { clock, FileTimeline, timeAgo } from "../src/FileTimeline";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -79,5 +79,51 @@ describe("FileTimeline (file-timeline spec §6.1)", () => {
     const now = Date.parse(at(30));
     expect(timeAgo(at(10), "en", now)).toBe("20 minutes ago");
     expect(timeAgo(at(30), "en", now)).toBe("now");
+  });
+
+  it("a date that doesn't parse shows nothing instead of throwing", async () => {
+    expect(timeAgo("not a date", "en")).toBe("");
+    expect(clock("not a date", "en")).toBe("");
+    const client = new FakeClient();
+    client.timelines[DOC] = [{ ...entries[1], at: "not a date" }];
+    await renderIn("en", <FileTimeline client={client} path={DOC} />);
+    expect((await screen.findByRole("list", { name: "Versions and changes" })).textContent).toContain("Outside the app");
+  });
+
+  it("without onPick the list is read-only: entries are not buttons", async () => {
+    const client = new FakeClient();
+    client.timelines[DOC] = entries;
+    await renderIn("en", <FileTimeline client={client} path={DOC} selected={sha(3)} />);
+    await screen.findByRole("list", { name: "Versions and changes" });
+    expect(screen.queryByRole("button", { name: /Spec writer/ })).toBeNull();
+    expect(screen.getByText("Spec writer").closest("[aria-current]")?.tagName).toBe("DIV");
+    expect(screen.getByRole("button", { name: "2 turns" })).toBeTruthy();
+  });
+
+  it("the chips use the timeline's own classes, not the start view's .hh-chip", async () => {
+    const client = new FakeClient();
+    client.timelines[DOC] = entries;
+    const { container } = await renderIn("en", <FileTimeline client={client} path={DOC} />);
+    await screen.findByRole("list", { name: "Versions and changes" });
+    expect(container.querySelectorAll(".hh-chip").length).toBe(0);
+    expect([...container.querySelectorAll(".hh-timeline-chip")].map((c) => c.className)).toEqual([
+      "hh-timeline-chip hh-timeline-chip-grey",
+      "hh-timeline-chip hh-timeline-chip-green",
+      "hh-timeline-chip hh-timeline-chip-amber",
+      "hh-timeline-chip hh-timeline-chip-grey",
+    ]);
+  });
+
+  it("a reload that fails keeps the last good list", async () => {
+    const client = new FakeClient();
+    client.timelines[DOC] = entries;
+    await renderIn("en", <FileTimeline client={client} path={DOC} />);
+    await screen.findByText("Spec writer");
+    let calls = 0;
+    client.files = { ...client.files, timeline: async () => (calls++, { ok: false, reason: "failed" }) };
+    await act(async () => client.emitFileCommit([DOC]));
+    expect(calls).toBe(1);
+    expect(screen.getByText("Spec writer")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

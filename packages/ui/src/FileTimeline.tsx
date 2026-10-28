@@ -21,9 +21,11 @@ export function authorName(t: TFunction, a: TimelineAuthor): string {
   return a.action ? a.label : t("history.question");
 }
 
-/** "20 minutes ago", "now", "3 days ago". */
+/** "20 minutes ago", "now", "3 days ago"; "" for a date that doesn't parse. */
 export function timeAgo(iso: string, language: string, now = Date.now()): string {
-  const seconds = Math.round((Date.parse(iso) - now) / 1000);
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms) || !Number.isFinite(now)) return "";
+  const seconds = Math.round((ms - now) / 1000);
   const f = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
   const abs = Math.abs(seconds);
   if (abs < 60) return f.format(0, "second");
@@ -32,7 +34,11 @@ export function timeAgo(iso: string, language: string, now = Date.now()): string
   return f.format(Math.round(seconds / 86_400), "day");
 }
 
-export const clock = (iso: string, language: string) => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+/** The date and time, or "" for a date that doesn't parse. */
+export function clock(iso: string, language: string): string {
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms)) : "";
+}
 
 /** The entry's own line (the chips say the rest). */
 function entryText(t: TFunction, e: TimelineEntry, language: string): string | null {
@@ -49,10 +55,10 @@ function entryText(t: TFunction, e: TimelineEntry, language: string): string | n
 
 function chips(t: TFunction, e: TimelineEntry): ReactNode {
   const out: ReactNode[] = [];
-  if (e.unapproved) out.push(<span key="u" className="hh-chip hh-chip-amber">{t("timeline.unapproved")}</span>);
-  if (e.kind === "approval") out.push(<span key="a" className="hh-chip hh-chip-green">{t(e.reason ? "timeline.approvedReason" : "timeline.approved", { version: e.version })}</span>);
-  if (e.kind === "outside") out.push(<span key="o" className="hh-chip hh-chip-grey">{t("timeline.outside")}</span>);
-  if (e.deleted) out.push(<span key="d" className="hh-chip hh-chip-grey">{t("timeline.deleted")}</span>);
+  if (e.unapproved) out.push(<span key="u" className="hh-timeline-chip hh-timeline-chip-amber">{t("timeline.unapproved")}</span>);
+  if (e.kind === "approval") out.push(<span key="a" className="hh-timeline-chip hh-timeline-chip-green">{t(e.reason ? "timeline.approvedReason" : "timeline.approved", { version: e.version })}</span>);
+  if (e.kind === "outside") out.push(<span key="o" className="hh-timeline-chip hh-timeline-chip-grey">{t("timeline.outside")}</span>);
+  if (e.deleted) out.push(<span key="d" className="hh-timeline-chip hh-timeline-chip-grey">{t("timeline.deleted")}</span>);
   return out;
 }
 
@@ -73,7 +79,8 @@ export function FileTimeline({ client, path, selected, onPick }: FileTimelinePro
     let seq = 0;
     const load = () => {
       const mine = ++seq;
-      const done = (r: FileTimelineResult) => live && mine === seq && setResult(r);
+      // A reload that fails keeps the last list it had.
+      const done = (r: FileTimelineResult) => live && mine === seq && setResult((prev) => (!r.ok && prev?.ok ? prev : r));
       client.files.timeline(path).then(done, () => done({ ok: false, reason: "failed" }));
     };
     setResult(null);
@@ -103,16 +110,27 @@ export function FileTimeline({ client, path, selected, onPick }: FileTimelinePro
       {result.entries.map((e, i) => {
         const turnsId = `${id}-turns-${i}`;
         const text = entryText(t, e, i18n.language);
+        const summary = (
+          <>
+            <span className="hh-timeline-author">{authorName(t, e.author)}</span>
+            {text && <span className="hh-timeline-text">{text}</span>}
+            {chips(t, e)}
+            <time className="hh-caption" dateTime={e.at}>
+              {clock(e.at, i18n.language)}
+            </time>
+          </>
+        );
         return (
           <li key={e.to} className={`hh-timeline-entry${selected === e.to ? " hh-timeline-selected" : ""}`}>
-            <button type="button" className="hh-timeline-pick" aria-current={selected === e.to ? "true" : undefined} disabled={!onPick} onClick={() => onPick?.(e)}>
-              <span className="hh-timeline-author">{authorName(t, e.author)}</span>
-              {text && <span className="hh-timeline-text">{text}</span>}
-              {chips(t, e)}
-              <time className="hh-caption" dateTime={e.at}>
-                {clock(e.at, i18n.language)}
-              </time>
-            </button>
+            {onPick ? (
+              <button type="button" className="hh-timeline-pick" aria-current={selected === e.to ? "true" : undefined} onClick={() => onPick(e)}>
+                {summary}
+              </button>
+            ) : (
+              <div className="hh-timeline-pick" aria-current={selected === e.to ? "true" : undefined}>
+                {summary}
+              </div>
+            )}
             {e.commits.length > 1 && (
               <button type="button" className="hh-link hh-timeline-more" aria-expanded={open.has(e.to)} aria-controls={turnsId} onClick={() => toggle(e.to)}>
                 {t("timeline.turns", { count: e.commits.length })}

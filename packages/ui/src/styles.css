@@ -412,14 +412,14 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 /* File timeline (file-timeline spec §6.1). */
 .hh-timeline { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .hh-timeline-pick { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; width: 100%; height: auto; padding: 6px 8px; text-align: left; border-radius: 6px; background: none; border: 1px solid transparent; }
-.hh-timeline-pick:hover:not(:disabled), .hh-timeline-selected .hh-timeline-pick { border-color: var(--hh-line-strong); background: var(--hh-surface); }
+button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-color: var(--hh-line-strong); background: var(--hh-surface); }
 .hh-timeline-author { font-weight: 600; }
 .hh-timeline-more { margin-left: 8px; font-size: 12px; }
 .hh-timeline-turns { margin: 2px 0 4px 16px; padding: 0; list-style: none; font-size: 13px; }
-.hh-chip { padding: 0 6px; border-radius: 999px; font-size: 12px; color: var(--hh-ink); }
-.hh-chip-amber { background: var(--hh-review-question); }
-.hh-chip-green { background: var(--hh-diff-ins); color: var(--hh-ok); }
-.hh-chip-grey { background: var(--hh-review-done); }
+.hh-timeline-chip { padding: 0 6px; border-radius: 999px; font-size: 12px; color: var(--hh-ink); }
+.hh-timeline-chip-amber { background: var(--hh-review-question); }
+.hh-timeline-chip-green { background: var(--hh-diff-ins); color: var(--hh-ok); }
+.hh-timeline-chip-grey { background: var(--hh-review-done); }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Review por decisiones</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.pill{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.btn{font:inherit;font-size:13px;padding:6px 11px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.step{font-size:12px;padding:6px 12px;border-radius:999px;color:#5f5f66;background:#ececf0}
+.dec{background:#fff;border:1px solid #e3e3e8;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7">
+  <header style="display:flex;flex-direction:column;gap:12px;padding:14px 24px;border-bottom:1px solid #e3e3e8;background:#fff">
+    <div style="display:flex;align-items:center;gap:12px">
+      <a href="Main.dc.html" style="font-size:13px">‹ Hoy</a>
+      <span class="k">SHOP-138</span>
+      <span style="font-weight:600;font-size:15px">Filtro de productos por talle</span>
+      <div style="flex:1"></div>
+      <span style="font-size:12px;color:#5f5f66">9 archivos · +214 −31 · tests: 41 ok</span>
+    </div>
+    <ol aria-label="Etapas" style="display:flex;gap:6px;margin:0;padding:0;list-style:none">
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Entender</li>
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Planificar</li>
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Implementar</li>
+      <li class="step" style="background:#0a5bc4;color:#fff;font-weight:600">Revisar · 2 de 6</li>
+      <li class="step">PR</li>
+      <li class="step">Feedback y CI</li>
+    </ol>
+  </header>
+  <div style="flex:1;display:flex;min-height:0">
+    <main style="flex:1;padding:22px 26px;display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden">
+      <h2 style="margin:0;font-size:18px">Qué decidió la IA mientras implementaba</h2>
+      <div style="font-size:13px;color:#3a3a40">Revisás decisiones, no líneas. Cada una lleva a su parte del diff si querés verla.</div>
+
+      <div class="dec">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#d9f0dc;color:#1f5a28">Aprobada</span><span class="pill" style="background:#ececf0;color:#3a3a40">AC1</span><strong style="font-size:14px">El filtro se guarda en la URL (?talle=M)</strong></div>
+        <div style="font-size:13px;color:#3a3a40">Así se puede compartir el link y el botón Atrás funciona.</div>
+      </div>
+      <div class="dec">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#d9f0dc;color:#1f5a28">Aprobada</span><span class="pill" style="background:#ececf0;color:#3a3a40">AC2</span><strong style="font-size:14px">Talles sin stock aparecen deshabilitados, no ocultos</strong></div>
+      </div>
+      <div class="dec" style="border-color:#e8a33d">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#fdebd0;color:#7a4a00">Supuesto</span><span class="pill" style="background:#ececf0;color:#3a3a40">AC3</span><strong style="font-size:14px">Los talles se ordenan XS→XXL; los numéricos van después</strong></div>
+        <div style="font-size:13px;color:#3a3a40">El ticket no dice el orden. Lo tomé de la tabla de talles del catálogo.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn p">Está bien</button><button class="btn">Cambiar</button><button class="btn">Preguntar al PO en Jira</button>
+          <div style="flex:1"></div><a href="#" style="font-size:13px">Ver diff (2 archivos)</a>
+        </div>
+      </div>
+      <div class="dec">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#ececf0;color:#3a3a40">Sin revisar</span><strong style="font-size:14px">Índice nuevo en products(size) para que el filtro no sea lento</strong></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn p">Está bien</button><button class="btn">Cambiar</button>
+          <div style="flex:1"></div><a href="#" style="font-size:13px">Ver diff (1 migración)</a>
+        </div>
+      </div>
+      <div style="font-size:13px;color:#5f5f66">+ 2 decisiones más sin revisar</div>
+    </main>
+    <aside aria-label="Cobertura" style="width:340px;padding:20px;display:flex;flex-direction:column;gap:12px;border-left:1px solid #e3e3e8;background:#fff">
+      <div class="k">¿CUMPLE LO QUE PIDE EL PRODUCTO?</div>
+      <div style="display:flex;gap:8px;font-size:13px"><span class="pill" style="background:#d9f0dc;color:#1f5a28">AC1</span><span>Cubierto · 3 tests</span></div>
+      <div style="display:flex;gap:8px;font-size:13px"><span class="pill" style="background:#d9f0dc;color:#1f5a28">AC2</span><span>Cubierto · 2 tests</span></div>
+      <div style="display:flex;gap:8px;font-size:13px"><span class="pill" style="background:#fdebd0;color:#7a4a00">AC3</span><span>Cubierto sin test automático</span></div>
+      <div class="k" style="margin-top:8px">FUERA DEL TICKET</div>
+      <div style="font-size:13px;line-height:1.5">La IA tocó api/products/search.ts, que no estaba en el plan. Motivo: el índice nuevo.</div>
+      <div style="flex:1"></div>
+      <div class="k">EL PR VA A DECIR</div>
+      <div style="font-size:12px;color:#3a3a40;line-height:1.5;background:#f5f5f7;border-radius:8px;padding:10px">Resumen, las 6 decisiones con su porqué, la cobertura de los criterios y el link a SHOP-138.</div>
+      <button class="btn p" disabled style="opacity:.5">Abrir PR (faltan 4 decisiones)</button>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

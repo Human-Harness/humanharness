@@ -1,0 +1,1365 @@
+<title>Student Harness prototipo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  --bg:#f5f5f7;--side:#ececf0;--card:#fff;--card2:#fbfbfd;--line:#e3e3e8;--line2:#d2d2d7;--line3:#f0f0f2;--fg:#1d1d1f;--fg2:#3a3a40;--muted:#5f5f66;
+  --sel:#dcdce2;--accent:#0a5bc4;--link:#0a5bc4;--acc-soft:#dbe8fb;--acc-bg:#f3f8ff;--acc-ink:#0a3f8a;
+  --wait:#e8a33d;--wait-soft:#fdebd0;--wait-ink:#5c3800;--wait-bg:#fffaf1;--warn-ink:#c2561c;
+  --ok:#2f7a43;--ok-soft:#d9f0dc;--ok-ink:#1f5a28;--err:#c2561c;--err-ink:#8a1c12;
+  --dom:#2f7a43;--dom-fg:#fff;--rep-bg:#e3f3e6;--rep-fg:#1f5a28;--rep-bd:#2f7a43;--pra-bg:#fdebd0;--pra-fg:#5c3800;--vis-bg:#dbe8fb;--vis-fg:#0a3f8a;--sin-bg:#ececf0;--sin-fg:#3a3a40;
+  --b-dom:#2f7a43;--b-rep:#8fc79b;--b-pra:#e8a33d;--b-vis:#7fa7e0;--b-sin:#d2d2d7;
+  --overlay:rgba(29,29,31,.35);--toast:#1d1d1f;--toast-fg:#fff;--shadow:rgba(0,0,0,.06);--logo:#1d1d1f;--logo-fg:#fff;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#161618;--side:#1f1f22;--card:#232326;--card2:#26262a;--line:#38383d;--line2:#4a4a50;--line3:#2e2e33;--fg:#f2f2f5;--fg2:#c9c9d0;--muted:#9a9aa3;
+  --sel:#34343a;--accent:#0a5bc4;--link:#6aa8ff;--acc-soft:#1c3256;--acc-bg:#1a2638;--acc-ink:#a9c8f5;
+  --wait:#b9822f;--wait-soft:#4a3410;--wait-ink:#f5c77a;--wait-bg:#2a2214;--warn-ink:#f0a070;
+  --ok:#3d9455;--ok-soft:#1d3a22;--ok-ink:#8fd49a;--err:#d0574b;--err-ink:#f2a59c;
+  --dom:#2f7a43;--dom-fg:#fff;--rep-bg:#1d3a22;--rep-fg:#8fd49a;--rep-bd:#5fb070;--pra-bg:#4a3410;--pra-fg:#f5c77a;--vis-bg:#1c3256;--vis-fg:#a9c8f5;--sin-bg:#34343a;--sin-fg:#c9c9d0;
+  --b-dom:#3d9455;--b-rep:#6fae7c;--b-pra:#c98d2e;--b-vis:#5f87c0;--b-sin:#4a4a50;
+  --overlay:rgba(0,0,0,.55);--toast:#f2f2f5;--toast-fg:#1d1d1f;--shadow:rgba(0,0,0,.3);--logo:#f2f2f5;--logo-fg:#1d1d1f;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#161618;--side:#1f1f22;--card:#232326;--card2:#26262a;--line:#38383d;--line2:#4a4a50;--line3:#2e2e33;--fg:#f2f2f5;--fg2:#c9c9d0;--muted:#9a9aa3;
+  --sel:#34343a;--accent:#0a5bc4;--link:#6aa8ff;--acc-soft:#1c3256;--acc-bg:#1a2638;--acc-ink:#a9c8f5;
+  --wait:#b9822f;--wait-soft:#4a3410;--wait-ink:#f5c77a;--wait-bg:#2a2214;--warn-ink:#f0a070;
+  --ok:#3d9455;--ok-soft:#1d3a22;--ok-ink:#8fd49a;--err:#d0574b;--err-ink:#f2a59c;
+  --dom:#2f7a43;--dom-fg:#fff;--rep-bg:#1d3a22;--rep-fg:#8fd49a;--rep-bd:#5fb070;--pra-bg:#4a3410;--pra-fg:#f5c77a;--vis-bg:#1c3256;--vis-fg:#a9c8f5;--sin-bg:#34343a;--sin-fg:#c9c9d0;
+  --b-dom:#3d9455;--b-rep:#6fae7c;--b-pra:#c98d2e;--b-vis:#5f87c0;--b-sin:#4a4a50;
+  --overlay:rgba(0,0,0,.55);--toast:#f2f2f5;--toast-fg:#1d1d1f;--shadow:rgba(0,0,0,.3);--logo:#f2f2f5;--logo-fg:#1d1d1f;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;font-size:14px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0;overflow-x:hidden}
+a{color:var(--link);cursor:pointer;text-decoration:none}a:hover{text-decoration:underline}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{font-size:14px;padding:9px 11px;border:1px solid var(--line2);border-radius:8px;background:var(--card);max-width:100%}
+textarea{resize:vertical;line-height:1.5;width:100%}
+h1,h2,h3{margin:0}
+.k{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.01em;text-transform:uppercase}
+.muted{color:var(--muted)}.fg2{color:var(--fg2)}.s12{font-size:12px}.s13{font-size:13px}.s15{font-size:15px}
+.okc{color:var(--ok-ink)}.errc{color:var(--err-ink)}.warnc{color:var(--warn-ink)}
+.grow{flex:1}
+.btn{font-size:13px;padding:8px 14px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1.25;text-align:center}
+.btn:hover{border-color:var(--muted);text-decoration:none}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.lg{font-size:15px;padding:11px 22px}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn[disabled]{opacity:.45;cursor:default}
+.btn.on{background:var(--acc-soft);border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card.hi{border:2px solid var(--accent)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chip{font-size:13px;padding:7px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--card);cursor:pointer}
+.chip.sel{border-color:var(--accent);background:var(--acc-soft)}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.45;background:var(--card);cursor:pointer;text-align:left;width:100%}
+.opt.sel{border:2px solid var(--accent);background:var(--acc-bg)}
+.opt input{margin-top:2px}
+.o{text-align:left;font-size:15px;padding:16px 18px;border-radius:12px;border:1px solid var(--line2);background:var(--card);cursor:pointer;line-height:1.4}
+.o.sel{border:2px solid var(--accent);background:var(--acc-bg)}
+.o.right{border:2px solid var(--ok);background:var(--ok-soft)}
+.o.wrong{border:2px solid var(--err)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.spin{width:12px;height:12px;border:2px solid var(--acc-soft);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:sp .8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.pill{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;display:inline-block;letter-spacing:.02em}
+.s-dom{background:var(--dom);color:var(--dom-fg)}
+.s-rep{background:var(--rep-bg);color:var(--rep-fg);border:2px dashed var(--rep-bd)}
+.pill.s-rep{border-width:1px}
+.s-pra{background:var(--pra-bg);color:var(--pra-fg)}
+.s-vis{background:var(--vis-bg);color:var(--vis-fg)}
+.s-sin{background:var(--sin-bg);color:var(--sin-fg)}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--b-sin)}
+.bar span{transition:flex .4s}
+.lg{display:flex;gap:12px;font-size:12px;color:var(--fg2);flex-wrap:wrap}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.av{border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex:none}
+/* shells */
+.page{min-height:100vh;display:flex;flex-direction:column;gap:18px;padding:28px 24px 80px;max-width:1440px;margin:0 auto}
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.top h1{font-size:24px}
+.app{display:flex;min-height:100vh;margin:0 calc(-1 * max(16px,env(safe-area-inset-right,0px))) 0 calc(-1 * max(16px,env(safe-area-inset-left,0px)))}
+.side{width:220px;flex:none;padding:20px 12px;display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--line);background:var(--side);position:sticky;top:0;height:100vh;overflow:auto;padding-left:max(12px,env(safe-area-inset-left,0px))}
+.side a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;color:var(--fg);font-size:13px}
+.side a:hover{background:var(--sel);text-decoration:none}.side a.on{background:var(--sel);font-weight:600}
+.side a.who{padding:8px 10px 16px;gap:10px}
+.side a.add{color:var(--link)}
+.side .sideh{padding:18px 10px 6px}
+.main{flex:1;min-width:0;padding:32px 36px 80px;display:flex;flex-direction:column;gap:24px}
+.center{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 0 80px;text-align:center}
+.center>*{max-width:100%}
+/* conocerte */
+.split{display:flex;min-height:100vh;margin-right:calc(-1 * max(16px,env(safe-area-inset-right,0px)))}
+.split main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 16px 80px}
+.split aside{width:400px;flex:none;background:var(--card);border-left:1px solid var(--line);padding:28px;padding-right:max(28px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:8px}
+.done{display:flex;flex-direction:column;gap:2px;font-size:13px;padding:10px 0;border-bottom:1px solid var(--line3)}
+.prog{display:flex;gap:6px}.prog span{width:40px;height:6px;border-radius:3px;background:var(--line2)}.prog span.on{background:var(--accent)}
+/* map */
+.mapbox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;gap:10px;min-width:0}
+.mapbox.soft{background:var(--card2)}
+.col{display:flex;flex-direction:column;gap:14px;flex:1;min-width:0}
+.arr{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
+.node{text-align:left;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px;font-size:14px;cursor:pointer;border:1px solid transparent;width:100%}
+.node .st{font-size:11px;font-weight:700;letter-spacing:.02em}
+.node.cur{box-shadow:0 0 0 3px var(--accent)}
+.pnode{background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.pnode.hard{border:2px solid var(--wait)}
+.pnode .src{font-size:11px;font-weight:600;color:var(--muted)}
+.pnode .acts{display:flex;gap:6px}
+.addc{font-size:13px;color:var(--link);background:none;border:1px dashed var(--line2);border-radius:10px;padding:10px;cursor:pointer}
+.ev{display:flex;gap:8px;font-size:13px;line-height:1.45;padding:5px 0}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{font-size:13px;padding:7px 12px;border:0;border-radius:7px;background:transparent;cursor:pointer;color:var(--fg2)}
+.tab.on{background:var(--sel);font-weight:600;color:var(--fg)}
+.tophead{background:var(--card);border-bottom:1px solid var(--line);padding:20px 0 0;display:flex;flex-direction:column;gap:12px;margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding-left:max(32px,env(safe-area-inset-left,0px));padding-right:max(32px,env(safe-area-inset-right,0px))}
+.body2{display:flex;gap:20px;padding:22px 16px 80px;min-height:0;align-items:flex-start}
+.panel{width:380px;flex:none;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:10px}
+.list{display:flex;flex-direction:column}
+.li{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line3);font-size:14px;line-height:1.45}
+.li:last-child{border:0}
+/* session */
+.sess{min-height:100vh;display:flex;flex-direction:column;margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px)))}
+.shead{display:flex;align-items:center;gap:12px;padding:14px 28px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px));background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.steps{display:flex;gap:6px;margin:0;padding:0;list-style:none;flex-wrap:wrap}
+.step{font-size:12px;padding:6px 12px;border-radius:999px;color:var(--muted);background:var(--sin-bg)}
+.step.done{background:var(--ok-soft);color:var(--ok-ink)}.step.cur{background:var(--accent);color:#fff;font-weight:600}
+.sbody{flex:1;display:flex;min-height:0}
+.smain{flex:1;display:flex;flex-direction:column;padding:22px 32px 90px;gap:14px;min-width:0;padding-left:max(32px,env(safe-area-inset-left,0px))}
+.saside{width:300px;flex:none;background:var(--card);border-left:1px solid var(--line);padding:22px;padding-right:max(22px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:10px;padding-bottom:64px}
+.ai{align-self:flex-start;max-width:680px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-size:15px;line-height:1.55}
+.ai.hi{border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px;width:100%}
+.me{align-self:flex-end;max-width:520px;background:var(--accent);color:#fff;border-radius:14px;padding:12px 16px;font-size:15px;line-height:1.5}
+.sub{font-size:11px;padding:4px 9px;border-radius:999px;background:var(--sin-bg);color:var(--muted)}
+.sub.on{background:var(--accent);color:#fff}.sub.done{background:var(--ok-soft);color:var(--ok-ink)}
+.hl-ok{background:var(--ok-soft);border-bottom:2px solid var(--ok)}
+.hl-gap{background:var(--wait-soft);border-bottom:2px solid var(--err)}
+.note{display:flex;gap:10px;font-size:14px;line-height:1.5;padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line)}
+.note.ok{border-color:var(--ok)}.note.gap{border-color:var(--wait)}.note.bad{border-color:var(--err)}
+.note b.i{font-weight:700;flex:none}
+.ex{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ex.hi{border:2px solid var(--accent)}.ex.lock{opacity:.6}
+.ln{display:flex;gap:12px;align-items:center;font-size:15px;padding:8px 10px;border-radius:8px;background:var(--bg);flex-wrap:wrap}
+.ln.hi{background:var(--acc-bg)}
+.ln .n{font-size:12px;font-weight:700;color:var(--muted);width:56px;flex:none}
+.big{font-family:"SF Mono",Menlo,monospace;font-size:18px}
+.mono{font-family:"SF Mono",Menlo,monospace;font-size:17px;width:100px}
+.blank{display:inline-block;width:46px;height:30px;border:2px dashed var(--accent);border-radius:6px;vertical-align:middle}
+.banner{background:var(--ok-soft);color:var(--ok-ink);border-radius:12px;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:14px}
+.chatin{display:flex;gap:8px;margin-top:auto}
+.chatin input{flex:1;min-width:0}
+.fc{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.seg{display:inline-flex;align-self:flex-start;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+.seg button{font-size:12px;padding:6px 10px;border:0;background:var(--card);cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.file{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:var(--card)}
+.drop{border:2px dashed var(--line2);border-radius:12px;padding:18px;text-align:center;font-size:13px;color:var(--fg2)}
+.rate{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.rate .btn{flex-direction:column;padding:10px 6px}
+.q{display:flex;gap:10px;font-size:13px;padding:8px 0;border-bottom:1px solid var(--line3)}
+.sr{position:absolute;left:-9999px}
+/* overlays */
+#toasts{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px;align-items:center;z-index:60;pointer-events:none;width:min(560px,calc(100vw - 32px))}
+.toast{background:var(--toast);color:var(--toast-fg);padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:0 6px 20px var(--shadow);text-align:center}
+.mback{position:fixed;inset:0;background:var(--overlay);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:var(--card);border-radius:14px;padding:22px;width:440px;max-width:100%;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 50px var(--shadow)}
+#demo{position:fixed;right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;gap:6px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px;font-size:11px;color:var(--muted);box-shadow:0 4px 14px var(--shadow);opacity:.85}
+#demo:hover{opacity:1}
+#demo button{font-size:11px;border:0;background:var(--sin-bg);border-radius:999px;padding:4px 9px;cursor:pointer;color:var(--fg2)}
+/* responsive */
+@media (max-width:900px){
+  .grid3{grid-template-columns:1fr}
+  .body2{flex-direction:column;align-items:stretch}.panel{width:auto}
+  .sbody{flex-direction:column}.saside{width:auto;border-left:0;border-top:1px solid var(--line)}
+  .split{flex-direction:column;margin-right:0}.split aside{width:auto;border-left:0;border-top:1px solid var(--line)}
+}
+@media (max-width:760px){
+  .grid2{grid-template-columns:1fr}
+  .app{flex-direction:column}
+  .side{width:auto;height:auto;position:static;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}
+  .side .grow,.side .sideh{display:none}
+  .main{padding:20px 16px 80px}
+  .mapbox{flex-direction:column}
+  .arr{transform:rotate(90deg)}
+  .smain{padding:18px 16px 90px}
+  .page{padding:20px 0 80px}
+  .rate{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fc{grid-template-columns:1fr}
+  .o{font-size:14px;padding:12px}
+  .center h1{font-size:26px}
+  .tophead{padding-left:16px;padding-right:16px}
+  .shead{padding-left:16px;padding-right:16px}
+}
+</style>
+
+<div id="app"></div>
+<div id="modal"></div>
+<div id="toasts"></div>
+<div id="demo"></div>
+
+<script>
+// Throwaway discovery prototype: everything is mocked and scripted. Do not reuse.
+const LS='student-harness-proto-v1';
+let S;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=p=>(p||'x')+Math.random().toString(36).slice(2,9);
+
+// ---------- static config ----------
+const AGES={kid:'Menos de 12',teen:'12 a 17',adult:'18 o más',na:'Prefiero no decir'};
+const COLORS=[['Azul','#3b5bab'],['Naranja','#c2561c'],['Verde','#2f7a43'],['Violeta','#6b3fa0']];
+const ST={sin:['Sin ver','s-sin'],visto:['Visto','s-vis'],practicando:['Practicando','s-pra'],dominado:['Dominado','s-dom'],repasar:['Para repasar','s-rep']};
+const ORDER=['dominado','repasar','practicando','visto','sin'];
+const BARC={dominado:'var(--b-dom)',repasar:'var(--b-rep)',practicando:'var(--b-pra)',visto:'var(--b-vis)',sin:'var(--b-sin)'};
+const COLN=['Primero','Después','Luego','Al final'];
+const METHODS=[
+ {id:'soc',n:'Socrático',d:'te pregunto hasta que lo descubrís vos',long:'Primero un ejercicio previo, después preguntas de a una. La respuesta llega recién cuando te comprometés.',set:'Pasos: ejercicio previo, preguntas, concepto, verificación · tipos de ejercicio previo'},
+ {id:'fey',n:'Feynman',d:'me lo explicás y marco los huecos',long:'Explicás el concepto con palabras simples, como para alguien que no sabe nada. La IA marca lo que está bien y los huecos.',set:'A quién se lo explicás · cuántos intentos'},
+ {id:'mem',n:'Práctica de memoria',d:'preguntas y flashcards sin mirar',long:'Sacar las cosas de memoria, sin mirar, es lo que más fija lo aprendido. Con repaso espaciado.',set:'Cuántas preguntas por ronda'},
+ {id:'ej',n:'Ejemplos resueltos',d:'te muestro uno y te dejo cada vez más pasos',long:'La IA resuelve un ejemplo paso a paso; en el siguiente te deja un paso a vos, después dos, hasta que lo hacés solo.',set:'Cuántos ejemplos · qué tan rápido te suelta'},
+ {id:'ela',n:'Elaboración',d:'¿por qué? ¿con qué se relaciona?',long:'Preguntarte por qué funciona algo y con qué se conecta de lo que ya sabés.',set:'Profundidad de las preguntas'},
+ {id:'mez',n:'Práctica mezclada',d:'ejercicios de varios conceptos juntos',long:'Ejercicios de varios conceptos mezclados: tenés que darte cuenta qué usar en cada uno. Ideal antes de una prueba.',set:'Cuántos conceptos mezclar'},
+ {id:'pro',n:'Por problemas',d:'arrancamos de un problema real',long:'Arrancamos de un problema real y aprendés lo que hace falta para resolverlo.',set:'Tipo de problemas'}];
+const MN=id=>METHODS.find(m=>m.id===id).n;
+const QS=[
+ {k:'purpose',q:'¿Para qué estudiás?',short:'Para qué estudio',o:[['school','Para la escuela o la facultad'],['curious','Porque me gusta saber cosas'],['work','Por trabajo'],['exam','Para preparar pruebas o exámenes']]},
+ {k:'how',q:'¿Cómo te gusta aprender?',short:'Cómo me gusta aprender',o:[['ejercicios','Haciendo ejercicios'],['leyendo','Leyendo y subrayando'],['explicando','Explicándolo con mis palabras'],['preguntas','Con preguntas que me hagan pensar']]},
+ {k:'stuck',q:'Cuando algo no te sale, ¿qué te ayuda más?',short:'Si algo no me sale',o:[['pista','Que me den una pista chiquita'],['ejemplo','Ver un ejemplo parecido resuelto'],['otraforma','Que me lo expliquen de otra forma'],['solo','Seguir intentando solo un rato más']]},
+ {k:'time',q:'¿Cuánto tiempo te gusta estudiar seguido?',short:'Tiempo seguido',o:[['15','15 minutos'],['20','20 minutos'],['30','30 minutos'],['45','45 minutos o más']]},
+ {k:'bored',q:'¿Qué te aburre cuando estudiás?',short:'Qué me aburre',o:[['texto','Leer mucho texto seguido'],['repetir','Repetir lo que ya sé'],['escuchar','Que me expliquen sin dejarme probar'],['nada','Nada en especial']]},
+ {k:'talk',q:'¿Cómo querés que te hable la IA?',short:'Cómo me habla',o:[['paciente','Con paciencia y simple'],['neutro','Normal, al grano'],['exigente','Exigente, que me desafíe'],['igual','Me da igual']]}];
+const ansLabel=(k,v)=>{const q=QS.find(x=>x.k===k);const o=q&&q.o.find(x=>x[0]===v);return o?o[1]:'Sin responder';};
+
+// ---------- seed ----------
+function C(name,col,src,state,o){return Object.assign({id:uid('c'),name,col,src,state,hard:false,ev:[],masteredDay:null,interval:3},o||{});}
+function E(ok,kind,text,day){return {ok,kind,text,day};}
+function topic(o){return Object.assign({id:uid('t'),kind:'gen',mode:'ia',files:[],matDesc:'',level:null,summaries:[],sessions:[],openQs:[],lastDay:null},o);}
+function card(t,key,q,a,due,iv){const c=t.concepts.find(x=>x.key===key);return {id:uid('k'),topicId:t.id,cid:c?c.id:null,q,a,due,interval:iv||1,lastOk:null};}
+function fresh(){
+  const fr=topic({name:'Fracciones',kind:'frac',mode:'mixto',files:['cuaderno-fracciones-1.jpg','cuaderno-fracciones-2.jpg'],matDesc:'2 fotos del cuaderno',lastDay:-1,concepts:[
+    C('Parte y entero',0,'mat','dominado',{key:'parte',ev:[E(true,'recall','Respondió de memoria qué es un entero',-14),E(true,'exercise','Partió una figura en 4 partes iguales sin pistas',-10)],masteredDay:-10,interval:16}),
+    C('La fracción como parte',0,'mat','dominado',{key:'comoparte',ev:[E(true,'recall','Dijo qué parte es 1 de 4 porciones',-13),E(true,'exercise','Pintó 3/8 de una figura sin pistas',-10)],masteredDay:-10,interval:16}),
+    C('Leer y escribir fracciones',1,'mat','repasar',{key:'leer',ev:[E(true,'recall','Escribió "dos tercios" como 2/3',-12),E(true,'recall','Leyó 5/8 sin dudar',-9)],masteredDay:-9,interval:3}),
+    C('Fracciones equivalentes',1,'ia','practicando',{key:'eq',ev:[E(true,'recall','Respondió de memoria que 2/4 = 1/2 · sesión 2',-5),E(false,'hint','Ejercicio con 2 pistas: encontrar una equivalente a 3/5 · sesión 3',-1)]}),
+    C('Comparar fracciones',2,'mat','practicando',{key:'cmp',ev:[E(true,'exercise','Comparó 1/2 y 1/4 con un dibujo · sesión 3',-1)]}),
+    C('Simplificar',2,'ia','visto',{key:'simp',ev:[E(true,'diag','Diagnóstico: reconoció que 2/4 se puede achicar',-15)]}),
+    C('Sumar con igual denominador',3,'mat','sin',{key:'sumi'}),
+    C('Sumar con distinto denominador',3,'mat','sin',{key:'sumd',hard:true})]});
+  const k=key=>fr.concepts.find(c=>c.key===key).id;
+  fr.summaries=[{cid:k('eq'),text:'Son fracciones que valen lo mismo aunque tengan números distintos, como 1/2 y 2/4.',ok:true,day:-5},
+    {cid:k('leer'),text:'El número de arriba es el numerador y dice cuántas partes tomo. El de abajo es el denominador y dice en cuántas partes corté.',ok:true,day:-12},
+    {cid:k('parte'),text:'Un entero es la cosa completa. Si la corto en partes iguales, cada una es una fracción.',ok:true,day:-14}];
+  fr.sessions=[{day:-14,method:'Socrático',minutes:18,note:'Parte y entero · La fracción como parte'},{day:-5,method:'Práctica de memoria',minutes:15,note:'Leer y escribir · Equivalentes'},{day:-1,method:'Ejemplos resueltos',minutes:20,note:'Equivalentes y comparar · pidió 2 pistas'}];
+  fr.openQs=['¿Por qué 0/5 es cero pero 5/0 no se puede?'];
+  const so=topic({name:'El sistema solar',lastDay:-5,concepts:[
+    C('El Sol es una estrella',0,'ia','dominado',{key:'sol',ev:[E(true,'recall','Dijo que el Sol es una estrella',-9),E(true,'recall','Explicó por qué el Sol da luz',-5)],masteredDay:-5,interval:10}),
+    C('Los planetas',0,'ia','practicando',{key:'plan',ev:[E(true,'recall','Nombró 5 planetas de memoria',-5)]}),
+    C('Rocosos y gaseosos',1,'ia','sin'),C('Las órbitas',1,'ia','sin'),C('La Luna',2,'ia','sin'),C('Día y noche',2,'ia','sin'),C('Las estaciones',3,'ia','sin'),C('Asteroides y cometas',3,'ia','sin')]});
+  so.concepts[1].key='plan';
+  so.sessions=[{day:-5,method:'Práctica de memoria',minutes:15,note:'El Sol · Los planetas'}];
+  so.summaries=[{cid:so.concepts[0].id,text:'El Sol es una estrella. Es la más cerca nuestro y por eso la vemos tan grande.',ok:true,day:-5}];
+  const sofi={id:'p_sofi',name:'Sofi',age:'kid',color:'#c2561c',onboarded:true,
+    answers:{purpose:'curious',how:'ejercicios',stuck:'ejemplo',time:'20',bored:'texto',talk:'paciente'},
+    settings:{tone:'paciente',expl:'cortas',hintAfter:2,explAfter:3,qpm:1},methods:{fav:[],hidden:[]},topics:[fr,so],cards:[]};
+  sofi.cards=[card(fr,'leer','¿Qué es el denominador?','El número de abajo: en cuántas partes se corta el entero',0),
+    card(fr,'leer','Escribí "tres quintos"','3/5',0),
+    card(fr,'eq','¿Qué son fracciones equivalentes?','Las que valen lo mismo',0),
+    card(fr,'eq','Una equivalente a 1/4','2/8',0),
+    card(so,'plan','¿Qué planeta está más cerca del Sol?','Mercurio',0),
+    card(so,'plan','¿Por qué Marte es rojo?','Porque su suelo tiene óxido de hierro, como la herrumbre',0),
+    card(fr,'cmp','¿Cuál es más grande, 1/3 o 1/4?','1/3',0),
+    card(fr,'leer','¿Qué indica el numerador?','Cuántas partes tomamos',3,3),
+    card(fr,'parte','Si corto algo en 4 partes iguales, ¿cómo se llama cada una?','Un cuarto',5,8)];
+  const pr=topic({name:'Probabilidad',kind:'gen',mode:'mixto',files:['apunte-probabilidad.pdf'],matDesc:'1 PDF del curso',lastDay:-3,concepts:[
+    C('Espacio muestral',0,'mat','dominado',{key:'esp',ev:[E(true,'feynman','Lo explicó sin huecos',-10),E(true,'recall','Respondió de memoria qué es',-6)],masteredDay:-6,interval:12}),
+    C('Probabilidad de un evento',0,'mat','repasar',{key:'pev',ev:[E(true,'exercise','Calculó P(par) con un dado sin pistas',-11),E(true,'recall','Definió casos favorables sobre posibles',-8)],masteredDay:-8,interval:3}),
+    C('Regla de la suma',1,'mat','practicando',{key:'suma',ev:[E(true,'exercise','P(A o B) con eventos disjuntos',-3)]}),
+    C('Probabilidad condicional',1,'mat','visto',{key:'cond',ev:[E(true,'diag','Diagnóstico: reconoció la notación P(A|B)',-11)]}),
+    C('Independencia',2,'ia','sin',{key:'ind'}),
+    C('Teorema de Bayes',3,'mat','sin',{key:'bayes',hard:true})]});
+  pr.sessions=[{day:-11,method:'Feynman',minutes:40,note:'Espacio muestral · Probabilidad de un evento'},{day:-3,method:'Por problemas',minutes:45,note:'Regla de la suma'}];
+  pr.summaries=[{cid:pr.concepts[0].id,text:'El espacio muestral es el conjunto de todos los resultados posibles de un experimento. Con un dado: {1,2,3,4,5,6}.',ok:true,day:-10}];
+  pr.openQs=['¿Por qué condicionar puede cambiar tanto una probabilidad (falsos positivos)?'];
+  const ro=topic({name:'Historia de Roma',lastDay:-7,concepts:[
+    C('Fundación y monarquía',0,'ia','dominado',{key:'fund',ev:[E(true,'recall','Fechó la fundación (753 a. C.) de memoria',-12),E(true,'recall','Nombró el fin de la monarquía',-7)],masteredDay:-7,interval:14}),
+    C('La República',1,'ia','practicando',{key:'rep',ev:[E(true,'feynman','Explicó cónsules y senado, con un hueco',-7)]}),
+    C('Las guerras púnicas',1,'ia','sin'),C('César y el fin de la República',2,'ia','sin',{key:'cesar'}),C('El Imperio',2,'ia','sin'),C('La caída de Occidente',3,'ia','sin')]});
+  ro.sessions=[{day:-7,method:'Feynman',minutes:30,note:'Fundación · La República'}];
+  const marco={id:'p_marco',name:'Marco',age:'adult',color:'#3b5bab',onboarded:true,
+    answers:{purpose:'curious',how:'explicando',stuck:'otraforma',time:'45',bored:'repetir',talk:'neutro'},
+    settings:{tone:'neutro',expl:'medias',hintAfter:2,explAfter:3,qpm:1},methods:{fav:['fey'],hidden:[]},topics:[pr,ro],cards:[]};
+  marco.cards=[card(pr,'esp','¿Qué es el espacio muestral?','El conjunto de todos los resultados posibles',0,6),
+    card(pr,'pev','P(sacar un número par con un dado)','1/2',0),
+    card(pr,'pev','¿Cómo se calcula la probabilidad clásica?','Casos favorables sobre casos posibles',0),
+    card(pr,'cond','¿Qué significa P(A|B)?','La probabilidad de A sabiendo que pasó B',2),
+    card(ro,'cesar','¿Quién cruzó el Rubicón?','Julio César',0)];
+  return {v:1,day:0,firstRun:true,cur:null,profiles:[sofi,marco],view:'welcome',params:{},ui:{},nt:null,sess:null,fin:null,rev:null,diag:null};
+}
+function load(){try{const r=localStorage.getItem(LS);if(r){S=JSON.parse(r);if(S&&S.v===1){S.ui={};return;}}}catch(e){}S=fresh();}
+function save(){try{const c=Object.assign({},S,{ui:{}});localStorage.setItem(LS,JSON.stringify(c));}catch(e){}}
+
+// ---------- helpers ----------
+const P=()=>S.profiles.find(p=>p.id===S.cur);
+const T=id=>P().topics.find(t=>t.id===id);
+const CC=(t,cid)=>t&&t.concepts.find(c=>c.id===cid);
+const kid=p=>(p||P()).age==='kid';
+const minor=p=>['kid','teen'].includes((p||P()).age);
+const young=p=>kid(p)||(p||P()).age==='teen';
+function avatar(p,sz){return `<span class="av" style="width:${sz}px;height:${sz}px;background:${p.color};font-size:${Math.round(sz*.42)}px">${esc(p.name.charAt(0).toUpperCase()||'?')}</span>`;}
+function rel(d){const x=S.day-d;if(x===0)return 'hoy';if(x===1)return 'ayer';if(x>1)return `hace ${x} días`;if(x===-1)return 'mañana';return `en ${-x} días`;}
+function pill(st,extra){return `<span class="pill ${ST[st][1]}">${ST[st][0].toUpperCase()}${extra?' · '+extra:''}</span>`;}
+function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\/ ]/g,' ').replace(/\s+/g,' ').trim();}
+function frac(s){const m=String(s||'').match(/(\d+)\s*\/\s*(\d+)/);return m?[+m[1],+m[2]]:null;}
+const feq=(a,b)=>a&&b&&a[1]&&b[1]&&a[0]*b[1]===b[0]*a[1];
+const STOP=new Set('para porque como cuando donde sobre entre desde hasta tiene tienen esta este estos estas que los las una uno unos unas del con por sus mas pero muy todo toda todos cada ese esa eso hace'.split(' '));
+function stems(s){return norm(s).split(' ').filter(w=>w.length>=4&&!STOP.has(w)).map(w=>w.slice(0,5));}
+// Fake "AI" answer check: fractions by value, otherwise loose keyword overlap.
+function checkAns(user,stored){
+  const u=norm(user),s=norm(stored);if(!u)return false;if(u===s)return true;
+  const fs=frac(stored);if(fs&&/^\d+\/\d+$/.test(s.replace(/ /g,'')))return feq(frac(user),fs);
+  const ss=stems(stored),us=stems(user);if(!ss.length)return u.includes(s);
+  const hit=ss.filter(x=>us.some(y=>y.startsWith(x.slice(0,4))||x.startsWith(y.slice(0,4)))).length;
+  return hit>=(ss.length<=3?Math.ceil(ss.length*0.34):1);
+}
+function streakDays(c){let d=new Set();for(const e of c.ev){if(e.kind==='diag')continue;if(!e.ok)d=new Set();else d.add(e.day);}return d.size;}
+// State machine: states move only with evidence.
+function addEv(c,e){
+  e.day=S.day;c.ev.push(e);
+  if(e.kind==='diag'){if(c.state==='sin')c.state='visto';return;}
+  if(!e.ok){c.state='practicando';return;}
+  if(c.state==='repasar'){c.state='dominado';c.masteredDay=S.day;c.interval=Math.max(3,(c.interval||3)*2);return;}
+  if(c.state==='sin'||c.state==='visto')c.state='practicando';
+  if(c.state==='practicando'&&streakDays(c)>=2){c.state='dominado';c.masteredDay=S.day;c.interval=3;}
+}
+function counts(t){const r={dominado:0,repasar:0,practicando:0,visto:0,sin:0};t.concepts.forEach(c=>r[c.state]++);return r;}
+function bar(t){const n=counts(t);return `<div class="bar" role="img" aria-label="${ORDER.map(s=>n[s]+' '+ST[s][0].toLowerCase()).join(', ')}">${ORDER.map(s=>n[s]?`<span style="flex:${n[s]};background:${BARC[s]}"></span>`:'').join('')}</div>`;}
+const legend=()=>`<div class="lg">${ORDER.map(s=>`<span><span class="dot" style="background:${BARC[s]}"></span>${ST[s][0]}</span>`).join('')}</div>`;
+const dueCards=p=>(p||P()).cards.filter(k=>k.due<=S.day);
+const masteredish=c=>c.state==='dominado'||c.state==='repasar';
+function nextConcept(t){
+  const cs=[...t.concepts].sort((a,b)=>a.col-b.col);
+  return cs.find(c=>['practicando','visto','sin'].includes(c.state)&&t.concepts.filter(x=>x.col<c.col).every(masteredish))||cs.find(c=>['practicando','visto','sin'].includes(c.state))||null;
+}
+function paraHoy(p){
+  p=p||P();if(!p.topics.length)return null;
+  let best=null;
+  for(const t of p.topics){const due=t.concepts.filter(c=>c.state==='repasar');const nx=nextConcept(t);const sc=due.length*10+(nx?3:0)+((t.lastDay??-99)/100);if(!best||sc>best.sc)best={t,due,nx,sc};}
+  const {t,due,nx}=best;
+  let text;
+  if(due.length&&nx)text=`${t.name}: repasar "${due.map(c=>c.name).join('", "')}" y seguir con "${nx.name}"`;
+  else if(due.length)text=`${t.name}: repasar "${due.map(c=>c.name).join('", "')}"`;
+  else if(nx)text=`${t.name}: seguir con "${nx.name}"`;
+  else text=`${t.name}: todo dominado. Un repaso de flashcards alcanza.`;
+  const cids=[...due.map(c=>c.id),...(nx?[nx.id]:[])];
+  return {t,due,nx,text,cids};
+}
+// Method recommendation from profile + concept + goal (scripted scoring).
+function recommend(p,t,cids,goal){
+  const sc={},why={};METHODS.forEach(m=>{sc[m.id]=0;why[m.id]=[];});
+  const add=(id,n,r)=>{sc[id]+=n;if(r)why[id].push([n,r]);};
+  const A=p.answers;const ex=kid(p)?'te':'te';
+  if(A.stuck==='ejemplo')add('ej',3,'En tu perfil dijiste que te ayuda ver un ejemplo parecido.');
+  if(A.stuck==='pista')add('soc',3,'Dijiste que te ayudan las pistas chiquitas: el socrático va de a poco.');
+  if(A.stuck==='otraforma'){add('fey',2,'Dijiste que te ayuda verlo de otra forma: explicarlo vos lo da vuelta.');add('ela',2,'Dijiste que te ayuda verlo de otra forma: conectar ideas también.');}
+  if(A.stuck==='solo')add('pro',3,'Te gusta pelearla solo un rato: arrancar de un problema te va a gustar.');
+  if(A.how==='ejercicios'){add('ej',1,'Te gusta aprender haciendo ejercicios.');add('mez',1,'Te gusta aprender haciendo ejercicios.');}
+  if(A.how==='explicando')add('fey',2,'Te gusta aprender explicándolo con tus palabras.');
+  if(A.how==='preguntas')add('soc',2,'Te gustan las preguntas que hacen pensar.');
+  if(A.how==='leyendo')add('ela',1,'Te gusta leer: la elaboración convierte la lectura en preguntas.');
+  if(A.bored==='repetir'){sc.mem-=1;}
+  const cs=(cids||[]).map(id=>CC(t,id)).filter(Boolean);
+  const main=cs.find(c=>c.state!=='repasar')||cs[0];
+  if(goal==='exam'){add('mez',3,'Para una prueba conviene practicar todo mezclado.');add('mem',2,'Para una prueba, sacar las cosas de memoria es lo que más rinde.');}
+  else if(goal==='free'){add('ela',2,'Sesión libre: preguntarte por qué ayuda a explorar.');add('soc',1,'Sesión libre: ir de pregunta en pregunta.');}
+  else if(main){
+    const nm=`"${main.name}"`;
+    if(main.state==='sin'||main.state==='visto'){add('ej',2,`${nm} es nuevo para vos: conviene construirlo de a poco.`);add('soc',2,`${nm} es nuevo: descubrirlo con preguntas lo fija mejor.`);}
+    if(main.state==='practicando'){add('fey',2,`${nm} ya lo practicaste: explicarlo muestra si quedó firme.`);add('mez',1,`${nm} ya lo practicaste: mezclarlo con otros lo pone a prueba.`);if(t.kind==='frac'&&main.key==='eq')add('ej',1,'Equivalentes se entiende viendo cómo se transforma una fracción.');}
+    if(main.state==='repasar')add('mem',3,`${nm} toca repasar: lo mejor es sacarlo de memoria.`);
+    if(main.state==='dominado')add('mez',2,`${nm} ya lo dominás: mezclarlo con otros es el siguiente paso.`);
+    if(main.ev.some(e=>e.kind==='hint'))add('ej',2,'La sesión pasada tuviste que pedir pistas acá.');
+    if(main.hard)add('ej',1,'Marcaste que este concepto te cuesta.');
+  }
+  p.methods.fav.forEach(id=>add(id,2,'Es uno de tus métodos favoritos.'));
+  const avail=METHODS.filter(m=>!p.methods.hidden.includes(m.id));
+  const list=(avail.length?avail:METHODS).slice().sort((a,b)=>sc[b.id]-sc[a.id]);
+  const best=list[0].id;
+  const reasons=why[best].sort((a,b)=>b[0]-a[0]).map(x=>x[1]).filter((r,i,a)=>a.indexOf(r)===i).slice(0,3);
+  if(!reasons.length)reasons.push('Es un buen punto de partida para este tema.');
+  return {best,reasons,sc};
+}
+function tonePre(kind){const t=P().settings.tone;
+  if(kind==='ok')return {paciente:'¡Muy bien! ',neutro:'Bien. ',exigente:'Correcto. '}[t];
+  return {paciente:'Casi, no pasa nada. ',neutro:'No exactamente. ',exigente:'No. '}[t];}
+function sampleLine(p){
+  const s=p.settings,k=young(p);
+  let base={paciente:'¡Qué bueno que lo intentaste! Casi: cambiaste solo el número de arriba. Tomate tu tiempo.',neutro:'Casi. Cambiaste solo el número de arriba.',exigente:'No. Si cambiás solo el de arriba, la fracción cambia. Rehacelo y justificá cada paso.'}[s.tone];
+  const ex=k?'1/2 y 2/4 ocupan lo mismo de la pizza':'1/2 taza y 2/4 de taza son la misma cantidad de harina';
+  if(s.expl==='medias')base+=` Pensalo así: ${ex}.`;
+  if(s.expl==='largas')base+=` Pensalo así: ${ex}. Por eso, cada vez que multiplicás arriba tenés que multiplicar abajo por el mismo número: cortás en porciones más chicas sin cambiar cuánto hay.`;
+  base+=s.qpm>1?' ¿Qué pasa con el de abajo? ¿Y si dividís en vez de multiplicar?':' ¿Qué pasa con el de abajo?';
+  return base;
+}
+
+// ---------- navigation / overlays ----------
+function go(view,params){S.view=view;S.params=params||{};S.ui.tab=null;window.scrollTo(0,0);render();}
+function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;const box=$('#toasts');box.appendChild(el);while(box.children.length>3)box.firstChild.remove();setTimeout(()=>el.remove(),4200);}
+function modal(title,body,actions){S.ui.modal={title,body,actions};render();}
+
+// ---------- views ----------
+const V={};
+V.welcome=()=>`<div class="center">
+  <svg width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Logo Student Harness"><rect x="4" y="4" width="88" height="88" rx="22" fill="var(--logo)"></rect><path d="M24 40l24-12 24 12-24 12z M34 46v12c0 4 6 8 14 8s14-4 14-8V46" stroke="var(--logo-fg)" stroke-width="4" fill="none" stroke-linejoin="round"></path></svg>
+  <h1 style="font-size:34px">Student Harness</h1>
+  <p style="margin:0;font-size:16px;color:var(--fg2);max-width:560px;line-height:1.5">Para aprender de verdad, no para que te hagan la tarea. Elegís un tema y la IA te acompaña con métodos de estudio probados.</p>
+  <div class="card" style="width:460px;text-align:left;font-size:14px;padding:16px 20px">
+    <div style="font-weight:600">Antes de empezar</div>
+    <div class="row"><span class="okc">✓</span><span>Motor de IA: Claude Code (paso del core)</span></div>
+    <div class="row"><span class="errc">●</span><span>Quién va a estudiar</span></div>
+    <div class="row muted"><span>i</span><span>Si estudia un menor, lo ideal es que lo acompañe un adulto.</span></div>
+  </div>
+  <button class="btn p lg" data-a="go" data-v="profiles">Empezar</button>
+</div>`;
+
+V.profiles=()=>{
+  const np=S.ui.np||(S.ui.np={name:'',age:'kid',color:'#c2561c',err:false});
+  const isMinor=np.age==='kid'||np.age==='teen';
+  return `<div class="center" style="justify-content:flex-start;padding-top:70px">
+  <h1 style="font-size:28px">¿Quién va a estudiar?</h1>
+  <p style="margin:0;color:var(--fg2);font-size:15px">Cada persona tiene su perfil: su forma de aprender, sus temas y su progreso.</p>
+  <div class="row" style="align-items:flex-start;justify-content:center;gap:20px">
+    ${S.profiles.map(p=>`<button class="card" data-a="pickProfile" data-v="${p.id}" style="width:200px;align-items:center;cursor:pointer;padding:22px;${p.id===S.cur?'border:2px solid var(--accent)':''}">
+      ${avatar(p,72)}<strong style="font-size:16px">${esc(p.name)}</strong>
+      <span class="s13 muted">${p.age==='adult'?'Adulto':AGES[p.age]} · ${p.topics.length} ${p.topics.length===1?'tema':'temas'}</span></button>`).join('')}
+    <section class="card hi" style="width:380px;text-align:left;padding:22px" aria-labelledby="np">
+      <h2 id="np" style="font-size:16px">Nuevo perfil</h2>
+      <label for="npn" class="s13" style="font-weight:600">Nombre</label><input id="npn" data-f="ui.np.name" value="${esc(np.name)}" placeholder="Por ejemplo, Lucía">
+      ${np.err?'<div class="s12 errc">Poné un nombre para seguir.</div>':''}
+      <label for="npe" class="s13" style="font-weight:600">Edad</label>
+      <select id="npe" data-c="npAge">${Object.entries(AGES).map(([k,v])=>`<option value="${k}" ${np.age===k?'selected':''}>${v}</option>`).join('')}</select>
+      ${isMinor?`<div style="background:var(--wait-bg);border:1px solid var(--wait);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5">Es menor: sugerimos que estudie con un adulto al lado. La app adapta el lenguaje y los ejemplos a su edad.</div>`:''}
+      <div class="k" style="margin-top:4px">Color</div>
+      <div class="row" style="gap:8px">${COLORS.map(([n,c])=>`<button aria-label="${n}" data-a="npColor" data-v="${c}" style="width:32px;height:32px;border-radius:50%;cursor:pointer;background:${c};border:${np.color===c?'3px solid var(--fg)':'0'}"></button>`).join('')}</div>
+      <button class="btn p" data-a="createProfile" style="margin-top:6px">Seguir</button>
+    </section>
+  </div>
+  <div class="s13 muted">Los perfiles no tienen contraseña: son para ordenar, no para proteger.</div>
+  ${S.cur?`<a data-a="go" data-v="home" class="s13">‹ Volver al inicio</a>`:''}
+</div>`;};
+
+function knowsWhat(p){
+  const A=p.answers,b=[];
+  if(A.how==='ejercicios'||A.stuck==='ejemplo')b.push('recomendarte métodos con práctica y ejemplos');
+  if(A.how==='explicando')b.push('pedirte que expliques con tus palabras');
+  if(A.how==='preguntas'||A.stuck==='pista')b.push('ir con preguntas y pistas chiquitas');
+  if(A.stuck==='otraforma')b.push('darte otra explicación cuando algo no cierra');
+  if(A.stuck==='solo')b.push('dejarte pelearla antes de dar pistas');
+  if(A.time)b.push(`armar sesiones de unos ${A.time} minutos`);
+  if(A.bored==='texto')b.push('evitar textos largos');
+  if(A.bored==='repetir')b.push('no repetir lo que ya dominás');
+  if(A.bored==='escuchar')b.push('dejarte probar antes de explicar');
+  if(A.talk==='paciente')b.push('hablarte con paciencia');
+  if(A.talk==='exigente')b.push('desafiarte');
+  if(young(p))b.push('usar ejemplos de la vida diaria y hablarte simple');
+  if(!b.length)return 'Todavía no sabe mucho de vos. Con cada respuesta, se ajusta.';
+  const s=b.join(', ');return s.charAt(0).toUpperCase()+s.slice(1)+'.';
+}
+V.know=()=>{
+  const p=P(),i=S.ui.ki||0,q=QS[i],cur=p.answers[q.k];
+  return `<div class="split"><main>
+    <div class="prog" aria-label="Pregunta ${i+1} de 6">${QS.map((_,j)=>`<span class="${j<=i?'on':''}"></span>`).join('')}</div>
+    <div class="k">Conocerte · ${i+1} de 6</div>
+    <h1 style="font-size:28px;text-align:center;max-width:640px">${q.q}</h1>
+    <div class="grid2" style="width:640px;max-width:100%;gap:12px">${q.o.map(([v,l])=>`<button class="o ${cur===v?'sel':''}" data-a="knowPick" data-v="${v}">${l}</button>`).join('')}</div>
+    <div class="row" style="justify-content:center">${i>0?'<button class="btn" data-a="knowBack">Atrás</button>':''}<button class="btn" data-a="knowNext" data-v="skip">Saltear</button><button class="btn p" data-a="knowNext" ${cur?'':'disabled'}>${i===5?'Terminar':'Siguiente'}</button></div>
+    <div class="s13 muted">Podés cambiar todo esto después en tu perfil.</div>
+  </main>
+  <aside aria-label="Lo que la app entiende de vos">
+    <div class="row">${avatar(p,36)}<strong>${esc(p.name)} · ${AGES[p.age].toLowerCase()}</strong></div>
+    <div class="k" style="margin-top:12px">Lo que ya respondiste</div>
+    ${QS.filter(x=>p.answers[x.k]).map(x=>`<div class="done"><span class="k" style="text-transform:none">${x.q}</span><span>${ansLabel(x.k,p.answers[x.k])}</span></div>`).join('')||'<div class="s13 muted">Nada todavía.</div>'}
+    <div class="k" style="margin-top:12px">Falta</div>
+    <div class="s13 fg2" style="line-height:1.6">${QS.filter(x=>!p.answers[x.k]).map(x=>x.q).join(' · ')||'Nada: ¡listo!'}</div>
+    <div class="grow"></div>
+    <div class="k">Con esto, la app va a</div>
+    <div class="s13 fg2" style="line-height:1.5">${knowsWhat(p)}</div>
+  </aside></div>`;
+};
+
+V.home=()=>{
+  const p=P(),h=paraHoy(p),due=dueCards(p).length;
+  const rec=h?recommend(p,h.t,h.cids,'obj'):null;
+  return `<div class="app"><nav class="side" aria-label="Navegación">
+    <a class="who" data-a="go" data-v="profiles">${avatar(p,32)}<span><strong>${esc(p.name)}</strong><br><span class="s12 muted">Cambiar perfil</span></span></a>
+    <a class="on" data-a="go" data-v="home">Inicio</a>
+    <a data-a="review">Flashcards${due?` · ${due} para repasar`:''}</a>
+    <div class="k sideh">Temas</div>
+    ${p.topics.map(t=>`<a data-a="topic" data-v="${t.id}">${esc(t.name)}</a>`).join('')}
+    <a class="add" data-a="newtopic">+ Nuevo tema</a>
+    <div class="grow"></div>
+    <a data-a="go" data-v="profile">Mi perfil y ajustes</a>
+  </nav>
+  <main class="main">
+    <h1 style="font-size:28px">Hola, ${esc(p.name)}</h1>
+    ${h?`<section aria-labelledby="hoy" class="card hi" style="flex-direction:row;align-items:center;gap:24px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:8px">
+        <h2 id="hoy" class="k">Para hoy</h2>
+        <div style="font-size:18px;font-weight:600">${esc(h.text)}</div>
+        <div class="s13 fg2">Unos ${p.answers.time||20} minutos · método sugerido: ${MN(rec.best).toLowerCase()}${due?` · además, ${due} flashcards para repasar`:''}</div>
+      </div>
+      <button class="btn p lg" data-a="startFromToday">Empezar</button></section>`
+    :`<section class="card hi"><h2 class="k">Para hoy</h2><div style="font-size:18px;font-weight:600">${kid(p)?'¿Qué querés aprender? Elegí un tema para arrancar.':'Todavía no hay temas. Arrancá con uno nuevo.'}</div><div><button class="btn p" data-a="newtopic">+ Nuevo tema</button></div></section>`}
+    <section aria-labelledby="tm" style="display:flex;flex-direction:column;gap:12px">
+      <h2 id="tm" class="k">Tus temas</h2>
+      <div class="grid3" style="gap:16px">
+        ${p.topics.map(t=>`<button class="card" data-a="topic" data-v="${t.id}" style="text-align:left;cursor:pointer">
+          <strong style="font-size:17px">${esc(t.name)}</strong>
+          <span class="s13 muted">${t.files.length?`Con tu material (${esc(t.matDesc||t.files.length+' archivos')}) · ${t.mode==='estricto'?'solo tu material':'mixto'}`:'Sin material · lo que sabe la IA'}</span>
+          ${bar(t)}
+          <span class="s12 fg2">${t.concepts.length} conceptos · ${t.sessions.length} ${t.sessions.length===1?'sesión':'sesiones'}${t.lastDay!=null?` · última: ${rel(t.lastDay)}`:''}</span></button>`).join('')}
+        <button class="card" data-a="newtopic" style="align-items:center;justify-content:center;border-style:dashed;color:var(--link);cursor:pointer;min-height:130px"><span style="font-size:28px">+</span><strong>Nuevo tema</strong></button>
+      </div>
+      ${legend()}
+    </section>
+  </main></div>`;
+};
+
+// ----- new topic -----
+const FILEPOOL=['cuaderno-%-1.jpg','cuaderno-%-2.jpg','apunte-%.pdf','resumen-de-clase.pdf'];
+V.newtopic=()=>{
+  const p=P(),n=S.nt;const lvl=n.level||p.age;
+  return `<div class="page">
+  <div class="top"><a data-a="go" data-v="home" class="s13">‹ Inicio</a><h1>Nuevo tema</h1></div>
+  <div class="grid2" style="gap:24px">
+    <section class="card" style="padding:24px;gap:14px">
+      <label class="s15" style="font-weight:600" for="ntq">¿Qué querés aprender?</label>
+      <input id="ntq" data-f="nt.name" value="${esc(n.name)}" placeholder="${kid(p)?'Por ejemplo, Fracciones':'Por ejemplo, Estadística básica'}" style="font-size:16px">
+      ${S.ui.ntErr?'<div class="s12 errc">Escribí qué querés aprender.</div>':''}
+      <div class="k" style="margin-top:6px">¿Para qué?</div>
+      <div class="row" style="gap:8px">${['Entenderlo bien','Preparar una prueba','Por curiosidad'].map(x=>`<button class="chip ${n.purpose===x?'sel':''}" data-a="ntPurpose" data-v="${x}">${x}</button>`).join('')}</div>
+      <div class="k" style="margin-top:6px">Nivel para este tema</div>
+      <div style="font-size:14px">${n.levelEdit?`<select data-c="ntLevel">${Object.entries(AGES).map(([k,v])=>`<option value="${k}" ${lvl===k?'selected':''}>${v}</option>`).join('')}</select>`:`${n.level?'Solo para este tema':'Como en tu perfil'}: <strong>${AGES[lvl].toLowerCase()}</strong> <a data-a="ntLevelEdit" class="s13" style="margin-left:6px">Cambiar solo para este tema</a>`}</div>
+      <div class="s12 muted" style="line-height:1.5">Sirve cuando sabés más (o menos) de un tema que de otros.</div>
+      <div class="k" style="margin-top:6px">¿Ya sabés algo?</div>
+      <textarea aria-label="Lo que ya sabés" rows="3" data-f="nt.know" placeholder="${kid(p)?'Por ejemplo: sé qué es un medio. Me cuesta sumarlas.':'Por ejemplo: vi lo básico hace años; me cuesta la parte de ...'}">${esc(n.know)}</textarea>
+    </section>
+    <section class="card" style="padding:24px;gap:12px">
+      <div class="s15" style="font-weight:600">Tu material (opcional)</div>
+      <div class="drop">Arrastrá PDFs, fotos de apuntes o pegá un link · <a data-a="ntAddFile">Elegir archivos</a></div>
+      ${n.files.map((f,i)=>`<div class="file"><span class="k">${/\.pdf$/.test(f.n)?'PDF':'FOTO'}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(f.n)}</span>${f.st==='ok'?'<span class="okc">✓ leído</span>':'<span class="row muted" style="gap:6px"><span class="spin"></span>leyendo…</span>'}<button class="btn sm" data-a="ntDelFile" data-v="${i}" aria-label="Quitar">×</button></div>`).join('')}
+      ${n.files.length?`<div class="k" style="margin-top:8px">¿Cómo usa la IA tu material?</div>
+      <div class="row" style="align-items:stretch;flex-wrap:nowrap">
+        <label class="opt ${n.mode==='estricto'?'sel':''}" data-a="ntMode" data-v="estricto"><input type="radio" name="m" ${n.mode==='estricto'?'checked':''}><span><strong>Solo mi material</strong><br>Nada de afuera. Útil si la prueba es sobre lo que dio tu profe.</span></label>
+        <label class="opt ${n.mode==='mixto'?'sel':''}" data-a="ntMode" data-v="mixto"><input type="radio" name="m" ${n.mode==='mixto'?'checked':''}><span><strong>Mixto</strong><br>Parte de tu material y suma lo que sabe para explicar mejor.</span></label>
+      </div>`:''}
+      <div class="s12 muted">Sin material, la IA usa lo que sabe del tema.</div>
+    </section>
+  </div>
+  <div class="row" style="justify-content:flex-end">
+    <button class="btn" data-a="go" data-v="home">Cancelar</button>
+    <button class="btn p" data-a="ntBuild" ${S.ui.building?'disabled':''}>${S.ui.building?'<span class="spin"></span> Armando el mapa…':'Armar el mapa del tema'}</button>
+  </div></div>`;
+};
+function genConcepts(n){
+  const hasM=n.files.length>0,src=s=>hasM?s:'ia';
+  const hardText=/cuesta|dificil|difícil|no entiendo|no me sale/i.test(n.know);
+  if(/fracc/i.test(n.name)){
+    return [C('Parte y entero',0,src('mat'),'sin',{key:'parte'}),C('La fracción como parte',0,src('mat'),'sin',{key:'comoparte'}),
+      C('Leer y escribir fracciones',1,src('mat'),'sin',{key:'leer'}),C('Fracciones equivalentes',1,'ia','sin',{key:'eq'}),
+      C('Comparar fracciones',2,src('mat'),'sin',{key:'cmp'}),C('Simplificar',2,'ia','sin',{key:'simp'}),
+      C('Sumar con igual denominador',3,src('mat'),'sin',{key:'sumi'}),C('Sumar con distinto denominador',3,src('mat'),'sin',{key:'sumd',hard:hardText&&/sum/i.test(n.know)})];
+  }
+  const T0=n.name.trim();
+  return [C(`Qué es ${T0.toLowerCase()}`,0,src('mat'),'sin'),C('Palabras clave',0,src('mat'),'sin'),
+    C('Las ideas principales',1,src('mat'),'sin'),C('Cómo se relacionan las partes',1,'ia','sin'),
+    C('Ejemplos típicos',2,src('mat'),'sin'),C('Errores comunes',2,'ia','sin'),
+    C('Aplicarlo a problemas',3,src('mat'),'sin',{hard:hardText}),C('Explicarlo todo junto',3,src('mat'),'sin')];
+}
+const srcLabel=(c,n)=>c.src==='mat'?(/foto|jpg|cuaderno/i.test((n.files[0]||{}).n||'')?'De tu cuaderno':'De tu material'):c.src==='you'?'Agregado por vos':(n.files.length?'Agregado por la IA':'Lo que sabe la IA');
+V.map=()=>{
+  const n=S.nt;const strict=n.mode==='estricto';
+  const vis=n.concepts.filter(c=>!(strict&&c.src==='ia'));
+  const nm=n.concepts.filter(c=>c.src==='mat').length,ni=n.concepts.filter(c=>c.src==='ia').length,ny=n.concepts.filter(c=>c.src==='you').length;
+  const node=c=>S.ui.edit===c.id?`<div class="pnode"><input data-f="ui.editVal" value="${esc(S.ui.editVal)}" data-enter="renameOk" aria-label="Nombre del concepto" autofocus><div class="acts"><button class="btn sm p" data-a="renameOk">Guardar</button><button class="btn sm" data-a="renameCancel">Cancelar</button></div></div>`
+    :`<div class="pnode ${c.hard?'hard':''}"><strong>${esc(c.name)}</strong><span class="src">${srcLabel(c,n)}${c.hard?' · dijiste que te cuesta':''}</span><div class="acts"><button class="btn sm" data-a="renameStart" data-v="${c.id}">Renombrar</button><button class="btn sm" data-a="removeConcept" data-v="${c.id}">Sacar</button></div></div>`;
+  return `<div class="page">
+  <div class="top"><a data-a="go" data-v="newtopic" class="s13">‹ Nuevo tema</a><h1>El mapa de ${esc(n.name)}</h1></div>
+  <p style="margin:0;font-size:14px;color:var(--fg2)">${n.files.length?`Leímos ${n.files.length===1?'tu archivo':'tus '+n.files.length+' archivos'} y armamos`:'Con lo que sabe la IA armamos'} los conceptos en orden: cada columna necesita la anterior. Podés sacar, sumar o renombrar.</p>
+  <div class="body2" style="padding:0">
+    <section aria-label="Mapa" class="mapbox soft" style="flex:1">
+      ${[0,1,2,3].map(col=>`${col?'<div class="arr" aria-hidden="true">›</div>':''}<div class="col"><div class="k">${COLN[col]}</div>${vis.filter(c=>c.col===col).map(node).join('')}<button class="addc" data-a="addConcept" data-v="${col}">+ Sumar concepto</button></div>`).join('')}
+    </section>
+    <aside class="panel" style="width:340px">
+      <div class="k">¿Por dónde empezamos?</div>
+      <div style="font-size:14px;line-height:1.5">${n.know.trim()?`Contaste lo que ya sabés. Para no repetirlo, conviene un diagnóstico corto.`:'Si ya sabés algo del tema, un diagnóstico corto evita repetir lo que sabés.'}</div>
+      <label class="opt ${n.start==='diag'?'sel':''}" data-a="ntStart" data-v="diag"><input type="radio" name="d" ${n.start==='diag'?'checked':''}><span><strong>Diagnóstico de 5 preguntas</strong><br><span class="s13 fg2">Marca como "visto" lo que ya sabés</span></span></label>
+      <label class="opt ${n.start==='zero'?'sel':''}" data-a="ntStart" data-v="zero"><input type="radio" name="d" ${n.start==='zero'?'checked':''}><span><strong>Empezar desde el principio</strong></span></label>
+      ${n.files.length?`<div class="k" style="margin-top:8px">Modo del material</div><div class="seg"><button class="${strict?'on':''}" data-a="ntMode" data-v="estricto">Solo mi material</button><button class="${!strict?'on':''}" data-a="ntMode" data-v="mixto">Mixto</button></div>`:''}
+      <div class="grow"></div>
+      <div class="k">Este mapa</div>
+      <div class="s13 fg2" style="line-height:1.5">${n.files.length?`${nm} conceptos salen de tu material${ny?`, ${ny} los sumaste vos`:''} y ${ni} ${ni===1?'lo sumó':'los sumó'} la IA. ${strict?`En modo "solo mi material" los de la IA quedan afuera (${ni} ocultos).`:'En modo "solo mi material" no aparecerían.'}`:`${n.concepts.length} conceptos, todos de lo que sabe la IA${ny?` (${ny} sumados por vos)`:''}.`}</div>
+      <button class="btn p" data-a="createTopic">Listo, crear el tema</button>
+    </aside>
+  </div></div>`;
+};
+function diagQs(t){
+  const g=k=>t.concepts.find(c=>c.key===k);
+  if(t.kind==='frac')return [
+    {q:'Una pizza cortada en 4 porciones iguales. ¿Qué parte es 1 porción?',o:['1/4','4/1','1/3'],a:0,c:g('comoparte')||g('parte')},
+    {q:'En 3/5, ¿cuál es el denominador?',o:['3','5','8'],a:1,c:g('leer')},
+    {q:'¿Valen lo mismo 1/2 y 2/4?',o:['Sí','No','Depende'],a:0,c:g('eq')},
+    {q:'¿Cuál es más grande: 1/3 o 1/5?',o:['1/3','1/5','Son iguales'],a:0,c:g('cmp')},
+    {q:'1/5 + 2/5 = ?',o:['3/10','3/5','2/5'],a:1,c:g('sumi')}].filter(x=>x.c);
+  return t.concepts.slice(0,5).map(c=>({q:`¿Cuánto sabés de "${c.name}"?`,o:['Lo puedo explicar','Me suena','Nada todavía'],a:0,c}));
+}
+V.diag=()=>{
+  const d=S.diag,t=T(d.tid);
+  if(d.i>=d.qs.length){
+    const got=d.res.filter(r=>r.ok).map(r=>r.name);
+    return `<div class="center"><div class="k">Diagnóstico · listo</div><h1 style="font-size:28px">${got.length?'Ya sabés algo de esto':'Arrancamos desde el principio'}</h1>
+      <div class="card" style="width:520px;text-align:left">${d.res.map(r=>`<div class="row"><span class="${r.ok?'okc':'muted'}">${r.ok?'✓':'○'}</span><span style="flex:1">${esc(r.name)}</span>${r.ok?pill('visto'):pill('sin')}</div>`).join('')}</div>
+      <div class="s13 muted" style="max-width:520px">"Visto" no es "dominado": para subir hace falta practicarlo en una sesión.</div>
+      <button class="btn p lg" data-a="topic" data-v="${t.id}">Ver el tema</button></div>`;
+  }
+  const q=d.qs[d.i];
+  return `<div class="center"><div class="prog">${d.qs.map((_,j)=>`<span class="${j<=d.i?'on':''}"></span>`).join('')}</div>
+    <div class="k">Diagnóstico de ${esc(t.name)} · ${d.i+1} de ${d.qs.length}</div>
+    <h1 style="font-size:26px;max-width:640px">${esc(q.q)}</h1>
+    <div class="grid3" style="width:640px;max-width:100%;gap:12px">${q.o.map((o,j)=>`<button class="o" data-a="diagPick" data-v="${j}">${esc(o)}</button>`).join('')}</div>
+    <button class="btn" data-a="diagPick" data-v="-1">No sé</button></div>`;
+};
+
+// ----- topic -----
+function missing(t,c){
+  const prev=t.concepts.filter(x=>x.col<c.col&&!masteredish(x));
+  const pre=prev.length&&['sin','visto'].includes(c.state)?` Antes conviene: ${prev.slice(0,2).map(x=>'"'+x.name+'"').join(', ')}.`:'';
+  if(c.state==='sin')return 'Verlo por primera vez: una sesión con este concepto.'+pre;
+  if(c.state==='visto')return 'Practicarlo: un ejercicio, explicarlo o responder de memoria.'+pre;
+  if(c.state==='practicando'){const s=streakDays(c);const today=c.ev.some(e=>e.day===S.day&&e.ok&&e.kind!=='diag');
+    if(s>=1)return today?'Una evidencia más en otro día (hoy ya sumaste una). Volvé mañana.':'Una evidencia más en otro día: un ejercicio sin pistas, explicarlo sin huecos o responder de memoria.';
+    return 'Un ejercicio sin pistas, o explicarlo con tus palabras sin huecos.';}
+  if(c.state==='dominado'){const r=c.masteredDay+c.interval-S.day;return `Nada: lo dominás. Te lo vuelvo a preguntar ${r<=1?'mañana':'en '+r+' días'}.`;}
+  return 'Responderlo de memoria: un repaso corto alcanza para volver a dominarlo.';
+}
+function stLabel(c){
+  if(c.state==='repasar'){const last=[...c.ev].reverse().find(e=>e.ok);return last?rel(last.day):'';}
+  return '';
+}
+V.topic=()=>{
+  const p=P(),t=T(S.params.id);if(!t)return V.home();
+  const tab=S.ui.tab||'map';
+  const sel=CC(t,(S.ui.sel||{})[t.id])||t.concepts.find(c=>c.state==='practicando')||t.concepts[0];
+  const kc=p.cards.filter(k=>k.topicId===t.id);
+  const tabs=[['map','Mapa'],['sum',`Mis resúmenes (${t.summaries.length})`],['cards',`Flashcards (${kc.length})`],['mat',`Material (${t.files.length})`],['ses',`Sesiones (${t.sessions.length})`],['open',`Preguntas abiertas (${t.openQs.length})`]];
+  let body='';
+  if(tab==='map'){
+    const nodes=col=>t.concepts.filter(c=>c.col===col).map(c=>`<button class="node ${ST[c.state][1]} ${sel&&sel.id===c.id?'cur':''}" data-a="selConcept" data-v="${c.id}"><strong>${esc(c.name)}</strong><span class="st">${ST[c.state][0].toUpperCase()}${stLabel(c)?' · '+stLabel(c):''}${c.hard?' · TE CUESTA':''}</span></button>`).join('');
+    const csum=sel&&[...t.summaries].reverse().find(s=>s.cid===sel.id);
+    const ccards=sel?kc.filter(k=>k.cid===sel.id):[];
+    body=`<div class="body2">
+      <section aria-label="Mapa de dominio" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+        <div class="mapbox">${[0,1,2,3].filter(col=>t.concepts.some(c=>c.col===col)).map((col,i)=>`${i?'<div class="arr" aria-hidden="true">›</div>':''}<div class="col">${nodes(col)}</div>`).join('')}</div>
+        <div class="s12 muted">Un concepto sube solo con evidencia: respuestas de memoria correctas en días distintos, explicarlo sin huecos o un ejercicio sin pistas.</div>
+        ${legend()}
+      </section>
+      ${sel?`<aside class="panel" aria-label="Concepto elegido">
+        <div class="k">Concepto</div>
+        <div style="font-size:18px;font-weight:600">${esc(sel.name)}</div>
+        <div class="row" style="gap:6px">${pill(sel.state)}${sel.hard?'<span class="pill s-pra">TE CUESTA</span>':''}</div>
+        <div class="k" style="margin-top:8px">Evidencia</div>
+        ${sel.ev.length?sel.ev.slice().reverse().slice(0,6).map(e=>`<div class="ev"><span class="${e.kind==='diag'?'muted':e.ok?'okc':'errc'}">${e.kind==='diag'?'○':e.ok?'✓':'✗'}</span><span>${esc(e.text)} · <span class="muted">${rel(e.day)}</span></span></div>`).join(''):'<div class="s13 muted">Todavía nada.</div>'}
+        <div class="k" style="margin-top:8px">${sel.state==='dominado'?'Estado':'Para dominarlo te falta'}</div>
+        <div class="s13" style="line-height:1.5">${missing(t,sel)}</div>
+        <div class="k" style="margin-top:8px">Tu resumen</div>
+        ${csum?`<div class="s13" style="line-height:1.5;background:var(--bg);border-radius:8px;padding:10px">"${esc(csum.text)}" ${csum.ok?'<span class="okc">· corregido ✓</span>':'<span class="warnc">· con correcciones pendientes</span>'}</div>`:'<div class="s13 muted">Lo escribís vos al cerrar una sesión sobre este concepto.</div>'}
+        <div class="s13">${ccards.length} ${ccards.length===1?'flashcard':'flashcards'}${ccards.length?` · <a data-a="review">Repasar</a>`:''}</div>
+        <div class="grow"></div>
+        <div class="row" style="gap:8px"><button class="btn p" data-a="studyConcept" data-v="${sel.id}">Estudiar este concepto</button><button class="btn ${sel.hard?'on':''}" data-a="toggleHard" data-v="${sel.id}" aria-pressed="${sel.hard}">${sel.hard?'✓ Me cuesta':'Me cuesta'}</button></div>
+      </aside>`:''}
+    </div>`;
+  } else {
+    const cn=id=>{const c=CC(t,id);return c?c.name:'General';};
+    let items='';
+    if(tab==='sum')items=t.summaries.length?t.summaries.slice().reverse().map(s=>`<div class="li"><span class="${s.ok?'okc':'warnc'}">${s.ok?'✓':'?'}</span><div style="flex:1"><div class="k" style="text-transform:none">${esc(cn(s.cid))} · ${rel(s.day)}</div><div>${esc(s.text)}</div></div></div>`).join(''):'<div class="li muted">Todavía no escribiste resúmenes. Se escriben en el cierre de cada sesión.</div>';
+    if(tab==='cards')items=kc.length?kc.map(k=>`<div class="li"><div style="flex:1"><strong>${esc(k.q)}</strong><div class="fg2">${esc(k.a)}</div></div><span class="s12 muted">${k.due<=S.day?'para hoy':'vuelve '+rel(k.due)}</span></div>`).join(''):'<div class="li muted">Sin flashcards todavía.</div>';
+    if(tab==='mat')items=t.files.length?t.files.map(f=>`<div class="li"><span class="k">${/\.pdf$/.test(f)?'PDF':'FOTO'}</span><span style="flex:1">${esc(f)}</span><span class="okc s13">✓ leído</span></div>`).join('')+`<div class="li s13 muted">Modo: ${t.mode==='estricto'?'solo tu material':'mixto (tu material + lo que sabe la IA)'}</div>`:'<div class="li muted">Sin material: la IA usa lo que sabe del tema.</div>';
+    if(tab==='ses')items=t.sessions.length?t.sessions.slice().reverse().map(s=>`<div class="li"><div style="flex:1"><strong>${esc(s.method)}</strong> · ${s.minutes} min<div class="fg2 s13">${esc(s.note)}</div></div><span class="s12 muted">${rel(s.day)}</span></div>`).join(''):'<div class="li muted">Todavía no hubo sesiones.</div>';
+    if(tab==='open')items=t.openQs.length?t.openQs.map(q=>`<div class="li"><span class="warnc">?</span><span style="flex:1">${esc(q)}</span></div>`).join(''):'<div class="li muted">Sin preguntas abiertas.</div>';
+    body=`<div class="body2"><section class="card" style="flex:1;max-width:820px"><div class="list">${items}</div></section></div>`;
+  }
+  const lvl=t.level||p.age;
+  return `<div style="min-height:100vh"><header class="tophead">
+    <div class="top"><a data-a="go" data-v="home" class="s13">‹ Inicio</a><h1>${esc(t.name)}</h1>
+      <span class="s13 muted">${t.files.length?(t.mode==='estricto'?'Solo tu material':'Mixto')+' · '+esc(t.matDesc||t.files.length+' archivos'):'Sin material'} · nivel: ${AGES[lvl].toLowerCase()}</span>
+      <div class="grow"></div><button class="btn p" data-a="startTopic" data-v="${t.id}" style="font-size:14px">Empezar sesión</button></div>
+    <div role="tablist" class="tabs" style="padding-bottom:10px">${tabs.map(([k,l])=>`<button class="tab ${tab===k?'on':''}" role="tab" aria-selected="${tab===k}" data-a="tab" data-v="${k}">${l}</button>`).join('')}</div>
+  </header>${body}</div>`;
+};
+
+// ----- start session -----
+V.start=()=>{
+  const p=P(),f=S.ui.st,t=T(f.tid);
+  const rec=recommend(p,t,f.cids,f.goal);
+  if(!f.method||f.autoM)f.method=rec.best;
+  const chips=f.goal==='free'?'':`<div class="row" style="gap:6px;padding-left:28px">${f.cids.map(id=>{const c=CC(t,id);return c?`<button class="chip sel" data-a="stDelC" data-v="${id}" title="Sacar">${esc(c.name)} ×</button>`:'';}).join('')}<button class="chip" data-a="stMore">+ otro</button></div>
+    ${S.ui.stMore?`<div class="row" style="gap:6px;padding-left:28px">${t.concepts.filter(c=>!f.cids.includes(c.id)).map(c=>`<button class="chip" data-a="stAddC" data-v="${c.id}">${esc(c.name)}</button>`).join('')||'<span class="s12 muted">Ya están todos.</span>'}</div>`:''}`;
+  const g=(v,title,desc)=>`<label class="opt ${f.goal===v?'sel':''}" data-a="stGoal" data-v="${v}"><input type="radio" name="o" ${f.goal===v?'checked':''}><span><strong>${title}</strong><br>${desc}</span></label>${f.goal===v?chips:''}`;
+  const h=paraHoy(p);
+  const m=METHODS.find(x=>x.id===f.method);
+  const isRec=f.method===rec.best;
+  return `<div class="page">
+  <div class="top"><a data-a="topic" data-v="${t.id}" class="s13">‹ ${esc(t.name)}</a><h1>Nueva sesión</h1></div>
+  <div class="grid3">
+    <section class="card" aria-labelledby="a"><h2 id="a" style="font-size:16px">1 · ¿Qué hacemos hoy?</h2>
+      ${g('obj','Con objetivo',h&&h.t.id===t.id?`La app sugiere: ${esc(h.text.replace(t.name+': ',''))}.`:'Elegís los conceptos del mapa.')}
+      ${g('exam','Preparar una prueba','Elegís los conceptos que entran y practicamos todos mezclados.')}
+      ${g('free','Libre','Preguntá lo que quieras o explorá sin plan.')}
+      <div class="k" style="margin-top:8px">¿Cuánto tiempo?</div>
+      <div class="row" style="gap:6px">${[[0,'Sin límite'],[15,'15 min'],[20,'20 min'],[30,'30 min'],[45,'45 min']].map(([v,l])=>`<button class="chip ${f.time===v?'sel':''}" data-a="stTime" data-v="${v}">${l}</button>`).join('')}</div>
+    </section>
+    <section class="card hi" aria-labelledby="b"><h2 id="b" style="font-size:16px">2 · ${isRec?'Método recomendado':'Método elegido'}</h2>
+      <div style="font-size:20px;font-weight:600">${m.n}</div>
+      <div style="font-size:14px;line-height:1.5">${m.long}</div>
+      ${isRec?`<div class="k" style="margin-top:6px">Por qué este</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">${rec.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`
+        :`<div class="s13 fg2" style="line-height:1.5">La IA recomendaba <strong>${MN(rec.best)}</strong>, pero elegís vos. <a data-a="stMethod" data-v="${rec.best}">Volver al recomendado</a></div>`}
+      <div class="grow"></div>
+      <div class="k">La sesión va a tener</div>
+      <div class="s13" style="line-height:1.6">Calentamiento: hasta 3 preguntas de memoria · Bloque principal con este método · Cierre: escribís tu resumen y tus flashcards.</div>
+    </section>
+    <section class="card" aria-labelledby="c"><h2 id="c" style="font-size:16px">O elegí otro</h2>
+      ${METHODS.filter(x=>!p.methods.hidden.includes(x.id)).map(x=>`<label class="row s13" style="padding:9px 0;border-bottom:1px solid var(--line3);line-height:1.4;flex-wrap:nowrap;align-items:flex-start;cursor:pointer" data-a="stMethod" data-v="${x.id}"><input type="radio" name="me" ${f.method===x.id?'checked':''}><span><strong>${x.n}</strong>${p.methods.fav.includes(x.id)?' ★':''} · ${x.id===rec.best?'recomendado':x.d}</span></label>`).join('')}
+      ${p.methods.hidden.length?`<div class="s12 muted">${p.methods.hidden.length} oculto(s) desde tu perfil.</div>`:''}
+      <div class="s12 muted">Podés cambiar de método en medio de la sesión.</div>
+    </section>
+  </div>
+  <div class="row" style="justify-content:flex-end">${f.goal!=='free'&&!f.cids.length?'<span class="s13 errc">Elegí al menos un concepto.</span>':''}<button class="btn p lg" data-a="beginSession" ${f.goal!=='free'&&!f.cids.length?'disabled':''}>Empezar</button></div>
+  </div>`;
+};
+
+// ----- session -----
+function sctx(){
+  const s=S.sess,p=P(),t=T(s.tid);
+  const cs=s.cids.map(id=>CC(t,id)).filter(Boolean);
+  const main=cs.find(c=>s.before[c.id]!=='repasar')||cs[0]||null;
+  const N=main?main.name:t.name;
+  const eqScript=t.kind==='frac'&&main&&main.key==='eq';
+  return {s,p,t,cs,main,N,eqScript,y:young(p)};
+}
+function evid(cid,ok,kind,text){
+  const s=S.sess;if(!cid)return;
+  s.ev.push({cid,ok,kind,text});
+  toast(ok?`Evidencia: ${text}`:`Anotado: ${text}`);
+}
+function bumpTries(st){st.tries=(st.tries||0)+1;}
+function hintBtn(st,act){const n=P().settings.hintAfter;const ok=(st.tries||0)>=n;return `<button class="btn" data-a="${act}" ${ok?'':`title="Pista después de ${n} intentos"`}>Necesito una pista</button>`;}
+function wantHint(st){const n=P().settings.hintAfter;if((st.tries||0)<n){toast(`Probá ${n-(st.tries||0)===1?'una vez más':(n-(st.tries||0))+' veces más'} antes de la pista. Así lo configuraste en tu perfil.`);return false;}return true;}
+const AI=h=>`<div class="ai">${h}</div>`, ME=h=>`<div class="me">${esc(h)}</div>`;
+function goalMet(){return `<div class="banner"><span>✓</span><span style="flex:1">Conseguiste evidencia para hoy. ¿Vamos al cierre? (También podés seguir o cambiar de método.)</span><button class="btn p" data-a="toClose">Ir al cierre</button></div>`;}
+
+// Warm-up: recall questions from the student's own cards (due-review concepts first).
+function warmQs(p,t,cids){
+  const cards=p.cards.filter(k=>k.topicId===t.id);
+  const rep=cards.filter(k=>{const c=CC(t,k.cid);return c&&c.state==='repasar';});
+  const due=cards.filter(k=>k.due<=S.day&&!rep.includes(k));
+  const inS=cards.filter(k=>cids.includes(k.cid)&&!rep.includes(k)&&!due.includes(k));
+  const qs=[...rep,...due,...inS].slice(0,3).map(k=>({q:k.q,a:k.a,cid:k.cid,kid:k.id}));
+  return qs;
+}
+function renderWarm(x){
+  const w=x.s.warm;
+  if(!w.qs.length)return `${AI('No hay nada para repasar de memoria en este tema todavía. Arrancamos directo con el bloque principal.')}<div><button class="btn p" data-a="toMain">Ir al bloque principal</button></div>`;
+  if(w.i>=w.qs.length){const ok=w.res.filter(Boolean).length;return `${AI(`Calentamiento listo: <strong>${ok} de ${w.qs.length}</strong> de memoria. ${ok===w.qs.length?tonePre('ok'):'Lo que no salió lo vamos a ver de nuevo.'}`)}<div><button class="btn p" data-a="toMain">Seguir con ${MN(x.s.method).toLowerCase()}</button></div>`;}
+  const q=w.qs[w.i],r=w.cur;
+  return `${AI(x.y?'Arrancamos con unas preguntitas de memoria. Sin mirar nada.':'Primero, un calentamiento de memoria: sin mirar apuntes.')}
+  <div class="ai hi"><span class="k">Calentamiento · ${w.i+1} de ${w.qs.length}</span><span style="font-size:17px;font-weight:600">${esc(q.q)}</span>
+   ${r==null?`<input data-f="sess.warm.ans" data-enter="warmCheck" value="${esc(w.ans||'')}" placeholder="Tu respuesta" aria-label="Tu respuesta" autofocus><div class="row"><button class="btn p" data-a="warmCheck">Responder</button><button class="btn" data-a="warmCheck" data-v="idk">No me acuerdo</button></div>`
+   :`<div class="note ${r?'ok':'bad'}"><b class="i ${r?'okc':'errc'}">${r?'✓':'✗'}</b><span>${r?tonePre('ok')+'Coincide con tu tarjeta.':'No coincide.'} <span class="muted">Tu tarjeta dice: ${esc(q.a)}</span></span></div><div><button class="btn p" data-a="warmNext">Siguiente</button></div>`}
+  </div><div class="row"><button class="btn sm" data-a="toMain">Saltear el calentamiento</button></div>`;
+}
+
+// --- Socratic ---
+function renderSoc(x){
+  const st=x.s.blk.soc||(x.s.blk.soc={ph:'pre',log:[],tries:0});
+  const subs=[['pre','Ejercicio previo'],['q','Preguntas'],['concept','Concepto'],['verify','Verificación']];
+  const order=['pre','q1','q2','concept','verify','done'];const pi=order.indexOf(st.ph);
+  const subIdx={pre:0,q1:1,q2:1,concept:2,verify:3,done:4}[st.ph];
+  let html=`<div class="row" style="gap:6px"><span class="k">Sócrates:</span>${subs.map((s2,i)=>`<span class="sub ${i<subIdx?'done':i===subIdx?'on':''}">${s2[1]}</span>`).join('')}</div>`;
+  html+=st.log.map(m=>m.me?ME(m.me):AI(m.ai)).join('');
+  if(x.eqScript){
+    const pre=x.y?{q:'Vos tenés una pizza cortada en 2 partes iguales y comés 1. Tu amiga tiene una pizza igual, cortada en 4, y come 2. ¿Quién comió más?',o:['Yo','Las dos igual','Mi amiga'],a:1}
+      :{q:'Una receta pide 1/2 taza de harina. Tu vecino usa la misma receta pero mide con una taza marcada en cuartos y pone 2/4. ¿Quién pone más harina?',o:['Yo','Los dos lo mismo','Mi vecino'],a:1};
+    st.pre=pre;
+    if(st.ph==='pre'){if(!st.log.length)html+=AI('Antes de explicarte nada, probá con esto.');
+      html+=`<div class="ai hi"><span class="k">Ejercicio previo</span><span>${pre.q}</span>
+      <div class="grid3" style="gap:8px">${pre.o.map((o,i)=>`<button class="o ${st.sel===i?'sel':''}" style="font-size:14px;padding:12px 14px" data-a="socSel" data-v="${i}">${o}</button>`).join('')}</div>
+      <label for="why" class="k">¿Por qué? (con tus palabras)</label><textarea id="why" rows="2" data-f="sess.blk.soc.why" placeholder="${x.y?'Porque…':'Mi razonamiento…'}">${esc(st.why||'')}</textarea>
+      <div class="row"><button class="btn p" data-a="socCommit">Me comprometo</button>${hintBtn(st,'socHint')}</div>
+      <span class="s12 muted">La respuesta llega recién cuando te comprometés. Pista después de ${x.p.settings.hintAfter} ${x.p.settings.hintAfter===1?'intento':'intentos'}.</span></div>`;}
+    if(st.ph==='q1')html+=`<div class="ai hi"><span class="k">Pregunta</span><span>${x.y?'Si la pizza de tu amiga estuviera cortada en 8 porciones, ¿cuántas tendría que comer para comer lo mismo que vos?':'Si tu vecino midiera con una taza marcada en octavos, ¿cuántos octavos tendría que poner?'}</span>
+      <input data-f="sess.blk.soc.a" data-enter="socQ1" value="${esc(st.a||'')}" placeholder="Un número" aria-label="Tu respuesta"><div class="row"><button class="btn p" data-a="socQ1">Responder</button>${hintBtn(st,'socHint')}</div></div>`;
+    if(st.ph==='q2')html+=`<div class="ai hi"><span class="k">Pregunta</span><span>Mirá los números: pasamos de 1/2 a 2/4 y a 4/8. ¿Qué le pasó al número de arriba y qué al de abajo?</span>
+      <textarea rows="2" data-f="sess.blk.soc.b" placeholder="Con tus palabras">${esc(st.b||'')}</textarea><div class="row"><button class="btn p" data-a="socQ2">Responder</button>${hintBtn(st,'socHint')}</div></div>`;
+    if(st.ph==='concept')html+=`<div class="ai hi"><span class="k">Concepto</span><span>Eso que descubriste tiene nombre: <strong>fracciones equivalentes</strong>. Valen lo mismo aunque tengan números distintos. Si multiplicás (o dividís) el de arriba <strong>y</strong> el de abajo por el mismo número, la cantidad no cambia.</span><div><button class="btn p" data-a="socConcept">Entendido, probame</button></div></div>`;
+    if(st.ph==='verify')html+=`<div class="ai hi"><span class="k">Verificación</span><span>Escribí una fracción equivalente a <span class="big">3/5</span> (que no sea 3/5).</span>
+      <input class="mono" data-f="sess.blk.soc.v" data-enter="socVerify" value="${esc(st.v||'')}" placeholder="?/?" aria-label="Fracción"><div class="row"><button class="btn p" data-a="socVerify">Comprobar</button>${hintBtn(st,'socHint')}</div></div>`;
+  } else {
+    if(st.ph==='pre'){if(!st.log.length)html+=AI(`Antes de explicarte nada sobre "${esc(x.N)}", comprometete con lo que pensás.`);
+      html+=`<div class="ai hi"><span class="k">Ejercicio previo</span><span>¿Qué tan bien podrías explicar "${esc(x.N)}" ahora mismo?</span>
+      <div class="grid3" style="gap:8px">${['Lo puedo explicar','Me suena, pero no sé explicarlo','No sé qué es'].map((o,i)=>`<button class="o ${st.sel===i?'sel':''}" style="font-size:14px;padding:12px 14px" data-a="socSel" data-v="${i}">${o}</button>`).join('')}</div>
+      <label for="why" class="k">¿Qué creés que es? (aunque no estés seguro)</label><textarea id="why" rows="2" data-f="sess.blk.soc.why">${esc(st.why||'')}</textarea>
+      <div class="row"><button class="btn p" data-a="socCommit">Me comprometo</button>${hintBtn(st,'socHint')}</div>
+      <span class="s12 muted">Contenido genérico de demo: con un motor real, las preguntas salen del tema y tu material.</span></div>`;}
+    if(st.ph==='q1')html+=`<div class="ai hi"><span class="k">Pregunta</span><span>¿Qué ejemplo concreto se te ocurre de "${esc(x.N)}"?</span><textarea rows="2" data-f="sess.blk.soc.a">${esc(st.a||'')}</textarea><div class="row"><button class="btn p" data-a="socQ1">Responder</button>${hintBtn(st,'socHint')}</div></div>`;
+    if(st.ph==='q2')html+=`<div class="ai hi"><span class="k">Pregunta</span><span>En tu ejemplo, ¿qué cambiaría si eso no estuviera? ¿Con qué otra idea del tema se conecta?</span><textarea rows="2" data-f="sess.blk.soc.b">${esc(st.b||'')}</textarea><div class="row"><button class="btn p" data-a="socQ2">Responder</button>${hintBtn(st,'socHint')}</div></div>`;
+    if(st.ph==='concept')html+=`<div class="ai hi"><span class="k">Concepto</span><span>Juntemos lo que dijiste: tu idea, tu ejemplo y la conexión forman el concepto de "${esc(x.N)}". (Acá la IA real armaría la definición a partir de tus respuestas.)</span><div><button class="btn p" data-a="socConcept">Entendido, probame</button></div></div>`;
+    if(st.ph==='verify')html+=`<div class="ai hi"><span class="k">Verificación</span><span>Sin mirar lo anterior: resumí "${esc(x.N)}" en una frase con un ejemplo nuevo.</span><textarea rows="2" data-f="sess.blk.soc.v">${esc(st.v||'')}</textarea><div class="row"><button class="btn p" data-a="socVerify">Comprobar</button>${hintBtn(st,'socHint')}</div></div>`;
+  }
+  if(st.ph==='done')html+=goalMet();
+  return html;
+}
+// --- Feynman ---
+function analyzeFey(text,eq){
+  const sents=text.trim().split(/(?<=[.!?])\s+/).filter(Boolean);const notes=[];const marks=sents.map(s=>({s,ok:true}));
+  if(eq){
+    const central=/mism|igual/i.test(text),example=/\d+\s*\/\s*\d+/.test(text),how=/multiplic|dividi|por \d|x ?\d|×/i.test(text),both=/abajo|denominador|los dos|ambos|arriba y abajo/i.test(text);
+    if(central&&example)notes.push(['ok','La idea central está clara, y el ejemplo es correcto.']);
+    else if(central)notes.push(['ok','La idea central está clara.']);
+    if(!central)notes.push(['gap','<strong>Hueco:</strong> falta la idea central. ¿Qué tienen en común dos fracciones equivalentes?']);
+    if(!example)notes.push(['gap','<strong>Hueco:</strong> sumá un ejemplo con números, para que se vea.']);
+    if(!how)notes.push(['gap','<strong>Hueco:</strong> ¿cómo hacés para conseguir una fracción equivalente a otra?']);
+    else if(!both){notes.push(['gap','<strong>Hueco:</strong> si solo multiplicás el de arriba, 1/2 se convierte en 2/2. ¿Qué tiene que pasar con el de abajo para que siga valiendo lo mismo?']);marks.forEach(m=>{if(/multiplic|dividi|por \d|×/i.test(m.s))m.ok=false;});}
+    if(!central||!example)marks.forEach(m=>{if(sents.length===1)m.ok=false;});
+  } else {
+    const long=text.trim().length>=60,example=/ejemplo|como cuando|por ejemplo|\bcomo\b/i.test(text);
+    if(long)notes.push(['ok','Está explicado con tus palabras.']);else{notes.push(['gap','<strong>Hueco:</strong> es muy corta. ¿Qué es y para qué sirve?']);marks.forEach(m=>m.ok=false);}
+    if(!example)notes.push(['gap','<strong>Hueco:</strong> falta un ejemplo concreto ("por ejemplo…").']);
+  }
+  return {marks,notes,gaps:notes.filter(n=>n[0]==='gap').length};
+}
+function renderFey(x){
+  const st=x.s.blk.fey||(x.s.blk.fey={text:'',attempt:0,res:null,editing:true});
+  const prompt=x.y?`Explicale "${esc(x.N)}" a un amigo de 8 años. Sin palabras difíciles. Yo marco lo que está bien y lo que falta.`:`Explicá "${esc(x.N)}" como si se lo contaras a alguien que nunca lo vio. Yo marco lo que está bien y los huecos.`;
+  let html=`<div class="ai" style="max-width:760px">${prompt}</div><section class="card hi" style="max-width:820px" aria-labelledby="tu"><h2 id="tu" class="k">Tu explicación · intento ${st.attempt+(st.editing?1:0)||1}</h2>`;
+  if(st.editing){
+    html+=`<textarea rows="4" data-f="sess.blk.fey.text" placeholder="${x.y?'Son fracciones que…':'Escribilo con tus palabras…'}" style="font-size:16px">${esc(st.text)}</textarea>
+    <div class="row"><button class="btn p" data-a="feyCheck">Revisar mi explicación</button>${st.example?'':'<button class="btn" data-a="feyExample">Dame un ejemplo para pensarlo</button>'}</div>`;
+  } else {
+    const r=st.res;
+    html+=`<p style="margin:0;font-size:17px;line-height:1.9">${r.marks.map(m=>`<span class="${m.ok?'hl-ok':'hl-gap'}">${esc(m.s)}</span>`).join(' ')}</p>
+    <div class="k" style="margin-top:4px">Lo que marca la IA</div>
+    ${r.notes.map(n=>`<div class="note ${n[0]}"><b class="i ${n[0]==='ok'?'okc':'warnc'}">${n[0]==='ok'?'✓':'?'}</b><span>${n[1]}</span></div>`).join('')}
+    ${r.gaps?`<div class="row"><button class="btn p" data-a="feyAgain">Explicar de nuevo</button>${st.example?'':'<button class="btn" data-a="feyExample">Dame un ejemplo para pensarlo</button>'}</div>`:`<div class="note ok"><b class="i okc">✓</b><span>${tonePre('ok')}Sin huecos. Esto cuenta como evidencia de que lo dominás.</span></div>`}`;
+  }
+  if(st.example)html+=`<div class="note"><b class="i">i</b><span>${x.eqScript?(x.y?'Pensá en una pizza: 1 de 2 porciones grandes es lo mismo que 2 de 4 chicas. ¿Qué pasó con las porciones (abajo) y con las que comés (arriba)?':'Pensá en una taza: 1/2 taza = 2/4 de taza. ¿Qué pasó con el total de partes (abajo) y con las que usás (arriba)?'):`Pensá en una situación de todos los días donde aparezca "${esc(x.N)}" y contala.`}</span></div>`;
+  html+=`</section><div class="s13 muted">Cuando tu explicación no tenga huecos, cuenta como evidencia de que lo dominás.</div>`;
+  if(st.done)html+=goalMet();
+  return html;
+}
+// --- Worked examples ---
+function renderEj(x){
+  const st=x.s.blk.ej||(x.s.blk.ej={e2:'',e2ok:false,e2h:false,t2:0,k:'',r:'',e3ok:false,e3h:false,t3:0});
+  if(x.eqScript){
+    return `<div class="s15">Mirá cómo se arma una fracción equivalente. En cada ejemplo te dejo más pasos a vos.</div>
+    <div class="grid3">
+     <section class="ex" aria-label="Ejemplo 1"><div class="k">Ejemplo 1 · lo resuelvo yo</div>
+      <div class="ln"><span class="n">Paso 1</span><span>Partimos de <span class="big">1/3</span></span></div>
+      <div class="ln"><span class="n">Paso 2</span><span>Multiplico arriba <strong>y abajo</strong> por 2</span></div>
+      <div class="ln"><span class="n">Paso 3</span><span class="big">1×2 / 3×2 = 2/6</span></div>
+      <div class="s13 fg2" style="line-height:1.5">${x.y?'Mismo tamaño de pizza: 1 de 3 porciones grandes = 2 de 6 chicas.':'Misma cantidad: un tercio de taza es lo mismo que dos sextos.'}</div></section>
+     <section class="ex ${st.e2ok?'':'hi'}" aria-label="Ejemplo 2"><div class="k">Ejemplo 2 · te dejo el último paso</div>
+      <div class="ln"><span class="n">Paso 1</span><span>Partimos de <span class="big">2/5</span></span></div>
+      <div class="ln"><span class="n">Paso 2</span><span>Multiplico arriba y abajo por 3</span></div>
+      <div class="ln hi"><span class="n">Paso 3</span><span class="big">2×3 / 5×3 = </span>${st.e2ok?`<span class="big okc">6/15 ✓</span>`:`<input class="mono" data-f="sess.blk.ej.e2" data-enter="ejCheck2" value="${esc(st.e2)}" placeholder="?/?" aria-label="Resultado">`}</div>
+      ${st.e2ok?`<div class="note ok"><b class="i okc">✓</b><span>${tonePre('ok')}Ahora el ejemplo 3 es todo tuyo.</span></div>`:`${st.fb2?`<div class="note bad"><b class="i errc">✗</b><span>${st.fb2}</span></div>`:''}${st.e2h?`<div class="note"><b class="i">i</b><span>Pista: 2×3 = 6. ¿Y cuánto es 5×3?</span></div>`:''}<div class="row"><button class="btn p" data-a="ejCheck2">Comprobar</button>${hintBtn({tries:st.t2},'ejHint2')}</div>`}</section>
+     <section class="ex ${st.e2ok?(st.e3ok?'':'hi'):'lock'}" aria-label="Ejemplo 3"><div class="k">Ejemplo 3 · lo hacés vos</div>
+      <div class="ln"><span class="n">Paso 1</span><span>Partimos de <span class="big">3/4</span></span></div>
+      ${st.e2ok?`<div class="ln ${st.e3ok?'':'hi'}"><span class="n">Paso 2</span><span>Multiplico arriba y abajo por</span>${st.e3ok?`<strong>${esc(st.k)}</strong>`:`<input class="mono" style="width:64px" data-f="sess.blk.ej.k" value="${esc(st.k)}" aria-label="Número">`}</div>
+      <div class="ln ${st.e3ok?'':'hi'}"><span class="n">Paso 3</span><span class="big">3/4 = </span>${st.e3ok?`<span class="big okc">${esc(st.r)} ✓</span>`:`<input class="mono" data-f="sess.blk.ej.r" data-enter="ejCheck3" value="${esc(st.r)}" placeholder="?/?" aria-label="Resultado">`}</div>
+      ${st.e3ok?`<div class="note ok"><b class="i okc">✓</b><span>${st.e3h?'Resuelto, con una pista. Queda anotado.':'Resuelto sin pistas: cuenta como evidencia.'}</span></div>`:`${st.fb3?`<div class="note bad"><b class="i errc">✗</b><span>${st.fb3}</span></div>`:''}${st.e3h?`<div class="note"><b class="i">i</b><span>Pista: elegí un número (por ejemplo 2) y multiplicá el 3 <strong>y</strong> el 4 por ese número.</span></div>`:''}<div class="row"><button class="btn p" data-a="ejCheck3">Comprobar</button>${hintBtn({tries:st.t3},'ejHint3')}</div>`}`
+      :`<div class="ln"><span class="n">Paso 2</span><span class="blank" aria-label="Vacío"></span></div><div class="ln"><span class="n">Paso 3</span><span class="blank" aria-label="Vacío"></span></div><div class="s13 muted">Se abre al terminar el ejemplo 2. Si lo hacés sin pistas, cuenta como evidencia.</div>`}
+     </section>
+    </div>${st.e3ok?goalMet():''}`;
+  }
+  // generic placeholder version
+  return `<div class="s15">Ejemplos resueltos sobre "${esc(x.N)}". En cada uno te dejo más pasos a vos.</div>
+  <div class="grid3">
+   <section class="ex"><div class="k">Ejemplo 1 · lo resuelvo yo</div><div class="ln"><span class="n">Paso 1</span><span>Leo qué se pide</span></div><div class="ln"><span class="n">Paso 2</span><span>Identifico la idea de "${esc(x.N)}" que aplica</span></div><div class="ln"><span class="n">Paso 3</span><span>La aplico y reviso el resultado</span></div><div class="s12 muted">Contenido genérico de demo: con un motor real, los ejemplos salen del tema y tu material.</div></section>
+   <section class="ex ${st.e2ok?'':'hi'}"><div class="k">Ejemplo 2 · te dejo el último paso</div><div class="ln"><span class="n">Paso 1</span><span>Leo qué se pide</span></div><div class="ln"><span class="n">Paso 2</span><span>Identifico la idea</span></div>
+    <div class="ln hi"><span class="n">Paso 3</span>${st.e2ok?`<span class="okc">${esc(st.e2)} ✓</span>`:`<input data-f="sess.blk.ej.e2" value="${esc(st.e2)}" placeholder="¿Cómo la aplicás?" aria-label="Paso 3" style="flex:1;min-width:0">`}</div>${st.e2ok?'':`<div class="row"><button class="btn p" data-a="ejCheck2">Comprobar</button></div>`}</section>
+   <section class="ex ${st.e2ok?(st.e3ok?'':'hi'):'lock'}"><div class="k">Ejemplo 3 · lo hacés vos</div>${st.e2ok?`<div class="ln hi"><span class="n">Paso 2</span>${st.e3ok?esc(st.k):`<input data-f="sess.blk.ej.k" value="${esc(st.k)}" placeholder="La idea que aplica" style="flex:1;min-width:0" aria-label="Paso 2">`}</div><div class="ln hi"><span class="n">Paso 3</span>${st.e3ok?esc(st.r):`<input data-f="sess.blk.ej.r" value="${esc(st.r)}" placeholder="Cómo la aplicás" style="flex:1;min-width:0" aria-label="Paso 3">`}</div>${st.e3ok?'<div class="note ok"><b class="i okc">✓</b><span>Resuelto sin pistas: cuenta como evidencia.</span></div>':'<div class="row"><button class="btn p" data-a="ejCheck3">Comprobar</button></div>'}`:'<div class="s13 muted">Se abre al terminar el ejemplo 2.</div>'}</section>
+  </div>${st.e3ok?goalMet():''}`;
+}
+// --- the other four: simple scripted placeholders ---
+function memQs(x){
+  const used=new Set(x.s.warm.qs.map(q=>q.kid));
+  const cards=x.p.cards.filter(k=>k.topicId===x.t.id&&!used.has(k.id)&&(!x.cs.length||x.s.cids.includes(k.cid)));
+  const qs=cards.slice(0,2).map(k=>({q:k.q,a:k.a,cid:k.cid}));
+  while(qs.length<2)qs.push({q:qs.length?`¿Con qué otro concepto del tema se conecta "${x.N}"?`:`¿Qué recordás de "${x.N}"? Una frase.`,a:null,cid:x.main&&x.main.id});
+  return qs;
+}
+function renderMem(x){
+  const st=x.s.blk.mem||(x.s.blk.mem={qs:memQs(x),i:0,res:[],ans:''});
+  let html=AI('Práctica de memoria: preguntas cortas, sin mirar. Cada respuesta correcta cuenta.');
+  html+=st.res.map((r,i)=>`${AI(esc(st.qs[i].q))}${ME(r.ans||'(no me acuerdo)')}${AI(r.ok?tonePre('ok')+'Bien.':'No coincide. '+(st.qs[i].a?'La respuesta era: '+esc(st.qs[i].a):''))}`).join('');
+  if(st.i<st.qs.length)html+=`<div class="ai hi"><span class="k">Pregunta ${st.i+1} de ${st.qs.length}</span><span style="font-weight:600">${esc(st.qs[st.i].q)}</span><input data-f="sess.blk.mem.ans" data-enter="memCheck" value="${esc(st.ans)}" placeholder="De memoria" aria-label="Respuesta"><div class="row"><button class="btn p" data-a="memCheck">Responder</button></div></div>`;
+  else html+=st.res.some(r=>r.ok)?goalMet():`<div class="row"><button class="btn" data-a="toClose">Ir al cierre</button></div>`;
+  return html;
+}
+function renderEla(x){
+  const st=x.s.blk.ela||(x.s.blk.ela={step:0,a:'',b:'',reply:''});
+  const other=x.t.concepts.find(c=>x.main&&c.col<x.main.col)||x.t.concepts.find(c=>c!==x.main);
+  let html=AI(`Elaboración: no busco la respuesta correcta, busco conexiones.`);
+  if(st.step>=1)html+=`${AI(`¿Por qué funciona "${esc(x.N)}"? ¿Con qué otro concepto del mapa se relaciona?`)}${ME(st.a)}${AI(st.reply)}`;
+  if(st.step===0)html+=`<div class="ai hi"><span class="k">¿Por qué?</span><span>¿Por qué funciona "${esc(x.N)}"? ¿Con qué otro concepto del mapa se relaciona?</span><textarea rows="3" data-f="sess.blk.ela.a">${esc(st.a)}</textarea><div><button class="btn p" data-a="elaNext">Responder</button></div></div>`;
+  if(st.step===1)html+=`<div class="ai hi"><span class="k">¿En qué se diferencia?</span><span>¿Y en qué se diferencia de "${esc(other?other.name:'lo anterior')}"?</span><textarea rows="2" data-f="sess.blk.ela.b">${esc(st.b)}</textarea><div><button class="btn p" data-a="elaNext">Responder</button></div></div>`;
+  if(st.step>=2)html+=`${ME(st.b)}${AI('Bien pensado. Esto te ayuda a fijarlo, aunque por sí solo no sube el estado del mapa: para eso hace falta un ejercicio, explicarlo sin huecos o responder de memoria.')}<div class="row"><button class="btn" data-a="setMethod" data-v="mem">Probar práctica de memoria</button><button class="btn p" data-a="toClose">Ir al cierre</button></div>`;
+  return html;
+}
+function mezQs(x){
+  const g=k=>x.t.concepts.find(c=>c.key===k);
+  if(x.t.kind==='frac')return [
+    {q:'¿Cuál es más grande, 1/3 o 1/4?',chk:a=>norm(a).replace(/ /g,'')==='1/3',c:g('cmp'),sol:'1/3: cuanto más chicas las porciones, menos comés.'},
+    {q:'Simplificá 2/6',chk:a=>{const f=frac(a);return f&&feq(f,[1,3])&&f[1]<6;},c:g('simp'),sol:'1/3 (dividís arriba y abajo por 2).'},
+    {q:'Una fracción equivalente a 2/3',chk:a=>{const f=frac(a);return f&&feq(f,[2,3])&&!(f[0]===2&&f[1]===3);},c:g('eq'),sol:'Por ejemplo 4/6.'}];
+  return x.t.concepts.slice(0,3).map(c=>({q:`En una frase: ¿para qué sirve "${c.name}"?`,chk:a=>norm(a).length>=10,c,sol:'(Respuesta de demo: cualquier frase con sentido vale.)'}));
+}
+function renderMez(x){
+  const st=x.s.blk.mez||(x.s.blk.mez={i:0,res:[],ans:''});const qs=mezQs(x);
+  let html=AI('Práctica mezclada: ejercicios de varios conceptos. Primero date cuenta de qué concepto usar.');
+  html+=st.res.map((r,i)=>`${AI(esc(qs[i].q))}${ME(r.ans)}${AI(r.ok?tonePre('ok')+(qs[i].c?`Usaste "${esc(qs[i].c.name)}".`:''):tonePre('no')+esc(qs[i].sol))}`).join('');
+  if(st.i<qs.length)html+=`<div class="ai hi"><span class="k">Ejercicio ${st.i+1} de ${qs.length}</span><span style="font-weight:600">${esc(qs[st.i].q)}</span><input data-f="sess.blk.mez.ans" data-enter="mezCheck" value="${esc(st.ans)}" aria-label="Respuesta"><div><button class="btn p" data-a="mezCheck">Comprobar</button></div></div>`;
+  else html+=st.res.some(r=>r.ok)?goalMet():'<div><button class="btn" data-a="toClose">Ir al cierre</button></div>';
+  return html;
+}
+function renderPro(x){
+  const st=x.s.blk.pro||(x.s.blk.pro={step:0,a:'',b:'',tries:0});
+  const frac0=x.t.kind==='frac';
+  const prob=frac0?(x.y?'Para una torta necesitás 2/4 de litro de leche, pero tu jarra solo marca medios. ¿Hasta qué marca la llenás?':'Una receta pide 2/4 de taza de aceite y tu medidor solo marca medios. ¿Cuánto ponés?')
+    :`Problema: tenés que usar "${x.N}" para resolver algo real de tu vida o tu trabajo. Contá la situación y qué harías primero.`;
+  let html=AI('Por problemas: arrancamos de algo real y vemos qué hace falta saber.');
+  html+=`<div class="ai hi"><span class="k">El problema</span><span>${esc(prob)}</span>`;
+  if(st.step===0)html+=`<input data-f="sess.blk.pro.a" data-enter="proNext" value="${esc(st.a)}" aria-label="Respuesta" placeholder="${frac0?'Por ejemplo, hasta 1/…':'Tu planteo'}"><div class="row"><button class="btn p" data-a="proNext">Responder</button></div>`;
+  else html+=`<div class="me" style="align-self:flex-end">${esc(st.a)}</div>`;
+  html+='</div>';
+  if(st.step===1)html+=`${AI(frac0?`${tonePre('ok')}Hasta 1/2. ¿Por qué 2/4 y 1/2 son la misma cantidad?`:'Buen planteo. ¿Qué dato o idea te falta para resolverlo?')}<div class="ai hi"><textarea rows="2" data-f="sess.blk.pro.b" aria-label="Respuesta">${esc(st.b)}</textarea><div><button class="btn p" data-a="proNext">Responder</button></div></div>`;
+  if(st.step>=2)html+=`${ME(st.b)}${AI('Eso es justo lo que el problema pedía. Cuenta como evidencia.')}${goalMet()}`;
+  return html;
+}
+const BLOCKS={soc:renderSoc,fey:renderFey,ej:renderEj,mem:renderMem,ela:renderEla,mez:renderMez,pro:renderPro};
+
+function timerText(){const s=S.sess;if(!s)return '';const sec=Math.floor((Date.now()-s.start)/1000);const m=Math.floor(sec/60),ss=String(sec%60).padStart(2,'0');return `${m}:${ss}${s.time?` de ${s.time} min`:''}`;}
+V.session=()=>{
+  const x=sctx(),s=x.s;
+  const parts=[['warm','Calentamiento'],['main','Bloque principal'],['close','Cierre']];const pi=parts.findIndex(q=>q[0]===s.part);
+  let main;
+  if(s.part==='warm')main=renderWarm(x);
+  else if(s.part==='main'){if(!s.used.includes(s.method))s.used.push(s.method);main=BLOCKS[s.method](x);}
+  else main=renderClose(x);
+  const evs=s.ev;
+  const goalTxt=s.goal==='free'?'Sesión libre: preguntá o explorá.':s.goal==='exam'?`Preparar la prueba: ${x.cs.map(c=>c.name).join(', ')}`:x.cs.map(c=>(s.before[c.id]==='repasar'?'Repasar':'Entender')+` "${c.name}"`).join(' · ');
+  const terms=x.t.kind==='frac'?'numerador · denominador':x.cs.slice(0,2).map(c=>c.name.toLowerCase()).join(' · ');
+  return `<div class="sess"><header class="shead">
+    <a data-a="leaveSession" class="s13">‹ ${esc(x.t.name)}</a>
+    <ol aria-label="Partes de la sesión" class="steps">${parts.map((q,i)=>`<li class="step ${i<pi?'done':i===pi?'cur':''}">${i<pi?'✓ ':''}${q[1]}</li>`).join('')}</ol>
+    <div class="grow"></div>
+    ${s.part!=='close'?`<label for="met" class="k">Método</label><select id="met" data-c="setMethodSel" style="font-size:13px;padding:6px 8px">${METHODS.filter(m=>!x.p.methods.hidden.includes(m.id)||m.id===s.method).map(m=>`<option value="${m.id}" ${m.id===s.method?'selected':''}>${m.n}</option>`).join('')}</select>`:''}
+    <span class="s13 fg2" id="timer">${timerText()}</span>
+    ${s.part!=='close'?'<button class="btn" data-a="toClose">Ir al cierre</button>':''}
+  </header>
+  <div class="sbody">
+    <main class="smain">${main}
+      ${s.part!=='close'?`<div class="chatin"><label for="msg" class="sr">Escribile a la IA</label><input id="msg" data-f="ui.msg" data-enter="sendMsg" placeholder="Escribí una duda…" value="${esc(S.ui.msg||'')}"><button class="btn" data-a="sendMsg">Enviar</button></div>`:''}
+    </main>
+    <aside class="saside" aria-label="Hoy">
+      <div class="k">Objetivo de hoy</div><div style="font-size:14px;line-height:1.45">${esc(goalTxt)}</div>
+      <div class="k" style="margin-top:10px">En esta sesión</div>
+      <div class="s13" style="line-height:1.6">${s.warm.qs.length&&s.warm.i>0?`<span class="okc">✓</span> Calentamiento: ${s.warm.res.filter(Boolean).length} de ${s.warm.i} de memoria<br>`:''}
+        ${evs.filter(e=>!e.warm).slice(-6).map(e=>{const c=CC(x.t,e.cid);return `<span class="${e.ok?'okc':'errc'}">${e.ok?'✓':'✗'}</span> ${esc(c?c.name:'')}: ${esc(e.text)}`;}).join('<br>')||(s.warm.i?'':'<span class="muted">Todavía sin evidencia.</span>')}
+        ${s.part==='main'&&!evs.some(e=>e.cid===(x.main&&x.main.id))?`<br><span class="muted">…</span> ${esc(x.N)}: en curso`:''}</div>
+      ${s.openQs.length?`<div class="k" style="margin-top:10px">Preguntas anotadas</div><div class="s13">${s.openQs.map(esc).join('<br>')}</div>`:''}
+      <div class="k" style="margin-top:10px">Términos nuevos</div><div class="s13">${esc(terms)}</div>
+      <div class="grow"></div>
+      <div class="s12 muted" style="line-height:1.5">${minor(x.p)?'Estudiás con un adulto al lado: la IA habla simple y usa ejemplos de la vida diaria.':`Tono: ${x.p.settings.tone} · explicaciones ${x.p.settings.expl} · pista después de ${x.p.settings.hintAfter} intentos.`}</div>
+    </aside>
+  </div></div>`;
+};
+
+// ----- close -----
+function reviewClose(x,f){
+  const eq=x.t.kind==='frac';
+  const sn=[];const t=f.sum.trim();
+  if(t.length<25)sn.push(['gap','Es muy corto. ¿Qué es lo central de lo que viste hoy y cómo se hace?']);
+  else{
+    let wrong=false;
+    if(eq&&/multiplic/i.test(t)&&!/arriba y abajo|numerador y denominador|los dos|ambos|y abajo/i.test(t)){sn.push(['bad','Si multiplicás solo uno de los números, la fracción cambia. ¿Qué pasa con el otro?']);wrong=true;}
+    if(!wrong)sn.push(['ok',`Correcto${t.length>80?' y completo':''}.${/\d+\s*\/\s*\d+|por ejemplo|ejemplo/i.test(t)?' Usaste tu propio ejemplo: bien.':''}`]);
+    if(eq&&/dividi/i.test(t)&&!/mismo n|si los dos|se pueden dividir|por el mismo/i.test(t))sn.push(['gap','"También se puede dividir": es cierto, pero solo si los dos números se pueden dividir por el mismo. Eso es "Simplificar", que vemos después. ¿Lo aclarás o lo dejás para ese tema?','divide']);
+  }
+  const cn=f.cards.map(c=>{
+    const q=c.q.trim(),a=c.a.trim();if(!q&&!a)return null;
+    if(!q)return ['gap','Falta la pregunta.'];if(!a)return ['gap','Falta la respuesta.'];
+    if(q.length<6)return ['gap','La pregunta es muy corta: ¿se va a entender dentro de una semana?'];
+    const m=q.match(/equivalente a\s*(\d+)\s*\/\s*(\d+)/i),fa=frac(a);
+    if(m&&fa){const base=[+m[1],+m[2]];if(!feq(fa,base)){const half=feq(fa,[1,2]);return ['bad',`${esc(a)} ${half?'es la mitad, no '+esc(m[1]+'/'+m[2]):'no vale lo mismo que '+esc(m[1]+'/'+m[2])}. Probá multiplicando arriba <strong>y abajo</strong>.`];}
+      if(fa[0]===base[0]&&fa[1]===base[1])return ['gap','Es la misma fracción: buscá una distinta que valga lo mismo.'];}
+    const mc=q.match(/(\d+\/\d+)\s*o\s*(\d+\/\d+)/);if(mc&&fa){const A=frac(mc[1]),B=frac(mc[2]);const big=A[0]/A[1]>B[0]/B[1]?A:B;if(!feq(fa,big))return ['bad','Revisalo: con porciones más chicas comés menos.'];}
+    return ['ok','Bien.'];
+  });
+  return {sn,cn,at:Date.now()};
+}
+function renderClose(x){
+  const f=x.s.close;const r=f.rev;
+  const nt=(n)=>`<div class="note ${n[0]}"><b class="i ${n[0]==='ok'?'okc':n[0]==='bad'?'errc':'warnc'}">${n[0]==='ok'?'✓':n[0]==='bad'?'✗':'?'}</b><span>${n[1]}</span></div>`;
+  return `<div class="grid2" style="align-items:start">
+    <section class="card" aria-labelledby="rs"><h2 id="rs" style="font-size:17px">Tu resumen de hoy</h2>
+      <div class="s13 fg2">Escribilo vos, con tus palabras. Yo solo marco lo que hay que corregir.</div>
+      <label for="res" class="sr">Resumen</label><textarea id="res" rows="6" data-f="sess.close.sum" style="font-size:15px;line-height:1.6" placeholder="${x.y?'Hoy aprendí que…':'Lo central de hoy…'}">${esc(f.sum)}</textarea>
+      ${r?r.sn.map(nt).join(''):''}
+    </section>
+    <section class="card" aria-labelledby="fl"><h2 id="fl" style="font-size:17px">Tus flashcards</h2>
+      <div class="s13 fg2">Una pregunta de un lado, la respuesta del otro. Van a tu repaso.</div>
+      <div class="k">Pregunta · respuesta</div>
+      ${f.cards.map((c,i)=>`<div class="fc"><input aria-label="Pregunta ${i+1}" data-f="sess.close.cards.${i}.q" value="${esc(c.q)}" placeholder="Pregunta"><input aria-label="Respuesta ${i+1}" data-f="sess.close.cards.${i}.a" value="${esc(c.a)}" placeholder="Respuesta"></div>${r&&r.cn[i]?nt(r.cn[i]):''}`).join('')}
+      <div><button class="btn sm" data-a="addCardRow">+ Otra tarjeta</button></div>
+      <div class="row" style="justify-content:space-between;margin-top:8px">
+        <a class="s12 muted" data-a="fillClose">Rellenar con un ejemplo (demo)</a>
+        <div class="row"><button class="btn" data-a="skipClose">Saltear el cierre</button><button class="btn" data-a="checkClose">${r?'Revisar de nuevo':'Revisar'}</button><button class="btn p" data-a="saveClose">Guardar y terminar</button></div>
+      </div>
+    </section></div>`;
+}
+
+// ----- finish -----
+function finishSession(skipClose){
+  const x=sctx(),s=x.s,t=x.t,p=x.p;
+  const before={};t.concepts.forEach(c=>before[c.id]=c.state);
+  const per={};
+  s.ev.forEach(e=>{const c=CC(t,e.cid);if(!c)return;addEv(c,{ok:e.ok,kind:e.kind,text:e.text});(per[c.id]=per[c.id]||[]).push(e);});
+  let nCards=0,hasSum=false;const openQs=[...s.openQs];
+  if(!skipClose){
+    const f=s.close,r=reviewClose(x,f);
+    const target=(x.main||x.cs[0]);
+    f.cards.forEach(c=>{if(c.q.trim()&&c.a.trim()){p.cards.push({id:uid('k'),topicId:t.id,cid:target?target.id:null,q:c.q.trim(),a:c.a.trim(),due:S.day+1,interval:1,lastOk:null});nCards++;}});
+    if(f.sum.trim()){hasSum=true;t.summaries.push({cid:target?target.id:null,text:f.sum.trim(),ok:!r.sn.some(n=>n[0]!=='ok'),day:S.day});}
+    if(r.sn.some(n=>n[2]==='divide'))openQs.push('¿Cuándo se puede dividir? → para "Simplificar"');
+  }
+  openQs.forEach(q=>{if(!t.openQs.includes(q))t.openQs.push(q);});
+  const minutes=Math.max(1,Math.round((Date.now()-s.start)/60000));
+  const used=(s.used&&s.used.length?s.used:[s.method]).map(MN).join(', ');
+  t.sessions.push({day:S.day,method:used,minutes,note:x.cs.map(c=>c.name).join(' · ')||'Sesión libre'});
+  t.lastDay=S.day;
+  const rows=Object.keys(per).map(cid=>{
+    const c=CC(t,cid),es=per[cid],from=before[cid],to=c.state,ok=es.filter(e=>e.ok).length,rec=es.filter(e=>e.kind==='recall');
+    let why;
+    if(from==='repasar'&&to==='dominado'){const prevOk=c.ev.slice(0,-es.length).filter(e=>e.ok).pop();why=`Evidencia: ${rec.filter(e=>e.ok).length||ok} de ${rec.length||es.length} de memoria${prevOk?`, ${S.day-prevOk.day} días después de la última vez`:''}. Vuelve a repaso en ${c.interval} días.`;}
+    else if(to==='dominado'&&from!=='dominado')why=`${es.filter(e=>e.ok).pop().text}. Evidencia en 2 días distintos: ya lo dominás. Repaso en ${c.interval} días.`;
+    else if(to==='practicando'&&es.some(e=>!e.ok))why=`${es.filter(e=>!e.ok).pop().text}. Sin apuro: se vuelve a practicar.`;
+    else if(to==='practicando'&&streakDays(c)===1)why=`${es.filter(e=>e.ok).pop().text}. Falta una evidencia más en otro día para dominarlo.`;
+    else why=es.map(e=>e.text).join(' · ');
+    return {name:c.name,from,to,why};
+  });
+  const h=paraHoy(p);
+  S.fin={tid:t.id,minutes,method:used,nCards,hasSum,rows,openQs,next:h?h.text:'',nextEq:h};
+  S.sess=null;go('fin');
+}
+V.fin=()=>{
+  const f=S.fin,p=P();
+  return `<div class="center">
+  <h1 style="font-size:30px">${kid(p)?'¡Buena sesión, '+esc(p.name)+'!':'Buena sesión, '+esc(p.name)}</h1>
+  <div class="s15 fg2">${f.minutes} ${f.minutes===1?'minuto':'minutos'} · ${f.method.toLowerCase()}${f.hasSum||f.nCards?` · ${f.hasSum?'1 resumen':''}${f.hasSum&&f.nCards?' y ':''}${f.nCards?f.nCards+' flashcards':''} tuyos`:''}</div>
+  <section class="card" style="width:720px;text-align:left;padding:10px 28px" aria-labelledby="cm">
+    <h2 id="cm" class="k" style="margin:14px 0 4px">Qué cambió en tu mapa</h2>
+    ${f.rows.length?f.rows.map(r=>`<div class="row" style="padding:14px 0 6px;font-size:15px;border-top:1px solid var(--line3)"><span style="flex:1;min-width:160px">${esc(r.name)}</span>${pill(r.from)}<span aria-hidden="true">→</span>${pill(r.to)}</div><div class="s13 muted" style="margin:0 0 10px">${esc(r.why)}</div>`).join('')
+      :'<div class="s13 muted" style="padding:12px 0">No hubo evidencia nueva esta vez, así que el mapa no cambió. Eso también es información.</div>'}
+    ${f.openQs.map(q=>`<div class="row" style="padding:14px 0;border-top:1px solid var(--line3)"><span style="flex:1">Pregunta que quedó abierta</span><span class="fg2">"${esc(q)}"</span></div>`).join('')}
+  </section>
+  <div class="s15 fg2" style="max-width:720px">Próxima vez: ${esc(f.next)}.</div>
+  <div class="row" style="justify-content:center"><button class="btn" data-a="topic" data-v="${f.tid}">Ver el mapa</button><button class="btn p" data-a="go" data-v="home">Volver al inicio</button></div>
+  </div>`;
+};
+
+// ----- flashcards review -----
+function buildQueue(p){
+  const by={};dueCards(p).forEach(k=>(by[k.topicId]=by[k.topicId]||[]).push(k.id));
+  const lists=Object.values(by),q=[];let i=0;
+  while(lists.some(l=>l.length)){const l=lists[i%lists.length];if(l.length)q.push(l.shift());i++;}
+  return {queue:q,i:0,ans:'',checked:null,done:{},evid:0,changed:[]};
+}
+const ivs=k=>({bien:Math.max(4,k.interval*2),facil:Math.max(10,k.interval*3)});
+V.review=()=>{
+  const p=P();if(!S.rev)S.rev=buildQueue(p);const r=S.rev;
+  const kc=id=>p.cards.find(k=>k.id===id);
+  const side=`<aside class="saside" aria-label="Para repasar hoy" style="width:320px"><div class="k">Para repasar hoy</div>
+    ${r.queue.map((id,i)=>{const k=kc(id);return k?`<div class="q" style="${i===r.i?'font-weight:600':''}"><span class="${i<r.i?(r.done[i]?'okc':'errc'):'muted'}">${i<r.i?(r.done[i]?'✓':'✗'):i===r.i?'›':'○'}</span><span style="flex:1">${esc(k.q)}</span></div>`:'';}).join('')||'<div class="s13 muted">Nada para hoy.</div>'}
+    <div class="grow"></div><div class="s12 muted" style="line-height:1.5">Mezcla tarjetas de tus ${p.topics.length} temas: practicar mezclado ayuda a recordar.</div></aside>`;
+  let mainH;
+  if(!r.queue.length)mainH=`<div class="card" style="width:640px;max-width:100%;text-align:center;align-items:center"><div style="font-size:20px;font-weight:600">No hay tarjetas para hoy</div><div class="s13 fg2">Las tarjetas vuelven según cómo te fue. Escribí nuevas en el cierre de una sesión, o usá "Avanzar un día" (control de demo).</div><button class="btn p" data-a="go" data-v="home">Volver al inicio</button></div>`;
+  else if(r.i>=r.queue.length)mainH=`<div class="card" style="width:640px;max-width:100%;text-align:center;align-items:center"><div style="font-size:22px;font-weight:600">${kid(p)?'¡Listo por hoy!':'Listo por hoy'}</div><div class="s15 fg2">${r.queue.length} tarjetas · ${r.evid} respuestas correctas sumaron evidencia</div>${r.changed.length?`<div class="s13" style="line-height:1.6">${r.changed.map(esc).join('<br>')}</div>`:''}<button class="btn p" data-a="go" data-v="home">Volver al inicio</button></div>`;
+  else{
+    const k=kc(r.queue[r.i]),t=T(k.topicId),iv=ivs(k);
+    mainH=`<section aria-label="Tarjeta" class="card" style="width:640px;max-width:100%;border-radius:20px;padding:36px;gap:18px;box-shadow:0 8px 24px var(--shadow)">
+      <span class="k">${esc(t.name)} · escrita por vos</span>
+      <div style="font-size:24px;font-weight:600">${esc(k.q)}</div>
+      <label for="ans" class="k">Respondé de memoria</label>
+      ${r.checked==null?`<input id="ans" data-f="rev.ans" data-enter="revCheck" value="${esc(r.ans)}" style="font-size:16px;padding:12px" autofocus><div class="row"><button class="btn p" data-a="revCheck">Comprobar</button><button class="btn" data-a="revCheck" data-v="idk">No me acuerdo</button></div>`
+       :`<div style="font-size:16px;padding:12px;border:1px solid var(--line2);border-radius:10px">${esc(r.ans)||'<span class="muted">(sin respuesta)</span>'}</div>
+       <div style="background:${r.checked?'var(--ok-soft)':'var(--wait-soft)'};border-radius:12px;padding:14px;font-size:14px;line-height:1.5"><strong>Tu respuesta guardada:</strong> ${esc(k.a)}<br><span class="${r.checked?'okc':'warnc'}">La IA: ${r.checked?(norm(r.ans).length>norm(k.a).length+8?'correcta, y más completa que la original.':'correcta.'):'no coincide. Mirá la diferencia antes de puntuar.'}</span></div>
+       <div class="k">¿Cómo te fue?</div>
+       <div class="rate"><button class="btn" data-a="rate" data-v="0">No me salió<span class="s12 muted">vuelve hoy</span></button><button class="btn" data-a="rate" data-v="1">Me costó<span class="s12 muted">en 1 día</span></button><button class="btn ${r.checked?'p':''}" data-a="rate" data-v="${iv.bien}">Bien<span class="s12">en ${iv.bien} días</span></button><button class="btn" data-a="rate" data-v="${iv.facil}">Fácil<span class="s12 muted">en ${iv.facil} días</span></button></div>`}
+    </section>`;
+  }
+  const pct=r.queue.length?Math.round(r.i/r.queue.length*100):0;
+  return `<div class="sess"><div class="sbody">
+    <main class="smain" style="align-items:center;justify-content:center;gap:22px">
+      <div class="row" style="width:640px;max-width:100%;flex-wrap:nowrap"><a data-a="go" data-v="home" class="s13">‹ Inicio</a><div style="flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden"><div style="width:${pct}%;height:6px;background:var(--accent)"></div></div><span class="k">${Math.min(r.i+1,r.queue.length)} de ${r.queue.length}</span></div>
+      ${mainH}
+      <div class="s13 muted">Cada respuesta correcta en un día distinto cuenta como evidencia en el mapa.</div>
+    </main>${side}</div></div>`;
+};
+
+// ----- profile -----
+V.profile=()=>{
+  const p=P(),tab=S.ui.tab||'learn',s=p.settings;
+  const seg=(key,opts)=>`<div class="seg">${opts.map(([v,l])=>`<button class="${s[key]===v?'on':''}" data-a="setSetting" data-v="${key}:${v}">${l}</button>`).join('')}</div>`;
+  const sel=(key,opts)=>`<select data-c="setSettingSel" data-k="${key}">${opts.map(([v,l])=>`<option value="${v}" ${String(s[key])===String(v)?'selected':''}>${l}</option>`).join('')}</select>`;
+  let body;
+  if(tab==='learn'){
+    const rowA=(k,label,value,opts)=>`<div class="row" style="padding:10px 0;border-bottom:1px solid var(--line3);font-size:14px;flex-wrap:wrap"><span style="flex:1;min-width:130px">${label}</span>${S.ui.editAns===k?`<select data-c="setAnswer" data-k="${k}">${opts.map(([v,l])=>`<option value="${v}" ${v===value?'selected':''}>${l}</option>`).join('')}</select>`:`<span class="fg2">${esc(k==='age'?AGES[p.age]+(minor(p)?' · con un adulto':''):ansLabel(k,value))}</span><button class="btn sm" data-a="editAns" data-v="${k}">Cambiar</button>`}</div>`;
+    body=`<div class="grid2" style="align-content:start">
+      <section class="card" aria-labelledby="a" style="gap:2px"><h2 id="a" class="k" style="margin-bottom:6px">Lo que la app sabe de vos (de "Conocerte")</h2>
+        ${rowA('age','Edad',p.age,Object.entries(AGES))}
+        ${QS.filter(q=>q.k!=='talk').map(q=>rowA(q.k,q.short,p.answers[q.k],q.o)).join('')}
+        <div class="s12 muted" style="padding-top:10px;line-height:1.5">Con esto, la app va a: ${knowsWhat(p).toLowerCase()}</div>
+      </section>
+      <section class="card" aria-labelledby="b" style="gap:2px"><h2 id="b" class="k" style="margin-bottom:6px">Cómo te habla la IA</h2>
+        <div class="row" style="padding:10px 0;border-bottom:1px solid var(--line3)"><span style="flex:1">Tono</span>${seg('tone',[['paciente','Paciente'],['neutro','Neutro'],['exigente','Exigente']])}</div>
+        <div class="row" style="padding:10px 0;border-bottom:1px solid var(--line3)"><span style="flex:1">Explicaciones</span>${seg('expl',[['cortas','Cortas'],['medias','Medias'],['largas','Largas']])}</div>
+        <div class="row" style="padding:10px 0;border-bottom:1px solid var(--line3)"><span style="flex:1">Pista después de</span>${sel('hintAfter',[[1,'1 intento'],[2,'2 intentos'],[3,'3 intentos']])}</div>
+        <div class="row" style="padding:10px 0;border-bottom:1px solid var(--line3)"><span style="flex:1">Explicación después de</span>${sel('explAfter',[[2,'2 intentos'],[3,'3 intentos'],[99,'Nunca, seguir preguntando']])}</div>
+        <div class="row" style="padding:10px 0"><span style="flex:1">Preguntas por mensaje</span>${sel('qpm',[[1,'1'],[2,'2']])}</div>
+        <div class="k" style="margin-top:10px">Así te respondería si te equivocás</div>
+        <div class="ai" id="sample" style="font-size:14px;max-width:none">${esc(sampleLine(p))}</div>
+      </section></div>`;
+  } else if(tab==='methods'){
+    const t=p.topics[0];const h=paraHoy(p);const rec=h?recommend(p,h.t,h.cids,'obj'):null;
+    body=`<section class="card"><div class="s13 fg2" style="line-height:1.5">Marcá favoritos (la IA los recomienda más) u ocultá los que no te gustan. ${rec?`Con esto, hoy para "${esc(h.t.name)}" la IA recomendaría: <strong>${MN(rec.best)}</strong>.`:''}</div>
+      <div class="list">${METHODS.map(m=>{const fav=p.methods.fav.includes(m.id),hid=p.methods.hidden.includes(m.id);return `<div class="li" style="${hid?'opacity:.55':''}"><div style="flex:1;min-width:0"><strong>${m.n}</strong>${fav?' ★':''}<div class="s13 fg2">${m.long}</div><div class="s12 muted">Ajustes propios: ${m.set}</div></div><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn sm ${fav?'on':''}" data-a="favM" data-v="${m.id}" aria-pressed="${fav}">${fav?'★ Favorito':'☆ Favorito'}</button><button class="btn sm ${hid?'on':''}" data-a="hideM" data-v="${m.id}" aria-pressed="${hid}">${hid?'Oculto':'Ocultar'}</button></div></div>`;}).join('')}</div></section>`;
+  } else {
+    body=`<section class="card" style="max-width:640px"><div class="list">
+      <div class="li"><span style="flex:1">Motor de IA</span><span class="fg2">Claude Code (lo configura el core)</span></div>
+      <div class="li"><span style="flex:1">Uso y modelos</span><span class="fg2">Lo maneja el core</span></div>
+      <div class="li"><span style="flex:1">Datos de la demo</span><button class="btn sm" data-a="askReset">Reiniciar demo</button></div></div></section>`;
+  }
+  return `<div class="page">
+  <div class="top"><a data-a="go" data-v="home" class="s13">‹ Inicio</a>${avatar(p,36)}<h1>Perfil de ${esc(p.name)}</h1><div class="grow"></div><button class="btn" data-a="go" data-v="profiles">Cambiar de perfil</button></div>
+  <div role="tablist" class="tabs">${[['learn','Cómo aprendo'],['methods','Métodos'],['app','App (motor y uso)']].map(([k,l])=>`<button class="tab ${tab===k?'on':''}" role="tab" aria-selected="${tab===k}" data-a="tab" data-v="${k}">${l}</button>`).join('')}</div>
+  ${body}</div>`;
+};
+
+// ---------- actions ----------
+const A={
+  go:v=>go(v),
+  tab:v=>{S.ui.tab=v;render();},
+  // profiles
+  pickProfile:v=>{S.cur=v;S.firstRun=false;S.rev=null;const p=P();if(!p.onboarded){S.ui.ki=0;go('know');}else{toast(`Perfil: ${p.name}`);go('home');}},
+  npColor:v=>{S.ui.np.color=v;render();},
+  createProfile:()=>{const np=S.ui.np;if(!np.name.trim()){np.err=true;render();return;}
+    const p={id:uid('p'),name:np.name.trim(),age:np.age,color:np.color,onboarded:false,answers:{},settings:{tone:'neutro',expl:'medias',hintAfter:2,explAfter:3,qpm:1},methods:{fav:[],hidden:[]},topics:[],cards:[]};
+    if(minor(p)){p.settings.tone='paciente';p.settings.expl='cortas';}
+    S.profiles.push(p);S.cur=p.id;S.firstRun=false;S.ui.np=null;S.ui.ki=0;go('know');},
+  knowPick:v=>{const p=P(),q=QS[S.ui.ki||0];p.answers[q.k]=v;if(q.k==='talk')p.settings.tone=v==='igual'?'neutro':v;render();},
+  knowBack:()=>{S.ui.ki=Math.max(0,(S.ui.ki||0)-1);render();},
+  knowNext:()=>{const i=S.ui.ki||0;if(i>=5){const p=P();p.onboarded=true;if(p.answers.time)p.settings=p.settings;toast('Listo: tu perfil quedó armado.');go('home');}else{S.ui.ki=i+1;render();}},
+  // home
+  startFromToday:()=>{const h=paraHoy();openStart(h.t.id,h.cids);},
+  review:()=>{S.rev=null;go('review');},
+  topic:v=>go('topic',{id:v}),
+  newtopic:()=>{S.nt={name:'',purpose:'Entenderlo bien',level:null,levelEdit:false,know:'',files:[],mode:'mixto',concepts:[],start:'diag'};S.ui.ntErr=false;go('newtopic');},
+  ntPurpose:v=>{S.nt.purpose=v;render();},
+  ntLevelEdit:()=>{S.nt.levelEdit=true;render();},
+  ntAddFile:()=>{const n=S.nt;const base=norm(n.name||'tema').replace(/ /g,'-')||'tema';const name=FILEPOOL[n.files.length%FILEPOOL.length].replace('%',base);const f={n:name,st:'reading'};n.files.push(f);render();setTimeout(()=>{f.st='ok';if(S.view==='newtopic')render();},1300);},
+  ntDelFile:v=>{S.nt.files.splice(+v,1);render();},
+  ntMode:v=>{S.nt.mode=v;render();},
+  ntBuild:()=>{const n=S.nt;if(!n.name.trim()){S.ui.ntErr=true;render();return;}if(n.files.some(f=>f.st!=='ok')){toast('Esperá a que termine de leer tu material.');return;}
+    S.ui.building=true;render();setTimeout(()=>{S.ui.building=false;n.concepts=genConcepts(n);go('map');},900);},
+  ntStart:v=>{S.nt.start=v;render();},
+  renameStart:v=>{const c=S.nt.concepts.find(x=>x.id===v);S.ui.edit=v;S.ui.editVal=c.name;render();setTimeout(()=>{const i=document.querySelector('[data-f="ui.editVal"]');if(i){i.focus();i.select();}},0);},
+  renameOk:()=>{const c=S.nt.concepts.find(x=>x.id===S.ui.edit);if(c&&S.ui.editVal.trim())c.name=S.ui.editVal.trim();S.ui.edit=null;render();},
+  renameCancel:()=>{const c=S.nt.concepts.find(x=>x.id===S.ui.edit);if(c&&c.isNew&&!c.named)S.nt.concepts=S.nt.concepts.filter(x=>x!==c);S.ui.edit=null;render();},
+  removeConcept:v=>{const c=S.nt.concepts.find(x=>x.id===v);S.nt.concepts=S.nt.concepts.filter(x=>x.id!==v);S.ui.lastRemoved=c;render();toast(`Sacaste "${c.name}".`);},
+  addConcept:v=>{const c=C('Nuevo concepto',+v,'you','sin');S.nt.concepts.push(c);S.ui.edit=c.id;S.ui.editVal='';render();setTimeout(()=>{const i=document.querySelector('[data-f="ui.editVal"]');if(i)i.focus();},0);},
+  createTopic:()=>{const n=S.nt,p=P();const strict=n.mode==='estricto'&&n.files.length;
+    const cs=n.concepts.filter(c=>!(strict&&c.src==='ia'));if(!cs.length){toast('El mapa necesita al menos un concepto.');return;}
+    const t=topic({name:n.name.trim(),kind:/fracc/i.test(n.name)?'frac':'gen',mode:n.files.length?n.mode:'ia',files:n.files.map(f=>f.n),matDesc:n.files.length?`${n.files.length} ${n.files.length===1?'archivo':'archivos'}`:'',level:n.level,concepts:cs,purpose:n.purpose});
+    // compact columns so there are no empty ones
+    const used=[...new Set(cs.map(c=>c.col))].sort();cs.forEach(c=>c.col=used.indexOf(c.col));
+    p.topics.push(t);S.nt=null;
+    if(n.start==='diag'){S.diag={tid:t.id,qs:diagQs(t).map(q=>({q:q.q,o:q.o,a:q.a,cid:q.c.id})),i:0,res:[]};go('diag');}
+    else{toast(`Tema creado: ${t.name}`);go('topic',{id:t.id});}},
+  diagPick:v=>{const d=S.diag,t=T(d.tid),q=d.qs[d.i],c=CC(t,q.cid);const ok=+v===q.a;
+    if(ok&&c)addEv(c,{ok:true,kind:'diag',text:'Diagnóstico: '+q.q.replace(/\?.*$/,'?')});
+    d.res.push({ok,name:c?c.name:''});d.i++;render();},
+  // topic
+  selConcept:v=>{S.ui.sel=S.ui.sel||{};S.ui.sel[S.params.id]=v;render();},
+  toggleHard:v=>{const c=CC(T(S.params.id),v);c.hard=!c.hard;toast(c.hard?`Anotado: "${c.name}" te cuesta. La IA lo va a tener en cuenta.`:'Listo, sacamos la marca.');render();},
+  studyConcept:v=>openStart(S.params.id,[v]),
+  startTopic:v=>{const h=paraHoy();const t=T(v);const cids=h&&h.t.id===v?h.cids:(nextConcept(t)?[nextConcept(t).id]:[]);openStart(v,cids);},
+  // start
+  stGoal:v=>{const f=S.ui.st,t=T(f.tid);f.goal=v;f.autoM=true;if(v==='exam')f.cids=t.concepts.filter(c=>c.state!=='sin').map(c=>c.id);if(v==='obj'&&!f.cids.length)f.cids=f.orig.slice();render();},
+  stDelC:v=>{const f=S.ui.st;f.cids=f.cids.filter(x=>x!==v);f.autoM=true;render();},
+  stAddC:v=>{const f=S.ui.st;f.cids.push(v);f.autoM=true;S.ui.stMore=false;render();},
+  stMore:()=>{S.ui.stMore=!S.ui.stMore;render();},
+  stTime:v=>{S.ui.st.time=+v;render();},
+  stMethod:v=>{S.ui.st.method=v;S.ui.st.autoM=false;render();},
+  beginSession:()=>{const f=S.ui.st,p=P(),t=T(f.tid);const before={};t.concepts.forEach(c=>before[c.id]=c.state);
+    S.sess={tid:t.id,cids:f.goal==='free'?[]:f.cids.slice(),goal:f.goal,time:f.time,method:f.method,part:'warm',start:Date.now(),warm:{qs:warmQs(p,t,f.cids),i:0,res:[],ans:'',cur:null},ev:[],blk:{},used:[],openQs:[],before,close:{sum:'',cards:[{q:'',a:''},{q:'',a:''},{q:'',a:''}],rev:null},timeUp:false};
+    S.ui.msg='';go('session');},
+  // session frame
+  leaveSession:()=>modal('¿Salir de la sesión?','Lo que hiciste hoy no se guarda en el mapa si salís sin cerrar. Podés ir al cierre en cualquier momento.',[['Seguir estudiando','closeModal',null,true],['Salir igual','leaveConfirm']]),
+  leaveConfirm:()=>{const tid=S.sess.tid;S.sess=null;S.ui.modal=null;go('topic',{id:tid});},
+  closeModal:()=>{S.ui.modal=null;render();},
+  setMethod:v=>{S.sess.method=v;if(S.sess.part==='warm'){}toast(`Método: ${MN(v)}`);render();},
+  toMain:()=>{S.sess.part='main';render();},
+  toClose:()=>{S.sess.part='close';window.scrollTo(0,0);render();},
+  sendMsg:()=>{const m=(S.ui.msg||'').trim();if(!m)return;S.sess.openQs.push(m);S.ui.msg='';toast('La anoto como pregunta abierta para no cortar el ejercicio.');render();},
+  warmCheck:v=>{const w=S.sess.warm,q=w.qs[w.i];if(v!=='idk'&&!String(w.ans||'').trim()){toast('Escribí algo, aunque no estés seguro.');return;}
+    const ok=v==='idk'?false:checkAns(w.ans,q.a);w.cur=ok;w.res.push(ok);
+    evid(q.cid,ok,'recall',ok?`De memoria: "${q.q}"`:`No salió de memoria: "${q.q}"`);S.sess.ev[S.sess.ev.length-1].warm=true;
+    const k=P().cards.find(x=>x.id===q.kid);if(k&&ok){k.lastOk=S.day;k.interval=Math.max(2,k.interval*2);k.due=S.day+k.interval;}
+    render();},
+  warmNext:()=>{const w=S.sess.warm;w.i++;w.ans='';w.cur=null;render();},
+  // socratic
+  socSel:v=>{S.sess.blk.soc.sel=+v;render();},
+  socCommit:()=>{const x=sctx(),st=x.s.blk.soc;if(st.sel==null){toast('Elegí una opción.');return;}if(!String(st.why||'').trim()){toast('Escribí por qué, con tus palabras. Es parte del ejercicio.');return;}
+    if(x.eqScript){const pre=st.pre;st.log.push({me:`${pre.o[st.sel]}. ${st.why}`});
+      if(st.sel===pre.a){st.log.push({ai:`${tonePre('ok')}${x.y?'Comieron lo mismo: 1 porción grande es lo mismo que 2 chicas.':'Ponen lo mismo: 1/2 y 2/4 son la misma cantidad, medida distinto.'} Vamos a ver por qué pasa eso.`});st.ph='q1';st.tries=0;}
+      else{bumpTries(st);st.log.push({ai:`${tonePre('no')}${x.y?'Mirá el tamaño de cada porción: si la pizza se corta en más partes, cada parte es más chica.':'Pensá en el tamaño de cada parte: un cuarto es la mitad de un medio.'} Probá de nuevo.`});st.sel=null;}
+    } else {st.log.push({me:`${['Lo puedo explicar','Me suena','No sé qué es'][st.sel]}. ${st.why}`});st.log.push({ai:`Gracias por comprometerte. Partamos de lo que dijiste: «${esc(st.why)}».`});st.ph='q1';st.tries=0;}
+    st.why='';render();},
+  socHint:()=>{const x=sctx(),st=x.s.blk.soc;if(!wantHint(st))return;st.hinted=true;
+    const H=x.eqScript?{pre:x.y?'Pista: dibujá las dos pizzas. ¿Cuánto ocupa 1 de 2 porciones? ¿Y 2 de 4?':'Pista: ¿cuántos cuartos entran en un medio?',q1:x.y?'Pista: si en 4 porciones comió 2, ¿qué pasa si cada porción se corta otra vez a la mitad?':'Pista: un cuarto son dos octavos.',q2:'Pista: fijate si los números se agrandaron igual. ¿Por cuánto se multiplicó cada uno?',verify:'Pista: multiplicá el 3 y el 5 por el mismo número, por ejemplo por 2.'}
+      :{pre:'Pista: pensá dónde lo viste por primera vez.',q1:'Pista: pensá en algo de todos los días.',q2:'Pista: mirá el mapa del tema.',verify:'Pista: usá tus propias palabras de antes.'};
+    st.log.push({ai:H[st.ph]||H.pre});render();},
+  socQ1:()=>{const x=sctx(),st=x.s.blk.soc;const a=String(st.a||'').trim();if(!a)return;st.log.push({me:a});
+    const ok=x.eqScript?/(^|\D)4(\D|$)|cuatro/.test(a):a.length>=8;
+    if(ok){st.log.push({ai:`${tonePre('ok')}${x.eqScript?'Cuatro de ocho.':'Buen ejemplo.'}`});st.ph='q2';st.tries=0;}else{bumpTries(st);st.log.push({ai:tonePre('no')+(x.eqScript?'Contá de nuevo: si cada porción se corta a la mitad, hay el doble de porciones.':'Contame un poco más.')});}
+    st.a='';render();},
+  socQ2:()=>{const x=sctx(),st=x.s.blk.soc;const b=String(st.b||'').trim();if(!b)return;st.log.push({me:b});
+    const ok=x.eqScript?/multiplic|doble|duplic|por 2|x ?2|×|los dos|ambos|mismo/i.test(b):b.length>=12;
+    if(ok){st.log.push({ai:`${tonePre('ok')}${x.eqScript?'Los dos números se multiplican por lo mismo.':'Bien conectado.'}`});st.ph='concept';st.tries=0;}else{bumpTries(st);st.log.push({ai:tonePre('no')+(x.eqScript?'Mirá: 1→2→4 arriba y 2→4→8 abajo. ¿Qué operación es esa?':'Probá conectarlo con otro concepto del mapa.')});}
+    st.b='';render();},
+  socConcept:()=>{const st=S.sess.blk.soc;st.log.push({ai:'Ahora verifiquemos que quedó.'});st.ph='verify';st.tries=0;st.hinted=false;render();},
+  socVerify:()=>{const x=sctx(),st=x.s.blk.soc;const v=String(st.v||'').trim();if(!v)return;st.log.push({me:v});
+    let ok;if(x.eqScript){const f=frac(v);ok=f&&feq(f,[3,5])&&!(f[0]===3&&f[1]===5);}else ok=v.length>=15;
+    if(ok){const txt=x.eqScript?`Encontró una equivalente a 3/5 (${v})`:'Resumió el concepto con un ejemplo nuevo';
+      st.log.push({ai:`${tonePre('ok')}${st.hinted?'Bien, con una pista. Queda anotado así.':'Sin pistas: esto cuenta como evidencia.'}`});
+      evid(x.main&&x.main.id,!st.hinted,st.hinted?'hint':'exercise',st.hinted?txt+' con pista':txt+' sin pistas');st.ph='done';}
+    else{bumpTries(st);st.log.push({ai:tonePre('no')+(x.eqScript?'Esa no vale lo mismo que 3/5. Acordate: arriba y abajo por el mismo número.':'Un poco más: sumá un ejemplo.')});}
+    st.v='';render();},
+  // feynman
+  feyCheck:()=>{const x=sctx(),st=x.s.blk.fey;if(st.text.trim().length<5){toast('Escribí tu explicación primero.');return;}
+    st.attempt++;st.res=analyzeFey(st.text,x.eqScript);st.editing=false;
+    if(!st.res.gaps&&!st.done){st.done=true;evid(x.main&&x.main.id,true,'feynman',`Lo explicó sin huecos (intento ${st.attempt})`);}
+    render();},
+  feyAgain:()=>{S.sess.blk.fey.editing=true;render();},
+  feyExample:()=>{S.sess.blk.fey.example=true;render();},
+  // worked examples
+  ejCheck2:()=>{const x=sctx(),st=x.s.blk.ej;const v=String(st.e2||'').trim();if(!v)return;
+    if(!x.eqScript){st.e2ok=v.length>=2;render();return;}
+    const f=frac(v);if(f&&f[0]===6&&f[1]===15){st.e2ok=true;st.fb2=null;}else{st.t2++;st.fb2=f&&feq(f,[2,5])?'Vale lo mismo, pero el ejemplo pide multiplicar por 3: 2×3 y 5×3.':'Revisá: multiplicá arriba <strong>y abajo</strong> por 3.';}
+    render();},
+  ejHint2:()=>{const st=S.sess.blk.ej;if(!wantHint({tries:st.t2}))return;st.e2h=true;render();},
+  ejCheck3:()=>{const x=sctx(),st=x.s.blk.ej;
+    if(!x.eqScript){if(String(st.k).trim()&&String(st.r).trim()){st.e3ok=true;evid(x.main&&x.main.id,true,'exercise','Ejemplo 3 resuelto sin pistas');}render();return;}
+    const k=parseInt(st.k,10),f=frac(st.r);
+    if(f&&feq(f,[3,4])&&!(f[0]===3&&f[1]===4)&&(!k||(f[0]===3*k&&f[1]===4*k))){st.e3ok=true;st.fb3=null;if(!k)st.k=String(f[0]/3);
+      evid(x.main&&x.main.id,!st.e3h,st.e3h?'hint':'exercise',st.e3h?`Ejemplo 3 con pista (3/4 = ${st.r})`:`Ejemplo 3 resuelto sin pistas (3/4 = ${st.r})`);}
+    else{st.t3++;st.fb3=f&&k&&feq(f,[3,4])?`Vale lo mismo, pero no coincide con multiplicar por ${k}.`:'Revisá: el 3 y el 4 se multiplican por el mismo número.';}
+    render();},
+  ejHint3:()=>{const st=S.sess.blk.ej;if(!wantHint({tries:st.t3}))return;st.e3h=true;render();},
+  // placeholders
+  memCheck:()=>{const x=sctx(),st=x.s.blk.mem,q=st.qs[st.i];const a=String(st.ans||'').trim();if(!a)return;
+    const ok=q.a?checkAns(a,q.a):a.length>=10;st.res.push({ans:a,ok});evid(q.cid,ok,'recall',ok?`De memoria: "${q.q}"`:`No salió de memoria: "${q.q}"`);st.i++;st.ans='';render();},
+  elaNext:()=>{const x=sctx(),st=x.s.blk.ela;
+    if(st.step===0){if(!st.a.trim())return;const hit=x.t.concepts.find(c=>c!==x.main&&stems(c.name).some(w=>stems(st.a).includes(w)));
+      st.reply=hit?`${tonePre('ok')}Lo conectaste con "${esc(hit.name)}": esa es una relación clave del mapa.`:`Interesante. No nombraste otro concepto del mapa: ¿se relaciona con "${esc((x.t.concepts.find(c=>c!==x.main)||{}).name||'otro')}"?`;st.step=1;}
+    else if(st.step===1){if(!st.b.trim())return;st.step=2;}
+    render();},
+  mezCheck:()=>{const x=sctx(),st=x.s.blk.mez,qs=mezQs(x),q=qs[st.i];const a=String(st.ans||'').trim();if(!a)return;
+    const ok=!!q.chk(a);st.res.push({ans:a,ok});if(q.c)evid(q.c.id,ok,'exercise',ok?`Ejercicio mezclado sin pistas: ${q.q}`:`Ejercicio mezclado con error: ${q.q}`);st.i++;st.ans='';render();},
+  proNext:()=>{const x=sctx(),st=x.s.blk.pro;
+    if(st.step===0){const a=String(st.a||'').trim();if(!a)return;
+      if(x.t.kind==='frac'){const f=frac(a);const ok=(f&&feq(f,[1,2]))||/medio|mitad/i.test(a);if(!ok){bumpTries(st);toast(tonePre('no')+'Pensá: ¿cuántos cuartos hay en un medio?');return;}}
+      st.step=1;}
+    else if(st.step===1){if(!String(st.b||'').trim())return;st.step=2;evid(x.main&&x.main.id,true,'exercise',x.t.kind==='frac'?'Resolvió el problema de la jarra sin pistas':'Planteó y resolvió un problema real');}
+    render();},
+  // close
+  fillClose:()=>{const x=sctx(),f=x.s.close;
+    if(x.t.kind==='frac'){f.sum='Dos fracciones son equivalentes si valen lo mismo. Para hacer una equivalente multiplico arriba y abajo por el mismo número. Ejemplo: 2/5 = 6/15. También se puede dividir.';
+      f.cards=[{q:'¿Qué son fracciones equivalentes?',a:'Las que valen lo mismo'},{q:'Una equivalente a 1/4',a:'2/4'},{q:'',a:''}];}
+    else{f.sum=`Hoy vi ${x.N.toLowerCase()}. Lo central es que se entiende mejor con un ejemplo concreto, por ejemplo uno de todos los días.`;f.cards=[{q:`¿Qué es ${x.N.toLowerCase()}?`,a:'(con tus palabras)'},{q:'',a:''},{q:'',a:''}];}
+    f.rev=null;render();},
+  addCardRow:()=>{S.sess.close.cards.push({q:'',a:''});render();},
+  checkClose:()=>{const x=sctx(),f=x.s.close;if(!f.sum.trim()&&!f.cards.some(c=>c.q.trim()||c.a.trim())){toast('Escribí tu resumen o alguna tarjeta primero.');return;}f.rev=reviewClose(x,f);toast(f.rev.sn.concat(f.rev.cn.filter(Boolean)).some(n=>n[0]!=='ok')?'Revisado: hay cosas para mirar.':'Revisado: todo bien.');render();},
+  saveClose:()=>{const x=sctx(),f=x.s.close;const r=reviewClose(x,f);const bad=r.sn.concat(r.cn.filter(Boolean)).some(n=>n[0]==='bad');
+    if(!f.rev){f.rev=r;render();toast('Lo revisé antes de guardar: mirá las notas.');return;}
+    if(bad){f.rev=r;modal('Quedan correcciones','Hay algo marcado como incorrecto. Si lo guardás así, vas a repasar una tarjeta con un error.',[['Corregir','closeModal',null,true],['Guardar igual','saveForce']]);return;}
+    finishSession(false);},
+  saveForce:()=>{S.ui.modal=null;finishSession(false);},
+  skipClose:()=>modal('¿Saltear el cierre?','Escribir el resumen y las tarjetas es parte de estudiar. Igual, la evidencia de hoy se guarda en el mapa.',[['Volver al cierre','closeModal',null,true],['Saltear','skipForce']]),
+  skipForce:()=>{S.ui.modal=null;finishSession(true);},
+  // flashcards
+  revCheck:v=>{const p=P(),r=S.rev,k=p.cards.find(x=>x.id===r.queue[r.i]);if(v!=='idk'&&!String(r.ans||'').trim()){toast('Escribí tu respuesta, o tocá "No me acuerdo".');return;}
+    if(v==='idk')r.ans='';const ok=v==='idk'?false:checkAns(r.ans,k.a);r.checked=ok;r.done[r.i]=ok;
+    if(ok&&k.lastOk!==S.day){k.lastOk=S.day;const t=T(k.topicId),c=CC(t,k.cid);if(c){const from=c.state;addEv(c,{ok:true,kind:'recall',text:`Flashcard de memoria: "${k.q}"`});r.evid++;
+      if(from!==c.state){const m=`${c.name}: ${ST[from][0].toLowerCase()} → ${ST[c.state][0].toLowerCase()}`;r.changed.push(m);toast(m);}else toast(`Evidencia sumada a "${c.name}"`);}}
+    render();},
+  rate:v=>{const p=P(),r=S.rev,k=p.cards.find(x=>x.id===r.queue[r.i]);const d=+v;
+    if(d===0){k.due=S.day;r.queue.push(k.id);}else{k.due=S.day+d;k.interval=d;}
+    r.i++;r.ans='';r.checked=null;render();},
+  // profile
+  editAns:v=>{S.ui.editAns=v;render();},
+  setSetting:v=>{const [k,val]=v.split(':');P().settings[k]=val;render();},
+  favM:v=>{const m=P().methods;m.fav=m.fav.includes(v)?m.fav.filter(x=>x!==v):[...m.fav,v];m.hidden=m.hidden.filter(x=>x!==v);render();},
+  hideM:v=>{const m=P().methods;if(!m.hidden.includes(v)&&m.hidden.length>=METHODS.length-1){toast('Tiene que quedar al menos un método.');return;}m.hidden=m.hidden.includes(v)?m.hidden.filter(x=>x!==v):[...m.hidden,v];m.fav=m.fav.filter(x=>x!==v);render();},
+  // demo
+  askReset:()=>modal('¿Reiniciar la demo?','Se borran los perfiles, temas y progreso de esta demo y vuelve a la bienvenida.',[['Cancelar','closeModal'],['Reiniciar','resetConfirm',null,true]]),
+  resetConfirm:()=>{S=fresh();save();toast('Demo reiniciada.');render();},
+  advanceDay:()=>{S.day++;S.rev=null;const fell=[];
+    S.profiles.forEach(p=>p.topics.forEach(t=>t.concepts.forEach(c=>{if(c.state==='dominado'&&c.masteredDay!=null&&S.day-c.masteredDay>=c.interval){c.state='repasar';if(p.id===S.cur)fell.push(c.name);}})));
+    const due=S.cur?dueCards().length:0;
+    toast(`Pasó un día (día ${S.day}).${fell.length?` Para repasar: ${fell.join(', ')}.`:''}${S.cur?` ${due} flashcards para hoy.`:''}`);render();},
+};
+const CH={
+  npAge:v=>{S.ui.np.age=v;render();},
+  ntLevel:v=>{S.nt.level=v===P().age?null:v;S.nt.levelEdit=false;render();},
+  setMethodSel:v=>A.setMethod(v),
+  setSettingSel:(v,el)=>{P().settings[el.dataset.k]=+v;render();},
+  setAnswer:(v,el)=>{const p=P(),k=el.dataset.k;if(k==='age')p.age=v;else p.answers[k]=v;S.ui.editAns=null;toast('Guardado.');render();},
+};
+function openStart(tid,cids){const p=P();const t=T(tid);S.ui.st={tid,cids:cids.slice(),orig:cids.slice(),goal:'obj',time:+(p.answers.time||20),method:null,autoM:true};S.ui.stMore=false;go('start');}
+
+// ---------- render / events ----------
+function setPath(path,val){const ks=path.split('.');let o=S;for(let i=0;i<ks.length-1;i++){o=o[ks[i]];if(o==null)return;}o[ks[ks.length-1]]=val;}
+function render(){
+  if(!S.cur&&!['welcome','profiles'].includes(S.view))S.view=S.firstRun?'welcome':'profiles';
+  if(S.view==='session'&&!S.sess)S.view='home';
+  if(S.view==='start'&&!S.ui.st)S.view='home';
+  if((S.view==='newtopic'||S.view==='map')&&!S.nt)S.view='home';
+  if(S.view==='diag'&&!S.diag)S.view='home';
+  if(S.view==='fin'&&!S.fin)S.view='home';
+  if(S.view==='know'&&S.ui.ki==null)S.ui.ki=0;
+  const ae=document.activeElement;const focusKey=ae&&ae.dataset&&ae.dataset.f;const sel=focusKey&&ae.selectionStart;
+  $('#app').innerHTML=(V[S.view]||V.home)();
+  const m=S.ui.modal;
+  $('#modal').innerHTML=m?`<div class="mback"><div class="modal" role="dialog" aria-modal="true"><h2 style="font-size:17px">${esc(m.title)}</h2><div class="s13 fg2" style="line-height:1.5">${esc(m.body)}</div><div class="row" style="justify-content:flex-end">${m.actions.map(a=>`<button class="btn ${a[3]?'p':''}" data-a="${a[1]}" ${a[2]!=null?`data-v="${a[2]}"`:''}>${esc(a[0])}</button>`).join('')}</div></div></div>`:'';
+  $('#demo').innerHTML=`<span>Demo · día ${S.day}</span><button data-a="advanceDay" title="Simula que pasó un día">Avanzar un día</button><button data-a="askReset">Reiniciar demo</button>`;
+  if(focusKey){const el=document.querySelector(`[data-f="${focusKey}"]`);if(el){el.focus();try{if(sel!=null)el.setSelectionRange(sel,sel);}catch(e){}}}
+  else{const af=document.querySelector('#app [autofocus]');if(af&&window.innerWidth>760)af.focus({preventScroll:true});}
+  save();
+}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t||t.disabled)return;const fn=A[t.dataset.a];if(!fn)return;e.preventDefault();fn(t.dataset.v,t,e);});
+document.addEventListener('input',e=>{const t=e.target;if(t.dataset&&t.dataset.f){setPath(t.dataset.f,t.value);if(t.dataset.f==='ui.np.name'&&S.ui.np&&S.ui.np.err&&t.value.trim()){S.ui.np.err=false;}}});
+document.addEventListener('change',e=>{const t=e.target;if(t.dataset&&t.dataset.c&&CH[t.dataset.c])CH[t.dataset.c](t.value,t);});
+document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t.dataset&&t.dataset.enter&&t.tagName==='INPUT'){e.preventDefault();A[t.dataset.enter]();}if(e.key==='Escape'&&S.ui.modal){A.closeModal();}});
+setInterval(()=>{if(S.view!=='session'||!S.sess)return;const el=$('#timer');if(el)el.textContent=timerText();
+  if(S.sess.time&&!S.sess.timeUp&&(Date.now()-S.sess.start)>S.sess.time*60000){S.sess.timeUp=true;toast('Se terminó el tiempo que elegiste. Cuando quieras, vamos al cierre.');}},1000);
+load();render();
+</script>

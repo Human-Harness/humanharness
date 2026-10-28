@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Después del PR</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.pill{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.btn{font:inherit;font-size:13px;padding:6px 11px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.step{font-size:12px;padding:6px 12px;border-radius:999px;color:#5f5f66;background:#ececf0}
+.it{background:#fff;border:1px solid #e3e3e8;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7">
+  <header style="display:flex;flex-direction:column;gap:12px;padding:14px 24px;border-bottom:1px solid #e3e3e8;background:#fff">
+    <div style="display:flex;align-items:center;gap:12px">
+      <a href="Main.dc.html" style="font-size:13px">‹ Hoy</a>
+      <span class="k">SHOP-129</span>
+      <span style="font-weight:600;font-size:15px">Cupones por categoría</span>
+      <span class="pill" style="background:#dbe8fb;color:#0a3f8a">Jira: En review</span>
+      <div style="flex:1"></div>
+      <a href="#" style="font-size:13px">PR #212 en GitHub</a>
+    </div>
+    <ol aria-label="Etapas" style="display:flex;gap:6px;margin:0;padding:0;list-style:none">
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Entender</li>
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Planificar</li>
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Implementar</li>
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Revisar</li>
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ PR</li>
+      <li class="step" style="background:#0a5bc4;color:#fff;font-weight:600">Feedback y CI · 3 cosas</li>
+    </ol>
+  </header>
+  <div style="flex:1;display:flex;min-height:0">
+    <main style="flex:1;padding:22px 26px;display:flex;flex-direction:column;gap:12px;min-width:0">
+      <h2 style="margin:0;font-size:18px">Qué volvió del PR</h2>
+      <div style="font-size:13px;color:#3a3a40">La IA leyó los comentarios y el CI y propone qué hacer con cada uno. Vos decidís.</div>
+
+      <div class="it" style="border-color:#c0392b">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#f7d9d6;color:#8a1c12">CI</span><strong style="font-size:14px">Falla el e2e "aplicar cupón en checkout"</strong></div>
+        <div style="font-size:13px;color:#3a3a40;line-height:1.5">Causa probable: el test espera el precio con descuento antes de que cargue el carrito. No es un error del cupón.</div>
+        <div style="display:flex;gap:8px"><button class="btn p">Arreglar el test</button><button class="btn">Ver el log</button><button class="btn">Volver a correr</button></div>
+      </div>
+      <div class="it">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#ececf0;color:#3a3a40">Review · ana-dev</span><strong style="font-size:14px">"¿Qué pasa si la categoría se borra con cupones activos?"</strong></div>
+        <div style="font-size:13px;color:#3a3a40;line-height:1.5">Nadie lo decidió todavía. Opciones: desactivar los cupones, o impedir borrar la categoría.</div>
+        <div style="display:flex;gap:8px"><button class="btn">Desactivar cupones</button><button class="btn">Impedir borrar</button><button class="btn">Preguntar al PO en Jira</button></div>
+      </div>
+      <div class="it">
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#ececf0;color:#3a3a40">Review · ana-dev</span><strong style="font-size:14px">"Renombrar applyCoupon2 a algo claro"</strong></div>
+        <div style="font-size:13px;color:#3a3a40">Cambio chico. Propuesta: applyCategoryCoupon.</div>
+        <div style="display:flex;gap:8px"><button class="btn p">Hacerlo y responder en GitHub</button><button class="btn">Contestar sin cambiar</button></div>
+      </div>
+    </main>
+    <aside aria-label="Estado" style="width:320px;padding:20px;display:flex;flex-direction:column;gap:12px;border-left:1px solid #e3e3e8;background:#fff">
+      <div class="k">ESTADO DEL PR</div>
+      <div style="font-size:13px;line-height:1.7">1 aprobación de 2 · 2 comentarios abiertos · CI: 1 de 7 checks en rojo</div>
+      <div class="k" style="margin-top:6px">AL TERMINAR</div>
+      <div style="font-size:13px;line-height:1.5">La app sube los cambios, contesta los comentarios en GitHub y anota las decisiones nuevas en el ticket.</div>
+      <div style="flex:1"></div>
+      <div class="k">CUANDO SE MERGEA</div>
+      <div style="font-size:13px;line-height:1.5">Mover SHOP-129 a Hecho y borrar el worktree.</div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

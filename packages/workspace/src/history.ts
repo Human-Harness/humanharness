@@ -99,7 +99,10 @@ export interface HistoryTask {
   end: string;
   /** The date of `end`. */
   date: Date;
-  /** Tasks: the tree diff from `start` to `end`. Outside a task: the union of its commits' own changes. */
+  /**
+   * Tasks: the tree diff from `start` to `end`; with `ownCommits`, the union of its own commits' changes (parallel spec
+   * §5.3), the commit at `start` left out. Outside a task: the union of its commits' own changes.
+   */
   changes: FileChange[];
   /** Newest first. */
   entries: HistoryEntry[];
@@ -604,9 +607,10 @@ export class History {
    * The commits of the last `depth`, grouped by task id, newest task first; the "Outside a task" group always last.
    * A task's commits need not be contiguous: its changes run from its `start` to its last commit, so they
    * include whatever happened in between (untagged commits too). A task cut by `depth` is followed back
-   * past it to find its true first commit.
+   * past it to find its true first commit. With `ownCommits`, a task's changes come from its own commits only, so
+   * another task's commits in between don't show up under it (parallel spec §5.3).
    */
-  async tasks(depth = 200): Promise<HistoryTask[]> {
+  async tasks(depth = 200, opts: { ownCommits?: boolean } = {}): Promise<HistoryTask[]> {
     const cache = {};
     const groups = new Map<string | null, HistoryEntry[]>();
     for (const e of await this.listWith(depth, cache)) {
@@ -628,11 +632,22 @@ export class History {
         start,
         end: end.sha,
         date: end.date,
-        changes: taskId === null ? await this.unionOfChanges(entries, cache) : await this.diff(start, end.sha, cache),
+        changes:
+          taskId === null
+            ? await this.unionOfChanges(entries, cache)
+            : opts.ownCommits
+              ? await this.ownChanges(entries, start, cache)
+              : await this.diff(start, end.sha, cache),
         entries,
       });
     }
     return [...out.filter((g) => g.taskId !== null), ...out.filter((g) => g.taskId === null)];
+  }
+
+  /** The tracked files commit `sha` changed against its parent. */
+  async commitChanges(sha: string): Promise<FileChange[]> {
+    const cache = {};
+    return this.diff(await this.parentOf(sha, cache), sha, cache);
   }
 
   /** The files the history tracks in the folder now (relative, forward slashes). */
@@ -728,4 +743,31 @@ export class History {
     }
     return [...seen.values()].sort(byPath);
   }
+
+  /**
+   * A task's changes from its own commits (newest first), the commit at `start` (its opening "Before message") left
+   * out. Each file's kinds fold oldest first, so with no other task in between this equals the `start` → end diff:
+   * added then modified is added, added then deleted is nothing, deleted then added is modified.
+   */
+  private async ownChanges(entries: HistoryEntry[], start: string | null, cache: object): Promise<FileChange[]> {
+    const kinds = new Map<string, FileChange["kind"] | null>();
+    for (const e of [...entries].reverse()) {
+      if (e.sha === start) continue;
+      for (const c of await this.diff(await this.parentOf(e.sha, cache), e.sha, cache)) {
+        const prev = kinds.get(c.path);
+        kinds.set(c.path, prev === undefined ? c.kind : foldKind(prev, c.kind));
+      }
+    }
+    const out: FileChange[] = [];
+    for (const [p, kind] of kinds) if (kind !== null) out.push({ path: p, kind });
+    return out.sort(byPath);
+  }
+}
+
+/** One file's net change after `prev` then `next` (null: no net change, the file was added then deleted). */
+function foldKind(prev: FileChange["kind"] | null, next: FileChange["kind"]): FileChange["kind"] | null {
+  if (prev === null) return next === "deleted" ? null : "added";
+  if (prev === "added") return next === "deleted" ? null : "added";
+  if (prev === "deleted") return next === "deleted" ? "deleted" : "modified";
+  return next === "deleted" ? "deleted" : "modified";
 }

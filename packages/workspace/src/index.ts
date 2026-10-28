@@ -18,3 +18,4 @@ export * from "./sidekick-checks";
 export * from "./sidekick-brief";
 export * from "./sidekick-events";
 export * from "./attribution";
+export * from "./undo-paths";

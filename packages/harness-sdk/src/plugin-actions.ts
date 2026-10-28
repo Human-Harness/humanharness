@@ -50,7 +50,9 @@ export function fillActionPrompt(prompt: string, vars: Record<string, unknown>):
     const v = vars[n];
     return visible(typeof v === "string" ? v : JSON.stringify(v), true);
   });
-  return { ok: true, text };
+  // The manifest refuses hidden characters in the template; dropping them over the whole text too keeps the card
+  // and the agent's prompt the same even for a template that got past it.
+  return { ok: true, text: visible(text, true) };
 }
 
 const TITLE_VAR_MAX = 40;

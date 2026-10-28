@@ -73,6 +73,15 @@ describe("readDist (plugins spec §3.1, §7 Add from folder step 1)", () => {
     expect(await readDist(d2, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/^settings: /) });
   });
 
+  it("B12: an action prompt with hidden characters is refused (the card would not show what the agent reads)", async () => {
+    const root = await tmp();
+    for (const [i, x] of ["\u{e0041}", "\u202e", "\u200b"].entries()) {
+      const action = { id: "a", label: "A", tier: "light", prompt: `Explain.${x}` };
+      const dist = await writePlugin(root, `p${i}`, { permissions: { tasks: true }, actions: [action] });
+      expect(await readDist(dist, "dev"), JSON.stringify(x)).toMatchObject({ ok: false, error: expect.stringMatching(/hidden or control/) });
+    }
+  });
+
   it("refuses a plugin.json over 256 KB, invalid JSON, a non-object, and a missing backend.js", async () => {
     const root = await tmp();
     const dist = await writePlugin(root, "a");

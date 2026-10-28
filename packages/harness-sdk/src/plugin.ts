@@ -203,6 +203,21 @@ export const HIDDEN_CHARS =
   /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufe00-\ufe0f\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
 /** Text the person reads (names, labels, titles, help): refuses what HIDDEN_CHARS names. */
 const shown = (s: z.ZodString) => s.refine((v) => !HIDDEN_CHARS.test(v), { message: "Display text can't hold hidden or control characters" });
+/** HIDDEN_CHARS without tab and newline: what a template the agent reads may not hold (B12). */
+const hiddenInProse = (v: string) => HIDDEN_CHARS.test(v.replace(/[\t\n]/g, ""));
+/**
+ * Text the agent reads and the person sees in full (an action's prompt on the prepared card): tab and newline are
+ * fine, the rest of HIDDEN_CHARS is refused, so nothing reaches the agent that the card can't show.
+ */
+const prose = (s: z.ZodString) => s.refine((v) => !hiddenInProse(v), { message: "Text for the agent can't hold hidden or control characters (tab and newline are fine)" });
+/** A settings field's agent sentence (`settingsSchema` checks its shape): its text follows `prose`. */
+const agentSentence = z.unknown().refine(
+  (a) => {
+    const t = typeof a === "string" ? a : typeof a === "object" && a !== null && typeof (a as { text?: unknown }).text === "string" ? (a as { text: string }).text : "";
+    return !hiddenInProse(t);
+  },
+  { message: "Text for the agent can't hold hidden or control characters (tab and newline are fine)" },
+);
 
 const pluginCollectionSchema = z.strictObject({
   /** Always app-wide: sources run outside any scope (Decision 2). */
@@ -237,7 +252,7 @@ const settingFieldJson = z.strictObject({
   help: shown(z.string()).optional(),
   unit: shown(z.string()).optional(),
   options: z.record(z.string(), shown(z.string())).optional(),
-  agent: z.unknown().optional(),
+  agent: agentSentence.optional(),
   advanced: z.boolean().optional(),
 });
 
@@ -284,7 +299,7 @@ export const pluginManifestSchema = z
           tier: z.enum(PLUGIN_TIERS),
           scope: z.enum(["required", "none"]).default("required"),
           vars: objectSchema.default({ type: "object", properties: {} }),
-          prompt: text.max(4000),
+          prompt: prose(text.max(4000)),
         }),
       )
       .max(20)

@@ -35,6 +35,13 @@ describe("definePlugin → plugin.json (Decision 16)", () => {
     d.data!.queues.schema = z.looseObject({ id: z.string() });
     expect(pluginJson(d).data?.queues.schema).toMatchObject({ additionalProperties: true });
   });
+  it("an action prompt with hidden characters (tag characters, bidi override, zero-width space) fails the build (B12)", () => {
+    for (const x of ["\u{e0041}", "\u202e", "\u200b"]) {
+      const d = def();
+      d.actions![0].prompt = `Triage {{key}}.${x}`;
+      expect(() => pluginJson(d), JSON.stringify(x)).toThrow(/hidden or control/);
+    }
+  });
   it("runs the loader's model checks: a key that is not a schema field is refused (data:)", () => {
     const d = def();
     d.data!.queues.key = "nope";

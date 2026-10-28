@@ -94,7 +94,7 @@ function setup(jobs: Record<string, HarnessJob>, o: { scopes?: string[]; setting
     changed: () => void changes++,
   };
   const s = new JobScheduler(deps);
-  return { s, t, calls, lines, log, changes: () => changes };
+  return { s, t, calls, lines, log, deps, changes: () => changes };
 }
 
 const record = (job: string, tokens: number, startedAt: Date): JobRunRecord => ({
@@ -167,6 +167,8 @@ describe("JobScheduler (parallel spec §8)", () => {
     expect(await s.manual("boot")).toBe(false);
     expect(await s.manual("per", "gamma")).toBe(false);
     expect(await s.manual("sync", "gamma")).toBe(false);
+    // An app-wide job takes no scope, an existing one neither (as the window's jobs.run refuses it).
+    expect(await s.manual("sync", "alpha")).toBe(false);
     // scope "trigger" runs only in the scope it was asked for.
     expect(await s.manual("trig")).toBe(false);
     expect(calls).toEqual([]);
@@ -397,6 +399,52 @@ describe("JobScheduler (parallel spec §8)", () => {
     calls[0].finish();
     await flush();
     expect(changes()).toBe(2);
+    s.stopAll();
+  });
+
+  it("a run that throws before it returns a promise frees its job and scope; every keeps firing", async () => {
+    const { t, lines, deps } = setup({ tick: job({ on: { every: "30m", manual: true }, dailyTokens: 1_000_000 }) });
+    let runs = 0;
+    const s = new JobScheduler({
+      ...deps,
+      run: () => {
+        runs++;
+        throw new Error("boom");
+      },
+    });
+    await s.appReady();
+    await t.advance(30 * MIN);
+    expect(runs).toBe(1);
+    expect(s.isActive("tick", null)).toBe(false);
+    await t.advance(30 * MIN);
+    expect(runs).toBe(2);
+    expect(await s.manual("tick")).toBe(true);
+    await flush();
+    expect(runs).toBe(3);
+    expect(lines.filter((l) => l.includes("boom"))).toHaveLength(3);
+    s.stopAll();
+  });
+
+  it("a changed() that throws when a run ends is reported, not left unhandled", async () => {
+    const { calls, lines, deps } = setup({ sync: job({ on: { manual: true } }) });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => void unhandled.push(e);
+    process.on("unhandledRejection", onUnhandled);
+    let fail = false;
+    const s = new JobScheduler({
+      ...deps,
+      changed: () => {
+        if (fail) throw new Error("window gone");
+      },
+    });
+    expect(await s.manual("sync")).toBe(true);
+    fail = true;
+    calls[0].finish();
+    await flush();
+    process.off("unhandledRejection", onUnhandled);
+    expect(unhandled).toEqual([]);
+    expect(s.isActive("sync", null)).toBe(false);
+    expect(lines.some((l) => l.includes("window gone"))).toBe(true);
     s.stopAll();
   });
 });

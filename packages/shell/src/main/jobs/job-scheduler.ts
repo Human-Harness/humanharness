@@ -80,12 +80,14 @@ export class JobScheduler {
 
   /**
    * "Run now" (`client.jobs.run`, J4): only a declared manual job, only in an existing scope; a scope-"trigger" job needs
-   * one. True when at least one run was queued (false when off, unknown or already running).
+   * one and an app-wide (scope "none") job takes none. True when at least one run was queued (false when off, unknown,
+   * asked wrong or already running).
    */
   async manual(id: string, scope?: string): Promise<boolean> {
     if (this.stopped || !Object.hasOwn(this.d.jobs, id)) return false;
     const job = this.d.jobs[id];
     if (!job.on.manual) return false;
+    if (job.scope === "none" && scope !== undefined) return false;
     if (scope !== undefined && !(await this.d.scopeExists(scope))) return false;
     if (job.scope === "trigger" && scope === undefined) return false;
     return (await this.fire(id, job, "manual", scope)) > 0;
@@ -178,12 +180,22 @@ export class JobScheduler {
         const c = new AbortController();
         this.active.set(key, c);
         queued++;
-        void this.d
-          .run(id, job, scope, trigger, c.signal)
+        // A run that throws before it returns its promise still ends here and frees its key.
+        let running: Promise<unknown>;
+        try {
+          running = this.d.run(id, job, scope, trigger, c.signal);
+        } catch (err) {
+          running = Promise.reject(err);
+        }
+        void running
           .catch((err: unknown) => this.report(`Job ${key} failed: ${err instanceof Error ? err.message : String(err)}`))
           .finally(() => {
             if (this.active.get(key) === c) this.active.delete(key);
-            this.d.changed();
+            try {
+              this.d.changed();
+            } catch (err) {
+              this.report(`Job ${key}: could not tell the window: ${err instanceof Error ? err.message : String(err)}`);
+            }
           });
       }
       if (queued > 0) this.d.changed();

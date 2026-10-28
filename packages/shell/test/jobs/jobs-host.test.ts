@@ -307,9 +307,9 @@ describe("job results in the Attention inbox (part 3 Task 8)", () => {
     return { ...t, stores, items, changes: () => changes };
   }
   /** Runs `sync` in `scope` once, its turn answering `data`. */
-  async function runOnce(t: ReturnType<typeof attended>, data: unknown, scope = "main") {
+  async function runOnce(t: ReturnType<typeof attended>, data: unknown, scope: string | null = "main") {
     const before = t.fake.turns.length;
-    expect(await t.h.runManual("sync", scope)).toBe(true);
+    expect(await t.h.runManual("sync", scope ?? undefined)).toBe(true);
     await until(() => t.fake.turns.length === before + 1);
     t.fake.turns[before].end([result(data), { type: "done", ok: true }]);
     await until(() => !t.h.running());
@@ -430,7 +430,7 @@ describe("job results in the Attention inbox (part 3 Task 8)", () => {
 
   it("an app-wide job's id is `<job>:-`, its target has no scope", async () => {
     const t = attended({ sync: job() });
-    await runOnce(t, { status: "needs-you", summary: "Look", action: "implement" });
+    await runOnce(t, { status: "needs-you", summary: "Look", action: "implement" }, null);
     expect(await t.items()).toMatchObject([{ origin: { kind: "job", id: "sync:-" }, target: { action: "implement", vars: {} } }]);
   });
 });

@@ -803,3 +803,54 @@ describe("HarnessApp", () => {
     await screen.findByText("Progress 60%");
   });
 });
+
+describe("HarnessApp language on demand (plan 5b)", () => {
+  it("starts in the saved language's cached strings; D0 English asks for none", async () => {
+    const client = new FakeClient(ready);
+    client.state.config.language = "es";
+    client.languageStrings.es = { "core:home.start": "Empezar {{name}}" };
+    render(<HarnessApp client={client} locales={{ en: { title: "Notes" } }} />);
+    expect(await screen.findByRole("button", { name: "Empezar Demo" })).toBeTruthy();
+    expect(document.documentElement.lang).toBe("es");
+    expect(client.languageCalls).toEqual([{ op: "strings", args: ["es", { title: "Notes" }] }]);
+    cleanup();
+    for (const language of ["en", "en-GB"]) {
+      const en = new FakeClient({ ...ready, language });
+      render(<HarnessApp client={en} />);
+      await screen.findByRole("button", { name: "Start Demo" });
+      // No strings for English, and no state ask (an engine check) at start.
+      expect(en.languageCalls).toEqual([]);
+      cleanup();
+    }
+  });
+
+  it("a failed strings answer starts in English", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    client.language.strings = async () => Promise.reject(new Error("gone"));
+    render(<HarnessApp client={client} />);
+    expect(await screen.findByRole("button", { name: "Start Demo" })).toBeTruthy();
+  });
+
+  it("Settings › General asks for the state and offers Change…; a finished run switches the screen live", async () => {
+    const client = new FakeClient(ready);
+    client.languageState = { ...client.languageState, language: "en" };
+    client.languageStrings.es = { "core:home.start": "Empezar {{name}}" };
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Change…" }));
+    expect(screen.getByRole("dialog", { name: "Language" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Language" }), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    act(() => client.pushLanguage({ language: "es", cached: [{ tag: "es", complete: true }], run: { tag: "es", done: 1, total: 1, status: "done" } }));
+    expect(await screen.findByRole("button", { name: "Empezar Demo" })).toBeTruthy();
+  });
+
+  it("D0: without client.language Settings keeps the read-only row", async () => {
+    const client = new FakeClient(ready);
+    (client as { language?: unknown }).language = undefined;
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    await screen.findByText("The AI always thinks in English and writes to you in this language.");
+    expect(screen.queryByRole("button", { name: "Change…" })).toBeNull();
+  });
+});

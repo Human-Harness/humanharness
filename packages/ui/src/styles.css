@@ -760,3 +760,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langpick-reason, .hh-langpick-none, .hh-langpick-progress { margin: 0; }
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-langpick-actions, .hh-langnotice-actions, .hh-langoffer-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.hh-langrow-name { display: inline-flex; gap: 6px; align-items: baseline; }
+.hh-langrow-progress, .hh-langrow-stopped, .hh-langrow-new { gap: 8px; }
+.hh-langrow-reason { margin: 0; }

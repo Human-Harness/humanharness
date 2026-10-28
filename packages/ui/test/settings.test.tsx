@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AppState } from "../src/client";
+import type { AppState, LanguageState } from "../src/client";
+import type { LanguageControl } from "../src/language-control";
 import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
 import { ownName, systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
@@ -15,15 +16,17 @@ function Sheet({
   initialTab = "general",
   onClose = () => {},
   onSetup = () => {},
+  language,
 }: {
   client: FakeClient;
   initialTab?: SettingsTab;
   onClose?: () => void;
   onSetup?: () => void;
+  language?: LanguageControl;
 }) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
-  return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} />;
+  return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} language={language} />;
 }
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -291,5 +294,79 @@ describe("SettingsSheet", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(client.settingsSets).toEqual([]);
+  });
+});
+
+describe("Settings › General › Language (spec §3, §5, §6)", () => {
+  const control = (view: Partial<LanguageState>) => ({
+    view: { language: "es", cached: [], missing: 0, canTranslate: true as const, engineName: "Claude Code", run: null, ...view } as LanguageState,
+    load: vi.fn(),
+    choose: vi.fn(async () => "switched" as const),
+    translate: vi.fn(async () => true),
+    cancel: vi.fn(),
+  });
+  const renderSettings = (opts: { language?: LanguageControl; onClose?: () => void }) =>
+    renderIn("en", <Sheet client={new FakeClient(ready)} language={opts.language} onClose={opts.onClose} />);
+
+  it("shows the language by its own name and English name, with Change…; asks for the state once when shown", async () => {
+    const c = control({ cached: [{ tag: "es", complete: true }] });
+    await renderSettings({ language: c });
+    expect(screen.getByText("Español").getAttribute("lang")).toBe("es");
+    expect(screen.getByText("Spanish").getAttribute("lang")).toBe("en");
+    expect(c.load).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Change…" }));
+    expect(screen.getByRole("dialog", { name: "Language" })).toBeTruthy();
+  });
+
+  it("Escape in the picker closes the picker, not the sheet", async () => {
+    const onClose = vi.fn();
+    await renderSettings({ language: control({ cached: [{ tag: "es", complete: true }] }), onClose });
+    fireEvent.click(screen.getByRole("button", { name: "Change…" }));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Language" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Language" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+  });
+
+  it("a running translation shows its progress and Cancel; Change… waits", async () => {
+    const c = control({ run: { tag: "es", done: 3, total: 5, status: "running" } });
+    await renderSettings({ language: c });
+    expect(screen.getByText("Translating… 3 of 5").getAttribute("role")).toBe("status");
+    expect((screen.getByRole("button", { name: "Change…" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(c.cancel).toHaveBeenCalled();
+  });
+
+  it("a stopped run offers Try again; new texts offer Translate; no engine disables them with the reason", async () => {
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "quota" } }) });
+    expect(screen.getByText("The translation stopped. What it finished is kept.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect((await screen.findByRole("alertdialog")).textContent).toContain("Español");
+    cleanup();
+    await renderSettings({ language: control({ cached: [{ tag: "es", complete: false }], missing: 4 }) });
+    expect(screen.getByText("Some texts are new. Translate them?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    cleanup();
+    await renderSettings({ language: control({ missing: 800, canTranslate: "mock" }) });
+    expect(screen.getByText("The app's texts aren't in Español yet.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Translate" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Connect an AI engine to translate the app.")).toBeTruthy();
+    cleanup();
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "cancelled" }, canTranslate: "no-engine" }) });
+    expect((screen.getByRole("button", { name: "Try again" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("English (and its variants) never offers a translation", async () => {
+    await renderSettings({ language: control({ language: "en-GB", missing: 800 }) });
+    expect(screen.queryByRole("button", { name: "Translate" })).toBeNull();
+    expect(screen.getAllByText("British English")).toHaveLength(1);
+  });
+
+  it("D0: no language control keeps today's read-only row", async () => {
+    await renderSettings({});
+    expect(screen.queryByRole("button", { name: "Change…" })).toBeNull();
+    expect(screen.getByText("The AI always thinks in English and writes to you in this language.")).toBeTruthy();
   });
 });

@@ -33,6 +33,23 @@ describe("client.language in the preload", () => {
     expect(await languageClient(async () => good, () => () => {}).state({})).toEqual(good);
     expect(await languageClient(async () => ({ ...good, run: "x" }), () => () => {}).state({})).toBeNull();
     expect(await languageClient(async () => ({ ...good, missing: "1" }), () => () => {}).state({})).toBeNull();
+    const cached = { ...good, cached: [{ tag: "es", complete: true }] };
+    expect(await languageClient(async () => cached, () => () => {}).state({})).toEqual(cached);
+    for (const bad of [{ ...good, cached: [null] }, { ...good, cached: ["es"] }, { ...good, cached: [{ tag: 3 }] }, { ...good, canTranslate: "yes" }, { ...good, canTranslate: undefined }]) {
+      expect(await languageClient(async () => bad, () => () => {}).state({})).toBeNull();
+    }
+    for (const canTranslate of ["no-engine", "mock"]) {
+      expect(await languageClient(async () => ({ ...good, canTranslate }), () => () => {}).state({})).not.toBeNull();
+    }
+  });
+
+  it("a result needs a boolean ok, and a switch needs a string language", async () => {
+    const answer = (v: unknown) => languageClient(async () => v, () => () => {});
+    expect(await answer({ ok: "yes" }).translate("es", {})).toEqual({ ok: false, reason: "failed" });
+    expect(await answer({ ok: 1 }).cancel()).toEqual({ ok: false });
+    expect(await answer({ ok: true }).choose("es", {})).toEqual({ ok: false, reason: "failed" });
+    expect(await answer({ ok: true, language: 3 }).choose("es", {})).toEqual({ ok: false, reason: "failed" });
+    expect(await answer({ ok: false, reason: "needs-translation" }).choose("es", {})).toEqual({ ok: false, reason: "needs-translation" });
   });
 
   it("onChange hears only well-formed states and returns the unsubscribe", () => {

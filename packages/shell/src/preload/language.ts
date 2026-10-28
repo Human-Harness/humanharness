@@ -9,9 +9,13 @@ const isState = (v: unknown): v is LanguageState =>
   isObject(v) &&
   typeof v.language === "string" &&
   Array.isArray(v.cached) &&
+  v.cached.every((c) => isObject(c) && typeof c.tag === "string") &&
   typeof v.missing === "number" &&
+  (v.canTranslate === true || v.canTranslate === "no-engine" || v.canTranslate === "mock") &&
   (v.run === null || isObject(v.run));
-const isResult = (v: unknown): v is { ok: unknown } => isObject(v) && "ok" in v;
+const isResult = (v: unknown): v is { ok: boolean } => isObject(v) && typeof v.ok === "boolean";
+/** A choose answer: a switch must name the language it switched to. */
+const isChoose = (v: unknown): boolean => isResult(v) && (!v.ok || typeof (v as Record<string, unknown>).language === "string");
 /** Only the string values of a strings map (anything else would reach i18next). */
 const onlyStrings = (v: unknown): GeneratedStrings =>
   isObject(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")) : {};
@@ -27,7 +31,7 @@ export function languageClient(invoke: Invoke, subscribe: Subscribe): LanguageCl
   return {
     state: (harness) => ask<LanguageState | null>(null, isState, "hh:languageState", harness),
     choose: (tag, harness) =>
-      ask<LanguageChoose>(failed, isResult, "hh:languageChoose", tag, harness).then((r) => (r.ok ? { ...r, strings: onlyStrings(r.strings) } : r)),
+      ask<LanguageChoose>(failed, isChoose, "hh:languageChoose", tag, harness).then((r) => (r.ok ? { ...r, strings: onlyStrings(r.strings) } : r)),
     translate: (tag, harness) => ask<LanguageStart>(failed, isResult, "hh:languageTranslate", tag, harness),
     cancel: () => ask<{ ok: boolean }>({ ok: false }, isResult, "hh:languageCancel"),
     strings: (tag, harness) => ask<unknown>({}, isObject, "hh:languageStrings", tag, harness).then(onlyStrings),

@@ -52,12 +52,16 @@ export class LiveBuffer {
       t.events.shift();
       t.chars -= t.sizes.shift() ?? 0;
     }
-    // One text run longer than the budget keeps its end.
+    // One text run longer than the budget keeps its end: about ¾ of it, so the next deltas don't trim it again each time.
     const only = t.events[0];
     if (t.chars > this.maxChars && only?.type === "text") {
-      t.events[0] = { ...only, delta: only.delta.slice(-this.maxChars) };
-      t.sizes[0] = this.maxChars;
-      t.chars = this.maxChars;
+      let delta = only.delta.slice(-Math.max(1, Math.floor((this.maxChars * 3) / 4)));
+      // Never half a character: a cut through a surrogate pair leaves its low half first.
+      const first = delta.charCodeAt(0);
+      if (first >= 0xdc00 && first <= 0xdfff) delta = delta.slice(1);
+      t.events[0] = { ...only, delta };
+      t.sizes[0] = delta.length;
+      t.chars = delta.length;
     }
   }
 

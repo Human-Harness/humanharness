@@ -60,7 +60,36 @@ describe("LiveBuffer (Decision 6)", () => {
     b.event("t1", { type: "text", delta: "abcdefgh" });
     expect(b.live("t1")?.events).toEqual([{ type: "text", delta: "abcdefgh" }]);
     b.event("t1", { type: "text", delta: "XYZ" });
-    expect(b.live("t1")?.events).toEqual([{ type: "text", delta: "bcdefghXYZ" }]);
+    // Over the budget, the run keeps about ¾ of it (7 of 10).
+    expect(b.live("t1")?.events).toEqual([{ type: "text", delta: "efghXYZ" }]);
+  });
+
+  it("a trim never leaves half a surrogate pair", () => {
+    const b = new LiveBuffer(100, 10);
+    b.user("t1", { text: "x", at: "t" });
+    // "😀" is two UTF-16 units: 12 units, trimmed to ¾ of 10 = the last 7, cuts the first emoji in half.
+    b.event("t1", { type: "text", delta: "abcd😀😀😀😀" });
+    const delta = (b.live("t1")?.events[0] as { delta: string }).delta;
+    expect(delta).toBe("😀😀😀");
+    const first = delta.charCodeAt(0);
+    expect(first >= 0xdc00 && first <= 0xdfff).toBe(false);
+  });
+
+  it("past the budget, a long run of deltas trims it rarely, not on every delta", () => {
+    const b = new LiveBuffer(100, 100);
+    b.user("t1", { text: "x", at: "t" });
+    let trims = 0;
+    let before = 0;
+    for (let i = 0; i < 1000; i++) {
+      b.event("t1", { type: "text", delta: "a" });
+      const length = (b.live("t1")?.events[0] as { delta: string }).delta.length;
+      if (length < before) trims++;
+      expect(length).toBeLessThanOrEqual(100);
+      before = length;
+    }
+    // Each trim leaves 75 of 100: the next comes 26 deltas later.
+    expect(trims).toBeGreaterThan(0);
+    expect(trims).toBeLessThanOrEqual(Math.ceil(1000 / 26));
   });
 
   it("never keeps an activity's edits (paths stay in main)", () => {

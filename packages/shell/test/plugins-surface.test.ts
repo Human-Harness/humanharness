@@ -188,6 +188,13 @@ describe("PluginsController prepared tasks", () => {
     expect(await t.ctl.takePrepared(first.token)).toBeNull();
   });
 
+  it("concurrent requestAction calls give one card", async () => {
+    const t = await oncall();
+    const out = await Promise.all([t.ctl.requestAction("oncall", "triage", { issue: "A" }), t.ctl.requestAction("oncall", "triage", { issue: "B" })]);
+    expect(out.filter((o) => o.ok)).toHaveLength(1);
+    expect(out.filter((o) => !o.ok)).toEqual([{ ok: false, error: "Too soon" }]);
+  });
+
   it("a value holding {{x}} is not expanded again (P6)", async () => {
     const t = await oncall();
     await t.ctl.requestAction("oncall", "triage", { issue: "{{issue}}" });

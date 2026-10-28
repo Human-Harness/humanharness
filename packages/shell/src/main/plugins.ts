@@ -310,7 +310,9 @@ export class PluginsController {
     this.clearPrepared();
     this.detached = true;
     this.ctx = null;
-    for (const id of [...this.running.keys()]) void this.stopPlugin(id);
+    const stops = [...this.running.keys()].map((id) => this.stopPlugin(id));
+    // The window must stop showing panels and chips that now answer "Not running".
+    void Promise.allSettled(stops).then(() => this.pushSurface());
   }
 
   private loaded(): Loaded[] {
@@ -1164,6 +1166,8 @@ export class PluginsController {
     if (filled.text.length > PREPARED_PROMPT_MAX) return { ok: false, error: "The prompt is too long" };
     const c = await this.base();
     if (!c || r.stopped) return { ok: false, error: NOT_RUNNING };
+    // Checked again after the await, and claimed with nothing awaited before the card: concurrent calls get one card.
+    if (r.lastAction !== undefined && this.clock() - r.lastAction < ACTION_GAP_MS) return { ok: false, error: "Too soon" };
     r.lastAction = this.clock();
     const title = preparedTitle(m.name, a, checked.vars);
     const expires = this.now().getTime() + PREPARED_MS;

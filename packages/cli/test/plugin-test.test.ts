@@ -1,10 +1,11 @@
 import { Buffer } from "node:buffer";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { main } from "../src/main";
-import { shellDir } from "../src/paths";
+import { CLI_DIR, shellDir } from "../src/paths";
 import { buildPlugin } from "../src/plugin-build";
 import { pluginContext, runSource } from "../src/plugin-run";
 import { fixtureTransport, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
@@ -196,6 +197,22 @@ describe("humanharness plugin test", () => {
   });
 });
 
+describe("the humanharness command", () => {
+  it("exits once plugin test has printed, even with plugin code still holding the process", async () => {
+    const dir = withFixtures("held", {});
+    // Plugin code can reach this realm's timers (P12); runSource can't clear those.
+    fs.writeFileSync(path.join(dir, "dist", "backend.js"), `export default { sources: { queues: async () => { URL.constructor("setInterval(() => {}, 1000)")(); }, clock: async () => {} } };\n`);
+    const child = spawn(process.execPath, [path.join(CLI_DIR, "bin", "humanharness.js"), "plugin", "test", "--source", "queues"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d) => (out += String(d)));
+    const killer = setTimeout(() => child.kill(), 30_000);
+    const code = await new Promise<number | null>((r) => child.on("exit", (c) => r(c)));
+    clearTimeout(killer);
+    expect(out).toContain("queues: ok");
+    expect(code).toBe(0);
+  }, 40_000);
+});
+
 describe("runSource", () => {
   it("a key reaches the request as fixture-<id> in a fixture run", async () => {
     const dir = good();
@@ -244,6 +261,13 @@ describe("runSource", () => {
     const dir = withFixtures("slow", {});
     const backend = path.join(dir, "dist", "backend.js");
     fs.writeFileSync(backend, `export default { sources: { queues: () => new Promise((r) => setTimeout(r, 5000)), clock: async () => {} } };\n`);
+    const r = await runSource({ dir, source: "queues", transport: { fetch: globalThis.fetch, run: (() => Promise.reject(new Error("no"))) as never }, secrets: async () => ({}), runLimitMs: 50 });
+    expect(r).toMatchObject({ ok: false, error: "The sync took longer than 0.05 s" });
+  });
+
+  it("stops a source stuck in a synchronous endless loop", async () => {
+    const dir = withFixtures("loop", {});
+    fs.writeFileSync(path.join(dir, "dist", "backend.js"), `export default { sources: { queues: () => { for (;;) {} }, clock: async () => {} } };\n`);
     const r = await runSource({ dir, source: "queues", transport: { fetch: globalThis.fetch, run: (() => Promise.reject(new Error("no"))) as never }, secrets: async () => ({}), runLimitMs: 50 });
     expect(r).toMatchObject({ ok: false, error: "The sync took longer than 0.05 s" });
   });

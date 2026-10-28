@@ -147,7 +147,7 @@ const fixedClock = (ms: number) => `(() => {
  * dist/backend.js (the bytes the app runs) as the default export's `sources`, loaded the way spike P-S10 settled:
  * esbuild turns the ES module into an IIFE in memory, and `vm.runInContext` runs it in a context of its own.
  */
-async function loadSources(dir: string, globals: Record<string, unknown>, now?: Date): Promise<Record<string, unknown>> {
+async function loadSources(dir: string, globals: Record<string, unknown>, now?: Date): Promise<{ sources: Record<string, unknown>; context: vm.Context }> {
   const file = path.join(dir, DIST, "backend.js");
   const code = await fs.readFile(file, "utf8").catch(() => {
     throw new CliError(`${path.join(DIST, "backend.js")} is missing: run humanharness plugin build.`);
@@ -162,8 +162,25 @@ async function loadSources(dir: string, globals: Record<string, unknown>, now?: 
   if (now) vm.runInContext(fixedClock(now.getTime()), context);
   vm.runInContext(iife, context, { filename: "backend.js" });
   const found = (context as { __hhBackend?: { default?: { sources?: unknown } } }).__hhBackend?.default?.sources;
-  return found !== null && typeof found === "object" ? (found as Record<string, unknown>) : {};
+  return { sources: found !== null && typeof found === "object" ? (found as Record<string, unknown>) : {}, context };
 }
+
+/**
+ * Calls `fn(ctx)` inside the backend's context with a time limit on its synchronous part, so a source stuck in an
+ * endless loop before its first `await` is stopped. A loop after an `await` runs as a microtask outside any limit and
+ * can't be stopped in this process; the app's host is a process of its own, killed at the limit.
+ */
+function callWithLimit(context: vm.Context, fn: unknown, ctx: unknown, limitMs: number): unknown {
+  (context as { __hhCall?: unknown }).__hhCall = { fn, ctx };
+  try {
+    return vm.runInContext("(() => { const c = globalThis.__hhCall; delete globalThis.__hhCall; return c.fn(c.ctx); })()", context, { timeout: limitMs });
+  } catch (e) {
+    if ((e as { code?: unknown } | null)?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") throw new Error(tooLong(limitMs));
+    throw e;
+  }
+}
+
+const tooLong = (limitMs: number) => `The sync took longer than ${limitMs / 1000} s`;
 
 /** The `console` of the backend's context: every line goes to the report's log. */
 function consoleInto(log: string[]) {
@@ -264,7 +281,7 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
       timers.delete(t);
       clearTimeout(t);
     };
-    const sources = await loadSources(
+    const { sources, context } = await loadSources(
       o.dir,
       {
         console: consoleInto(report.log),
@@ -289,9 +306,9 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        Promise.resolve().then(() => (fn as (c: unknown) => unknown)(ctx)),
+        Promise.resolve().then(() => callWithLimit(context, fn, ctx, limit)),
         new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`The sync took longer than ${limit / 1000} s`)), limit);
+          timer = setTimeout(() => reject(new Error(tooLong(limit))), limit);
         }),
       ]);
       report.ok = true;

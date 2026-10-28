@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { USAGE, main } from "../src/main";
+import { USAGE, exitsWhenDone, main } from "../src/main";
 import { BUILD_USAGE, PLUGIN_USAGE } from "../src/plugin";
 import * as sdk from "../src/sdk";
 import { memoryIo } from "./helpers";
@@ -71,5 +71,13 @@ describe("humanharness", () => {
     expect(typeof sdk.defineHarness).toBe("function");
     expect(typeof sdk.defineBlock).toBe("function");
     expect(typeof sdk.z.object).toBe("function");
+  });
+});
+
+describe("exitsWhenDone", () => {
+  it("is true only for the commands that run plugin code in this process", () => {
+    expect(exitsWhenDone(["plugin", "test"])).toBe(true);
+    expect(exitsWhenDone(["plugin", "record", "events"])).toBe(true);
+    for (const argv of [["plugin", "dev"], ["plugin", "build"], ["dev"], ["run", "x"], []]) expect(exitsWhenDone(argv), argv.join(" ")).toBe(false);
   });
 });

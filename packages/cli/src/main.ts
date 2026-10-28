@@ -33,6 +33,15 @@ const COMMANDS: Record<string, Command> = {
   plugin: pluginCommand,
 };
 
+/**
+ * Commands that end the process once they have printed: `plugin test` and `record` run plugin code in this process
+ * (P12), and what it leaves behind (a timer or a request made through this realm, past the run's time limit) would
+ * otherwise keep the command alive.
+ */
+export function exitsWhenDone(argv: string[]): boolean {
+  return argv[0] === "plugin" && (argv[1] === "test" || argv[1] === "record");
+}
+
 export async function main(argv: string[], io: Io): Promise<number> {
   const [name, ...args] = argv;
   if (name === undefined || name === "help" || name === "--help" || name === "-h") {

@@ -262,11 +262,23 @@ describe("PluginsController dev watcher (Decision 22)", () => {
     expect(t.host.started).toEqual(["devp"]);
     await fs.writeFile(path.join(dist, "backend.js"), "export default { sources: { s: async () => { /* v2 */ } } };\n");
     const fire = w.watched.get(real)!;
-    fire("dist");
-    fire(path.join("dist", "backend.js"));
-    await new Promise((r) => setTimeout(r, 150));
-    fire(null);
-    expect(t.host.started).toEqual(["devp"]);
+    // The debounce on a held clock: a change 150 ms in starts the 300 ms again; only the timers are fake, so the
+    // rescan's file reads stay real once the last one fires.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fire("dist");
+      fire(path.join("dist", "backend.js"));
+      vi.advanceTimersByTime(150);
+      fire(null);
+      vi.advanceTimersByTime(299);
+      // The first quiet period (ending at 300) was cancelled: one timer, still waiting.
+      expect(vi.getTimerCount()).toBe(1);
+      expect(t.host.started).toEqual(["devp"]);
+      vi.advanceTimersByTime(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
     await until(() => t.ctl.surface().reloads.devp === 1, 2000);
     expect(t.host.started).toEqual(["devp", "devp"]);
     await new Promise((r) => setTimeout(r, 400));

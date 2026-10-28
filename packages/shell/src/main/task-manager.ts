@@ -474,7 +474,8 @@ export class TaskManager {
   }
 
   /**
-   * The person approved `a.path` (review spec §5.4). The document's task, when it is the open one, gets a line before its
+   * The person approved `a.path` (review spec §5.4). The document's task (the record's, or a "Review <title>" task of
+   * that document), when it is the open one, gets a line before its
    * next message. When the open task waits and its current phase has an `approve` glob matching the path, the task moves
    * to its next phase as if the person had picked it (§5.5). Never from the last phase (the close phase is always last):
    * there an approval only leaves the line, and a stale document never moves the task back.
@@ -482,7 +483,8 @@ export class TaskManager {
   async documentApproved(a: { path: string; task: string | null; reason?: string }): Promise<void> {
     const c = await this.storedCurrent();
     if (!c) return;
-    if (a.task === c.id) {
+    // The record's task, or the open "Review <title>" task of this document (it is never the record's task).
+    if (a.task === c.id || c.review === a.path) {
       const line = `The person approved ${a.path}${a.reason ? `, with reason: ${oneLine(a.reason)}` : ""}.`.slice(0, NOTICE_MAX);
       await this.update((s) => (s.current?.id === c.id ? { ...s, current: { ...s.current, notices: [...(s.current.notices ?? []), line].slice(-NOTICES_MAX) } } : s));
     }

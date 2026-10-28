@@ -37,8 +37,6 @@ export interface ReviewRound {
   path: string;
   title: string;
   message: string;
-  /** The record's task (null: none). */
-  task: string | null;
   scope?: string;
   tier: Tier;
 }
@@ -269,7 +267,6 @@ export class ReviewService {
         path: doc,
         title: documentTitle(doc, text),
         message: b.message,
-        task: review.task,
         ...(review.scope ? { scope: review.scope } : {}),
         tier: this.d.reviewTier(kind),
       };

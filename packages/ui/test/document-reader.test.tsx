@@ -326,7 +326,7 @@ describe("review in the reader (review spec §6.1, D0)", () => {
 
   it("with `review` it shows the record's cards and draws again on a change", async () => {
     const { client } = setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     client.reviews["docs/cache.md"] = {
       path: "docs/cache.md",
       task: null,
@@ -364,7 +364,7 @@ describe("review in the reader (review spec §6.1, D0)", () => {
   it("a review view still pending when another document opens is never drawn over it", async () => {
     const OTHER_DOC = "## Other\n\nSlow calls.\n";
     const s = setup({ review: true }, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER_DOC });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     const pending: ((v: ReviewView) => void)[] = [];
     const view = s.client.documents.view;
     // A's view hangs until the end; B's answers at once.
@@ -391,6 +391,24 @@ describe("review in the reader (review spec §6.1, D0)", () => {
     expect(screen.queryByText("From A")).toBeNull();
   });
 
+  it("no column until the first comment: a draft made on a selection brings it (§6.1)", async () => {
+    setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+    const para = screen.getByText("Slow calls.");
+    const range = document.createRange();
+    range.selectNodeContents(para);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "How slow?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    const column = await screen.findByRole("region", { name: "Comments" });
+    expect(within(column).getByText("How slow?")).toBeTruthy();
+  });
+
   it("a record that can't be read shows a note and no column", async () => {
     const { client } = setup({ review: true });
     client.documents.view = async () => ({ ok: false, reason: "broken" });
@@ -411,7 +429,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
 
   it("a selection in the text shows 'Comment'; saving makes a draft with the heading above it", async () => {
     const { client } = setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     const para = screen.getByText("Slow calls.");
     select(para);
     fireEvent.mouseUp(para);
@@ -424,7 +442,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
 
   it("a selection that runs past the end of the text (a triple click on the last paragraph) keeps the part inside it", async () => {
     const { client } = setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     const para = screen.getByText("Slow calls.");
     const box = para.closest(".hh-review-text")!;
     const range = document.createRange();
@@ -446,7 +464,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
 
   it("a selection the document doesn't hold says so; Escape closes the pick before the reader", async () => {
     const { client, props } = setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     client.documents.comment = async () => ({ ok: false, reason: "not-found" });
     const para = screen.getByText("Slow calls.");
     select(para);
@@ -496,7 +514,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
 
   it("after Cancel the focus goes back to the text", async () => {
     setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     const para = screen.getByText("Slow calls.");
     select(para);
     fireEvent.mouseUp(para);
@@ -507,7 +525,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
 
   it("an approved version that can't be read says so, not 'too large'", async () => {
     const { client } = setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
     client.currentBlobs["docs/cache.md"] = "1".repeat(40);
     act(() => client.emitReviewChanged("docs/cache.md"));
@@ -518,7 +536,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
 
   it("'See what changed' shows the lines added and removed since the approval", async () => {
     const { client } = setup({ review: true });
-    await screen.findByRole("region", { name: "Comments" });
+    await screen.findByRole("button", { name: "Approve" });
     client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
     client.currentBlobs["docs/cache.md"] = "1".repeat(40);
     client.approvedTexts["docs/cache.md"] = ANALYSIS.replace("Slow calls.", "Fast calls.");

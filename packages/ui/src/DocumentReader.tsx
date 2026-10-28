@@ -601,13 +601,10 @@ export function DocumentReader({
             </div>
           )}
         </div>
-        {review && doc?.ok && !source && rv?.ok && (!inFocus || (peek !== null && rv.review)) && (
+        {/* No column until the first comment (§6.1). */}
+        {review && doc?.ok && !source && rv?.ok && rv.review && rv.review.comments.length > 0 && (!inFocus || peek !== null) && (
           <ReviewColumn
-            review={
-              inFocus && rv.review
-                ? { ...rv.review, comments: rv.review.comments.filter((c) => c.id === peek) }
-                : (rv.review ?? { path, task: null, comments: [], approvals: [] })
-            }
+            review={inFocus ? { ...rv.review, comments: rv.review.comments.filter((c) => c.id === peek) } : rv.review}
             text={doc.text}
             agent={target.agent ?? ""}
             locked={rv.summary.status === "approved"}

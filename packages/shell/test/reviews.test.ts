@@ -114,7 +114,7 @@ describe("comments and the batch (§5.2, §5.3)", () => {
     expect(await t.svc.answer(DOC, "c1", { other: "Only in the session." })).toMatchObject({ ok: true, applied: false });
     expect(await t.svc.send(DOC)).toEqual({ ok: true, sent: 2, to: "open" });
     expect(t.rounds).toHaveLength(1);
-    expect(t.rounds[0]).toMatchObject({ path: DOC, title: "Filter", task: "t1", scope: "main", tier: "deep" });
+    expect(t.rounds[0]).toEqual({ path: DOC, title: "Filter", message: t.rounds[0].message, scope: "main", tier: "deep" });
     expect(t.rounds[0].message).toContain('- c2 on "The size filter keeps." (## Scope): "No, by size and colour."');
     expect((await loadReview(t.base, DOC))?.comments.map((c) => c.state)).toEqual(["sent", "sent"]);
     expect(await t.svc.send(DOC)).toEqual({ ok: false, reason: "nothing-to-send" });

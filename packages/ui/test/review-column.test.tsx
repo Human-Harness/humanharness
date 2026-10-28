@@ -64,6 +64,19 @@ describe("ReviewColumn (§6.1)", () => {
     expect(p.onAnswer).toHaveBeenCalledWith("c1", { other: "Only in the session" });
   });
 
+  it("an answered question says it can change until approval; not before an answer, not once approved", async () => {
+    const HINT = "You can change the answer until you approve";
+    await setup();
+    expect(screen.queryByText(HINT)).toBeNull();
+    cleanup();
+    const answered: Review = { ...REVIEW, comments: REVIEW.comments.map((c) => (c.id === "c1" ? { ...c, answer: { option: 0 }, state: "answered" } : c)) };
+    await setup({ review: answered });
+    expect(screen.getAllByText(HINT)).toHaveLength(1);
+    cleanup();
+    await setup({ review: answered, locked: true });
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
   it("locked: the options are disabled and say why; waiting: the card says so", async () => {
     await setup({ locked: true, waiting: "c1" });
     expect((screen.getAllByRole("radio", { name: "Keep" })[0] as HTMLInputElement).disabled).toBe(true);

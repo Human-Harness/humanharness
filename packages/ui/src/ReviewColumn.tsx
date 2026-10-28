@@ -129,6 +129,7 @@ function ReviewCard({ c, secs, text, agent, locked, waiting, active, onActive, o
           )}
         </fieldset>
       )}
+      {c.kind === "question" && c.answer && !locked && <p className="hh-caption">{t("review.changeAnswer")}</p>}
       {waiting === c.id && (
         <p className="hh-caption" role="status">
           {t("review.waiting")}

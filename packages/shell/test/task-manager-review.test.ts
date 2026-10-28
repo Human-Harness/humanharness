@@ -86,6 +86,15 @@ describe("approval (review spec §5.4, §5.5)", () => {
     expect(t.state().current?.notices).toBeUndefined();
   });
 
+  it("reaches the open 'Review <title>' task of that document, whatever the record's task", async () => {
+    const t = setup();
+    await t.manager.reviewRound({ path: "specs/a.md", title: "A", message: "Round.", tier: "standard" });
+    await t.manager.documentApproved({ path: "specs/a.md", task: "old" });
+    expect(t.state().current?.notices).toEqual(["The person approved specs/a.md."]);
+    await t.manager.documentApproved({ path: "specs/b.md", task: null });
+    expect(t.state().current?.notices).toEqual(["The person approved specs/a.md."]);
+  });
+
   it("moves the task on when its phase's approve glob matches, carrying the line in the change message", async () => {
     const t = setup({ phases: SPEC_PHASES, script: [[ok], [ok]] });
     await t.manager.start("session");

@@ -182,8 +182,8 @@ With the tools, `AGENTS.md`'s "Writing for the reader" part gets three more line
 
 **The reader.**
 
-- A "Comments" column (`ReviewColumn.tsx`) sits right of the document; under 900 px it moves below it.
-- Its cards are the questions with their options, "No answer" and "Other", and the comments with their replies.
+- A "Comments" column (`ReviewColumn.tsx`) sits right of the document; under 900 px it moves below it. There is no column until the first comment.
+- Its cards are the questions with their options, "No answer" and "Other", and the comments with their replies. An answered question says "You can change the answer until you approve" while the document isn't approved.
 - The footer bar (`ReviewBar.tsx`) has send, approve, the reason form and the approved or stale line. "See what changed" is `ApprovedDiff.tsx`.
 - The review layout sits behind the `hh-reader-reviewing` class, so a reader without reviews keeps its layout.
 - The chat's document cards show a chip with the summary:
@@ -254,6 +254,11 @@ A harness whose agent can't edit the folder (`permissions.edit: "none"`, like th
 - its manifest validation (`approve` and `reviewTier` are optional);
 - the output of `humanharness run`.
 
+Two harmless changes reach every harness, this one included:
+
+- the history skips `.<name>.md.<uuid>.tmp` files (the review's atomic writes of a document);
+- Esc in the History, Notes and Settings panels is marked handled (`preventDefault`), so focus mode's window listener leaves it alone.
+
 The tests that hold this: `packages/blocks/test/ui-server.test.ts` (unchanged), the runtime's and the CLI's edit-"none" tests, the reader's and the chat's, `review-ipc` and the e2e on the demo (`packages/e2e/fixtures/review-d0-mock`).
 
 ## Known gaps
@@ -269,6 +274,8 @@ The tests that hold this: `packages/blocks/test/ui-server.test.ts` (unchanged), 
 - **Raw error text from other servers.** The `data` and `material` servers still forward a handler's error message to the agent as is; the review tools send only a refusal's message (outside this plan).
 - **One lock per process.** `ReviewLocks` doesn't serialize the app and `humanharness run` working on the same folder.
 - **Switching focus mode** remounts the footer bar. Its draft lives in the reader, but other local state starts again.
+- **No "Comments · N" toggle in focus mode** (§6.2). The margin markers stand in for it: each opens its one card.
+- **No ■ on blocking marks** (§6.1). A blocking question's mark in the text looks like any other; only its card has the "Blocking" badge.
 
 ## Where to look
 

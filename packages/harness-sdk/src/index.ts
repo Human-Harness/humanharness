@@ -6,6 +6,7 @@ import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RE
 import { dataSchema } from "./data";
 import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
+import { hatchProblems, linkedFoldersSchema } from "./hatches";
 import { JOB_RESULT_TOOL, jobProblems, jobsSchema } from "./jobs";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { parallelSchema } from "./parallel";
@@ -34,6 +35,7 @@ export * from "./plugin-permissions";
 export * from "./plugin-actions";
 export * from "./parallel";
 export * from "./jobs";
+export * from "./hatches";
 export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
@@ -232,6 +234,8 @@ const manifestSchema = z.object({
   jobs: jobsSchema.optional(),
   /** False hides the core inbox and its button (parallel spec §9.2); `client.tasks` stays. `ui` is taken (a custom UI path). */
   inbox: z.boolean().optional(),
+  /** Folders outside the person's folder, linked per scope (hatches spec §3). Absent: none (D0). */
+  linkedFolders: linkedFoldersSchema.optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
   /**
@@ -494,6 +498,8 @@ const manifestSchema = z.object({
       statuses.add(key);
     });
   }
+  // Hatches (hatches spec §3.1).
+  for (const p of hatchProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
 });
 
 export type Harness = z.output<typeof manifestSchema>;

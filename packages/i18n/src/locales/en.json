@@ -861,6 +861,76 @@
       "dismiss": "Dismiss",
       "unreadItem": "Unread",
       "severity": { "info": "Info", "warn": "Warning", "action": "Needs you" }
+    },
+    "tab": "Plugins",
+    "intro": "Plugins bring information from outside into this app. Each one shows what it may reach before it runs.",
+    "empty": "No plugins yet.",
+    "add": "Add from folder…",
+    "failed": "Something went wrong",
+    "version": "Version {{version}}",
+    "origin": { "bundled": "Bundled", "local": "Local:", "dev": "Development:" },
+    "status": { "on": "On", "off": "Off", "review": "Needs review", "crashed": "Turned off after crashes", "error": "Error:" },
+    "updated": "Updated",
+    "lastSync": "Last sync {{time}}",
+    "lastError": "Last sync failed:",
+    "review": {
+      "intro": "Turning it on lets it:",
+      "from": "From:",
+      "more": "This version asks for more:",
+      "hosts": "Connects to:",
+      "exec": "Runs:",
+      "readOnly": "(read only)",
+      "wide": "(any arguments)",
+      "secrets_one": "Stores {{count}} key:",
+      "secrets_other": "Stores {{count}} keys:",
+      "tasks": "Can propose agent tasks",
+      "none": "It asks for nothing beyond its own data.",
+      "added": { "host": "Connects to:", "exec": "Runs:", "secret": "Stores the key:", "tasks": "Can propose agent tasks" },
+      "turnOn": "Turn on",
+      "cancel": "Cancel"
+    },
+    "detail": {
+      "back": "All plugins",
+      "permissions": "What it may do",
+      "settings": "Settings",
+      "reset": "Reset settings"
+    },
+    "keys": {
+      "title": "Keys",
+      "note": "A key is kept encrypted on this computer and is never shown again.",
+      "stored": "Stored",
+      "notStored": "Not stored",
+      "input": "Paste the key",
+      "save": "Save",
+      "replace": "Replace",
+      "delete": "Delete",
+      "cancel": "Cancel"
+    },
+    "test": {
+      "button": "Test connection",
+      "running": "Testing…",
+      "ok": "OK",
+      "records_one": "OK, {{count}} record",
+      "records_other": "OK, {{count}} records",
+      "none": "It has no sources to test."
+    },
+    "errors": { "title": "Last errors", "empty": "No errors." },
+    "notify": "Notify me",
+    "notifyHelp": "A system notification when something needs you.",
+    "remove": {
+      "button": "Remove…",
+      "title": "Remove this plugin?",
+      "text": "This deletes its settings, keys and data; its folder stays.",
+      "yes": "Remove",
+      "no": "Cancel"
+    },
+    "workHours": {
+      "title": "Work hours",
+      "help": "Sources that only sync in work hours run on these days, between these times.",
+      "days": "Days",
+      "from": "From",
+      "to": "To",
+      "timezone": "Time zone"
     }
   }
 }

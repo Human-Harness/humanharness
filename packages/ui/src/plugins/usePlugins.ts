@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AttentionView, HarnessClient, PluginsView } from "../client";
 
 interface LiveSource<V> {
@@ -44,4 +44,13 @@ export function useAttention(client: HarnessClient, enabled: boolean): Attention
 /** Settings › Plugins (plugins spec §7), live; null while loading or without plugins. */
 export function usePluginsView(client: HarnessClient, enabled: boolean): PluginsView | null {
   return useLive(client.plugins, enabled);
+}
+
+/**
+ * Settings › Plugins (plugins spec §7): the tab opening is when changes on disk are looked for, so its first read is a
+ * rescan; main's pushes follow.
+ */
+export function usePluginsRescan(client: HarnessClient): PluginsView | null {
+  const source = useMemo<LiveSource<PluginsView>>(() => ({ get: () => client.plugins.rescan(), onChange: (l) => client.plugins.onChange(l) }), [client]);
+  return useLive(source, true);
 }

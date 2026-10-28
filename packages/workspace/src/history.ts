@@ -142,6 +142,13 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
   }
 }
 
+/**
+ * A path written exactly as git names it: relative, `/`-separated, no `.` or `..` segment, no trailing `/`, no `\\`.
+ * Anything else could name a tracked file by another spelling (`./a.md`, `sub/../a.md`) and slip past `tracked`.
+ */
+const isCanonicalPath = (p: string): boolean =>
+  p !== "" && !p.startsWith("/") && !p.includes("\\") && path.posix.normalize(p) === p && !p.endsWith("/") && !p.split("/").includes("..");
+
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;
 
@@ -417,12 +424,17 @@ export class History {
   /**
    * Brings only `paths` back to how they were at `sha` (a path absent there is removed) and commits just them (spec
    * §5.3: a crashed turn's own paths, a task's undo). The same link checks as `restore`: never through a link, never
-   * outside the folder. The paths it couldn't write safely are skipped and reported.
+   * outside the folder. Only exact tracked names count (a path absent at `sha` is removed only when the folder has it
+   * by that very name); others are ignored. The paths it couldn't write safely are skipped, reported and not committed.
    */
   restorePaths(paths: readonly string[], sha: string, message: string, trailer?: HistoryTrailer): Promise<RestoreResult> {
     return this.serialize(async () => {
-      const wanted = new Set(paths.filter((p) => this.tracked(p)));
+      const wanted = new Set(paths.filter((p) => isCanonicalPath(p) && this.tracked(p)));
       const target = await this.entriesAt(sha);
+      // The folder's own names: `A.md` never stands for `a.md` on a case-insensitive disk.
+      const present = new Set(
+        (await git.statusMatrix({ ...this.repo(), filter: (f) => wanted.has(f) && this.tracked(f) })).map(([f]) => f),
+      );
       const root = await fs.promises.realpath(this.folder);
       const skipped: string[] = [];
       const skip = (file: string, why: unknown) => {
@@ -432,12 +444,17 @@ export class History {
       for (const file of wanted) {
         const entry = target.get(file);
         if (entry) {
-          await this.writeEntry(root, file, entry, (dir) => resolvesInside(root, dir), () => undefined, skip);
+          if (!(await this.writeEntry(root, file, entry, (dir) => resolvesInside(root, dir), () => undefined, skip))) wanted.delete(file);
           continue;
         }
         const absolute = path.join(this.folder, file);
         if (!(await resolvesInside(root, path.dirname(absolute)))) {
           skip(file, "its folder leads outside the folder");
+          wanted.delete(file);
+          continue;
+        }
+        if (!present.has(file)) {
+          wanted.delete(file);
           continue;
         }
         try {
@@ -445,6 +462,7 @@ export class History {
           await fs.promises.rm(absolute, { force: true });
         } catch (err) {
           skip(file, err);
+          wanted.delete(file);
           continue;
         }
         await this.pruneEmptyParents(path.dirname(file));

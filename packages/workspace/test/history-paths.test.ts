@@ -133,3 +133,43 @@ describe("History.restorePaths (parallel spec §5.3, T4)", () => {
     expect(fs.readFileSync(path.join(outside, "secret"), "utf8")).toBe("theirs");
   });
 });
+
+describe("History.restorePaths touches only exact tracked paths (Task 4 review)", () => {
+  /** A path absent at `sha` that names an existing file only by a non-exact spelling. */
+  const leavesInPlace = async (h: History, given: string, real: string) => {
+    const start = (await h.last())!;
+    const r = await h.restorePaths([given], start, "Undo: x", { task: "t1" });
+    expect(fs.existsSync(path.join(folder, real))).toBe(true);
+    expect(r.sha).toBeNull();
+  };
+  it("a different case, ./, a leading / or a .. segment never deletes a.md", async () => {
+    for (const given of ["A.md", "./a.md", "/a.md", "sub/../a.md", "a.md/", "a.md\\"]) await leavesInPlace(history, given, "a.md");
+    expect(read("a.md")).toBe("a0");
+  });
+  it("a kept prefix with .. or a different case never reaches an ignored file", async () => {
+    const kept = new History(folder, gitdir, [".harness/"], [".harness/notes/"]);
+    await kept.init();
+    write(".harness/tasks.json", "{}");
+    write(".harness/notes/n.md", "n");
+    await kept.save("Note: n");
+    await leavesInPlace(kept, ".harness/notes/../tasks.json", ".harness/tasks.json");
+    await leavesInPlace(kept, ".HARNESS/tasks.json", ".harness/tasks.json");
+  });
+  it("never deletes the person's .git", async () => {
+    write(".git/config", "[core]");
+    await leavesInPlace(history, ".git/config", ".git/config");
+  });
+  it("a path it couldn't write is left out of the commit", async () => {
+    const start = (await history.last())!;
+    write("a.md", "a1");
+    write("b.md", "b1");
+    await history.save("Turn: one", { task: "t1" });
+    // A folder where b.md goes: it can't be written, and must not be committed as deleted.
+    fs.rmSync(path.join(folder, "b.md"));
+    fs.mkdirSync(path.join(folder, "b.md"));
+    fs.writeFileSync(path.join(folder, "b.md", "x"), "x");
+    const r = await history.restorePaths(["a.md", "b.md"], start, "Undo: x", { task: "t1" });
+    expect(r.skipped).toEqual(["b.md"]);
+    expect(await treeOf(r.sha!)).toEqual({ "a.md": "a0", "b.md": "b1" });
+  });
+});

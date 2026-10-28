@@ -128,6 +128,22 @@ describe("check: errors", () => {
     expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
   });
 
+  it("job-daily-tokens: dailyTokens on a job with no every is a warning (it caps nothing)", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'questions: { tier: "light" },',
+        'questions: { tier: "light" },\n  jobs: {\n    sync: { label: "Sync", prompt: "./agent/tasks/example.md", on: { manual: true }, dailyTokens: 1000 },\n    poll: { label: "Poll", prompt: "./agent/tasks/example.md", on: { every: "30m" }, dailyTokens: 1000 },\n  },',
+      );
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "job-daily-tokens").map((f) => `${f.severity} ${f.file} ${f.message}`)).toEqual([
+      'warning harness.config.ts Job "sync": dailyTokens caps only periodic runs and the job has no every, so it caps nothing.',
+    ]);
+    expect(errors(r)).toEqual([]);
+  });
+
   it("schema: a job that widens the harness's permissions (J2) or breaks a jobs check", async () => {
     const dir = await fixture((d) => {
       replaceIn(

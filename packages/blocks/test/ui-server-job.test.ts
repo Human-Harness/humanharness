@@ -22,12 +22,16 @@ afterEach(async () => {
   bridge = undefined;
 });
 
-/** Starts the real `ui` server binary, as a job slot does (`HH_JOB=1`) or as a task slot does (no `HH_JOB`). */
-async function connect(received: BlockMessage[], harnessConfig: string, job: boolean) {
+/**
+ * Starts the real `ui` server binary, as a job slot does (`HH_JOB=1`) or as a task slot does (no `HH_JOB`). A string
+ * sets `HH_JOB` to exactly that value.
+ */
+async function connect(received: BlockMessage[], harnessConfig: string, job: boolean | string) {
   bridge = await openBridge((m) => received.push(m));
   const spec = uiServerSpec({ harnessConfig, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
   const env: Record<string, string> = { ...(process.env as Record<string, string>), ...spec.env };
-  if (job) env.HH_JOB = "1";
+  if (typeof job === "string") env.HH_JOB = job;
+  else if (job) env.HH_JOB = "1";
   else delete env.HH_JOB;
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(new StdioClientTransport({ command: spec.command, args: spec.args, env }));
@@ -76,6 +80,27 @@ describe("ui server in job mode (parallel spec §8, J1)", () => {
     const r = await c.callTool({ name: "show_choices", arguments: { options: [{ label: "Go on" }] } });
     expect(r.isError).toBeFalsy();
     expect(received).toEqual([{ name: "choices", data: { options: [{ label: "Go on" }] } }]);
+  });
+
+  it.each(["0", "true", "", "yes"])("D0: HH_JOB=%j is not job mode: no job_result, choices still reach the bridge", async (value) => {
+    const received: BlockMessage[] = [];
+    const c = await connect(received, FIXTURE, value);
+    expect(await names(c)).toEqual(["save_note", "show_choices", "show_note", "update_progress"]);
+    const r = await c.callTool({ name: "show_choices", arguments: { options: [{ label: "Go on" }] } });
+    expect(r.isError).toBeFalsy();
+    expect(received).toEqual([{ name: "choices", data: { options: [{ label: "Go on" }] } }]);
+  });
+
+  it("refuses an asking tool with the spec's message even when its arguments break the block's schema", async () => {
+    const received: BlockMessage[] = [];
+    const c = await connect(received, FIXTURE, true);
+    const r = await c.callTool({ name: "show_choices", arguments: { options: "not a list" } });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toBe(JOB_CANNOT_ASK);
+    const n = await c.callTool({ name: "save_note", arguments: {} });
+    expect(n.isError).toBe(true);
+    expect(textOf(n)).toBe(JOB_NO_NOTE);
+    expect(received).toEqual([]);
   });
 
   it("job mode adds job_result and keeps every other tool name", async () => {

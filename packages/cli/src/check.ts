@@ -54,7 +54,8 @@ export type RuleId =
   | "setup-context"
   | "material-review-tier"
   | "material-items-scope"
-  | "sidekick-tips";
+  | "sidekick-tips"
+  | "job-daily-tokens";
 
 export interface Finding {
   rule: RuleId;
@@ -269,7 +270,7 @@ async function phaseFindings(h: LoadedHarness): Promise<Finding[]> {
   return out;
 }
 
-/** Each job's brief (parallel spec §3): it must exist and say something. The jobs' other checks are schema errors. */
+/** Each job's brief (parallel spec §3): it must exist and say something. A `dailyTokens` with no `every` is a warning; the jobs' other checks are schema errors. */
 async function jobFindings(h: LoadedHarness): Promise<Finding[]> {
   const out: Finding[] = [];
   for (const [id, job] of Object.entries(h.jobs ?? {})) {
@@ -277,6 +278,9 @@ async function jobFindings(h: LoadedHarness): Promise<Finding[]> {
     const text = await read(file);
     if (text === null) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} does not exist.`, MANIFEST));
     else if (!text.trim()) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} is empty.`, path.relative(h.root, file)));
+    if (job.dailyTokens !== undefined && job.on.every === undefined) {
+      out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only periodic runs and the job has no every, so it caps nothing.`, MANIFEST));
+    }
   }
   return out;
 }

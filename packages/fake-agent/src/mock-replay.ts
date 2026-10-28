@@ -110,11 +110,18 @@ function answerTarget(turn: MockTurn, prompt: string): string | undefined {
 
 /**
  * One engine turn of mock mode. `newSession`: the run opened a session (`--session-id`), so the prompt is a
- * task's first message and picks the recording; otherwise `position` says where the session is.
+ * task's first message and picks the recording; otherwise `position` says where the session is. `jobSlot`: the
+ * slot's ui server runs in job mode (`HH_JOB=1`); only then can the prompt's mark make the turn a job's.
  */
-export function replay(recordings: Recording[], position: SessionPosition | undefined, prompt: string, newSession: boolean): { play: Play; session: SessionPosition } {
+export function replay(
+  recordings: Recording[],
+  position: SessionPosition | undefined,
+  prompt: string,
+  newSession: boolean,
+  jobSlot = false,
+): { play: Play; session: SessionPosition } {
   // A job's turn never plays a recording, whatever its brief names: it reports the canned result and ends.
-  if (isMockJobTurn(prompt)) {
+  if (jobSlot && isMockJobTurn(prompt)) {
     return { play: { ...quiet(""), blocks: [{ tool: "job_result", input: { ...MOCK_JOB_RESULT } }] }, session: position ?? { action: null, turn: null } };
   }
   if (newSession || !position) {

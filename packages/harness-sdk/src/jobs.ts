@@ -8,7 +8,7 @@ export const JOB_RESULT_TOOL = "job_result";
 export const JOB_CANNOT_ASK = "A background job cannot ask the person; end with job_result.";
 /** What the agent reads when a job tries to save a note (Decision 4). */
 export const JOB_NO_NOTE = "A background job saves no note; end with job_result.";
-/** A job id: the same shape as an action id, since both key the models config. */
+/** A job id: the same shape as an action id. It keys the app config's `jobs` (Settings › Jobs), the jobs log and usage lines; not the models config. */
 export const JOB_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 
 /** "15m", "2h" → milliseconds; null for anything else. */

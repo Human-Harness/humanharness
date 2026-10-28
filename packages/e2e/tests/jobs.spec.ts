@@ -156,12 +156,25 @@ test("a job that tries to ask fails without asking, and one with no result fails
     await expect(page.getByRole("button", { name: "Tickets 1-3" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "All of them" })).toHaveCount(0);
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 0 waiting");
+    // And opened no task: the tasks file (if any) has no lane.
+    const tasksFile = path.join(s.folder, ".harness", "tasks.json");
+    const lanes = fs.existsSync(tasksFile) ? (JSON.parse(fs.readFileSync(tasksFile, "utf8")) as { lanes?: unknown[] }).lanes ?? [] : [];
+    expect(lanes).toEqual([]);
   });
 });
 
 test("two quick runs of the same job make one run", async () => {
   await withApp(board, "jobs-dedupe", scenario(board, "parallel"), async (page, s) => {
     await expect.poll(() => runsOf(s, "sync").length).toBe(1);
+    // The start run is logged a moment before main clears its dedupe key: wait until it no longer runs.
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const hh = (window as unknown as { hh: { jobs: { list: () => Promise<{ id: string; running: boolean }[]> } } }).hh;
+          return (await hh.jobs.list()).find((j) => j.id === "sync")?.running;
+        }),
+      )
+      .toBe(false);
     const asked = await page.evaluate(() => {
       const hh = (window as unknown as { hh: { jobs: { run: (id: string) => Promise<boolean> } } }).hh;
       return Promise.all([hh.jobs.run("sync"), hh.jobs.run("sync")]);

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
 import type { ModelProfile } from "@humanharness/engines";
-import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -165,7 +165,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       folder,
       session,
       mcp: [
-        o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1" } } : ui,
+        // The engine hands its own env to MCP servers: a task slot clears HH_JOB so an outer one can't make it a job.
+        // Only with jobs declared: without them the spec is today's (D0).
+        o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1" } } : hasJobs(harness) ? { ...ui, env: { ...ui.env, HH_JOB: "" } } : ui,
         ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
         ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
         ...harnessMcpServers(harness, launcher),

@@ -21,6 +21,7 @@ const readLog = (f: string) =>
 let ws: HarnessWorkspace | undefined;
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await ws?.close();
   ws = undefined;
 });
@@ -187,6 +188,29 @@ describe("job slots (Decision 11, T5)", () => {
     expect(Object.keys(jobRest)).toEqual(Object.keys(taskRest));
     expect(Object.keys(jobRest)).toHaveLength(2);
     for (const [name, spec] of Object.entries(jobRest)) expect(Object.hasOwn(spec.env, "HH_JOB"), name).toBe(false);
+  });
+
+  it("with jobs declared, a task slot's ui server gets HH_JOB empty, so an outer HH_JOB=1 can't turn it into a job", async () => {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const args = path.join(base, "args.json");
+    const harness = await loadHarness(FIXTURE);
+    ws = await createWorkspace({
+      harness: { ...harness, jobs: { sync: { label: "Sync", prompt: "./brief.md", tier: "light", on: { manual: true }, scope: "none" } } },
+      engine: getEngine("claude"), folder: path.join(base, "Work"), gitdir: path.join(base, "h.git"),
+      language: "en", command: fakeClaudeCommand(),
+      env: { HH_FAKE_SCRIPT: writeScript(base, { steps: [claudeResultLine(true)] } as ClaudeScript), HH_FAKE_ARGS: args },
+    });
+    const uiEnv = () => {
+      const argv = JSON.parse(fs.readFileSync(args, "utf8")) as string[];
+      return (JSON.parse(argv[argv.indexOf("--mcp-config") + 1]).mcpServers as Record<string, { env: Record<string, string> }>).ui.env;
+    };
+    vi.stubEnv("HH_JOB", "1");
+    const task = await ws.openSlot({ key: "t1" });
+    await task.send("x", () => {}).done;
+    expect(uiEnv().HH_JOB).toBe("");
+    const job = await ws.openSlot({ key: "job:r1", kind: "job" });
+    await job.send("y", () => {}).done;
+    expect(uiEnv().HH_JOB).toBe("1");
   });
 
   it("a job slot can never widen the harness's permissions", async () => {

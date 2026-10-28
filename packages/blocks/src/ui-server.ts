@@ -34,14 +34,20 @@ export async function createUiServer(
   const server = new McpServer({ name: "ui", version: "0.1.0" });
   const phases = phaseIds(harness);
   for (const [name, block] of Object.entries(allBlocks(harness))) {
+    // Still a tool in a job, so the agent sees why it fails instead of guessing at a missing one. No input schema: the
+    // refusal comes before any argument check, so bad arguments don't cost a turn on a schema error first.
+    if (opts.job && (JOB_REFUSED.includes(name) || block.input)) {
+      const text = name === "save_note" ? JOB_NO_NOTE : JOB_CANNOT_ASK;
+      server.registerTool(blockToolName(name, block), { description: block.description }, async () => ({
+        isError: true,
+        content: [{ type: "text" as const, text }],
+      }));
+      continue;
+    }
     server.registerTool(
       blockToolName(name, block),
       { description: block.description, inputSchema: block.schema.shape },
       async (args) => {
-        // Still a tool in a job, so the agent sees why it fails instead of guessing at a missing one.
-        if (opts.job && (JOB_REFUSED.includes(name) || block.input)) {
-          return { isError: true, content: [{ type: "text" as const, text: name === "save_note" ? JOB_NO_NOTE : JOB_CANNOT_ASK }] };
-        }
         // The server knows the harness, not the open task: an id of another action reaches the app, which ignores it.
         if (name === "set_phase" && !phases.includes(String((args as { to?: unknown }).to))) {
           return { isError: true, content: [{ type: "text" as const, text: unknownPhase(phases) }] };

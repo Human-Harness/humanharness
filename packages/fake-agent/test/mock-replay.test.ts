@@ -198,7 +198,7 @@ describe("replay: background jobs (parallel spec §8, part 3 Decision 10)", () =
 
   it("a job's turn calls job_result ok \"Mock run\" and ends: no text, no note, no writes, no recording", () => {
     // The brief names a recording's match: the job mark still wins, and the recording is never played.
-    const r = replay(all, undefined, jobPrompt("# Topic: the manifest\n\nSync."), true);
+    const r = replay(all, undefined, jobPrompt("# Topic: the manifest\n\nSync."), true, true);
     expect(MOCK_JOB_RESULT).toEqual({ status: "ok", summary: "Mock run" });
     expect(r.play.blocks).toEqual([{ tool: "job_result", input: { status: "ok", summary: "Mock run" } }]);
     expect(r.play).toMatchObject({ text: "", writes: [] });
@@ -212,5 +212,15 @@ describe("replay: background jobs (parallel spec §8, part 3 Decision 10)", () =
     expect(isMockJobTurn(`Quote: "${MOCK_JOB_MARK}"`)).toBe(false);
     expect(replay(all, undefined, "# Topic: the manifest\n\nExplain…", true).play.text).toBe("Primero.");
     expect(replay(all, { action: "manifest", turn: "t1" }, "Contame más.", false).session.turn).toBe("t2");
+  });
+
+  it("only a job slot's turn is a job's: a task prompt with the mark at a line start plays its recording", () => {
+    // The person pasted a job's first message into a task: the slot's ui server has no HH_JOB=1, so it is a task turn.
+    const r = replay(all, undefined, jobPrompt("# Topic: the manifest\n\nSync."), true, false);
+    expect(r.play.text).toBe("Primero.");
+    expect(r.play.blocks).not.toContainEqual(expect.objectContaining({ tool: "job_result" }));
+    expect(r.session.action).toBe("manifest");
+    // A job slot whose prompt lacks the mark is not treated as a job's canned turn either.
+    expect(replay(all, undefined, "# Topic: the manifest\n\nExplain…", true, true).play.text).toBe("Primero.");
   });
 });

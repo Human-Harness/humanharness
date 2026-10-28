@@ -37,6 +37,7 @@ export function FlowSide({
   onStart,
   onOpenNote,
   material,
+  plugins,
 }: {
   state: AppState;
   tasks: TaskView;
@@ -45,6 +46,8 @@ export function FlowSide({
   onOpenNote: (slug: string) => void;
   /** The scope's material panel, after the notes (only with `state.material`). */
   material?: ReactNode;
+  /** The Plugins section, after the material (only with running plugins that have panels there). */
+  plugins?: ReactNode;
 }) {
   const { t } = useTranslation();
   const pathId = useId();
@@ -108,6 +111,7 @@ export function FlowSide({
         </section>
       )}
       {material}
+      {plugins}
       {(state.references ?? []).length > 0 && (
         <div className="hh-flow-refs">
           {(state.references ?? []).map((r) => (

@@ -38,6 +38,9 @@ import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
 import { AttentionInbox } from "./plugins/AttentionInbox";
+import { PluginChips } from "./plugins/PluginChips";
+import { PluginsSection } from "./plugins/PluginsSection";
+import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, usePluginSurface } from "./plugins/surface";
 import { useAttention } from "./plugins/usePlugins";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
@@ -186,6 +189,19 @@ export function ChatView({
   const sidekick = useSidekick(client, skEnabled, skRefresh);
   // The Attention inbox (plugins spec §6): only when main sends `state.plugins`, never in slim mode (D0).
   const attention = useAttention(client, state.plugins !== undefined && !slim);
+  // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
+  const surface = usePluginSurface(client, state.plugins !== undefined && !slim);
+  const [panelTarget, setPanelTarget] = useState<PanelTarget | null>(null);
+  const surfaceCtx = useMemo<PluginSurfaceContextValue | null>(
+    () =>
+      surface && {
+        surface,
+        client,
+        target: panelTarget,
+        open: (plugin, panel, focus) => setPanelTarget((prev) => ({ plugin, panel, ...(focus !== undefined ? { focus } : {}), n: (prev?.n ?? 0) + 1 })),
+      },
+    [surface, client, panelTarget],
+  );
   /** Under 720 px the panel can't show: no paid review the person can't see (styles.css). */
   const narrow = useNarrow();
   const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
@@ -1047,6 +1063,8 @@ export function ChatView({
       // Keyed by scope: another scope's panel starts fresh (its form, notices and cards are not this one's).
       <Panel key={materialScope} client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
     ) : null;
+  // The core's Plugins section: only while a running plugin has a panel there (none: the side panel as before, D0).
+  const pluginsSection = surfaceCtx && surfaceCtx.surface.panels.some((p) => p.slot === PLUGINS_SLOT) ? <PluginsSection ctx={surfaceCtx} /> : null;
 
   return (
     <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
@@ -1055,6 +1073,7 @@ export function ChatView({
           {profileBar?.(blocked())}
           {scopeBar?.(blocked())}
           <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+          {surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
           {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
           {sidekick && (
             <SidekickToggle
@@ -1096,12 +1115,14 @@ export function ChatView({
               setNotesPanel({ expanded: slug });
             }}
             material={material}
+            {...(pluginsSection ? { plugins: pluginsSection } : {})}
           />
         )}
-        {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
-        {!flow && material && (
-          <nav className="hh-flow-side" aria-label={t("material.title")}>
+        {/* Without actions there is no flow side panel: the material panel (and the Plugins section) get one of their own. */}
+        {!flow && (material || pluginsSection) && (
+          <nav className="hh-flow-side" aria-label={material ? t("material.title") : t("plugins.panels.section")}>
             {material}
+            {pluginsSection}
           </nav>
         )}
         <Main className="hh-main">
@@ -1404,7 +1425,10 @@ export function ChatView({
           {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
         </Main>
         {(() => {
-          const harnessSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
+          const ownSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
+          // The harness's `<PluginSlot>`s read the surface from here; without one, exactly its side panel (D0).
+          const harnessSide =
+            ownSide !== undefined && surfaceCtx ? <PluginSurfaceContext.Provider value={surfaceCtx}>{ownSide}</PluginSurfaceContext.Provider> : ownSide;
           // D0: without Sidekick, exactly the harness's side panel as before.
           // Narrow, the panel and rail hide (styles.css): the harness's side panel shows as before (D0).
           if (!sidekick || narrow) return harnessSide !== undefined ? <aside className="hh-side">{harnessSide}</aside> : null;

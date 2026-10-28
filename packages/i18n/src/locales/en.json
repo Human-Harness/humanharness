@@ -934,6 +934,13 @@
     },
     "frame": {
       "stopped": "This panel kept reloading itself, so it was stopped."
+    },
+    "panels": {
+      "section": "Plugins",
+      "tabs": "Plugin panels"
+    },
+    "chips": {
+      "open": "Open {{name}}"
     }
   }
 }

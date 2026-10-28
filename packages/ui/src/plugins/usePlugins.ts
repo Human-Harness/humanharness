@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AttentionView, HarnessClient, PluginsView } from "../client";
 
-interface LiveSource<V> {
+export interface LiveSource<V> {
   get(): Promise<V | null>;
   onChange(listener: (view: V) => void): () => void;
 }
@@ -44,7 +44,7 @@ function useLiveState<V>(source: LiveSource<V>, enabled: boolean): { view: V | n
   }, [source, enabled]);
   return enabled ? { view, failed } : { view: null, failed: false };
 }
-function useLive<V>(source: LiveSource<V>, enabled: boolean): V | null {
+export function useLive<V>(source: LiveSource<V>, enabled: boolean): V | null {
   return useLiveState(source, enabled).view;
 }
 

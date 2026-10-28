@@ -704,8 +704,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-reader-problem, .hh-reader-truncated { color: var(--hh-muted); }
 /* Contents beside the text from the default 1100 px window up, and always in full screen; below 1000 px the side reader is too narrow. */
 @media (max-width: 999px) { .hh-reader:not(.hh-reader-is-full) .hh-reader-toc { display: none; } }
-/* The reader beside the chat: the harness's own side panel hides (three columns don't fit 1100 px); full screen hides the chat too. */
-.hh-with-reader .hh-side { display: none; }
+/* The reader beside the chat: the harness's own side panel hides (three columns don't fit 1100 px); full screen hides the chat too.
+   Sidekick's panel and rail are such a column too: they hide with the reader, and come back when it closes. */
+.hh-with-reader .hh-side, .hh-with-reader .hh-sk-panel, .hh-with-reader .hh-sk-rail { display: none; }
 /* Review marks (review spec §6.1): drawn with the CSS Custom Highlight API, so the document's DOM never changes. */
 ::highlight(hh-review-question) { background-color: var(--hh-review-question); }
 ::highlight(hh-review-comment) { background-color: var(--hh-review-comment); }
@@ -761,7 +762,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
   /* A reader without review keeps its flex row: a narrower drawer. */
   .hh-timeline-drawer { flex-basis: 220px; }
 }
-.hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
+.hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side, .hh-reader-full .hh-sk-panel, .hh-reader-full .hh-sk-rail { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }
 /* Focus mode (review spec §6.2): focus-only classes, so a reader without review never gets them (D0). After the
    container query: a card a margin marker opened floats over the text at any width. */

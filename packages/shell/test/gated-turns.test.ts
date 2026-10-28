@@ -155,6 +155,51 @@ describe("gatedTurns (parallel spec §7)", () => {
     expect(ga.isBusy()).toBe(false);
   });
 
+  it("with `startFailed`, a turn the gate couldn't get ready goes there: the turn's own failed start writes the chat", async () => {
+    const error = new Error("sleep failed");
+    const gate = {
+      tryAcquire: vi.fn(() => null),
+      acquire: vi.fn(() => Promise.reject(error)),
+      isQueued: vi.fn(() => false),
+      drop: vi.fn(() => null),
+    } as unknown as TurnGate;
+    const chat: { role: string; text: string; error?: unknown }[] = [];
+    const emitted: Event[] = [];
+    let startError: Error | null = null;
+    const controller = new TurnController({
+      ensureRuntime: async () => {
+        const e = startError;
+        startError = null;
+        if (e) throw new Error("Couldn't get ready for this turn");
+        throw new Error("never reached");
+      },
+      chatLog: async () => ({ append: async (entry) => void chat.push(entry) }),
+      stateBlocks: () => new Set(),
+      emit: (e) => emitted.push(e),
+    });
+    const seen: Event[] = [];
+    const ga = gatedTurns("a", gate, controller, {
+      cap: "tasks",
+      emit: (e) => emitted.push(e),
+      startFailed: (message, options, err) => {
+        startError = err instanceof Error ? err : new Error(String(err));
+        return controller.send(message, options);
+      },
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await ga.send("one", { onEvent: (e) => seen.push(e) });
+    await controller.flush();
+    log.mockRestore();
+    const failed: Event = { type: "done", ok: false, error: { code: "agent-crashed", detail: "Couldn't get ready for this turn" } };
+    expect(seen).toEqual([failed]);
+    expect(emitted).toEqual([failed]);
+    expect(chat.map((e) => [e.role, e.text, e.error])).toEqual([
+      ["user", "one", undefined],
+      ["assistant", "", { code: "agent-crashed", detail: "Couldn't get ready for this turn" }],
+    ]);
+    expect(ga.isBusy()).toBe(false);
+  });
+
   it("cancel of a running turn goes to the inner turns", async () => {
     const gate = new TurnGate({ tasks: 1, jobs: 1 });
     const a = fakeTurns();

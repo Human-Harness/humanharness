@@ -23,7 +23,16 @@ export function gatedTurns(
   lane: string,
   gate: TurnGate,
   inner: Turns,
-  o: { cap: Cap; emit?: (e: Event) => void; now?: () => number },
+  o: {
+    cap: Cap;
+    emit?: (e: Event) => void;
+    now?: () => number;
+    /**
+     * A turn the gate couldn't get ready (its `beforeStart` failed) goes here instead: the board host runs it through
+     * its TurnController's failed start, so the chat keeps the person's line and the error. Absent: it ends unstarted.
+     */
+    startFailed?: (message: string, options: TurnOptions, err: unknown) => Promise<void>;
+  },
 ): Turns & { isQueued(): boolean } {
   const now = o.now ?? Date.now;
   /** From the send until the turn starts: queued, in the gate's `beforeStart`, or let in and not yet started. */
@@ -90,8 +99,9 @@ export function gatedTurns(
         (err: unknown) => {
           waiting = false;
           if (err instanceof Dropped) return endUnstarted(options, fail("cancelled") as Done);
-          // The gate's `beforeStart` failed: it already gave the slot back. The chat keeps no line of it (no chat log here).
+          // The gate's `beforeStart` failed: it already gave the slot back.
           console.error("Could not get ready for the turn", err);
+          if (o.startFailed) return o.startFailed(message, options, err);
           endUnstarted(options, fail("agent-crashed", "Couldn't get ready for this turn") as Done);
         },
       );

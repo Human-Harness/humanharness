@@ -444,6 +444,12 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-filediff-before, .hh-filediff-after { min-width: 0; padding: 2px 6px; }
 .hh-filediff-diagrams figure { margin: 0 0 8px; }
 .hh-filediff-diagrams figcaption { font-size: 12px; color: var(--hh-muted); }
+/* An entry's diff and the core's go-back confirmation (file-timeline spec §5, §6.1). */
+.hh-entrydiff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hh-entrydiff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hh-restore-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: var(--hh-backdrop); }
+.hh-restore-confirm { max-width: 440px; padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
+.hh-restore-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }

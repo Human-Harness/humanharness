@@ -13,6 +13,7 @@ import {
   type ChoiceOption,
   type DocumentCard,
   type EngineProblem,
+  type FileRestorePrompt,
   type HarnessClient,
   type ModeChoice,
   type ModeSwitch,
@@ -37,6 +38,7 @@ import { type BlockActions, type BlockProps, type InputContext, Message } from "
 import { markdownToPlain } from "./markdown";
 import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
 import { ModeBar, ModeList } from "./ModeList";
+import { RestoreConfirm } from "./RestoreConfirm";
 import { actionModes, tierBelow } from "./modes";
 import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
@@ -171,6 +173,30 @@ export function ChatView({
   const [pickResets, setPickResets] = useState(0);
   /** The tier question (task-modes spec §5.3): the mode asks for more than the task's tier. */
   const [tierAsk, setTierAsk] = useState<{ mode: string; task: string; required: Tier; current: Tier } | null>(null);
+  /** The core's "go back?" for every `client.files.restore`, from the reader, a panel or a harness view (§5). */
+  const [restoreAsk, setRestoreAsk] = useState<{ prompt: FileRestorePrompt; answer: (yes: boolean) => void } | null>(null);
+  useEffect(() => {
+    let open: ((yes: boolean) => void) | null = null;
+    const off = client.files.hostConfirm(
+      (prompt) =>
+        new Promise<boolean>((resolve) => {
+          // A second request while one is open: the first is answered no.
+          open?.(false);
+          const answer = (yes: boolean) => {
+            if (open === answer) open = null;
+            resolve(yes);
+          };
+          open = answer;
+          setRestoreAsk({ prompt, answer });
+        }),
+    );
+    return () => {
+      off();
+      // The chat goes away: a question still open is answered no, so its restore never waits forever.
+      open?.(false);
+      setRestoreAsk(null);
+    };
+  }, [client]);
   /** `defaultMode: "ask"`: the start waits for the person's mode (no model call before it). */
   const [askPick, setAskPick] = useState<{ text: string; options: SendOptions } | null>(null);
   /** The last mode pick was refused or failed (shown until the next pick or message). */
@@ -1369,6 +1395,15 @@ export function ChatView({
         <div className="hh-sr-only" aria-live="polite">
           {announcement}
         </div>
+        {restoreAsk && (
+          <RestoreConfirm
+            prompt={restoreAsk.prompt}
+            onAnswer={(yes) => {
+              restoreAsk.answer(yes);
+              setRestoreAsk(null);
+            }}
+          />
+        )}
         {showHistory && (
           <HistoryPanel
             client={client}

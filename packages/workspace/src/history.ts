@@ -448,11 +448,15 @@ export class History {
     }
   }
 
-  /** The text of blob `oid` (an approved version, review spec §5.4); null when the history doesn't have it. */
-  async readBlob(oid: string): Promise<string | null> {
+  /**
+   * The text of blob `oid` (an approved version, review spec §5.4); null when the history doesn't have it, or when it
+   * is over `max` bytes.
+   */
+  async readBlob(oid: string, max = Number.POSITIVE_INFINITY): Promise<string | null> {
     if (!/^[0-9a-f]{40}$/.test(oid)) return null;
     try {
       const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid });
+      if (blob.length > max) return null;
       return Buffer.from(blob).toString("utf8");
     } catch (err) {
       // Not there, or a commit or tree id rather than a blob's.

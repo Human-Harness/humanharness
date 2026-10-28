@@ -689,6 +689,9 @@ describe("review records (review spec §3, §7 undo)", () => {
     expect(await history.readBlob(blobId(Buffer.from("approved\n")))).toBe("approved\n");
     expect(await history.readBlob("f".repeat(40))).toBeNull();
     expect(await history.readBlob("nope")).toBeNull();
+    // Over the cap: not read out.
+    expect(await history.readBlob(blobId(Buffer.from("approved\n")), 9)).toBe("approved\n");
+    expect(await history.readBlob(blobId(Buffer.from("approved\n")), 8)).toBeNull();
     // A commit's or a tree's id is not a blob's.
     const { commit } = await git.readCommit({ fs, gitdir: `${folder}.git`, oid: sha });
     expect(await history.readBlob(sha)).toBeNull();

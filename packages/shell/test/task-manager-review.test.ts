@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Event } from "@humanharness/runtime";
+import { RoundNotStarted } from "../src/main/reviews";
 import { REVIEW_PROMPT } from "../src/main/task-prompts";
 import { setup } from "./task-manager-fixture";
 
@@ -26,6 +27,15 @@ describe("review rounds (review spec §5.3)", () => {
     expect(t.turns[0].message).toContain("read_review");
     expect(t.profileCalls.at(-1)).toEqual([undefined, undefined, "deep"]);
     expect(REVIEW_PROMPT).toContain("{{question}}");
+  });
+
+  it("reject with RoundNotStarted when the turn never started, so the items go back", async () => {
+    const refused = { isBusy: () => false, cancel: () => {}, send: async () => Promise.reject(new Error("The app is closing")) };
+    const t = setup({ extra: { turns: refused } });
+    const err = await t.manager.reviewRound({ path: "specs/a.md", title: "A", message: "Review round for specs/a.md.", tier: "standard" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RoundNotStarted);
+    expect((err as RoundNotStarted).message).toBe("The app is closing");
+    expect(t.state().current).toBeNull();
   });
 });
 

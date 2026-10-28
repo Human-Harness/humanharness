@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import git from "isomorphic-git";
 import { afterAll, describe, expect, it } from "vitest";
-import type { Review } from "@humanharness/harness-sdk";
+import type { Review, ReviewComment } from "@humanharness/harness-sdk";
 import { MAX_REVIEW_DOCUMENT_BYTES, ReviewLocks, ReviewRefused, blobId, canonicalDocumentPath, loadReview, newReview, readOwnDocument, reviewSummarySync, saveReview, writeOwnDocument } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-reviews-"));
@@ -138,6 +138,24 @@ describe("the record", () => {
     fs.mkdirSync(path.join(f, ".harness", "reviews", "specs"), { recursive: true });
     fs.writeFileSync(path.join(f, ".harness", "reviews", "specs", "a.md.json"), '{"path":"specs/a.md","task":null,"comments":[{}],"approvals":[]}');
     await expect(loadReview(f, "specs/a.md")).rejects.toBeInstanceOf(ReviewRefused);
+  });
+
+  it("refuses a record the next load would call broken, and keeps the old one", async () => {
+    const f = folder();
+    await saveReview(f, record("specs/a.md"));
+    const comment: ReviewComment = {
+      id: "c1",
+      author: "person",
+      kind: "comment",
+      anchor: { quote: "q".repeat(20_001), heading: null, occurrence: 0 },
+      text: "x",
+      state: "draft",
+      replies: [],
+      at: "2026-10-28T10:00:00.000Z",
+    };
+    const tooLong: Review = { ...record("specs/a.md"), comments: [comment] };
+    await expect(saveReview(f, tooLong)).rejects.toMatchObject({ reason: "bad-input" });
+    expect((await loadReview(f, "specs/a.md"))?.comments).toEqual([]);
   });
 
   it("refuses to write through a linked reviews folder", async () => {

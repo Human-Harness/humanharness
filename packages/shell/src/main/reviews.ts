@@ -19,6 +19,7 @@ import type { ApprovedText, CommentInput, ReviewFailure, ReviewResult, ReviewSen
 import {
   type HistoryTrailer,
   MAX_COMMENTS,
+  MAX_REVIEW_DOCUMENT_BYTES,
   ReviewLocks,
   ReviewRefused,
   blobId,
@@ -45,17 +46,23 @@ export interface ReviewRound {
 export interface ReviewDeps {
   /** The person's folder (the active profile's); null when the app isn't set up. */
   base(): Promise<string | null>;
-  history(): Promise<{ save(message: string, trailer?: HistoryTrailer): Promise<string | null>; readBlob(oid: string): Promise<string | null> } | null>;
+  history(): Promise<{ save(message: string, trailer?: HistoryTrailer): Promise<string | null>; readBlob(oid: string, max?: number): Promise<string | null> } | null>;
   /** The open task's trailer: an answer's and an approval's commits belong to it (undo, §7). */
   trailer(): Promise<HistoryTrailer | undefined>;
   openTask(): Promise<{ id: string; scope: string } | null>;
   /** A turn or a task operation runs now. */
   busy(): boolean;
-  /** Resolves once no turn runs (§5.1 "writes during a turn"). */
-  settled(): Promise<void>;
+  /**
+   * Runs `write` once no turn runs (§5.1 "writes during a turn"): the task manager's `whenSettled`. It may call `write`
+   * again when a turn started meanwhile; the service runs it only once.
+   */
+  whenSettled<T>(write: () => Promise<T>): Promise<T>;
   /** Why writes can't run now (a restore, a folder move, quitting), or null. */
   blocked(): string | null;
-  /** Starts the round (task manager); it may run a whole turn. */
+  /**
+   * Starts the round (task manager); it may run a whole turn. Rejects with `RoundNotStarted` when nothing reached the
+   * agent (the items go back); any other rejection means the round was delivered (the items stay sent).
+   */
   round(r: ReviewRound): Promise<unknown>;
   /** The approval is saved and committed (§5.4): the task manager's part. */
   approved(a: { path: string; task: string | null; reason?: string }): void;
@@ -65,6 +72,17 @@ export interface ReviewDeps {
   changed(path: string): void;
   now?(): Date;
 }
+
+/** The review round never reached the agent (no turn started): its items go back to what they were (§5.3). */
+export class RoundNotStarted extends Error {
+  constructor(readonly reason: unknown) {
+    super(reason instanceof Error ? reason.message : String(reason));
+    this.name = "RoundNotStarted";
+  }
+}
+
+/** A blob id as the window got it with the view. */
+const BLOB_ID = /^[0-9a-f]{40}$/;
 
 /** At most this many paths per `summaries` call. */
 export const MAX_SUMMARY_PATHS = 200;
@@ -128,13 +146,33 @@ export class ReviewService {
     }
   }
 
+  /** Commits the change. A failure is logged, not returned: the change is on disk and goes with the next commit. */
   private async commit(message: string): Promise<void> {
-    const history = await this.d.history();
-    await history?.save(message, await this.d.trailer());
+    try {
+      const history = await this.d.history();
+      await history?.save(message, await this.d.trailer());
+    } catch (err) {
+      console.error("A review commit failed", err);
+    }
   }
 
+  /** Runs `write` (a `withDoc`) once, after the turn; a failure of the wait becomes data. */
+  private async afterTurn<T extends { ok: boolean }>(write: () => Promise<T | ReviewFailure>): Promise<T | ReviewFailure> {
+    let once: Promise<T | ReviewFailure> | null = null;
+    try {
+      return await this.d.whenSettled(() => (once ??= write()));
+    } catch (err) {
+      console.error("A review action failed", err);
+      return { ok: false, reason: "not-ready" };
+    }
+  }
+
+  /** `blob`: the version shown, which `approve` passes back. */
   view(rel: unknown): Promise<ReviewView> {
-    return this.withDoc(rel, async ({ bytes, review }) => ({ ok: true as const, review, summary: summarizeReview(review, blobId(bytes)) }));
+    return this.withDoc(rel, async ({ bytes, review }) => {
+      const blob = blobId(bytes);
+      return { ok: true as const, review, blob, summary: summarizeReview(review, blob) };
+    });
   }
 
   /** One summary per path (the chat's chips, harness views); null without a record or when it can't be read. */
@@ -153,8 +191,7 @@ export class ReviewService {
   async answer(rel: unknown, id: unknown, pick: unknown): Promise<ReviewResult> {
     if (this.d.blocked()) return { ok: false, reason: "blocked" };
     if (typeof id !== "string" || !isPick(pick)) return { ok: false, reason: "bad-input" };
-    await this.d.settled();
-    return this.withDoc(rel, async ({ base, doc, text, bytes, review }) => {
+    return this.afterTurn(() => this.withDoc(rel, async ({ base, doc, text, bytes, review }) => {
       const c = review?.comments.find((x) => x.id === id);
       if (!review || !c) return { ok: false, reason: "unknown" };
       if (summarizeReview(review, blobId(bytes)).status === "approved") return { ok: false, reason: "locked" };
@@ -168,11 +205,12 @@ export class ReviewService {
       await this.commit(`Answer: ${doc} · ${cut(c.text, 60)}`);
       this.d.changed(doc);
       return { ok: true, applied: r.text !== null };
-    });
+    }));
   }
 
   /** A comment on a rendered selection (§5.2): a draft. */
   comment(rel: unknown, input: unknown): Promise<ReviewResult> {
+    if (this.d.blocked()) return Promise.resolve({ ok: false, reason: "blocked" });
     const i = (input ?? {}) as Partial<CommentInput>;
     if (typeof i.selected !== "string" || i.selected.length > 20_000 || (i.heading !== null && typeof i.heading !== "string") || typeof i.text !== "string" || !i.text.trim() || i.text.length > 4000)
       return Promise.resolve({ ok: false, reason: "bad-input" });
@@ -192,6 +230,7 @@ export class ReviewService {
 
   /** Edits a draft, or deletes it with null. Only the person's drafts. */
   editDraft(rel: unknown, id: unknown, text: unknown): Promise<ReviewResult> {
+    if (this.d.blocked()) return Promise.resolve({ ok: false, reason: "blocked" });
     if (typeof id !== "string" || (text !== null && (typeof text !== "string" || !text.trim() || text.length > 4000))) return Promise.resolve({ ok: false, reason: "bad-input" });
     return this.withDoc(rel, async ({ base, doc, review }) => {
       const c = review?.comments.find((x) => x.id === id);
@@ -205,6 +244,7 @@ export class ReviewService {
 
   /** The person reopens a resolved comment (§11.2): a comment goes back to draft (the next round carries it), a question to open. */
   reopen(rel: unknown, id: unknown): Promise<ReviewResult> {
+    if (this.d.blocked()) return Promise.resolve({ ok: false, reason: "blocked" });
     return this.withDoc(rel, async ({ base, doc, review }) => {
       const c = review?.comments.find((x) => x.id === id);
       if (!review || !c || c.state !== "resolved") return { ok: false, reason: "unknown" };
@@ -237,11 +277,16 @@ export class ReviewService {
     });
     if (!prepared.ok) return prepared;
     const { ids, before, round } = prepared;
-    const to = (await this.d.openTask()) ? ("open" as const) : ("new" as const);
-    void this.d.round(round).catch(async (err: unknown) => {
-      console.error("The review round could not start", err);
-      await this.unsend(round.path, ids, before);
-    });
+    const to = (await this.d.openTask().catch(() => null)) ? ("open" as const) : ("new" as const);
+    // Through `then`, so a synchronous throw lands in the same catch.
+    void Promise.resolve()
+      .then(() => this.d.round(round))
+      .catch(async (err: unknown) => {
+        // Delivered and failed later: the agent has the items, so they stay sent (no round twice).
+        if (!(err instanceof RoundNotStarted)) return console.error("The review round failed", err);
+        console.error("The review round could not start", err.reason);
+        await this.unsend(round.path, ids, before);
+      });
     return { ok: true, sent: ids.length, to };
   }
 
@@ -258,32 +303,39 @@ export class ReviewService {
   }
 
   /**
-   * "Approve" (§5.4): appends `{ blob, at, reason? }`, commits `Approved: <path>`, tells the task manager. The version
-   * already approved changes nothing and tells no one.
+   * "Approve" (§5.4): appends `{ blob, at, reason? }`, commits `Approved: <path>`, tells the task manager. `blob` is the
+   * version the person saw (the view's): a document changed since is refused with "changed", so an approval never names
+   * text nobody read. The version already approved changes nothing and tells no one.
    */
-  async approve(rel: unknown, opts: unknown = {}): Promise<ReviewResult> {
+  async approve(rel: unknown, blob: unknown, opts: unknown = {}): Promise<ReviewResult> {
     if (this.d.blocked()) return { ok: false, reason: "blocked" };
+    if (typeof blob !== "string" || !BLOB_ID.test(blob)) return { ok: false, reason: "bad-input" };
     const o = (opts ?? {}) as { reason?: unknown; discard?: unknown };
     if (o.reason !== undefined && (typeof o.reason !== "string" || o.reason.length > 500)) return { ok: false, reason: "bad-input" };
     const reason = typeof o.reason === "string" && o.reason.trim() ? o.reason.trim().split("\n").join(" ") : undefined;
-    await this.d.settled();
-    const r = await this.withDoc(rel, async ({ base, doc, bytes, review }) => {
-      const record = review ?? newReview(doc, await this.d.openTask());
-      const blob = blobId(bytes);
-      if (summarizeReview(record, blob).status === "approved") return { ok: true as const, told: null };
-      const unsent = record.comments.filter(isUnsent).length;
-      if (unsent > 0 && o.discard !== true) return { ok: false, reason: "unsent", count: unsent } as ReviewFailure;
-      const comments = o.discard === true ? discardUnsent(record.comments) : record.comments;
-      const blocking = summarizeReview({ ...record, comments }, blob).blocking;
-      if (blocking > 0 && !reason) return { ok: false, reason: "reason-required", count: blocking } as ReviewFailure;
-      const approval = { blob, at: this.at(), ...(reason ? { reason } : {}) };
-      await saveReview(base, { ...record, comments, approvals: [...record.approvals, approval].slice(-200) });
-      await this.commit(`Approved: ${doc}`);
-      this.d.changed(doc);
-      return { ok: true as const, told: { path: doc, task: record.task, ...(reason ? { reason } : {}) } };
-    });
+    const r = await this.afterTurn(() =>
+      this.withDoc(rel, async ({ base, doc, bytes, review }) => {
+        if (blobId(bytes) !== blob) return { ok: false, reason: "changed" } as ReviewFailure;
+        const record = review ?? newReview(doc, await this.d.openTask());
+        if (summarizeReview(record, blob).status === "approved") return { ok: true as const, told: null };
+        const unsent = record.comments.filter(isUnsent).length;
+        if (unsent > 0 && o.discard !== true) return { ok: false, reason: "unsent", count: unsent } as ReviewFailure;
+        const comments = o.discard === true ? discardUnsent(record.comments) : record.comments;
+        const blocking = summarizeReview({ ...record, comments }, blob).blocking;
+        if (blocking > 0 && !reason) return { ok: false, reason: "reason-required", count: blocking } as ReviewFailure;
+        const approval = { blob, at: this.at(), ...(reason ? { reason } : {}) };
+        await saveReview(base, { ...record, comments, approvals: [...record.approvals, approval].slice(-200) });
+        await this.commit(`Approved: ${doc}`);
+        this.d.changed(doc);
+        return { ok: true as const, told: { path: doc, task: record.task, ...(reason ? { reason } : {}) } };
+      }),
+    );
     if (!r.ok) return r;
-    if (r.told) this.d.approved(r.told);
+    try {
+      if (r.told) this.d.approved(r.told);
+    } catch (err) {
+      console.error("The task could not hear of the approval", err);
+    }
     return { ok: true };
   }
 
@@ -292,7 +344,7 @@ export class ReviewService {
     return this.withDoc(rel, async ({ review }) => {
       const blob = review?.approvals.at(-1)?.blob;
       const history = blob ? await this.d.history() : null;
-      const text = blob && history ? await history.readBlob(blob) : null;
+      const text = blob && history ? await history.readBlob(blob, MAX_REVIEW_DOCUMENT_BYTES) : null;
       return text === null ? { ok: false, reason: "missing" } : { ok: true as const, text };
     });
   }

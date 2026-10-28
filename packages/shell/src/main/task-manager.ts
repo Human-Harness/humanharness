@@ -39,6 +39,7 @@ import {
   nextInPath,
 } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeDir, isScopeId, noteSlug } from "@humanharness/workspace";
+import { RoundNotStarted } from "./reviews";
 import {
   CHECKPOINT_PROMPT,
   type ModeText,
@@ -433,8 +434,22 @@ export class TaskManager {
   /**
    * A review round (review spec §5.3): to the task that waits, as the person's message; with no task open, a new core
    * "Review <title>" task in the record's scope (the open scope without one) at `r.tier`. Refused while a turn runs.
+   * Rejects with `RoundNotStarted` when no turn started (refused, stopped, quitting): the items go back to the person.
    */
-  reviewRound(r: { path: string; title: string; message: string; scope?: string; tier: Tier }): Promise<"open" | "new"> {
+  async reviewRound(r: { path: string; title: string; message: string; scope?: string; tier: Tier }): Promise<"open" | "new"> {
+    const started = this.turnsStarted;
+    let to: "open" | "new";
+    try {
+      to = await this.reviewRoundNow(r);
+    } catch (err) {
+      throw this.turnsStarted === started ? new RoundNotStarted(err) : err;
+    }
+    // Stopped before the send (a Stop, a checkpoint the person declined): nothing reached the agent.
+    if (this.turnsStarted === started) throw new RoundNotStarted(new Error("The review round was stopped before it started"));
+    return to;
+  }
+
+  private reviewRoundNow(r: { path: string; title: string; message: string; scope?: string; tier: Tier }): Promise<"open" | "new"> {
     return this.op(async () => {
       const c = await this.storedCurrent();
       if (c?.status === "waiting") {

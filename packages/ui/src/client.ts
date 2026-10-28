@@ -999,8 +999,16 @@ export type ReviewRefusal =
   | "nothing-to-send";
 /** `count`: the unsent items (`unsent`) or the open blocking questions (`reason-required`). */
 export type ReviewFailure = { ok: false; reason: ReviewRefusal; count?: number };
-/** The reader's view of a document's review. `review` null: no record yet (§6.1 "reading only"). */
-export type ReviewView = { ok: true; review: Review | null; summary: ReviewSummary } | ReviewFailure;
+/**
+ * The reader's view of a document's review. `review` null: no record yet (§6.1 "reading only"). `blob`: the version
+ * read, which an approval passes back (a document changed since is refused with "changed").
+ */
+export type ReviewView = { ok: true; review: Review | null; blob: string; summary: ReviewSummary } | ReviewFailure;
+/** "Approve" (§5.4), with the blob of the version shown: a reason when a blocking question is open; drop unsent items. */
+export interface ApproveOptions {
+  reason?: string;
+  discard?: boolean;
+}
 export type ReviewResult = { ok: true; id?: string; applied?: boolean } | ReviewFailure;
 /** `to`: the round went to the task that waits ("open") or starts a "Review <title>" task ("new"). */
 export type ReviewSendResult = { ok: true; sent: number; to: "open" | "new" } | ReviewFailure;

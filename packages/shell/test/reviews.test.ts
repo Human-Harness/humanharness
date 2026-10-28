@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { History, ReviewLocks, loadReview, runReviewRequest } from "@humanharness/workspace";
-import { type ReviewDeps, type ReviewRound, ReviewService } from "../src/main/reviews";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { History, ReviewLocks, blobId, loadReview, runReviewRequest } from "@humanharness/workspace";
+import { type ReviewDeps, type ReviewRound, ReviewService, RoundNotStarted } from "../src/main/reviews";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-review-svc-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -28,7 +28,10 @@ async function setup(over: Partial<ReviewDeps> = {}) {
     trailer: async () => ({ task: "t1", action: "ticket" }),
     openTask: async () => ({ id: "t1", scope: "main" }),
     busy: () => false,
-    settled: () => gate.settled,
+    whenSettled: async (write) => {
+      await gate.settled;
+      return write();
+    },
     blocked: () => null,
     round: async (r) => void rounds.push(r),
     approved: (a) => void approved.push(a),
@@ -55,7 +58,9 @@ async function setup(over: Partial<ReviewDeps> = {}) {
     return () => release();
   };
   const read = () => fs.readFileSync(path.join(base, DOC), "utf8");
-  return { svc, base, history, rounds, approved, changed, ask, hold, read };
+  // The version the window shows (the view's blob).
+  const blob = () => blobId(fs.readFileSync(path.join(base, DOC)));
+  return { svc, base, history, rounds, approved, changed, ask, hold, read, blob };
 }
 
 describe("answers (§5.1)", () => {
@@ -86,7 +91,7 @@ describe("answers (§5.1)", () => {
   it("are locked once approved, and unlock when the file changes", async () => {
     const t = await setup();
     await t.ask("Filter by size.", false);
-    expect(await t.svc.approve(DOC)).toMatchObject({ ok: true });
+    expect(await t.svc.approve(DOC, t.blob())).toMatchObject({ ok: true });
     expect(await t.svc.answer(DOC, "c1", 1)).toEqual({ ok: false, reason: "locked" });
     fs.writeFileSync(path.join(t.base, DOC), `${TEXT}\nMore.\n`);
     expect(await t.svc.answer(DOC, "c1", 1)).toMatchObject({ ok: true });
@@ -134,15 +139,59 @@ describe("comments and the batch (§5.2, §5.3)", () => {
     expect((await loadReview(t.base, DOC))?.comments).toEqual([]);
   });
 
-  it("refuses while a turn runs; puts the items back when the round can't start", async () => {
+  it("refuses while a turn runs; puts the items back when the round never started", async () => {
     const busy = await setup({ busy: () => true });
     await busy.svc.comment(DOC, { selected: "Filter by size.", heading: "scope", text: "x" });
     expect(await busy.svc.send(DOC)).toEqual({ ok: false, reason: "busy" });
-    const failing = await setup({ round: async () => Promise.reject(new Error("A turn is already running")) });
+    let refused = false;
+    let back!: () => void;
+    const putBack = new Promise<void>((r) => (back = r));
+    const failing = await setup({
+      round: async () => {
+        refused = true;
+        throw new RoundNotStarted(new Error("A turn is already running"));
+      },
+      // The record changes once more after the refusal: the items went back.
+      changed: () => void (refused && back()),
+    });
     await failing.svc.comment(DOC, { selected: "Filter by size.", heading: "scope", text: "x" });
     await failing.svc.send(DOC);
-    await new Promise((r) => setTimeout(r, 20));
+    await putBack;
     expect((await loadReview(failing.base, DOC))?.comments[0].state).toBe("draft");
+  });
+
+  it("a round that fails after it started leaves the items sent (no round twice)", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const t = await setup({ round: () => Promise.reject(new Error("The agent crashed")) });
+      await t.svc.comment(DOC, { selected: "Filter by size.", heading: "scope", text: "x" });
+      expect(await t.svc.send(DOC)).toMatchObject({ ok: true, sent: 1 });
+      await vi.waitFor(() => expect(logged).toHaveBeenCalledWith("The review round failed", expect.any(Error)));
+      expect((await loadReview(t.base, DOC))?.comments[0].state).toBe("sent");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("a selection whose source passes the record's limits is refused, and the record still loads", async () => {
+    const t = await setup();
+    await t.ask("Filter by size.", false);
+    // Rendered "ab ab …" under 20,000 characters; its source, with the bold markers, is well over.
+    const para = "**ab** ".repeat(5000).trimEnd();
+    fs.writeFileSync(path.join(t.base, DOC), `${TEXT}\n${para}\n`);
+    const selected = "ab ".repeat(5000).trimEnd();
+    expect(await t.svc.comment(DOC, { selected, heading: "scope", text: "Too long." })).toEqual({ ok: false, reason: "bad-input" });
+    expect((await loadReview(t.base, DOC))?.comments.map((c) => c.id)).toEqual(["c1"]);
+  });
+
+  it("nothing is written while writes are blocked", async () => {
+    const t = await setup({ blocked: () => "restoring" });
+    const input = { selected: "Filter by size.", heading: "scope", text: "x" };
+    expect(await t.svc.comment(DOC, input)).toEqual({ ok: false, reason: "blocked" });
+    expect(await t.svc.editDraft(DOC, "c1", "y")).toEqual({ ok: false, reason: "blocked" });
+    expect(await t.svc.reopen(DOC, "c1")).toEqual({ ok: false, reason: "blocked" });
+    expect(await t.svc.approve(DOC, t.blob())).toEqual({ ok: false, reason: "blocked" });
+    expect(await loadReview(t.base, DOC)).toBeNull();
   });
 
   it("the person reopens a resolved comment", async () => {
@@ -160,30 +209,47 @@ describe("approval (§5.4)", () => {
   it("asks for a reason with a blocking question open, stores it, commits, and tells the task", async () => {
     const t = await setup();
     await t.ask("Filter by size.", true);
-    expect(await t.svc.approve(DOC)).toEqual({ ok: false, reason: "reason-required", count: 1 });
-    expect(await t.svc.approve(DOC, { reason: "Decided on the call" })).toEqual({ ok: true });
+    expect(await t.svc.approve(DOC, t.blob())).toEqual({ ok: false, reason: "reason-required", count: 1 });
+    expect(await t.svc.approve(DOC, t.blob(), { reason: "Decided on the call" })).toEqual({ ok: true });
     const r = await loadReview(t.base, DOC);
     expect(r?.approvals).toEqual([{ blob: expect.stringMatching(/^[0-9a-f]{40}$/), at: "2026-10-28T10:00:00.000Z", reason: "Decided on the call" }]);
     expect(t.approved).toEqual([{ path: DOC, task: "t1", reason: "Decided on the call" }]);
-    expect(await t.svc.view(DOC)).toMatchObject({ ok: true, summary: { status: "approved" } });
+    expect(await t.svc.view(DOC)).toMatchObject({ ok: true, blob: t.blob(), summary: { status: "approved" } });
     expect((await t.history.list())[0].message).toBe("Approved: specs/spec.md");
   });
 
   it("with unsent items it asks first; discard drops them and approves", async () => {
     const t = await setup();
     await t.svc.comment(DOC, { selected: "Filter by size.", heading: "scope", text: "x" });
-    expect(await t.svc.approve(DOC)).toEqual({ ok: false, reason: "unsent", count: 1 });
-    expect(await t.svc.approve(DOC, { discard: true })).toEqual({ ok: true });
+    expect(await t.svc.approve(DOC, t.blob())).toEqual({ ok: false, reason: "unsent", count: 1 });
+    expect(await t.svc.approve(DOC, t.blob(), { discard: true })).toEqual({ ok: true });
     expect((await loadReview(t.base, DOC))?.comments).toEqual([]);
+  });
+
+  it("refuses a version the person didn't see, also when the file changes while it waits for the turn", async () => {
+    const t = await setup();
+    const seen = t.blob();
+    fs.writeFileSync(path.join(t.base, DOC), `${TEXT}More.\n`);
+    expect(await t.svc.approve(DOC, seen)).toEqual({ ok: false, reason: "changed" });
+    const shown = t.blob();
+    const release = t.hold();
+    const pending = t.svc.approve(DOC, shown);
+    // The agent rewrites the document during its turn.
+    fs.writeFileSync(path.join(t.base, DOC), `${TEXT}Rewritten.\n`);
+    release();
+    expect(await pending).toEqual({ ok: false, reason: "changed" });
+    expect(await loadReview(t.base, DOC)).toBeNull();
+    expect(t.approved).toEqual([]);
+    expect(await t.svc.approve(DOC, "not-a-blob")).toEqual({ ok: false, reason: "bad-input" });
   });
 
   it("stale after a change; the approved text comes from the history; approving again appends", async () => {
     const t = await setup();
-    await t.svc.approve(DOC);
+    await t.svc.approve(DOC, t.blob());
     fs.writeFileSync(path.join(t.base, DOC), `${TEXT}More.\n`);
     expect(await t.svc.view(DOC)).toMatchObject({ ok: true, summary: { status: "stale" } });
     expect(await t.svc.approvedText(DOC)).toEqual({ ok: true, text: TEXT });
-    await t.svc.approve(DOC);
+    await t.svc.approve(DOC, t.blob());
     expect((await loadReview(t.base, DOC))?.approvals).toHaveLength(2);
   });
 });

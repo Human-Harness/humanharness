@@ -163,6 +163,8 @@ export async function loadReview(base: string, doc: string): Promise<Review | nu
 
 /** Writes the record atomically (a temp file the history skips, then a rename). Never through a linked folder. */
 export async function saveReview(base: string, review: Review): Promise<void> {
+  // Only a record the next load accepts (a quote mapped back from a selection may pass the schema's limits).
+  if (!reviewSchema.safeParse(review).success) throw new ReviewRefused(`the review of ${path.posix.basename(review.path)} can't hold that`, "bad-input");
   const json = `${JSON.stringify(review, null, 2)}\n`;
   // The agent's tools and the person's actions alike: past the cap the next load would call the record broken.
   if (Buffer.byteLength(json) > MAX_RECORD_BYTES) throw new ReviewRefused(`${path.posix.basename(review.path)} has too many comments`, "full");

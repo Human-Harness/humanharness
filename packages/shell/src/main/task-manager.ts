@@ -282,13 +282,6 @@ interface PhasePlan {
 }
 
 /**
- * The app-driven flow (spec §4.2): one engine session per task. idle → running → waiting; a message
- * while waiting follows up in the same session; picking "next" or another topic closes the task with
- * one quiet turn asking for `save_note`, writes the note and starts the next task in a fresh session
- * whose first message carries the notes index. Cancel, a failed first turn and interruptions end the
- * task as unfinished.
- */
-/**
  * The notes part of a new session's first message (spec §3.3): the scope's notes index; in a scope, the app-wide one,
  * trimmed, after it. Without scopes, the index of the flat notes folder (D2). Shared with a job run's first message.
  */
@@ -306,6 +299,13 @@ export async function notesIndexFor(notes: TaskDeps["notes"], scoped: boolean, s
   return [own, appIndex].filter(Boolean).join("\n\n");
 }
 
+/**
+ * The app-driven flow (spec §4.2): one engine session per task. idle → running → waiting; a message
+ * while waiting follows up in the same session; picking "next" or another topic closes the task with
+ * one quiet turn asking for `save_note`, writes the note and starts the next task in a fresh session
+ * whose first message carries the notes index. Cancel, a failed first turn and interruptions end the
+ * task as unfinished.
+ */
 export class TaskManager {
   /** Task operations (each may run several turns), one after another. */
   private ops: Promise<unknown> = Promise.resolve();

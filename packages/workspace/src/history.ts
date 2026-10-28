@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
@@ -519,17 +520,45 @@ export class History {
   /**
    * The blob id of a file as it is in the folder (a link: of its target path, as git stores it); null when it vanished
    * since statusMatrix (another turn's temp file): it counts as deleted.
+   *
+   * A second read of each dirty file: statusMatrix hashes them too but returns only indices, and a walk of our own
+   * would read through isomorphic-git's FileSystem, which turns every read error into empty content (a vanished file
+   * would hash as empty, EACCES would pass silently). So the bytes are streamed into the hash: never the whole file in
+   * memory, and a file over readFile's 2 GB limit still hashes.
    */
   private async workOid(file: string): Promise<string | null> {
     const absolute = path.join(this.folder, file);
     const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
     if (stats === null) return null;
-    const object = await (stats.isSymbolicLink()
-      ? fs.promises.readlink(absolute, { encoding: "buffer" })
-      : fs.promises.readFile(absolute)
-    ).catch(goneAsNull);
-    if (object === null) return null;
-    return (await git.hashBlob({ object })).oid;
+    const linkOid = async () => {
+      const object = await fs.promises.readlink(absolute, { encoding: "buffer" }).catch(goneAsNull);
+      return object === null ? null : (await git.hashBlob({ object })).oid;
+    };
+    if (stats.isSymbolicLink()) return linkOid();
+    // O_NOFOLLOW: a link swapped in since the lstat is never followed; it hashes as a link.
+    const handle = await fs.promises
+      .open(absolute, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+      .catch((err: unknown) => ((err as { code?: unknown } | null)?.code === "ELOOP" ? ("link" as const) : goneAsNull(err)));
+    if (handle === "link") return linkOid();
+    if (handle === null) return null;
+    try {
+      // git's blob id: sha1 of `blob <size>\0` and the bytes. The size is the open file's; at most that many are read.
+      const { size } = await handle.stat();
+      const hash = createHash("sha1").update(`blob ${size}\0`);
+      const chunk = Buffer.alloc(Math.min(Math.max(size, 1), 1 << 20));
+      let read = 0;
+      while (read < size) {
+        const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - read), read);
+        if (bytesRead === 0) break;
+        hash.update(chunk.subarray(0, bytesRead));
+        read += bytesRead;
+      }
+      return hash.digest("hex");
+    } catch (err) {
+      return goneAsNull(err);
+    } finally {
+      await handle.close();
+    }
   }
 
   /** The tracked files of `sha` with their mode and blob id. */

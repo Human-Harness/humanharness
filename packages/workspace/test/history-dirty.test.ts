@@ -139,11 +139,36 @@ describe("a file that vanishes mid-scan (another turn's temp file)", () => {
 
   it("any other read error is still thrown", async () => {
     write("tmp.md", "t");
-    const realRead = fs.promises.readFile;
-    vi.spyOn(fs.promises, "readFile").mockImplementation(((file: unknown, ...rest: unknown[]) =>
+    const realOpen = fs.promises.open;
+    vi.spyOn(fs.promises, "open").mockImplementation(((file: unknown, ...rest: unknown[]) =>
       String(file).endsWith("tmp.md")
         ? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" }))
-        : (realRead as (...a: unknown[]) => Promise<unknown>)(file, ...rest)) as typeof fs.promises.readFile);
+        : (realOpen as (...a: unknown[]) => Promise<unknown>)(file, ...rest)) as typeof fs.promises.open);
     await expect(history.dirtyState()).rejects.toThrow("denied");
+  });
+});
+
+describe("a dirty file's blob id", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("is git's, streamed: a file too large for readFile still hashes", async () => {
+    const content = "x".repeat(200_000);
+    write("big.md", content);
+    // readFile refuses a file over 2 GB; stand in for one without writing it.
+    const realRead = fs.promises.readFile;
+    vi.spyOn(fs.promises, "readFile").mockImplementation(((file: unknown, ...rest: unknown[]) =>
+      String(file).endsWith("big.md")
+        ? Promise.reject(Object.assign(new Error("File size is greater than 2 GiB"), { code: "ERR_FS_FILE_TOO_LARGE" }))
+        : (realRead as (...a: unknown[]) => Promise<unknown>)(file, ...rest)) as typeof fs.promises.readFile);
+    const state = await history.dirtyState();
+    expect(state.get("big.md")).toBe((await git.hashBlob({ object: content })).oid);
+  });
+
+  it("an empty file and a link hash as git hashes them", async () => {
+    write("empty.md", "");
+    fs.symlinkSync("a.md", path.join(folder, "l.md"));
+    const state = await history.dirtyState();
+    expect(state.get("empty.md")).toBe((await git.hashBlob({ object: "" })).oid);
+    expect(state.get("l.md")).toBe((await git.hashBlob({ object: "a.md" })).oid);
   });
 });

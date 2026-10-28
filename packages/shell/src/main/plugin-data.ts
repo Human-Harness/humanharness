@@ -1,4 +1,4 @@
-import { type DataKey, type DataRecord, type PluginManifest, pluginCollections } from "@humanharness/harness-sdk";
+import { type Collection, type DataKey, type DataRecord, type PluginManifest, pluginCollections } from "@humanharness/harness-sdk";
 import {
   APP_SCOPE,
   type DataChange,
@@ -8,6 +8,7 @@ import {
   DataStore,
   isDataWrite,
   pluginDataDir,
+  buildDataContext,
   runDataRequest,
 } from "@humanharness/workspace";
 
@@ -24,11 +25,13 @@ const APP = { who: "app" as const, scope: APP_SCOPE };
  */
 export class PluginData {
   private readonly store: DataStore;
+  private readonly collections: Record<string, Collection>;
   /** Writes one at a time, so the caps hold between the check and the write. */
   private writes: Promise<unknown> = Promise.resolve();
 
   constructor(base: string, manifest: PluginManifest, opts: { log?: (message: string) => void } = {}) {
-    this.store = new DataStore(base, pluginCollections(manifest), {
+    this.collections = pluginCollections(manifest);
+    this.store = new DataStore(base, this.collections, {
       dir: pluginDataDir(base, manifest.id),
       // Measured on what is stored: each record after the schema's defaults, the file as written (pretty-printed).
       // A file already over the cap can still shrink, and replaceAll clears one too large to read.
@@ -87,6 +90,15 @@ export class PluginData {
   agentRequest(request: unknown): Promise<unknown> {
     if (isDataWrite(request)) return Promise.reject(new DataError("refused", "The agent may not change plugin data: it is read-only"));
     return runDataRequest(this.store, request, { who: "agent", scope: APP_SCOPE });
+  }
+
+  /**
+   * The tables of the `agent: "read"` collections with `context` for a new session's first message ("" when none).
+   * TODO(Task 14): titles say `<id>.<collection>` once buildDataContext takes a label.
+   */
+  agentContext(action: string | undefined): Promise<string> {
+    const visible = Object.fromEntries(Object.entries(this.collections).filter(([, c]) => c.agent === "read"));
+    return Object.keys(visible).length === 0 ? Promise.resolve("") : buildDataContext(this.store, visible, APP_SCOPE, action);
   }
 
   onChange(listener: (change: DataChange) => void): () => void {

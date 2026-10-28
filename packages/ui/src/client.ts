@@ -1218,3 +1218,80 @@ export type SidekickImportResult =
 /** An imported sidekick's files: as read, changed since, gone (or now refused); `none` when it wasn't imported from files. */
 export type SidekickOriginal = "unchanged" | "changed" | "gone" | "none";
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";
+
+/** Plugins (plugins spec §7): the harness takes them; `local`: the person may add their own from a folder. */
+export interface PluginsInfo {
+  local: boolean;
+}
+export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
+export interface PluginRow {
+  id: string;
+  name: string;
+  version: string;
+  origin: "bundled" | "local" | "dev";
+  folder?: string;
+  status: PluginStatus;
+  /** Its code changed since the person last opened its detail (no new permissions). */
+  updated?: true;
+  lastSync?: string;
+  lastError?: string;
+  /** Why it can't load or start. */
+  error?: string;
+}
+export interface PluginsView {
+  local: boolean;
+  plugins: PluginRow[];
+}
+/** One line of the permission review, as plain data the UI words (never markup, B12). */
+export type PluginLine = { kind: "hosts"; hosts: string[] } | { kind: "exec"; command: string; readOnly: boolean; wide: boolean } | { kind: "secrets"; labels: string[] } | { kind: "tasks" };
+export interface PluginReview {
+  id: string;
+  name: string;
+  version: string;
+  folder: string;
+  lines: PluginLine[];
+  /** What this version adds to the approved permissions. */
+  added?: { kind: string; value: string }[];
+}
+export type PluginPick = { ok: true; token: string; review: PluginReview } | { ok: false; message: string } | { ok: false; cancelled: true };
+export type PluginResult = { ok: true } | { ok: false; message: string } | { ok: false; review: PluginReview };
+export interface PluginWorkHours {
+  days: number[];
+  from: string;
+  to: string;
+  timezone: string;
+}
+export interface PluginDetail {
+  row: PluginRow;
+  review: PluginReview;
+  settings?: SettingsView;
+  values: Record<string, unknown>;
+  workHours?: PluginWorkHours;
+  /** Which keys are stored: never their values (B6). */
+  secrets: { id: string; label: string; help?: string; stored: boolean }[];
+  sources: { id: string; ttl: number; running: boolean; lastOk?: string; lastError?: string }[];
+  errors: { at: string; source?: string; message: string }[];
+  notify: boolean;
+}
+export interface PluginTestResult {
+  source: string;
+  ok: boolean;
+  writes?: number;
+  error?: string;
+}
+export interface AttentionItemView {
+  plugin: string;
+  pluginName: string;
+  key: string;
+  severity: "info" | "warn" | "action";
+  title: string;
+  body?: string;
+  at: string;
+  read: boolean;
+  hasTarget: boolean;
+}
+export interface AttentionView {
+  items: AttentionItemView[];
+  badge: number;
+  show: boolean;
+}

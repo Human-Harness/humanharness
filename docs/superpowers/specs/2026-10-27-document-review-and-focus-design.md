@@ -1,6 +1,6 @@
 # Document review and focus mode — design
 
-Status: approved by Marco on 2026-10-27, with four fixes from his review (§5.1 swap guard and writes during a turn, §5.4 unsent comments and the Sidekick `before-approve` moment) and the open questions decided (§11). Not in the roadmap yet.
+Status: implemented (plan docs/superpowers/plans/2026-10-28-document-review-and-focus.md). Approved by Marco on 2026-10-27, with four fixes from his review (§5.1 swap guard and writes during a turn, §5.4 unsent comments and the Sidekick `before-approve` moment) and the open questions decided (§11). Architecture doc: `docs/architecture/reviews.md`.
 
 This is spec B from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidates C2 and C3). It builds on the document reader (`2026-10-27-document-reader-design.md`, 10th in the core order), which leaves comments, approval and focus mode to this spec (its §8). It adds one key to task phases (`2026-10-25-task-phases-design.md`). With parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`), its writes follow that spec's attribution; without them, nothing here depends on it.
 

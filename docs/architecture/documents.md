@@ -81,6 +81,13 @@ The window never trusts a saved entry: `cleanDocumentCards` (`packages/ui/src/ca
 - Over 1 MB only the first 200 KB (cut on UTF-8 bytes, `cutToBytes`) is rendered, with a notice to open Source for all of it. Over 10 MB main refuses it ("too-large", with the size).
 - Escape closes the reader when focus is inside it; focus goes back to what opened it from the chat (a card, a link), or to the composer.
 - With the reader open, the harness's own side panel (`renderSide`) is hidden; full screen also hides the chat and the flow side panel. A slim chat never opens the reader.
+- In a harness whose agent may edit the folder (`AppState.review`), the reader also has:
+  - a "Comments" column right of the document (below it under 900 px);
+  - "Comment" on a text selection;
+  - a footer bar to send comments and approve;
+  - a "Focus" button in the header.
+
+  See `reviews.md`.
 
 Reading preferences (`font`: `sans`/`serif`, `size`: `normal`/`large`) are saved in `AppConfig.reader` (`cleanReaderPrefs`); the config keeps only its valid fields. They live only in the "Aa" menu (Q7).
 
@@ -113,6 +120,16 @@ On a change the reader keeps its place at the heading nearest the top. Only the 
 - no `kind`, or no kinds declared → no check.
 
 Extra sections and another order are fine. The manifest refuses a kind id that is not lowercase letters, digits and `-` or is over 64 characters, more than 20 kinds, a line break in `when`, a section or a status, and the same section or status twice. The window gets the kinds as `AppState.documents.kinds`, present only when the manifest declares `documents`.
+
+## Reviews
+
+A harness whose agent may edit the folder can review documents in the reader:
+
+- the agent asks about a passage with `ask_in_document`, and each option carries its replacement text;
+- the person answers, comments on selected text and sends the comments as one round;
+- the person approves a version, and a later change makes the approval stale.
+
+Focus mode shows one document alone and holds the core's interruptions until the person leaves. Records live in `.harness/reviews/`. A phase may move on when a matching document is approved. See `reviews.md`.
 
 ## The SDK for harness views
 

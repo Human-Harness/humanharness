@@ -78,6 +78,8 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 The agent's own request to move stays a recorded `set_phase` call in `blocks` (`{ "tool": "set_phase", "input": { "to": "main", "reason": "…" } }`).
 
+The agent's review tools are recorded the same way. In a harness whose agent may edit the folder, `blocks` can call `ask_in_document` and `reply_to_comment` (and `read_review`) like any `ui` tool, with the tool's own input. The app answers them as it would a real engine's, and a refusal fails the turn (`docs/architecture/reviews.md`). Write the document in an earlier `writes` entry of the same turn: the writes land before the blocks run.
+
 ## How replay walks it
 
 `fake-claude` runs once per engine turn, so `HH_FAKE_MOCK_STATE` is a JSON file holding each session's action and current turn. It is written atomically (temp file, then rename) and only after a turn succeeded: a failed or cancelled turn does not advance the session. A lost state file is treated as a first message. The code is in `mock-replay.ts` (the walk) and `mock-claude.ts` (the output), both in `packages/fake-agent/src`.
@@ -87,7 +89,7 @@ The agent's own request to move stays a recorded `set_phase` call in `blocks` (`
 - **An answer.** A prompt that ends with an answer's ```json fence (`readAnswer` in `packages/harness-sdk/src/answer.ts`) is matched against the turn's `respond` first.
 - **Closing.** The app's closing prompt plays the `close` turn (its blocks dropped; a default note titled after the action when it has none). Without a `close` turn, a default note is saved.
 - **Checkpoint.** A checkpoint prompt saves the closing note and changes nothing else.
-- **Phase change and wrap-up.** `promptKind` knows the app's own prompts by their start: `Next part of this task:` (`PHASE_PROMPT`, whose first line names the part's id) and `Time is almost up:` (`WRAP_UP_PROMPT`). A phase change plays the turn whose `setPhase` is that id, the wrap-up the turn with `timeUp`, and the session continues from it. An unrecorded one plays the fallback and stays where it was. The first message never plays a `setPhase` or `timeUp` turn.
+- **Phase change and wrap-up.** `promptKind` knows the app's own prompts by their start: `Next part of this task:` (`PHASE_PROMPT`, whose first line names the part's id) and `Time is almost up:` (`WRAP_UP_PROMPT`). The phase change prompt may also come after a block of lines the app kept for the task (an approval's "The person approved …", `reviews.md`) and a blank line; `promptKind` finds it there too. A phase change plays the turn whose `setPhase` is that id, the wrap-up the turn with `timeUp`, and the session continues from it. An unrecorded one plays the fallback and stays where it was. The first message never plays a `setPhase` or `timeUp` turn.
 - **Time.** `dev --mock` sets `HH_TEST_MINUTE_MS=1000`: a time-box minute lasts one second, so a 15-minute box wraps up in about 13 seconds of test.
 - **Free questions.** They match no recording and always get the default fallback.
 - **Errors.** Any failure inside a turn (a write refused, a `ui` call rejected) becomes an error result `mock: <reason>` and exit code 1. The app shows it as an engine error.
@@ -130,6 +132,7 @@ The agent's own request to move stays a recorded `set_phase` call in `blocks` (`
 - `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state, phase changes and the wrap-up). `packages/fake-agent/fixtures/phases-harness/mock/session.json` is a recording with them.
 - `packages/cli/test/record.test.ts`, `run.test.ts`, `dev.test.ts` and `check.test.ts`: the recorder, `run --record`, `dev --mock` and each `check` rule.
 - `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Models shows the test model.
+- `packages/e2e/tests/review.spec.ts`: the review fixture `packages/fake-agent/fixtures/review-harness` (id `reviewer`, edit "folder", a spec part with `approve: "specs/*.md"`) and its hand-written `mock/ticket.json` walk a review from the agent's questions to the approval that moves the part, including focus mode. Its build is the fixture's own (`launchMock`'s third argument). A D0 test replays `packages/e2e/fixtures/review-d0-mock` on the demo (edit "none"): its call to `ask_in_document` finds no such tool, and no review UI or record appears.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.
 
 ## Known gaps

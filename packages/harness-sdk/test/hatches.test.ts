@@ -30,6 +30,8 @@ describe("linkedFolders (hatches spec §3.1)", () => {
     ["a key outside the action-id pattern", { ...scoped, linkedFolders: { "Bad Key": repos } }, undefined],
     ["an unknown field (strict)", { ...scoped, linkedFolders: { repos: { ...repos, path: "/x" } } }, undefined],
     ["a label over 40 characters", { ...scoped, linkedFolders: { repos: { ...repos, label: "x".repeat(41) } } }, undefined],
+    ["a label with a bidi override", { ...scoped, linkedFolders: { repos: { ...repos, label: "Repos\u202e" } } }, "hidden or control characters"],
+    ["a label with a line separator", { ...scoped, linkedFolders: { repos: { ...repos, label: "A\u2028B" } } }, "hidden or control characters"],
     ["more than 8 keys", { ...scoped, linkedFolders: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`k${i}`, repos])) }, undefined],
   ])("refuses %s", (_name, manifest, message) => {
     const run = () => defineHarness(manifest as never);

@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { EngineDef } from "@humanharness/engines";
-import { type Block, type DocumentKind, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
+import { type Block, type DocumentKind, HIDDEN_CHARS, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
 import { harnessDir } from "./layout";
 
 export const MANAGED_START = "<!-- humanharness:start -->";
@@ -105,8 +105,17 @@ export interface LinkedFolderLine {
   mode: "read" | "write";
 }
 
-/** Folds line breaks to spaces: a label or path can't start a line of its own in the section. */
-const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ");
+const HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
+/**
+ * A folder's key, label or path on its one line: controls and line separators become spaces, the rest of HIDDEN_CHARS
+ * goes and a backtick becomes a quote, so it can't start a line of its own, close its code span or hide words (B12).
+ * The picker refuses such paths ("unsafe-name"), so a shown path is the real one.
+ */
+const oneLine = (s: string) =>
+  s
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(HIDDEN, "")
+    .replace(/`/g, "'");
 
 function toolSchema(schema: Block["schema"]): string {
   const { $schema: _omit, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;

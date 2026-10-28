@@ -1,5 +1,6 @@
 import { constants as C, promises as fs } from "node:fs";
 import path from "node:path";
+import { HIDDEN_CHARS } from "@humanharness/harness-sdk";
 import { ruleUnsafePath } from "@humanharness/runtime";
 import { homeOrDotFolder } from "./references";
 import { folderProblem, realFolder } from "./validate";
@@ -41,6 +42,9 @@ export function linkRefusal(dir: string, ctx: LinkContext): LinkRefusal | null {
   // A comma, glob or rule character, or a control character: Claude's permission rules couldn't spell the folder
   // (claudeArgs throws on one), so it is refused here rather than failing every turn. Relative paths: below.
   if (path.isAbsolute(dir) && ruleUnsafePath(dir)) return "unsafe-name";
+  // A backtick or a hidden character (line separators, bidi overrides, zero-width…): AGENTS.md names the path in a code
+  // span on one line, and could only show it changed (B12).
+  if (dir.includes("`") || HIDDEN_CHARS.test(dir)) return "unsafe-name";
   if (norm(dir) === norm(ctx.home)) return "home";
   // ~/.claude, ~/.codex, every other dot folder in home (credentials, engine config) and what's inside them.
   if (homeOrDotFolder(dir, ctx.home)) return "engine-home";

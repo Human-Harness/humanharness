@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HIDDEN_CHARS } from "./plugin";
 
 /** A linked folder's key: the action id pattern (spec §3.1). */
 export const LINKED_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -10,7 +11,11 @@ export const LINKED_MANY_MAX = 16;
 /** One kind of folder a scope may link (hatches spec §3.1). Strict: a typo is refused. */
 export const linkedFolderSchema = z.strictObject({
   /** What Scope settings calls it: one English string (plan 5a). */
-  label: z.string().min(1).max(40),
+  label: z
+    .string()
+    .min(1)
+    .max(40)
+    .refine((v) => !HIDDEN_CHARS.test(v), { message: "Display text can't hold hidden or control characters" }),
   /** `read`: the agent reads only; `write`: it may change files there. */
   mode: z.enum(["read", "write"]),
   /** `auto`: tracked by the core history unless it is a git repository (D1); `own`: must be a git repository. */

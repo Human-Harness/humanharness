@@ -42,7 +42,7 @@ describe("linkRefusal (hatches spec §3.2)", () => {
     ["/usr", "/usr/local/x", "system"],
     ["/System", "/System/Library", "system"],
     ["/Applications", "/Applications/X.app", "system"],
-    ...[",", "(", ")", "*", "?", "[", "]", "{", "}", "\\", "\n", "\x7f"].map(
+    ...[",", "(", ")", "*", "?", "[", "]", "{", "}", "\\", "\n", "\x7f", "`", "\u2028", "\u0085", "\u202e", "\u200b"].map(
       (ch) => [`a ${JSON.stringify(ch)} in the name`, path.join(home, "code", `a${ch}b`), "unsafe-name"] as [string, string, string],
     ),
   ])("refuses %s", (_n, p, why) => {
@@ -124,6 +124,10 @@ describe("checkLink (real paths)", () => {
     ["a target with a comma", () => [mk(path.join(home, "code", "a,b")), {}], "unsafe-name"],
     ["a target named notes[1]", () => [mk(path.join(home, "code", "notes[1]")), {}], "unsafe-name"],
     ["a target with a star", () => [mk(path.join(home, "code", "a*b")), {}], "unsafe-name"],
+    ["a target with a backtick", () => [mk(path.join(home, "code", "a`b")), {}], "unsafe-name"],
+    ["a target with U+2028", () => [mk(path.join(home, "code", "a\u2028b")), {}], "unsafe-name"],
+    ["a target with U+0085", () => [mk(path.join(home, "code", "a\u0085b")), {}], "unsafe-name"],
+    ["a target with U+202E", () => [mk(path.join(home, "code", "a\u202eb")), {}], "unsafe-name"],
     ["a folder inside the app root", () => [mk(path.join(home, "Apps", "ana")), { folder: path.join(home, "Apps", "bo"), root: path.join(home, "Apps") }], "main-folder"],
   ])("refuses through a link: %s", async (_n, make, why) => {
     const [target, over] = make();

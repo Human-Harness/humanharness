@@ -3,6 +3,7 @@ import { SIDEKICK_PURPOSE_TEXT_MAX } from "@humanharness/harness-sdk";
 import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
 import {
   SIDEKICK_AFTER_MARK,
+  SIDEKICK_DAILY_MARK,
   SIDEKICK_LEARN_MARK,
   SIDEKICK_PHASE_MARK,
   SIDEKICK_PRE_MARK,
@@ -10,6 +11,7 @@ import {
   SIDEKICK_ROUTE_MARK,
   afterReplyPrompt,
   cutReply,
+  dailyPrompt,
   learnPrompt,
   parseAfter,
   parseGuard,
@@ -168,7 +170,7 @@ describe("after the reply (spec §4.2)", () => {
   });
 
   it("fake-agent's mock knows the real marks and answers an after-reply turn with nothing to show", () => {
-    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK, phase: SIDEKICK_PHASE_MARK });
+    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK, phase: SIDEKICK_PHASE_MARK, daily: SIDEKICK_DAILY_MARK });
     const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     const after = parseAfter(mockSidekickReply(p));
@@ -309,5 +311,34 @@ describe("phase-change turn (spec §2a.2 process-guard)", () => {
     const p = phaseChangePrompt({ harness: { name: "E" }, from: { label: "A" }, to: { label: "B" }, lastPrompts: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     expect(parseGuard(mockSidekickReply(p))).toEqual({ missing: [] });
+  });
+});
+
+describe("daily turn (spec §2a.2 daily-summary, plan Decision 12)", () => {
+  it("daily prompt: titles only, tokens, no bodies", () => {
+    const p = dailyPrompt({ harness: { name: "Essay Coach" }, day: "2026-10-26", notes: ["Outline chapter 2", "Sources"], tokens: { tasks: 120_000, sidekick: 9_000 }, open: ["Draft chapter 3"], uiLanguage: "English" });
+    expect(p.startsWith(SIDEKICK_DAILY_MARK)).toBe(true);
+    expect(p).toContain("Day: 2026-10-26");
+    expect(p).toContain("- Outline chapter 2\n- Sources");
+    expect(p).toContain("Still open:\n- Draft chapter 3");
+    expect(p).toContain("Tokens: tasks 120000, Sidekick 9000");
+    expect(p).not.toContain("Scope purpose");
+  });
+
+  it("the purpose goes in on one line; a title stays one bounded line; at most 20 notes", () => {
+    const notes = ["Two\nlines", "x".repeat(500), ...Array.from({ length: 30 }, (_, i) => `n${i}`)];
+    const p = dailyPrompt({ harness: { name: "E" }, day: "2026-10-26", notes, tokens: { tasks: 1, sidekick: 0 }, open: [], uiLanguage: "English", purposeText: "Short.\nKind." });
+    expect(p).toContain("Day: 2026-10-26\nScope purpose: Short. Kind.\n");
+    expect(p).toContain("- Two lines\n");
+    expect(p).not.toContain("x".repeat(201));
+    expect(p).toContain("- n17\n");
+    expect(p).not.toContain("- n18");
+    expect(p).toContain("Still open:\n- (none)");
+  });
+
+  it("fake-agent's mock answers it in plain text", () => {
+    const p = dailyPrompt({ harness: { name: "E" }, day: "2026-10-26", notes: ["a"], tokens: { tasks: 1, sidekick: 0 }, open: [], uiLanguage: "English" });
+    expect(isMockSidekickTurn(p)).toBe(true);
+    expect(mockSidekickReply(p)).toMatch(/^[^{]/);
   });
 });

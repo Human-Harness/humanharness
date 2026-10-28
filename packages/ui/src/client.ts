@@ -1047,6 +1047,8 @@ export interface SidekickCard {
   after?: { gap?: { title: string; text: string }; next?: string; repeated?: { topic: string; decision: string }; lesson?: string };
   /** A process-guard's card (spec §2a.2): what the phase left (or the document) is missing. */
   guard?: { missing: string[] };
+  /** The daily card (spec §2a.2 daily-summary): yesterday in a few plain sentences. */
+  text?: string;
   /** A heads-up (spec §4.3): the context near full, an ask that keeps coming back, prompts drifting off the phase. */
   headsUp?: SidekickHeadsUp;
 }

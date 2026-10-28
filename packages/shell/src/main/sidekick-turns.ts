@@ -305,3 +305,43 @@ export type SidekickGuard = z.output<typeof guardSchema>;
 
 /** The phase-change reply, parsed; null when it isn't the contract. */
 export const parseGuard = (text: string): SidekickGuard | null => parseJson(text, guardSchema);
+
+export const SIDEKICK_DAILY_MARK = "Sidekick: daily summary";
+/** How many of the day's note titles (and open items) a daily turn names, and how much of each. */
+const DAILY_ITEMS = 20;
+const DAILY_TITLE = 200;
+/** The longest daily card shown. */
+export const SIDEKICK_DAILY_TEXT_MAX = 1200;
+
+/** What the daily turn reads (plan Decision 12): titles and token counts only, never a note's body. */
+export interface DailyInput {
+  /** The local day summed up (YYYY-MM-DD): yesterday. */
+  day: string;
+  /** The titles of the notes written that day. */
+  notes: string[];
+  /** That day's tokens: the tasks' turns and Sidekick's. */
+  tokens: { tasks: number; sidekick: number };
+  /** What is still open (titles); [] when the app can't list it. */
+  open: string[];
+}
+
+const titles = (items: readonly string[]) => list(items.slice(0, DAILY_ITEMS).map((t) => t.replace(/\s+/g, " ").trim().slice(0, DAILY_TITLE)));
+
+/** The daily turn (spec §2a.2 daily-summary): yesterday in a few plain sentences. */
+export function dailyPrompt(i: DailyInput & { harness: { name: string }; uiLanguage: string; purposeText?: string }): string {
+  return [
+    SIDEKICK_DAILY_MARK,
+    "",
+    `App: ${i.harness.name}`,
+    `Day: ${i.day}`,
+    ...purposeLine(i.purposeText),
+    "Notes written that day:",
+    ...titles(i.notes),
+    "Still open:",
+    ...titles(i.open),
+    `Tokens: tasks ${i.tokens.tasks}, Sidekick ${i.tokens.sidekick}`,
+    `UI language: ${i.uiLanguage}`,
+    "",
+    "Answer in at most 4 short sentences, plain text: what got done, what's open, one suggestion for today.",
+  ].join("\n");
+}

@@ -5,13 +5,14 @@ import type { SidekickRecord } from "@humanharness/harness-sdk";
 import type { SidekickEvent } from "@humanharness/workspace";
 import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
 import { SidekickStore } from "../src/main/sidekick-store";
+import type { DailyInput } from "../src/main/sidekick-turns";
 import { type UsageRecord, sidekickRecord } from "../src/main/usage-log";
 
 const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 80 };
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -32,6 +33,8 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const briefs: string[] = [];
   const states: unknown[] = [];
   const decisions: unknown[] = [];
+  // The days dailyInput was asked for.
+  const days: string[] = [];
   let task = o.task === undefined ? { id: "t1", scope: "main" } : o.task;
   const answers = [...(o.answers ?? [])];
   const store = new SidekickStore({
@@ -103,6 +106,8 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     },
     ...(o.learnMs !== undefined ? { learnMs: o.learnMs } : {}),
     ...(o.routeMs !== undefined ? { routeMs: o.routeMs } : {}),
+    dailyInput: async (_b, day) => (days.push(day), o.dailyInput ?? { day, notes: [], tokens: { tasks: 0, sidekick: 0 }, open: [] }),
+    ...(o.dailyMs !== undefined ? { dailyMs: o.dailyMs } : {}),
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, sessions, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
@@ -111,6 +116,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     appCalls,
     folders,
     decisions,
+    days,
     records: () => [...records.values()],
     record: () => records.get("settings") ?? null,
     setRecord: (r: Partial<SidekickRecord> | null) => (r ? records.set("settings", r) : records.delete("settings")),
@@ -1515,5 +1521,96 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
     await off.ctl.phaseMoved(MOVE);
     expect(off.asked).toEqual([]);
     expect(off.events).toEqual([]);
+  });
+});
+
+describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
+  const DAILY = { id: "day", type: "sidekick" as const, name: "Day", mark: "☀️", personality: "", purposes: [{ id: "daily-summary" as const }], order: 1 };
+  const input = { day: "2026-10-26", notes: ["Outline"], tokens: { tasks: 1, sidekick: 1 }, open: [] };
+
+  it("once per local day: a card, and lastDaily set", async () => {
+    const h = harness({ record: on, extra: [DAILY], dailyInput: input, answers: ["Yesterday you outlined chapter 2."] });
+    await h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    await h.ctl.daily(new Date("2026-10-27T15:00:00"));
+    expect(h.asked).toHaveLength(1);
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "daily", kind: "daily", text: "Yesterday you outlined chapter 2.", speaker: { id: "day", name: "Day", mark: "☀️" } })]);
+    expect(h.record()).toMatchObject({ lastDaily: "2026-10-27" });
+  });
+
+  it("asks about yesterday in a light one-off session of its own, logged as daily, closed after", async () => {
+    const h = harness({ record: on, extra: [DAILY], dailyInput: input, answers: ["Quiet day."] });
+    await h.ctl.daily(new Date("2026-10-27T00:30:00"));
+    expect(h.days).toEqual(["2026-10-26"]);
+    expect(h.sessions).toEqual(["daily"]);
+    expect(h.closed).toEqual(["s1"]);
+    expect(h.asked[0]).toContain("Sidekick: daily summary");
+    expect(h.asked[0]).toContain("- Outline");
+    expect(h.briefs[0]).toContain("Day");
+    expect(h.logged[0]).toMatchObject({ sidekick: "day", moment: "daily", tier: "light" });
+    expect(h.logged[0]?.task).toBeUndefined();
+  });
+
+  it("D0: no daily-summary sidekick, or Sidekick off → nothing", async () => {
+    for (const h of [harness({ record: on, dailyInput: input }), harness({ extra: [DAILY], dailyInput: input })]) {
+      await h.ctl.daily(new Date("2026-10-27T08:00:00"));
+      expect(h.asked).toEqual([]);
+      expect(h.opened).toEqual([]);
+      expect(h.writes).toEqual([]);
+      expect(h.events).toEqual([]);
+      expect(h.days).toEqual([]);
+    }
+  });
+
+  it("nothing happened yesterday → no turn", async () => {
+    const h = harness({ record: on, extra: [DAILY], dailyInput: { ...input, notes: [], tokens: { tasks: 0, sidekick: 0 } } });
+    await h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    expect(h.asked).toEqual([]);
+    expect(h.record()).toMatchObject({ lastDaily: "2026-10-27" });
+  });
+
+  it("muted for its sidekick, or an empty answer → no card", async () => {
+    const muted = harness({ record: { ...on, muted: { day: ["daily"] } }, extra: [DAILY], dailyInput: input });
+    await muted.ctl.daily(new Date("2026-10-27T08:00:00"));
+    expect(muted.asked).toEqual([]);
+    const empty = harness({ record: on, extra: [DAILY], dailyInput: input, answers: ["  "] });
+    await empty.ctl.daily(new Date("2026-10-27T08:00:00"));
+    expect((await empty.ctl.state()).cards).toEqual([]);
+  });
+
+  it("a hung CLI ends at dailyMs: no card, the session closed", async () => {
+    const h = harness({ record: on, extra: [DAILY], dailyInput: input, answers: [slow], dailyMs: 20 });
+    await h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    expect((await h.ctl.state()).cards).toEqual([]);
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("turning off, a refresh with Sidekick off, or closing drops the running turn", async () => {
+    for (const stop of [(h: ReturnType<typeof harness>) => h.ctl.set({ on: false }), (h: ReturnType<typeof harness>) => h.ctl.close()]) {
+      const h = harness({ record: on, extra: [DAILY], dailyInput: input, answers: [slow] });
+      const run = h.ctl.daily(new Date("2026-10-27T08:00:00"));
+      await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+      await stop(h);
+      await run;
+      expect(h.ctl["cards"]).toEqual([]);
+      expect(h.closed).toContain("s1");
+    }
+    const r = harness({ record: on, extra: [DAILY], dailyInput: input, answers: [slow] });
+    const run = r.ctl.daily(new Date("2026-10-27T08:00:00"));
+    await vi.waitFor(() => expect(r.asked).toHaveLength(1));
+    r.setRecord({ ...on, on: false, lastDaily: "2026-10-27" });
+    await r.ctl.refresh();
+    await run;
+    expect((await r.ctl.state()).cards).toEqual([]);
+  });
+
+  it("the card is app-wide: it stays when a task opens or closes", async () => {
+    const h = harness({ record: on, extra: [DAILY], dailyInput: input, answers: ["Quiet day."], task: null });
+    await h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    h.setTask({ id: "t2", scope: "main" });
+    await h.ctl.betweenTasks();
+    h.setTask(null);
+    await h.ctl.betweenTasks();
+    await h.ctl.learningSettled();
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "daily" })]);
   });
 });

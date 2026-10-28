@@ -109,7 +109,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
+import { type UsageRecord, UsageLog, capTokens, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -117,7 +117,7 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
-import { SidekickController } from "./sidekick";
+import { SidekickController, localDay } from "./sidekick";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
@@ -1727,6 +1727,20 @@ if (loaded) {
     uiLanguage: async () => languageName((await config.load()).language ?? DEFAULT_LANGUAGE),
     usage: (base) => new UsageLog(base).load(2000),
     log: (base, record) => new UsageLog(base).append(record),
+    // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
+    // The task manager can't list open tasks (Open question 7): nothing is open.
+    dailyInput: async (base, day) => {
+      const scopes = scoped() ? [MAIN_SCOPE, ...(await scopeStoreFor(base).list().catch(() => [])).map((sc) => sc.id)] : [MAIN_SCOPE];
+      const notes: string[] = [];
+      for (const scope of new Set(scopes)) {
+        for (const n of await readNotes(base, notesPrefix(scoped(), scope)).catch(() => [])) {
+          if (n.date && localDay(new Date(n.date)) === day) notes.push(n.title);
+        }
+      }
+      const ofDay = (await new UsageLog(base).load(Infinity)).filter((u) => u.usage && localDay(new Date(u.at)) === day);
+      const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
+      return { day, notes, tokens: { tasks: sum(ofDay.filter((u) => u.phase !== "sidekick")), sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")) }, open: [] };
+    },
     changed: (state) => sendToWindow("hh:sidekick", state),
     events: { read: readSidekickEvents, append: appendSidekickEvent },
     // "Save as decision" (sidekick plan Decision 7): a note like any other, written as the person when they press the button.
@@ -1868,6 +1882,8 @@ if (primary) {
     // AI stages an earlier run left to do (the queue looks only once the app is set up).
     if (await validConfig()) kickMaterial();
     await createWindow();
+    // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
+    void sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
 
   app.on("window-all-closed", () => app.quit());

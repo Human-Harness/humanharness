@@ -27,6 +27,8 @@ export const isMoment = (v: unknown): v is SidekickMoment =>
 
 export const SIDEKICK_PERSONALITY_MAX = 1500;
 export const SIDEKICK_PURPOSE_TEXT_MAX = 600;
+/** How many kinds one sidekick may have muted (spec §6.3): every flag, after-reply, heads-up, guard and daily kind fits. */
+export const SIDEKICK_MUTED_MAX = 20;
 
 type CorePurpose = Exclude<SidekickPurpose, "custom">;
 /** The core's purposes and their moments (spec §2a.2). */
@@ -155,7 +157,7 @@ export const sidekickRecordSchema = z
     /** The harness's presets were offered once (spec §2a.7). */
     presetsOffered: z.boolean().optional(),
     /** Muted kinds per sidekick id (spec §6.3). */
-    muted: z.record(z.string(), z.array(z.string().max(40)).max(10)).optional(),
+    muted: z.record(z.string(), z.array(z.string().max(40)).max(SIDEKICK_MUTED_MAX)).optional(),
     /** When learning last ran (spec §6.4). */
     learnedAt: ISO.optional(),
     /** The local day the daily card last ran (YYYY-MM-DD). */

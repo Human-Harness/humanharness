@@ -3,6 +3,7 @@ import {
   DEFAULT_SIDEKICK,
   SIDEKICK_CAPS,
   SIDEKICK_COLLECTION,
+  SIDEKICK_MUTED_MAX,
   SIDEKICK_SETTINGS_ID,
   SIDEKICK_WAITS,
   type SidekickDef,
@@ -26,7 +27,7 @@ const patchSchema = z.strictObject({
   afterReply: z.boolean().optional(),
   headsUps: z.boolean().optional(),
   presetsOffered: z.boolean().optional(),
-  muted: z.record(z.string().max(80), z.array(z.string().max(40)).max(10)).optional(),
+  muted: z.record(z.string().max(80), z.array(z.string().max(40)).max(SIDEKICK_MUTED_MAX)).optional(),
   learnedAt: z.string().min(10).max(40).optional(),
   lastDaily: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
@@ -41,11 +42,11 @@ export interface SidekickScope {
 }
 
 /**
- * Ids a new sidekick never gets: `learn` and `route` are the learning and routing turns' folders (`workDir(base, "learn")`), `sidekick` is
+ * Ids a new sidekick never gets: `learn`, `route` and `daily` are the learning, routing and daily turns' folders (`workDir(base, "learn")`), `sidekick` is
  * the default one's, whose folder, muted kinds and scope records a new sidekick must not inherit, and `settings` is
  * the settings record's (all record types share one id space, and a put replaces by id).
  */
-const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", "route", DEFAULT_SIDEKICK.id, SIDEKICK_SETTINGS_ID]);
+const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", "route", "daily", DEFAULT_SIDEKICK.id, SIDEKICK_SETTINGS_ID]);
 
 /** A name's id: accents dropped, `-` between words; `k-` before it when it would look like a scope (`s-`) or learned (`l-`) id. */
 const slug = (name: string) => {

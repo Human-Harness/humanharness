@@ -15,6 +15,7 @@ import {
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
+  APP_SCOPE,
   MAIN_SCOPE,
   SIDEKICK_FLAG_KINDS,
   type SidekickEvent,
@@ -28,7 +29,7 @@ import {
 } from "@humanharness/workspace";
 import { candidates, pickSpeaker } from "./sidekick-route";
 import type { SidekickStore } from "./sidekick-store";
-import { SIDEKICK_LEARN_MIN, afterParts, afterReplyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
+import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, afterParts, afterReplyPrompt, dailyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { PhaseMoved, TurnEnd } from "./task-manager";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
@@ -53,6 +54,13 @@ const ROUTE_MS = 15_000;
 /** The routing session's folder (a reserved sidekick id) and its brief: it only names who speaks. */
 const ROUTE_ID = "route";
 const ROUTE_BRIEF = "# Route\n\nYou pick which sidekick of the app should speak. Answer with one id from the choices only. Never act.\n";
+/** The daily turn's folder (a reserved sidekick id), and how long it may run. */
+const DAILY_ID = "daily";
+const DAILY_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A date's local calendar day (YYYY-MM-DD): the daily card runs once per one (plan Decision 12). */
+export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 /** How much of a phase's brief a turn carries: its text's start, on one line. */
 const PHASE_BRIEF_MAX = 600;
 
@@ -137,6 +145,10 @@ export interface SidekickDeps {
   learnMs?: number;
   /** How long a routing turn may run, in ms (tests shorten it). */
   routeMs?: number;
+  /** What the daily turn reads about `day` (YYYY-MM-DD, local) in `base`: note titles, tokens, what's open (plan Decision 12). */
+  dailyInput(base: string, day: string): Promise<DailyInput>;
+  /** How long a daily turn may run, in ms (tests shorten it). */
+  dailyMs?: number;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -195,6 +207,8 @@ export class SidekickController {
   private readonly routing = new Set<AbortController>();
   /** The running learning turn (spec §6.4); turning off, a profile switch or closing drops it. */
   private learning: AbortController | null = null;
+  /** The running daily turn (spec §2a.2 daily-summary); turning off, a profile switch or closing drops it. */
+  private dailyRun: AbortController | null = null;
   /** The running learning turn's promise (never rejects), for `learned`. */
   private learnRun: Promise<void> | null = null;
   /** The task open at the last betweenTasks (or seen open since): learning runs only when it closes (spec §6.4). */
@@ -276,6 +290,7 @@ export class SidekickController {
       this.running?.abort();
       this.dropAfter();
       this.learning?.abort();
+      this.dailyRun?.abort();
       this.guard?.abort();
       this.abortRouting();
       this.card = null;
@@ -441,6 +456,7 @@ export class SidekickController {
       this.running?.abort();
       this.dropAfter();
       this.learning?.abort();
+      this.dailyRun?.abort();
       this.guard?.abort();
       this.abortRouting();
       this.card = null;
@@ -469,7 +485,8 @@ export class SidekickController {
     this.lastOpen = open ?? NO_TASK;
     if (this.past.key !== (open ?? NO_TASK)) this.past = { key: open ?? NO_TASK, items: [] };
     // Another task: the old one's waiting cards and its running after-reply turn go (they were about its reply).
-    const left = this.cards.filter((c) => (c.ctx.task?.id ?? NO_TASK) === (open ?? NO_TASK));
+    // The daily card is app-wide: it stays.
+    const left = this.cards.filter((c) => c.card.moment === "daily" || (c.ctx.task?.id ?? NO_TASK) === (open ?? NO_TASK));
     const dropped = left.length !== this.cards.length;
     if (dropped) {
       this.dropAfter();
@@ -555,12 +572,69 @@ export class SidekickController {
     }
   }
 
+  /**
+   * The daily card (spec §2a.2 daily-summary, plan Decision 12): once per local day, at the first app start, a
+   * daily-summary sidekick sums up yesterday (note titles, tokens) in one light turn of a one-off session (its own
+   * `daily` folder, the speaker's brief, closed right after). `lastDaily` is set before the turn, so a crash never
+   * repeats it. Off, no such sidekick, its kind muted, a quiet yesterday, past the cap or without a CLI: no turn (D0;
+   * off writes nothing). Turning off, a profile switch, closing or DAILY_MS drop it. Scope records never switch it
+   * off: it is app-wide (APP_SCOPE).
+   */
+  async daily(now: Date = new Date()): Promise<void> {
+    const settings = await this.d.store.settings();
+    if (this.closed || this.dailyRun || !settings.on) return;
+    const today = localDay(now);
+    if (settings.lastDaily === today) return;
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
+    const list = await this.candidatesFor("daily", APP_SCOPE);
+    if (list.length === 0 || this.closed || this.dailyRun) return;
+    const controller = new AbortController();
+    this.dailyRun = controller;
+    const live = () => !controller.signal.aborted && !this.closed;
+    let session: SidekickLike | null = null;
+    try {
+      // Before the turn: a crash or a failed turn never repeats today's.
+      const set = await this.d.store.set({ lastDaily: today });
+      if (!set.ok || !set.settings.on || !live()) return;
+      const input = await this.d.dailyInput(setup.base, localDay(new Date(now.getTime() - DAY_MS))).catch(() => null);
+      if (!input || (input.notes.length === 0 && input.tokens.tasks === 0) || !live()) return;
+      if (await this.pastCap(setup.base, null, settings)) return;
+      const engine = this.d.engine(setup.engineId);
+      const speaker = await this.pick(list, "daily", `Day: ${input.day}`, { base: setup.base, task: null, signal: controller.signal, live });
+      if (!live() || mutedOf(settings, speaker.id).includes("daily")) return;
+      session = await this.oneOff(setup.base, engine, DAILY_ID, live, { tier: "light", brief: await this.briefFor(speaker) });
+      if (!session || !live()) return;
+      const prompt = dailyPrompt({ ...input, harness: { name: this.d.harness.name }, uiLanguage: await this.d.uiLanguage().catch(() => "English"), ...(await this.purposeText(APP_SCOPE, speaker.id)) });
+      if (!live()) return;
+      // A hung CLI must not keep the turn (and its session) forever.
+      const answer = await session.ask(prompt, AbortSignal.any([controller.signal, AbortSignal.timeout(this.d.dailyMs ?? DAILY_MS)]));
+      await this.logTurn(setup.base, engine, session, null, "daily", answer, speaker.id);
+      const text = answer.ok ? answer.text.trim().slice(0, SIDEKICK_DAILY_TEXT_MAX) : "";
+      if (!text || !live()) return;
+      // Settings may have changed while the turn ran.
+      const after = await this.d.store.settings();
+      if (!after.on || mutedOf(after, speaker.id).includes("daily") || !live()) return;
+      this.cards.push({
+        card: { id: randomUUID(), moment: eventMoment("daily"), speaker: infoOf(speaker), kind: "daily", prompt: "", flags: [], issues: [], confidence: 1, text, at: now.toISOString() },
+        ctx: { task: null, base: setup.base },
+      });
+      await this.push();
+    } catch (err) {
+      if (!controller.signal.aborted) console.error("Sidekick's daily turn failed", err);
+    } finally {
+      if (this.dailyRun === controller) this.dailyRun = null;
+      await session?.close().catch(() => undefined);
+    }
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     this.reviews++;
     this.running?.abort();
     this.dropAfter();
     this.learning?.abort();
+    this.dailyRun?.abort();
     this.guard?.abort();
     this.abortRouting();
     await this.closeSessions(() => true);
@@ -951,13 +1025,13 @@ export class SidekickController {
     engine: EngineDef,
     session: SidekickLike,
     task: OpenTask | null,
-    moment: "pre" | "after" | "learn" | "route" | "phase-change",
+    moment: "pre" | "after" | "learn" | "route" | "phase-change" | "daily",
     answer: SidekickAnswer,
     sidekick: string = SIDEKICK_ID,
   ): Promise<void> {
     if (!answer.usage) return;
-    // Learning runs between tasks: no loose session's spend.
-    if (!task && moment !== "learn") this.pending.set(NO_TASK, (this.pending.get(NO_TASK) ?? 0) + capTokens(answer.usage));
+    // Learning and the daily card are no task's: no loose session's spend.
+    if (!task && moment !== "learn" && moment !== "daily") this.pending.set(NO_TASK, (this.pending.get(NO_TASK) ?? 0) + capTokens(answer.usage));
     const record = sidekickRecord({
       engine: engine.id,
       ...(task ? { task: task.id, scope: task.scope } : {}),
@@ -1017,13 +1091,9 @@ export class SidekickController {
     const profile = await this.d.profile(engine, speaker.tier);
     if (!live()) return null;
     const folder = this.d.workDir(base, speaker.id);
-    const tips = sidekickTips(this.d.manifest);
-    // What Sidekick learned (spec §6.4): read when the session opens, so the brief changes only between tasks.
-    const learned = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text).map((r) => r.text as string);
+    const brief = await this.briefFor(speaker);
     if (!live()) return null;
-    // Part 1's Sidekick keeps part 1's brief (D0); any other gets its name, personality and purposes (spec §2a.1).
-    const own = plainDefault(speaker) ? {} : { sidekick: { name: speaker.name, personality: speaker.personality, purposes: speaker.purposes } };
-    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}), ...(learned.length ? { learned } : {}), ...own }), engine);
+    await this.d.writeBrief(folder, brief, engine);
     // A review that replaced this one may have opened the key's session meanwhile: keep that one.
     const raced = this.sessions.get(at);
     if (raced && raced.base === base) return raced.session;
@@ -1031,6 +1101,18 @@ export class SidekickController {
     const session = this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
     this.sessions.set(at, { session, base, sidekick: speaker.id, task: key });
     return session;
+  }
+
+  /**
+   * `speaker`'s brief. What Sidekick learned (spec §6.4) is read when a session opens, so the brief changes only
+   * between tasks. Part 1's Sidekick keeps part 1's brief (D0); any other gets its name, personality and purposes
+   * (spec §2a.1).
+   */
+  private async briefFor(speaker: SidekickDef): Promise<string> {
+    const tips = sidekickTips(this.d.manifest);
+    const learned = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text).map((r) => r.text as string);
+    const own = plainDefault(speaker) ? {} : { sidekick: { name: speaker.name, personality: speaker.personality, purposes: speaker.purposes } };
+    return sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}), ...(learned.length ? { learned } : {}), ...own });
   }
 
   /**

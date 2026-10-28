@@ -47,10 +47,10 @@ function safeTarget(cwd: string, p: string): string {
 }
 
 /**
- * The first lines of Sidekick's turns (shell `SIDEKICK_PRE_MARK`, `SIDEKICK_AFTER_MARK`, `SIDEKICK_LEARN_MARK`, `SIDEKICK_ROUTE_MARK` and `SIDEKICK_PHASE_MARK`; a
+ * The first lines of Sidekick's turns (shell `SIDEKICK_PRE_MARK`, `SIDEKICK_AFTER_MARK`, `SIDEKICK_LEARN_MARK`, `SIDEKICK_ROUTE_MARK`, `SIDEKICK_PHASE_MARK` and `SIDEKICK_DAILY_MARK`; a
  * copy: fake-agent never imports the shell; shell sidekick-turns.test pins them).
  */
-export const MOCK_SIDEKICK_MARKS = { pre: "Sidekick: pre-send review", after: "Sidekick: after the reply", learn: "Sidekick: learn", route: "Sidekick: route", phase: "Sidekick: phase change" } as const;
+export const MOCK_SIDEKICK_MARKS = { pre: "Sidekick: pre-send review", after: "Sidekick: after the reply", learn: "Sidekick: learn", route: "Sidekick: route", phase: "Sidekick: phase change", daily: "Sidekick: daily summary" } as const;
 
 /** A Sidekick turn: answered by `mockSidekickReply`, never by the recordings (sidekick plan Decision 12). */
 export const isMockSidekickTurn = (prompt: string): boolean => Object.values(MOCK_SIDEKICK_MARKS).some((m) => prompt.startsWith(m));
@@ -72,6 +72,8 @@ export function mockSidekickReply(prompt: string): string {
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.learn)) return "{}";
   // A phase change (sidekick spec §2a.2 process-guard): nothing missing.
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.phase)) return '{"missing":[]}';
+  // The daily summary (sidekick spec §2a.2 daily-summary): plain text.
+  if (prompt.startsWith(MOCK_SIDEKICK_MARKS.daily)) return "Mock: yesterday's notes are saved. Pick one open thing for today.";
   // Routing (sidekick spec §2a.3): the first choice, the person's order.
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.route)) return /^Who should speak\? Choices:\n- ([^:\n]+):/m.exec(prompt)?.[1] ?? "";
   const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";

@@ -4,6 +4,7 @@ import {
   RESERVED_COLLECTIONS,
   SIDEKICK_COLLECTION,
   SIDEKICK_MIN_WORDS,
+  SIDEKICK_MUTED_MAX,
   SIDEKICK_SETTINGS_ID,
   dataCollections,
   defineHarness,
@@ -142,6 +143,13 @@ describe("several sidekicks (spec §2a)", () => {
     expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [], order: 1 }).success).toBe(false);
     expect(schema().safeParse({ id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false, purposeText: "No spec without AC." }).success).toBe(true);
     expect(schema().safeParse({ id: "settings", type: "settings", afterReply: false, headsUps: true, muted: { sidekick: ["vague"] }, learnedAt: "2026-10-27T10:00:00Z", lastDaily: "2026-10-27" }).success).toBe(true);
+  });
+
+  it("muted: up to SIDEKICK_MUTED_MAX (20) kinds per sidekick", () => {
+    const kinds = (n: number) => Array.from({ length: n }, (_, i) => `kind-${i}`);
+    expect(SIDEKICK_MUTED_MAX).toBe(20);
+    expect(schema().safeParse({ id: "settings", type: "settings", muted: { sidekick: kinds(20) } }).success).toBe(true);
+    expect(schema().safeParse({ id: "settings", type: "settings", muted: { sidekick: kinds(21) } }).success).toBe(false);
   });
 
   it("record types: missing fields and a misplaced source are refused", () => {

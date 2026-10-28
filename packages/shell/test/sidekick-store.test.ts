@@ -116,6 +116,14 @@ describe("SidekickStore", () => {
     expect((await s.settings()).muted).toEqual({});
   });
 
+  it("muted takes up to 20 kinds per sidekick (the SDK's SIDEKICK_MUTED_MAX)", async () => {
+    const { s } = await store();
+    const kinds = (n: number) => Array.from({ length: n }, (_, i) => `kind-${i}`);
+    expect(await s.set({ muted: { sidekick: kinds(20) } })).toMatchObject({ ok: true });
+    expect((await s.settings()).muted.sidekick).toHaveLength(20);
+    expect(await s.set({ muted: { sidekick: kinds(21) } })).toMatchObject({ ok: false });
+  });
+
   it("muted again after an unmute: muted, with no second learned item; after Forget this, a new one", async () => {
     const { s } = await store();
     await s.mute("sidekick", "Sidekick", "vague", "2026-10-27T09:00:00Z");
@@ -204,6 +212,11 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
   it("reserved ids: a new one is never `route` (the routing turn's folder)", async () => {
     const s = mem([{ ...RULO, order: 0 }]);
     expect((await s.store.saveSidekick({ name: "Route", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("route-2");
+  });
+
+  it("reserved ids: a new one is never `daily` (the daily turn's folder)", async () => {
+    const s = mem([{ ...RULO, order: 0 }]);
+    expect((await s.store.saveSidekick({ name: "Daily", mark: "x", personality: "", purposes: [{ id: "daily-summary" }] })).id).toBe("daily-2");
   });
 
   it("a new id never takes another record's: settings, a scope record, a learned item's shape (s-, l-)", async () => {

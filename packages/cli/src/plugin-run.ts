@@ -133,13 +133,19 @@ const req = createRequire(import.meta.url);
 /** esbuild as tsx carries it, as `build` loads it (spike P-S8). */
 const esbuild = () => createRequire(req.resolve("tsx/package.json"))("esbuild") as Esbuild;
 
-/** `new Date()` and `Date.now()` at `ms`, set up inside the backend's context. */
+/**
+ * `new Date()`, `Date()` and `Date.now()` at `ms`, set up inside the backend's context. A function, not a class: a
+ * class can't be called without `new`, and `Date()` is.
+ */
 const fixedClock = (ms: number) => `(() => {
   const D = Date;
-  class FixedDate extends D {
-    constructor(...a) { if (a.length === 0) super(${ms}); else super(...a); }
-    static now() { return ${ms}; }
+  function FixedDate(...a) {
+    if (!new.target) return new D(${ms}).toString();
+    return a.length === 0 ? new D(${ms}) : new D(...a);
   }
+  Object.setPrototypeOf(FixedDate, D);
+  Object.defineProperty(FixedDate, "prototype", { value: D.prototype });
+  FixedDate.now = () => ${ms};
   globalThis.Date = FixedDate;
 })();`;
 

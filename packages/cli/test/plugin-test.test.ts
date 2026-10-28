@@ -44,6 +44,7 @@ export default definePluginBackend({
     },
     async clock(ctx) {
       await ctx.log("info", "now " + new Date().toISOString() + " " + new Date(Date.now()).toISOString());
+      await ctx.log("info", "called " + Date() + " " + (new Date() instanceof Date) + " " + new Date(0).toISOString() + " " + Date.UTC(2000, 0));
     },
   },
 });
@@ -148,6 +149,8 @@ describe("humanharness plugin test", () => {
   it("--now fixes the backend's clock", async () => {
     const { out } = await cli(good(), "--source", "clock", "--now", "2026-01-02T03:04:05Z");
     expect(out).toContain("info: now 2026-01-02T03:04:05.000Z 2026-01-02T03:04:05.000Z");
+    // Date() without new is a string of the fixed time, as the real Date gives one of now.
+    expect(out).toContain(`info: called ${new Date("2026-01-02T03:04:05Z").toString()} true 1970-01-01T00:00:00.000Z ${Date.UTC(2000, 0)}`);
   });
 
   it("refuses a bad --now, an unknown --source and a plugin that isn't built", async () => {

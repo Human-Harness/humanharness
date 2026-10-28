@@ -564,7 +564,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-pl-dot[data-severity="warn"] { background: var(--hh-warn); }
 .hh-pl-dot[data-severity="action"] { background: var(--hh-ink); }
 .hh-pl-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
-.hh-pl-item-meta { display: flex; gap: 8px; color: var(--hh-muted); font-size: 0.8rem; }
+.hh-pl-item-meta { display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; color: var(--hh-muted); font-size: 0.8rem; }
 .hh-pl-item-title { white-space: pre-wrap; }
 .hh-pl-item[data-unread="true"] .hh-pl-item-title { font-weight: 600; }
 .hh-pl-item-body { color: var(--hh-slate); font-size: 0.85rem; white-space: pre-wrap; }

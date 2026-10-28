@@ -161,4 +161,44 @@ describe("Attention inbox", () => {
     fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
   });
+
+  it("plugin text sets its own direction (dir=auto), so a right-to-left title can't flip the row", async () => {
+    const c = client(view([item()]));
+    await open(c);
+    fireEvent.click(await bell());
+    const dialog = await screen.findByRole("dialog", { name: "Attention" });
+    for (const text of ["PagerDuty: checkout is down", "Triggered 3 minutes ago.", "On-call"]) {
+      expect(within(dialog).getByText(text).getAttribute("dir")).toBe("auto");
+    }
+  });
+
+  it("closes when focus leaves it, not when it moves inside", async () => {
+    const c = client(view([item()]));
+    await open(c);
+    const b = await bell();
+    fireEvent.click(b);
+    const dialog = await screen.findByRole("dialog", { name: "Attention" });
+    const dismiss = within(dialog).getByRole("button", { name: "Dismiss" });
+    fireEvent.focusOut(within(dialog).getAllByRole("button")[0], { relatedTarget: dismiss });
+    expect(screen.queryByRole("dialog", { name: "Attention" })).toBeTruthy();
+    fireEvent.focusOut(dismiss, { relatedTarget: b });
+    expect(screen.queryByRole("dialog", { name: "Attention" })).toBeTruthy();
+    fireEvent.focusOut(dismiss, { relatedTarget: screen.getByRole("textbox") });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
+  });
+
+  it("a failed dismiss leaves no focus pending for a later list", async () => {
+    const c = client(view([item(), item({ key: "k2", title: "Second" })]));
+    vi.spyOn(c.attention, "dismiss").mockRejectedValue(new Error("no"));
+    await open(c);
+    fireEvent.click(await bell());
+    const dialog = await screen.findByRole("dialog", { name: "Attention" });
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Dismiss" })[1]);
+    await act(async () => {});
+    const first = dialog.querySelector<HTMLButtonElement>(".hh-pl-item-main")!;
+    first.focus();
+    act(() => c.emitAttention(view([item({ title: "Updated" }), item({ key: "k2", title: "Second" })])));
+    await within(dialog).findByText("Updated");
+    expect(document.activeElement).toBe(first);
+  });
 });

@@ -189,6 +189,13 @@ const jsonSchema = z.custom<Record<string, unknown>>((v) => checkSchemaSubset(v)
 });
 const objectSchema = jsonSchema.refine((s) => s.type === "object", { message: 'A collection\'s schema is { "type": "object", … }' });
 const text = z.string().min(1);
+/**
+ * What a plugin's display text may not hold: C0/C1 controls, bidi marks, overrides and isolates, zero-width
+ * characters and line separators. Shown as plain text, they could still hide words or reorder them (B12).
+ */
+const HIDDEN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/;
+/** Text the person reads (names, labels, titles, help): refuses what HIDDEN names. */
+const shown = (s: z.ZodString) => s.refine((v) => !HIDDEN.test(v), { message: "Display text can't hold hidden or control characters" });
 
 const pluginCollectionSchema = z.strictObject({
   /** Always app-wide: sources run outside any scope (Decision 2). */
@@ -219,10 +226,10 @@ const settingFieldJson = z.strictObject({
   default: z.unknown().optional(),
   section: z.string().optional(),
   control: z.string(),
-  label: z.string(),
-  help: z.string().optional(),
-  unit: z.string().optional(),
-  options: z.record(z.string(), z.string()).optional(),
+  label: shown(z.string()),
+  help: shown(z.string()).optional(),
+  unit: shown(z.string()).optional(),
+  options: z.record(z.string(), shown(z.string())).optional(),
   agent: z.unknown().optional(),
   advanced: z.boolean().optional(),
 });
@@ -239,7 +246,7 @@ function unique(list: { id: string }[], path: (string | number)[], ctx: z.Refine
 export const pluginManifestSchema = z
   .strictObject({
     id: z.string().regex(PLUGIN_ID),
-    name: text.max(60),
+    name: shown(text.max(60)),
     version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]{1,40})?$/),
     api: z.number().int(),
     /** A harness id, or "*" for any harness (§3.4). */
@@ -247,17 +254,17 @@ export const pluginManifestSchema = z
     permissions: z.strictObject({
       hosts: z.array(z.string().regex(HOST_PATTERN)).max(20).default([]),
       exec: z.array(execPattern).max(10).default([]),
-      secrets: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), label: text.max(80), help: text.max(200).optional() })).max(10).default([]),
+      secrets: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), label: shown(text.max(80)), help: shown(text.max(200)).optional() })).max(10).default([]),
       tasks: z.boolean().default(false),
     }),
     sources: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), ttl: z.number().int().min(10).max(604_800), workHoursOnly: z.boolean().default(false) })).max(10).default([]),
     data: z.record(z.string().regex(COLLECTION_NAME), pluginCollectionSchema).default({}),
-    panels: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID), title: text.max(40) })).max(5).default([]),
+    panels: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID), title: shown(text.max(40)) })).max(5).default([]),
     chips: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), slot: z.string().regex(SLOT_ID) })).max(5).default([]),
     settings: z
       .strictObject({
-        tab: text.max(40).optional(),
-        sections: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), label: text.max(60) })).default([]),
+        tab: shown(text.max(40)).optional(),
+        sections: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), label: shown(text.max(60)) })).default([]),
         fields: z.record(z.string().regex(SETTING_NAME), settingFieldJson),
       })
       .optional(),
@@ -265,7 +272,7 @@ export const pluginManifestSchema = z
       .array(
         z.strictObject({
           id: z.string().regex(PLUGIN_LOCAL_ID),
-          label: text.max(60),
+          label: shown(text.max(60)),
           tier: z.enum(PLUGIN_TIERS),
           scope: z.enum(["required", "none"]).default("required"),
           vars: objectSchema.default({ type: "object", properties: {} }),

@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type FocusEvent, type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BellIcon } from "../chrome";
 import type { AttentionItemView, AttentionView, HarnessClient } from "../client";
@@ -80,12 +80,19 @@ export function AttentionInbox({ client, view }: { client: HarnessClient; view: 
   };
   const dismiss = (item: AttentionItemView, index: number) => {
     refocus.current = index;
-    void client.attention.dismiss(item.plugin, item.key).catch(() => undefined);
+    void client.attention.dismiss(item.plugin, item.key).catch(() => {
+      // No new list comes: a later one must not pull focus back.
+      refocus.current = null;
+    });
+  };
+  // Focus moving elsewhere (Tab out) closes the list; a null target (a row removed, the window left) does not.
+  const onBlur = (e: FocusEvent) => {
+    if (open && e.relatedTarget instanceof Node && !wrap.current?.contains(e.relatedTarget)) setOpen(false);
   };
 
   const unread = t("plugins.attention.unread", { count: view.badge });
   return (
-    <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown}>
+    <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
       <button
         ref={button}
         className="hh-icon-button"
@@ -130,15 +137,15 @@ export function AttentionInbox({ client, view }: { client: HarnessClient; view: 
                         <span className="hh-pl-item-meta">
                           <span className="hh-sr-only">{t(`plugins.attention.severity.${item.severity}`)}</span>
                           {!item.read && <span className="hh-sr-only">{t("plugins.attention.unreadItem")}</span>}
-                          <span>{item.pluginName}</span>
+                          <span dir="auto">{item.pluginName}</span>
                           <time dateTime={item.at} title={Number.isNaN(Date.parse(item.at)) ? undefined : new Date(item.at).toLocaleString(language)}>
                             {ago(item.at, language)}
                           </time>
                         </span>
-                        <span id={titleId} className="hh-pl-item-title">
+                        <span id={titleId} className="hh-pl-item-title" dir="auto">
                           {item.title}
                         </span>
-                        {item.body && <span className="hh-pl-item-body">{item.body}</span>}
+                        {item.body && <span className="hh-pl-item-body" dir="auto">{item.body}</span>}
                       </span>
                     </button>
                     <button className="hh-pl-dismiss" aria-describedby={titleId} onClick={() => dismiss(item, index)}>

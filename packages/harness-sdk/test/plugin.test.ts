@@ -77,6 +77,29 @@ describe("plugin.json (plugins spec §3.2)", () => {
     expect(() => parsePluginManifest(manifest({ actions: [action] }))).toThrow(/tasks/);
   });
 
+  it("display text refuses controls, bidi overrides, zero-width chars and line separators", () => {
+    const bad = ["\u0007", "\n", "\u007f", "\u0085", "\u009b", "\u200b", "\u200c", "\u200d", "\ufeff", "\u200e", "\u200f", "\u202a", "\u202e", "\u2066", "\u2069", "\u061c", "\u2028", "\u2029"];
+    const settings = (f: object) => ({ tab: "On-call", fields: { team: { schema: { type: "string" }, control: "text", label: "Team", ...f } } });
+    const action = (a: object) => ({ actions: [{ id: "a", label: "A", tier: "light", prompt: "Go.", ...a }], permissions: { tasks: true } });
+    const places = (x: string) => [
+      { name: `On${x}call` },
+      { permissions: { secrets: [{ id: "jira", label: `Jira${x}`, help: "Help" }] } },
+      { permissions: { secrets: [{ id: "jira", label: "Jira", help: `Help${x}` }] } },
+      { panels: [{ id: "p", slot: "side", title: `Panel${x}` }] },
+      action({ label: `Act${x}` }),
+      { settings: { ...settings({}), tab: `Tab${x}` } },
+      { settings: { ...settings({}), sections: [{ id: "s", label: `Sec${x}` }] } },
+      { settings: settings({ label: `Team${x}` }) },
+      { settings: settings({ help: `Help${x}` }) },
+      { settings: settings({ unit: `min${x}` }) },
+      { settings: settings({ schema: { type: "string", enum: ["a"] }, control: "select", options: { a: `A${x}` } }) },
+    ];
+    for (const place of places("")) expect(() => parsePluginManifest(manifest(place))).not.toThrow();
+    for (const x of bad) for (const place of places(x)) expect(() => parsePluginManifest(manifest(place)), JSON.stringify([x, place])).toThrow(/hidden or control/);
+    // Ordinary non-Latin text and emoji are fine.
+    expect(() => parsePluginManifest(manifest({ name: "مناوبة 🚨 当番" }))).not.toThrow();
+  });
+
   it("repeats the core's tiers", () => {
     expect(PLUGIN_TIERS).toEqual(TIERS);
   });

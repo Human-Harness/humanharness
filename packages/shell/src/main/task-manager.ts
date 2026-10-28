@@ -52,7 +52,7 @@ import {
   isScopeId,
   noteSlug,
 } from "@humanharness/workspace";
-import { INDEX_NOTES_MAX, START_ITEMS_MAX, approxTokens } from "./context-record";
+import { INDEX_NOTES_MAX, READS_MAX, START_ITEMS_MAX, type SeenRead, approxTokens, markCompacted, mergeReads, readsOf } from "./context-record";
 import { RoundNotStarted } from "./reviews";
 import {
   CHECKPOINT_PROMPT,
@@ -137,6 +137,8 @@ export interface TaskDeps {
   personContext?(scope: string): Promise<PersonContext>;
   /** The open task's context record changed (its start, reads or compaction): the panel refreshes. */
   contextChanged?(taskId: string): void;
+  /** The folder the agent works in, to turn read paths into folder paths (context-panel spec §3.2). Absent: file names only. */
+  folder?(): Promise<string | null>;
   /** The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0). */
   materialContext?(scope: string): Promise<string>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
@@ -311,6 +313,8 @@ export class TaskManager {
   private windowDone = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
+  /** The task whose next turn's `usage` is its first-turn total (a first turn, or a resumed one): context-panel spec §3.1. */
+  private recordStart: string | null = null;
   /** Counts the turns that started (a `done` came or the send returned): `respond` knows whether its turn ran. */
   private turnsStarted = 0;
   /** How the last turn that started ended: `respond` reopens its question when the answer's turn failed. */
@@ -1125,6 +1129,8 @@ export class TaskManager {
       const after = (await this.d.store.load()).current;
       const soFar = (after?.id === c.id ? after : c).checkpointNote ? await this.checkpointSummary(c) : undefined;
       const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
+      // Recorded before the status, so no await falls between the Stop check and the send.
+      await this.addBrief(c.id, `Mode brief · ${oneLine(text.label)}`, message);
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.
       if (this.cancelRequested) {
@@ -1251,10 +1257,14 @@ export class TaskManager {
           followUp: true,
         };
         // A resumed turn opens a new session, like a first turn: a model the plan lacks falls back the same way.
+        if (c.resume) this.recordStart = c.id;
         done = c.resume ? await this.firstTurn(c, message, options) : await this.runTurn(c, message, options);
       } catch (err) {
         if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
         throw unwrap(err);
+      } finally {
+        // A first turn that reported no usage leaves no total: a later turn's is not the first's.
+        this.recordStart = null;
       }
       if (c.resume && done.ok) {
         await this.update((s) => {
@@ -1495,11 +1505,14 @@ export class TaskManager {
     }
     let done: Done;
     try {
+      this.recordStart = current.id;
       done = await this.firstTurn(current, first, { display, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       // Nothing ran: the task goes away without marking its topic.
       if (err instanceof TurnNotStarted) await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
       throw unwrap(err);
+    } finally {
+      this.recordStart = null;
     }
     await this.afterRun(current.id, done, true);
   }
@@ -1542,7 +1555,9 @@ export class TaskManager {
    * the turn was refused before it began (no `done` came).
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
-    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest } = {};
+    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number } = { reads: [] };
+    // Read paths become folder paths; without the folder, file names only (nothing is read from them).
+    const base = this.d.folder ? await this.d.folder().catch(() => null) : null;
     const shownInputs: Promise<void>[] = [];
     this.lastPhaseAsk = null;
     const kind = options.phase ?? "run";
@@ -1576,6 +1591,10 @@ export class TaskManager {
             if (parsed.success) seen.phaseAsk = parsed.data;
           } else if (e.type === "block" && e.id !== undefined && this.d.inputBlocks && Object.hasOwn(this.d.inputBlocks, e.name)) {
             shownInputs.push(this.showInput(task.id, e.name, e.id));
+          } else if (e.type === "activity") {
+            if (seen.reads.length < READS_MAX) seen.reads.push(...readsOf(e, base));
+          } else if (e.type === "usage") {
+            seen.input = e.inputTokens + e.cacheReadTokens + e.cacheWriteTokens;
           } else if (e.type === "context") {
             seen.used = e.used;
             if (e.size !== undefined) seen.size = e.size;
@@ -1600,6 +1619,9 @@ export class TaskManager {
     if (d && !isHeld(d, options) && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
+    const startTokens = this.recordStart === task.id && seen.input !== undefined ? seen.input : undefined;
+    if (startTokens !== undefined) this.recordStart = null;
+    if (seen.reads.length > 0 || startTokens !== undefined) await this.recordTurn(task.id, seen.reads, startTokens);
     return result;
   }
 
@@ -1730,6 +1752,8 @@ export class TaskManager {
     if (!plan.message) return;
     const now = (await this.d.store.load()).current;
     if (now?.id !== c.id) return this.stopped();
+    // Recorded before the status, so no await falls between the Stop check and the send.
+    await this.addBrief(c.id, `Phase brief · ${oneLine(to.label)}`, plan.message);
     await this.setStatus(c.id, "running");
     // Checked with no await before the send: a Stop while the status was saved.
     if (this.cancelRequested) {
@@ -1751,6 +1775,36 @@ export class TaskManager {
       throw unwrap(err);
     }
     return this.afterRun(c.id, done, false);
+  }
+
+  /** One turn's reads and tools, merged once it ended (context-panel spec §3.2), and the first-turn total. */
+  private async recordTurn(id: string, reads: SeenRead[], startTokens: number | undefined): Promise<void> {
+    const at = this.now().toISOString();
+    await this.update((s) => {
+      if (s.current?.id !== id) return s;
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          ...(reads.length > 0 ? { reads: mergeReads(s.current.reads ?? [], reads, at) } : {}),
+          ...(startTokens !== undefined ? { startTokens } : {}),
+        },
+      };
+    });
+    this.changedContext(id);
+  }
+
+  /** A brief that reached the session after its start (a mode switch, a phase change): one more `brief` item (§3.1). */
+  private async addBrief(id: string, label: string, message: string): Promise<void> {
+    const at = this.now().toISOString();
+    await this.update((s) => {
+      if (s.current?.id !== id) return s;
+      const start = s.current.start ?? [];
+      const n = start.filter((i) => i.kind === "brief").length;
+      const item: ContextItem = { id: `brief:${n}`, kind: "brief", label, tokens: approxTokens(message.length), at };
+      return { ...s, current: { ...s.current, start: [...start, item].slice(0, START_ITEMS_MAX) } };
+    });
+    this.changedContext(id);
   }
 
   /** The panel refreshes (context-panel spec §5.2). A failing listener never breaks the task. */
@@ -1973,10 +2027,16 @@ export class TaskManager {
     const prev = before.context?.used;
     const compacted = seen.compacted === true || (prev !== undefined && seen.used !== undefined && seen.used < prev * COMPACTED_DROP);
     const context = seen.used !== undefined ? { used: seen.used, ...(seen.size !== undefined ? { size: seen.size } : {}) } : undefined;
-    await this.update((s) =>
-      s.current?.id === id ? { ...s, current: { ...s.current, ...(context ? { context } : {}), ...(compacted ? { checkpointed: false } : {}) } } : s,
-    );
+    await this.update((s) => {
+      if (s.current?.id !== id) return s;
+      // Everything recorded so far may now be summarized (context-panel spec §3.2), in the same write.
+      const marks = compacted
+        ? { ...(s.current.start ? { start: markCompacted(s.current.start) } : {}), ...(s.current.reads ? { reads: markCompacted(s.current.reads) } : {}) }
+        : {};
+      return { ...s, current: { ...s.current, ...(context ? { context } : {}), ...(compacted ? { checkpointed: false } : {}), ...marks } };
+    });
     if (!compacted) return;
+    this.changedContext(id);
     try {
       await this.d.recordCompaction?.(before);
     } catch (err) {

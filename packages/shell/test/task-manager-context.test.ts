@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Event } from "@humanharness/runtime";
 import type { ContextItem } from "@humanharness/ui/client";
 import type { Note } from "@humanharness/workspace";
 import { approxTokens } from "../src/main/context-record";
@@ -115,5 +116,77 @@ describe("the start of a task (context-panel spec §3.1)", () => {
     const c = t.state().current;
     expect(c?.start?.map((i) => i.id)).toEqual(["brief", "notes"]);
     expect(c?.start?.[0].tokens).not.toBe(900);
+  });
+});
+
+const read = (id: string, p: string): Event => ({ type: "activity", id, kind: "read", detail: p, state: "start", paths: [`/w/${p}`] });
+const usage = (input: number, cacheRead = 0): Event => ({ type: "usage", inputTokens: input, outputTokens: 10, cacheReadTokens: cacheRead, cacheWriteTokens: 0 });
+const ok: Event = { type: "done", ok: true };
+
+describe("during the task (context-panel spec §3.2)", () => {
+  it("records reads by folder path and tools by name, with counts, once per turn; the first turn's real tokens", async () => {
+    const changed: string[] = [];
+    const t = setup({
+      script: [
+        [read("r1", "docs/a.md"), { type: "activity", id: "m1", kind: "other", detail: "", state: "start", tool: { server: "atlassian", name: "getJiraIssue" } }, usage(6000, 300), ok],
+        [read("r2", "docs/a.md"), { type: "activity", id: "r3", kind: "read", detail: "x.pdf", state: "start", paths: ["/refs/x.pdf"] }, usage(100), ok],
+      ],
+      extra: { folder: async () => "/w", contextChanged: (id: string) => void changed.push(id) },
+    });
+    await t.manager.start("quiz");
+    await t.manager.ask("more");
+    const c = t.state().current;
+    expect(c?.startTokens).toBe(6300);
+    expect(c?.reads?.map((r) => [r.kind, r.label, r.path, r.count])).toEqual([
+      ["read", "docs/a.md", "docs/a.md", 2],
+      ["tool", "atlassian · getJiraIssue", undefined, 1],
+      ["read", "x.pdf", undefined, 1],
+    ]);
+    expect(changed.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("a compaction marks everything before it; a read after it is fresh again", async () => {
+    const t = setup({
+      script: [[read("r1", "a.md"), ok], [{ type: "compaction" }, { type: "context", used: 1000 }, ok], [read("r2", "a.md"), ok]],
+      extra: { folder: async () => "/w" },
+    });
+    await t.manager.start("quiz");
+    await t.manager.ask("one");
+    expect(t.state().current?.start?.every((i) => i.compacted === true)).toBe(true);
+    expect(t.state().current?.reads?.[0].compacted).toBe(true);
+    await t.manager.ask("two");
+    expect(t.state().current?.reads?.[0]).not.toHaveProperty("compacted");
+  });
+
+  it("a mode switch and a phase change add their brief with the time it arrived", async () => {
+    // No phases, so the switch is a plain mode turn; the task starts in its default mode.
+    const t = setup({ phases: [], modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" } });
+    await t.manager.start("session");
+    await t.manager.chooseMode("feynman").done;
+    const briefs = (t.state().current?.start ?? []).filter((i) => i.kind === "brief");
+    expect(briefs.length).toBeGreaterThanOrEqual(2);
+    expect(briefs.at(-1)).toMatchObject({ id: expect.stringMatching(/^brief:\d+$/), label: "Mode brief · Feynman", at: expect.any(String) });
+  });
+
+  it("a phase change adds its brief too", async () => {
+    const t = setup();
+    await t.manager.start("session");
+    await t.manager.setPhase("main").done;
+    expect(t.state().current?.start?.at(-1)).toMatchObject({ id: "brief:1", label: "Phase brief · Main block", at: expect.any(String) });
+  });
+
+  it("D0: no reads, no tools and no usage write nothing new", async () => {
+    const t = setup({ script: [[ok]] });
+    await t.manager.start("quiz");
+    expect(t.state().current).not.toHaveProperty("reads");
+    expect(t.state().current).not.toHaveProperty("startTokens");
+  });
+
+  it("the resumed turn's usage is the new first-turn total", async () => {
+    const state = emptyTasks();
+    state.current = { id: "t9", action: "quiz", status: "waiting", startedAt: "2026-10-26T09:00:00.000Z", turns: 2, resume: true, startTokens: 5000 };
+    const t = setup({ state, script: [[usage(700), ok]] });
+    await t.manager.ask("Go on");
+    expect(t.state().current?.startTokens).toBe(700);
   });
 });

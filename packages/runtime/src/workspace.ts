@@ -10,7 +10,7 @@ import { ClaudeCliTransport } from "./claude-cli";
 import { turnDocuments } from "./documents";
 import { type Event, fail } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
-import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
+import { type Session, type Transport, type TransportOptions, type TurnScope, acpFields } from "./transport";
 import { type TurnAttribution, beginTurn, endTurn } from "./turn-commit";
 import { TurnLedger, type TurnWindow } from "./turn-ledger";
 
@@ -47,6 +47,8 @@ export interface SlotSendOptions {
   trailer?: HistoryTrailer;
   /** After an overlapped turn's commits: what it owned, shared and collided with (spec §5.3). Not called for a turn that ran alone. */
   onAttribution?: (a: TurnAttribution) => void;
+  /** The task's scope: linked folders (hatches). Absent: none (D0). */
+  scope?: TurnScope;
 }
 
 /** One open task's (or job run's) engine connection (spec §4). One turn at a time. */
@@ -298,6 +300,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
               },
               controller.signal,
               options.profile,
+              options.scope,
             );
             emitCurrent = null;
             const f = (final ?? { type: "done", ok: false, error: { code: "agent-crashed" } }) as Extract<Event, { type: "done" }>;

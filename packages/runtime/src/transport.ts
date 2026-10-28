@@ -48,12 +48,26 @@ export interface TransportOptions {
   onModels?: (offer: { models: ModelChoice[]; efforts: Effort[] }) => void;
 }
 
+/** A folder of the turn's scope the agent may reach (hatches spec §3.3). `path` is absolute and real. */
+export interface LinkedAccess {
+  path: string;
+  mode: "read" | "write";
+  /** The core history tracks it (no git): the workspace commits and restores it with the folder (§3.4). */
+  tracked: boolean;
+}
+
+/** What a turn gets from its task's scope (hatches spec §3, §5). Absent: nothing, as before (D0). Part 3 adds `engine`. */
+export interface TurnScope {
+  linked: LinkedAccess[];
+}
+
 export interface Transport {
   /**
    * Runs one turn. Emits events and always finishes with exactly one `done` event before resolving.
    * `profile` is the task's model, effort and context cap (resources spec §5.2); absent: the engine's defaults.
+   * `scope`: the task's scope's linked folders (hatches); absent for a harness without them (D0).
    */
-  turn(message: string, emit: (event: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void>;
+  turn(message: string, emit: (event: Event) => void, signal: AbortSignal, profile?: ModelProfile, scope?: TurnScope): Promise<void>;
   /** Ends the current engine session; the next turn starts a new one. Never called during a turn. */
   endSession(): Promise<void>;
   close(): Promise<void>;

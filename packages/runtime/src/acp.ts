@@ -7,7 +7,7 @@ import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isMo
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { Transport, TransportOptions } from "./transport";
+import type { Transport, TransportOptions, TurnScope } from "./transport";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {
@@ -652,7 +652,7 @@ export class AcpTransport implements Transport {
     }
   }
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, _scope?: TurnScope): Promise<void> {
     let config: string | undefined;
     try {
       config = profile && !this.byConfigOption ? codexConfig(profile) : undefined;

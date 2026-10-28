@@ -6,7 +6,7 @@ import { type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/eng
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { Transport, TransportOptions } from "./transport";
+import type { LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
 /** Plumbing tools the user should never see as activity. */
@@ -22,9 +22,18 @@ const READ_TOOLS = ["Read", "Glob", "Grep", "TodoWrite"];
 /** Further built-in tools an MCP-only session never needs: subagents, listing, notebooks, skills, slash commands, web. */
 const MCP_ONLY_DENIED = [...READ_TOOLS, "Task", "Agent", "LS", "NotebookRead", "NotebookEdit", "Skill", "SlashCommand", "WebFetch", "WebSearch"];
 
-export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false): string[] {
+export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false, linked: LinkedAccess[] = []): string[] {
   const tools = mcpOnly ? [] : [...READ_TOOLS];
-  if (permissions.edit === "folder") tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
+  if (permissions.edit === "folder") {
+    tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
+    // A write linked folder (hatches spec §3.3): explicit allow rules next to `additionalDirectories`, in case
+    // acceptEdits does not cover additional directories. Its deny rules below still win.
+    for (const l of linked) {
+      if (l.mode !== "write") continue;
+      const dir = referenceRulePath(l.path);
+      tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
+    }
+  }
   if (permissions.web) tools.push("WebSearch", "WebFetch");
   if (permissions.exec) tools.push("Bash");
   for (const server of mcp) tools.push(`mcp__${server.name}`);
@@ -32,7 +41,7 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcp
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false): string[] {
+export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false, linked: LinkedAccess[] = []): string[] {
   const tools = ["AskUserQuestion", ...(mcpOnly ? MCP_ONLY_DENIED : [])];
   const deny = (...names: string[]) => tools.push(...names.filter((n) => !tools.includes(n)));
   if (permissions.edit === "none") deny("Edit", "Write", "MultiEdit", "NotebookEdit");
@@ -44,6 +53,13 @@ export function disallowedTools(permissions: Permissions, references: string[] =
   for (const ref of references) {
     const dir = referenceRulePath(ref);
     tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
+  }
+  // A linked folder (hatches spec §3.3): read-only like a reference; a write folder's own settings and git hooks are
+  // denied, as `.claude/**` is in the main folder.
+  for (const l of linked) {
+    const dir = referenceRulePath(l.path);
+    const subs = l.mode === "read" ? [""] : ["/.claude", "/.git"];
+    for (const sub of subs) tools.push(`Edit(/${dir}${sub}/**)`, `Write(/${dir}${sub}/**)`, `MultiEdit(/${dir}${sub}/**)`);
   }
   return tools;
 }
@@ -90,18 +106,30 @@ export const ALL_BUILTIN_TOOLS = [
  * directories grant file access, not configuration").
  */
 export function referenceSettingsArgs(references: string[]): string[] {
-  if (references.length === 0) return [];
-  return ["--settings", JSON.stringify({ permissions: { additionalDirectories: references } })];
+  return scopeSettingsArgs(references);
+}
+
+/**
+ * The one `--settings` for the reference and linked folders, or nothing without any (D0). Linked folders follow the
+ * references, so a turn without a scope gets exactly `referenceSettingsArgs`'s value; never `--add-dir` (hatches
+ * spec §3.5). Part 3 merges the scope's approved settings into the same object.
+ */
+export function scopeSettingsArgs(references: string[], scope?: TurnScope): string[] {
+  const dirs = [...references, ...(scope?.linked ?? []).map((l) => l.path)];
+  if (dirs.length === 0) return [];
+  return ["--settings", JSON.stringify({ permissions: { additionalDirectories: dirs } })];
 }
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly"> & { profile?: ModelProfile },
+  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly"> & { profile?: ModelProfile; scope?: TurnScope },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
-  if (o.noTools && (o.mcp.length > 0 || (o.references ?? []).length > 0)) {
-    throw new Error("A no-tools session takes no MCP servers or reference folders");
+  const linked = o.scope?.linked ?? [];
+  if (o.noTools && (o.mcp.length > 0 || (o.references ?? []).length > 0 || linked.length > 0)) {
+    throw new Error("A no-tools session takes no MCP servers, reference or linked folders");
   }
+  if (o.mcpOnly && linked.length > 0) throw new Error("An MCP-only session takes no linked folders");
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
@@ -109,8 +137,8 @@ export function claudeArgs(
   const tools = o.noTools
     ? ["--tools", "", "--disallowedTools", ALL_BUILTIN_TOOLS.join(",")]
     : [
-        "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly).join(","),
-        "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly).join(","),
+        "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly, linked).join(","),
+        "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked).join(","),
       ];
   return [
     "-p",
@@ -122,7 +150,7 @@ export function claudeArgs(
     ...tools,
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
-    ...referenceSettingsArgs(o.references ?? []),
+    ...scopeSettingsArgs(o.references ?? [], o.scope),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
     ...profileArgs(o.profile),
@@ -313,7 +341,7 @@ export class ClaudeCliTransport implements Transport {
     this.o.onSessionStarted(this.o.session);
   };
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, scope?: TurnScope): Promise<void> {
     try {
       profileArgs(profile);
     } catch (err) {
@@ -324,18 +352,24 @@ export class ClaudeCliTransport implements Transport {
       return;
     }
     const wasResume = this.o.session.started;
-    let last = await this.attempt(message, emit, signal, profile);
+    let last = await this.attempt(message, emit, signal, profile, scope);
     if (wasResume && last.type === "done" && !last.ok && last.error?.detail && NO_CONVERSATION.test(last.error.detail) && !signal.aborted) {
       // The stored session is gone on the CLI side: continue the chat in a fresh one.
       this.o.session = { id: randomUUID(), started: false };
-      last = await this.attempt(message, emit, signal, profile);
+      last = await this.attempt(message, emit, signal, profile, scope);
       if (last.type === "done" && last.ok) this.markStarted();
     }
     emit(last);
   }
 
   /** Runs one process; resolves with the terminal event instead of emitting it. */
-  private attempt(message: string, rawEmit: (e: Event) => void, signal: AbortSignal, profile: ModelProfile | undefined): Promise<Event> {
+  private attempt(
+    message: string,
+    rawEmit: (e: Event) => void,
+    signal: AbortSignal,
+    profile: ModelProfile | undefined,
+    scope: TurnScope | undefined,
+  ): Promise<Event> {
     return new Promise((resolve) => {
       let finished = false;
       let killTimer: NodeJS.Timeout | undefined;
@@ -352,7 +386,7 @@ export class ClaudeCliTransport implements Transport {
       };
       const useGroup = process.platform !== "win32";
       const [binary, ...leading] = this.o.command;
-      const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile })], {
+      const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile, scope })], {
         cwd: this.o.folder,
         env: { ...process.env, ...this.o.env },
         stdio: ["pipe", "pipe", "pipe"],

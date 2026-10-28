@@ -641,3 +641,56 @@ describe("edit paths (parallel spec §5.2)", () => {
     expect(events).toEqual([{ type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/a.md"], state: "start" }]);
   });
 });
+
+describe("linked folders (hatches spec §3.3, §3.5)", () => {
+  const base = { session: { id: "a", started: false }, mcp: [], permissions };
+  const scope = { linked: [
+    { path: "/Users/me/code/app", mode: "write" as const, tracked: false },
+    { path: "/Users/me/manuscript", mode: "read" as const, tracked: false },
+  ] };
+  const settingsOf = (args: string[]) => JSON.parse(args[args.indexOf("--settings") + 1]);
+  const denied = (args: string[]) => args[args.indexOf("--disallowedTools") + 1].split(",");
+  const allowed = (args: string[]) => args[args.indexOf("--allowedTools") + 1].split(",");
+
+  it("gives every linked folder file access through one --settings, after the references, never --add-dir", () => {
+    const args = claudeArgs({ ...base, references: ["/opt/docs"], scope });
+    expect(args).not.toContain("--add-dir");
+    expect(args.filter((a) => a === "--settings")).toHaveLength(1);
+    expect(settingsOf(args)).toEqual({ permissions: { additionalDirectories: ["/opt/docs", "/Users/me/code/app", "/Users/me/manuscript"] } });
+  });
+
+  it("denies edits in a read folder, as in a reference folder", () => {
+    expect(denied(claudeArgs({ ...base, scope }))).toEqual(
+      expect.arrayContaining(["Edit(//Users/me/manuscript/**)", "Write(//Users/me/manuscript/**)", "MultiEdit(//Users/me/manuscript/**)"]),
+    );
+    expect(allowed(claudeArgs({ ...base, scope }))).not.toContain("Edit(//Users/me/manuscript/**)");
+  });
+
+  it("allows edits in a write folder but denies its .claude and .git", () => {
+    const args = claudeArgs({ ...base, scope });
+    expect(allowed(args)).toEqual(expect.arrayContaining(["Edit(//Users/me/code/app/**)", "Write(//Users/me/code/app/**)", "MultiEdit(//Users/me/code/app/**)"]));
+    for (const sub of [".claude", ".git"]) {
+      for (const tool of ["Edit", "Write", "MultiEdit"]) expect(denied(args)).toContain(`${tool}(//Users/me/code/app/${sub}/**)`);
+    }
+    expect(denied(args)).not.toContain("Edit(//Users/me/code/app/**)");
+  });
+
+  it("a write folder under edit: none gets no allow rule (the manifest wins)", () => {
+    const args = claudeArgs({ ...base, permissions: { edit: "none", exec: false, web: false }, scope });
+    expect(allowed(args).some((t) => t.includes("/Users/me/code/app"))).toBe(false);
+    expect(denied(args)).toContain("Edit");
+  });
+
+  it("a no-tools or MCP-only session refuses linked folders", () => {
+    expect(() => claudeArgs({ ...base, noTools: true, scope })).toThrow(/linked/);
+    expect(() => claudeArgs({ ...base, mcpOnly: true, scope })).toThrow(/linked/);
+  });
+
+  it("the transport reads the scope per turn: a link reaches the next turn, an unlink drops it", async () => {
+    const { transport, args } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    await transport.turn("one", () => {}, new AbortController().signal, undefined, scope);
+    expect(settingsOf(args()).permissions.additionalDirectories).toEqual(["/Users/me/code/app", "/Users/me/manuscript"]);
+    await transport.turn("two", () => {}, new AbortController().signal, undefined, { linked: [] });
+    expect(args()).not.toContain("--settings");
+  });
+});

@@ -38,6 +38,9 @@ export interface DiffWorkerOptions {
   budgetMs?: number;
   timeoutMs?: number;
   heapMb?: number;
+  /** Workers at once (`DIFF_WORKERS_AT_ONCE`) and diffs that may wait for one (`DIFF_WORKERS_WAITING`). */
+  atOnce?: number;
+  waiting?: number;
 }
 
 /**
@@ -49,7 +52,7 @@ export function workerDiff(o: DiffWorkerOptions = {}): DiffRunner {
   const entry = o.entry ?? fileURLToPath(new URL("./diff-worker.ts", import.meta.url));
   // Built JavaScript needs no loader; the TypeScript source needs tsx.
   const execArgv = o.entry ? [] : devLauncher().args;
-  return (file, before, after) =>
+  return limitDiffs((file, before, after, release) =>
     new Promise((resolve) => {
       const job: DiffJob = { file, before, after, budgetMs: o.budgetMs ?? DIFF_TIMEOUT_MS };
       let worker: Worker;
@@ -57,6 +60,7 @@ export function workerDiff(o: DiffWorkerOptions = {}): DiffRunner {
         worker = new Worker(entry, { workerData: job, execArgv, resourceLimits: { maxOldGenerationSizeMb: o.heapMb ?? DIFF_WORKER_HEAP_MB } });
       } catch (err) {
         console.error("Could not start the diff worker", err);
+        release();
         resolve(null);
         return;
       }
@@ -65,7 +69,8 @@ export function workerDiff(o: DiffWorkerOptions = {}): DiffRunner {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        void worker.terminate().catch(() => undefined);
+        // Its place frees up once the thread is gone, not when the answer leaves: a stopped worker may still run a moment.
+        void worker.terminate().catch(() => undefined).finally(release);
         resolve(view);
       };
       const timer = setTimeout(() => finish(null), o.timeoutMs ?? DIFF_WORKER_TIMEOUT_MS);
@@ -76,5 +81,49 @@ export function workerDiff(o: DiffWorkerOptions = {}): DiffRunner {
       });
       // Exiting without an answer reads as a failure.
       worker.once("exit", () => finish(null));
-    });
+    }),
+  o,
+  );
+}
+
+/** Diffs whose workers may run at once (each may take DIFF_WORKER_HEAP_MB). */
+export const DIFF_WORKERS_AT_ONCE = 2;
+/** Diffs that may wait for a place; past it a diff answers null ("failed") at once. */
+export const DIFF_WORKERS_WAITING = 8;
+
+/** A diff that calls `release` once its place may go to the next one (it may answer before). */
+type HeldDiff = (file: string, before: DiffSide, after: DiffSide, release: () => void) => Promise<FileDiffView | null>;
+
+/**
+ * At most `atOnce` diffs of `run` at a time; up to `waiting` more wait their turn, in order; any more answer null at once,
+ * so a burst of clicks never starts a worker per click nor queues without end.
+ */
+export function limitDiffs(run: HeldDiff, o: { atOnce?: number; waiting?: number } = {}): DiffRunner {
+  const atOnce = o.atOnce ?? DIFF_WORKERS_AT_ONCE;
+  const most = o.waiting ?? DIFF_WORKERS_WAITING;
+  let running = 0;
+  const queue: (() => void)[] = [];
+  const release = () => {
+    // The place passes straight to the next diff waiting; otherwise it frees up.
+    const next = queue.shift();
+    if (next) next();
+    else running--;
+  };
+  return async (file, before, after) => {
+    if (running < atOnce) running++;
+    else if (queue.length < most) await new Promise<void>((r) => queue.push(r));
+    else return null;
+    let once = false;
+    const free = () => {
+      if (once) return;
+      once = true;
+      release();
+    };
+    try {
+      return await run(file, before, after, free);
+    } catch (err) {
+      free();
+      throw err;
+    }
+  };
 }

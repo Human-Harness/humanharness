@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { History, MAX_DIFF_BYTES, REVIEWS_PREFIX } from "@humanharness/workspace";
-import { workerDiff } from "../src/main/diff-runner";
+import { limitDiffs, workerDiff } from "../src/main/diff-runner";
 import { FileTimelineService } from "../src/main/file-timeline";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-fts-"));
@@ -201,4 +201,75 @@ describe("FileTimelineService (file-timeline spec §3–§5)", () => {
     // A worker that can't finish in time answers null, never hangs.
     expect(await workerDiff({ timeoutMs: 1 })(DOC, { kind: "absent" }, { kind: "absent" })).toBeNull();
   }, 20_000);
+
+  it("the current side of a link inside the folder is refused, never read through", async () => {
+    const { t2 } = await writeSpec();
+    write("specs/target.md", "## Scope\n\nFilter by size and colour.\n");
+    fs.rmSync(path.join(folder, DOC));
+    fs.symlinkSync("target.md", path.join(folder, DOC));
+    expect(await svc.diff(DOC, t2, "current")).toEqual({ ok: false, reason: "unsafe" });
+    // A folder on the way that is a link, too.
+    write("real/notes.txt", "x");
+    await history.save("Turn: notes", { task: "t5" });
+    const notes = await svc.timeline("real/notes.txt");
+    if (!notes.ok) throw new Error(notes.reason);
+    fs.renameSync(path.join(folder, "real"), path.join(folder, "elsewhere"));
+    fs.symlinkSync("elsewhere", path.join(folder, "real"));
+    expect(await svc.diff("real/notes.txt", notes.entries[0].to, "current")).toEqual({ ok: false, reason: "unsafe" });
+  });
+});
+
+describe("limitDiffs: workers at once, and a bounded wait (file-timeline spec §4)", () => {
+  const view = { ok: true as const, kind: "binary" as const, same: true, sizes: { before: null, after: null } };
+  const none = { kind: "absent" as const };
+
+  it("runs at most `atOnce`; up to `waiting` wait in order; any more answer null at once", async () => {
+    let running = 0;
+    let most = 0;
+    const order: string[] = [];
+    const gates: (() => void)[] = [];
+    const run = limitDiffs(
+      (file, _b, _a, release) =>
+        new Promise((resolve) => {
+          running++;
+          most = Math.max(most, running);
+          order.push(file);
+          gates.push(() => {
+            running--;
+            release();
+            resolve(view);
+          });
+        }),
+      { atOnce: 2, waiting: 2 },
+    );
+    const calls = ["a", "b", "c", "d"].map((f) => run(f, none, none));
+    expect(await run("e", none, none)).toBeNull();
+    await Promise.resolve();
+    expect(order).toEqual(["a", "b"]);
+    gates.shift()!();
+    await calls[0];
+    await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual(["a", "b", "c"]);
+    while (gates.length > 0) {
+      gates.shift()!();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(await Promise.all(calls)).toEqual([view, view, view, view]);
+    expect(order).toEqual(["a", "b", "c", "d"]);
+    expect(most).toBe(2);
+    // The places all came back.
+    const f = run("f", none, none);
+    await Promise.resolve();
+    expect(order.at(-1)).toBe("f");
+    gates.shift()!();
+    expect(await f).toEqual(view);
+  });
+
+  it("a diff that throws gives its place back", async () => {
+    const run = limitDiffs(async () => {
+      throw new Error("boom");
+    }, { atOnce: 1, waiting: 0 });
+    await expect(run("a", none, none)).rejects.toThrow("boom");
+    await expect(run("b", none, none)).rejects.toThrow("boom");
+  });
 });

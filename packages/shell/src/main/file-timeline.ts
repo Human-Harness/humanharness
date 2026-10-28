@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isMarkdownPath, refusedShape } from "@humanharness/harness-sdk/documents";
 import type { FileDiffResult, FileRefusal, FileRestoreAnswer, FileRestorePromptResult, FileTimelineResult, TimelineEntry } from "@humanharness/ui/client";
@@ -138,7 +139,7 @@ export class FileTimelineService {
       if ((from !== null && !known(from)) || (to !== "current" && !known(to as string))) return no("not-found");
       const before = from === null ? absent : await this.sideAt(r.history, from, r.path);
       const after = to === "current" ? await this.current(r.base, r.path, before) : await this.sideAt(r.history, to as string, r.path);
-      if (after === "outside") return no("outside");
+      if (after === "outside" || after === "unsafe") return no(after);
       const view = await this.runDiff(r.path, before.side, after.side);
       if (!view) return no("failed");
       return { ...view, same: sameContent(before, after) };
@@ -154,9 +155,12 @@ export class FileTimelineService {
    * The file in the folder now: absent when it isn't there; "outside" when it leads out (a link). Its blob id is
    * hashed only when it could equal `other` (the same size): a big file is otherwise read no further than the cap.
    */
-  private async current(base: string, file: string, other: Side): Promise<Side | "outside"> {
+  private async current(base: string, file: string, other: Side): Promise<Side | "outside" | "unsafe"> {
     const at = await locate(file, [base]);
     if (!at.ok) return at.reason === "missing" ? absent : "outside";
+    // The history stores a link as its target's path, never what it points to: a link inside the folder, the file or a
+    // folder on its way, has no current side to compare (the read would follow it).
+    if (await linkOnTheWay(at.root, file)) return "unsafe";
     const otherSize = other.side.kind === "bytes" ? other.side.size : -1;
     const got = await readPrefix(at.file, READ_BYTES, () => stillSafe(at.file, [base]), (size) => size === otherSize);
     return got ? { side: { kind: "bytes", bytes: got.bytes, size: got.size }, oid: got.oid ?? null } : "outside";
@@ -211,6 +215,18 @@ export class FileTimelineService {
 }
 
 const absent: Side = { side: { kind: "absent" }, oid: null };
+
+/** Whether `file` (relative to the real `root`) or a folder on its way is a link. */
+async function linkOnTheWay(root: string, file: string): Promise<boolean> {
+  let at = root;
+  for (const part of file.split("/")) {
+    at = path.join(at, part);
+    const stat = await fs.lstat(at).catch(() => null);
+    if (!stat) return false;
+    if (stat.isSymbolicLink()) return true;
+  }
+  return false;
+}
 
 /** Both absent, or both there with the same size and the same blob id (an unknown id is never the same). */
 function sameContent(a: Side, b: Side): boolean {

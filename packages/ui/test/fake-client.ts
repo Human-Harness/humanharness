@@ -43,6 +43,7 @@ import type {
   SidekickDraftDef,
   SidekickImportInput,
   SidekickImportResult,
+  SidekickInScope,
   SidekickInfo,
   SidekickOriginal,
   SidekickPlaceAnswer,
@@ -603,6 +604,12 @@ export class FakeClient implements HarnessClient {
   sidekickList: SidekickView[] = [{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }];
   /** When set, sidekick.saveSidekick rejects with this message. */
   sidekickSaveFails: string | null = null;
+  /** What sidekick.scope answers (any scope); setScope changes it. */
+  sidekickScope: SidekickInScope[] = [];
+  /** When set, sidekick.setScope answers `{ ok: false, message }`. */
+  sidekickScopeFails: string | null = null;
+  /** When set, sidekick.setScope waits for it before answering. */
+  sidekickScopeGate: Promise<void> | null = null;
   /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
@@ -694,6 +701,14 @@ export class FakeClient implements HarnessClient {
     reorder: async (ids: string[]) => {
       this.sidekickCalls.push(["reorder", ids]);
       this.sidekickList = ids.flatMap((id, order) => this.sidekickList.filter((k) => k.id === id).map((k) => ({ ...k, order })));
+    },
+    scope: async (_scope: string) => structuredClone(this.sidekickScope),
+    setScope: async (scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }) => {
+      this.sidekickCalls.push(["setScope", scope, sidekick, v]);
+      if (this.sidekickScopeGate) await this.sidekickScopeGate;
+      if (this.sidekickScopeFails) return { ok: false, message: this.sidekickScopeFails };
+      this.sidekickScope = this.sidekickScope.map((k) => (k.id === sidekick ? { id: k.id, name: k.name, mark: k.mark, ...v } : k));
+      return { ok: true };
     },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);

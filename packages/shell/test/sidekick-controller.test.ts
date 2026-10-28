@@ -1971,6 +1971,34 @@ describe("Settings › Sidekicks: list, remove, reorder (spec §8)", () => {
   });
 });
 
+describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
+  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 1, defaultOn: false };
+  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
+
+  it("D0: no records → the implicit default, on, nothing written", async () => {
+    const h = harness({ record: on });
+    expect(await h.ctl.scopeSidekicks("login")).toEqual([{ id: "sidekick", name: "Sidekick", mark: "spark", on: true }]);
+    expect(h.writes).toEqual([]);
+  });
+
+  it("each sidekick by order: its record in this scope, else its defaultOn", async () => {
+    const rec = { id: "s-login-sidekick", type: "scope" as const, scope: "login", sidekick: "sidekick", on: false, purposeText: "Keep PRs small.", places: ["terminal"] };
+    const h = harness({ record: on, extra: [RULO, DEF, rec] });
+    expect(await h.ctl.scopeSidekicks("login")).toEqual([
+      { id: "sidekick", name: "Sidekick", mark: "spark", on: false, purposeText: "Keep PRs small.", places: ["terminal"] },
+      { id: "rulo", name: "Rulo", mark: "🦊", on: false },
+    ]);
+    expect((await h.ctl.scopeSidekicks("billing"))[0]).toEqual({ id: "sidekick", name: "Sidekick", mark: "spark", on: true });
+  });
+
+  it("setScope writes the record as the person; an unknown sidekick throws", async () => {
+    const h = harness({ record: on, extra: [DEF, RULO] });
+    await h.ctl.setScope("login", "rulo", { on: true, purposeText: "No spec without AC." });
+    expect(await h.ctl.scopeSidekicks("login")).toContainEqual({ id: "rulo", name: "Rulo", mark: "🦊", on: true, purposeText: "No spec without AC." });
+    await expect(h.ctl.setScope("login", "ghost", { on: true })).rejects.toThrow("No sidekick");
+  });
+});
+
 /** The hash readImportFiles gives one file named `name` holding `body`. */
 const sha256 = (body: string, name = "a.md") => createHash("sha256").update(joinImportFiles([{ name, text: body }])).digest("hex");
 

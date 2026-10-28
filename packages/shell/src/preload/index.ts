@@ -129,6 +129,8 @@ const client: HarnessClient = {
     list: () => ipcRenderer.invoke("hh:sidekickList"),
     remove: (id) => ipcRenderer.invoke("hh:sidekickRemove", id),
     reorder: (ids) => ipcRenderer.invoke("hh:sidekickReorder", ids),
+    scope: (scope) => ipcRenderer.invoke("hh:sidekickScope", scope),
+    setScope: (scope, sidekick, v) => ipcRenderer.invoke("hh:sidekickSetScope", scope, sidekick, v),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

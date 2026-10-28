@@ -319,6 +319,64 @@ describe("sidekick IPC: the list, remove and reorder (Settings › Sidekicks)", 
   });
 });
 
+describe("sidekick IPC: sidekicks in a scope (spec §2a.4)", () => {
+  function scopeWire(ctl: Record<string, unknown> | null) {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => ctl as never,
+    );
+    return (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+  }
+  const ROW = { id: "rulo", name: "Rulo", mark: "🦊", on: true };
+
+  it("passes valid requests through; the store's refusal comes back as its message", async () => {
+    const calls: unknown[][] = [];
+    const call = scopeWire({
+      scopeSidekicks: async (scope: string) => (calls.push(["scope", scope]), [ROW]),
+      setScope: async (scope: string, sidekick: string, v: unknown) => {
+        calls.push(["setScope", scope, sidekick, v]);
+        if (sidekick === "ghost") throw new Error('No sidekick "ghost"');
+      },
+    });
+    expect(await call("hh:sidekickScope", "login")).toEqual([ROW]);
+    expect(await call("hh:sidekickSetScope", "login", "rulo", { on: false, purposeText: "x".repeat(600), places: ["terminal"], extra: 1 })).toEqual({ ok: true });
+    expect(await call("hh:sidekickSetScope", "login", "rulo", { on: true, purposeText: "  " })).toEqual({ ok: true });
+    expect(await call("hh:sidekickSetScope", "login", "ghost", { on: true })).toEqual({ ok: false, message: 'No sidekick "ghost"' });
+    expect(calls).toEqual([
+      ["scope", "login"],
+      ["setScope", "login", "rulo", { on: false, purposeText: "x".repeat(600), places: ["terminal"] }],
+      ["setScope", "login", "rulo", { on: true }],
+      ["setScope", "login", "ghost", { on: true }],
+    ]);
+  });
+
+  it("refuses malformed requests: scope id, sidekick id, text past 600, places", async () => {
+    const calls: unknown[][] = [];
+    const call = scopeWire({ scopeSidekicks: async () => Promise.reject(new Error("boom")), setScope: async (...a: unknown[]) => void calls.push(a) });
+    for (const scope of ["Login", "../x", "", 7, "x".repeat(65)]) {
+      expect(await call("hh:sidekickScope", scope)).toEqual([]);
+      expect(await call("hh:sidekickSetScope", scope, "rulo", { on: true })).toMatchObject({ ok: false });
+    }
+    for (const bad of [
+      ["login", 7, { on: true }],
+      ["login", "x".repeat(81), { on: true }],
+      ["login", "rulo", null],
+      ["login", "rulo", []],
+      ["login", "rulo", {}],
+      ["login", "rulo", { on: "yes" }],
+      ["login", "rulo", { on: true, purposeText: "x".repeat(601) }],
+      ["login", "rulo", { on: true, purposeText: 7 }],
+      ["login", "rulo", { on: true, places: ["Bad Id"] }],
+      ["login", "rulo", { on: true, places: Array.from({ length: 13 }, (_, i) => `p${i}`) }],
+    ]) expect(await call("hh:sidekickSetScope", ...bad)).toMatchObject({ ok: false });
+    expect(calls).toEqual([]);
+    expect(await call("hh:sidekickScope", "login")).toEqual([]);
+    expect(await scopeWire(null)("hh:sidekickScope", "login")).toEqual([]);
+    expect(await scopeWire(null)("hh:sidekickSetScope", "login", "rulo", { on: true })).toMatchObject({ ok: false });
+  });
+});
+
 describe("sidekick IPC: import", () => {
   const TOKEN = "a1".repeat(16);
   function importWire(available = true) {

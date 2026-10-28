@@ -14,7 +14,7 @@ import {
   sidekickTips,
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState, SidekickView } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState, SidekickView } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
   MAIN_SCOPE,
@@ -30,7 +30,7 @@ import {
 } from "@humanharness/workspace";
 import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportRead } from "./sidekick-import";
 import { candidates, pickSpeaker } from "./sidekick-route";
-import type { SidekickInput, SidekickStore } from "./sidekick-store";
+import type { SidekickInput, SidekickScope, SidekickStore } from "./sidekick-store";
 import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { PhaseMoved, TurnEnd } from "./task-manager";
 import { type SidekickUsageMoment, type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
@@ -508,6 +508,21 @@ export class SidekickController {
   async reorder(ids: readonly string[]): Promise<void> {
     await this.d.store.reorder(ids);
     await this.push();
+  }
+
+  /**
+   * "Sidekicks in this <scope>" (spec §2a.4, Decision 8): each sidekick by order with its state in `scope` (its scope
+   * record, else its `defaultOn`). Read through the store only: scope record ids may be hashed. Works with Sidekick off.
+   */
+  async scopeSidekicks(scope: string): Promise<SidekickInScope[]> {
+    const out: SidekickInScope[] = [];
+    for (const k of await this.d.store.sidekicks()) out.push({ id: k.id, name: k.name, mark: k.mark, ...(await this.d.store.scopeFor(scope, k.id)) });
+    return out;
+  }
+
+  /** A sidekick on or off in a scope and its purpose text there, as the person; an unknown sidekick throws. */
+  async setScope(scope: string, sidekick: string, v: SidekickScope): Promise<void> {
+    await this.d.store.setScope(scope, sidekick, v);
   }
 
   /**

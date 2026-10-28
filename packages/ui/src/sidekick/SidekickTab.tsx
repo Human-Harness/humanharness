@@ -1,10 +1,11 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "../chrome";
-import type { HarnessClient, SidekickSettings, SidekickSettingsPatch } from "../client";
+import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "../client";
 import { shownLanguage } from "../language";
 import { LearnedList } from "./LearnedList";
 import { PresetOffer } from "./PresetOffer";
+import { ScopeSidekicks } from "./ScopeSidekicks";
 import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
 
@@ -12,12 +13,52 @@ type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
 
 /**
- * Settings › Sidekick(s) (spec §8, mockup board 6): on/off and the moments, the share used, the muted kinds, the
- * harness's presets (while any is not adopted, spec §2a.7), the sidekicks, and what they learned. Each change saves at once.
+ * The open scope's id and title (harnesses with scopes; null when none is open or the harness has none). The title
+ * follows renames; a change that arrives is newer than the first reply.
  */
-export function SidekickTab({ client, onModels }: { client: HarnessClient; onModels: () => void }) {
+function useOpenScope(client: HarnessClient, enabled: boolean): { id: string; label: string } | null {
+  const [open, setOpen] = useState<{ id: string; label: string } | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    let seen = false;
+    const show = (id: string | null, list: ScopeView[]) => setOpen(id === null ? null : { id, label: list.find((s) => s.id === id)?.title ?? id });
+    Promise.all([client.scopes.current(), client.scopes.list()]).then(
+      ([id, list]) => {
+        if (live && !seen) show(id, list);
+      },
+      () => undefined,
+    );
+    const off = client.scopes.onChange((v) => {
+      seen = true;
+      show(v.open, v.list);
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, [client, enabled]);
+  return enabled ? open : null;
+}
+
+/**
+ * Settings › Sidekick(s) (spec §8, mockup board 6): on/off and the moments, the share used, the muted kinds, the
+ * harness's presets (while any is not adopted, spec §2a.7), the sidekicks, the sidekicks in the open scope (harnesses
+ * with scopes, Decision 8), and what they learned. Each change saves at once.
+ */
+export function SidekickTab({
+  client,
+  onModels,
+  scopes,
+}: {
+  client: HarnessClient;
+  onModels: () => void;
+  /** The harness's scopes (manifest `scopes`): its `label` names a scope. Absent: no scope section (D0). */
+  scopes?: { label: string };
+}) {
   const { t, i18n } = useTranslation();
   const state = useSidekick(client, true);
+  const openScope = useOpenScope(client, Boolean(scopes));
   const [failed, setFailed] = useState<string | null>(null);
   /** "Not now" hides the presets until Settings opens again (it stays here while one is not adopted). */
   const [presetsHidden, setPresetsHidden] = useState(false);
@@ -157,6 +198,7 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
       {/* Always offered here while one is not adopted; `presetsOffered` only gates the panel's one-time offer. */}
       {!presetsHidden && <PresetOffer client={client} onDone={() => setPresetsHidden(true)} />}
       <SidekickList client={client} places={state.places} />
+      {scopes && openScope && <ScopeSidekicks key={openScope.id} client={client} scope={openScope} scopeNoun={scopes.label} />}
       <LearnedList client={client} />
     </div>
   );

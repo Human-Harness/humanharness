@@ -786,6 +786,11 @@
       "orderHint": "When two could speak, the higher one does.",
       "dailyOff": "Off by default, so it never gives the daily summary."
     },
+    "scope": {
+      "title": "Sidekicks in this {{noun}}",
+      "purpose": "{{name}}'s purpose here",
+      "purposeHint": "Added to what it reads on every turn in this {{noun}}."
+    },
     "editor": {
       "name": "Name",
       "mark": "Mark",

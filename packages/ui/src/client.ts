@@ -960,6 +960,13 @@ export interface HarnessClient {
     remove(id: string): Promise<{ ok: boolean; message?: string }>;
     /** Orders the sidekicks as `ids` (the higher one speaks when two could). */
     reorder(ids: string[]): Promise<void>;
+    /** "Sidekicks in this <scope>" (spec §2a.4): every sidekick by order, on or off in `scope`, and its purpose text there. */
+    scope(scope: string): Promise<SidekickInScope[]>;
+    /**
+     * A sidekick in a scope, as the person: on or off and its purpose text there (at most 600 characters; none when
+     * absent). Send the `places` it had, or they are dropped. `ok: false` with why (e.g. the sidekick was removed).
+     */
+    setScope(scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }): Promise<{ ok: boolean; message?: string }>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1181,6 +1188,15 @@ export interface SidekickDraftDef {
   tier?: "light" | "standard" | "deep";
   preset?: string;
   defaultOn?: boolean;
+}
+/** A sidekick in one scope (spec §2a.4): on or off there, its purpose text there, and the places it answers there. */
+export interface SidekickInScope {
+  id: string;
+  name: string;
+  mark: string;
+  on: boolean;
+  purposeText?: string;
+  places?: string[];
 }
 /** A stored sidekick as Settings shows and edits it: its full definition and its place in the order. */
 export interface SidekickView extends SidekickDraftDef {

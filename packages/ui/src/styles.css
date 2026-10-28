@@ -528,6 +528,8 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-sk-list button[aria-disabled="true"], .hh-sk-editor button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .hh-sk-editor { border: 1px solid var(--hh-line); border-radius: 10px; padding: 12px; margin-top: 8px; }
 .hh-sk-editor textarea { width: 100%; box-sizing: border-box; }
+.hh-sk-scope label { display: block; }
+.hh-sk-scope textarea { width: 100%; box-sizing: border-box; margin-top: 2px; }
 .hh-sk-check { display: block; margin: 4px 0; }
 .hh-sk-custom { margin: 8px 0 0 22px; }
 .hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-paper); }

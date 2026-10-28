@@ -1,7 +1,8 @@
 import { sidekickRecordSchema } from "@humanharness/harness-sdk";
-import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/ui/client";
+import { isScopeId } from "@humanharness/workspace";
+import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
-import type { SidekickInput } from "./sidekick-store";
+import type { SidekickInput, SidekickScope } from "./sidekick-store";
 import { IMPORT_MAX_BYTES } from "./sidekick-import";
 import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
 
@@ -39,7 +40,7 @@ function importInput(v: unknown): SidekickImportInput | null {
 }
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick" | "list" | "removeSidekick" | "reorder">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick" | "list" | "removeSidekick" | "reorder" | "scopeSidekicks" | "setScope">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 /** Edits to the learned items: at most MAX_EDITS, each an id and a text of 1..MAX_LEARNED characters (not blank). */
@@ -65,6 +66,18 @@ function sidekickInput(v: unknown): SidekickInput | null {
   if (!r.success) return null;
   const { id: _id, type: _type, order: _order, ...def } = r.data;
   return { ...(picked.id !== undefined ? { id: r.data.id } : {}), ...def } as SidekickInput;
+}
+/**
+ * A sidekick's state in a scope, checked as the scope record it becomes (purpose text at most
+ * SIDEKICK_PURPOSE_TEXT_MAX, at most 12 place ids); a blank purpose text is none. Null when malformed.
+ */
+function scopeInput(scope: string, sidekick: string, v: unknown): SidekickScope | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const { on, purposeText, places } = v as { on?: unknown; purposeText?: unknown; places?: unknown };
+  const text = typeof purposeText === "string" && !purposeText.trim() ? undefined : purposeText;
+  const r = sidekickRecordSchema.safeParse({ id: "s-draft", type: "scope", scope, sidekick, on, purposeText: text, places });
+  if (!r.success) return null;
+  return { on: r.data.on!, ...(r.data.purposeText !== undefined ? { purposeText: r.data.purposeText } : {}), ...(r.data.places ? { places: r.data.places } : {}) };
 }
 /** Learned items saved with a sidekick: at most MAX_EDITS, each a text of 1..MAX_LEARNED characters (trimmed) and a level. */
 function learnedInput(v: unknown): { text: string; level: "you" | "harness" }[] | null {
@@ -186,6 +199,22 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
   handle("hh:sidekickReorder", async (ids: unknown) => {
     if (!Array.isArray(ids) || ids.length === 0 || ids.length > SIDEKICK_MAX || !ids.every(isId)) return;
     await ctl()?.reorder(ids);
+  });
+  // Sidekicks in a scope (spec §2a.4), as the person: a malformed request never reaches the controller.
+  handle("hh:sidekickScope", async (scope: unknown): Promise<SidekickInScope[]> => {
+    if (!isScopeId(scope)) return [];
+    return (await ctl()?.scopeSidekicks(scope).catch(() => [])) ?? [];
+  });
+  handle("hh:sidekickSetScope", async (scope: unknown, sidekick: unknown, v: unknown): Promise<{ ok: boolean; message?: string }> => {
+    const c = ctl();
+    if (!c) return { ok: false, message: "Sidekick is not available" };
+    const input = isScopeId(scope) && isId(sidekick) ? scopeInput(scope, sidekick, v) : null;
+    if (!input) return { ok: false, message: "Not a sidekick change for this scope" };
+    // The store's refusal (an unknown sidekick) reaches the person as its message.
+    return c.setScope(scope as string, sidekick as string, input).then(
+      () => ({ ok: true }),
+      (err: unknown) => ({ ok: false, message: err instanceof Error ? err.message : String(err) }),
+    );
   });
   handle("hh:sidekickEditLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;

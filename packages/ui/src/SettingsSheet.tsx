@@ -185,7 +185,7 @@ export function SettingsSheet({
           {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
-          {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} />}
+          {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
           {tab === "harness" && configured && (
             <>

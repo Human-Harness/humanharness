@@ -85,6 +85,18 @@ describe("file diff basics (file-timeline spec §4)", () => {
     expect(compactLines(lineChanges("a\nb\n", "a\nb\n")).lines).toEqual([{ kind: "gap", text: "", count: 2 }]);
   });
 
+  it("the line cap counts only real lines, never gap rows", () => {
+    // Four changes, each far from the next: gap, ins, gap, ins, gap, ins, gap, ins.
+    const lines = lineChanges("a\nb\nc\nd\n", "a\nX\nb\nX\nc\nX\nd\nX\n");
+    const three = compactLines(lines, 0, 3);
+    expect(three.lines.filter((l) => l.kind !== "gap")).toHaveLength(3);
+    expect(three.cut).toBe(true);
+    // Exactly at the cap, with only unchanged lines left: nothing real is dropped, so nothing is cut.
+    const four = compactLines(lineChanges("a\nb\nc\nd\ne\nf\n", "X\nb\nc\nd\ne\nf\n"), 0, 2);
+    expect(four.lines.map((l) => l.kind)).toEqual(["del", "ins", "gap"]);
+    expect(four.cut).toBe(false);
+  });
+
   it("a big text diff stays small: 200 KB of short lines with one change, or every line changed", () => {
     const before = "a\n\n".repeat(68_000);
     const after = `${before.slice(0, 100_000)}b${before.slice(100_000)}`;

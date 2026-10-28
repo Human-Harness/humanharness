@@ -140,8 +140,11 @@ export function compactLines(lines: LineChange[], context = DIFF_CONTEXT_LINES, 
   }
   const out: LineChange[] = [];
   let i = 0;
-  for (; i < lines.length && out.length < max; i++) {
+  let kept = 0;
+  for (; i < lines.length; i++) {
     if (near[i]) {
+      if (kept === max) break;
+      kept++;
       out.push(lines[i]);
       continue;
     }

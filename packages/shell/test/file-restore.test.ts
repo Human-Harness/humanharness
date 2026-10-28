@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { restoreFlow } from "../src/preload/file-restore";
+import { askFile, restoreFlow } from "../src/preload/file-restore";
 
 const SHA = "c".repeat(40);
 const prompt = { path: "a.md", author: { kind: "agent", label: "Spec writer" }, at: "2026-10-28T10:00:00.000Z", kind: "task" };
@@ -51,5 +51,15 @@ describe("restoreFlow (file-timeline spec §6.3: the core always confirms)", () 
     expect(await restoreFlow(after.invoke, async () => true, "a.md", SHA)).toEqual({ refused: "unsafe" });
     const odd = invoker({ "hh:fileRestorePrompt": "nonsense" });
     expect(await restoreFlow(odd.invoke, async () => true, "a.md", SHA)).toEqual({ refused: "failed" });
+  });
+});
+
+describe("askFile (files.timeline and files.diff answer data, never a throw)", () => {
+  it("passes main's answer through, and a rejected invoke answers failed", async () => {
+    const { invoke, calls } = invoker({ "hh:fileTimeline": { ok: true, entries: [] } });
+    expect(await askFile(invoke, "hh:fileTimeline", "a.md")).toEqual({ ok: true, entries: [] });
+    expect(calls).toEqual(["hh:fileTimeline a.md"]);
+    const broken = async () => Promise.reject(new Error("no handler"));
+    expect(await askFile(broken, "hh:fileDiff", "a.md", null, "current")).toEqual({ ok: false, reason: "failed" });
   });
 });

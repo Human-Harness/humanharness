@@ -96,7 +96,7 @@ import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { reviewHandlers } from "./review-ipc";
 import { workerDiff } from "./diff-runner";
-import { announcedPaths, fileHandlers } from "./file-ipc";
+import { commitAnnouncer, fileHandlers } from "./file-ipc";
 import { FileTimelineService } from "./file-timeline";
 import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
@@ -682,6 +682,8 @@ async function closeRuntime() {
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
+  // A closed runtime's history keeps no listener of main's.
+  if (rt) commitAnnouncements.stop(rt.history);
   // The next runtime writes AGENTS.md afresh: nothing is pending against this one's. Only once close() resolved (a
   // running refresh would set what was applied again), and not when a new runtime has already written its own.
   if (!runtime.peek()) settingsCtl?.forget();
@@ -1175,9 +1177,8 @@ const fileTimelines = new FileTimelineService({
 });
 
 /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
-function announceCommits(history: History) {
-  history.onCommit((c) => sendToWindow("hh:fileCommits", announcedPaths(c.paths)));
-}
+const commitAnnouncements = commitAnnouncer((paths) => sendToWindow("hh:fileCommits", paths));
+const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
 function registerIpc() {
   handle("hh:getState", () => appState());

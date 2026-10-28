@@ -7,6 +7,14 @@ const answer = (v: unknown): { ok: true; prompt?: FileRestorePrompt } | { ok: fa
   return { ok: false, reason: "failed" };
 };
 
+/** `client.files.timeline` and `client.files.diff`: main's answer, or "failed" when the invoke rejects (data, never a throw). */
+export function askFile<T>(invoke: Invoke, channel: "hh:fileTimeline" | "hh:fileDiff", ...args: unknown[]): Promise<T | { ok: false; reason: "failed" }> {
+  return invoke(channel, ...args).then(
+    (v) => v as T,
+    () => ({ ok: false as const, reason: "failed" as const }),
+  );
+}
+
 /**
  * `client.files.restore` (file-timeline spec §5, §6.3): main's prompt, then the core's confirmation, then the go-back.
  * Without a confirmer (no core chat on screen) or on any failure to ask, nothing goes back: "cancelled".

@@ -223,6 +223,7 @@ The move never happens from the last phase or a `close` phase. A stale document 
 
 - **Reading:** `view(path)` (the record, the summary and the blob of the version read), `review(path)` (a `ReviewSummary` or null), `summaries(paths)` (at most 200 paths).
 - **The person's actions:** `answer`, `comment`, `editDraft`, `reopen`, `send`, `approve(path, blob, { reason?, discard? })` and `approvedText`.
+- **`approvedText(path)`** (`hh:reviewApprovedText`) answers the text of the last approved version. The core no longer uses it ("See what changed" diffs from the file's timeline, see `timeline.md`), but it stays as public harness API: a harness view may still read it.
 - **Listening:** `onChange(listener)`.
 - **Focus mode:** `focus(path)` opens the reader in focus mode, and the chat listens with `onFocus`.
 

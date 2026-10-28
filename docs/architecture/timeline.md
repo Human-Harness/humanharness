@@ -108,7 +108,7 @@ Main checks every path: `refusedShape` first, then inside the person's folder (a
 
 ## "See what changed"
 
-A stale document's "See what changed" (`ApprovedDiff.tsx`, `reviews.md`) is the timeline's diff from the `lastApproved` entry's `to` (the approval the review record holds last, paired by blob) to the current file, drawn with `<FileDiff>`. That is not always the newest approval entry: after a whole-folder go-back between v1 and v2, the record holds v1 again, and so does "See what changed". With no paired entry it says there is nothing to compare. It reloads on `files.onChange` and when the reader reads the text again; a reload that fails keeps the approval it had. Answers and approvals appear on the document's timeline.
+A stale document's "See what changed" (`ApprovedDiff.tsx`, `reviews.md`) is the timeline's diff from the `lastApproved` entry's `to` (the approval the review record holds last, paired by blob) to the current file, drawn with `<FileDiff>`. That is not always the newest approval entry: after a whole-folder go-back between v1 and v2, the record holds v1 again, and so does "See what changed". With no paired entry it says there is nothing to compare. It reloads on `files.onChange` and when the reader reads the text again; a reload that fails keeps the approval it had. Answers and approvals appear on the document's timeline. `client.documents.approvedText` (`hh:reviewApprovedText`), which "See what changed" used before, stays as public harness API though the core no longer calls it.
 
 ## D0
 

@@ -5,7 +5,7 @@ import type { ModelProfile } from "@humanharness/engines";
 import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
-import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
+import { MAIN_SCOPE, isCanonicalPath, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
 import { cleanProfile } from "./models";
 
 /** The input block the task waits an answer for (input-blocks spec §4): its id, its block's name, when it was shown. */
@@ -135,6 +135,11 @@ export const CONFLICT_MAX = 20;
 /** A lane's id is its task id, its slot key and an IPC argument (parallel threat model P1): at most this long. */
 export const LANE_ID_MAX = 200;
 const CONFLICT_PATH_MAX = 1024;
+/**
+ * A lane id also names its chat file (`chats/<scope>/<id>.jsonl`): a UUID, or a test's `t1`. Never a dot, a slash,
+ * a leading `_` (`__proto__`) or `-`.
+ */
+const LANE_ID = new RegExp(`^[A-Za-z0-9][A-Za-z0-9_-]{0,${LANE_ID_MAX - 1}}$`);
 
 /** What the manifest declares, when known: mode ids, and each action's phase ids. */
 export interface Known {
@@ -237,11 +242,12 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
   };
 }
 
-const isLaneId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= LANE_ID_MAX;
+export const isLaneId = (v: unknown): v is string => typeof v === "string" && LANE_ID.test(v);
 
 /**
- * Board mode's open tasks (parallel spec §6): each entry cleaned as `current` is, plus `tokens` and `conflict`.
- * Entries that don't read as a task, a repeated id (the first wins) and any past LANES_MAX are dropped.
+ * Board mode's open tasks (parallel spec §6): each entry cleaned as `current` is, plus `tokens` and `conflict` (only
+ * canonical folder-relative paths). Entries that don't read as a task, an id that isn't a safe file name, a repeated
+ * id (the first wins) and any past LANES_MAX are dropped.
  */
 export function cleanLanes(raw: unknown, known: Known = {}): CurrentTask[] {
   if (!Array.isArray(raw)) return [];
@@ -255,7 +261,7 @@ export function cleanLanes(raw: unknown, known: Known = {}): CurrentTask[] {
     seen.add(task.id);
     const { tokens, conflict } = entry;
     const paths = Array.isArray(conflict)
-      ? [...new Set(conflict.filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= CONFLICT_PATH_MAX))].slice(-CONFLICT_MAX)
+      ? [...new Set(conflict.filter((p): p is string => typeof p === "string" && p.length <= CONFLICT_PATH_MAX && isCanonicalPath(p)))].slice(-CONFLICT_MAX)
       : [];
     out.push({
       ...task,

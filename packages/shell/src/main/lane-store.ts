@@ -1,30 +1,52 @@
+import path from "node:path";
 import type { ActionStatus } from "@humanharness/ui/client";
 import type { TasksFile } from "./task-store";
 
-/** What a lane reads and writes through: the board's one `TaskStore` (or a test's memory). */
-export type TasksFileStore = { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
+/** What a lane reads and writes through: a `TaskStore` (or a test's memory). `file`, when given, keys the write chain. */
+export type TasksFileStore = { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void>; readonly file?: string };
 
-/** One write chain per file store: every lane's load-merge-save runs after the one before it ended. */
-const chains = new WeakMap<TasksFileStore, Promise<unknown>>();
+/**
+ * One write chain per tasks.json: by its resolved path when the store names one (two `TaskStore`s of one folder share
+ * it), otherwise by the store object. Every load-merge-save runs after the one before it ended.
+ */
+const byPath = new Map<string, Promise<unknown>>();
+const byStore = new WeakMap<TasksFileStore, Promise<unknown>>();
 
 /**
  * Runs `fn` on `store` once every earlier write through it ended (failed ones too). Anything else that changes
  * a file lanes write (the board's `focus`) goes through here, so no read-modify-write undoes another.
  */
 export function withTasksFile<T>(store: TasksFileStore, fn: () => Promise<T>): Promise<T> {
-  const run = (chains.get(store) ?? Promise.resolve()).then(fn, fn);
-  chains.set(store, run.catch(() => {}));
+  const key = store.file === undefined ? undefined : path.resolve(store.file);
+  const before = (key === undefined ? byStore.get(store) : byPath.get(key)) ?? Promise.resolve();
+  const run = before.then(fn, fn);
+  const tail: Promise<unknown> = run.catch(() => {});
+  if (key === undefined) byStore.set(store, tail);
+  else {
+    byPath.set(key, tail);
+    // The map keeps a path only while a write is pending on it.
+    void tail.then(() => {
+      if (byPath.get(key) === tail) byPath.delete(key);
+    });
+  }
   return run;
 }
 
+/** How many distinct snapshots a lane keeps between two saves: reads repeat, so a bound on a long idle stretch. */
+const SNAPSHOTS_MAX = 64;
+
 /**
  * One lane's view of tasks.json (parallel spec §6, Decision 3): its task is `current`, the others are hidden. On save
- * its task goes back into `lanes` and its changes to the shared fields are merged three-way against what it loaded,
- * so two lanes saving one after the other never undo each other's action statuses.
+ * its task goes back into `lanes` and its changes to the shared fields are merged three-way, so two lanes saving one
+ * after the other never undo each other's action statuses.
+ *
+ * The merge base is every view this lane loaded since its last save: `TaskManager` reads outside its updates too, and
+ * the state it saves may come from any of those reads. A value counts as this lane's change only when it differs
+ * from all of them; anything else is left as the file has it now.
  */
 export class LaneStore {
-  /** What this lane last loaded or saved: the base of the next merge. */
-  private base: TasksFile | null = null;
+  /** Distinct views loaded (or saved) since the last save, oldest first. Empty: none yet. */
+  private snapshots: TasksFile[] = [];
 
   constructor(
     private readonly file: TasksFileStore,
@@ -33,33 +55,48 @@ export class LaneStore {
 
   async load(): Promise<TasksFile> {
     const view = viewOf(await this.file.load(), this.id);
-    this.base = structuredClone(view);
+    this.remember(view);
     return view;
   }
 
-  /** Serialized with every other save to the same file store. A task other than this lane's is never written. */
+  /**
+   * Serialized with every other save to the same tasks.json. A `current` that isn't this lane's task is refused.
+   * A lane the file no longer lists (another writer ended it) is not put back, unless this save starts its task.
+   */
   save(state: TasksFile): Promise<void> {
+    if (state.current && state.current.id !== this.id) {
+      return Promise.reject(new Error(`Lane ${this.id} can't save task ${state.current.id}`));
+    }
     return withTasksFile(this.file, async () => {
       const fresh = await this.file.load();
-      const base = this.base ?? viewOf(fresh, this.id);
+      const bases = this.snapshots.length > 0 ? this.snapshots : [viewOf(fresh, this.id)];
       const all = fresh.lanes ?? [];
       const at = all.findIndex((l) => l.id === this.id);
       const lanes = all.filter((l) => l.id !== this.id);
-      if (state.current && state.current.id === this.id) lanes.splice(at < 0 ? lanes.length : at, 0, state.current);
+      const isNew = bases.every((b) => b.current === null);
+      if (state.current && (at >= 0 || isNew)) lanes.splice(at < 0 ? lanes.length : at, 0, state.current);
       const { open: _open, engine: _engine, scopes: _scopes, ...rest } = fresh;
-      const scopes = mergeScopes(base.scopes, state.scopes, fresh.scopes);
+      const scopes = mergeScopes(bases.map((b) => b.scopes), state.scopes, fresh.scopes);
       const merged: TasksFile = {
         ...rest,
-        ...mergeOptional("engine", base, state, fresh),
+        ...mergeOptional("engine", bases, state, fresh),
         current: null,
-        actions: mergeRecord(base.actions, state.actions, fresh.actions),
-        ...mergeOptional("open", base, state, fresh),
+        actions: mergeRecord(bases.map((b) => b.actions), state.actions, fresh.actions),
+        ...mergeOptional("open", bases, state, fresh),
         ...(scopes ? { scopes } : {}),
         lanes,
       };
       await this.file.save(merged);
-      this.base = structuredClone(state);
+      this.snapshots = [structuredClone(state)];
     });
+  }
+
+  private remember(view: TasksFile): void {
+    const text = JSON.stringify(view);
+    if (this.snapshots.some((s) => JSON.stringify(s) === text)) return;
+    this.snapshots.push(structuredClone(view));
+    // The oldest stays (the state an update started from is usually the first read); the next oldest goes.
+    if (this.snapshots.length > SNAPSHOTS_MAX) this.snapshots.splice(1, 1);
   }
 }
 
@@ -69,13 +106,15 @@ function viewOf(f: TasksFile, id: string): TasksFile {
   return { ...rest, current: (lanes ?? []).find((l) => l.id === id) ?? null };
 }
 
-/** Keys this lane changed (added, changed or removed against `base`) applied to `fresh`. */
-function mergeRecord<T>(base: Record<string, T>, mine: Record<string, T>, fresh: Record<string, T>): Record<string, T> {
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Keys this lane changed (a value, or absence, unlike every base) applied to `fresh`. */
+function mergeRecord<T>(bases: readonly Record<string, T>[], mine: Record<string, T>, fresh: Record<string, T>): Record<string, T> {
   const out = { ...fresh };
-  for (const k of new Set([...Object.keys(base), ...Object.keys(mine)])) {
-    const before = Object.hasOwn(base, k) ? base[k] : undefined;
+  const keys = new Set([...bases.flatMap((b) => Object.keys(b)), ...Object.keys(mine)]);
+  for (const k of keys) {
     const after = Object.hasOwn(mine, k) ? mine[k] : undefined;
-    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    if (bases.some((b) => same(Object.hasOwn(b, k) ? b[k] : undefined, after))) continue;
     if (after === undefined) delete out[k];
     else out[k] = after;
   }
@@ -84,23 +123,26 @@ function mergeRecord<T>(base: Record<string, T>, mine: Record<string, T>, fresh:
 
 type Scopes = Record<string, Record<string, ActionStatus>>;
 
-/** Each scope merged as `actions` is; a scope this lane removed is removed. Undefined when none is left to write. */
-function mergeScopes(base: Scopes | undefined, mine: Scopes | undefined, fresh: Scopes | undefined): Scopes | undefined {
-  if (!base && !mine) return fresh;
+/**
+ * Each scope merged as `actions` is. A scope this lane dropped loses only the keys it had; it goes when nothing
+ * another lane added is left in it. Undefined when there is nothing to write.
+ */
+function mergeScopes(bases: readonly (Scopes | undefined)[], mine: Scopes | undefined, fresh: Scopes | undefined): Scopes | undefined {
+  if (bases.every((b) => b === undefined) && mine === undefined) return fresh;
   const out: Scopes = { ...(fresh ?? {}) };
-  for (const s of new Set([...Object.keys(base ?? {}), ...Object.keys(mine ?? {})])) {
-    const had = base !== undefined && Object.hasOwn(base, s);
-    if (!mine || !Object.hasOwn(mine, s)) {
-      if (had) delete out[s];
-      continue;
-    }
-    out[s] = mergeRecord(had ? base[s] : {}, mine[s], Object.hasOwn(out, s) ? out[s] : {});
+  const ids = new Set([...bases.flatMap((b) => Object.keys(b ?? {})), ...Object.keys(mine ?? {})]);
+  for (const s of ids) {
+    const before = bases.map((b) => (b && Object.hasOwn(b, s) ? b[s] : {}));
+    const kept = mine !== undefined && Object.hasOwn(mine, s);
+    const result = mergeRecord(before, kept ? mine[s] : {}, Object.hasOwn(out, s) ? out[s] : {});
+    if (kept || Object.keys(result).length > 0) out[s] = result;
+    else delete out[s];
   }
   return mine === undefined && fresh === undefined ? undefined : out;
 }
 
-/** This lane's value when it changed it (absent when it cleared it), otherwise the file's. */
-function mergeOptional<K extends "open" | "engine">(key: K, base: TasksFile, mine: TasksFile, fresh: TasksFile): Partial<Pick<TasksFile, K>> {
-  const value = base[key] === mine[key] ? fresh[key] : mine[key];
+/** This lane's value when it differs from every base (absent when it cleared it), otherwise the file's. */
+function mergeOptional<K extends "open" | "engine">(key: K, bases: readonly TasksFile[], mine: TasksFile, fresh: TasksFile): Partial<Pick<TasksFile, K>> {
+  const value = bases.some((b) => b[key] === mine[key]) ? fresh[key] : mine[key];
   return value === undefined ? {} : ({ [key]: value } as Partial<Pick<TasksFile, K>>);
 }

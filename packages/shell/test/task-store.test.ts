@@ -373,6 +373,16 @@ describe("lanes (parallel spec §6)", () => {
     expect(cleanLanes({ a: lane("a") })).toEqual([]);
   });
 
+  it("cleanLanes keeps only ids that are safe file names (a lane id names its chat file)", () => {
+    const ids = ["__proto__", "../../x", "a/b", "a.b", "-a", "_a", "a b", "e7a1c9de-0b5f-4c43-9a7e-2f1d3c4b5a69", "t1"];
+    expect(cleanLanes(ids.map((id) => lane(id))).map((l) => l.id)).toEqual(["e7a1c9de-0b5f-4c43-9a7e-2f1d3c4b5a69", "t1"]);
+  });
+
+  it("cleanLanes keeps only canonical folder-relative conflict paths", () => {
+    const [a] = cleanLanes([lane("a", { conflict: ["../../etc/passwd", "/abs", "a//b", "./a.md", "dir/", "", "a\\b", "docs/spec.md", "a.md"] })]);
+    expect(a.conflict).toEqual(["docs/spec.md", "a.md"]);
+  });
+
   it("cleanLanes keeps tokens as a non-negative whole number and conflict as at most 20 paths, newest last", () => {
     const paths = Array.from({ length: 25 }, (_, i) => `f${i}.md`);
     const [a, b, c] = cleanLanes([
@@ -402,6 +412,10 @@ describe("lanes (parallel spec §6)", () => {
     expect(await store.load()).toEqual({ version: 1, current: null, actions: {}, lanes: [] });
     fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, focus: "z".repeat(201) }));
     expect(await store.load()).toEqual({ version: 1, current: null, actions: {} });
+    for (const focus of ["../x", "__proto__"]) {
+      fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, focus }));
+      expect(await store.load()).toEqual({ version: 1, current: null, actions: {} });
+    }
     fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, lanes: [lane("a")], focus: null }));
     expect(await store.load()).toEqual({ version: 1, current: null, actions: {}, lanes: [lane("a")], focus: null });
   });

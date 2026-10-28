@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LaneStore } from "../src/main/lane-store";
-import type { TasksFile } from "../src/main/task-store";
+import { LaneStore, withTasksFile } from "../src/main/lane-store";
+import { type TasksFile, interruptedLanes } from "../src/main/task-store";
 
 function memory(initial: TasksFile) {
   let file = structuredClone(initial);
@@ -14,6 +14,7 @@ function memory(initial: TasksFile) {
       saves += 1;
     },
     peek: () => file,
+    set: (f: TasksFile) => void (file = structuredClone(f)),
     saves: () => saves,
   };
 }
@@ -46,11 +47,47 @@ describe("LaneStore (Decision 3)", () => {
     expect(m.peek().lanes?.map((l) => l.id)).toEqual(["n"]);
   });
 
-  it("a lane never writes another task as its current", async () => {
-    const m = memory({ version: 1, current: null, actions: {}, lanes: [task("b")] });
+  it("a lane never writes another task as its current: the save is refused", async () => {
+    const m = memory({ version: 1, current: null, actions: {}, lanes: [task("a"), task("b")] });
     const a = new LaneStore(m, "a");
-    await a.save({ ...(await a.load()), current: task("b", { turns: 9 }) });
-    expect(m.peek().lanes).toEqual([task("b")]);
+    await expect(a.save({ ...(await a.load()), current: task("b", { turns: 9 }) })).rejects.toThrow("Lane a can't save task b");
+    expect(m.peek().lanes).toEqual([task("a"), task("b")]);
+    expect(m.saves()).toBe(0);
+  });
+
+  it("a lane another writer ended isn't put back by its next save; a new task is", async () => {
+    const m = memory({ version: 1, current: null, actions: {}, lanes: [task("a")] });
+    const a = new LaneStore(m, "a");
+    const sa = await a.load();
+    m.set(interruptedLanes(m.peek()));
+    await a.save({ ...sa, current: { ...sa.current!, turns: 3 } });
+    expect(m.peek().lanes).toEqual([]);
+  });
+
+  it("a read between a lane's load and its save never undoes another lane's change (probe P1)", async () => {
+    const m = memory({ version: 1, current: null, actions: { x: "done" }, open: "s1", lanes: [task("a"), task("b")] });
+    const a = new LaneStore(m, "a");
+    const b = new LaneStore(m, "b");
+    const sa = await a.load();
+    const sb = await b.load();
+    await b.save({ ...sb, actions: { ...sb.actions, two: "done" }, open: "s2" });
+    // A read outside the update (the window's view): the update below still saves what it loaded first.
+    await a.load();
+    await a.save({ ...sa, actions: { ...sa.actions, one: "done" } });
+    expect(m.peek().actions).toEqual({ x: "done", one: "done", two: "done" });
+    expect(m.peek().open).toBe("s2");
+  });
+
+  it("a lane that drops a scope keeps what another lane added to it (probe P3)", async () => {
+    const m = memory({ version: 1, current: null, actions: {}, scopes: { s1: { k: "done" }, s2: { j: "done" } }, lanes: [task("a"), task("b")] });
+    const a = new LaneStore(m, "a");
+    const b = new LaneStore(m, "b");
+    const sa = await a.load();
+    const sb = await b.load();
+    await b.save({ ...sb, scopes: { ...sb.scopes, s1: { k: "done", other: "done" } } });
+    await a.save({ ...sa, scopes: {} });
+    // s1 keeps only b's key; s2, which nobody else touched, goes.
+    expect(m.peek().scopes).toEqual({ s1: { other: "done" } });
   });
 
   it("two lanes' changes to actions both survive (three-way merge)", async () => {
@@ -111,6 +148,33 @@ describe("LaneStore (Decision 3)", () => {
     expect(m.peek().actions).toEqual({ a: "done", b: "done", c: "done" });
     expect(m.peek().lanes?.map((l) => [l.id, l.turns])).toEqual([["a", 1], ["b", 2], ["c", 3]]);
     expect(m.saves()).toBe(3);
+  });
+
+  it("the write chain follows the file path, so two stores of one tasks.json share it", async () => {
+    const shared = memory({ version: 1, current: null, actions: {}, lanes: [task("a"), task("b")] });
+    const at = (file: string) => ({ file, load: shared.load, save: shared.save });
+    const a = new LaneStore(at("/f/.harness/tasks.json"), "a");
+    const b = new LaneStore(at("/f/.harness/../.harness/tasks.json"), "b");
+    const [sa, sb] = await Promise.all([a.load(), b.load()]);
+    await Promise.all([a.save({ ...sa, actions: { one: "done" } }), b.save({ ...sb, actions: { two: "done" } })]);
+    expect(shared.peek().actions).toEqual({ one: "done", two: "done" });
+  });
+
+  it("withTasksFile runs work in order on one path and goes on after a failure", async () => {
+    const store = { file: "/g/tasks.json", load: async () => ({ version: 1, current: null, actions: {} }) as TasksFile, save: async () => {} };
+    const order: number[] = [];
+    const first = withTasksFile(store, async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      order.push(1);
+      throw new Error("x");
+    });
+    const second = withTasksFile({ ...store }, async () => {
+      order.push(2);
+      return 7;
+    });
+    await expect(first).rejects.toThrow("x");
+    await expect(second).resolves.toBe(7);
+    expect(order).toEqual([1, 2]);
   });
 
   it("a failed save doesn't block the next one", async () => {

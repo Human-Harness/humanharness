@@ -30,7 +30,7 @@ const plain = (t: string) => {
 export async function jobFirstMessage(o: {
   brief: string;
   scope: string;
-  /** The notes part of the context (`notesIndexFor` of task-manager.ts, as a task's first message has it). */
+  /** The notes part of the context (`notesIndexFor` of notes-index.ts, as a task's first message has it). */
   notesIndex(scope: string): Promise<string>;
   dataContext?(scope: string): Promise<string>;
   materialContext?(scope: string): Promise<string>;

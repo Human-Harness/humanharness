@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { APP_SCOPE, type Note, buildNotesIndex } from "@humanharness/workspace";
 import { JOB_BRIEF_CHARS, jobFirstMessage } from "../../src/main/jobs/job-prompt";
-import { notesIndexFor } from "../../src/main/task-manager";
+import { notesIndexFor } from "../../src/main/notes-index";
 
 const base = {
   brief: "Sync the tickets.",

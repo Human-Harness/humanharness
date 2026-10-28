@@ -38,7 +38,8 @@ import {
   type TimeBoxView,
   nextInPath,
 } from "@humanharness/ui/client";
-import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
+import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, isScopeId, noteSlug } from "@humanharness/workspace";
+import { notesIndexFor } from "./notes-index";
 import {
   CHECKPOINT_PROMPT,
   type ModeText,
@@ -221,9 +222,6 @@ export class ScopeRequired extends Error {
   }
 }
 
-/** How much the app-wide notes index may take in a scope's session (spec §3.3 "trimmed"). */
-export const APP_INDEX_TOKENS = 500;
-
 /** The error the caller sees: the turn's own reason when it never started. */
 const unwrap = (err: unknown) => (err instanceof TurnNotStarted ? err.reason : err);
 
@@ -281,24 +279,6 @@ const MAX_TIMER_MS = 2_147_483_647;
 interface PhasePlan {
   message: string | null;
   modes?: { mode?: string; modes?: string[]; suspendedMode?: string; belowMinTier?: true };
-}
-
-/**
- * The notes part of a new session's first message (spec §3.3): the scope's notes index; in a scope, the app-wide one,
- * trimmed, after it. Without scopes, the index of the flat notes folder (D2). Shared with a job run's first message.
- */
-export async function notesIndexFor(notes: TaskDeps["notes"], scoped: boolean, scope: string): Promise<string> {
-  const own = buildNotesIndex(await notes(scoped ? scope : undefined).catch(() => [] as Note[]));
-  if (!scoped || scope === APP_SCOPE) return own;
-  const app = await notes(APP_SCOPE).catch(() => [] as Note[]);
-  // The own index ends with the "open a note" line; the app-wide one says it only when it stands alone.
-  const appIndex = buildNotesIndex(app, {
-    budgetTokens: APP_INDEX_TOKENS,
-    heading: "## App-wide notes",
-    decisionsHeading: "## App-wide decisions",
-    ...(own ? { footer: null } : {}),
-  });
-  return [own, appIndex].filter(Boolean).join("\n\n");
 }
 
 /**

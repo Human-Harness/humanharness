@@ -112,6 +112,71 @@ describe("LanguageChooser (spec §3, §4)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("Cancel or Escape while the run is starting cancels it, so it never switches the language", async () => {
+    for (const how of ["click", "escape"] as const) {
+      const started = later<boolean>();
+      const c = control("needs-translation", started.promise);
+      const onClose = vi.fn();
+      await renderIn("en", <LanguageChooser control={c} start={{ notice: "es" }} harnessName="Demo" onClose={onClose} />);
+      fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+      if (how === "click") fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      else fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+      expect(c.cancel).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      await act(async () => started.resolve(false));
+      cleanup();
+    }
+  });
+
+  it("Cancel on the notice before Translate cancels nothing", async () => {
+    const c = control("needs-translation");
+    const onClose = vi.fn();
+    await renderIn("en", <LanguageChooser control={c} start={{ notice: "es" }} harnessName="Demo" onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(c.cancel).not.toHaveBeenCalled();
+  });
+
+  it("the notice with no engine (or in mock mode): Translate is off and it says why", async () => {
+    for (const canTranslate of ["no-engine", "mock"] as const) {
+      const c = control("needs-translation", true, { ...view, canTranslate, engineName: undefined });
+      await renderIn("en", <LanguageChooser control={c} start={{ notice: "es" }} harnessName="Demo" onClose={() => {}} />);
+      const translate = screen.getByRole("button", { name: "Translate" }) as HTMLButtonElement;
+      expect(translate.disabled).toBe(true);
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toBe("Connect an AI engine to translate the app.");
+      expect(screen.getByRole("alertdialog").contains(alert)).toBe(true);
+      fireEvent.click(translate);
+      expect(c.translate).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("focus goes back to the opener after picker → notice → close, and after the progress closes", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    try {
+      opener.focus();
+      const c = control("needs-translation");
+      const { rerender, i18n } = await renderIn("en", <LanguageChooser control={c} start={{ pick: "es" }} harnessName="Demo" onClose={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "Use" }));
+      await screen.findByRole("alertdialog");
+      expect(document.activeElement?.textContent).toBe("Cancel");
+      rerender(<I18nextProvider i18n={i18n}>{null}</I18nextProvider>);
+      expect(document.activeElement).toBe(opener);
+      cleanup();
+
+      opener.focus();
+      const running: LanguageState = { ...view, run: { tag: "es", done: 1, total: 5, status: "running" } };
+      const r = await renderIn("en", <LanguageChooser control={control("switched", true, running)} start={{}} harnessName="Demo" onClose={() => {}} />);
+      expect(document.activeElement?.textContent).toBe("Close");
+      r.rerender(<I18nextProvider i18n={r.i18n}>{null}</I18nextProvider>);
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      opener.remove();
+    }
+  });
+
   it("drops an answer that comes after the chooser closed", async () => {
     const answer = later<Choose>();
     const c = control(answer.promise);

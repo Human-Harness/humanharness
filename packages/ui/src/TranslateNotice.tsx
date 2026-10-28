@@ -18,6 +18,7 @@ export function TranslateNotice({
   onTranslate,
   onCancel,
   busy = false,
+  disabled = false,
   error = null,
 }: {
   tag: Language;
@@ -27,6 +28,8 @@ export function TranslateNotice({
   onCancel: () => void;
   /** The run is starting: Translate is off. */
   busy?: boolean;
+  /** No run can start (no engine, mock mode): Translate is off; `error` says why. */
+  disabled?: boolean;
   /** Why the last Translate started nothing, shown inside the dialog. */
   error?: string | null;
 }) {
@@ -83,7 +86,7 @@ export function TranslateNotice({
           <button type="button" ref={cancel} onClick={onCancel}>
             {t("language.cancel")}
           </button>
-          <button type="button" className="hh-primary" disabled={busy} onClick={onTranslate}>
+          <button type="button" className="hh-primary" disabled={busy || disabled} onClick={onTranslate}>
             {t("language.translate")}
           </button>
         </div>

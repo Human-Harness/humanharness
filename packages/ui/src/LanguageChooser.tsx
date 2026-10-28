@@ -57,6 +57,8 @@ export function LanguageChooser({
   }, [showProgress]);
 
   if (!view) return null;
+  // The notice can open straight (new texts, Try again) while no run can start: say why rather than fail on Translate.
+  const ready = view.canTranslate === true;
   if (notice)
     return (
       <TranslateNotice
@@ -64,10 +66,15 @@ export function LanguageChooser({
         harnessName={harnessName}
         engineName={view.engineName ?? ""}
         busy={starting}
-        error={failed ? t("language.failed") : null}
-        onCancel={onClose}
+        disabled={!ready}
+        error={!ready ? t("language.needsEngine") : failed ? t("language.failed") : null}
+        onCancel={() => {
+          // A run that is starting is cancelled too: translate then answers failed and nothing switches.
+          if (startingRef.current) control.cancel();
+          onClose();
+        }}
         onTranslate={() => {
-          if (startingRef.current) return;
+          if (startingRef.current || !ready) return;
           startingRef.current = true;
           setStarting(true);
           setFailed(false);

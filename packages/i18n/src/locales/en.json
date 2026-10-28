@@ -63,6 +63,7 @@
     "change": "Change…",
     "pickTitle": "Language",
     "search": "Search languages",
+    "noMatch": "No language matches.",
     "use": "Use",
     "cancel": "Cancel",
     "ready": "Ready",

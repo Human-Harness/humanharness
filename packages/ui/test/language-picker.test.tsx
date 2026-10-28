@@ -70,6 +70,33 @@ describe("LanguagePicker (spec §2, §3)", () => {
     expect(on(screen.getByRole("button", { name: "Use" }))).toBe(false);
   });
 
+  it("never preselects a suggestion it doesn't offer (D9: no right-to-left), and Use stays off", async () => {
+    const onPick = vi.fn();
+    await renderIn("en", <LanguagePicker current="en" suggested="ar" view={view} onPick={onPick} onClose={() => {}} />);
+    expect(screen.queryByRole("radio", { name: /Arabic/ })).toBeNull();
+    expect(checked(screen.getByRole("radio", { name: /English/ }))).toBe(true);
+    const use = screen.getByRole("button", { name: "Use" });
+    expect(on(use)).toBe(false);
+    fireEvent.click(use);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("finishes the saved language only when the state is about that language", async () => {
+    // The state still speaks of es while the prop says fr (a late push): no "finish" for fr.
+    await renderIn("en", <LanguagePicker current="fr" view={{ ...view, language: "es", missing: 12 }} onPick={() => {}} onClose={() => {}} />);
+    expect(on(screen.getByRole("button", { name: "Use" }))).toBe(false);
+  });
+
+  it("marks each English name as English text, and says when no language matches the search", async () => {
+    await renderIn("en", <LanguagePicker current="en" view={view} onPick={() => {}} onClose={() => {}} />);
+    const english = screen.getByRole("radio", { name: /Español/ }).closest("label")!.querySelector(".hh-langpick-english")!;
+    expect(english.getAttribute("lang")).toBe("en");
+    expect(screen.queryByText("No language matches.")).toBeNull();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "zzzz" } });
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(screen.getByText("No language matches.")).toBeTruthy();
+  });
+
   it("disables the choices while a pick is pending, so two quick clicks can't race", async () => {
     let finish = () => {};
     const onPick = vi.fn(() => new Promise<void>((r) => (finish = r)));

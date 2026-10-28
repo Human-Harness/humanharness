@@ -757,6 +757,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langpick-option:has(input:disabled) { opacity: 0.55; }
 .hh-langpick-english { grid-column: 2; }
 .hh-langpick-ready { grid-row: 1 / span 2; grid-column: 3; font-size: 12px; color: var(--hh-ok); }
-.hh-langpick-reason { margin: 0; }
+.hh-langpick-reason, .hh-langpick-none { margin: 0; }
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-langpick-actions, .hh-langnotice-actions, .hh-langoffer-actions { display: flex; justify-content: flex-end; gap: 8px; }

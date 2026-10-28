@@ -57,3 +57,11 @@ describe("narrowPermissions (parallel spec §8, T5)", () => {
     expect(narrowPermissions(wide, undefined)).not.toBe(wide);
   });
 });
+
+describe("inbox (parallel spec §9.2, Decision 1)", () => {
+  it("absent by default; false hides the core inbox", () => {
+    expect("inbox" in defineHarness(base)).toBe(false);
+    expect(defineHarness({ ...base, parallel: {}, inbox: false }).inbox).toBe(false);
+    expect(() => defineHarness({ ...base, inbox: "no" as never })).toThrow();
+  });
+});

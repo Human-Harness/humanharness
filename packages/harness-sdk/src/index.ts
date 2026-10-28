@@ -191,6 +191,8 @@ const manifestSchema = z.object({
   slots: harnessSlotsSchema.optional(),
   /** Suggested caps on turns running at once (parallel spec §3). Absent: one task at a time, as before (D7). */
   parallel: parallelSchema.optional(),
+  /** False hides the core inbox and its button (parallel spec §9.2); `client.tasks` stays. `ui` is taken (a custom UI path). */
+  inbox: z.boolean().optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */

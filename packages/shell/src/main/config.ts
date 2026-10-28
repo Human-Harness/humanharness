@@ -10,6 +10,16 @@ export function historyDir(userData: string, folder: string): string {
   return path.join(userData, "history", createHash("sha256").update(folder).digest("hex").slice(0, 16));
 }
 
+/** A hand-edited `parallel` keeps only integer caps (parallel spec §7; parallelInfo clamps them to 1..8). */
+function cleanParallel(v: unknown): AppConfig["parallel"] | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  const out: { tasks?: number; jobs?: number } = {};
+  if (Number.isInteger(o.tasks)) out.tasks = o.tasks as number;
+  if (Number.isInteger(o.jobs)) out.jobs = o.jobs as number;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Per-app settings in Electron's userData folder. The folder is fixed once chosen (spec §7). */
 export class ConfigStore {
   private readonly file: string;
@@ -25,13 +35,16 @@ export class ConfigStore {
       if (!saved || typeof saved !== "object") return saved;
       // Like a bad entry under models: a hand-edited backupDismissed, textSize or language of the wrong kind is dropped,
       // never a reason to treat the whole config as invalid.
-      const { backupDismissed, textSize, language, profile, ...rest } = saved;
+      const { backupDismissed, textSize, language, profile, parallel, notifyWaiting, ...rest } = saved;
+      const caps = cleanParallel(parallel);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
         ...(isTextSize(textSize) ? { textSize } : {}),
         ...(typeof language === "string" && canonicalLanguage(language) === language ? { language } : {}),
         ...(isProfileId(profile) ? { profile } : {}),
+        ...(caps ? { parallel: caps } : {}),
+        ...(typeof notifyWaiting === "boolean" ? { notifyWaiting } : {}),
       };
     } catch {
       return {};

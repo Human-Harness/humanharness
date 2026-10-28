@@ -122,6 +122,7 @@ import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStor
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
+import { engineHold, parallelInfo } from "./parallel-config";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
@@ -346,6 +347,7 @@ async function appState(): Promise<AppState> {
   const saved = await config.load();
   const inputs = inputSpecs(harness.blocks);
   const interviews = interviewCollections(harness);
+  const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
   const state: AppState = {
     harness: {
       id: harness.id,
@@ -451,6 +453,8 @@ async function appState(): Promise<AppState> {
     ...materialAppState(harness),
     // Only a harness that takes plugins (or dev folders) sends this: the Plugins tab and the inbox (plugins D0).
     ...(pluginsCtl ? { plugins: { local: pluginsAccepted(harness) && (harness.plugins?.local ?? false) } } : {}),
+    // Only a harness that declares `parallel` sends this: caps, the task inbox (parallel D7).
+    ...(parallel ? { parallel } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),

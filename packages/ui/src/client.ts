@@ -61,6 +61,30 @@ export interface AppConfig {
   backupDismissed?: boolean;
   /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
   profile?: string;
+  /** Settings › General: the person's caps (parallel spec §7). Absent: the manifest's. Cleaned when read. */
+  parallel?: { tasks?: number; jobs?: number };
+  /** Settings › General: an OS notification when a task waits for the person. Absent: off. */
+  notifyWaiting?: boolean;
+}
+
+/** Caps on turns running at once (parallel spec §7). */
+export interface ParallelCaps {
+  tasks: number;
+  jobs: number;
+}
+
+/** The harness declares `parallel` (spec §3): several open tasks, the inbox. Absent: one task at a time (D7). */
+export interface ParallelInfo {
+  /** In force now: the person's (Settings › General) or the manifest's. */
+  caps: ParallelCaps;
+  /** The manifest's suggestion. */
+  suggested: ParallelCaps;
+  /** The core inbox and its button show (manifest `inbox`, default true). */
+  inbox: boolean;
+  /** An OS notification when a task starts waiting (Settings › General; off by default). */
+  notifyWaiting: boolean;
+  /** Why the caps are held at 1, when they are: the engine isn't shown to run two sessions at once (OpenCode, PT-S5 unverified). */
+  heldReason?: "engine";
 }
 
 export interface EngineOption {
@@ -223,6 +247,8 @@ export interface AppState {
   material?: MaterialInfo;
   /** The harness takes plugins (manifest `plugins`). Absent: no Plugins tab, no inbox (plugins D0). */
   plugins?: PluginsInfo;
+  /** Parallel tasks (parallel spec). Absent: one task at a time, no task inbox (D7). */
+  parallel?: ParallelInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */

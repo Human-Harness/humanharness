@@ -100,6 +100,26 @@ describe("ConfigStore", () => {
     expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x" });
   });
 
+  it("keeps valid parallel caps and notifyWaiting; drops bad ones (parallel spec §7)", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", parallel: { tasks: 3, jobs: "x" }, notifyWaiting: "yes" }));
+    expect(await store.load()).toEqual({ folder: "/x", parallel: { tasks: 3 } });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", parallel: { tasks: 1.5, jobs: null }, notifyWaiting: true }));
+    expect(await store.load()).toEqual({ folder: "/x", notifyWaiting: true });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", parallel: "3" }));
+    expect(await store.load()).toEqual({ folder: "/x" });
+  });
+
+  it("D0: a config without parallel or notifyWaiting never gets them", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    await store.save({ language: "es" });
+    const loaded = await store.load();
+    expect("parallel" in loaded).toBe(false);
+    expect("notifyWaiting" in loaded).toBe(false);
+  });
+
   it("setProfile refuses anything that isn't an id", async () => {
     const store = new ConfigStore(fs.mkdtempSync(path.join(root, "c-")));
     await expect(store.setProfile("../x")).rejects.toThrow(/profile/);

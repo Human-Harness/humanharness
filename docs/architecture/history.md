@@ -159,6 +159,16 @@ Spec §5.3, Decision 12. In a harness that declares `parallel` (`parallel.md`):
 - `packages/runtime/test/runtime-d0.test.ts` pins them through `createRuntime`: ok, stopped, crashed and no-change turns, with every tree as path → content.
 - `packages/e2e/tests/history.spec.ts` pins the demo flow's commit messages end to end.
 
+### Linked folders
+
+In a harness with `linkedFolders` (`docs/architecture/hatches.md`), a scope may link folders outside the work folder:
+
+- A **tracked** one (write, no git) has a history of its own in the app's data folder (`<userData>/linked-history/<hash>`). Each turn of that scope commits both histories with the same trailer, and the crash undo restores both.
+- An **untracked** one (it has git, or it is read only) is never committed or restored: its own git is its history. The History panel says "Undo doesn't cover this folder: it has its own git." for each such write folder.
+- **"Undo this task"** covers the work folder and every tracked linked folder. Board and single mode check every history before restoring any; a refusal between the checks and the restores is reported as a partial undo ("Undone in … Not undone in …"). A task that changed only a linked folder can be undone too.
+- **"Go back here"** stays main-folder only.
+- An unlinked folder's history is kept 30 days, so a relink continues it.
+
 ### Every go-back asks in main
 
 Every go-back is confirmed by a native dialog that main shows before it does anything (Marco, 2026-10-28): the whole folder (`hh:restore`), one task (`hh:restoreTask`) and one file from its timeline (`hh:fileRestore`, `timeline.md`). Harness UI code runs in the same window and JS realm as the core, so a confirmation drawn in the window could be answered by harness code; a native dialog can't. The window draws no confirmation of its own, so the person is asked once.
@@ -225,7 +235,7 @@ What under `.harness/` names a place: only notes' `files:` (agent-provided paths
 ## Known gaps
 
 - A history the root kept before the harness added profiles is not moved by a folder move: no history tracks the root any more.
-- No size limit for the history yet: a folder with large media inflates it in the app's data folder.
+- No size limit for the history yet: a folder with large media inflates it in the app's data folder. The same holds for a tracked linked folder's history (`hatches.md`).
 - Board-mode undo can't undo a task's shared paths from the window: the confirm offering them (open question 5) isn't built.
 - Parallel turns: a turn's `edits` set has no size limit. A turn that reverts another running turn's change to HEAD drops it from that turn's `changedSince` with no conflict. `saveNow` still throws if a file vanishes between `statusMatrix` and `git.add`.
 - A restore's skipped paths (`RestoreResult.skipped`) are only logged: the History panel doesn't tell the person yet.

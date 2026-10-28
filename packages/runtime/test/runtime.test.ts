@@ -496,7 +496,7 @@ describe("createRuntime", () => {
 
   it("with a review handler and an agent that edits the folder: review tools and guide lines (review §4)", async () => {
     const seen: unknown[] = [];
-    const { runtime, folder, args } = await setup(
+    const { runtime: r, folder, args } = await setup(
       {
         steps: [
           { write: { path: "spec.md", content: "## Scope\n\nBy size.\n" } },
@@ -518,21 +518,34 @@ describe("createRuntime", () => {
         },
       },
     );
-    await send(runtime);
+    await send(r);
     expect(uiEnv(args()).HH_REVIEW_RPC).toBeTruthy();
+    expect(uiEnv(args()).HH_REVIEW_RPC_TOKEN).toBeTruthy();
     expect(seen).toEqual([expect.objectContaining({ op: "ask", path: "spec.md" })]);
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("`ask_in_document`");
+    // The review socket closes with the runtime, even when closing the ui bridge before it fails.
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow("bridge");
+    } finally {
+      sockets.failBridgeClose = false;
+    }
+    expect(sockets.rpcClosed).toBe(closed + 1);
   });
 
   it("D0: no review channel without a handler, or for an agent that can't edit the folder", async () => {
     const plain = await setup({ steps: [claudeResultLine(true)] });
     await send(plain.runtime);
     expect(uiEnv(plain.args()).HH_REVIEW_RPC).toBeUndefined();
+    expect(uiEnv(plain.args()).HH_REVIEW_RPC_TOKEN).toBeUndefined();
     expect(fs.readFileSync(path.join(plain.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
     await plain.runtime.close();
     const readOnly = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(READER), review: async () => null });
     await send(readOnly.runtime);
     expect(uiEnv(readOnly.args()).HH_REVIEW_RPC).toBeUndefined();
+    expect(uiEnv(readOnly.args()).HH_REVIEW_RPC_TOKEN).toBeUndefined();
     expect(fs.readFileSync(path.join(readOnly.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
   });
 

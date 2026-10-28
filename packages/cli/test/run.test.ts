@@ -379,7 +379,24 @@ describe("runTask", () => {
       steps: [...claudeTextLines("Done."), result],
       turns: [
         { match: "save_note", steps: [ui("save_note", { title: "x", summary: ["x"], decisions: [], files: [], open: [] }), result] },
-        { match: "# Task: study", steps: [...claudeTextLines("Read it."), result] },
+        {
+          match: "# Task: study",
+          // The agent tries to ask anyway: the ui server has no such tool, so nothing is recorded.
+          steps: [
+            { write: { path: "notes/plan.md", content: "## Scope\n\nBy size.\n" } },
+            ui("ask_in_document", {
+              path: "notes/plan.md",
+              quote: "By size.",
+              question: "Size only?",
+              options: [
+                { label: "Keep", text: "By size." },
+                { label: "Colour", text: "By size and colour." },
+              ],
+            }),
+            ...claudeTextLines("Read it."),
+            result,
+          ],
+        },
       ],
     };
     const out = memoryStream();
@@ -392,6 +409,7 @@ describe("runTask", () => {
       output: out.stream,
       engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } },
     });
+    expect(out.text()).toContain("Read it.");
     expect(out.text()).not.toContain("Review:");
     expect(fs.existsSync(path.join(folder, ".harness", "reviews"))).toBe(false);
   });

@@ -32,13 +32,19 @@ type Activity = Extract<Event, { type: "activity" }>;
 /** Longest label kept for a read or tool. */
 export const LABEL_MAX = 200;
 
-/** What an activity's start says the agent read (Read, Grep, Glob; Codex read and search) or which MCP tool it used. */
-export function readsOf(e: Activity, base: string | null): SeenRead[] {
+/**
+ * What an activity's start says the agent read (Read, Grep, Glob; Codex read and search) or which MCP tool it used.
+ * `base` may be several spellings of the folder (as given and its real path): an engine reports paths under the real
+ * one when the folder sits behind a link (macOS's /var → /private/var); the first that holds the path wins.
+ */
+export function readsOf(e: Activity, base: string | readonly string[] | null): SeenRead[] {
   if (e.state !== "start") return [];
   if (e.tool) return e.tool.server ? [{ kind: "tool", label: (e.tool.name ? `${e.tool.server} · ${e.tool.name}` : e.tool.server).slice(0, LABEL_MAX) }] : [];
   if ((e.kind !== "read" && e.kind !== "search") || !e.paths) return [];
+  const bases = base === null ? [] : typeof base === "string" ? [base] : base;
   return e.paths.slice(0, PATHS_PER_EVENT).map((p): SeenRead => {
-    const rel = base ? folderPath(base, p) : null;
+    let rel: string | null = null;
+    for (const b of bases) if (rel === null) rel = folderPath(b, p);
     return rel ? { kind: "read", label: rel.slice(0, LABEL_MAX), path: rel } : { kind: "read", label: (path.basename(p) || p).slice(0, LABEL_MAX) };
   });
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
 import type { ModelProfile } from "@humanharness/engines";
 import {
   type BlockAnswer,
@@ -1645,7 +1646,9 @@ export class TaskManager {
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number } = { reads: [] };
     // Read paths become folder paths; without the folder, file names only (nothing is read from them).
-    const base = this.d.folder ? await this.d.folder().catch(() => null) : null;
+    const given = this.d.folder ? await this.d.folder().catch(() => null) : null;
+    const real = given ? await fs.realpath(given).catch(() => given) : null;
+    const base = given && real && real !== given ? [given, real] : given;
     const shownInputs: Promise<void>[] = [];
     this.lastPhaseAsk = null;
     const kind = options.phase ?? "run";

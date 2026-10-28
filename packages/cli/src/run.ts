@@ -49,6 +49,8 @@ import {
   memoise,
   nearestTier,
   nextFallback,
+  pinnedBudget,
+  pinnedContext,
   resolveProfile,
   resolveReferences,
   saveAnswerRecords,
@@ -61,7 +63,7 @@ import {
   DataStore,
   MAIN_SCOPE,
   ReviewLocks,
-  buildDataContext,
+  buildDataContextParts,
   ScopeStore,
   generatedFiles,
   migrateToScopes,
@@ -381,8 +383,16 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     language: async () => language,
     engine: async () => engine.id,
     ...(Object.values(harness.data).some((c) => c.context !== false)
-      ? { dataContext: (scope: string, action: string | undefined) => buildDataContext(dataStore, harness.data, scope, action) }
+      ? { dataContext: (scope: string, action: string | undefined) => buildDataContextParts(dataStore, harness.data, scope, action) }
       : {}),
+    // Context panel (context-panel spec), as the app wires them: the CLI has no panel, but a folder pinned or excluded
+    // in the app gets the same first message here. The budget is the manifest's (the CLI keeps no person settings).
+    instructionsSize: async () => {
+      const stat = await fs.stat(path.join(folder, "AGENTS.md")).catch(() => null);
+      return stat?.isFile() ? stat.size : null;
+    },
+    personContext: (scope: string) => pinnedContext(folder, scoped && scope !== APP_SCOPE ? [scope, APP_SCOPE] : [scope], pinnedBudget({}, harness.context)),
+    folder: async () => folder,
     scoped,
     scopeExists: async (id) => (await scopes.list()).some((s) => s.id === id && !s.archived),
     // As the app wires them (packages/shell/src/main/index.ts); undefined without input blocks (D0).

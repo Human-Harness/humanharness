@@ -43,6 +43,13 @@ describe("readsOf", () => {
     expect(readsOf(activity({ kind: "search", paths: [path.join(base, "src")] }), base)).toEqual([{ kind: "read", label: "src", path: "src" }]);
   });
 
+  it("tries each spelling of the folder: a path under its real path is still a folder path", () => {
+    const real = path.resolve("/private/work/folder");
+    expect(readsOf(activity({ paths: [path.join(real, "a.md")] }), [base, real])).toEqual([{ kind: "read", label: "a.md", path: "a.md" }]);
+    expect(readsOf(activity({ paths: [path.join(real, "a.md")] }), base)).toEqual([{ kind: "read", label: "a.md" }]);
+    expect(readsOf(activity({ paths: [path.join(base, "a.md")] }), [])).toEqual([{ kind: "read", label: "a.md" }]);
+  });
+
   it("records a tool by server and name; ignores ends, edits and plain activities", () => {
     expect(readsOf(activity({ kind: "other", tool: { server: "atlassian", name: "getJiraIssue" } }), base)).toEqual([{ kind: "tool", label: "atlassian · getJiraIssue" }]);
     expect(readsOf(activity({ kind: "other", tool: { server: "notes", name: "" } }), base)).toEqual([{ kind: "tool", label: "notes" }]);

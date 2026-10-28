@@ -122,6 +122,7 @@ describe("mock mode markers", () => {
     expect(promptKind(WRAP_UP_PROMPT)).toBe("wrap-up");
     expect(promptKind(phasePrompt({ id: "main", label: "Main block", brief: "Teach." }, { language: "en" }))).toBe("phase");
     expect(promptKind(wrapUpPrompt("en"))).toBe("wrap-up");
+    expect(promptKind(contextAddPrompt("docs/conv.md"))).toBe("context-add");
   });
 });
 

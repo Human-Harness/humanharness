@@ -46,6 +46,18 @@ function safeTarget(cwd: string, p: string): string {
   return target;
 }
 
+/** The absolute path of a recorded read; throws outside the work folder (symlinks included). The file may not exist. */
+function readTarget(cwd: string, p: string): string {
+  const target = path.resolve(cwd, p);
+  const rel = path.relative(cwd, target);
+  if (rel === "" || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) throw new Error(`refused to read "${p}": outside the work folder`);
+  let ancestor = target;
+  while (!existsSync(ancestor)) ancestor = path.dirname(ancestor);
+  const real = path.relative(realpathSync(cwd), realpathSync(ancestor));
+  if (real === ".." || real.startsWith(".." + path.sep) || path.isAbsolute(real)) throw new Error(`refused to read "${p}": a symlink leads outside the work folder`);
+  return target;
+}
+
 /** One engine turn in mock mode: prints Claude's stream-json, calls the ui tools and writes the files. Returns the exit code. */
 export async function runMockTurn(argv: string[], prompt: string, mcpServers: McpServers, env: { dir: string; state: string }): Promise<number> {
   const resumed = flag(argv, "--resume");
@@ -76,6 +88,13 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
       writeFileSync(w.target, w.content);
     }
   }
+  // Recorded reads (context-panel spec §7): a Read tool call and its result, as Claude prints them. Nothing is read.
+  const reads = play.reads.map((p) => readTarget(cwd, p));
+  reads.forEach((file, i) => {
+    const id = `mock-read-${i + 1}`;
+    print({ type: "assistant", session_id: sessionId, message: { content: [{ type: "tool_use", id, name: "Read", input: { file_path: file } }] } });
+    print({ type: "user", session_id: sessionId, message: { content: [{ type: "tool_result", tool_use_id: id, content: "" }] } });
+  });
   if (play.text) {
     const event = (e: unknown) => print({ type: "stream_event", parent_tool_use_id: null, session_id: sessionId, event: e });
     // Streamed in about eight chunks over delayMs, so the window shows it arriving.

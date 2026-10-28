@@ -212,6 +212,53 @@ describe("runTask", () => {
     expect(readJsonl(path.join(folder, ".harness", "usage.jsonl")).map((r) => r.phase)).toEqual(["run", "run", "close"]);
   });
 
+  it("records the start and the turn's reads in tasks.json; no context file without a pin (context-panel spec D0)", { timeout: 60_000 }, async () => {
+    // The demo's manifest recording reads README.md in its first turn; the run stops with the task still open.
+    const demo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo");
+    const folder = path.join(root, "demo-reads");
+    const input = new PassThrough();
+    const out = memoryStream();
+    const output = watch(out, (text) => {
+      if (text.includes("q to close the task")) input.destroy(new Error("stop here"));
+    });
+    await expect(
+      runTask({
+        harnessDir: demo,
+        action: "manifest",
+        engine: "claude",
+        folder,
+        input,
+        output,
+        engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: path.join(demo, "mock"), HH_FAKE_MOCK_STATE: path.join(root, "demo-reads-state.json") } },
+      }),
+    ).rejects.toThrow("stop here");
+    const current = JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8")).current;
+    expect(current.start.map((i: { kind: string }) => i.kind)).toContain("brief");
+    expect(current.startTokens).toBeGreaterThan(0);
+    expect(current.reads).toEqual([expect.objectContaining({ kind: "read", path: "README.md", count: 1 })]);
+    expect(fs.existsSync(path.join(folder, ".harness", "context"))).toBe(false);
+  });
+
+  it("a file pinned in the app goes into the CLI's first message too", { timeout: 60_000 }, async () => {
+    const folder = path.join(root, "pinned-run");
+    fs.mkdirSync(path.join(folder, ".harness", "context"), { recursive: true });
+    fs.writeFileSync(path.join(folder, "conv.md"), "# Conventions\n\nUse tabs.\n");
+    fs.writeFileSync(path.join(folder, ".harness", "context", "main.json"), JSON.stringify({ version: 1, pinned: [{ path: "conv.md", at: "2026-10-28T10:00:00.000Z" }], excluded: [] }));
+    const prompts = path.join(root, "pinned-run-prompts.jsonl");
+    await runTask({
+      harnessDir,
+      action: "example",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: memoryStream().stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_PROMPTS: prompts } },
+    });
+    const first = (readJsonl(prompts)[0] as { prompt: string }).prompt;
+    expect(first).toContain("### conv.md");
+    expect(first).toContain("Use tabs.");
+  });
+
   it("--tier overrides the action's tier; with no --folder it works in a new temp folder", { timeout: 60_000 }, async () => {
     const out = memoryStream();
     const report = await runTask({

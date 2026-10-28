@@ -32,6 +32,7 @@
           }
         }
       ],
+      "reads": ["README.md"],
       "usage": { "input": 18400, "output": 320, "cacheRead": 12000, "cacheWrite": 0 },
       "delayMs": 900,
       "next": { "Profundizar en las acciones": "t2" }

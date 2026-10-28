@@ -272,6 +272,16 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     expect(within(section).queryByText("No jobs")).toBeNull();
   });
 
+  it("a job turned off doesn't count, as the Dock badge doesn't: its needs-you row still shows", async () => {
+    const c = jobsClient([
+      { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Two conflicts need you", at }, paused: "off", manual: true, running: false },
+    ]);
+    await open(c);
+    // Only the waiting task.
+    fireEvent.click(await screen.findByRole("button", { name: "Inbox, 1 waiting" }));
+    expect(within(jobsSection()).getAllByRole("listitem")[0].textContent).toContain("Two conflicts need you");
+  });
+
   it("Run now only on manual jobs, and it calls client.jobs.run(id, scope)", async () => {
     const c = jobsClient([
       { id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: false },

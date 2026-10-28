@@ -51,7 +51,8 @@ export function Inbox({
   const working = all.filter((s) => WORKING.includes(s.state));
   const queued = all.filter((s) => s.state === "queued");
   const jobs = useJobs(client, Boolean(state.jobs));
-  const needsYou = jobs.filter((j) => j.last?.status === "needs-you");
+  // As the Dock badge counts them: a job turned off in Settings › Jobs waits for no one.
+  const needsYou = jobs.filter((j) => j.last?.status === "needs-you" && j.paused !== "off");
   const count = waiting.length + needsYou.length;
 
   const hasScopes = Boolean(state.scopes);

@@ -125,8 +125,9 @@ const client: HarnessClient = {
       focusListeners.add(listener);
       return () => void focusListeners.delete(listener);
     },
+    /** The core's chat only. Any value it is given (even null from a harness view) becomes a well-formed state. */
     set: (state) => {
-      focusState = { on: state.on === true, ...(typeof state.path === "string" ? { path: state.path } : {}) };
+      focusState = { on: state?.on === true, ...(typeof state?.path === "string" ? { path: state.path } : {}) };
       for (const l of [...focusListeners]) l(focusState);
     },
   },

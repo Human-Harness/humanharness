@@ -43,7 +43,6 @@ import {
   type MoveResult,
   type ProfileResult,
   type ProfilesState,
-  type ReviewSummary,
   type RunningSetup as SetupInfo,
   type ScopesView,
   type SendOptions,
@@ -93,6 +92,7 @@ import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTi
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
+import { reviewHandlers } from "./review-ipc";
 import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -1144,7 +1144,10 @@ const reviews = new ReviewService({
   // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
   round: (r) => tasks.reviewRound(r),
   approved: (a) => void tasks.documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
-  reviewTier: (kind) => (kind !== undefined ? harness.documents?.kinds[kind]?.reviewTier : undefined) ?? "standard",
+  reviewTier: (kind) => {
+    const kinds = harness.documents?.kinds;
+    return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
+  },
   changed: (p) => sendToWindow("hh:reviewChanged", p),
 });
 
@@ -1424,22 +1427,8 @@ function registerIpc() {
     }
   });
   handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
-  // Reviews (review spec): every answer is data (the service checks every input); a throw would be a bug.
-  const reviewCall = <T>(fn: () => Promise<T>, fallback: T) =>
-    fn().catch((err: unknown) => {
-      console.error("A review call failed", err);
-      return fallback;
-    });
-  const notReady = { ok: false as const, reason: "not-ready" as const };
-  handle("hh:reviewView", (file: unknown) => reviewCall(() => reviews.view(file), notReady));
-  handle("hh:reviewSummaries", (paths: unknown) => reviewCall(() => reviews.summaries(paths), [] as (ReviewSummary | null)[]));
-  handle("hh:reviewAnswer", (file: unknown, id: unknown, pick: unknown) => reviewCall(() => reviews.answer(file, id, pick), notReady));
-  handle("hh:reviewComment", (file: unknown, input: unknown) => reviewCall(() => reviews.comment(file, input), notReady));
-  handle("hh:reviewEditDraft", (file: unknown, id: unknown, text: unknown) => reviewCall(() => reviews.editDraft(file, id, text), notReady));
-  handle("hh:reviewReopen", (file: unknown, id: unknown) => reviewCall(() => reviews.reopen(file, id), notReady));
-  handle("hh:reviewSend", (file: unknown) => reviewCall(() => reviews.send(file), notReady));
-  handle("hh:reviewApprove", (file: unknown, blob: unknown, opts: unknown) => reviewCall(() => reviews.approve(file, blob, opts), notReady));
-  handle("hh:reviewApprovedText", (file: unknown) => reviewCall(() => reviews.approvedText(file), notReady));
+  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
+  for (const [channel, fn] of Object.entries(reviewHandlers(reviews, () => harness.permissions.edit === "folder"))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.

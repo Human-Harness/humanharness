@@ -2,9 +2,11 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useL
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
 import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
-import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView } from "./client";
+import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView, TimelineEntry } from "./client";
 import { ApprovedDiff } from "./ApprovedDiff";
 import { DocumentContext, type DocumentHost } from "./documents-context";
+import { EntryDiff } from "./EntryDiff";
+import { FileTimeline } from "./FileTimeline";
 import { FocusMarkers } from "./FocusMarkers";
 import { Markdown, documentOutline } from "./markdown";
 import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
@@ -19,6 +21,8 @@ export interface ReaderTarget {
   agent?: string;
   /** New on every open, so opening the same document at the same anchor again still goes there. */
   nonce?: number;
+  /** Open with the "File history" drawer (the History panel's link, file-timeline spec §6.2). */
+  timeline?: boolean;
 }
 
 /** Over this the reader draws only the first `SHOWN_BYTES` (§6). */
@@ -135,6 +139,24 @@ export function DocumentReader({
   // A new visit to focus mode starts with no card open.
   useEffect(() => setPeek(null), [focus]);
   const inFocus = review === true && focus;
+  /** The "File history" drawer (file-timeline spec §6.1), and the entry whose diff shows in place of the document. */
+  const [drawer, setDrawer] = useState(target.timeline === true);
+  const [picked, setPicked] = useState<TimelineEntry | null>(null);
+  const drawerId = useId();
+  const drawerRef = useRef<HTMLElement>(null);
+  const drawerButton = useRef<HTMLButtonElement>(null);
+  // The History panel's link opens the drawer, also on a document already shown.
+  useEffect(() => {
+    if (target.timeline === true) setDrawer(true);
+  }, [path, target.nonce, target.timeline]);
+  // Focus mode hides the drawer and shows the document itself.
+  useEffect(() => {
+    if (inFocus) setPicked(null);
+  }, [inFocus]);
+  // A new entry's diff starts at its top.
+  useEffect(() => {
+    if (picked) scrollRef.current?.scrollTo?.({ top: 0 });
+  }, [picked]);
   // Focus can fall to the page (the Approve button goes once pressed): Esc still leaves focus mode. A key the
   // reader already handled (its own onKeyDown prevents the default) is left alone.
   useEffect(() => {
@@ -162,6 +184,7 @@ export function DocumentReader({
     setDraft(null);
     setDiffOpen(false);
     setPeek(null);
+    setPicked(null);
     setBarDraft(NO_BAR_DRAFT);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
@@ -274,8 +297,9 @@ export function DocumentReader({
   // Marks are found in the rendered body only, once it is in the DOM; hovering a card only redraws (below).
   useLayoutEffect(() => {
     const box = textRef.current;
-    setRanges(box && doc?.ok && !source && marks.length > 0 ? findMarks(box, marks) : new Map());
-  }, [marks, doc, source]);
+    setRanges(box && doc?.ok && !source && !picked && marks.length > 0 ? findMarks(box, marks) : new Map());
+    // `picked`: the text is drawn again on the way back from a diff, and its marks with it.
+  }, [marks, doc, source, picked]);
   // The CSS Custom Highlight API: no DOM change, no CSP change.
   useLayoutEffect(() => {
     if (ranges.size === 0) {
@@ -364,6 +388,13 @@ export function DocumentReader({
     onPrefs(next);
   };
   const crumbs = path.split("/").filter(Boolean);
+  /** Back from an entry's diff to the document; focus goes to the entry it came from (else the text), never lost. */
+  const leaveDiff = () => {
+    const inDrawer = drawerRef.current?.contains(document.activeElement) === true;
+    const from = drawerRef.current?.querySelector<HTMLElement>('.hh-timeline-pick[aria-current="true"]');
+    setPicked(null);
+    if (!inDrawer) (from ?? scrollRef.current)?.focus({ preventScroll: true });
+  };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.preventDefault();
@@ -380,7 +411,12 @@ export function DocumentReader({
         (marker ?? scrollRef.current)?.focus({ preventScroll: true });
       }
     }
-    else if (inFocus && onFocus) onFocus(false);
+    // An entry's diff (§6.1): back to the document first. The drawer closes only when focus is in it.
+    else if (picked) leaveDiff();
+    else if (drawer && !inFocus && drawerRef.current?.contains(document.activeElement)) {
+      setDrawer(false);
+      drawerButton.current?.focus();
+    } else if (inFocus && onFocus) onFocus(false);
     else onClose();
   };
 
@@ -434,7 +470,8 @@ export function DocumentReader({
   }
 
   // The footer bar (§5.3, §5.4): under the columns, or in focus mode the last thing in the document column.
-  const bar = review && doc?.ok && !source && rv?.ok && (
+  // Hidden while an entry's diff shows: approving acts on the document, which is not on screen then.
+  const bar = review && !picked && doc?.ok && !source && rv?.ok && (
     <ReviewBar
       key={path}
       summary={rv.summary}
@@ -487,6 +524,22 @@ export function DocumentReader({
             onClick={() => setPrefsOpen((o) => !o)}
           >
             Aa <span className="hh-sr-only">{t("reader.prefsButton")}</span>
+          </button>
+          <button
+            type="button"
+            ref={drawerButton}
+            aria-pressed={drawer && !inFocus}
+            aria-controls={drawer && !inFocus && !refused ? drawerId : undefined}
+            disabled={refused}
+            onClick={() => {
+              // In focus mode the drawer is hidden (§6.1): the button leaves focus mode and opens it.
+              if (inFocus && onFocus) {
+                onFocus(false);
+                setDrawer(true);
+              } else setDrawer((d) => !d);
+            }}
+          >
+            {t("timeline.open")}
           </button>
           {review && onFocus && (
             <button type="button" aria-pressed={inFocus} onClick={() => onFocus(!inFocus)}>
@@ -561,8 +614,12 @@ export function DocumentReader({
               {notice}
             </p>
           )}
-          {review && diffOpen && doc?.ok && !source && <ApprovedDiff client={client} path={path} current={doc.text} />}
-          <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
+          {review && diffOpen && !picked && doc?.ok && !source && <ApprovedDiff client={client} path={path} current={doc.text} />}
+          {picked ? (
+            <EntryDiff client={client} path={path} entry={picked} busy={busy} onBack={leaveDiff} />
+          ) : (
+            <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
+          )}
           {inFocus && bar}
           {inFocus && doc?.ok && !source && rv?.ok && rv.review && (
             <FocusMarkers
@@ -577,7 +634,7 @@ export function DocumentReader({
               }}
             />
           )}
-          {review && pick && doc?.ok && !source && (
+          {review && pick && !picked && doc?.ok && !source && (
             // The place goes through React's style (CSSOM): the CSP stays as it is.
             <div className="hh-review-pick" style={{ top: pick.top, left: pick.left }}>
               {draft === null ? (
@@ -598,6 +655,21 @@ export function DocumentReader({
             </div>
           )}
         </div>
+        {/* Only once opened: a reader without the drawer keeps its columns as they were. */}
+        {drawer && !inFocus && !refused && (
+          <section className="hh-timeline-drawer" id={drawerId} ref={drawerRef} aria-label={t("timeline.title")}>
+            <FileTimeline
+              client={client}
+              path={path}
+              selected={picked?.to}
+              onPick={(e) => {
+                setPick(null);
+                setDraft(null);
+                setPicked(e);
+              }}
+            />
+          </section>
+        )}
         {/* No column until the first comment (§6.1). */}
         {review && doc?.ok && !source && rv?.ok && rv.review && rv.review.comments.length > 0 && (!inFocus || peek !== null) && (
           <ReviewColumn

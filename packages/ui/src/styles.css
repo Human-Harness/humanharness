@@ -692,6 +692,16 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
   .hh-reader-reviewing .hh-reader-scroll { grid-column: 2; grid-row: 1; }
   .hh-reader-reviewing .hh-review-column { grid-column: 1 / -1; grid-row: 2; max-height: 40vh; border-left: 0; border-top: 1px solid var(--hh-line); }
 }
+/* The reader's "File history" drawer (file-timeline spec §6.1): a column beside the document, only once opened, so a
+   reader without it keeps its layout. An entry's diff takes the document's place in the scrolling column. */
+.hh-timeline-drawer { flex: 0 0 280px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-sheet); font-size: 13px; }
+.hh-reader-scroll > .hh-entrydiff { max-width: 72ch; margin: 0 auto; }
+.hh-reader-is-full .hh-reader-scroll > .hh-entrydiff { max-width: none; }
+@container (max-width: 900px) {
+  /* The narrow reviewing grid gets a third column for the drawer only while it is open. */
+  .hh-reader-reviewing .hh-reader-columns:has(> .hh-timeline-drawer) { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .hh-reader-reviewing .hh-timeline-drawer { grid-column: 3; grid-row: 1; width: 220px; }
+}
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }
 /* Focus mode (review spec §6.2): focus-only classes, so a reader without review never gets them (D0). After the

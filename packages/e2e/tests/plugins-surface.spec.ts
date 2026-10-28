@@ -152,6 +152,9 @@ test("the demo's On this day: off draws nothing; on, its panel, chip and inbox i
     await expect(page.locator(".hh-pl-chip")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Attention" })).toHaveCount(0);
     expect(await windowCount(app)).toBe(1);
+    // D0: the panel handler, request filter and frame guard wait for the first plugin with panels.
+    const handled = () => app.evaluate(({ session }) => session.defaultSession.protocol.isProtocolHandled("hh-plugin"));
+    expect(await handled()).toBe(false);
     const tab = await openPlugins(page);
     const row = tab.getByRole("listitem").filter({ hasText: OTD });
     await expect(row.getByText("Bundled")).toBeVisible();
@@ -164,6 +167,7 @@ test("the demo's On this day: off draws nothing; on, its panel, chip and inbox i
     await expect(page.getByRole("tablist", { name: "Plugin panels" }).getByRole("tab", { name: OTD })).toBeVisible();
     const frame = otdFrame(page);
     await expect(frame.locator("tbody tr")).toHaveCount(25);
+    expect(await handled()).toBe(true);
     await expect(frame.getByText("Sample event for the demo (fixture), 1925.")).toBeVisible();
     await expect(page.locator(".hh-pl-chip")).toContainText(`${age}-year anniversary today`);
     const inbox = page.getByRole("button", { name: "Attention" });

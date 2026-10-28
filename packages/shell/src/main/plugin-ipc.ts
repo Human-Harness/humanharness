@@ -300,12 +300,39 @@ export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: PreparedDeps & {
 
 /**
  * Panels in an app window (plugins spec §5; P1–P3, P7): the default session's panel-only handler and request filter,
- * and the window's frame guard. Only with the controller (D0: a harness without plugins installs none of them). The
- * host asks `panelHost` at every request, so a plugin that stops serves nothing from then on.
+ * and the window's frame guard. Only with the controller (D0: a harness without plugins installs none of them), and
+ * through PluginPanelsOnDemand only once a plugin with panels starts. The host asks `panelHost` at every request, so a
+ * plugin that stops serves nothing from then on.
  */
 export function installPluginPanels(win: Parameters<PluginBackendHost["installPanels"]>[0], host: Pick<PluginBackendHost, "installPanels"> | null, ctl: Pick<PluginsController, "panelHost"> | null): void {
   if (!host || !ctl) return;
   host.installPanels(win, (id) => ctl.panelHost(id));
+}
+
+/**
+ * D0 for a harness that takes plugins but runs none with panels: `installPluginPanels` waits for the first plugin
+ * with panels to start (`PluginsDeps.panelsNeeded`), then covers the current window and every later one. It stays
+ * installed after that plugin stops (the handler serves nothing for a stopped plugin).
+ */
+export class PluginPanelsOnDemand<W> {
+  private wanted = false;
+  constructor(
+    private readonly install: (win: W) => void,
+    private readonly current: () => W | null,
+  ) {}
+
+  /** A plugin with panels is starting. */
+  needed(): void {
+    if (this.wanted) return;
+    this.wanted = true;
+    const win = this.current();
+    if (win) this.install(win);
+  }
+
+  /** A new app window: installed only once panels were needed. */
+  window(win: W): void {
+    if (this.wanted) this.install(win);
+  }
 }
 
 /**

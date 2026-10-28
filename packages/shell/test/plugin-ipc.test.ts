@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PLUGIN_IPC_CHANNELS, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "../src/main/plugin-ipc";
+import { PLUGIN_IPC_CHANNELS, installPluginPanels, PluginPanelsOnDemand, registerPluginsIpc, safeStorageCrypto } from "../src/main/plugin-ipc";
 import { ScopeRequired } from "../src/main/task-manager";
 
 const HASH = "a".repeat(64);
@@ -419,6 +419,27 @@ describe("installPluginPanels (P1–P3, P7)", () => {
     expect(lookup("other")).toBeNull();
     running = null;
     expect(lookup("jira")).toBeNull();
+  });
+});
+
+describe("PluginPanelsOnDemand (D0: panels installed from the first plugin with panels)", () => {
+  it("installs nothing until needed; then the current window, and every later window; once per need", () => {
+    const install = vi.fn();
+    let current: { id: number } | null = null;
+    const lazy = new PluginPanelsOnDemand(install, () => current);
+    lazy.window({ id: 1 });
+    expect(install).not.toHaveBeenCalled();
+    lazy.needed();
+    expect(install).not.toHaveBeenCalled();
+    lazy.window({ id: 2 });
+    expect(install.mock.calls).toEqual([[{ id: 2 }]]);
+    current = { id: 3 };
+    lazy.needed();
+    expect(install).toHaveBeenCalledTimes(1);
+    const fresh = new PluginPanelsOnDemand(install, () => current);
+    fresh.needed();
+    fresh.needed();
+    expect(install.mock.calls.slice(1)).toEqual([[{ id: 3 }]]);
   });
 });
 

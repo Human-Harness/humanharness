@@ -58,6 +58,28 @@ describe("PluginsController surface", () => {
     expect(surfaceChanged).not.toHaveBeenCalled();
   });
 
+  it("panelsNeeded: called when a plugin with panels starts, before panelHost serves it; never for none on or no panels (D0)", async () => {
+    let servedAtCall: unknown = "not called";
+    const t0 = await setup({ plugins: { bundled: ["oncall"], on: [], local: false }, over: { panelsNeeded: vi.fn() } });
+    await bundled(t0.root, "oncall", ONCALL);
+    await t0.ctl.start();
+    expect(t0.deps.panelsNeeded).not.toHaveBeenCalled();
+    const t1 = await setup({ plugins: { bundled: ["bare"], on: ["bare"], local: false }, over: { panelsNeeded: vi.fn() } });
+    await bundled(t1.root, "bare", { data: { results: QUEUES } });
+    await t1.ctl.start();
+    expect(t1.ctl.surface().panels).toEqual([]);
+    expect(t1.deps.panelsNeeded).not.toHaveBeenCalled();
+    const ctlRef: { ctl?: { panelHost(id: string): unknown } } = {};
+    const panelsNeeded = vi.fn(() => (servedAtCall = ctlRef.ctl?.panelHost("oncall")));
+    const t2 = await setup({ plugins: { bundled: ["oncall"], on: ["oncall"], local: false }, over: { panelsNeeded } });
+    ctlRef.ctl = t2.ctl;
+    await bundled(t2.root, "oncall", ONCALL);
+    await t2.ctl.start();
+    expect(panelsNeeded).toHaveBeenCalledTimes(1);
+    // Installed before the plugin can be served or drawn.
+    expect(servedAtCall).toBeNull();
+  });
+
   it("panels in their slots, chips set and unset, and off removes them; each change is pushed", async () => {
     const t = await oncall();
     expect(t.ctl.surface().panels).toEqual([

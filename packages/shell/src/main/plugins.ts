@@ -102,6 +102,11 @@ export interface PluginsDeps {
   /** A run of `plugin` wrote these collections (a signal only: panels query again, Decision 8). */
   dataChanged?(plugin: string, collections: string[]): void;
   /**
+   * A plugin with panels is starting (D0): the app window's panel handler, request filter and frame guard go in now,
+   * before the plugin can be served or drawn. Called at every such start; the caller installs once.
+   */
+  panelsNeeded?(): void;
+  /**
    * Fixture mode (P10; mock mode, HH_PLUGIN_FIXTURES): runs play `<plugin folder>/fixtures/<source>/*.json`, keys are
    * `fixture-<id>`, and neither `fetch`, the command runner, a binary lookup nor the key store is used.
    */
@@ -531,6 +536,13 @@ export class PluginsController {
       onTimeout: (source) => this.onTimeout(c, r, source),
       changed: () => void this.push(),
     });
+    if (r.panels.length > 0) {
+      try {
+        this.d.panelsNeeded?.();
+      } catch (err) {
+        this.log("Could not set up the plugin panels", err);
+      }
+    }
     this.running.set(id, r);
     this.crashes.set(id, this.crashes.get(id) ?? new CrashPolicy());
     await this.openBackend(c, r);

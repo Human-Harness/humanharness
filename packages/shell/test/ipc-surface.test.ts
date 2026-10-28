@@ -70,15 +70,20 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect([...text("task-manager.ts").matchAll(/\bstartPrepared\s*\(/g)].length).toBe(1);
   });
 
-  it("D0: index.ts installs panels only in createWindow's plugins block, through installPluginPanels", async () => {
+  it("D0: index.ts installs panels only through PluginPanelsOnDemand, needed by the controller, per window in createWindow's plugins block", async () => {
     const index = (await sources()).find(([n]) => n === "index.ts")![1];
     expect(index).not.toMatch(/\.installPanels\s*\(/);
     expect([...index.matchAll(/\binstallPluginPanels\s*\(/g)].length).toBe(1);
+    expect(index).toMatch(/new PluginPanelsOnDemand<BrowserWindow>\(\s*\(win\) => installPluginPanels\(win, pluginHost, pluginsCtl\),/);
+    // needed() only from the controller's deps: a plugin with panels starting.
+    expect([...index.matchAll(/\bpluginPanels\.needed\s*\(/g)].length).toBe(1);
+    expect(index).toMatch(/panelsNeeded: \(\) => pluginPanels\.needed\(\),/);
     const create = group(index, index.indexOf("async function createWindow()"), /\{/);
     const at = create.indexOf("if (plugins) {");
     expect(at).toBeGreaterThan(0);
     expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = pluginsCtl;\s*$/);
-    expect(group(create, at, /\{/)).toMatch(/installPluginPanels\(win, pluginHost, plugins\)/);
+    expect([...index.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
+    expect(group(create, at, /\{/)).toMatch(/pluginPanels\.window\(win\)/);
   });
 
   it("profileFor passes a prepared task's tier on as the manifest tier", async () => {

@@ -118,7 +118,7 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { runFile } from "./plugin-exec";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
-import { installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
+import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
@@ -205,6 +205,14 @@ let sidekickCtl: SidekickController | null = null;
 let pluginsCtl: PluginsController | null = null;
 /** The plugins' backend windows (Electron), with pluginsCtl. */
 let pluginHost: PluginBackendHost | null = null;
+/**
+ * The panel handler, request filter and frame guards (P1–P3, P7), installed when the first plugin with panels starts
+ * (D0: a harness that takes plugins but runs none with panels gets none of them).
+ */
+const pluginPanels = new PluginPanelsOnDemand<BrowserWindow>(
+  (win) => installPluginPanels(win, pluginHost, pluginsCtl),
+  () => (window && !window.isDestroyed() ? window : null),
+);
 /** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
 let pluginStateRoot: string | null = null;
 const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
@@ -1686,8 +1694,9 @@ async function createWindow() {
   // The agent may have edited attention.json (no listener fires for it): the inbox is read again when the window comes back.
   const plugins = pluginsCtl;
   if (plugins) {
-    // Every app window: the panel-only handler, the request filter and the frame guard (D0: none without plugins).
-    installPluginPanels(win, pluginHost, plugins);
+    // Every app window, once a plugin with panels has started: the panel-only handler, the request filter and the
+    // frame guard (D0: none without plugins, none while no plugin with panels has run).
+    pluginPanels.window(win);
     win.on("focus", () => {
       void plugins.attention.view().then(
         (view) => sendToWindow("hh:attention", view),
@@ -1920,6 +1929,7 @@ if (loaded) {
       changed: (view) => sendToWindow("hh:plugins", view),
       attentionChanged: (view) => sendToWindow("hh:attention", view),
       surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),
+      panelsNeeded: () => pluginPanels.needed(),
       dataChanged: (plugin, collections) => sendToWindow("hh:pluginData", { plugin, collections }),
       log: pluginLog,
     });

@@ -114,10 +114,10 @@ export async function endTurn(
         first ??= s;
       }
     }
-    // The paths it named count too: another task's commit may already hold this turn's change (that turn ended first
-    // with the path its own, or both wrote the same text), leaving nothing here to commit, and both still changed it.
-    const paths = [...owned, ...shared];
-    for (const e of w.edits) if (!paths.some((p) => samePath(p) === e)) paths.push(e);
+    // The paths it surely wrote count too (an edit that ended without an error; a denied one only named its path):
+    // another task's commit may already hold this turn's change (that turn ended first with the path its own, or both
+    // wrote the same text), leaving nothing here to commit, and both still changed it.
+    const paths = [...owned, ...shared, ...w.wrote];
     // Best effort: the commits have landed; a failed look back must not turn the turn's end into an error.
     const conflicts = await conflictsSince(history, w.before, first, paths, trailer?.task).catch((err: unknown) => {
       console.error("Conflict check failed", err);
@@ -155,5 +155,7 @@ async function conflictsSince(
   if (before === null || paths.length === 0) return [];
   const commits = await history.commitsSince(before, CONFLICT_DEPTH);
   const mine = first === null ? -1 : commits.findIndex((c) => c.sha === first);
-  return conflictsOf(paths, mine >= 0 ? commits.slice(mine + 1) : commits, ownTask);
+  // One spelling on both sides (edit paths are NFC, git keeps the file's own): each file once, matched by its name.
+  const others = (mine >= 0 ? commits.slice(mine + 1) : commits).map((c) => ({ ...c, paths: c.paths.map(samePath) }));
+  return conflictsOf([...new Set(paths.map(samePath))], others, ownTask);
 }

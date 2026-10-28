@@ -103,6 +103,28 @@ describe("Workspace and slots (parallel spec §4)", () => {
     expect(attributions.t1).toMatchObject({ owned: ["a.md"], shared: [], conflicts: [] });
   });
 
+  it("an edit's end marks what the turn wrote: the same text another task committed first is still a conflict", async () => {
+    const done = (id: string) => ({ line: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] } } });
+    const script: ClaudeScript = {
+      steps: [claudeResultLine(true)],
+      turns: [
+        { match: "^one", steps: [claudeEditLine("e1", "spec.md"), { write: { path: "spec.md", content: "same" } }, done("e1"), { sleep: 400 }, claudeResultLine(true)] },
+        { match: "^two", steps: [{ sleep: 900 }, claudeEditLine("e2", "spec.md"), { write: { path: "spec.md", content: "same" } }, done("e2"), claudeResultLine(true)] },
+      ],
+    };
+    const { ws, folder } = await setup(script);
+    const a = await ws.openSlot({ key: "t1" });
+    const b = await ws.openSlot({ key: "t2" });
+    const attributions: Record<string, TurnAttribution> = {};
+    const ta = a.send("one", () => {}, { trailer: { task: "t1" }, onAttribution: (x) => (attributions.t1 = x) });
+    await until(() => fs.existsSync(path.join(folder, "spec.md")));
+    const tb = b.send("two", () => {}, { trailer: { task: "t2" }, onAttribution: (x) => (attributions.t2 = x) });
+    await Promise.all([ta.done, tb.done]);
+    expect(attributions.t1).toMatchObject({ owned: ["spec.md"], conflicts: [] });
+    // Nothing left for t2 to commit, but its edit ended fine: t1's commit of the file is a conflict.
+    expect(attributions.t2).toEqual({ owned: [], shared: [], with: [], conflicts: [{ path: "spec.md", tasks: ["t1"] }] });
+  });
+
   it("refuses a second turn of a task that already runs in another slot (one slot per task)", async () => {
     const { ws } = await setup({ steps: [{ sleep: 400 }, claudeResultLine(true)] });
     const a = await ws.openSlot({ key: "A" });

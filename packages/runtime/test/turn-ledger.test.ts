@@ -37,6 +37,27 @@ describe("TurnLedger (parallel spec §5.2, T3)", () => {
     expect(w.edits.size).toBe(MAX_EDITS);
   });
 
+  it("wrote: only the paths of an edit that ended without an error, by its id; a closed window forgets the rest", () => {
+    const l = new TurnLedger(["/w"]);
+    const w = l.open("A", "t1");
+    l.noteEdits("A", ["/w/ok.md", "/outside/x.md"], "e1");
+    l.noteEdits("A", ["/w/denied.md"], "e2");
+    l.noteEdits("A", ["/w/open.md"], "e3");
+    expect([...w.edits].sort()).toEqual(["denied.md", "ok.md", "open.md"]);
+    expect(w.wrote.size).toBe(0);
+    l.noteEditEnd("A", "e1", false);
+    l.noteEditEnd("A", "e2", true);
+    l.noteEditEnd("A", "unknown", false);
+    l.noteEditEnd("B", "e3", false);
+    expect([...w.wrote]).toEqual(["ok.md"]);
+    // An id ends once.
+    l.noteEditEnd("A", "e2", false);
+    expect([...w.wrote]).toEqual(["ok.md"]);
+    l.close("A");
+    l.noteEditEnd("A", "e3", false);
+    expect([...w.wrote]).toEqual(["ok.md"]);
+  });
+
   it("a key can't hold two windows", () => {
     const l = new TurnLedger(["/w"]);
     l.open("A");

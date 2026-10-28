@@ -315,8 +315,9 @@ describe("two turns at once (parallel spec §5.2, T1, T2)", () => {
     write("spec.md", "spec");
     ledger.noteEdits("A", [abs("spec.md")]);
     expect((await endTurn(history, ledger, a, ok, "A", { task: "t1" }))?.conflicts).toEqual([]);
+    ledger.noteEdits("B", [abs("spec.md")], "eb");
     write("spec.md", "spec");
-    ledger.noteEdits("B", [abs("spec.md")]);
+    ledger.noteEditEnd("B", "eb", false);
     const rb = await endTurn(history, ledger, b, ok, "B", { task: "t2" });
     expect(rb).toEqual({ owned: [], shared: [], with: [], conflicts: [{ path: "spec.md", tasks: ["t1"] }] });
   });
@@ -328,12 +329,43 @@ describe("two turns at once (parallel spec §5.2, T1, T2)", () => {
     const b = await beginTurn(history, ledger, "B", { task: "t2" });
     write("spec.md", "from A");
     ledger.noteEdits("A", [abs("spec.md")]);
+    ledger.noteEdits("B", [abs("spec.md")], "eb");
     write("spec.md", "from B");
-    ledger.noteEdits("B", [abs("spec.md")]);
+    ledger.noteEditEnd("B", "eb", false);
     expect(await endTurn(history, ledger, a, ok, "A", { task: "t1" })).toEqual({ owned: ["spec.md"], shared: [], with: [], conflicts: [] });
     const rb = await endTurn(history, ledger, b, ok, "B", { task: "t2" });
     expect(rb?.owned).toEqual([]);
     expect(rb?.conflicts).toEqual([{ path: "spec.md", tasks: ["t1"] }]);
+  });
+
+  it("an edit that only named the file (denied or failed) is no conflict, even when another task committed it", async () => {
+    write("spec.md", "0");
+    await history.save("seed spec");
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    ledger.noteEdits("B", [abs("spec.md")], "denied");
+    ledger.noteEditEnd("B", "denied", true);
+    // Named, never ended (the turn stopped mid-edit): no proof it wrote either.
+    ledger.noteEdits("B", [abs("spec.md")], "open");
+    write("spec.md", "from A");
+    ledger.noteEdits("A", [abs("spec.md")]);
+    await endTurn(history, ledger, a, ok, "A", { task: "t1" });
+    expect(await endTurn(history, ledger, b, ok, "B", { task: "t2" })).toEqual({ owned: [], shared: [], with: [], conflicts: [] });
+  });
+
+  it("a file git spells NFD and an edit names NFC is one file: the conflict is found, once", async () => {
+    const nfd = "cafe\u0301.md";
+    const nfc = "caf\u00e9.md";
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    write(nfd, "same");
+    ledger.noteEdits("A", [abs(nfd)]);
+    await endTurn(history, ledger, a, ok, "A", { task: "t1" });
+    // The commit names the file as it was created; B's engine reports it NFC and writes the same text.
+    vi.spyOn(history, "commitsSince").mockImplementationOnce(async () => [{ sha: "x", task: "t1", paths: [nfd] }] as never);
+    ledger.noteEdits("B", [abs(nfc)], "eb");
+    ledger.noteEditEnd("B", "eb", false);
+    expect((await endTurn(history, ledger, b, ok, "B", { task: "t2" }))?.conflicts).toEqual([{ path: nfc, tasks: ["t1"] }]);
   });
 
   it("another task's commit after this turn's own commit is no conflict", async () => {

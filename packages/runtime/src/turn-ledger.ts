@@ -18,6 +18,11 @@ export interface TurnWindow {
   /** Folder-relative paths its edit events named, in Unicode NFC (`samePath`). */
   readonly edits: Set<string>;
   /**
+   * The named paths whose edit ended without an error (an edit event's end), in NFC: the turn surely wrote them. A
+   * denied or failed edit names a path at its start and never gets here.
+   */
+  readonly wrote: Set<string>;
+  /**
    * Paths a turn that ended meanwhile changed but left for this one (only this one named them): they hold that turn's
    * work, so a crash of this one never restores them. In NFC, like `edits`.
    */
@@ -39,6 +44,8 @@ export const MAX_EDITS = 10_000;
 /** The turns running in one folder now (parallel spec §5.2). Opening and closing are synchronous: no await between check and mark. */
 export class TurnLedger {
   private readonly open_ = new Map<string, TurnWindow>();
+  /** Per open window: each edit event's paths by its id, until the event ends. */
+  private readonly pending = new Map<string, Map<string, string[]>>();
 
   /**
    * `roots`: the folder as given first, then its real path. Engines report either (spike PT-S1/PT-S3: Claude names the
@@ -58,14 +65,16 @@ export class TurnLedger {
     if (this.open_.has(key)) throw new Error(`A turn is already open for ${key}`);
     const alone = this.open_.size === 0;
     for (const w of this.open_.values()) w.overlapped = true;
-    const w: TurnWindow = { key, task, alone, overlapped: !alone, before: null, startDirty: null, edits: new Set(), held: new Set() };
+    const w: TurnWindow = { key, task, alone, overlapped: !alone, before: null, startDirty: null, edits: new Set(), wrote: new Set(), held: new Set() };
     this.open_.set(key, w);
+    this.pending.set(key, new Map());
     return w;
   }
 
   /** Closes `key`'s window; returns the windows still running (they may own or share its paths). */
   close(key: string): TurnWindow[] {
     this.open_.delete(key);
+    this.pending.delete(key);
     return [...this.open_.values()];
   }
 
@@ -82,14 +91,29 @@ export class TurnLedger {
    * folder (by any of its roots) count; the folder itself, `..` escapes, absolute outsiders and any name git couldn't
    * track by that spelling are dropped (T3). A key with no open window is ignored; past `MAX_EDITS` paths, so is the rest.
    */
-  noteEdits(key: string, paths: readonly string[]): void {
+  noteEdits(key: string, paths: readonly string[], id?: string): void {
     const w = this.open_.get(key);
     if (!w) return;
+    const named: string[] = [];
     for (const p of paths) {
-      if (w.edits.size >= MAX_EDITS) return;
+      if (w.edits.size >= MAX_EDITS) break;
       const rel = this.relative(p);
-      if (rel !== null) w.edits.add(rel);
+      if (rel === null) continue;
+      w.edits.add(rel);
+      named.push(rel);
     }
+    const pending = this.pending.get(key)!;
+    if (id !== undefined && named.length > 0 && pending.size < MAX_EDITS) pending.set(id, named);
+  }
+
+  /** Edit event `id` of `key`'s turn ended: without an error, the paths its start named go to `wrote`. */
+  noteEditEnd(key: string, id: string, error: boolean): void {
+    const w = this.open_.get(key);
+    const pending = this.pending.get(key);
+    const named = pending?.get(id);
+    if (!w || !named) return;
+    pending!.delete(id);
+    if (!error) for (const p of named) w.wrote.add(p);
   }
 
   private relative(p: string): string | null {

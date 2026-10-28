@@ -255,7 +255,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
                 if (e.type === "done") final = e;
                 else {
                   // `edits` is a hint for attribution (spec §5.2); a path no turn named counts as shared.
-                  if (e.type === "activity" && e.edits) ledger.noteEdits(o.key, e.edits);
+                  // An edit that ended without an error surely wrote its paths (conflicts, spec §5.3).
+                  if (e.type === "activity" && e.edits) ledger.noteEdits(o.key, e.edits, e.id);
+                  if (e.type === "activity" && e.state === "end") ledger.noteEditEnd(o.key, e.id, e.error === true);
                   emitOnce(e);
                 }
               },

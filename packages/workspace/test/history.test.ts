@@ -623,6 +623,38 @@ describe("Scope trailer", () => {
   });
 });
 
+describe("Plugin trailer (plugins spec §5.3)", () => {
+  it("D0: without plugin the message is byte-identical", () => {
+    expect(withTrailer("Before message", { task: "t-1", action: "a" })).toBe("Before message\n\nTask: t-1\nAction: a");
+  });
+
+  it("writes Plugin: <id> after the others and reads it back", () => {
+    const msg = withTrailer("Before message", { task: "t-1", scope: "_app", plugin: "on-this-day" });
+    expect(msg).toBe("Before message\n\nTask: t-1\nScope: _app\nPlugin: on-this-day");
+    expect(parseCommitMessage(msg)).toEqual({ subject: "Before message", task: "t-1", action: null, scope: "_app", plugin: "on-this-day" });
+  });
+
+  it("drops an id that isn't a plugin id, written or read", () => {
+    expect(withTrailer("m", { task: "t", plugin: "Bad Id" })).toBe("m\n\nTask: t");
+    expect(withTrailer("m", { task: "t", plugin: "-x" })).toBe("m\n\nTask: t");
+    expect(parseCommitMessage("m\n\nTask: t\nPlugin: Bad_Id")).toEqual({ subject: "m", task: "t", action: null });
+  });
+
+  it("D0: an old message parses exactly as before (no plugin key)", () => {
+    expect(parseCommitMessage("m\n\nTask: t\nAction: a")).toEqual({ subject: "m", task: "t", action: "a" });
+  });
+
+  it("reaches the history list", async () => {
+    write("a.md", "plugin-1");
+    await history.save("Turn: explain", { task: "t-7", scope: "_app", plugin: "on-this-day" });
+    write("a.md", "plugin-2");
+    await history.save("Turn: other", { task: "t-8" });
+    const [other, mine] = await history.list();
+    expect(mine).toMatchObject({ task: "t-7", plugin: "on-this-day" });
+    expect(other).not.toHaveProperty("plugin");
+  });
+});
+
 describe("data in the history", () => {
   it("tracks .harness/data/ like the notes, never its temp files or the data-meta stamps", async () => {
     const dir = fs.mkdtempSync(path.join(root, "data-"));

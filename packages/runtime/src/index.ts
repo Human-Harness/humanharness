@@ -5,3 +5,4 @@ export { ClaudeCliTransport, allowedTools, claudeArgs, profileArgs } from "./cla
 export { AcpTransport, codexConfig, decidePermission, isUiTool, offeredModels, type PermissionPolicy } from "./acp";
 export { createRuntime, type HarnessRuntime, type RunningTurn, type RuntimeOptions } from "./runtime";
 export { runSystemTask, type SystemTaskOptions, type SystemTaskResult } from "./system";
+export { runSystemSession, type SystemSessionOptions, type SystemSessionResult } from "./system-session";

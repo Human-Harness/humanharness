@@ -1043,6 +1043,7 @@ describe("acpEditPaths (parallel spec §5.2)", () => {
     expect(acpEditPaths({ kind: "edit", locations: [{ path: "/w/a.md" }], content: [{ type: "diff", path: "/w/a.md" }, { type: "diff", path: "/w/b.md" }] })).toEqual(["/w/a.md", "/w/b.md"]);
     expect(acpEditPaths({ kind: "delete", locations: [{ path: "/w/x" }] })).toEqual(["/w/x"]);
     expect(acpEditPaths({ kind: "move", locations: [{ path: "/w/y" }] })).toEqual(["/w/y"]);
+    expect(acpEditPaths({ kind: "edit", locations: [{ path: `/w/${"x".repeat(5000)}` }, { path: "/w/z" }] })).toEqual(["/w/z"]);
     expect(acpEditPaths({ kind: "read", locations: [{ path: "/w/a.md" }] })).toEqual([]);
     expect(acpEditPaths({ kind: "edit", locations: [{ path: "" }, {}, null] })).toEqual([]);
     expect(acpEditPaths({ kind: "edit", content: [{ type: "content", path: "/w/a.md" }, null, { type: "diff", path: 3 }] })).toEqual([]);

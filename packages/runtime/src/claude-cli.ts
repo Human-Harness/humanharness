@@ -5,7 +5,7 @@ import type { McpServerSpec } from "@humanharness/blocks";
 import { type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
-import { type ActivityKind, type Event, fail } from "./events";
+import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
 import type { Transport, TransportOptions } from "./transport";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
@@ -139,7 +139,7 @@ const EDIT_FIELDS: Record<string, string> = { Edit: "file_path", Write: "file_pa
 export function editPaths(tool: string, input: Record<string, unknown>): string[] {
   const field = Object.hasOwn(EDIT_FIELDS, tool) ? EDIT_FIELDS[tool] : undefined;
   const value = field ? input[field] : undefined;
-  return typeof value === "string" && value ? [value] : [];
+  return typeof value === "string" && value && value.length <= EDIT_PATH_MAX ? [value] : [];
 }
 
 /** Turns Claude Code's stream-json lines into normalized events. */
@@ -210,7 +210,7 @@ export class StreamJsonReader {
       for (const b of o.message?.content ?? []) {
         if (b.type !== "tool_use" || String(b.name).startsWith(UI_TOOL_PREFIX) || HIDDEN_TOOLS.has(b.name)) continue;
         if (this.tools.has(b.id)) continue;
-        const activity = { kind: KINDS[b.name] ?? ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
+        const activity = { kind: Object.hasOwn(KINDS, b.name) ? KINDS[b.name] : ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
         this.tools.set(b.id, activity);
         const edits = editPaths(String(b.name), b.input ?? {});
         this.emit({ type: "activity", id: b.id, ...activity, ...(edits.length > 0 ? { edits } : {}), state: "start" });

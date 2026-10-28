@@ -493,6 +493,13 @@ describe("edit paths (parallel spec §5.2)", () => {
     expect(editPaths("Edit", { file_path: 3 })).toEqual([]);
     expect(editPaths("Edit", { file_path: "" })).toEqual([]);
     expect(editPaths("toString", { file_path: "/w/a.md" })).toEqual([]);
+    expect(editPaths("Edit", { file_path: `/w/${"x".repeat(5000)}` })).toEqual([]);
+  });
+  it("a tool named like an Object.prototype key is an 'other' activity, not an object", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "p1", name: "__proto__", input: {} }] } }));
+    expect(events.find((e) => e.type === "activity")).toMatchObject({ kind: "other" });
   });
   it("puts them on the start event only", () => {
     const events: Event[] = [];

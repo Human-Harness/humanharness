@@ -6,7 +6,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
-import { type ActivityKind, type Event, fail } from "./events";
+import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
 import type { Transport, TransportOptions } from "./transport";
 
 type PermissionOption = { optionId: string; kind: string };
@@ -162,7 +162,7 @@ export function acpEditPaths(call: { kind?: unknown; locations?: unknown; conten
   if (typeof call.kind !== "string" || !EDIT_KINDS.has(call.kind)) return [];
   const out = new Set<string>();
   const add = (p: unknown) => {
-    if (typeof p === "string" && p && out.size < EDITS_MAX) out.add(p);
+    if (typeof p === "string" && p && p.length <= EDIT_PATH_MAX && out.size < EDITS_MAX) out.add(p);
   };
   if (Array.isArray(call.locations)) for (const l of call.locations) add((l as { path?: unknown } | null)?.path);
   if (Array.isArray(call.content)) {
@@ -596,7 +596,7 @@ export class AcpTransport implements Transport {
           this.hidden.add(u.toolCallId);
           return;
         }
-        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
+        const activity = { kind: typeof u.kind === "string" && Object.hasOwn(KINDS, u.kind) ? KINDS[u.kind] : ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
         const edits = acpEditPaths(u);

@@ -38,9 +38,10 @@ function runner(answer: (batch: Record<string, unknown>, forms: string[]) => Rec
 const pseudo = (b: Record<string, unknown>, forms: string[]) =>
   Object.fromEntries(Object.entries(b).map(([k, v]) => [k, typeof v === "string" ? `~${v}` : Object.fromEntries(forms.map((f) => [f, `~${(v as Record<string, string>).other}`]))]));
 
-function make(o: { language?: string; run?: Runner; available?: true | "no-engine" | "mock"; batchSize?: number; core?: Record<string, string>; cache?: (dir: string) => TranslationCache; prepare?: () => Promise<{ engineName: string; run: Runner } | null> } = {}) {
+function make(o: { language?: string; run?: Runner; available?: true | "no-engine" | "mock"; batchSize?: number; core?: Record<string, string>; cache?: (dir: string) => TranslationCache; prepare?: () => Promise<{ engineName: string; run: Runner } | null>; answerOffer?: () => Promise<void> } = {}) {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-translation-"));
   let saved = o.language ?? "en";
+  let offered = 0;
   const sent: LanguageState[] = [];
   const svc = new TranslationService({
     cache: o.cache ? o.cache(dir) : new TranslationCache(dir),
@@ -48,13 +49,14 @@ function make(o: { language?: string; run?: Runner; available?: true | "no-engin
     tone: "warm",
     language: async () => saved,
     saveLanguage: async (tag) => void (saved = tag),
+    answerOffer: o.answerOffer ?? (async () => void offered++),
     available: async () => o.available ?? true,
     prepare: o.prepare ?? (async () => (o.run ? { engineName: "Claude", run: o.run } : null)),
     engineName: async () => "Claude",
     send: (s) => void sent.push(s),
     batchSize: o.batchSize ?? 2,
   });
-  return { svc, sent, saved: () => saved, dir };
+  return { svc, sent, saved: () => saved, offered: () => offered, dir };
 }
 
 describe("TranslationService (language spec §4–§6, §9)", () => {
@@ -63,6 +65,33 @@ describe("TranslationService (language spec §4–§6, §9)", () => {
     expect(await t.svc.state(HARNESS)).toMatchObject({ language: "en", cached: [], missing: 0, canTranslate: true, run: null });
     expect(await t.svc.choose("en", HARNESS)).toEqual({ ok: true, language: "en", strings: {} });
     expect(fs.existsSync(path.join(t.dir, "locales"))).toBe(false);
+    // Choosing English doesn't answer the Home offer (D0: an English person has none).
+    expect(t.offered()).toBe(0);
+  });
+
+  it("choosing a non-English language or starting its run answers the Home offer; a refused one doesn't", async () => {
+    const t = make({ run: runner(pseudo) });
+    expect(await t.svc.choose("es", HARNESS)).toEqual({ ok: false, reason: "needs-translation" });
+    expect(await t.svc.translate("he", HARNESS)).toEqual({ ok: false, reason: "invalid" });
+    expect(t.offered()).toBe(0);
+    expect(await t.svc.translate("es", HARNESS)).toEqual({ ok: true });
+    expect(t.offered()).toBe(1);
+    await t.svc.settled();
+    expect(await t.svc.choose("es", HARNESS)).toMatchObject({ ok: true, language: "es" });
+    expect(t.offered()).toBe(2);
+    const none = make({ available: "no-engine" });
+    expect(await none.svc.translate("es", HARNESS)).toEqual({ ok: false, reason: "no-engine" });
+    expect(none.offered()).toBe(0);
+  });
+
+  it("a failing offer save never fails a choice or a start", async () => {
+    const t = make({ run: runner(pseudo), answerOffer: async () => Promise.reject(new Error("disk")) });
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await t.svc.translate("es", HARNESS)).toEqual({ ok: true });
+    await t.svc.settled();
+    expect(await t.svc.choose("es", HARNESS)).toMatchObject({ ok: true, language: "es" });
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it("an English variant counts as English: nothing missing, nothing to translate", async () => {

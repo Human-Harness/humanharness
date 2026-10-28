@@ -860,6 +860,26 @@ describe("HarnessApp language on demand (plan 5b)", () => {
     expect(screen.queryByRole("region", { name: "Use Demo in another language?" })).toBeNull();
   });
 
+  it("a language chosen in Settings answers the offer: back on Home, no state ask and no card", async () => {
+    // An English person (no offer to answer yet) picks French, already translated, in Settings.
+    const client = new FakeClient(ready);
+    client.languageState = { ...client.languageState, cached: [{ tag: "fr", complete: true }] };
+    client.languageStrings.fr = { "core:home.start": "Démarrer {{name}}" };
+    render(<HarnessApp client={client} />);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Start Demo" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Change…" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Français/ }));
+    client.languageCalls = [];
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
+    // The window's own state says the offer is answered (main saved it too), so Home, still under the sheet, doesn't ask.
+    expect(await screen.findByRole("button", { name: "Démarrer Demo", hidden: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByRole("button", { name: "Démarrer Demo" });
+    expect(client.languageCalls.map((c) => c.op)).toEqual(["choose"]);
+    expect(document.querySelector(".hh-langoffer")).toBeNull();
+  });
+
   it("D0: without client.language Home has no card and Settings keeps the read-only row", async () => {
     const client = new FakeClient({ ...ready, language: "es" });
     (client as { language?: unknown }).language = undefined;

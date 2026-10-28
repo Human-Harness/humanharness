@@ -35,24 +35,24 @@ function suggestion(tag: string | undefined): Language | null {
 
 /**
  * The language Home would offer before the state is known, or null: only then does Home ask for it (asking runs an
- * engine check). A ready engine, outside mock mode, not yet answered, set up; the saved language if it isn't English,
- * else the system language if it isn't. An English person on an English system gets null (D0).
+ * engine check). Only on a ready Home (set up, engine connected, Start offered), outside mock mode, not yet answered;
+ * the saved language if it isn't English, else the system language if it isn't. An English person on an English system gets null (D0).
  */
-function offerCandidate(state: { config: AppConfig; mock?: boolean }, connected: boolean | null, system: Language): Language | null {
-  if (connected !== true || state.mock || state.config.languageOffered === true || !isConfigured(state.config)) return null;
+function offerCandidate(state: { config: AppConfig; mock?: boolean }, ready: boolean | null, system: Language): Language | null {
+  if (ready !== true || state.mock || state.config.languageOffered === true || !isConfigured(state.config)) return null;
   const saved = canonicalLanguage(state.config.language);
   if (saved && !isEnglish(saved)) return suggestion(saved);
   return suggestion(system);
 }
 
 /**
- * The language to offer on Home once (spec §3, §10), or null. Only with a ready engine, outside mock mode, never once
+ * The language to offer on Home once (spec §3, §10), or null. Only on a ready Home, outside mock mode, never once
  * answered, and only with a non-English suggestion (D0: an English person and an English system see nothing new):
  * the saved language when it has no translation at all (a started one is Settings' "finish translating"), else the
  * system language. Never during a run.
  */
-export function languageOffer(state: { config: AppConfig; mock?: boolean }, view: LanguageState | null, connected: boolean | null, system: Language): Language | null {
-  if (!view || view.run?.status === "running" || offerCandidate(state, connected, system) === null) return null;
+export function languageOffer(state: { config: AppConfig; mock?: boolean }, view: LanguageState | null, ready: boolean | null, system: Language): Language | null {
+  if (!view || view.run?.status === "running" || offerCandidate(state, ready, system) === null) return null;
   const saved = canonicalLanguage(view.language);
   if (saved && !isEnglish(saved)) {
     const started = view.cached.some((c) => canonicalLanguage(c.tag) === saved);
@@ -129,8 +129,8 @@ export function Home({
   const [choosing, setChoosing] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const system = systemLanguage();
-  const wantsOffer = language !== undefined && !dismissed && offerCandidate(state, connected, system) !== null;
-  const offer = language && !dismissed ? languageOffer(state, language.view, connected, system) : null;
+  const wantsOffer = language !== undefined && !dismissed && offerCandidate(state, ready, system) !== null;
+  const offer = language && !dismissed ? languageOffer(state, language.view, ready, system) : null;
   // The chooser keeps the suggestion after the card goes (the answer is saved as soon as the card is acted on).
   const offered = useRef<Language | null>(null);
   if (offer) offered.current = offer;

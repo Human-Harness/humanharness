@@ -1033,6 +1033,9 @@ function buildTranslation(): TranslationService {
     saveLanguage: async (tag) => {
       await config.save({ language: tag });
     },
+    answerOffer: async () => {
+      await config.save({ languageOffered: true });
+    },
     // Spec §3: "no-engine" also covers an engine with a problem; mock mode never translates.
     available: async () => {
       if (hooks.mock) return "mock";

@@ -231,4 +231,14 @@ describe("the language offer card", () => {
     expect(language.load).not.toHaveBeenCalled();
     expect(document.querySelector(".hh-langoffer")).toBeNull();
   });
+
+  it("a connected engine is not enough: with Set up still showing (no active profile) there is no card and no ask", async () => {
+    const client = new FakeClient({ ...configured, language: "es" });
+    client.state = { ...client.state, profiles: { label: "student", form: { fields: [] } } };
+    const language = control(spanish);
+    await renderHome(client, { status: client.status, language });
+    expect(screen.queryByRole("button", { name: "Start Demo" })).toBeNull();
+    expect(language.load).not.toHaveBeenCalled();
+    expect(document.querySelector(".hh-langoffer")).toBeNull();
+  });
 });

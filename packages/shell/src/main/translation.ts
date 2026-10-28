@@ -32,6 +32,11 @@ export interface TranslationDeps {
   tone?: string;
   language(): Promise<Language>;
   saveLanguage(tag: Language): Promise<void>;
+  /**
+   * Saves `languageOffered: true`: a non-English language was chosen or its run started, so Home's offer card is
+   * answered (and Home stops asking for the state it would need to show it).
+   */
+  answerOffer(): Promise<void>;
   /** Cheap: whether a run could start now (spec §3); "no-engine" also covers an engine with a problem. */
   available(): Promise<true | "no-engine" | "mock">;
   /** The engine's name and a runner; null when the engine can't run after all. */
@@ -128,6 +133,7 @@ export class TranslationService {
       if (classify(items, await this.load(tag, items)).missing.length > 0) return { ok: false, reason: "needs-translation" };
     }
     if ((await this.d.language()) !== tag) await this.d.saveLanguage(tag);
+    if (!isEnglish(tag)) await this.answerOffer();
     return { ok: true, language: tag, strings: await this.strings(tag, harnessRaw) };
   }
 
@@ -150,7 +156,13 @@ export class TranslationService {
       this.running = null;
       this.controller = null;
     });
+    await this.answerOffer();
     return { ok: true };
+  }
+
+  /** The Home offer is answered; a failed save only means the card may ask once more. */
+  private async answerOffer(): Promise<void> {
+    await this.d.answerOffer().catch((err: unknown) => console.error("Could not save the language offer", err));
   }
 
   async cancel(): Promise<{ ok: boolean }> {

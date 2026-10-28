@@ -10,7 +10,7 @@ import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow,
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import { shownLanguage, systemLanguage } from "./language";
-import { useLanguage } from "./language-control";
+import { type LanguageControl, useLanguage } from "./language-control";
 import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
@@ -151,7 +151,20 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   }, [i18n]);
 
   /** Language on demand (plan 5b): asks main for nothing until the Language row, the picker or the offer card loads it. */
-  const language = useLanguage(client, i18n, locales?.en ?? {}, (tag) => setState((s) => s && { ...s, config: { ...s.config, language: tag } }));
+  // Main also saves `languageOffered` when a non-English language is chosen or its run starts; the window's copy follows,
+  // so Home's offer card stays answered (and stops asking for the state) without a reload.
+  const english = (tag: string) => tag === "en" || tag.startsWith("en-");
+  const control = useLanguage(client, i18n, locales?.en ?? {}, (tag) =>
+    setState((s) => s && { ...s, config: { ...s.config, language: tag, ...(english(tag) ? {} : { languageOffered: true }) } }),
+  );
+  const language: LanguageControl = {
+    ...control,
+    translate: async (tag) => {
+      const ok = await control.translate(tag);
+      if (ok) setState((s) => s && { ...s, config: { ...s.config, languageOffered: true } });
+      return ok;
+    },
+  };
 
   // ⌘+, ⌘− and ⌘0 change the text size in the main process: Settings shows the new one.
   useEffect(() => client.onTextSize((textSize) => setState((s) => s && { ...s, config: { ...s.config, textSize } })), [client]);

@@ -572,6 +572,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       }
     },
     closeWorkspace,
+    /** A workspace is open or opening. */
+    workspaceOpen: (): boolean => workspace.peek() !== null,
     /** Quit (Decision 16): every lane's turn stops, its slot closes; tasks.json stays for the next start to end them. */
     async closeAll(): Promise<void> {
       await board.closeAll();

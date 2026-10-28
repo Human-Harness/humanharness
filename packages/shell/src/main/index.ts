@@ -125,6 +125,7 @@ import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
+import { restoreTaskArgs, tasksIpc } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
@@ -757,7 +758,8 @@ async function closeRuntime() {
   // Board mode: the shared workspace (every lane's slot) closes; the open tasks stay, as today's task does.
   if (host) {
     await host.closeWorkspace();
-    settingsCtl?.forget();
+    // As below: not when a lane has already opened a new workspace, which wrote its own AGENTS.md.
+    if (!host.workspaceOpen()) settingsCtl?.forget();
     return;
   }
   const rt = await runtime.peek()?.catch(() => null);
@@ -799,8 +801,10 @@ async function openHistory(): Promise<History | null> {
   const rt = host ? null : await runtime.peek()?.catch(() => null);
   if (rt) return rt.history;
   // Board mode: the shared workspace's history while it is open.
-  const open = await host?.history();
-  if (open) return open;
+  if (host) {
+    const open = await host.history();
+    if (open) return open;
+  }
   const c = await validConfig();
   if (!c) return null;
   const extra = getEngine(c.engineId).instructionsFile?.path;
@@ -1234,12 +1238,6 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
   }
 }
 
-/** A task id from the window: a string of 1..200 characters (the board then looks it up among its lanes, P1). */
-function validTaskId(v: unknown): string {
-  if (typeof v !== "string" || v.length === 0 || v.length > 200) throw new Error("Invalid task");
-  return v;
-}
-
 /** Why "Undo this task" was refused in board mode, for the window. */
 function undoRefusal(r: Exclude<Awaited<ReturnType<typeof restoreTaskByPaths>>, { ok: true }>): string {
   switch (r.reason) {
@@ -1632,14 +1630,13 @@ function registerIpc() {
     // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.
     const board = host;
     if (board) {
-      const id = validTaskId(taskId);
-      if (includeShared !== undefined && typeof includeShared !== "boolean") throw new Error("Invalid choice");
+      const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
       let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
       return restores
         .run(
           currentHistory,
           async (history: History) => {
-            result = await restoreTaskByPaths(history, id, { running: () => board.runningPaths(), includeShared: includeShared === true });
+            result = await restoreTaskByPaths(history, id, { running: () => board.runningPaths(), includeShared: withShared });
           },
           { busy: () => board.lane(id)?.manager.isBusy() ?? false },
         )
@@ -1662,14 +1659,11 @@ function registerIpc() {
     });
   });
   // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.
-  const requireBoard = (): BoardHost => {
-    if (!host) throw new Error("No parallel tasks");
-    return host;
-  };
-  handle("hh:tasksList", () => requireBoard().tasksState());
-  handle("hh:tasksFocus", (id: unknown) => requireBoard().board.focus(id === null ? null : validTaskId(id)));
-  handle("hh:tasksCancelQueued", (id: unknown) => requireBoard().gate.drop(validTaskId(id)));
-  handle("hh:tasksResume", () => requireBoard().gate.resume());
+  const inbox = tasksIpc(() => host);
+  handle("hh:tasksList", () => inbox.list());
+  handle("hh:tasksFocus", (id: unknown) => inbox.focus(id));
+  handle("hh:tasksCancelQueued", (id: unknown) => inbox.cancelQueued(id));
+  handle("hh:tasksResume", () => inbox.resume());
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
@@ -2289,7 +2283,7 @@ if (primary) {
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
       try {
-        await boardClosed;
+        if (boardClosed) await boardClosed;
         await (host ? closeRuntime() : dropRuntime());
       } catch (err) {
         console.error("Could not close the agent cleanly", err);

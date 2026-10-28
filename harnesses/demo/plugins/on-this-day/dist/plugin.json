@@ -1,0 +1,99 @@
+{
+  "id": "on-this-day",
+  "name": "On this day",
+  "version": "0.1.0",
+  "api": 1,
+  "harness": "demo",
+  "permissions": {
+    "hosts": [
+      "api.wikimedia.org"
+    ],
+    "tasks": true
+  },
+  "sources": [
+    {
+      "id": "events",
+      "ttl": 21600
+    }
+  ],
+  "data": {
+    "events": {
+      "key": "id",
+      "agent": "read",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "year",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "panels": [
+    {
+      "id": "events",
+      "title": "On this day"
+    }
+  ],
+  "chips": [
+    {
+      "id": "today"
+    }
+  ],
+  "settings": {
+    "fields": {
+      "count": {
+        "label": "Events kept",
+        "help": "How many of today's events to keep. A round anniversary is looked for among these only.",
+        "control": "number",
+        "schema": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 50
+        },
+        "default": 25
+      }
+    }
+  },
+  "actions": [
+    {
+      "id": "explain",
+      "label": "Explain this event",
+      "tier": "light",
+      "scope": "none",
+      "vars": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "year",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "prompt": "Explain this event from {{year}} for someone curious, in a few short paragraphs: {{text}} Say when you're unsure. Only explain: change nothing outside the app without asking."
+    }
+  ]
+}

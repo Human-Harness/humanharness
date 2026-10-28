@@ -71,7 +71,7 @@ function writePluginSettings(s: Sandbox, id: string, values: Record<string, unkn
   fs.writeFileSync(path.join(dir, "settings.json"), `${JSON.stringify(values, null, 2)}\n`);
 }
 
-test("D0: the demo with no plugin added runs nothing, writes nothing and tells the agent nothing", async () => {
+test("D0: the demo with its bundled plugin off and none added runs nothing, writes nothing and tells the agent nothing", async () => {
   const s = makeSandbox("plugins-d0");
   const { app, page } = await launch(s, { claude: claudeScript });
   try {
@@ -91,10 +91,13 @@ test("D0: the demo with no plugin added runs nothing, writes nothing and tells t
     expect(first.prompt).not.toContain(PLUGINS_HEADER);
     expect(fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8")).not.toContain("### How to work with this person");
 
-    // The top bar has no inbox; Settings has the Plugins tab (the demo takes plugins), empty.
+    // The top bar has no inbox; Settings has the Plugins tab (the demo takes plugins), listing only its bundled
+    // on-this-day, off (plugins spec §10: it starts off, so a demo run never reaches Wikimedia).
     await expect(page.getByRole("button", { name: "Attention" })).toHaveCount(0);
     const tab = await openPlugins(page);
-    await expect(tab.getByText("No plugins yet.")).toBeVisible();
+    await expect(tab.getByRole("switch", { name: "On this day" })).not.toBeChecked();
+    await expect(tab.getByRole("listitem").filter({ hasText: "On this day" }).getByText("Off", { exact: true })).toBeVisible();
+    await expect(tab.getByRole("switch")).toHaveCount(1);
     await expect(tab.getByRole("button", { name: "Add from folder…" })).toBeVisible();
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
     expect(fs.existsSync(path.join(s.folder, ".harness", "plugins"))).toBe(false);

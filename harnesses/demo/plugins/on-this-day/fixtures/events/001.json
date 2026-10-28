@@ -1,0 +1,14 @@
+{
+  "kind": "fetch",
+  "request": {
+    "method": "GET",
+    "url": "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/*/*"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "text": "{\"selected\":[{\"text\":\"Sample event for the demo (fixture), 1925.\",\"year\":1925,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1924.\",\"year\":1924,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1923.\",\"year\":1923,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1922.\",\"year\":1922,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1921.\",\"year\":1921,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1920.\",\"year\":1920,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1919.\",\"year\":1919,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1918.\",\"year\":1918,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1917.\",\"year\":1917,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1916.\",\"year\":1916,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1915.\",\"year\":1915,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1914.\",\"year\":1914,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1913.\",\"year\":1913,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1912.\",\"year\":1912,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1911.\",\"year\":1911,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1910.\",\"year\":1910,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1909.\",\"year\":1909,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1908.\",\"year\":1908,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1907.\",\"year\":1907,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1906.\",\"year\":1906,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1905.\",\"year\":1905,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1904.\",\"year\":1904,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1903.\",\"year\":1903,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1902.\",\"year\":1902,\"pages\":[]},{\"text\":\"Sample event for the demo (fixture), 1901.\",\"year\":1901,\"pages\":[]}]}"
+  }
+}

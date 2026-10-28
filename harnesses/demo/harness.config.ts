@@ -66,8 +66,9 @@ export default defineHarness({
     // A ready-made second sidekick the person may add (sidekick spec §2a.7); nothing changes until they do.
     presets: [{ name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
   },
-  // The demo accepts plugins added from a folder (plugins spec §3.4); part 2 adds its own bundled plugin.
-  plugins: { local: true },
+  // The demo ships one plugin, off until the person turns it on (plugins spec §10), and accepts plugins added from a
+  // folder (§3.4). Not in `on`: a normal demo run never reaches Wikimedia.
+  plugins: { bundled: ["on-this-day"], local: true },
   tagline: "How Human Harness works",
   tone: "clear and friendly, for developers; short sentences",
   author: "Marco Zanger",

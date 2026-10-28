@@ -1027,6 +1027,8 @@ export class SidekickController {
     // Settings may have changed while the turn ran.
     const now = await this.d.store.settings();
     if (!now.on || mutedOf(now, speaker.id).includes("missing") || !live()) return APPROVE;
+    // The task closed while the turn ran: the card would be about a task no longer open.
+    if ((task && !(await this.isOpen(task.id))) || !live()) return APPROVE;
     const card: SidekickCard = { id: randomUUID(), moment: eventMoment("before-approve"), speaker: infoOf(speaker), kind: "missing", prompt: "", flags: [], issues: [], confidence: 1, guard: { missing: guard.missing }, at: new Date().toISOString() };
     this.cards.push({ card, ctx: { task, base: setup.base } });
     await this.push();

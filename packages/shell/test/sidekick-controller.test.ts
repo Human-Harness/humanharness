@@ -1718,6 +1718,17 @@ describe("before approve (spec §2a.2, Decision 10)", () => {
     }
   });
 
+  it("the task closed while the turn ran: approve, no card", async () => {
+    let answer!: (a: SidekickAnswer) => void;
+    const h = harness({ record: on, extra: [GUARD], waitMs: 60_000, answers: [() => new Promise<SidekickAnswer>((r) => (answer = r))] });
+    const run = h.ctl.beforeApprove(DOC);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    h.setTask({ id: "t2", scope: "main" });
+    answer({ ok: true, text: json({ missing: ["x"] }) });
+    expect(await run).toEqual(APPROVE);
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
   it("a newer check replaces the running one", async () => {
     let first!: (a: SidekickAnswer) => void;
     const h = harness({ record: on, extra: [GUARD], waitMs: 60_000, answers: [() => new Promise<SidekickAnswer>((r) => (first = r)), json({ missing: ["Risks"] })] });

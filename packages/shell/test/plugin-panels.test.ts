@@ -89,6 +89,18 @@ describe("allowPanelRequest (P2)", () => {
 
   it("a request with no frame passes only if it isn't for a plugin file (main-process fetches go through other sessions)", () => {
     expect(allowPanelRequest({ frames: [], resourceType: "xhr", url: "https://x/" })).toBe(true);
+    expect(allowPanelRequest({ frames: [], resourceType: "xhr", url: "hh-plugin://oncall/panel-queue.js" })).toBe(false);
+  });
+
+  it("a chain deeper than any real page (blank frames nested by a panel) refuses everything", () => {
+    type F = { url: string; parent: F | null };
+    let f: F = { url: "file:///app/index.html", parent: null };
+    f = { url: "hh-plugin://oncall/panel-queue.html", parent: f };
+    for (let i = 0; i < 33; i++) f = { url: "", parent: f };
+    const frames = frameChain(f);
+    expect(frames).not.toBeNull();
+    expect(allowPanelRequest({ frames, resourceType: "xhr", url: "http://127.0.0.1:9/x" })).toBe(false);
+    expect(allowPanelRequest({ frames, resourceType: "script", url: "hh-plugin://oncall/panel-queue.js" })).toBe(false);
   });
 
   it("a frame that couldn't be read cancels a request for a plugin file, and only that", () => {
@@ -116,7 +128,9 @@ describe("frameChain", () => {
     expect(frameChain(disposed)).toBeNull();
     const loop: F = { url: "x", parent: null };
     loop.parent = loop;
-    expect(frameChain(loop)).toBeNull();
+    const looped = frameChain(loop);
+    expect(looped).not.toBeNull();
+    expect(allowPanelRequest({ frames: looped, resourceType: "xhr", url: "https://x/" })).toBe(false);
   });
 });
 

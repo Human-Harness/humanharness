@@ -62,17 +62,20 @@ export async function readPanelFile(url: string, running: RunningPanels): Promis
 
 /** Deeper than any real page nests: a chain that doesn't end by then is not trusted. */
 const MAX_FRAME_DEPTH = 32;
+/** Ends a chain that went deeper: it reads as a plugin's frame that may load nothing (a panel can nest blank frames). */
+const TOO_DEEP = "hh-plugin:";
 
 /**
  * A frame's URL followed by each ancestor's, from Electron's `details.frame` (spike P-S3): `[]` with no frame, null
- * when a frame can't be read (a disposed frame throws) or the chain doesn't end.
+ * when a frame can't be read (a disposed frame throws). A chain that doesn't end by `MAX_FRAME_DEPTH` ends in a marker
+ * that refuses every request (Task 7 review: a panel could nest 33 blank frames to drop out of the filter).
  */
 export function frameChain(frame: { readonly url: string; readonly parent: unknown } | null | undefined): string[] | null {
   const out: string[] = [];
   try {
     let f = frame as { readonly url: string; readonly parent: unknown } | null | undefined;
     while (f) {
-      if (out.length >= MAX_FRAME_DEPTH) return null;
+      if (out.length >= MAX_FRAME_DEPTH) return [...out, TOO_DEEP];
       out.push(String(f.url));
       f = f.parent as typeof f;
     }
@@ -90,7 +93,7 @@ export function frameChain(frame: { readonly url: string; readonly parent: unkno
  */
 export function allowPanelRequest(r: { frames: readonly string[] | null; resourceType: string; url: string }): boolean {
   const target = pluginUrl(r.url);
-  if (r.frames === null) return target === null && !r.url.toLowerCase().startsWith("hh-plugin:");
+  if (r.frames === null || r.frames.length === 0) return target === null && !r.url.toLowerCase().startsWith("hh-plugin:");
   const from = new Set<string>();
   for (const f of r.frames) {
     if (f.toLowerCase().startsWith("hh-plugin:")) from.add(pluginUrl(f)?.id ?? "");

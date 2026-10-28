@@ -979,6 +979,8 @@
     "resume": "Resume",
     "outOfQuota": "Out of quota",
     "outOfQuotaUntil": "Out of quota until {{time}}",
+    "outOfQuotaUntilDay": "Out of quota until {{day}} {{time}}",
+    "waitingCount": "{{count}} waiting for you",
     "pausedMove": "Paused while the folder moves",
     "newTask": "New task",
     "shownTask": "Task on screen",

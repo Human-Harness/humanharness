@@ -118,14 +118,15 @@ export function Inbox({
     return action?.phases?.find((p) => p.id === s.phase)?.label ?? null;
   };
 
-  const row = (s: TaskSummary) => {
+  const row = (s: TaskSummary, index: number, key: string) => {
+    const labelId = `${id}-${key}-${index}`;
     const scope = hasScopes && Object.hasOwn(scopeTitles, s.scope) ? scopeTitles[s.scope] : null;
     const said = stateText(s);
     const phase = phaseLabel(s);
     return (
       <li key={s.id} className="hh-tk-item">
         <button className="hh-tk-row" aria-current={s.focused ? "true" : undefined} onClick={() => void focus(s.id)}>
-          <span className="hh-tk-label" dir="auto">
+          <span id={labelId} className="hh-tk-label" dir="auto">
             {s.label}
           </span>
           {(scope || said || phase) && (
@@ -142,7 +143,7 @@ export function Inbox({
           )}
         </button>
         {s.state === "queued" && (
-          <button className="hh-tk-cancel" onClick={() => cancel(s)}>
+          <button className="hh-tk-cancel" aria-describedby={labelId} onClick={() => cancel(s)}>
             {t("parallel.cancel")}
           </button>
         )}
@@ -152,10 +153,17 @@ export function Inbox({
   const section = (key: string, title: string, list: TaskSummary[], empty: string) => (
     <section className="hh-tk-section" aria-labelledby={`${id}-${key}`}>
       <h3 id={`${id}-${key}`}>{title}</h3>
-      {list.length === 0 ? <p className="hh-tk-empty">{empty}</p> : <ul className="hh-tk-list">{list.map(row)}</ul>}
+      {list.length === 0 ? <p className="hh-tk-empty">{empty}</p> : <ul className="hh-tk-list">{list.map((s, i) => row(s, i, key))}</ul>}
     </section>
   );
 
+  /** The reset's time, with its weekday when it is not today (a weekly window can reset days later). */
+  const untilText = (at: number): string => {
+    const reset = new Date(at);
+    const time = reset.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
+    if (reset.toDateString() === new Date().toDateString()) return t("parallel.outOfQuotaUntil", { time });
+    return t("parallel.outOfQuotaUntilDay", { day: reset.toLocaleDateString(language, { weekday: "long" }), time });
+  };
   const paused = tasks?.paused;
   const resetsAt = paused?.resetsAt ? Date.parse(paused.resetsAt) : NaN;
   const pauseText = !paused
@@ -164,7 +172,7 @@ export function Inbox({
       ? t("parallel.pausedMove")
       : Number.isNaN(resetsAt)
         ? t("parallel.outOfQuota")
-        : t("parallel.outOfQuotaUntil", { time: new Date(resetsAt).toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" }) });
+        : untilText(resetsAt);
 
   return (
     <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
@@ -184,6 +192,9 @@ export function Inbox({
           </span>
         )}
       </button>
+      <span className="hh-sr-only" aria-live="polite">
+        {count > 0 ? t("parallel.waitingCount", { count }) : ""}
+      </span>
       {open && (
         <div id={`${id}-list`} ref={dialog} className="hh-pl-popover" role="dialog" aria-label={t("parallel.inbox")} tabIndex={-1}>
           {pauseText && (

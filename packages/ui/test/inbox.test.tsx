@@ -165,7 +165,52 @@ describe("Inbox (parallel spec §9.2)", () => {
     fireEvent.click(await inbox());
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(c.tasks.cancelQueued).toHaveBeenCalledWith("c"));
+    // The refill runs in the reply's `.then`: let it settle before checking the box stayed empty.
+    await act(async () => {});
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("a queued row's Cancel is described by its task's label", async () => {
+    const c = client(parallel(), { tasks: [summary("c", "queued"), summary("d", "queued")], caps: { tasks: 1, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    const cancels = screen.getAllByRole("button", { name: "Cancel" });
+    const described = cancels.map((b) => {
+      const ref = b.getAttribute("aria-describedby");
+      return ref ? document.getElementById(ref)?.textContent : null;
+    });
+    expect(described).toEqual(["Task c", "Task d"]);
+  });
+
+  it("a polite live region announces the waiting count as it changes", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "running")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    await screen.findByRole("button", { name: "Inbox, 0 waiting" });
+    const region = document.querySelector('.hh-pl-inbox [aria-live="polite"]');
+    expect(region).not.toBeNull();
+    expect(region!.textContent).toBe("");
+    act(() => c.tasks.set({ tasks: [summary("a", "waiting"), summary("b", "waiting")], caps: { tasks: 2, jobs: 1 } }));
+    await waitFor(() => expect(region!.textContent).toBe("2 waiting for you"));
+  });
+
+  describe("the reset time of an out-of-quota pause", () => {
+    afterEach(() => vi.useRealTimers());
+    const pausedUntil = async (resetsAt: Date) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 9, 28, 10, 0));
+      const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 }, paused: { reason: "out-of-quota", resetsAt: resetsAt.toISOString() } });
+      await open(c);
+      fireEvent.click(await inbox());
+      return screen.getByText(/^Out of quota until /).textContent;
+    };
+
+    it("today: the time alone", async () => {
+      expect(await pausedUntil(new Date(2026, 9, 28, 15, 0))).toBe("Out of quota until 3:00 PM");
+    });
+
+    it("another day: the weekday too", async () => {
+      expect(await pausedUntil(new Date(2026, 9, 29, 9, 30))).toBe("Out of quota until Thursday 9:30 AM");
+    });
   });
 
   it("Escape closes the list and gives focus back to the button", async () => {

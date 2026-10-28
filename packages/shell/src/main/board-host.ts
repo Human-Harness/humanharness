@@ -304,25 +304,29 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       lane.known = stored?.started ? stored.id : null;
       return ws.openSlot({ key: id, ...(stored ? { session: stored } : {}), onSession: (s) => sessionStarted(lane, s) });
     });
-    lane.controller = new TurnController({
-      ...d.turnDeps,
-      ensureRuntime: async () => {
-        if (lane.startFailed) {
-          lane.startFailed = false;
-          throw new Error("Couldn't get ready for this turn");
-        }
-        await migrated.catch(() => undefined);
-        await d.checkTurn();
-        // A sleep started just before this turn (the idle timer): the slot is busy until it ends.
-        await sleeps.get(id)?.catch(() => undefined);
-        return lane.slot.get();
-      },
-      chatLog: async (chat) => {
-        await migrated.catch(() => undefined);
-        return d.chatLog(chat, id);
-      },
-      emit,
-    });
+    // Descriptors, not a spread: a getter of the shared deps (scopeAccess, set up once the linked folders' deps
+    // exist) is read at each turn, never frozen at the lane's creation.
+    lane.controller = new TurnController(Object.defineProperties({}, {
+      ...Object.getOwnPropertyDescriptors(d.turnDeps),
+      ...Object.getOwnPropertyDescriptors({
+        ensureRuntime: async () => {
+          if (lane.startFailed) {
+            lane.startFailed = false;
+            throw new Error("Couldn't get ready for this turn");
+          }
+          await migrated.catch(() => undefined);
+          await d.checkTurn();
+          // A sleep started just before this turn (the idle timer): the slot is busy until it ends.
+          await sleeps.get(id)?.catch(() => undefined);
+          return lane.slot.get();
+        },
+        chatLog: async (chat) => {
+          await migrated.catch(() => undefined);
+          return d.chatLog(chat, id);
+        },
+        emit,
+      } satisfies Partial<TurnDeps>),
+    }) as TurnDeps);
     lane.turns = gatedTurns(id, gate, lane.controller, {
       cap: "tasks",
       emit,

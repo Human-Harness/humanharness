@@ -12,6 +12,7 @@ import {
   type InputSpec,
   type ModeView,
   type RespondResult,
+  type ReviewSummary,
   type SendOptions,
   partsOf,
 } from "./client";
@@ -149,7 +150,7 @@ export function Message({
   /** The answer is arriving: how much of it shows (see usePacedAnswer). */
   reveal?: Reveal;
   /** The chat's handling of document cards (document-reader spec §5.1); absent: cards are not drawn. */
-  documents?: { missing: ReadonlySet<string>; open(card: DocumentCard): void };
+  documents?: { missing: ReadonlySet<string>; open(card: DocumentCard): void; reviews?: ReadonlyMap<string, ReviewSummary | null> };
 }) {
   const { t } = useTranslation();
   // The chat log is read from disk unchecked: only well-formed cards are drawn.
@@ -172,7 +173,7 @@ export function Message({
       {entry.role === "assistant" ? (
         <>
           <Answer parts={partsOf(entry)} blocks={entry.blocks} reveal={reveal} components={components} actions={actions} />
-          {documents && cards.length > 0 && <DocumentCards cards={cards} missing={documents.missing} onOpen={documents.open} />}
+          {documents && cards.length > 0 && <DocumentCards cards={cards} missing={documents.missing} onOpen={documents.open} reviews={documents.reviews} />}
         </>
       ) : (
         entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>)

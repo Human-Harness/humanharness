@@ -19,6 +19,7 @@ import {
   type NoteView,
   type ReaderPrefs,
   type RespondResult,
+  type ReviewSummary,
   type SendOptions,
   type TaskTurnNotice,
   type TaskView,
@@ -841,6 +842,27 @@ export function ChatView({
       live = false;
     };
   }, [client, cardKey, docsCheck]);
+  // Review chips (review spec §6.1): the cards' summaries, asked again when a review changes. D0: a harness that can't
+  // review, or no cards: no call, no listener.
+  const [reviewSummaries, setReviewSummaries] = useState<ReadonlyMap<string, ReviewSummary | null> | undefined>(undefined);
+  const [reviewTick, setReviewTick] = useState(0);
+  const canReview = state.review === true;
+  useEffect(() => {
+    if (!canReview || !cardKey) return;
+    return client.documents.onChange(() => setReviewTick((n) => n + 1));
+  }, [client, canReview, cardKey]);
+  useEffect(() => {
+    if (!canReview || !cardKey) return;
+    let live = true;
+    const paths = cardKey.split("\n");
+    client.documents.summaries(paths).then(
+      (s) => live && setReviewSummaries(new Map(paths.map((p, i) => [p, s[i] ?? null]))),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, canReview, cardKey, reviewTick, docsCheck]);
   useEffect(() => {
     if (!cardKey) return;
     window.addEventListener("focus", recheckDocs);
@@ -864,6 +886,7 @@ export function ChatView({
   const cardsFor = (entry: ChatEntry) => ({
     missing: missingDocs,
     open: (card: DocumentCard) => showReader({ path: card.path, agent: engineName(entry.engine) }),
+    ...(canReview && reviewSummaries ? { reviews: reviewSummaries } : {}),
   });
   const saveReaderPrefs = useCallback(
     (p: ReaderPrefs) => {

@@ -647,5 +647,8 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-doc-card { height: auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; text-align: left; border-radius: 8px; }
 .hh-doc-card-title { font-weight: 600; }
 .hh-doc-card-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--hh-muted); }
+.hh-review-chip { padding: 0 6px; border-radius: 999px; background: var(--hh-review-question); color: var(--hh-ink); font-size: 12px; }
+.hh-review-chip-ok { background: var(--hh-callout-tip); color: var(--hh-ok); }
+.hh-review-chip-warn { background: var(--hh-callout-warning); color: var(--hh-warn); }
 .hh-doc-card-missing { opacity: 0.6; cursor: default; }
 .hh-doc-card-missing .hh-doc-card-title { text-decoration: line-through; }

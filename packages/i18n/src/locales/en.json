@@ -742,7 +742,13 @@
     "hideChanges": "Hide changes",
     "noDiff": "Too large to compare here.",
     "diff": "Changes since the approval",
-    "notFound": "That text could not be found in the document. Select plain text, not a diagram."
+    "notFound": "That text could not be found in the document. Select plain text, not a diagram.",
+    "chipQuestions_one": "{{count}} question open",
+    "chipQuestions_other": "{{count}} questions open",
+    "chipBlocking": "{{count}} blocking",
+    "chipDraft": "In review",
+    "chipApproved": "Approved",
+    "chipStale": "Changed since approval"
   },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",

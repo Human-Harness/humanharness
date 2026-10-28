@@ -15,7 +15,7 @@ Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §4.
 - `createWorkspace` (`packages/runtime/src/workspace.ts`) sets up the folder once. It runs `prepareFolder`, writes the instructions, opens the `History`, commits "Start" and opens the folder's `TurnLedger`.
 - `workspace.openSlot({ key, session, onSession, kind, permissions })` opens a `SessionSlot`. One slot runs one task's engine connection.
 - `createRuntime` keeps its signature and its `HarnessRuntime` shape. It is a workspace with one slot, keyed `"main"`. The CLI's `humanharness run` and the shell use it unchanged.
-- Slot keys are opaque to the runtime. Board mode keys task slots by task id. Part 3 will key job slots `job:<run id>`.
+- Slot keys are opaque to the runtime. Board mode keys task slots by task id. Job runs key their slots `job:<run id>` (`jobs.md`).
 - One slot per task. Two windows of the same task would own each other's paths. A second turn of a task that already runs a turn throws "A turn of task X is already running".
 
 | Shared, one per folder | Per slot |

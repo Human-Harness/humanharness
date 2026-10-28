@@ -103,7 +103,7 @@ Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §5.
 - `commitChanges` and `tasks` are not queued: they only read commits already written. A commit landing meanwhile may or may not be in what `tasks` returns.
 
 **Trailers.**
-- A job's commit adds `Job: <job id>` (part 3 writes it).
+- A job run's commit carries `Task: <run id>` and adds `Job: <job id>` (`jobs.md`). `parseCommitMessage` reads it into the entry's `job`.
 - `withTrailer` drops a `Shared:` line naming the commit's own task, and duplicates.
 - Without `job` and `shared`, `withTrailer` writes exactly what it did before.
 

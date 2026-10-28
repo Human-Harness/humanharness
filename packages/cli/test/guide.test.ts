@@ -45,6 +45,13 @@ describe("the /new-harness guide", () => {
     for (const word of ["`modes`", "`defaultMode`", "`recommend`", "`ask`", "`minTier`", "`recommend_mode`", "--mode <id>", "docs/architecture/modes.md"]) expect(flow.body).toContain(word);
   });
 
+  it("asks about background jobs in the Flow phase", () => {
+    const flow = phases(guide).find((p) => p.name === "Flow")!;
+    for (const word of ["`jobs`", "`afterTask`", "`every`", "`dailyTokens`", "`job_result`", '`tier: "light"`', '`permissions: { edit: "none" }`', "docs/architecture/jobs.md"]) {
+      expect(flow.body).toContain(word);
+    }
+  });
+
   it("states the compliance rules and the check loop", () => {
     for (const dir of ["~/.claude", "~/.codex", "~/.gemini"]) expect(guide).toContain(dir);
     expect(guide).toContain("Never edit files outside this repository");

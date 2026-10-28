@@ -62,6 +62,7 @@ import {
 import {
   type CurrentTask,
   NOTICES_MAX,
+  NOTICE_MAX,
   PHASE_LOG_MAX,
   type PendingInput,
   type PhaseBy,
@@ -482,7 +483,7 @@ export class TaskManager {
     const c = await this.storedCurrent();
     if (!c) return;
     if (a.task === c.id) {
-      const line = `The person approved ${a.path}${a.reason ? `, with reason: ${oneLine(a.reason)}` : ""}.`;
+      const line = `The person approved ${a.path}${a.reason ? `, with reason: ${oneLine(a.reason)}` : ""}.`.slice(0, NOTICE_MAX);
       await this.update((s) => (s.current?.id === c.id ? { ...s, current: { ...s.current, notices: [...(s.current.notices ?? []), line].slice(-NOTICES_MAX) } } : s));
     }
     const phases = this.phasesOf(c.action);
@@ -1132,16 +1133,19 @@ export class TaskManager {
     return { ...c, profile };
   }
 
-  /** The lines kept for the task's next message, before `text`; the state drops them (review spec §5.4). */
+  /**
+   * The lines kept for the task's next message, before `text` (review spec §5.4). The lines sent are the ones the state
+   * holds when they are dropped, in the same write: a line an approval adds meanwhile is either sent or kept, never lost.
+   */
   private async withNotices(c: CurrentTask, text: string): Promise<string> {
-    const notes = c.notices ?? [];
-    if (notes.length === 0) return text;
+    let notes: string[] = [];
     await this.update((s) => {
-      if (s.current?.id !== c.id) return s;
-      const { notices: _n, ...rest } = s.current;
+      if (s.current?.id !== c.id || !s.current.notices?.length) return s;
+      const { notices, ...rest } = s.current;
+      notes = notices;
       return { ...s, current: rest };
     });
-    return `${notes.join("\n")}\n\n${text}`;
+    return notes.length === 0 ? text : `${notes.join("\n")}\n\n${text}`;
   }
 
   private async askNow(text: string, display?: string): Promise<void> {
@@ -1150,8 +1154,8 @@ export class TaskManager {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       // After the session was lost a new one starts, told what the task is and what the notes hold; the
       // chat still shows what was typed. Lines kept for this message (review spec §5.4) go before it, unshown.
-      const hasNotices = (c.notices?.length ?? 0) > 0;
       const said = await this.withNotices(c, text);
+      const hasNotices = said !== text;
       const message = c.resume ? await this.resumeMessageFor(c, said) : said;
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.

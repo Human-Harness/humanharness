@@ -122,8 +122,8 @@ export const PHASE_LOG_MAX = 200;
 export const TIME_BOX_MINUTES_MAX = 24 * 60;
 /** How many lines for the next message a task keeps (review spec §5.4): a bound on a hand-edited file. */
 export const NOTICES_MAX = 10;
-/** How long one of those lines can be in tasks.json. */
-const NOTICE_MAX = 600;
+/** How long one of those lines can be: cut when written and when read. */
+export const NOTICE_MAX = 600;
 const PHASE_BY: readonly string[] = ["agent", "person", "app"];
 
 /** What the manifest declares, when known: mode ids, and each action's phase ids. */

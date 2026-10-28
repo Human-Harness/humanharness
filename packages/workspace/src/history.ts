@@ -746,8 +746,9 @@ export class History {
 
   /**
    * A task's changes from its own commits (newest first), the commit at `start` (its opening "Before message") left
-   * out. Each file's kinds fold oldest first, so with no other task in between this equals the `start` → end diff:
-   * added then modified is added, added then deleted is nothing, deleted then added is modified.
+   * out. Each file's kinds fold oldest first, so with no other task in between this equals the `start` → end diff,
+   * except edits later reverted (a file changed then restored still shows as modified): added then modified is added,
+   * added then deleted is nothing, deleted then added is modified.
    */
   private async ownChanges(entries: HistoryEntry[], start: string | null, cache: object): Promise<FileChange[]> {
     const kinds = new Map<string, FileChange["kind"] | null>();

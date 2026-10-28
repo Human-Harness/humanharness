@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { BEFORE_MESSAGE, History, laterTasksSharing, ownedPathsOf, sharedPathsOf } from "../src";
+import { BEFORE_MESSAGE, History, laterChangesOf, laterChangesSharing, ownedPathsOf, sharedPathsOf, type HistoryTask } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-undo-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -115,25 +115,67 @@ describe("owned and shared paths of a task", () => {
   });
 });
 
-describe("laterTasksSharing", () => {
-  const groups = [
-    { taskId: "t3", date: "2026-10-28T10:03:00Z", changes: [{ path: "x.md", kind: "modified" as const }] },
-    { taskId: "t2", date: "2026-10-28T10:02:00Z", changes: [{ path: "a.md", kind: "modified" as const }] },
-    { taskId: null, date: "2026-10-28T10:02:30Z", changes: [{ path: "a.md", kind: "modified" as const }] },
-    { taskId: "t1", date: "2026-10-28T10:01:00Z", changes: [{ path: "a.md", kind: "added" as const }] },
-    { taskId: "t0", date: "2026-10-28T10:00:00Z", changes: [{ path: "a.md", kind: "added" as const }] },
-  ];
+describe("laterChangesOf (by commit order, not dates)", () => {
+  const taskOf = async (id: string) => (await history.tasks(200, { ownCommits: true })).find((g) => g.taskId === id)!;
 
-  it("only later tasks that changed one of the same paths", () => {
-    expect(laterTasksSharing(groups, "t1", "2026-10-28T10:01:00Z", ["a.md"]).map((g) => g.taskId)).toEqual(["t2"]);
+  it("a later task's commit in the same second still counts", async () => {
+    write("a.md", "A");
+    await history.save("Turn: A", { task: "A" });
+    write("a.md", "B");
+    await history.save("Turn: B", { task: "B" });
+    const A = await taskOf("A");
+    // Git dates are whole seconds, so these two almost always share one: a date check would miss B.
+    expect(await laterChangesOf(history, A, await ownedPathsOf(history, A))).toEqual({ tasks: ["B"], outside: [] });
   });
 
-  it("takes Date values as History.tasks gives them", () => {
-    const dated = groups.map((g) => ({ ...g, date: new Date(g.date) }));
-    expect(laterTasksSharing(dated, "t1", new Date("2026-10-28T10:01:00Z"), ["a.md"]).map((g) => g.taskId)).toEqual(["t2"]);
+  it("a commit interleaved between the task's own commits counts, though the task ends after it", async () => {
+    write("a.md", "A1");
+    await history.commitPaths(["a.md"], "Turn: A1", { task: "A" });
+    write("a.md", "B");
+    await history.commitPaths(["a.md"], "Turn: B", { task: "B" });
+    write("x.md", "A2");
+    await history.commitPaths(["x.md"], "Turn: A2", { task: "A" });
+    const A = await taskOf("A");
+    expect(await ownedPathsOf(history, A)).toEqual(["a.md", "x.md"]);
+    expect(await laterChangesOf(history, A, ["a.md", "x.md"])).toEqual({ tasks: ["B"], outside: [] });
   });
 
-  it("nothing when no path is shared", () => {
-    expect(laterTasksSharing(groups, "t1", "2026-10-28T10:01:00Z", ["z.md"])).toEqual([]);
+  it("the person's edit swept into another task's opening snapshot counts under that task", async () => {
+    await history.save(BEFORE_MESSAGE, { task: "A" });
+    write("a.md", "A");
+    await history.save("Turn: A", { task: "A" });
+    write("a.md", "person");
+    await history.save(BEFORE_MESSAGE, { task: "B" });
+    write("b.md", "B");
+    await history.save("Turn: B", { task: "B" });
+    const A = await taskOf("A");
+    expect(await ownedPathsOf(history, A)).toEqual(["a.md"]);
+    expect(await laterChangesOf(history, A, ["a.md"])).toEqual({ tasks: ["B"], outside: [] });
+  });
+
+  it("commits outside any task come back apart; the task's own and unrelated commits don't count", async () => {
+    write("a.md", "A");
+    await history.save("Turn: A", { task: "A" });
+    write("z.md", "C");
+    await history.save("Turn: C", { task: "C" });
+    write("a.md", "loose");
+    const loose = await history.save("Loose");
+    write("a.md", "A2");
+    await history.save("Turn: A2", { task: "A" });
+    const A = await taskOf("A");
+    expect(await laterChangesOf(history, A, ["a.md"])).toEqual({ tasks: [], outside: [loose] });
+  });
+
+  it("several later tasks: newest first, once each", () => {
+    const commits = [
+      { sha: "5", task: "t2", paths: ["a.md"] },
+      { sha: "4", task: "t3", paths: ["a.md", "b.md"] },
+      { sha: "3", task: "t2", paths: ["b.md"] },
+      { sha: "2", task: "t1", paths: ["a.md"] },
+      { sha: "1", task: "t4", paths: ["z.md"] },
+    ];
+    const own = { entries: [{ sha: "2" }] } as unknown as HistoryTask;
+    expect(laterChangesSharing(commits, own, ["a.md", "b.md"])).toEqual({ tasks: ["t2", "t3"], outside: [] });
+    expect(laterChangesSharing(commits, own, ["q.md"])).toEqual({ tasks: [], outside: [] });
   });
 });

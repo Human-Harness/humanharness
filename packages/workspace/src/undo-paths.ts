@@ -1,4 +1,4 @@
-import { isCanonicalPath, type FileChange, type History, type HistoryTask } from "./history";
+import { isCanonicalPath, type CommitSince, type History, type HistoryTask } from "./history";
 
 /**
  * The paths a task's own commits changed (commits without `Shared:` trailers), sorted. The commit at the task's
@@ -24,17 +24,41 @@ async function pathsOf(history: History, task: HistoryTask, shared: boolean): Pr
   return [...out].sort();
 }
 
+/** What undoing a task by paths would also undo (`laterChangesSharing`). */
+export interface LaterChanges {
+  /** The other tasks whose commits after the task's start touch one of the paths, newest first, once each. */
+  tasks: string[];
+  /** The commits outside any task that touch one of the paths (the person's own edits), newest first. */
+  outside: string[];
+}
+
 /**
- * The tasks after `after` other than `own` whose changes touch one of `paths`: what undoing `own` by paths would also
- * undo (spec §5.3 "it counts only later tasks that changed the same paths"). Pass groups from
- * `tasks(depth, { ownCommits: true })` so a task counts only for its own commits. Newest first, as given.
+ * Which commits after `task.start` other than the task's own entries touch one of `paths` (spec §5.3 "it counts only
+ * later tasks that changed the same paths"). Decided by commit order, never by dates: git dates are whole seconds and
+ * a task's commits may interleave with others'. `commits` is `History.commitsSince(task.start)` (newest first); a
+ * "Before message" of another task counts under that task, so the person's edits it swept in are never missed.
  */
-export function laterTasksSharing<
-  G extends { taskId: string | null; date: Date | string; changes: readonly Pick<FileChange, "path">[] },
->(groups: readonly G[], own: string | null, after: Date | string, paths: readonly string[]): G[] {
+export function laterChangesSharing(
+  commits: readonly Pick<CommitSince, "sha" | "task" | "paths">[],
+  task: Pick<HistoryTask, "entries">,
+  paths: readonly string[],
+): LaterChanges {
   const mine = new Set(paths);
-  const since = new Date(after).getTime();
-  return groups.filter(
-    (g) => g.taskId !== null && g.taskId !== own && new Date(g.date).getTime() > since && g.changes.some((c) => mine.has(c.path)),
-  );
+  const own = new Set(task.entries.map((e) => e.sha));
+  const tasks: string[] = [];
+  const outside: string[] = [];
+  for (const c of commits) {
+    if (own.has(c.sha) || !c.paths.some((p) => mine.has(p))) continue;
+    if (c.task === null) outside.push(c.sha);
+    else if (!tasks.includes(c.task)) tasks.push(c.task);
+  }
+  return { tasks, outside };
+}
+
+/**
+ * `laterChangesSharing` over the history's commits since `task.start`. It queues a read on the history's one write
+ * queue, so never call it from inside another serialized history operation.
+ */
+export async function laterChangesOf(history: History, task: HistoryTask, paths: readonly string[]): Promise<LaterChanges> {
+  return laterChangesSharing(await history.commitsSince(task.start), task, paths);
 }

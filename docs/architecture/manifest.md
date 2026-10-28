@@ -15,7 +15,7 @@ Every text in the manifest is one English string.
 | `tone` | One English line on how the translated screens should sound; the app ships in English and will translate (plan 5b) on the person's engine |
 | `engines` | Engines the harness was tested with; `availableEngines` in `packages/engines` keeps the ones whose legal status allows it |
 | `folder.suggested`, `folder.seed` | Where the person's work lives; the seed is copied there when the folder is empty (`prepareFolder`) |
-| `folder.references` | Folders the agent may read but never change; `"app-source"` is the repository the app runs from, in development only |
+| `folder.references` | Folders the agent may read but never change; `"app-source"` is the repository the app runs from, in development only. They give file access only: nothing in their `.claude/` (skills, commands, agents) is loaded (`docs/architecture/engines.md`) |
 | `instructions` | The base `AGENTS.md`; the core appends a managed section (`writeInstructions`) |
 | `permissions` | `edit` (`folder` or `none`), `exec`, `web`: turned into Claude's allowed and denied tools and into Codex's permission answers. `edit: "folder"` also turns on document reviews (`docs/architecture/reviews.md`) |
 | `blocks` | `defineBlock({ description, visible, schema, example })`: one MCP tool per block, served by the `ui` server |

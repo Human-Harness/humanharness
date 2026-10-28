@@ -39,8 +39,8 @@ export function disallowedTools(permissions: Permissions, references: string[] =
   if (!permissions.exec) deny("Bash");
   if (!permissions.web) deny("WebSearch", "WebFetch");
   tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
-  // `--add-dir` makes a reference folder a working directory, where acceptEdits would accept edits:
-  // deny them by absolute path (`//` starts an absolute path in permission rules).
+  // `permissions.additionalDirectories` makes a reference folder a working directory, where acceptEdits would
+  // accept edits: deny them by absolute path (`//` starts an absolute path in permission rules).
   for (const ref of references) {
     const dir = referenceRulePath(ref);
     tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
@@ -76,6 +76,18 @@ export function profileArgs(profile: ModelProfile | undefined): string[] {
   return [...(profile.model !== undefined ? ["--model", profile.model] : []), "--effort", profile.effort, "--autocompact", String(profile.cap)];
 }
 
+/**
+ * `--settings` for the reference folders, or nothing without any (D0). They go in as
+ * `permissions.additionalDirectories`, not `--add-dir`: an `--add-dir` folder also loads its `.claude/skills`,
+ * `.claude/commands` and `.claude/agents` under the project source, code nobody approved. The settings key
+ * "grants file access only and loads none of these" (code.claude.com/docs/en/permissions, "Additional
+ * directories grant file access, not configuration").
+ */
+export function referenceSettingsArgs(references: string[]): string[] {
+  if (references.length === 0) return [];
+  return ["--settings", JSON.stringify({ permissions: { additionalDirectories: references } })];
+}
+
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
   o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "mcpOnly"> & { profile?: ModelProfile },
@@ -95,7 +107,7 @@ export function claudeArgs(
     "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly).join(","),
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
-    ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),
+    ...referenceSettingsArgs(o.references ?? []),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
     ...profileArgs(o.profile),

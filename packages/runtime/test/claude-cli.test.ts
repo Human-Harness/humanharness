@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -420,15 +420,35 @@ describe("ClaudeCliTransport hardening", () => {
 });
 
 describe("reference folders", () => {
-  it("adds each reference folder with --add-dir and denies edits there", () => {
+  it("gives reference folders file access through --settings additionalDirectories, never --add-dir, and denies edits there", () => {
     const args = claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/Users/me/code/hh", "/opt/docs"] });
-    const at = args.indexOf("--add-dir");
-    expect(args.slice(at, at + 4)).toEqual(["--add-dir", "/Users/me/code/hh", "--add-dir", "/opt/docs"]);
+    // --add-dir would also load each folder's .claude/skills, commands and agents (spike S2).
+    expect(args).not.toContain("--add-dir");
+    expect(args.filter((a) => a === "--settings")).toHaveLength(1);
+    const settings = JSON.parse(args[args.indexOf("--settings") + 1]);
+    expect(settings).toEqual({ permissions: { additionalDirectories: ["/Users/me/code/hh", "/opt/docs"] } });
     const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
     expect(denied).toEqual(
       expect.arrayContaining(["Edit(//Users/me/code/hh/**)", "Write(//Users/me/code/hh/**)", "MultiEdit(//Users/me/code/hh/**)", "Edit(//opt/docs/**)"]),
     );
-    expect(claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions })).not.toContain("--add-dir");
+    // Reading keeps working as before: the bare Read, Glob and Grep allow rules cover any path.
+    expect(args[args.indexOf("--allowedTools") + 1].split(",")).toEqual(expect.arrayContaining(["Read", "Glob", "Grep"]));
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("project");
+  });
+
+  it("passes no --settings and no --add-dir without reference folders (D0)", () => {
+    const base = { session: { id: "a", started: false }, mcp: [], permissions };
+    for (const args of [claudeArgs(base), claudeArgs({ ...base, references: [] })]) {
+      expect(args).not.toContain("--add-dir");
+      expect(args).not.toContain("--settings");
+    }
+    expect(referenceSettingsArgs([])).toEqual([]);
+  });
+
+  it("keeps Windows paths intact in the settings JSON", () => {
+    const [flag, json] = referenceSettingsArgs(["C:\\Users\\me\\code"]);
+    expect(flag).toBe("--settings");
+    expect(JSON.parse(json).permissions.additionalDirectories).toEqual(["C:\\Users\\me\\code"]);
   });
 
   it("normalizes reference paths before building the deny rules", () => {

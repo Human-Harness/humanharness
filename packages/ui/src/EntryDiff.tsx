@@ -34,11 +34,23 @@ export function EntryDiff({
       live.current = false;
     };
   }, []);
+  const goBackButton = useRef<HTMLButtonElement>(null);
+  /** A go-back started from the button: once it settles, focus returns there (the button was disabled meanwhile). */
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (working || !refocus.current) return;
+    refocus.current = false;
+    const button = goBackButton.current;
+    const active = document.activeElement;
+    // Only when focus was lost with the dialog (it sits on the page body), never taken from where the person moved it.
+    if (button && !button.disabled && (active === null || active === document.body)) button.focus();
+  }, [working]);
   // Another entry or file: the last go-back's answer belonged to the one before.
   useEffect(() => setStatus(null), [path, entry.to]);
   const from = mode === "here" ? entry.from : entry.to;
   const to = mode === "here" ? entry.to : "current";
   const goBack = async () => {
+    refocus.current = true;
     setWorking(true);
     setStatus(null);
     const r: FileRestoreResult = await client.files.restore(path, entry.to).catch(() => ({ refused: "failed" as const }));
@@ -65,7 +77,7 @@ export function EntryDiff({
           </button>
         </div>
         {/* A "Deleted" entry has no file to bring back (§3.1): the button stays, disabled. */}
-        <button type="button" disabled={busy || working || entry.deleted === true} onClick={goBack}>
+        <button type="button" ref={goBackButton} disabled={busy || working || entry.deleted === true} onClick={goBack}>
           {t("timeline.goBack")}
         </button>
         <button type="button" onClick={onBack}>
@@ -73,11 +85,10 @@ export function EntryDiff({
         </button>
       </div>
       {busy && <p className="hh-caption">{t("timeline.busy")}</p>}
-      {status && (
-        <p className="hh-caption" role="status">
-          {status}
-        </p>
-      )}
+      {/* Always mounted, so a screen reader hears each new answer. */}
+      <p className="hh-caption" role="status">
+        {status}
+      </p>
       {/* Keyed by the pair: a new entry, file or mode starts the diff afresh (its Source toggle included). */}
       <FileDiff key={`${path}:${from}:${to}`} client={client} path={path} from={from} to={to} />
     </div>

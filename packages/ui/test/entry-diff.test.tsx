@@ -95,10 +95,50 @@ describe("RestoreConfirm (file-timeline spec §5)", () => {
     const prompt: FileRestorePrompt = { path: DOC, author: { kind: "person", label: "You" }, at: entry.at, kind: "approval", version: 2 };
     await renderIn("en", <RestoreConfirm prompt={prompt} onAnswer={(yes) => answers.push(yes)} />);
     const dialog = screen.getByRole("alertdialog");
-    expect(dialog.textContent).toContain(`Go back ${DOC} to how it was after v2 approved`);
+    expect(dialog.textContent).toContain(`Go back ${DOC} to v2, the version you approved`);
+    // A short title names the dialog; the sentence describes it.
+    expect(document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent).toBe("Go back to this version?");
+    expect(document.getElementById(dialog.getAttribute("aria-describedby") ?? "")?.textContent).toContain(`Go back ${DOC} to v2`);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(answers).toEqual([false]);
+  });
+
+  it("Tab and Shift+Tab stay inside the dialog", async () => {
+    const prompt: FileRestorePrompt = { path: DOC, author: entry.author, at: entry.at, kind: "task" };
+    await renderIn("en", <RestoreConfirm prompt={prompt} onAnswer={() => undefined} />);
+    const dialog = screen.getByRole("alertdialog");
+    const yes = screen.getByRole("button", { name: "Yes, go back" });
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    yes.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(yes);
+  });
+});
+
+describe("Focus after the confirmation (file-timeline spec §5)", () => {
+  it("returns to Go back after a cancel and after a restore; the status line is always there", async () => {
+    const client = setup();
+    await renderIn(
+      "en",
+      <>
+        <RestoreHost client={client} />
+        <EntryDiff client={client} path={DOC} entry={entry} onBack={() => undefined} />
+      </>,
+    );
+    const button = await screen.findByRole("button", { name: "Go back to this version" });
+    const status = screen.getByRole("status", { hidden: true });
+    expect(status.textContent).toBe("");
+    button.focus();
+    fireEvent.click(button);
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(button));
+    fireEvent.click(button);
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, go back" }));
+    await waitFor(() => expect(status.textContent).toBe(`${DOC} is back to that version.`));
+    await waitFor(() => expect(document.activeElement).toBe(button));
   });
 });
 

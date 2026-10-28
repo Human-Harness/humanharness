@@ -20,7 +20,7 @@ const FORMS = new Set(["zero", "one", "two", "few", "many", "other"]);
 const KEY = /^(core|harness):[A-Za-z0-9_.-]{1,200}$/;
 const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
 /** A namespaced key the app could have written: no prototype or empty segment, never a legal text. */
-const safeKey = (k: string): boolean => {
+export const safeKey = (k: string): boolean => {
   if (!KEY.test(k)) return false;
   const key = k.slice(k.indexOf(":") + 1);
   return !isLegalKey(key) && !key.split(".").some((p) => p === "" || UNSAFE.has(p));

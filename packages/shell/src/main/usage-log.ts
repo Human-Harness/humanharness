@@ -38,10 +38,10 @@ export interface UsageMeta extends ProfileFields {
   phase?: TurnKind;
 }
 
-/** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
 /** A Sidekick usage line's moment (sidekick spec §8); `place:<id>` is a harness place's turn (§2a.5). */
 export type SidekickUsageMoment = "pre" | "after" | "learn" | "route" | "phase-change" | "daily" | "before-approve" | "import" | `place:${string}`;
 
+/** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
 export interface UsageRecord extends ProfileFields {
   at: string;
   engine: string;

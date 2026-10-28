@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportIo, ImportTooBig, importFileIo, importHash, joinImportFiles, readImportFiles, refusedPath } from "../src/main/sidekick-import";
+import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportIo, ImportTooBig, importFileIo, importHash, joinImportFiles, readImportFiles, refusedPath, sourceTagKey } from "../src/main/sidekick-import";
 
 // Every test runs in a fake home folder under the temp dir: the real home's engine folders are never touched.
 const fakeHome = () => {
@@ -279,5 +279,26 @@ describe("readImportFiles limits", () => {
     const stat = async () => ({ id: "x", size: 1, file: true });
     expect(await readImportFiles([p], at(home), { stat, read: async () => Promise.reject(new ImportTooBig()) })).toEqual({ ok: false, reason: "too-big", file: "a.md" });
     expect(await readImportFiles([p], at(home), { stat, read: async () => "x".repeat(IMPORT_MAX_BYTES + 1) })).toEqual({ ok: false, reason: "too-big", file: "a.md" });
+  });
+});
+
+describe("sourceTagKey", () => {
+  it("reads nothing into being: without `create` there is no key; with it, 32 random bytes, owner-only, kept", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hh-tag-"));
+    try {
+      const file = join(dir, "sidekick", "source-key");
+      expect(await sourceTagKey(file, false)).toBeNull();
+      expect(existsSync(file)).toBe(false);
+      const made = await sourceTagKey(file, true);
+      expect(made).toHaveLength(32);
+      if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(await sourceTagKey(file, false)).toEqual(made);
+      expect(await sourceTagKey(file, true)).toEqual(made);
+      // A file of another size is no key, and never overwritten.
+      writeFileSync(file, "short");
+      expect(await sourceTagKey(file, true)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

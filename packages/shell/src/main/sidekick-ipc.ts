@@ -20,7 +20,6 @@ const MAX_PRESET_NAME = 40;
 /** A pick's token (pickFiles: 16 random bytes in hex). */
 const TOKEN = /^[0-9a-f]{32}$/;
 const IMPORT_FAILED: SidekickImportResult = { ok: false, reason: "failed" };
-export { SIDEKICK_MAX };
 
 /**
  * An import request: pasted text (at most IMPORT_MAX_BYTES characters; the controller counts bytes), a pick's token,

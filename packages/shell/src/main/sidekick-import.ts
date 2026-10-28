@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, readlink, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, readlink, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 
 /** Import limits (sidekick plan Decision 14): at most this many files, each at most this many bytes; paste the same. */
@@ -248,4 +248,27 @@ export async function readImportFiles(paths: readonly string[], where: ImportPla
   }
   const text = joinImportFiles(files);
   return { ok: true, text, hash: importHash(text), paths: [...paths] };
+}
+
+/** The source-tag key's size, in bytes. */
+const TAG_KEY_BYTES = 32;
+/**
+ * The key that tags an import's files source (sidekick spec §2a.6): `file` in main's userData, never the data folder
+ * the agent works in. Made (random, owner-only) only when `create`; an existing one is never replaced, and a file of
+ * another size is no key (null).
+ */
+export async function sourceTagKey(file: string, create: boolean): Promise<Buffer | null> {
+  const read = async () => {
+    const b = await readFile(file).catch(() => null);
+    return b?.length === TAG_KEY_BYTES ? b : null;
+  };
+  const have = await read();
+  if (have || !create) return have;
+  await mkdir(dirname(file), { recursive: true });
+  try {
+    await writeFile(file, randomBytes(TAG_KEY_BYTES), { mode: 0o600, flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+  }
+  return read();
 }

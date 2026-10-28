@@ -118,7 +118,7 @@ import { type ResolvedReference, displayPath, resolveReferences, usableReference
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
-import { readImportFiles } from "./sidekick-import";
+import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
@@ -1746,6 +1746,8 @@ if (loaded) {
     events: { read: readSidekickEvents, append: appendSidekickEvent },
     // Import (sidekick spec §2a.6): a file in an engine's settings folder (under home or moved by env) is refused, links resolved, before any read.
     importFiles: (paths, signal) => readImportFiles(paths, { home: os.homedir(), env: process.env }, undefined, signal),
+    // The tag key of imported files sources: in userData, where the agent can't reach it (never in the data folder).
+    tagKey: (create) => sourceTagKey(path.join(app.getPath("userData"), "sidekick", "source-key"), create),
     pickImportFiles: async () => {
       if (!window || window.isDestroyed()) return [];
       const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"], filters: [{ name: "Text", extensions: ["md", "txt"] }] });

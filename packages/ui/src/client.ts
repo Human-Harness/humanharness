@@ -1166,7 +1166,7 @@ export interface SidekickPreset {
   adopted: boolean;
 }
 /** Where an imported sidekick came from: pasted text, or files with the hash of what was read. */
-export type SidekickSource = { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };
+export type SidekickSource = { kind: "paste" } | { kind: "files"; paths: string[]; hash: string; tag?: string };
 export type SidekickImportInput = { kind: "paste"; text: string } | { kind: "files"; token: string } | { kind: "original"; sidekickId: string };
 /** A pick for an import: a token for the paths the app kept (used once by importDraft) and the files' names to show. */
 export interface SidekickPick {

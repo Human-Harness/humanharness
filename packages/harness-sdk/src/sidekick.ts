@@ -136,7 +136,8 @@ export const SIDEKICK_RECORD_TYPES = ["settings", "learned", "sidekick", "scope"
 export type SidekickRecordType = (typeof SIDEKICK_RECORD_TYPES)[number];
 const importSource = z.union([
   z.strictObject({ kind: z.literal("paste") }),
-  z.strictObject({ kind: z.literal("files"), paths: z.array(z.string().max(1024)).min(1).max(4), hash: z.string().regex(/^[0-9a-f]{64}$/) }),
+  // `tag`: main's HMAC of paths and hash (only a tagged source is read again; the key never sits in the data folder).
+  z.strictObject({ kind: z.literal("files"), paths: z.array(z.string().max(1024)).min(1).max(4), hash: z.string().regex(/^[0-9a-f]{64}$/), tag: z.string().regex(/^[0-9a-f]{64}$/).optional() }),
 ]);
 
 /**
@@ -253,7 +254,7 @@ export interface SidekickDef {
   purposes: SidekickPurposeDef[];
   order: number;
   tier?: "light" | "standard" | "deep";
-  source?: { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };
+  source?: { kind: "paste" } | { kind: "files"; paths: string[]; hash: string; tag?: string };
   preset?: string;
   /** On in a scope with no scope record (spec §2a.1, §2a.4); absent = true. */
   defaultOn?: boolean;

@@ -4,7 +4,7 @@ import type { SidekickAnswer } from "@humanharness/runtime";
 import type { SidekickRecord } from "@humanharness/harness-sdk";
 import type { SidekickState } from "@humanharness/ui/client";
 import type { SidekickEvent } from "@humanharness/workspace";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
 import { joinImportFiles, readImportFiles } from "../src/main/sidekick-import";
 import { SIDEKICK_MAX, type SidekickInput, SidekickStore } from "../src/main/sidekick-store";
@@ -13,9 +13,12 @@ import { type UsageRecord, sidekickRecord } from "../src/main/usage-log";
 
 const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 80 };
 const json = (o: unknown) => JSON.stringify(o);
+/** The harness's source-tag key, and a files source tagged with it (as an import here saves one). */
+const KEY = Buffer.alloc(32, 7);
+const tagged = (paths: string[], hash: string) => ({ kind: "files" as const, paths, hash, tag: createHmac("sha256", KEY).update(JSON.stringify([paths, hash])).digest("hex") });
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; turnMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number; placeMs?: number; files?: Record<string, string>; picked?: string[]; importMs?: number; noticed?: boolean } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; turnMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number; placeMs?: number; files?: Record<string, string>; picked?: string[]; importMs?: number; noticed?: boolean; key?: Buffer | null } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -40,6 +43,9 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const days: string[] = [];
   // Each imported file read (its resolved path).
   const imported: string[] = [];
+  // The source-tag key in userData (KEY unless given): `keyMade` counts the times it was created.
+  let key = o.key === undefined ? KEY : o.key;
+  let keyMade = 0;
   let task = o.task === undefined ? { id: "t1", scope: "main" } : o.task;
   const answers = [...(o.answers ?? [])];
   const store = new SidekickStore({
@@ -135,6 +141,13 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
       ),
     pickImportFiles: async () => o.picked ?? [],
     ...(o.importMs !== undefined ? { importMs: o.importMs } : {}),
+    tagKey: async (create) => {
+      if (!key && create) {
+        key = KEY;
+        keyMade++;
+      }
+      return key;
+    },
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, sessions, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
@@ -145,6 +158,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     decisions,
     days,
     imported,
+    keyMade: () => keyMade,
     records: () => [...records.values()],
     record: () => records.get("settings") ?? null,
     setRecord: (r: Partial<SidekickRecord> | null) => (r ? records.set("settings", r) : records.delete("settings")),
@@ -1624,6 +1638,28 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
     expect(gone.asked).toEqual([]);
   });
 
+  it("a review on the guard's own session drops the running phase-change turn; on another sidekick's it doesn't", async () => {
+    const BOTH_ROLES = { ...GUARD, id: "both", purposes: [{ id: "prompt-coach" as const }, { id: "process-guard" as const }] };
+    // Each guard turn's signal, as its ask got it.
+    const seen: AbortSignal[] = [];
+    const held = (signal: AbortSignal) => (seen.push(signal), slow(signal));
+    const h = harness({ record: on, extra: [BOTH_ROLES], phases, answers: [held, SUGGEST] });
+    const run = h.ctl.phaseMoved(MOVE);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    expect(await h.ctl.review({ text: "Make it better", force: true })).toMatchObject({ kind: "card" });
+    expect(seen[0]?.aborted).toBe(true);
+    await run;
+    expect(h.events).not.toContainEqual(expect.objectContaining({ outcome: "timeout" }));
+    // The coach speaks before a send, the guard holds its own session: the guard's turn goes on.
+    const two = harness({ record: on, extra: [COACH, GUARD], phases, answers: [held, SUGGEST] });
+    const other = two.ctl.phaseMoved(MOVE);
+    await vi.waitFor(() => expect(two.asked).toHaveLength(1));
+    expect(await two.ctl.review({ text: "Make it better", force: true })).toMatchObject({ kind: "card" });
+    expect(seen[1]?.aborted).toBe(false);
+    await two.ctl.close();
+    await other;
+  });
+
   it("turned off while the turn runs: no card", async () => {
     let answer!: (a: SidekickAnswer) => void;
     const h = harness({ record: on, extra: [COACH, GUARD], phases, answers: [() => new Promise<SidekickAnswer>((r) => (answer = r))] });
@@ -1743,6 +1779,25 @@ describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
     await r.ctl.refresh();
     await run;
     expect((await r.ctl.state()).cards).toEqual([]);
+  });
+
+  it("overlapping calls: the second one returns at once, even when the first finishes before its checks would", async () => {
+    let release: (() => void) | undefined;
+    const h = harness({ record: on, extra: [DAILY], dailyInput: input, answers: ["Quiet day.", "Again."] });
+    const setup = h.deps.setup;
+    let calls = 0;
+    // The second call's setup read, while no daily turn holds its place yet, waits until the first call is done.
+    (h.deps as { setup: SidekickDeps["setup"] }).setup = async () => {
+      if (++calls === 2 && !h.ctl["dailyRun"]) await new Promise<void>((r) => (release = r));
+      return setup();
+    };
+    const first = h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    const second = h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    await first;
+    release?.();
+    await second;
+    expect(h.asked).toHaveLength(1);
+    expect((await h.ctl.state()).cards).toHaveLength(1);
   });
 
   it("the card is app-wide: it stays when a task opens or closes", async () => {
@@ -2262,7 +2317,7 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("original: a stored sidekick's own files read again, never paths the renderer names", async () => {
-    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") } };
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
     const h = harness({ record: on, extra: [rulo], answers: [json(RULO)], files: { "/n/a.md": "v2" } });
     expect(await h.ctl.importDraft({ kind: "original", sidekickId: "rulo" })).toMatchObject({ ok: true, draft: { source: { kind: "files", paths: ["/n/a.md"] } } });
     expect(await h.ctl.importDraft({ kind: "original", sidekickId: "nobody" })).toEqual({ ok: false, reason: "failed" });
@@ -2323,21 +2378,66 @@ describe("import (spec §2a.6)", () => {
 
   it("checkOriginal: same hash → unchanged; different → changed; a refused or missing file → gone", async () => {
     const h = harness({ record: on, files: { "/n/a.md": "v2", "/hh-test-home/.codex/AGENTS.md": "v2" } });
-    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/n/a.md"], hash: sha256("v2") })).toBe("unchanged");
-    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/n/a.md"], hash: sha256("v1") })).toBe("changed");
-    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/n/gone.md"], hash: sha256("v1") })).toBe("gone");
-    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/hh-test-home/.codex/AGENTS.md"], hash: sha256("v2", "AGENTS.md") })).toBe("gone");
+    expect(await h.ctl.checkOriginal(tagged(["/n/a.md"], sha256("v2")))).toBe("unchanged");
+    expect(await h.ctl.checkOriginal(tagged(["/n/a.md"], sha256("v1")))).toBe("changed");
+    expect(await h.ctl.checkOriginal(tagged(["/n/gone.md"], sha256("v1")))).toBe("gone");
+    expect(await h.ctl.checkOriginal(tagged(["/hh-test-home/.codex/AGENTS.md"], sha256("v2", "AGENTS.md")))).toBe("gone");
     expect(h.imported).not.toContain("/hh-test-home/.codex/AGENTS.md");
     expect(await h.ctl.checkOriginal({ kind: "paste" })).toBe("none");
   });
 
   it("checkSidekick looks the source up by id; pickFiles reads nothing", async () => {
-    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") } };
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
     const h = harness({ record: on, extra: [rulo], files: { "/n/a.md": "v2" }, picked: ["/n/a.md"] });
     expect(await h.ctl.checkSidekick("rulo")).toBe("changed");
     expect(await h.ctl.checkSidekick("nobody")).toBe("none");
     expect(await h.ctl.pickFiles()).toEqual({ token: expect.any(String), files: ["a.md"] });
     expect(h.imported).toEqual(["/n/a.md"]);
+  });
+
+  it("original: a stored source needs main's tag; a forged or untagged one is never read again (the agent can edit sidekick.json)", async () => {
+    const def = (id: string, source: unknown) => ({ id, type: "sidekick" as const, name: id, mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: source as never });
+    const genuine = tagged(["/n/a.md"], sha256("v1"));
+    const forged = [
+      def("untagged", { kind: "files", paths: ["/n/secret.md"], hash: sha256("v1", "secret.md") }),
+      def("badtag", { ...tagged(["/n/a.md"], sha256("v1")), paths: ["/n/secret.md"] }),
+      def("othertag", { kind: "files", paths: ["/n/secret.md"], hash: sha256("v1", "secret.md"), tag: "0".repeat(64) }),
+      def("shorttag", { kind: "files", paths: ["/n/secret.md"], hash: sha256("v1", "secret.md"), tag: "ab" }),
+    ];
+    const h = harness({ record: on, extra: [...forged, def("rulo", genuine)], answers: [json(RULO)], files: { "/n/a.md": "v2", "/n/secret.md": "secret" } });
+    for (const k of forged) {
+      expect(await h.ctl.checkSidekick(k.id)).toBe("none");
+      expect(await h.ctl.importDraft({ kind: "original", sidekickId: k.id })).toEqual({ ok: false, reason: "failed" });
+    }
+    expect(h.imported).toEqual([]);
+    expect(h.opened).toEqual([]);
+    expect(await h.ctl.checkSidekick("rulo")).toBe("changed");
+    expect(await h.ctl.importDraft({ kind: "original", sidekickId: "rulo" })).toMatchObject({ ok: true, draft: { source: tagged(["/n/a.md"], sha256("v2")) } });
+    // Another key (another install's userData): the stored tag doesn't verify.
+    const other = harness({ record: on, extra: [def("rulo", genuine)], files: { "/n/a.md": "v2" }, key: Buffer.alloc(32, 9) });
+    expect(await other.ctl.checkSidekick("rulo")).toBe("none");
+    expect(other.imported).toEqual([]);
+  });
+
+  it("saveSidekick tags an imported source itself: a tag the renderer sends is never kept", async () => {
+    const h = harness({ record: on, answers: [json(RULO)], files: { "/n/a.md": "You are Rulo." }, picked: ["/n/a.md"] });
+    const d = await h.ctl.importDraft({ kind: "files", token: (await h.ctl.pickFiles())!.token });
+    if (!d.ok || d.draft.source.kind !== "files") throw new Error("no draft");
+    await h.ctl.saveSidekick({ ...(d.draft as SidekickInput), source: { ...d.draft.source, tag: "0".repeat(64) } as never });
+    expect(h.records()).toContainEqual(expect.objectContaining({ id: "rulo", source: tagged(["/n/a.md"], sha256("You are Rulo.")) }));
+  });
+
+  it("D0: the tag key is created only by an import of files, never by a paste, a check or Save of a paste", async () => {
+    const stored = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
+    const h = harness({ record: on, extra: [stored], answers: [json(RULO), json(RULO)], files: { "/n/a.md": "v2" }, picked: ["/n/a.md"], key: null });
+    expect(await h.ctl.importDraft({ kind: "paste", text: "You are Rulo." })).toMatchObject({ ok: true });
+    expect(await h.ctl.checkSidekick("rulo")).toBe("none");
+    expect(await h.ctl.importDraft({ kind: "original", sidekickId: "rulo" })).toEqual({ ok: false, reason: "failed" });
+    await h.ctl.saveSidekick({ name: "Pasted", mark: "🦊", personality: "", purposes: [{ id: "mentor" }], source: { kind: "paste" } });
+    expect(h.keyMade()).toBe(0);
+    expect(h.imported).toEqual([]);
+    expect(await h.ctl.importDraft({ kind: "files", token: (await h.ctl.pickFiles())!.token })).toMatchObject({ ok: true, draft: { source: tagged(["/n/a.md"], sha256("v2")) } });
+    expect(h.keyMade()).toBe(1);
   });
 
   it("saveSidekick writes the draft with its source and the learned items as the person's; works with Sidekick off", async () => {
@@ -2348,7 +2448,7 @@ describe("import (spec §2a.6)", () => {
     const draft = d.draft as SidekickInput;
     const info = await h.ctl.saveSidekick(draft, d.learned);
     expect(info).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
-    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", id: "rulo", source: { kind: "files", paths: ["/n/a.md"], hash: sha256("You are Rulo.") } }));
+    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", id: "rulo", source: tagged(["/n/a.md"], sha256("You are Rulo.")) }));
     expect(h.records().filter((r) => r.type === "learned")).toEqual([expect.objectContaining({ text: "Prefers short answers.", level: "you", source: "person" })]);
     // Saving it again (the original changed, the person brought the changes) never doubles a learned item.
     await h.ctl.saveSidekick({ ...draft, id: "rulo", personality: "Blunt." }, d.learned);

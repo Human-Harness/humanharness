@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { basename, extname, isAbsolute } from "node:path";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import {
@@ -186,6 +186,11 @@ export interface SidekickDeps {
   pickImportFiles(): Promise<string[]>;
   /** How long an import turn may run, in ms (tests shorten it). */
   importMs?: number;
+  /**
+   * The key that tags an import's files source (32 random bytes in userData, never in the data folder): created only
+   * when `create` (an import of files); null when there is none, or it can't be read or made.
+   */
+  tagKey(create: boolean): Promise<Buffer | null>;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -236,6 +241,8 @@ export class SidekickController {
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
   /** The running phase-change turn (spec §2a.2); a newer move, turning off, a profile switch or closing drops it. */
   private guard: AbortController | null = null;
+  /** The session the phase-change turn uses, heldKey(sidekick, task), once its speaker is picked: a review there drops the turn. */
+  private guardHeld: string | null = null;
   /** Bumped by every phase change: a move that finished its awaits after a newer one started never runs. */
   private moves = 0;
   /** The open task's phase-brief excerpts, read once per task, keyed `action\nphase`. */
@@ -262,6 +269,8 @@ export class SidekickController {
   private imports = 0;
   /** The files sources (paths and hash) imports read lately: Save may store only one of these, never paths the renderer made up. */
   private issued: string[] = [];
+  /** The source-tag key, once read or made (tagFor). */
+  private key: Buffer | null = null;
   /** The last place turn's end: the next one waits for it (one at a time in the shared `place` folder). */
   private placeTurns: Promise<void> = Promise.resolve();
   /** The running learning turn's promise (never rejects), for `learned`. */
@@ -483,9 +492,15 @@ export class SidekickController {
    */
   async saveSidekick(def: SidekickInput, learned: { text: string; level: "you" | "harness" }[] = []): Promise<SidekickInfo> {
     if (def.source?.kind === "files") {
-      const key = sourceKey(def.source);
+      const { paths, hash } = def.source;
+      const key = sourceKey({ paths, hash });
       const stored = def.id !== undefined ? (await this.d.store.sidekicks()).find((k) => k.id === def.id)?.source : undefined;
-      if (!this.issued.includes(key) && !(stored?.kind === "files" && sourceKey(stored) === key)) throw new Error("Not a source an import read");
+      // The tag is main's own, never the renderer's: an import's source gets it here; a kept one keeps the stored tag.
+      if (this.issued.includes(key)) {
+        const tag = await this.tagFor({ paths, hash }, true);
+        def = { ...def, source: { kind: "files", paths, hash, ...(tag ? { tag } : {}) } };
+      } else if (stored?.kind === "files" && sourceKey(stored) === key) def = { ...def, source: stored };
+      else throw new Error("Not a source an import read");
     }
     const have = new Set((await this.learnedRecords()).map((r) => `${r.level}\n${r.text}`));
     const now = new Date().toISOString();
@@ -587,7 +602,7 @@ export class SidekickController {
         let paths: string[] | null;
         if (input.kind === "files") paths = await this.takePick(input.token);
         else {
-          paths = this.originalPaths((await this.d.store.sidekicks()).find((k) => k.id === input.sidekickId)?.source);
+          paths = await this.originalPaths((await this.d.store.sidekicks()).find((k) => k.id === input.sidekickId)?.source);
         }
         if (!paths) return { ok: false, reason: input.kind === "files" ? "expired" : "failed" };
         const read = await this.d.importFiles(paths, signal);
@@ -595,7 +610,8 @@ export class SidekickController {
         if (!read.ok) return { ok: false, reason: read.reason, ...(read.file !== undefined ? { file: read.file } : {}) };
         if (!read.text.trim()) return { ok: false, reason: "empty" };
         text = read.text;
-        source = { kind: "files", paths: read.paths, hash: read.hash };
+        const tag = await this.tagFor(read, true);
+        source = { kind: "files", paths: read.paths, hash: read.hash, ...(tag ? { tag } : {}) };
       }
       if (turn !== this.imports || !live()) return { ok: false, reason: "cancelled" };
       const setup = await this.d.setup().catch(() => null);
@@ -611,7 +627,10 @@ export class SidekickController {
       if (!live()) return { ok: false, reason: "cancelled" };
       const r = answer.ok ? parseImport(answer.text) : null;
       if (!r) return { ok: false, reason: "failed" };
-      if (source.kind === "files") this.issued = [...this.issued.filter((k) => k !== sourceKey(source)), sourceKey(source)].slice(-ISSUED_MAX);
+      if (source.kind === "files") {
+        const key = sourceKey(source);
+        this.issued = [...this.issued.filter((k) => k !== key), key].slice(-ISSUED_MAX);
+      }
       return { ok: true, draft: { name: r.name, mark: r.mark, personality: r.personality, purposes: r.purposes, source }, learned: r.learned, skipped: r.skipped };
     } catch (err) {
       if (!controller.signal.aborted) console.error("Sidekick's import turn failed", err);
@@ -627,7 +646,7 @@ export class SidekickController {
    * hash: unchanged; another: changed; refused, missing or over the limits: gone. A paste has no original.
    */
   async checkOriginal(source: SidekickSource): Promise<SidekickOriginal> {
-    const paths = this.originalPaths(source);
+    const paths = await this.originalPaths(source);
     if (!paths || source.kind !== "files") return "none";
     const read = await this.d.importFiles(paths, AbortSignal.timeout(this.d.importMs ?? IMPORT_MS)).catch(() => null);
     if (!read?.ok) return "gone";
@@ -636,18 +655,34 @@ export class SidekickController {
 
   /**
    * A stored sidekick's original files, when they may be read again (null otherwise). Its source sits in a file the
-   * agent can edit, so only one that looks like an import's own qualifies: 1 to IMPORT_MAX_FILES absolute paths and
-   * a content hash. A path without a `.md`/`.txt` extension (a key, a dotfile) qualifies only when an import read this
-   * same source in this session (the person picked it); each path is refused again inside an engine's settings
-   * folder before any byte is read (importFiles).
+   * agent can edit, so only one an import here tagged qualifies (its HMAC with the key in userData, which the agent
+   * can't reach), shaped like an import's own: 1 to IMPORT_MAX_FILES absolute paths and a content hash. A path
+   * without a `.md`/`.txt` extension (a key, a dotfile) qualifies only when an import read this same source in this
+   * session (the person picked it); each path is refused again inside an engine's settings folder before any byte is
+   * read (importFiles). Never creates the key.
    */
-  private originalPaths(source: SidekickSource | undefined): string[] | null {
+  private async originalPaths(source: SidekickSource | undefined): Promise<string[] | null> {
     if (source?.kind !== "files" || typeof source.hash !== "string" || !SOURCE_HASH.test(source.hash)) return null;
     const paths: unknown = source.paths;
     if (!Array.isArray(paths) || paths.length === 0 || paths.length > IMPORT_MAX_FILES) return null;
     if (!paths.every((p): p is string => typeof p === "string" && isAbsolute(p) && !p.includes("\0"))) return null;
-    if (this.issued.includes(sourceKey(source))) return [...paths];
+    const { hash, tag } = source;
+    if (typeof tag !== "string" || !SOURCE_HASH.test(tag)) return null;
+    const want = await this.tagFor({ paths, hash }, false);
+    if (!want || !timingSafeEqual(Buffer.from(tag, "hex"), Buffer.from(want, "hex"))) return null;
+    if (this.issued.includes(sourceKey({ paths, hash }))) return [...paths];
     return paths.every((p) => ORIGINAL_EXTS.has(extname(p).toLowerCase())) ? [...paths] : null;
+  }
+
+  /** A files source's tag: HMAC-SHA256 of its paths and hash with the userData key (null without one; only `create` makes it). */
+  private async tagFor(source: { paths: string[]; hash: string }, create: boolean): Promise<string | null> {
+    if (!this.key) {
+      this.key = await this.d.tagKey(create).catch((err: unknown) => {
+        console.error("Could not read Sidekick's source key", err);
+        return null;
+      });
+    }
+    return this.key ? createHmac("sha256", this.key).update(sourceKey(source)).digest("hex") : null;
   }
 
   /** checkOriginal for a stored sidekick, by id: the renderer never passes paths to check. `none` without files. */
@@ -863,19 +898,21 @@ export class SidekickController {
    * off: it is app-wide (APP_SCOPE).
    */
   async daily(now: Date = new Date()): Promise<void> {
-    const settings = await this.d.store.settings();
-    if (this.closed || this.dailyRun || !settings.on) return;
-    const today = localDay(now);
-    if (settings.lastDaily === today) return;
-    const setup = await this.d.setup().catch(() => null);
-    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
-    const list = await this.candidatesFor("daily", APP_SCOPE);
-    if (list.length === 0 || this.closed || this.dailyRun) return;
+    if (this.closed || this.dailyRun) return;
+    // Held before the first await: an overlapping call can't pass the checks on settings read before this turn's write.
     const controller = new AbortController();
     this.dailyRun = controller;
     const live = () => !controller.signal.aborted && !this.closed;
     let session: SidekickLike | null = null;
     try {
+      const settings = await this.d.store.settings();
+      if (!settings.on || !live()) return;
+      const today = localDay(now);
+      if (settings.lastDaily === today) return;
+      const setup = await this.d.setup().catch(() => null);
+      if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
+      const list = await this.candidatesFor("daily", APP_SCOPE);
+      if (list.length === 0 || !live()) return;
       // Before the turn: a crash or a failed turn never repeats today's.
       const set = await this.d.store.set({ lastDaily: today });
       if (!set.ok || !set.settings.on || !live()) return;
@@ -1005,6 +1042,8 @@ export class SidekickController {
         flags = flags.filter((f) => !mutedKinds.includes(f.kind));
         if (flags.length === 0 && mode === "auto" && !req.force) return this.finish("send");
       }
+      // The phase-change turn on this same session would hold the review's ask behind it: it is dropped (like after-reply).
+      if (this.guardHeld === heldKey(speaker.id, key)) this.guard?.abort();
       const session = await this.sessionFor(setup.base, engine, speaker, key, task?.id, live);
       if (timedOut) return await timeout();
       if (controller.signal.aborted || !live()) return this.finish("cancelled");
@@ -1185,12 +1224,14 @@ export class SidekickController {
     this.guard?.abort();
     const controller = new AbortController();
     this.guard = controller;
+    this.guardHeld = null;
     const live = () => !controller.signal.aborted && !this.closed;
     try {
       const engine = this.d.engine(setup.engineId);
       const speaker = await this.pick(list, "phase-change", `${from.label} → ${to.label}`, { base: setup.base, task, signal: controller.signal, live });
       // Its only kind muted: the turn would show nothing.
       if (!live() || mutedOf(settings, speaker.id).includes("missing")) return;
+      this.guardHeld = heldKey(speaker.id, task.id);
       const session = await this.sessionFor(setup.base, engine, speaker, task.id, task.id, live);
       if (!session || !live()) return;
       const typed = this.prompts.key === task.id ? this.prompts.items.filter((p) => p.phase === e.from).map((p) => p.text) : [];
@@ -1221,7 +1262,10 @@ export class SidekickController {
     } catch (err) {
       if (!controller.signal.aborted) console.error("Sidekick's phase-change turn failed", err);
     } finally {
-      if (this.guard === controller) this.guard = null;
+      if (this.guard === controller) {
+        this.guard = null;
+        this.guardHeld = null;
+      }
     }
   }
 

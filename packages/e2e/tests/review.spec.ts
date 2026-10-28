@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ElectronApplication, type Page, expect, test } from "@playwright/test";
-import { closeAndClean, launchMock, makeSandbox, shellDir } from "./helpers";
+import { answerGoBack, closeAndClean, goBackAsks, launchMock, makeSandbox, shellDir } from "./helpers";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = path.resolve(here, "../../fake-agent/fixtures/review-harness");
@@ -230,13 +230,22 @@ test.describe("the review fixture", () => {
       await expect.poll(async () => (await workers()).filter(Boolean).length).toBeGreaterThanOrEqual(2);
       expect(await workers()).not.toContain(false);
 
-      // Go back to the agent's version: the core asks first; only this file changes (the review record stays as it was).
+      // Go back to the agent's version: main asks first with a native sheet (answered through the test hook); a Cancel
+      // changes nothing; only this file changes (the review record stays as it was).
       const record = path.join(s.folder, ".harness", "reviews", "specs", "filter.md.json");
       const recordBefore = fs.readFileSync(record, "utf8");
+      const answered = fs.readFileSync(doc, "utf8");
+      await answerGoBack(launched.app, "Cancel");
       await reader.getByRole("button", { name: "Go back to this version" }).click();
-      const confirm = page.getByRole("alertdialog");
-      await expect(confirm).toContainText("Go back specs/filter.md to how it was after Ticket");
-      await confirm.getByRole("button", { name: "Yes, go back" }).click();
+      await expect.poll(async () => (await goBackAsks(launched.app)).length).toBe(1);
+      const [asked] = await goBackAsks(launched.app);
+      expect(asked).toMatchObject({ message: "Go back to this version?", buttons: ["Go back", "Cancel"], attached: true });
+      expect(asked.detail).toContain("Go back specs/filter.md to how it was after Ticket");
+      await expect(page.getByRole("alertdialog")).toHaveCount(0);
+      await expect(reader.getByRole("button", { name: "Go back to this version" })).toBeEnabled();
+      expect(fs.readFileSync(doc, "utf8")).toBe(answered);
+      await answerGoBack(launched.app, "Go back");
+      await reader.getByRole("button", { name: "Go back to this version" }).click();
       await expect.poll(() => fs.readFileSync(doc, "utf8")).toBe(written);
       expect(fs.readFileSync(record, "utf8")).toBe(recordBefore);
       await expect(drawer.getByRole("button", { name: /You went back to the version of/ })).toBeVisible();
@@ -244,8 +253,8 @@ test.describe("the review fixture", () => {
       // Undo the go-back the same way: back to the answers entry.
       await drawer.getByRole("button", { name: /Your answers \(1\)/ }).click();
       await reader.getByRole("button", { name: "Go back to this version" }).click();
-      await page.getByRole("alertdialog").getByRole("button", { name: "Yes, go back" }).click();
       await expect.poll(() => fs.readFileSync(doc, "utf8")).toContain("Filter by size and colour.");
+      expect(await goBackAsks(launched.app)).toHaveLength(3);
       await reader.getByRole("button", { name: "Back to the document" }).click();
       await reader.getByRole("button", { name: "Close" }).click();
 

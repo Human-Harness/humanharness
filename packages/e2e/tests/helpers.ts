@@ -120,6 +120,39 @@ export async function closeAndClean(app: ElectronApplication, s: Sandbox): Promi
   }
 }
 
+/** What main's native go-back dialog was asked, as `answerGoBack` saw it. */
+export interface GoBackAsked {
+  message: string;
+  detail: string;
+  buttons: string[];
+  /** Shown as a sheet on a window (not app-modal). */
+  attached: boolean;
+}
+
+/**
+ * Every go-back asks with main's native dialog (go-back.ts), which a test can't click: this replaces
+ * `dialog.showMessageBox` in main (as context.spec does for the open dialog) with one that answers `answer`, the
+ * button's label, and records what it was asked (read it with `goBackAsks`).
+ */
+export async function answerGoBack(app: ElectronApplication, answer: "Go back" | "Cancel"): Promise<void> {
+  await app.evaluate(({ dialog }, label) => {
+    const g = globalThis as { hhGoBackAsks?: unknown[] };
+    g.hhGoBackAsks ??= [];
+    const asked = g.hhGoBackAsks;
+    dialog.showMessageBox = (async (...args: unknown[]) => {
+      const o = args[args.length - 1] as { message: string; detail?: string; buttons?: string[]; cancelId?: number };
+      const buttons = o.buttons ?? [];
+      asked.push({ message: o.message, detail: o.detail ?? "", buttons, attached: args.length === 2 });
+      const i = buttons.indexOf(label);
+      return { response: i >= 0 ? i : (o.cancelId ?? 0), checkboxChecked: false };
+    }) as unknown as typeof dialog.showMessageBox;
+  }, answer);
+}
+
+export function goBackAsks(app: ElectronApplication): Promise<GoBackAsked[]> {
+  return app.evaluate(() => ((globalThis as { hhGoBackAsks?: unknown[] }).hhGoBackAsks ?? []) as GoBackAsked[]);
+}
+
 export function readJsonl<T>(file: string): T[] {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as T);

@@ -253,18 +253,22 @@ export class FakeClient implements HarnessClient {
     return () => this.listeners.delete(listener);
   }
   async restore(sha: string) {
+    if (!(await this.askGoBack({ kind: "point", sha }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     this.restored.push(sha);
+    return { ok: true as const };
   }
   async historyTasks() {
     if (this.historyError) throw this.historyError;
     return this.historyGroups;
   }
   async restoreTask(taskId: string) {
+    if (!(await this.askGoBack({ kind: "task", taskId }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     this.restoredTasks.push(taskId);
+    return { ok: true as const };
   }
   async engineStatus(engineId: string) {
     await this.statusGates[engineId];
@@ -594,7 +598,13 @@ export class FakeClient implements HarnessClient {
   /** What a confirmed restore answers. */
   restoreAnswer: FileRestoreAnswer = { ok: true };
   private fileListeners = new Map<string, Set<() => void>>();
-  private confirmer: ((prompt: FileRestorePrompt) => Promise<boolean>) | null = null;
+  /** Main's native go-back dialog, for all three go-backs: true is "Go back". Every prompt it was asked, in order. */
+  confirmGoBack: (ask: FileRestorePrompt | { kind: "point"; sha: string } | { kind: "task"; taskId: string }) => Promise<boolean> = async () => true;
+  goBackAsks: unknown[] = [];
+  private async askGoBack(ask: Parameters<FakeClient["confirmGoBack"]>[0]): Promise<boolean> {
+    this.goBackAsks.push(ask);
+    return (await this.confirmGoBack(ask)) === true;
+  }
   /** As main does after a commit. */
   emitFileCommit(paths: string[]) {
     for (const p of paths) for (const l of [...(this.fileListeners.get(p) ?? [])]) l();
@@ -612,22 +622,16 @@ export class FakeClient implements HarnessClient {
       this.fileCalls.push({ op: "restore", args: [path, commit] });
       const e = (this.timelines[path] ?? []).find((x) => x.to === commit);
       if (!e) return { refused: "not-found" };
-      if (!this.confirmer) return "cancelled";
-      const yes = await this.confirmer({ path, author: e.author, at: e.at, kind: e.kind, ...(e.version ? { version: e.version } : {}) });
+      const yes = await this.askGoBack({ path, author: e.author, at: e.at, kind: e.kind, ...(e.version ? { version: e.version } : {}) });
       if (!yes) return "cancelled";
-      return this.restoreAnswer.ok ? "restored" : { refused: this.restoreAnswer.reason };
+      if (this.restoreAnswer.ok) return "restored";
+      return this.restoreAnswer.reason === "cancelled" ? "cancelled" : { refused: this.restoreAnswer.reason };
     },
     onChange: (path, listener) => {
       const set = this.fileListeners.get(path) ?? new Set();
       set.add(listener);
       this.fileListeners.set(path, set);
       return () => void set.delete(listener);
-    },
-    hostConfirm: (confirm) => {
-      this.confirmer = confirm;
-      return () => {
-        if (this.confirmer === confirm) this.confirmer = null;
-      };
     },
   };
   /** What `context.get` answers, by task. */

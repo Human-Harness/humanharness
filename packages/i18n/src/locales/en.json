@@ -499,12 +499,10 @@
     "yesterday": "Yesterday",
     "noteSaved": "Note saved",
     "inProgress": "In progress",
-    "undone": "What will be undone",
     "points": "Points in this task",
     "close": "Close",
-    "confirm": "Go back to this point? Files changed after it will be undone.",
-    "confirmYes": "Yes, go back",
-    "cancel": "Cancel",
+    "confirmFolderTitle": "Go back the whole folder to this point?",
+    "confirmFolder": "Files changed after it will be undone.",
     "restored": "I went back to that point. Files changed after it were undone.",
     "restoredTask": "I went back to before that task. Everything it changed in your files was undone.",
     "restoreFailed": "I couldn't go back to that point. Try again in a moment.",
@@ -512,8 +510,6 @@
     "restoreTask": "Undo this task",
     "confirmTaskTitle": "Undo “{{name}}”?",
     "confirmTask": "Everything it changed in your files will be undone.",
-    "undoTasks_one": "Undo task",
-    "undoTasks_other": "Undo {{count}} tasks",
     "laterTasks_one": "This also undoes {{count}} later task.",
     "laterTasks_other": "This also undoes {{count}} later tasks.",
     "other": "Outside a task",
@@ -837,8 +833,6 @@
     "confirmTitle": "Go back to this version?",
     "confirm": "Go back {{file}} to how it was after {{author}} ({{ago}})? The rest of the folder doesn't change.",
     "confirmApproval": "Go back {{file}} to v{{version}}, the version you approved ({{ago}})? The rest of the folder doesn't change.",
-    "confirmYes": "Yes, go back",
-    "cancel": "Cancel",
     "restored": "{{file}} is back to that version.",
     "refused": {
       "busy": "The AI is working. You can go back when it finishes.",
@@ -848,6 +842,10 @@
     },
     "panelTitle": "History of {{file}}",
     "close": "Close"
+  },
+  "goBack": {
+    "yes": "Go back",
+    "cancel": "Cancel"
   },
   "focus": {
     "enter": "Focus",

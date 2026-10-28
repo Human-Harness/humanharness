@@ -666,3 +666,35 @@ describe("summaries (parallel spec §9.1)", () => {
     expect([board.isFocused("t1"), board.isFocused("t2")]).toEqual([false, false]);
   });
 });
+
+describe("TaskBoard: master's review and context-panel calls reach a lane", () => {
+  it("contextRecord and addContext go to the named task's lane; a task that isn't open gets null or no-task", async () => {
+    const { board, made } = harness();
+    await board.start("intro");
+    await board.start("plan");
+    const t1: LaneHandle = made[0];
+    t1.contextRecord = vi.fn(async (id: string) => ({ id, scope: "main", start: [], reads: [] }));
+    t1.addContext = vi.fn(() => ({ accepted: Promise.resolve({ ok: true as const }), done: Promise.resolve() }));
+    expect(await board.contextRecord("t1")).toEqual({ id: "t1", scope: "main", start: [], reads: [] });
+    expect(await board.contextRecord("nope")).toBeNull();
+    const added = board.addContext("t1", "a.md");
+    expect(await added.accepted).toEqual({ ok: true });
+    await added.done;
+    expect(t1.addContext).toHaveBeenCalledWith("t1", "a.md");
+    const refused = board.addContext("nope", "a.md");
+    expect(await refused.accepted).toEqual({ ok: false, reason: "no-task" });
+  });
+  it("a review round goes to the focused task; an approval to the record's task when it is open", async () => {
+    const { board, made } = harness();
+    await board.start("intro");
+    await board.start("plan");
+    const [t1, t2]: LaneHandle[] = made;
+    t2.reviewRound = vi.fn(async () => "open" as const);
+    t1.documentApproved = vi.fn(async () => undefined);
+    const r = { path: "a.md", title: "A", message: "m", tier: "standard" as const };
+    expect(await board.reviewRound(r)).toBe("open");
+    expect(t2.reviewRound).toHaveBeenCalledWith(r);
+    await board.documentApproved({ path: "a.md", task: "t1" });
+    expect(t1.documentApproved).toHaveBeenCalledWith({ path: "a.md", task: "t1" });
+  });
+});

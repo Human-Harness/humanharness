@@ -1,4 +1,4 @@
-import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { type ComponentType, type FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
 import { AnnotateBlock } from "./AnnotateBlock";
@@ -40,7 +40,8 @@ import { actionPhases, phaseModesOf } from "./phases";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { PluginChips } from "./plugins/PluginChips";
 import { PluginsSection } from "./plugins/PluginsSection";
-import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, usePluginSurface } from "./plugins/surface";
+import { PreparedTask } from "./plugins/PreparedTask";
+import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, reloadOf, usePluginSurface } from "./plugins/surface";
 import { useAttention } from "./plugins/usePlugins";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
@@ -191,16 +192,25 @@ export function ChatView({
   const attention = useAttention(client, state.plugins !== undefined && !slim);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
   const surface = usePluginSurface(client, state.plugins !== undefined && !slim);
-  const [panelTarget, setPanelTarget] = useState<PanelTarget | null>(null);
+  /** The panel last opened, and its plugin's dev reload count then: a reloaded frame doesn't get the old focus again. */
+  const [panelTarget, setPanelTarget] = useState<(PanelTarget & { reloadAt: number }) | null>(null);
+  const surfaceNow = useRef(surface);
+  surfaceNow.current = surface;
+  const openPanel = useCallback((plugin: string, panel: string, focus?: string) => {
+    const reloadAt = surfaceNow.current ? reloadOf(surfaceNow.current, plugin) : 0;
+    setPanelTarget((prev) => ({ plugin, panel, ...(focus !== undefined ? { focus } : {}), n: (prev?.n ?? 0) + 1, reloadAt }));
+  }, []);
+  // Once its plugin reloaded, the open is spent: no target (so no old focus, no tab pulled back). Kept as one object
+  // per open otherwise, so a surface push doesn't count as a new open.
+  const targetLive = panelTarget !== null && surface !== null && reloadOf(surface, panelTarget.plugin) === panelTarget.reloadAt;
+  const target = useMemo<PanelTarget | null>(() => {
+    if (!panelTarget || !targetLive) return null;
+    const { reloadAt: _, ...rest } = panelTarget;
+    return rest;
+  }, [panelTarget, targetLive]);
   const surfaceCtx = useMemo<PluginSurfaceContextValue | null>(
-    () =>
-      surface && {
-        surface,
-        client,
-        target: panelTarget,
-        open: (plugin, panel, focus) => setPanelTarget((prev) => ({ plugin, panel, ...(focus !== undefined ? { focus } : {}), n: (prev?.n ?? 0) + 1 })),
-      },
-    [surface, client, panelTarget],
+    () => surface && { surface, client, target, open: openPanel },
+    [surface, client, target, openPanel],
   );
   /** Under 720 px the panel can't show: no paid review the person can't see (styles.css). */
   const narrow = useNarrow();
@@ -1086,7 +1096,7 @@ export function ChatView({
               }}
             />
           )}
-          {attention?.show && <AttentionInbox client={client} view={attention} />}
+          {attention?.show && <AttentionInbox client={client} view={attention} {...(surfaceCtx ? { onOpenPanel: openPanel } : {})} />}
           <button
             onClick={() => {
               // One panel at a time: Escape closes the one on screen.
@@ -1368,6 +1378,17 @@ export function ChatView({
             )}
             <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
           </section>
+          {/* A plugin's prepared task (plugins part 2): only while main sends one, and nothing starts without Start (P6). */}
+          {surfaceCtx?.surface.prepared && (
+            <PreparedTask
+              key={surfaceCtx.surface.prepared.token}
+              client={client}
+              prepared={surfaceCtx.surface.prepared}
+              blocked={blocked()}
+              needScope={surfaceCtx.surface.prepared.scope === "open" && state.scopes && !openScope ? state.scopes.label : null}
+              closesTask={tasks.current !== null}
+            />
+          )}
           {composer && (
             <form className="hh-composer" onSubmit={onSubmit}>
               {(() => {

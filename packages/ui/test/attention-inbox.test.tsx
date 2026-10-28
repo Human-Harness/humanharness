@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
+// happy-dom can't fetch hh-plugin:, so it doesn't navigate child frames here; each frame still fires one `load`.
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
-import type { AttentionItemView, AttentionView } from "../src/client";
+import type { AttentionItemView, AttentionView, PluginPanelView, PluginSurfaceView } from "../src/client";
 import { FakeClient } from "./fake-client";
 
 afterEach(() => {
@@ -200,5 +202,115 @@ describe("Attention inbox", () => {
     act(() => c.emitAttention(view([item({ title: "Updated" }), item({ key: "k2", title: "Second" })])));
     await within(dialog).findByText("Updated");
     expect(document.activeElement).toBe(first);
+  });
+
+  describe("targets (plugins part 2)", () => {
+    const panel = (over: Partial<PluginPanelView> = {}): PluginPanelView => ({
+      plugin: "oncall",
+      pluginName: "On-call",
+      id: "queue",
+      title: "Queue",
+      slot: "plugins",
+      url: "hh-plugin://oncall/panel-queue.html",
+      ...over,
+    });
+    const QUEUE = panel();
+    const DIGEST = panel({ plugin: "news", pluginName: "News", id: "digest", title: "Digest", url: "hh-plugin://news/panel-digest.html" });
+    const surface = (over: Partial<PluginSurfaceView> = {}): PluginSurfaceView => ({ panels: [], chips: [], reloads: {}, ...over });
+    type Spy = { mock: { calls: unknown[][] } };
+    const sent = (posts: Spy) => posts.mock.calls.map((x) => x[0] as Record<string, unknown>);
+    const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
+    /** Spies on every frame's window as soon as the frame is added, before its `load`. */
+    function watchFrames(): Map<HTMLIFrameElement, Spy> {
+      const spies = new Map<HTMLIFrameElement, Spy>();
+      const watch = (el: HTMLIFrameElement) => {
+        if (!spies.has(el) && el.contentWindow) spies.set(el, vi.spyOn(el.contentWindow, "postMessage") as unknown as Spy);
+      };
+      const mo = new MutationObserver(() => document.querySelectorAll("iframe").forEach(watch));
+      mo.observe(document.body, { childList: true, subtree: true });
+      return spies;
+    }
+    /** The posts into the frame on screen now, once it loaded (the theme goes in then). */
+    async function loadedFrame(spies: Map<HTMLIFrameElement, Spy>): Promise<Spy> {
+      let posts: Spy | undefined;
+      await waitFor(() => {
+        posts = spies.get(frame());
+        expect(posts && sent(posts).some((m) => m.event === "theme")).toBe(true);
+      });
+      return posts as Spy;
+    }
+    const targetItem = () => item({ hasTarget: true, title: "INC-42 needs a look" });
+    const openItem = async () => {
+      fireEvent.click(await bell());
+      const dialog = await screen.findByRole("dialog", { name: "Attention" });
+      const row = within(dialog).getByRole("button", { name: /INC-42 needs a look/ });
+      expect(row.textContent).toContain("Open");
+      fireEvent.click(row);
+      return dialog;
+    };
+
+    it("a panel target selects the panel's tab and closes the inbox; nothing is marked read from here", async () => {
+      const c = client(view([targetItem()]));
+      c.surfaceView = surface({ panels: [DIGEST, QUEUE] });
+      c.attentionTarget = { kind: "panel", plugin: "oncall", panel: "queue", focus: "INC-42" };
+      await open(c);
+      await screen.findByRole("region", { name: "Plugins" });
+      expect(frame().getAttribute("src")).toBe(DIGEST.url);
+      await openItem();
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
+      expect(c.pluginCalls).toEqual([["attention.open", "oncall", "k1"]]);
+      await waitFor(() => expect(frame().getAttribute("src")).toBe(QUEUE.url));
+      expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("true");
+      // The person moves on: a later push is not a new open, so it doesn't pull the tab back.
+      fireEvent.click(screen.getByRole("tab", { name: "Digest" }));
+      act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE], chips: [] })));
+      await act(async () => {});
+      expect(screen.getByRole("tab", { name: "Digest" }).getAttribute("aria-selected")).toBe("true");
+    });
+
+    it("a panel target passes its focus to the frame, and a dev reload of the plugin doesn't send it again", async () => {
+      const c = client(view([targetItem()]));
+      c.surfaceView = surface({ panels: [QUEUE] });
+      c.attentionTarget = { kind: "panel", plugin: "oncall", panel: "queue", focus: "INC-42" };
+      const spies = watchFrames();
+      await open(c);
+      await screen.findByRole("region", { name: "Plugins" });
+      const posts = await loadedFrame(spies);
+      await openItem();
+      await waitFor(() => expect(posts).toHaveBeenCalledWith({ hh: 1, event: "focus", focus: "INC-42" }, "*"));
+      // The plugin's dist changed (dev): a fresh frame, which loads with no focus.
+      act(() => c.emitSurface(surface({ panels: [QUEUE], reloads: { oncall: 1 } })));
+      const fresh = await loadedFrame(spies);
+      expect(sent(fresh).filter((m) => m.event === "focus")).toEqual([{ hh: 1, event: "focus", focus: null }]);
+    });
+
+    it("a prepared target closes the inbox; the card comes with main's push, and nothing starts", async () => {
+      const c = client(view([targetItem()]));
+      c.attentionTarget = { kind: "prepared" };
+      await open(c);
+      await openItem();
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
+      expect(c.pluginCalls).toEqual([["attention.open", "oncall", "k1"]]);
+    });
+
+    it("a target that is gone says so and keeps the list open", async () => {
+      const c = client(view([targetItem()]));
+      c.attentionTarget = { kind: "none" };
+      await open(c);
+      const dialog = await openItem();
+      expect(await within(dialog).findByText("This item can't be opened any more")).toBeTruthy();
+      expect(screen.getByRole("dialog", { name: "Attention" })).toBe(dialog);
+      expect(c.pluginCalls).toEqual([["attention.open", "oncall", "k1"]]);
+    });
+
+    it("a panel target with no surface on screen is treated as gone", async () => {
+      // state.plugins but the surface never arrives (a main that sends none): the panel can't be shown.
+      const c = client(view([targetItem()]));
+      vi.spyOn(c.plugins, "surface").mockImplementation(() => new Promise(() => {}));
+      c.attentionTarget = { kind: "panel", plugin: "oncall", panel: "queue" };
+      await open(c);
+      const dialog = await openItem();
+      expect(await within(dialog).findByText("This item can't be opened any more")).toBeTruthy();
+    });
   });
 });

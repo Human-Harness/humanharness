@@ -860,7 +860,9 @@
       "empty": "Nothing needs you now.",
       "dismiss": "Dismiss",
       "unreadItem": "Unread",
-      "severity": { "info": "Info", "warn": "Warning", "action": "Needs you" }
+      "severity": { "info": "Info", "warn": "Warning", "action": "Needs you" },
+      "open": "Open",
+      "gone": "This item can't be opened any more"
     },
     "tab": "Plugins",
     "intro": "Plugins bring information from outside into this app. Each one shows what it may reach before it runs.",
@@ -941,6 +943,16 @@
     },
     "chips": {
       "open": "Open {{name}}"
+    },
+    "prepared": {
+      "region": "Prepared task",
+      "by": "Proposed by {{name}}",
+      "prompt": "What the agent will be asked",
+      "start": "Start",
+      "cancel": "Cancel",
+      "needScope": "Open a {{scope}} first",
+      "closes": "Starting it closes the open task.",
+      "tier": "Model tier: {{tier}}"
     }
   }
 }

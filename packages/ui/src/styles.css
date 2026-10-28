@@ -602,3 +602,11 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-pl-chip { display: inline-block; max-width: 180px; height: 22px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--hh-line-strong); border-radius: 11px; background: var(--hh-surface); color: var(--hh-ink); font-size: 0.75rem; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-pl-chip.warn { border-color: var(--hh-warn); color: var(--hh-warn); }
 .hh-pl-chip.action { background: var(--hh-ink); border-color: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-pl-prepared { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0 0 8px; padding: 10px 12px; background: var(--hh-surface); border: 1px solid var(--hh-line-strong); border-radius: 10px; overflow-wrap: anywhere; }
+.hh-pl-prepared p { margin: 0; }
+.hh-pl-prepared-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--hh-muted); font-size: 0.8rem; }
+.hh-pl-prepared-prompt { margin: 0; max-height: 200px; overflow: auto; padding: 8px; background: var(--hh-sheet); border: 1px solid var(--hh-line); border-radius: 8px; font: inherit; font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-pl-prepared-note { color: var(--hh-slate); font-size: 0.85rem; }
+.hh-pl-prepared-error { color: var(--hh-warn); font-size: 0.85rem; white-space: pre-wrap; }
+.hh-pl-item-open { align-self: flex-start; margin-top: 2px; font-size: 0.75rem; text-decoration: underline; }
+.hh-pl-item-gone { color: var(--hh-muted); font-size: 0.8rem; }

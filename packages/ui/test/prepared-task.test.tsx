@@ -1,0 +1,189 @@
+// @vitest-environment happy-dom
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { HarnessApp } from "../src";
+import type { PluginSurfaceView, PreparedTaskView } from "../src/client";
+import { FakeClient } from "./fake-client";
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
+
+const TOKEN = "0123456789abcdef0123456789abcdef";
+const prepared = (over: Partial<PreparedTaskView> = {}): PreparedTaskView => ({
+  token: TOKEN,
+  plugin: "on-this-day",
+  pluginName: "On this day",
+  title: "On this day · Explain this event",
+  prompt: "Explain this event from 1903 for someone curious, in a few short paragraphs: Sample event. Say when you're unsure.",
+  tier: "light",
+  scope: "app",
+  expiresAt: "2026-10-28T10:10:00.000Z",
+  ...over,
+});
+const surface = (over: Partial<PluginSurfaceView> = {}): PluginSurfaceView => ({ panels: [], chips: [], reloads: {}, ...over });
+
+function makeClient(opts: { plugins?: boolean; view?: PluginSurfaceView; scopes?: boolean } = {}) {
+  const c = new FakeClient(ready);
+  if (opts.plugins !== false) c.state.plugins = { local: true };
+  if (opts.scopes) {
+    c.state.scopes = { label: "topic", plural: "topics" };
+    c.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];
+  }
+  if (opts.view) c.surfaceView = opts.view;
+  return c;
+}
+async function open(c: FakeClient) {
+  render(<HarnessApp client={c} />);
+  const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
+  await waitFor(() => expect(start.disabled).toBe(false));
+  fireEvent.click(start);
+  await screen.findByRole("textbox");
+  await screen.findByRole("button", { name: "History" });
+}
+const card = () => screen.queryByRole("region", { name: "Prepared task" });
+const startButton = (r: HTMLElement) => within(r).getByRole("button", { name: "Start" }) as HTMLButtonElement;
+const starts = (c: FakeClient) => c.pluginCalls.filter((x) => x[0] === "startPrepared");
+/** The main column's children, by tag and class: what sits around the composer. */
+const mainShape = () => [...(document.querySelector(".hh-main")?.children ?? [])].map((e) => `${e.tagName}.${e.className}`);
+
+describe("prepared-task card", () => {
+  it("D0: without state.plugins there is no card, nothing is asked, and the composer area is as before", async () => {
+    const c = makeClient({ plugins: false, view: surface({ prepared: prepared() }) });
+    const get = vi.spyOn(c.plugins, "surface");
+    await open(c);
+    expect(card()).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+    const before = mainShape();
+    cleanup();
+    // With plugins but nothing prepared, the same column.
+    const p = makeClient();
+    const got = vi.spyOn(p.plugins, "surface");
+    await open(p);
+    await waitFor(() => expect(got).toHaveBeenCalled());
+    expect(card()).toBeNull();
+    expect(mainShape()).toEqual(before);
+  });
+
+  it("P9/P13: shows the title, who proposed it, the tier and exactly the prompt, as text", async () => {
+    const prompt = "Explain <b>this</b> <img src=x onerror=alert(1)>\n\n  second line\twith a tab";
+    const c = makeClient({ view: surface({ prepared: prepared({ prompt, pluginName: "<i>On</i>", title: "<b>T</b> · Explain" }) }) });
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    const pre = r.querySelector("pre") as HTMLPreElement;
+    expect(pre.textContent).toBe(prompt);
+    expect(pre.getAttribute("dir")).toBe("auto");
+    expect(within(r).getByText("<b>T</b> · Explain")).toBeTruthy();
+    expect(r.textContent).toContain("Proposed by ⁨<i>On</i>⁩");
+    expect(within(r).getByText("Model tier: Light")).toBeTruthy();
+    expect(r.querySelector("b, i, img")).toBeNull();
+    // Above the composer.
+    expect(r.nextElementSibling?.className).toBe("hh-composer");
+    expect(starts(c)).toEqual([]);
+  });
+
+  it("P6: a surface push with a prepared task makes no client call; Start calls startPrepared once, even on a double click", async () => {
+    const c = makeClient();
+    await open(c);
+    const calls = c.pluginCalls.length;
+    act(() => c.emitSurface(surface({ prepared: prepared() })));
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    await act(async () => {});
+    expect(c.pluginCalls.length).toBe(calls);
+    c.pluginResults = [{ ok: true }];
+    let resolve!: () => void;
+    const spy = vi.spyOn(c.plugins, "startPrepared").mockImplementation(
+      () => new Promise((r2) => (resolve = () => r2({ ok: true }))),
+    );
+    const b = startButton(r);
+    fireEvent.click(b);
+    fireEvent.click(b);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(TOKEN);
+    expect(b.disabled).toBe(true);
+    await act(async () => resolve());
+    // Started: it stays disabled until main's push takes the card away.
+    expect(b.disabled).toBe(true);
+    act(() => c.emitSurface(surface()));
+    await waitFor(() => expect(card()).toBeNull());
+  });
+
+  it("a refused Start shows main's message and keeps the card", async () => {
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    c.pluginResults = [{ ok: false, message: "Wait until the answer ends" }];
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    fireEvent.click(startButton(r));
+    expect((await within(r).findByRole("alert")).textContent).toBe("Wait until the answer ends");
+    expect(card()).toBe(r);
+    expect(startButton(r).disabled).toBe(false);
+    expect(starts(c)).toEqual([["startPrepared", TOKEN]]);
+  });
+
+  it("Cancel calls cancelPrepared with the token", async () => {
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    fireEvent.click(within(r).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(c.pluginCalls).toContainEqual(["cancelPrepared", TOKEN]));
+    expect(starts(c)).toEqual([]);
+  });
+
+  it("Start is disabled while a turn runs", async () => {
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    expect(startButton(r).disabled).toBe(false);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    act(() => c.emit({ type: "text", delta: "Working on it" }));
+    await screen.findByRole("button", { name: "Stop" });
+    expect(startButton(r).disabled).toBe(true);
+  });
+
+  it("a card that needs the open scope waits for one: disabled with a hint, enabled once a scope is open", async () => {
+    const c = makeClient({ scopes: true, view: surface({ prepared: prepared({ scope: "open" }) }) });
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    expect(within(r).getByText("Open a topic first")).toBeTruthy();
+    expect(startButton(r).disabled).toBe(true);
+    c.openScope = "fracciones";
+    act(() => c.emitScopes());
+    // The chat (and the card with it) may be drawn afresh for the scope: read it again.
+    await waitFor(() => expect(startButton(card() as HTMLElement).disabled).toBe(false));
+    expect(within(card() as HTMLElement).queryByText("Open a topic first")).toBeNull();
+  });
+
+  it("an app-wide card in a harness with scopes needs no open scope", async () => {
+    const c = makeClient({ scopes: true, view: surface({ prepared: prepared({ scope: "app" }) }) });
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    expect(startButton(r).disabled).toBe(false);
+    expect(within(r).queryByText("Open a topic first")).toBeNull();
+  });
+
+  it("says that the open task will close", async () => {
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    expect(within(r).queryByText("Starting it closes the open task.")).toBeNull();
+    act(() => c.emitTasks({ current: { id: "t1", status: "waiting" }, actions: {}, notes: [] }));
+    expect(await within(r).findByText("Starting it closes the open task.")).toBeTruthy();
+  });
+
+  it("a newer card replaces the old one with a fresh state", async () => {
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    c.pluginResults = [{ ok: false, message: "This task is no longer prepared" }];
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    fireEvent.click(startButton(r));
+    await within(r).findByRole("alert");
+    const other = "fedcba9876543210fedcba9876543210";
+    act(() => c.emitSurface(surface({ prepared: prepared({ token: other, prompt: "Another" }) })));
+    const r2 = await screen.findByRole("region", { name: "Prepared task" });
+    await waitFor(() => expect(r2.querySelector("pre")?.textContent).toBe("Another"));
+    expect(within(r2).queryByRole("alert")).toBeNull();
+  });
+});

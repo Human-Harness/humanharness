@@ -25,9 +25,19 @@ function ago(iso: string, language: string): string {
 /**
  * The Attention inbox (plugins spec §6): a bell in the top bar with main's unread count, opening a list. Everything
  * an item says comes from a plugin, so it is shown as plain text only, never as markup (B12). A click marks the item
- * read; opening its target is part 2, and then only through what main answers for it (never built from item data).
+ * read. An item with a target opens it instead (plugins part 2, Decision 12), and then only through what main answers
+ * for it at click time (never built from item data): a panel through `onOpenPanel`, a prepared task through the surface.
  */
-export function AttentionInbox({ client, view }: { client: HarnessClient; view: AttentionView }) {
+export function AttentionInbox({
+  client,
+  view,
+  onOpenPanel,
+}: {
+  client: HarnessClient;
+  view: AttentionView;
+  /** Opens a plugin's panel and passes `focus` to it; absent while no surface is on screen. */
+  onOpenPanel?: (plugin: string, panel: string, focus?: string) => void;
+}) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -36,6 +46,8 @@ export function AttentionInbox({ client, view }: { client: HarnessClient; view: 
   const dialog = useRef<HTMLDivElement>(null);
   /** The row a dismissed item had: focus stays there once main's new list arrives. */
   const refocus = useRef<number | null>(null);
+  /** The item whose target main said is gone (its row says so), keyed like the rows. */
+  const [gone, setGone] = useState<string | null>(null);
   const lastBadge = useRef(view.badge);
   const id = useId();
   const language = shownLanguage(i18n);
@@ -77,6 +89,25 @@ export function AttentionInbox({ client, view }: { client: HarnessClient; view: 
     // Handled here: the panels' own Escape listeners skip it.
     e.preventDefault();
     close();
+  };
+  const openTarget = async (item: AttentionItemView, rowKey: string) => {
+    setGone(null);
+    let target;
+    try {
+      target = await client.attention.open(item.plugin, item.key);
+    } catch {
+      target = { kind: "none" } as const;
+    }
+    if (target.kind === "panel" && onOpenPanel) {
+      onOpenPanel(target.plugin, target.panel, target.focus);
+      setOpen(false);
+    } else if (target.kind === "prepared") {
+      // The card comes with main's surface push.
+      close();
+    } else {
+      setGone(rowKey);
+      setAnnounce(t("plugins.attention.gone"));
+    }
   };
   const dismiss = (item: AttentionItemView, index: number) => {
     refocus.current = index;
@@ -126,11 +157,14 @@ export function AttentionInbox({ client, view }: { client: HarnessClient; view: 
             <ul className="hh-pl-items">
               {view.items.map((item, index) => {
                 const titleId = `${id}-t-${index}`;
+                const rowKey = `${item.plugin}\u0000${item.key}`;
                 return (
-                  <li key={`${item.plugin}\u0000${item.key}`} className="hh-pl-item" data-unread={!item.read}>
+                  <li key={rowKey} className="hh-pl-item" data-unread={!item.read}>
                     <button
                       className="hh-pl-item-main"
-                      onClick={() => void client.attention.read(item.plugin, item.key).catch(() => undefined)}
+                      onClick={() =>
+                        item.hasTarget ? void openTarget(item, rowKey) : void client.attention.read(item.plugin, item.key).catch(() => undefined)
+                      }
                     >
                       <span className="hh-pl-dot" data-severity={item.severity} aria-hidden="true" />
                       <span className="hh-pl-item-text">
@@ -146,6 +180,10 @@ export function AttentionInbox({ client, view }: { client: HarnessClient; view: 
                           {item.title}
                         </span>
                         {item.body && <span className="hh-pl-item-body" dir="auto">{item.body}</span>}
+                        {item.hasTarget && <span className="hh-pl-item-open">{t("plugins.attention.open")}</span>}
+                        {gone === rowKey && (
+                          <span className="hh-pl-item-gone">{t("plugins.attention.gone")}</span>
+                        )}
                       </span>
                     </button>
                     <button className="hh-pl-dismiss" aria-describedby={titleId} onClick={() => dismiss(item, index)}>

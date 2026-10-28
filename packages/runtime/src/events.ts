@@ -42,7 +42,12 @@ export interface DocumentCard {
 export type Event =
   | { type: "text"; delta: string }
   | { type: "paragraph" }
-  | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean }
+  /**
+   * `paths`: what a read or search tool named (as the engine reported them, usually absolute), on the start event only.
+   * `tool`: an MCP tool's server and name (never the core's `ui`), on the start event only. Both are for the task
+   * manager's context record (context-panel spec §3.2); the window never gets them.
+   */
+  | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean; paths?: string[]; tool?: { server: string; name: string } }
   /** `id`: set by the app on a block the person answers (input-blocks spec §4), never by an engine. */
   | { type: "block"; name: string; data: unknown; id?: string }
   | { type: "limits"; status: string; windows: LimitWindow[] }

@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
 import { type ModelProfile, getEngine } from "@humanharness/engines";
-import { AcpTransport, type PermissionPolicy, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp";
+import { AcpTransport, type PermissionPolicy, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp";
 import type { Event } from "../src/events";
 import { type Session, type TransportOptions, acpFields } from "../src/transport";
 
@@ -1035,5 +1035,35 @@ describe("AcpTransport: OpenCode offer and cost", () => {
     );
     expect(usageOf(await run(t, "one"))?.costUsd).toBeCloseTo(0.02);
     expect(usageOf(await run(t, "two"))).not.toHaveProperty("costUsd");
+  });
+});
+
+describe("acpExtras (context-panel spec §3.2)", () => {
+  it("read and search locations; a trusted MCP server with its tool", () => {
+    expect(acpExtras({ kind: "read", locations: [{ path: "/w/a.md" }, { path: "" }, {}] }, undefined)).toEqual({ paths: ["/w/a.md"] });
+    expect(acpExtras({ kind: "search", locations: [] }, undefined)).toEqual({});
+    expect(acpExtras({ kind: "edit", locations: [{ path: "/w/a.md" }] }, undefined)).toEqual({});
+    expect(acpExtras({ kind: "execute", rawInput: { server: "notes", tool: "search" } }, "notes")).toEqual({ tool: { server: "notes", name: "search" } });
+    expect(acpExtras({ kind: "execute", rawInput: { server: "notes" } }, "notes")).toEqual({ tool: { server: "notes", name: "" } });
+    // Without Codex's marker, a model-written rawInput.server is not trusted.
+    expect(acpExtras({ kind: "execute", rawInput: { server: "notes", tool: "search" } }, undefined)).toEqual({});
+  });
+
+  it("emits them on the tool call's start event", async () => {
+    const { transport } = setup({
+      turns: [[
+        { update: { sessionUpdate: "tool_call", toolCallId: "r1", title: "Read a.md", kind: "read", status: "pending", locations: [{ path: "/w/a.md" }] } },
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "r1", status: "completed" } },
+        mcpCall("m1", "notes", "search"),
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "m1", status: "completed" } },
+      ]],
+    });
+    const events = await run(transport);
+    expect(events.filter((e) => e.type === "activity")).toEqual([
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/a.md"], state: "start" },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "end", error: false },
+      { type: "activity", id: "m1", kind: "exec", detail: "mcp.notes.search", tool: { server: "notes", name: "search" }, state: "start" },
+      { type: "activity", id: "m1", kind: "exec", detail: "mcp.notes.search", state: "end", error: false },
+    ]);
   });
 });

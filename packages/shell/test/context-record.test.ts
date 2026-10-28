@@ -1,9 +1,9 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Event } from "@humanharness/runtime";
-import { READS_MAX, approxTokens, folderPath, markCompacted, mergeReads, readsOf } from "../src/main/context-record";
+import { LABEL_MAX, READS_MAX, approxTokens, folderPath, markCompacted, mergeReads, readsOf } from "../src/main/context-record";
 
-type Activity = Extract<Event, { type: "activity" }> & { paths?: string[]; tool?: { server: string; name: string } };
+type Activity = Extract<Event, { type: "activity" }>;
 
 const base = path.resolve("/work/folder");
 const activity = (over: Partial<Activity>): Activity => ({
@@ -49,6 +49,16 @@ describe("readsOf", () => {
     expect(readsOf(activity({ state: "end", paths: [path.join(base, "a.md")] }), base)).toEqual([]);
     expect(readsOf(activity({ kind: "edit", paths: [path.join(base, "a.md")] }), base)).toEqual([]);
     expect(readsOf(activity({}), base)).toEqual([]);
+  });
+
+  it("caps labels at 200 characters; a tool without a server is not recorded", () => {
+    const long = "n".repeat(300);
+    expect(readsOf(activity({ kind: "other", tool: { server: "s", name: long } }), base)[0].label).toHaveLength(LABEL_MAX);
+    const [inside] = readsOf(activity({ paths: [path.join(base, `${long}.md`)] }), base);
+    expect(inside.label).toHaveLength(LABEL_MAX);
+    expect(inside.path).toBe(`${long}.md`);
+    expect(readsOf(activity({ paths: [`/elsewhere/${long}.pdf`] }), base)[0].label).toHaveLength(LABEL_MAX);
+    expect(readsOf(activity({ kind: "other", tool: { server: "", name: "x" } }), base)).toEqual([]);
   });
 
   it("takes at most 20 paths of one event", () => {

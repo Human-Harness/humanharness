@@ -27,17 +27,19 @@ export function folderPath(base: string, p: string): string | null {
 /** One read or tool a turn showed, before it is merged into the task's list. */
 export type SeenRead = { kind: "read" | "tool"; label: string; path?: string };
 
-/** The runtime's activity event; `paths` and `tool` are read through this type so the file does not depend on when they land. */
-type Activity = Extract<Event, { type: "activity" }> & { paths?: string[]; tool?: { server: string; name: string } };
+type Activity = Extract<Event, { type: "activity" }>;
+
+/** Longest label kept for a read or tool. */
+export const LABEL_MAX = 200;
 
 /** What an activity's start says the agent read (Read, Grep, Glob; Codex read and search) or which MCP tool it used. */
 export function readsOf(e: Activity, base: string | null): SeenRead[] {
   if (e.state !== "start") return [];
-  if (e.tool) return [{ kind: "tool", label: e.tool.name ? `${e.tool.server} · ${e.tool.name}` : e.tool.server }];
+  if (e.tool) return e.tool.server ? [{ kind: "tool", label: (e.tool.name ? `${e.tool.server} · ${e.tool.name}` : e.tool.server).slice(0, LABEL_MAX) }] : [];
   if ((e.kind !== "read" && e.kind !== "search") || !e.paths) return [];
   return e.paths.slice(0, PATHS_PER_EVENT).map((p): SeenRead => {
     const rel = base ? folderPath(base, p) : null;
-    return rel ? { kind: "read", label: rel, path: rel } : { kind: "read", label: path.basename(p) || p };
+    return rel ? { kind: "read", label: rel.slice(0, LABEL_MAX), path: rel } : { kind: "read", label: (path.basename(p) || p).slice(0, LABEL_MAX) };
   });
 }
 

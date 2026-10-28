@@ -1,10 +1,11 @@
 import { z } from "zod";
+import type { Permissions } from "./index";
 
 /** The most turns of one kind the person can let run at once (Settings › General, parallel spec §7). */
 export const PARALLEL_MAX = 8;
 
-/** `parallel` (spec §3): the harness's suggested caps on running turns; each defaults to 1. */
-export const parallelSchema = z.object({
+/** `parallel` (spec §3): the harness's suggested caps on running turns; each defaults to 1. Strict: a typo is refused. */
+export const parallelSchema = z.strictObject({
   tasks: z.int().min(1).max(PARALLEL_MAX).default(1),
   jobs: z.int().min(1).max(PARALLEL_MAX).default(1),
 });
@@ -24,17 +25,10 @@ export function parallelCaps(harness: { parallel?: ParallelCaps }): ParallelCaps
 }
 
 /** Permissions a job may ask for (spec §8): only ever narrower than the harness's. */
-export interface PermissionsOverride {
-  edit?: "folder" | "none";
-  exec?: boolean;
-  web?: boolean;
-}
+export type PermissionsOverride = Partial<Permissions>;
 
 /** The stricter of each field: an override can turn something off, never on. Always a new object. */
-export function narrowPermissions(
-  base: { edit: "folder" | "none"; exec: boolean; web: boolean },
-  override: PermissionsOverride | undefined,
-): { edit: "folder" | "none"; exec: boolean; web: boolean } {
+export function narrowPermissions(base: Permissions, override: PermissionsOverride | undefined): Permissions {
   if (!override) return { ...base };
   return {
     edit: base.edit === "none" || override.edit === "none" ? "none" : "folder",

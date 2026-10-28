@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { defineHarness, isConcurrent, narrowPermissions, parallelCaps } from "../src";
 
 const base = {
@@ -29,6 +30,16 @@ describe("parallel (parallel spec §3)", () => {
   });
   it.each([{ tasks: 0 }, { tasks: 9 }, { jobs: 1.5 }, { tasks: "2" }, { jobs: -1 }])("refuses %j", (p) => {
     expect(() => defineHarness({ ...base, parallel: p as never })).toThrow();
+  });
+  it("refuses an unknown key (a typo) the way the manifest reports any error: a ZodError naming the path", () => {
+    let error: unknown;
+    try {
+      defineHarness({ ...base, parallel: { task: 3 } as never });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(z.ZodError);
+    expect((error as z.ZodError).issues).toEqual([expect.objectContaining({ code: "unrecognized_keys", keys: ["task"], path: ["parallel"] })]);
   });
 });
 

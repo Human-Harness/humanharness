@@ -1,6 +1,7 @@
 import type {
   AppConfig,
   AppState,
+  AttentionView,
   ChatEntry,
   ChoiceOption,
   DataChangeView,
@@ -24,6 +25,12 @@ import type {
   ModeSwitch,
   MoveResult,
   PhaseResult,
+  PluginDetail,
+  PluginPick,
+  PluginResult,
+  PluginsView,
+  PluginTestResult,
+  PluginWorkHours,
   ProfileResult,
   ProfilesState,
   ProfileView,
@@ -934,6 +941,83 @@ export class FakeClient implements HarnessClient {
       this.materialListeners.add(l);
       return () => {
         this.materialListeners.delete(l);
+      };
+    },
+  };
+
+  /** What plugins.get and rescan answer: null (a main without plugins) unless a test sets it. */
+  pluginsView: PluginsView | null = null;
+  /** What plugins.detail answers per id; absent: null. */
+  pluginDetails: Record<string, PluginDetail> = {};
+  /** What attention.get answers: null unless a test sets it. */
+  attentionView: AttentionView | null = null;
+  /** What the change calls answer (setOn, add, approve…), in order; then `{ ok: false, message: "No plugins" }`. */
+  pluginResults: PluginResult[] = [];
+  /** What plugins.pick answers. */
+  pluginPick: PluginPick = { ok: false, cancelled: true };
+  /** What plugins.test answers. */
+  pluginTests: PluginTestResult[] = [];
+  /** What the plugins and attention namespaces were asked, in order (reads are not recorded). */
+  readonly pluginCalls: unknown[][] = [];
+  private pluginsListeners = new Set<(v: PluginsView) => void>();
+  private attentionListeners = new Set<(v: AttentionView) => void>();
+  emitPlugins(view: PluginsView) {
+    this.pluginsView = view;
+    for (const l of this.pluginsListeners) l(view);
+  }
+  emitAttention(view: AttentionView) {
+    this.attentionView = view;
+    for (const l of this.attentionListeners) l(view);
+  }
+  private pluginChange(...call: unknown[]): Promise<PluginResult> {
+    this.pluginCalls.push(call);
+    return Promise.resolve(this.pluginResults.shift() ?? { ok: false, message: "No plugins" });
+  }
+  plugins = {
+    get: async () => this.pluginsView,
+    rescan: async () => {
+      this.pluginCalls.push(["rescan"]);
+      return this.pluginsView;
+    },
+    setOn: (id: string, on: boolean) => this.pluginChange("setOn", id, on),
+    pick: async () => {
+      this.pluginCalls.push(["pick"]);
+      return this.pluginPick;
+    },
+    add: (token: string) => this.pluginChange("add", token),
+    approve: (id: string, distHash: string) => this.pluginChange("approve", id, distHash),
+    remove: (id: string) => this.pluginChange("remove", id),
+    detail: async (id: string) => (Object.hasOwn(this.pluginDetails, id) ? this.pluginDetails[id] : null),
+    setSetting: (id: string, field: string, value: unknown) => this.pluginChange("setSetting", id, field, value),
+    resetSettings: (id: string) => this.pluginChange("resetSettings", id),
+    setWorkHours: (id: string, wh: PluginWorkHours) => this.pluginChange("setWorkHours", id, wh),
+    setSecret: (id: string, secret: string, value: string) => this.pluginChange("setSecret", id, secret, value),
+    deleteSecret: (id: string, secret: string) => this.pluginChange("deleteSecret", id, secret),
+    setNotify: (id: string, on: boolean) => this.pluginChange("setNotify", id, on),
+    test: async (id: string) => {
+      this.pluginCalls.push(["test", id]);
+      return this.pluginTests;
+    },
+    refresh: (id: string, source: string) => this.pluginChange("refresh", id, source),
+    onChange: (l: (v: PluginsView) => void) => {
+      this.pluginsListeners.add(l);
+      return () => {
+        this.pluginsListeners.delete(l);
+      };
+    },
+  };
+  attention = {
+    get: async () => this.attentionView,
+    dismiss: async (plugin: string, key: string) => {
+      this.pluginCalls.push(["attention.dismiss", plugin, key]);
+    },
+    read: async (plugin?: string, key?: string) => {
+      this.pluginCalls.push(["attention.read", plugin, key]);
+    },
+    onChange: (l: (v: AttentionView) => void) => {
+      this.attentionListeners.add(l);
+      return () => {
+        this.attentionListeners.delete(l);
       };
     },
   };

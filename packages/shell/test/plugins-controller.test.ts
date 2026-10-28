@@ -525,6 +525,35 @@ describe("PluginsController: attention", () => {
     await u.ctl.setOn("oncall", false);
     expect(await u.ctl.attention.view()).toEqual({ items: [], badge: 0, show: false });
   });
+
+  it("a target is checked again at the click: plugin on, panel or action declared, tasks approved, vars that pass the schema", async () => {
+    let ctx: Ctx | undefined;
+    const u = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: { oncall: { s: (c) => ((ctx = c), new Promise(() => {})) } },
+    });
+    await bundled(u.root, "oncall", {
+      permissions: { tasks: true },
+      panels: [{ id: "queue", slot: "side", title: "Queue" }],
+      actions: [{ id: "ack", label: "Ack", tier: "light", vars: { type: "object", properties: { n: { type: "number" } }, required: ["n"] }, prompt: "Ack {{n}}" }],
+    });
+    await u.ctl.start();
+    await until(() => ctx !== undefined);
+    await ctx!.attention.raise({ key: "p", severity: "info", title: "Panel", target: { panel: "queue", focus: "a" } });
+    await ctx!.attention.raise({ key: "good", severity: "action", title: "Ack it", target: { action: "ack", vars: { n: 1 } } });
+    await ctx!.attention.raise({ key: "bad", severity: "action", title: "Bad vars", target: { action: "ack", vars: { n: "one" } } });
+    await ctx!.attention.raise({ key: "none", severity: "info", title: "Nothing to open" });
+    const has = Object.fromEntries((await u.ctl.attention.view()).items.map((i) => [i.key, i.hasTarget]));
+    expect(has).toEqual({ p: true, good: true, bad: false, none: false });
+    expect(await u.ctl.attentionTarget("oncall", "good")).toEqual({ action: "ack", vars: { n: 1 } });
+    expect(await u.ctl.attentionTarget("oncall", "p")).toEqual({ panel: "queue", focus: "a" });
+    expect(await u.ctl.attentionTarget("oncall", "bad")).toBeNull();
+    expect(await u.ctl.attentionTarget("oncall", "missing")).toBeNull();
+    expect(await u.ctl.attentionTarget("other", "good")).toBeNull();
+    // Turned off: nothing of it opens any more.
+    await u.ctl.setOn("oncall", false);
+    expect(await u.ctl.attentionTarget("oncall", "good")).toBeNull();
+  });
 });
 
 describe("PluginsController: agent surface", () => {

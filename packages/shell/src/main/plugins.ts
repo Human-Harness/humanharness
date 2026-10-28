@@ -8,6 +8,7 @@ import {
   type PluginManifest,
   type SettingRef,
   agentText,
+  jsonSchemaToZod,
   permissionLines,
   permissionsAdded,
   pluginSettings,
@@ -20,7 +21,7 @@ import {
   withSetting,
 } from "@humanharness/harness-sdk";
 import type { AttentionItemView, AttentionView, PluginDetail, PluginPick, PluginResult, PluginReview, PluginRow, PluginsView, PluginTestResult } from "@humanharness/ui/client";
-import { type AttentionInput, type AttentionOrigin, AttentionStore, DataError } from "@humanharness/workspace";
+import { type AttentionInput, type AttentionItem, type AttentionOrigin, AttentionStore, type AttentionTarget, DataError } from "@humanharness/workspace";
 import { type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";
 import { PluginData } from "./plugin-data";
@@ -92,6 +93,8 @@ type Loaded = PluginEntry & { manifest: PluginManifest };
 interface Running {
   entry: Loaded;
   approvedSecrets: Set<string>;
+  /** The approved snapshot allows tasks too (a dev plugin: its own manifest): actions may open a prepared task. */
+  approvedTasks: boolean;
   broker: PluginBroker;
   scheduler: PluginScheduler;
   channel: PluginChannel;
@@ -267,6 +270,7 @@ export class PluginsController {
     Object.assign(r, {
       entry: e,
       approvedSecrets,
+      approvedTasks: approved.tasks && m.permissions.tasks,
       data,
       workHours: parseWorkHours(stored[WORK_HOURS_KEY]) ?? DEFAULT_WORK_HOURS(),
       chips: new Map(),
@@ -922,6 +926,36 @@ export class PluginsController {
     },
   };
 
+  /**
+   * An item's target as it may be opened now, or null (Decision 12; Attention review): the agent can write the file,
+   * and the plugin may have changed or turned off since the item was raised, so the target is checked again at the
+   * click — its plugin runs, the panel or action is still declared, an action's plugin is approved for tasks, and
+   * the vars pass the action's schema. Part 2 opens only what this returns.
+   */
+  async attentionTarget(plugin: string, key: string): Promise<AttentionTarget | null> {
+    if (typeof plugin !== "string" || typeof key !== "string") return null;
+    const c = await this.base();
+    const store = c ? await this.attentionStore(c, false) : null;
+    const items = store ? await store.list().catch(() => []) : [];
+    const item = items.find((i) => i.origin.kind === "plugin" && i.origin.id === plugin && i.key === key);
+    return item ? this.targetNow(item) : null;
+  }
+
+  private targetNow(i: AttentionItem): AttentionTarget | null {
+    const t = i.target;
+    const r = i.origin.kind === "plugin" ? this.running.get(i.origin.id) : undefined;
+    if (!t || !r || r.stopped) return null;
+    const m = r.entry.manifest;
+    if ("panel" in t) return m.panels.some((p) => p.id === t.panel) ? t : null;
+    const action = m.actions.find((a) => a.id === t.action);
+    if (!action || !r.approvedTasks) return null;
+    try {
+      return jsonSchemaToZod(action.vars).safeParse(t.vars ?? {}).success ? t : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async attentionView(): Promise<AttentionView> {
     const empty: AttentionView = { items: [], badge: 0, show: false };
     if (!this.active || this.loaded().length === 0) return empty;
@@ -943,7 +977,7 @@ export class PluginsController {
         ...(i.body !== undefined ? { body: i.body } : {}),
         at: i.at,
         read: i.read,
-        hasTarget: i.target !== undefined,
+        hasTarget: this.targetNow(i) !== null,
       }));
     return { items, badge: items.filter((i) => i.severity === "action" && !i.read).length, show: someOn || items.length > 0 };
   }

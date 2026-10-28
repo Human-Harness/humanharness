@@ -221,6 +221,8 @@ export interface AppState {
   profiles?: ProfilesInfo;
   /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
   material?: MaterialInfo;
+  /** The harness takes plugins (manifest `plugins`). Absent: no Plugins tab, no inbox (plugins D0). */
+  plugins?: PluginsInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -969,6 +971,41 @@ export interface HarnessClient {
      */
     setScope(scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }): Promise<{ ok: boolean; message?: string }>;
     onChange(listener: (state: SidekickState) => void): () => void;
+  };
+  /**
+   * Plugins (plugins spec §7). Only with `state.plugins`: a main without them registers none of these channels (D0).
+   * Refusals come back as data.
+   */
+  plugins: {
+    get(): Promise<PluginsView | null>;
+    rescan(): Promise<PluginsView | null>;
+    setOn(id: string, on: boolean): Promise<PluginResult>;
+    /** Main shows the folder dialog itself; the renderer never sends a path. Pass the token to `add`, once, soon. */
+    pick(): Promise<PluginPick>;
+    add(token: string): Promise<PluginResult>;
+    /** Approves what the review showed: send its `distHash` back (a plugin that changed since is refused). */
+    approve(id: string, distHash: string): Promise<PluginResult>;
+    remove(id: string): Promise<PluginResult>;
+    detail(id: string): Promise<PluginDetail | null>;
+    setSetting(id: string, field: string, value: unknown): Promise<PluginResult>;
+    resetSettings(id: string): Promise<PluginResult>;
+    setWorkHours(id: string, wh: PluginWorkHours): Promise<PluginResult>;
+    /** Stores a key (at most 8,192 characters); its value never comes back, only whether it is stored (B6). */
+    setSecret(id: string, secret: string, value: string): Promise<PluginResult>;
+    deleteSecret(id: string, secret: string): Promise<PluginResult>;
+    setNotify(id: string, on: boolean): Promise<PluginResult>;
+    test(id: string): Promise<PluginTestResult[]>;
+    /** Runs a source now; one at a time per source and a few per minute. */
+    refresh(id: string, source: string): Promise<PluginResult>;
+    onChange(listener: (view: PluginsView) => void): () => void;
+  };
+  /** The Attention inbox (plugins spec §6). Only with `state.plugins` (D0). */
+  attention: {
+    get(): Promise<AttentionView | null>;
+    dismiss(plugin: string, key: string): Promise<void>;
+    /** No arguments: every item; a plugin: its items; both: that one. */
+    read(plugin?: string, key?: string): Promise<void>;
+    onChange(listener: (view: AttentionView) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   DataChangeView,
   Event,
+  FileRestorePrompt,
   FocusState,
   HarnessClient,
   MaterialView,
@@ -19,6 +20,7 @@ import type {
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
 import { documentWatcher } from "./document-watch";
+import { restoreFlow } from "./file-restore";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -36,6 +38,8 @@ const focusOpeners = new Set<(path: string) => void>();
 /** Focus mode as the chat set it last, and who listens. */
 let focusState: FocusState = { on: false };
 const focusListeners = new Set<(state: FocusState) => void>();
+/** The core's chat answers "go back?" for every `files.restore` (file-timeline spec §6.3); null while none is on screen. */
+let restoreConfirm: ((prompt: FileRestorePrompt) => Promise<boolean>) | null = null;
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -129,6 +133,21 @@ const client: HarnessClient = {
     set: (state) => {
       focusState = { on: state?.on === true, ...(typeof state?.path === "string" ? { path: state.path } : {}) };
       for (const l of [...focusListeners]) l(focusState);
+    },
+  },
+  files: {
+    timeline: (file) => ipcRenderer.invoke("hh:fileTimeline", file),
+    diff: (file, from, to) => ipcRenderer.invoke("hh:fileDiff", file, from, to),
+    restore: (file, commit) => restoreFlow((channel, ...args) => ipcRenderer.invoke(channel, ...args), restoreConfirm, file, commit),
+    onChange: (file, listener) =>
+      subscribe<unknown>("hh:fileCommits", (paths) => {
+        if (Array.isArray(paths) && paths.includes(file)) listener();
+      }),
+    hostConfirm: (confirm) => {
+      restoreConfirm = confirm;
+      return () => {
+        if (restoreConfirm === confirm) restoreConfirm = null;
+      };
     },
   },
   scopes: {

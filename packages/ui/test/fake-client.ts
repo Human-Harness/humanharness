@@ -10,6 +10,9 @@ import type {
   DataRecord,
   DocumentRead,
   EngineError,
+  FileDiffResult,
+  FileRestoreAnswer,
+  FileRestorePrompt,
   FocusState,
   EngineStatus,
   Event,
@@ -49,6 +52,7 @@ import type {
   TaskView,
   TestResult,
   TextSize,
+  TimelineEntry,
   UsageSummary,
 } from "../src/client";
 import { hearsDataChange } from "../src/client";
@@ -572,6 +576,50 @@ export class FakeClient implements HarnessClient {
     set: (s) => {
       this.focusState = s;
       for (const l of [...this.focusListeners]) l(s);
+    },
+  };
+  /** Timelines by path, and diffs by `${path}|${from}|${to}`; the fake's `files` answers from here like main. */
+  timelines: Record<string, TimelineEntry[]> = {};
+  diffs: Record<string, FileDiffResult> = {};
+  /** Every files call, in order. */
+  fileCalls: { op: string; args: unknown[] }[] = [];
+  /** What a confirmed restore answers. */
+  restoreAnswer: FileRestoreAnswer = { ok: true };
+  private fileListeners = new Map<string, Set<() => void>>();
+  private confirmer: ((prompt: FileRestorePrompt) => Promise<boolean>) | null = null;
+  /** As main does after a commit. */
+  emitFileCommit(paths: string[]) {
+    for (const p of paths) for (const l of [...(this.fileListeners.get(p) ?? [])]) l();
+  }
+  files: HarnessClient["files"] = {
+    timeline: async (path) => {
+      this.fileCalls.push({ op: "timeline", args: [path] });
+      return Object.hasOwn(this.timelines, path) ? { ok: true, entries: this.timelines[path] } : { ok: false, reason: "untracked" };
+    },
+    diff: async (path, from, to) => {
+      this.fileCalls.push({ op: "diff", args: [path, from, to] });
+      return this.diffs[`${path}|${from}|${to}`] ?? { ok: false, reason: "not-found" };
+    },
+    restore: async (path, commit) => {
+      this.fileCalls.push({ op: "restore", args: [path, commit] });
+      const e = (this.timelines[path] ?? []).find((x) => x.to === commit);
+      if (!e) return { refused: "not-found" };
+      if (!this.confirmer) return "cancelled";
+      const yes = await this.confirmer({ path, author: e.author, at: e.at, kind: e.kind, ...(e.version ? { version: e.version } : {}) });
+      if (!yes) return "cancelled";
+      return this.restoreAnswer.ok ? "restored" : { refused: this.restoreAnswer.reason };
+    },
+    onChange: (path, listener) => {
+      const set = this.fileListeners.get(path) ?? new Set();
+      set.add(listener);
+      this.fileListeners.set(path, set);
+      return () => void set.delete(listener);
+    },
+    hostConfirm: (confirm) => {
+      this.confirmer = confirm;
+      return () => {
+        if (this.confirmer === confirm) this.confirmer = null;
+      };
     },
   };
   async openPath(file: string) {

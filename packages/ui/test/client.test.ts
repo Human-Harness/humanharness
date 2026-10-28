@@ -221,3 +221,30 @@ describe("documents and focus (review spec §5.6)", () => {
     expect(opened).toEqual(["specs/a.md"]);
   });
 });
+
+describe("files (file-timeline spec §6.3)", () => {
+  it("the fake answers like main and confirms through the core's host", async () => {
+    const c = new FakeClient();
+    const entry = {
+      kind: "task" as const,
+      author: { kind: "agent" as const, label: "Spec writer", task: "t1", action: "spec" },
+      label: "1 change",
+      at: "2026-10-28T10:00:00.000Z",
+      from: "a".repeat(40),
+      to: "b".repeat(40),
+      commits: [{ id: "b".repeat(40), subject: "Turn: write", at: "2026-10-28T10:00:00.000Z" }],
+    };
+    c.timelines["specs/a.md"] = [entry];
+    expect(await c.files.timeline("specs/a.md")).toEqual({ ok: true, entries: [entry] });
+    expect(await c.files.timeline("other.md")).toEqual({ ok: false, reason: "untracked" });
+    expect(await c.files.restore("specs/a.md", entry.to)).toBe("cancelled");
+    const off = c.files.hostConfirm(async () => true);
+    expect(await c.files.restore("specs/a.md", entry.to)).toBe("restored");
+    off();
+    const seen: string[] = [];
+    c.files.onChange("specs/a.md", () => seen.push("a"));
+    c.emitFileCommit(["specs/a.md", "b.md"]);
+    c.emitFileCommit(["b.md"]);
+    expect(seen).toEqual(["a"]);
+  });
+});

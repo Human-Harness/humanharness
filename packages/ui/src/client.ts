@@ -929,6 +929,19 @@ export interface HarnessClient {
     /** The core's chat only. */
     set(state: FocusState): void;
   };
+  /** File timelines (file-timeline spec §6.3). Every call answers with data; the core always confirms a go-back. */
+  files: {
+    /** The file's entries, newest first. */
+    timeline(path: string): Promise<FileTimelineResult>;
+    /** What changed between two commits, or from a commit to the file now ("current"); `from` null: nothing before. */
+    diff(path: string, from: string | null, to: string | "current"): Promise<FileDiffResult>;
+    /** Brings the file back to `commit` (an entry's `to`) after the core's confirmation; nothing else changes. */
+    restore(path: string, commit: string): Promise<FileRestoreResult>;
+    /** A commit touched `path`: its timeline has a new entry. Returns the unsubscribe. */
+    onChange(path: string, listener: () => void): () => void;
+    /** The core's chat only: answers the confirmation every `restore` shows. Returns the unregister. */
+    hostConfirm(confirm: (prompt: FileRestorePrompt) => Promise<boolean>): () => void;
+  };
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;

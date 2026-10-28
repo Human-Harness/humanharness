@@ -68,6 +68,8 @@ function attempts(ctx, base) {
     ["worker", () => when(new Worker("data:text/javascript,postMessage(1)"), "message", "error")],
     ["window.open", () => window.open(`${base}/open`) !== null],
     ["file", () => fetch("file:///etc/hosts").then(() => true)],
+    // The page's CSP (and Chromium's lack of fetch support on a custom scheme) stops these two before any request
+    // reaches the protocol handler: the import variants below are the ones that exercise the handler's own refusals.
     ["other-fetch", () => fetch("hh-plugin://other/secret.json").then((r) => r.ok)],
     ["traversal-fetch", () => fetch("hh-plugin://probe/..%2f..%2fother%2fdist%2fsecret.json").then((r) => r.ok)],
     ["other-import", () => import("hh-plugin://other/backend.js").then(() => true)],
@@ -103,6 +105,8 @@ export default {
       await record("ctx.fetch-http", await refused(() => ctx.fetch(`${base}/ctx`)));
       await record("ctx.fetch-undeclared", await refused(() => ctx.fetch("https://undeclared.example/")));
       await record("ctx.exec", await refused(() => ctx.exec("sh", ["-c", "id"])));
+      // The control: the declared command goes through, so the refusals around it are the broker's checks.
+      await record("ctx.exec-declared", await refused(() => ctx.exec("date", [])));
       await record("ctx.data-other", await refused(() => ctx.data.put("other.results", { name: "x", outcome: "x" })));
       const forged = await globalThis.hh.rpc("ctx", { runId: "forged", name: "settings.get", args: [] }).catch(() => null);
       await record("forged-run", forged && forged.ok === true ? "reached" : "blocked");

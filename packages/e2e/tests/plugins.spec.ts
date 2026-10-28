@@ -174,6 +174,10 @@ test("a plugin added from a folder: review, on, its data and inbox item; the age
 test("boundaries B1–B5: a hostile backend reaches no network, no file, no other plugin, no Node and no app IPC", async () => {
   const s = makeSandbox("plugins-probe");
   const server = await countingServer();
+  // The control: the server counts a request that does reach it, so its zero below means something.
+  await new Promise<void>((resolve, reject) => http.get(`http://127.0.0.1:${server.port}/control`, (res) => res.resume().on("end", resolve)).on("error", reject));
+  expect(server.hits).toEqual(["/control"]);
+  server.hits.length = 0;
   writePluginSettings(s, "probe", { port: server.port });
   const dirs = [path.join(fixtures, "probe", "dist"), path.join(fixtures, "other", "dist")].join(path.delimiter);
   const { app } = await launch(s, { claude: claudeScript }, undefined, { HH_PLUGIN_DIRS: dirs });
@@ -210,7 +214,14 @@ test("boundaries B1–B5: a hostile backend reaches no network, no file, no othe
       "navigate",
     ];
     // sendBeacon only says whether it queued the beacon; the server's count above is what proves it never left.
-    expect(all).toEqual({ ...Object.fromEntries(expected.map((n) => [n, "blocked"])), beacon: expect.stringMatching(/^(blocked|queued)$/), "own-import": "reached", hh: "rpc", done: "yes" });
+    expect(all).toEqual({
+      ...Object.fromEntries(expected.map((n) => [n, "blocked"])),
+      beacon: expect.stringMatching(/^(blocked|queued)$/),
+      "own-import": "reached",
+      "ctx.exec-declared": "reached",
+      hh: "rpc",
+      done: "yes",
+    });
     // Two hidden backend windows, each on its own plugin's host page (the probe never left it).
     const wins = await backendWindows(app);
     expect(wins.map((w) => w.url).sort()).toEqual(["hh-plugin://other/_hh/host.html", "hh-plugin://probe/_hh/host.html"]);

@@ -76,7 +76,7 @@ export function HistoryPanel({
   currentTask,
   jobs = [],
   onOpenFile,
-  linkedFolders = false,
+  linkedFolders,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -98,8 +98,11 @@ export function HistoryPanel({
   jobs?: { id: string; label: string }[];
   /** A changed file was picked: its timeline opens (file-timeline spec §6.2). Absent: the paths stay plain text. */
   onOpenFile?: (path: string, kind: HistoryFileChange["kind"]) => void;
-  /** The harness declares linked folders (hatches spec §3.4): what undo covers in them shows too. Absent: none (D0). */
-  linkedFolders?: boolean;
+  /**
+   * The harness's declared linked folders (hatches spec §3.4): what undo covers in them shows too, and a partial undo
+   * names them by label. Absent: none (D0).
+   */
+  linkedFolders?: Record<string, { label: string }>;
 }) {
   const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
@@ -110,10 +113,16 @@ export function HistoryPanel({
   const [loadFailed, setLoadFailed] = useState(false);
   /** Hatches only: the open scope's linked folders; a failure shows nothing extra. */
   const [linked, setLinked] = useState<LinkedHistoryView | null>(null);
-  useEffect(() => {
-    if (!linkedFolders) return;
+  /** The scope `linked` belongs to: its "not covered" lines hide while the filter shows another scope. */
+  const [linkedScope, setLinkedScope] = useState<string | null>(null);
+  const withLinked = linkedFolders !== undefined;
+  const loadLinked = () => {
     client.scopes.linkedHistory().then(setLinked, () => undefined);
-  }, [client, linkedFolders]);
+    client.scopes.current().then(setLinkedScope, () => undefined);
+  };
+  useEffect(() => {
+    if (withLinked) loadLinked();
+  }, [client, withLinked]);
   /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
   const [restoring, setRestoring] = useState(false);
   /** Harnesses with scopes: the scope whose tasks show ("" for all), and the scopes' titles. */
@@ -146,15 +155,17 @@ export function HistoryPanel({
     onCloseRef.current();
     if (back?.isConnected) back.focus();
   };
-  useEffect(() => {
+  const loadGroups = (first: boolean) =>
     client.historyTasks().then(
       (g) => {
         setGroups(g);
         // The newest task starts open: it is what the person most likely wants to undo.
-        if (g[0]) setOpen(new Set([keyOf(g[0])]));
+        if (first && g[0]) setOpen(new Set([keyOf(g[0])]));
       },
       () => setLoadFailed(true),
     );
+  useEffect(() => {
+    void loadGroups(true);
   }, [client]);
   useEffect(() => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -199,6 +210,11 @@ export function HistoryPanel({
           refocus.current = triggerId(r);
           setRestoring(false);
           setRefused(answer.refused);
+          // Linked folders: part of the task was taken back, so the history changed (hatches spec §3.4).
+          if (answer.refused.reason === "partial") {
+            void loadGroups(false);
+            if (withLinked) loadLinked();
+          }
           return;
         }
         if (answer && answer.ok === false) {
@@ -245,7 +261,15 @@ export function HistoryPanel({
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
   };
+  const folderLabel = (key: string) => (linkedFolders && Object.hasOwn(linkedFolders, key) ? linkedFolders[key].label : key);
   const refusalText = (r: UndoRefusal): string => {
+    if (r.reason === "partial") {
+      // What was taken back, then the first folder that refused and why.
+      const done = [...(r.workFolder ? [t("hatches.undoWorkFolder")] : []), ...r.restored.map(folderLabel)];
+      const list = new Intl.ListFormat(language, { type: "conjunction" }).format(done);
+      const why = t("hatches.undoNotDone", { folder: folderLabel(r.notRestored[0] ?? ""), cause: refusalText(r.cause) });
+      return done.length > 0 ? `${t("hatches.undoDone", { folders: list })} ${why}` : why;
+    }
     if (r.reason === "running") return t("parallel.undoRunning", { path: r.path });
     if (r.reason === "uncommitted") return t("parallel.undoUnsaved", { path: r.path });
     if (r.reason === "later") return t(r.by === "task" ? "parallel.undoLaterTask" : "parallel.undoLaterOutside", { path: r.path });
@@ -292,11 +316,12 @@ export function HistoryPanel({
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
       {refused && <p role="alert">{refusalText(refused)}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
-      {linked?.uncovered.map((u) => (
-        <p key={u.key} className="hh-caption hh-history-uncovered">
-          {t("hatches.notCoveredFolder", { label: u.label })}
-        </p>
-      ))}
+      {(!filter || filter === linkedScope) &&
+        linked?.uncovered.map((u) => (
+          <p key={u.key} className="hh-caption hh-history-uncovered">
+            {t("hatches.notCoveredFolder", { label: u.label })}
+          </p>
+        ))}
       {groups?.length === 0 && (
         <div className="hh-history-empty">
           <ClockIcon size={28} />

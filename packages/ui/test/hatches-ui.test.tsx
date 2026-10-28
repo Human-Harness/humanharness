@@ -81,7 +81,7 @@ describe("Scope settings › Linked folders (hatches spec §3.2)", () => {
     await waitFor(() => expect(within(dialog).queryByText("/code/app")).toBeNull());
   });
 
-  it("shows a tracked read folder as read only and tracked", async () => {
+  it("shows a read folder as read only with no history line, beside a tracked write folder", async () => {
     const client = scoped();
     client.linkedSet("app", [{ key: "notes", label: "Notes", path: "/n", mode: "write", tracked: true }, { key: "repos", label: "Repos", path: "/r", mode: "read", tracked: false }]);
     const dialog = await openSettings(client);
@@ -187,7 +187,7 @@ describe("History panel with linked folders", () => {
       uncovered: [{ key: "repos", label: "Repos" }],
       tasks: { t1: [{ key: "notes", label: "Notes", changes: [{ path: "todo.md", kind: "added" }] }] },
     };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders onClose={() => undefined} onOpenFile={() => undefined} />);
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} onOpenFile={() => undefined} />);
     expect(await screen.findByText("Repos: Undo doesn't cover this folder: it has its own git.")).toBeTruthy();
     expect(screen.getAllByText(/Undo doesn't cover/)).toHaveLength(1);
     const files = await screen.findByRole("list", { name: "Notes" });
@@ -200,9 +200,53 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.scopes.linkedHistory.mockRejectedValueOnce(new Error("no"));
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders onClose={() => undefined} />);
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} />);
     await screen.findByRole("button", { name: /A question/ });
     await waitFor(() => expect(client.scopes.linkedHistory).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("hides the 'not covered' lines while the scope filter shows another scope", async () => {
+    const client = scoped();
+    client.scopeList = [...client.scopeList, { id: "web", title: "Web", createdAt: "c", archived: false }];
+    client.historyGroups = [{ ...task("t1"), scopeId: "app" }, { ...task("t2"), scopeId: "web" }];
+    client.linkedHistoryAnswer = { uncovered: [{ key: "repos", label: "Repos" }], tasks: {} };
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} />);
+    expect(await screen.findByText(/Undo doesn't cover/)).toBeTruthy();
+    const filter = screen.getByRole("combobox");
+    fireEvent.change(filter, { target: { value: "web" } });
+    await waitFor(() => expect(screen.queryByText(/Undo doesn't cover/)).toBeNull());
+    fireEvent.change(filter, { target: { value: "app" } });
+    expect(await screen.findByText(/Undo doesn't cover/)).toBeTruthy();
+  });
+
+  it("a partial undo says what was undone and which folder wasn't, and why", async () => {
+    const client = scoped();
+    client.historyGroups = [task("t1")];
+    client.restoreTaskRefusal = {
+      reason: "partial",
+      workFolder: true,
+      restored: ["repos"],
+      notRestored: ["notes", "repos"],
+      cause: { reason: "running", path: "notes/todo.md" },
+    };
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onClose={() => undefined} />);
+    const loads = client.scopes.linkedHistory.mock.calls.length;
+    fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Undone in your work folder and Repos. Not undone in Notes: Another task is changing notes/todo.md. Undo this one once that task waits.",
+    );
+    // Part of the task went back: the panel reads the history again.
+    await waitFor(() => expect(client.scopes.linkedHistory.mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it("a partial undo with nothing taken back says only what wasn't", async () => {
+    const client = scoped();
+    client.historyGroups = [task("t1")];
+    client.restoreTaskRefusal = { reason: "partial", workFolder: false, restored: [], notRestored: ["gone"], cause: { reason: "uncommitted", path: "gone/a.md" } };
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
+    // A key the manifest no longer declares shows as its key.
+    expect((await screen.findByRole("alert")).textContent).toMatch(/^Not undone in gone: /);
   });
 });

@@ -1332,8 +1332,10 @@
     "lostGit": "This folder no longer has git.",
     "keepTracked": "Track with the app's history",
     "leaveToGit": "Leave to its own git",
-    "notCovered": "Undo doesn't cover this folder: it has its own git.",
     "notCoveredFolder": "{{label}}: Undo doesn't cover this folder: it has its own git.",
+    "undoDone": "Undone in {{folders}}.",
+    "undoWorkFolder": "your work folder",
+    "undoNotDone": "Not undone in {{folder}}: {{cause}}",
     "codexUnsupported": "Linked folders don't work with this version of Codex yet.",
     "contextLinked": "Folders of this scope",
     "refused": {

@@ -361,32 +361,6 @@ function TaskRow({
 }
 
 /** Model, effort and context cap. A saved value the engine no longer lists stays selectable as it is. */
-/**
- * How much pinned text a new task gets whole (context-panel spec §4.2). The harness's suggestion is always offered;
- * picking it drops the saved value, so the harness's own number applies again.
- */
-function PinnedBudget({ value, suggested, onChange }: { value: number; suggested: number; onChange: (n: number) => void }) {
-  const { t, i18n } = useTranslation();
-  const id = useId();
-  const options = [...new Set([...PINNED, suggested, value])].sort((a, b) => a - b);
-  return (
-    <div className="hh-model-fields">
-      <label htmlFor={id}>{t("models.pinned")}</label>
-      <select id={id} value={String(value)} onChange={(e) => onChange(Number(e.target.value))}>
-        {options.map((n) => {
-          const tokens = n.toLocaleString(shownLanguage(i18n));
-          return (
-            <option key={n} value={String(n)}>
-              {t(n === suggested ? "models.pinnedSuggested" : "models.pinnedOption", { tokens })}
-            </option>
-          );
-        })}
-      </select>
-      <p className="hh-caption">{t("models.pinnedHint")}</p>
-    </div>
-  );
-}
-
 export function SpecFields({ spec, offer, onChange }: { spec: ModelSpec; offer: Offer; onChange: (s: ModelSpec) => void }) {
   const { t } = useTranslation();
   const id = useId();
@@ -420,6 +394,34 @@ export function SpecFields({ spec, offer, onChange }: { spec: ModelSpec; offer: 
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/**
+ * How much pinned text a new task gets whole (context-panel spec §4.2). The harness's suggestion is always offered;
+ * picking it drops the saved value, so the harness's own number applies again.
+ */
+function PinnedBudget({ value, suggested, onChange }: { value: number; suggested: number; onChange: (n: number) => void }) {
+  const { t, i18n } = useTranslation();
+  const id = useId();
+  const options = [...new Set([...PINNED, suggested, value])].sort((a, b) => a - b);
+  return (
+    <div className="hh-model-fields">
+      <label htmlFor={id}>{t("models.pinned")}</label>
+      <select id={id} value={String(value)} aria-describedby={`${id}-hint`} onChange={(e) => onChange(Number(e.target.value))}>
+        {options.map((n) => {
+          const tokens = n.toLocaleString(shownLanguage(i18n));
+          return (
+            <option key={n} value={String(n)}>
+              {t(n === suggested ? "models.pinnedSuggested" : "models.pinnedOption", { tokens })}
+            </option>
+          );
+        })}
+      </select>
+      <p id={`${id}-hint`} className="hh-caption hh-ctxp-budget-hint">
+        {t("models.pinnedHint")}
+      </p>
     </div>
   );
 }

@@ -55,7 +55,8 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     await openApp();
     // One meter: the flow side's, not a second one in the top bar.
     expect(await screen.findAllByRole("button", { name: PANEL })).toHaveLength(1);
-    expect(screen.getByRole("meter", { name: "Context in use" })).toBeTruthy();
+    // A button's content is presentational: the meter's readout stays reachable as the button's description.
+    expect(screen.getByRole("button", { name: PANEL, description: "Context in use: 20%, 40,000 of 200,000 tokens" })).toBeTruthy();
     const p = await openPanel();
     fireEvent.click(within(p).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: PANEL })).toBeNull());
@@ -98,10 +99,24 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     expect(document.activeElement).toBe(meter);
   });
 
-  it("the panel closes when the task ends", async () => {
+  it("the panel closes when the task ends, and focus lands on the composer instead of the page", async () => {
     const client = await openApp();
-    await openPanel();
+    const p = await openPanel();
+    within(p).getByRole("button", { name: "Close" }).focus();
     await act(() => client.emitTasks({ ...client.tasks, current: null }));
     await waitFor(() => expect(screen.queryByRole("region", { name: PANEL })).toBeNull());
+    expect(document.activeElement?.tagName).toBe("TEXTAREA");
+  });
+
+  it("another task's panel takes the place: focus goes back to the meter", async () => {
+    const client = await openApp();
+    const meter = await screen.findByRole("button", { name: PANEL });
+    meter.focus();
+    const p = await openPanel();
+    within(p).getByRole("button", { name: "Close" }).focus();
+    client.contexts.t2 = { ...CTX, task: "t2" };
+    await act(() => client.emitTasks({ ...client.tasks, current: { id: "t2", action: "manifest", status: "waiting", context: { used: 1000, cap: 200_000 } } }));
+    expect(await panel()).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: PANEL }));
   });
 });

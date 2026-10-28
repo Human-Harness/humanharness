@@ -744,4 +744,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-ctxp-picked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
 .hh-ctxp-meter { display: inline-flex; height: auto; padding: 2px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
 .hh-ctxp-meter:focus-visible { outline: 2px solid var(--hh-slate); outline-offset: 1px; }
+/* Settings › Models' budget hint spans the label and select columns. */
+.hh-ctxp-budget-hint { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 899px) { .hh-ctxp { position: fixed; inset: 52px 0 0 0; z-index: 5; border-left: 0; } }

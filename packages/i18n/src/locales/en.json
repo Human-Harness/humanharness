@@ -358,6 +358,7 @@
     "fallbackDefault": "Your plan doesn't include {{model}}; we used the engine's default model.",
     "context": "Context in use",
     "contextTitle": "{{used}} of {{cap}} tokens",
+    "contextReadout": "Context in use: {{pct}}%, {{used}} of {{cap}} tokens",
     "pinned": "Pinned files budget",
     "pinnedOption": "{{tokens}} tokens",
     "pinnedSuggested": "{{tokens}} tokens (suggested)",

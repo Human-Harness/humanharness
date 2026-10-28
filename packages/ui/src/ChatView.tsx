@@ -1008,9 +1008,15 @@ export function ChatView({
   /** Close or Escape: focus goes back to the meter that opened the panel (or the meter on screen now). */
   const closeContext = () => {
     setContextOpen(false);
+    focusContextOpener();
+  };
+  /** Focus back on the opener, else the meter on screen, else (the task ended: no meter) the composer. */
+  const focusContextOpener = () => {
     const opener = contextOpener.current;
     contextOpener.current = null;
-    const target = opener?.isConnected ? opener : document.querySelector<HTMLElement>(".hh-ctxp-meter");
+    const target = opener?.isConnected
+      ? opener
+      : (document.querySelector<HTMLElement>(".hh-ctxp-meter") ?? document.querySelector<HTMLElement>(".hh-composer textarea"));
     target?.focus();
   };
   /** An item of the panel opens like a History link: a `.md` in the reader, anything else in the timeline panel. */
@@ -1020,10 +1026,15 @@ export function ChatView({
     if (isMarkdownPath(file) && !slim) showReader({ path: file });
     else setTimelineFile(file);
   };
-  // The panel belongs to the open task: it closes when the task ends.
+  // The panel belongs to the open task: it closes when the task ends. Ending, or another task's panel taking its
+  // place (its key), unmounts what had focus: focus goes back to the meter rather than dropping to the page.
   const contextTask = tasks.current?.id;
+  const contextShown = useRef(false);
+  contextShown.current = contextOpen;
   useEffect(() => {
     if (!contextTask) setContextOpen(false);
+    const active = document.activeElement;
+    if (contextShown.current && (!active || active === document.body)) focusContextOpener();
   }, [contextTask]);
   // A link followed in focus mode: the harness's view hears which document is read now.
   const readerPath = reader?.path;

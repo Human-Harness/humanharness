@@ -10,6 +10,7 @@ import { shownLanguage } from "./language";
  */
 export function ContextMeter({ used, cap, onOpen }: { used: number; cap: number; onOpen?: () => void }) {
   const { t, i18n } = useTranslation();
+  const readoutId = useId();
   if (!(cap > 0)) return null;
   const pct = Math.max(0, Math.min(100, Math.round((used / cap) * 100)));
   const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
@@ -31,9 +32,13 @@ export function ContextMeter({ used, cap, onOpen }: { used: number; cap: number;
     </span>
   );
   if (!onOpen) return ring;
+  // A button's content is presentational: the meter's readout reaches screen readers as the button's description.
   return (
-    <button type="button" className="hh-ctxp-meter" aria-label={t("context.open")} onClick={onOpen}>
+    <button type="button" className="hh-ctxp-meter" aria-label={t("context.open")} aria-describedby={readoutId} onClick={onOpen}>
       {ring}
+      <span id={readoutId} className="hh-sr-only">
+        {t("models.contextReadout", { pct, used: fmt(used), cap: fmt(cap) })}
+      </span>
     </button>
   );
 }

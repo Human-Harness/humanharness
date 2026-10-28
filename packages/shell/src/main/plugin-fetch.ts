@@ -47,8 +47,8 @@ export const FETCH_LIMITS = {
 const METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
 const FORBIDDEN = new Set(["host", "content-length", "transfer-encoding", "connection", "upgrade", "proxy-authorization", "te", "trailer", "keep-alive"]);
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,256}$/;
-/** A header value is one line of visible text and spaces (no CR, LF, NUL or other controls). */
-const HEADER_VALUE = /^[\t -~\u0080-￿]*$/;
+/** A header value is one line of visible text and spaces, in bytes as Headers takes them (no controls, nothing past U+00FF). */
+const HEADER_VALUE = /^[\t\x20-\x7e\x80-\xff]*$/;
 const SECRET_LIKE = /\{\{\s*secret/i;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 /** Headers that go with credentials or with a body: dropped when the host changes, or with the body. */
@@ -126,28 +126,33 @@ export async function pluginFetch(req: FetchRequest, o: PluginFetchOptions): Pro
   const checked = check(req, o.hosts);
   if (typeof checked === "string") return refuse(checked);
   let { url, method, body } = checked;
+  const values = [...new Set(Object.values(o.secrets))];
+  const clean = (text: string) => redact(text, values);
 
   // Keys: filled into header values and the body only, in one pass each; which headers (and whether the body) held one.
-  const used = new Set<string>(Object.values(o.secrets));
+  // A filled value is checked again, and Headers can't throw past here: its message would tell where a key's bad
+  // character sits, so a bad value is one fixed refusal.
   const headers = new Headers();
   const secretHeaders = new Set<string>();
   for (const [name, value] of checked.headers) {
     const filled = fillSecrets(value, o.secrets);
     if (!filled.ok) return refuse(filled.reason);
+    const invalid = `The header ${name} has a value that is not valid`;
+    if (!HEADER_VALUE.test(filled.text)) return refuse(invalid);
+    try {
+      headers.append(name, filled.text);
+    } catch {
+      return refuse(invalid);
+    }
     if (filled.used.length > 0) secretHeaders.add(name.toLowerCase());
-    for (const v of filled.used) used.add(v);
-    headers.append(name, filled.text);
   }
   let bodyHasSecret = false;
   if (body !== undefined) {
     const filled = fillSecrets(body, o.secrets);
     if (!filled.ok) return refuse(filled.reason);
     bodyHasSecret = filled.used.length > 0;
-    for (const v of filled.used) used.add(v);
     body = filled.text;
   }
-  const values = [...used];
-  const clean = (text: string) => redact(text, values);
 
   const controller = new AbortController();
   let timedOut = false;

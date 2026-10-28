@@ -141,6 +141,16 @@ describe("pluginFetch (plugins spec §4.2, Decision 8)", () => {
     expect(JSON.stringify(r)).not.toContain(SECRET);
   });
 
+  it("a key that can't go in a header is refused, without a throw or its length", async () => {
+    const f = fakeFetch({});
+    for (const value of ["tok-SECRET-1234\u0100", "tok-SECRET\n1234", "tok-SECRET-1234\u2028"]) {
+      const r = await pluginFetch({ url: "https://acme.atlassian.net/", init: { headers: { authorization: "Bearer {{secret:jira}}" } } }, { ...opts(f.fetch), secrets: { jira: value } });
+      expect(r).toEqual({ ok: false, reason: "The header authorization has a value that is not valid" });
+    }
+    expect(await pluginFetch({ url: "https://acme.atlassian.net/", init: { headers: { a: "x\u0100" } } }, opts(f.fetch))).toMatchObject({ ok: false });
+    expect(f.calls).toEqual([]);
+  });
+
   it("a redirect echoing the secret is redacted from the url too", async () => {
     const f = fakeFetch({
       "https://acme.atlassian.net/a": () => new Response(null, { status: 302, headers: { location: `/b?t=${SECRET}` } }),

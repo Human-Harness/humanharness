@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import path from "node:path";
 import { type PluginPermissions, execAllowed } from "@humanharness/harness-sdk";
 
@@ -30,39 +30,66 @@ export interface RunOptions {
 
 export const EXEC_LIMITS = { timeoutMs: 30_000, maxBytes: 10 * 1024 * 1024 } as const;
 
-/** child_process.execFile, no shell, the given env only, stdin closed, killed past the time or the size. */
+/**
+ * child_process.spawn, no shell, the given env only, stdin closed, killed past the time or the size (stdout and stderr
+ * together). The command leads its own process group (detached, never unref'd), and a kill takes the whole group, so
+ * what it started in the background dies with it and can't hold its output open.
+ */
 export function runFile(file: string, args: string[], o: RunOptions): Promise<RunOutcome> {
   return new Promise((resolve) => {
-    let child: ReturnType<typeof execFile>;
+    const maxBytes = o.maxBytes ?? EXEC_LIMITS.maxBytes;
+    if (o.signal?.aborted) return resolve({ code: -1, stdout: "", stderr: "" });
+    let child: ChildProcess;
     try {
-      child = execFile(
-        file,
-        args,
-        {
-          shell: false,
-          env: o.env,
-          cwd: o.cwd,
-          timeout: o.timeoutMs ?? EXEC_LIMITS.timeoutMs,
-          maxBuffer: o.maxBytes ?? EXEC_LIMITS.maxBytes,
-          killSignal: "SIGKILL",
-          windowsHide: true,
-          encoding: "utf8",
-          ...(o.signal ? { signal: o.signal } : {}),
-        },
-        (err, stdout, stderr) => {
-          const out = { stdout: String(stdout ?? ""), stderr: String(stderr ?? "") };
-          if (!err) return resolve({ code: 0, ...out });
-          const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null; code?: unknown };
-          if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolve({ code: -1, ...out, tooLarge: true });
-          if (typeof e.code === "number") return resolve({ code: e.code, ...out });
-          if (e.killed && e.signal === "SIGKILL" && !o.signal?.aborted) return resolve({ code: -1, ...out, timedOut: true });
-          if (typeof e.code === "string" && e.code !== "ABORT_ERR") return resolve({ code: -1, ...out, spawnError: true });
-          resolve({ code: -1, ...out });
-        },
-      );
+      child = spawn(file, args, { shell: false, env: o.env, cwd: o.cwd, detached: process.platform !== "win32", windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
     } catch {
       return resolve({ code: -1, stdout: "", stderr: "", spawnError: true });
     }
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    let bytes = 0;
+    let why: "timedOut" | "tooLarge" | "aborted" | undefined;
+    let settled = false;
+    const kill = (reason: NonNullable<typeof why>) => {
+      why ??= reason;
+      try {
+        if (process.platform !== "win32" && child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+      // Whatever escaped the group may still hold the pipes: stop reading so the close comes.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    };
+    const timer = setTimeout(() => kill("timedOut"), o.timeoutMs ?? EXEC_LIMITS.timeoutMs);
+    const onAbort = () => kill("aborted");
+    o.signal?.addEventListener("abort", onAbort, { once: true });
+    const collect = (into: Buffer[]) => (chunk: Buffer) => {
+      if (why) return;
+      bytes += chunk.byteLength;
+      if (bytes > maxBytes) return kill("tooLarge");
+      into.push(chunk);
+    };
+    child.stdout?.on("data", collect(out));
+    child.stderr?.on("data", collect(err));
+    const finish = (r: RunOutcome) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      o.signal?.removeEventListener("abort", onAbort);
+      resolve(r);
+    };
+    child.on("error", () => {
+      if (child.pid === undefined) finish({ code: -1, stdout: "", stderr: "", spawnError: true });
+    });
+    child.on("close", (code) => {
+      const text = { stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") };
+      if (why === "tooLarge") return finish({ code: -1, ...text, tooLarge: true });
+      if (why === "timedOut") return finish({ code: -1, ...text, timedOut: true });
+      finish({ code: why === undefined && typeof code === "number" ? code : -1, ...text });
+    });
+    child.stdin?.on("error", () => undefined);
     child.stdin?.end();
   });
 }

@@ -77,7 +77,10 @@ export const BROKER_LIMITS = {
   keyChars: 200,
   records: 2000,
   depth: 32,
+  /** Per call, over all its arguments: values reached (a shared reference counts each time) and text characters. */
   nodes: 200_000,
+  chars: 10 * 1024 * 1024,
+  queryLimit: 1000,
 } as const;
 
 const SEVERITIES: readonly PluginSeverity[] = ["info", "warn", "action"];
@@ -99,6 +102,40 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => {
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 };
+
+/**
+ * One budget for a whole call, checked before anything else looks at it. Structured clone (Electron IPC) keeps shared
+ * references and cycles, so a small message can unfold into a huge walk: every value reached counts, each time it is
+ * reached, and so does every string's and key's length. Only arrays and plain objects are walked (the shape checks
+ * refuse anything else); the walk stops at the first value over the budget, so it is bounded whatever arrives.
+ */
+function checkBudget(args: unknown[]): void {
+  const stack: unknown[] = [...args];
+  let nodes = 0;
+  let chars = 0;
+  const over = () => fail("The call is too large");
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (++nodes > BROKER_LIMITS.nodes) over();
+    if (typeof v === "string") {
+      if ((chars += v.length) > BROKER_LIMITS.chars) over();
+      continue;
+    }
+    if (Array.isArray(v)) {
+      // Everything on the stack will be counted, so a list that can't fit is refused before it is pushed.
+      if (nodes + stack.length + v.length > BROKER_LIMITS.nodes) over();
+      for (const item of v) stack.push(item);
+      continue;
+    }
+    if (!isPlainObject(v)) continue;
+    const keys = Object.keys(v);
+    if (nodes + stack.length + keys.length > BROKER_LIMITS.nodes) over();
+    for (const k of keys) {
+      if ((chars += k.length) > BROKER_LIMITS.chars) over();
+      stack.push(v[k]);
+    }
+  }
+}
 
 /**
  * Plain JSON data, bounded: null, booleans, finite numbers, strings, arrays and plain objects (undefined as a missing
@@ -254,7 +291,9 @@ export class PluginBroker {
       if (!handler) return await this.refuseMalformed(String(typeof name === "string" ? name : typeof name).slice(0, 40), "Unknown call");
       if (!Array.isArray(args) || args.length > handler.max) return await this.refuseMalformed(name as string, "Wrong arguments");
       try {
-        return await handler.fn(run, [...args]);
+        const list = [...args];
+        checkBudget(list);
+        return await handler.fn(run, list);
       } catch (err) {
         if (err instanceof Malformed) return await this.refuseMalformed(name as string, err.message);
         const message = err instanceof Error ? err.message : String(err);
@@ -394,7 +433,7 @@ function query(v: unknown): { where?: Record<string, unknown>; fields?: string[]
   }
   if (q.limit !== undefined) {
     if (typeof q.limit !== "number" || !Number.isFinite(q.limit)) fail("A query's limit is a number");
-    out.limit = q.limit as number;
+    out.limit = Math.min(Math.max(Math.trunc(q.limit as number), 1), BROKER_LIMITS.queryLimit);
   }
   return out;
 }

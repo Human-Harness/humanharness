@@ -86,6 +86,39 @@ describe("PluginBroker (plugins spec §4.2)", () => {
     expect(seen.data).toEqual([]);
   });
 
+  it("one budget per call: shared references count each time they're reached, and so does their text", async () => {
+    const { b, seen } = broker();
+    const run = b.startRun("queues");
+    // Structured clone (Electron IPC) keeps shared references: a small message, a huge walk.
+    const inner = { key: "x", a: Array.from({ length: 1000 }, (_, i) => i) };
+    let t = Date.now();
+    expect(await b.call(run.id, "data.replaceAll", ["queues", Array(600).fill(inner)])).toMatchObject({ ok: false, refused: expect.stringMatching(/too large/) });
+    expect(Date.now() - t).toBeLessThan(1000);
+    const text = { key: "x", s: "a".repeat(1024 * 1024) };
+    t = Date.now();
+    expect(await b.call(run.id, "data.replaceAll", ["queues", Array(600).fill(text)])).toMatchObject({ ok: false, refused: expect.stringMatching(/too large/) });
+    expect(await b.call(run.id, "data.put", ["queues", { key: "x", r: Array(600).fill(text) }])).toMatchObject({ ok: false, refused: expect.stringMatching(/too large/) });
+    expect(Date.now() - t).toBeLessThan(1000);
+    // A cycle ends at the budget too.
+    const cyclic: Record<string, unknown> = { key: "x" };
+    cyclic.self = cyclic;
+    expect(await b.call(run.id, "data.put", ["queues", cyclic])).toMatchObject({ ok: false });
+    expect(seen.data).toEqual([]);
+    // Keys count as text as well.
+    expect(await b.call(run.id, "data.put", ["queues", { key: "x", ["k".repeat(11 * 1024 * 1024)]: 1 }])).toMatchObject({ ok: false, refused: expect.stringMatching(/too large/) });
+    // A few shared records stay well inside the budget.
+    expect(await b.call(run.id, "data.replaceAll", ["queues", Array(5).fill({ key: "x" })])).toMatchObject({ ok: true });
+  });
+
+  it("a query's limit is clamped to 1..1000, whole", async () => {
+    const { b, seen } = broker();
+    const run = b.startRun("queues");
+    for (const limit of [0, -5, 1e9, 2.7]) expect(await b.call(run.id, "data.query", ["queues", { limit }])).toMatchObject({ ok: true });
+    expect(seen.data.map((op) => (op as { query: { limit: number } }).query.limit)).toEqual([1, 1, 1000, 2]);
+    for (const limit of [Infinity, NaN, -Infinity]) expect(await b.call(run.id, "data.query", ["queues", { limit }])).toMatchObject({ ok: false });
+    expect(seen.data.length).toBe(4);
+  });
+
   it("fetch goes through the host and secret rules", async () => {
     const { b, seen } = broker();
     const run = b.startRun("queues");

@@ -57,6 +57,43 @@ describe("runFile (the real runner)", () => {
     expect(big).toMatchObject({ tooLarge: true });
   });
 
+  it("the output cap counts stdout and stderr together", async () => {
+    const both = await runFile(process.execPath, ["-e", "process.stdout.write('x'.repeat(600)); process.stderr.write('y'.repeat(600))"], { env: {}, cwd: process.cwd(), maxBytes: 1024 });
+    expect(both).toMatchObject({ tooLarge: true });
+    const under = await runFile(process.execPath, ["-e", "process.stdout.write('x'.repeat(500)); process.stderr.write('y'.repeat(500))"], { env: {}, cwd: process.cwd(), maxBytes: 1024 });
+    expect(under).toMatchObject({ code: 0 });
+    expect(under.stdout.length + under.stderr.length).toBe(1000);
+  });
+
+  it.skipIf(process.platform === "win32")("a timeout or the run ending kills the whole process group", async () => {
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const gone = async (pid: number) => {
+      for (let i = 0; i < 50 && alive(pid); i++) await new Promise((r) => setTimeout(r, 20));
+      return !alive(pid);
+    };
+    const script = "sleep 30 & echo $!; sleep 30";
+    const t0 = Date.now();
+    const timed = await runFile("/bin/sh", ["-c", script], { env: {}, cwd: process.cwd(), timeoutMs: 300 });
+    expect(timed).toMatchObject({ timedOut: true });
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(await gone(Number(timed.stdout.trim()))).toBe(true);
+
+    const ac = new AbortController();
+    const p = runFile("/bin/sh", ["-c", script], { env: {}, cwd: process.cwd(), signal: ac.signal });
+    setTimeout(() => ac.abort(), 300);
+    const aborted = await p;
+    expect(aborted).toMatchObject({ code: -1 });
+    expect(aborted.timedOut).toBeUndefined();
+    expect(await gone(Number(aborted.stdout.trim()))).toBe(true);
+  });
+
   it("never goes through a shell, and gives the exit code and stderr", async () => {
     const r = await runFile(process.execPath, ["-e", "process.stderr.write(process.argv[1]); process.exit(3)", "$(id); `id`"], { env: {}, cwd: process.cwd() });
     expect(r).toEqual({ code: 3, stdout: "", stderr: "$(id); `id`" });

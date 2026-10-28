@@ -112,6 +112,13 @@ describe("PanelFrame", () => {
     expect(panelCalls(client)).toEqual([]);
   });
 
+  it("sends main plain JSON only: a binary or Map arg arrives as {} and never whole", async () => {
+    const { client, win } = await mount();
+    message(call(8, "data.query", { collection: "queues", x: new ArrayBuffer(1024 * 1024), m: new Map([["a", 1]]) }), win);
+    await flush();
+    expect(panelCalls(client)).toEqual([["panel", "oncall", "queue", "data.query", { collection: "queues", x: {}, m: {} }]]);
+  });
+
   it("answers an unknown call without asking main, and a refused or failing call as an error", async () => {
     const { client, win, posts } = await mount();
     message(call(1, "secrets.get"), win);

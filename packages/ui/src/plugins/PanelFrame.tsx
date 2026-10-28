@@ -155,15 +155,17 @@ function Frame({ client, panel, focus }: PanelFrameProps) {
       // P4: only this frame's own window, opaque-origin, speaks for this panel; the ids come from props, never from it.
       const win = s.el?.contentWindow;
       if (!win || s.dead || e.source !== win || e.origin !== "null") return;
-      const d: unknown = e.data;
-      if (!isRecord(d) || d.hh !== 1 || typeof d.call !== "string") return;
-      let size: number;
+      // The message as JSON, measured and parsed back: only plain JSON goes on (an ArrayBuffer, Blob, Map or Set
+      // stringifies to {} and would otherwise pass the cap and be cloned whole into main).
+      let d: unknown;
       try {
-        size = JSON.stringify(d).length;
+        const json = JSON.stringify(e.data);
+        if (typeof json !== "string" || json.length > PANEL_MESSAGE_MAX_CHARS) return;
+        d = JSON.parse(json);
       } catch {
         return;
       }
-      if (size > PANEL_MESSAGE_MAX_CHARS) return;
+      if (!isRecord(d) || d.hh !== 1 || typeof d.call !== "string") return;
       if (d.call === "resize") {
         // Fire-and-forget: never answered, never sent to main, outside the bucket and the in-flight cap.
         const h = isRecord(d.args) ? d.args.height : undefined;

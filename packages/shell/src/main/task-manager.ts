@@ -1207,7 +1207,7 @@ export class TaskManager {
   private async addNow(taskId: string, file: string, take: (r: ContextResult) => void): Promise<void> {
     const c = await this.storedCurrent();
     if (!c || c.id !== taskId) return take({ ok: false, reason: "no-task" });
-    if (!addablePath(file)) return take({ ok: false, reason: "outside" });
+    if (!addablePath(file)) return take({ ok: false, reason: "bad-name" });
     if (c.status !== "waiting") return take({ ok: false, reason: "busy" });
     take({ ok: true });
     this.tellTurn({ task: c.id, kind: "context", path: file });

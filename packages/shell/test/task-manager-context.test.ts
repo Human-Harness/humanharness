@@ -216,7 +216,7 @@ describe("Add now (context-panel spec §4.1)", () => {
     expect(await answer("t1", "a.md")).toEqual({ ok: false, reason: "no-task" });
     await t.manager.start("quiz");
     expect(await answer("t7", "a.md")).toEqual({ ok: false, reason: "no-task" });
-    expect(await answer("t1", "a`b.md")).toEqual({ ok: false, reason: "outside" });
+    expect(await answer("t1", "a`b.md")).toEqual({ ok: false, reason: "bad-name" });
     expect(t.turns).toHaveLength(1);
     expect(t.notices).toEqual([]);
   });

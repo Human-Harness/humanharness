@@ -285,7 +285,19 @@ export interface TaskContext {
   budget: number;
 }
 
-export type ContextRefusal = "no-task" | "busy" | "outside" | "binary" | "missing" | "unknown-scope" | "not-a-note" | "full" | "not-ready" | "failed";
+/** `bad-name`: the path has a backtick, a line break or another control character, so it can't sit in a prompt or a commit. */
+export type ContextRefusal =
+  | "no-task"
+  | "busy"
+  | "outside"
+  | "bad-name"
+  | "binary"
+  | "missing"
+  | "unknown-scope"
+  | "not-a-note"
+  | "full"
+  | "not-ready"
+  | "failed";
 export type ContextResult = { ok: true } | { ok: false; reason: ContextRefusal };
 export type ContextGetResult = { ok: true; context: TaskContext } | { ok: false; reason: ContextRefusal };
 export type ContextPick = { ok: true; path: string } | { ok: false; reason: "cancelled" | ContextRefusal };

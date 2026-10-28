@@ -209,6 +209,10 @@ export async function runJob(
  * scope), the data asked with no action and the material. An app-wide run (scope null) reads the app scope with
  * scopes, `main` without.
  */
+/** The data context as one text: a string as it is; parts joined as TaskManager's `contextFor` joins them. */
+const joinData = (d: string | { text: string }[]): string =>
+  typeof d === "string" ? d : d.map((p) => p.text).filter(Boolean).join("\n\n");
+
 export function jobMessageFor(o: {
   jobs: Record<string, HarnessJob>;
   /** The text of the job's brief (its prompt file). */
@@ -216,7 +220,8 @@ export function jobMessageFor(o: {
   /** TaskDeps' getters, as index.ts builds them. */
   notes(scope?: string): Promise<Note[]>;
   scoped: boolean;
-  dataContext?(scope: string, action: string | undefined): Promise<string>;
+  /** A string, or one part per collection (master's per-collection context), joined as a task's first message joins them. */
+  dataContext?(scope: string, action: string | undefined): Promise<string | { text: string }[]>;
   materialContext?(scope: string): Promise<string>;
   actions: Record<string, { label: string }>;
 }): (id: string, scope: string | null) => Promise<string> {
@@ -231,7 +236,7 @@ export function jobMessageFor(o: {
       brief: await o.readBrief(job),
       scope: where,
       notesIndex: (s) => notesIndexFor((n) => o.notes(n), o.scoped, s),
-      ...(data ? { dataContext: (s: string) => data(s, undefined) } : {}),
+      ...(data ? { dataContext: async (s: string) => joinData(await data(s, undefined)) } : {}),
       ...(material ? { materialContext: (s: string) => material(s) } : {}),
       actions: labels,
     });

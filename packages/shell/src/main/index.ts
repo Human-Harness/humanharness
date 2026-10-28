@@ -1362,6 +1362,11 @@ type TaskApi = Pick<
   | "isBusy"
   | "idle"
   | "startPrepared"
+  | "whenSettled"
+  | "reviewRound"
+  | "documentApproved"
+  | "contextRecord"
+  | "addContext"
 >;
 /** Today's single TaskManager; in board mode, the board (set once the host is built). */
 let tasks: TaskApi = plainTasks;

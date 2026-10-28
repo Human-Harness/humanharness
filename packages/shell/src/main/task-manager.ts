@@ -455,6 +455,7 @@ export class TaskManager {
       await this.begin(
         { ...keptQuestion(p.prompt), plugin: p.plugin },
         where,
+        language,
         (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: p.prompt }),
         p.display,
         undefined,
@@ -1633,7 +1634,7 @@ export class TaskManager {
   ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
-    if (this.d.successor && this.begun) return this.d.successor((next) => next.op(() => next.begin(task, scope, message, display, floor, tier)));
+    if (this.d.successor && this.begun) return this.d.successor((next) => next.op(() => next.begin(task, scope, language, message, display, floor, tier)));
     await this.endSession();
     await this.between();
     const { text: context, items } = await this.contextFor(scope, task.action);

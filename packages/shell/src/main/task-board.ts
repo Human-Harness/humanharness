@@ -3,6 +3,7 @@ import type { TaskSummary, TaskView } from "@humanharness/ui/client";
 import { APP_SCOPE, isScopeId } from "@humanharness/workspace";
 import { type TasksFileStore, withTasksFile } from "./lane-store";
 import type { EngineHold } from "./parallel-config";
+import { RoundNotStarted } from "./reviews";
 import type { TaskManager } from "./task-manager";
 import { type CurrentTask, LANES_MAX, type TasksFile, interrupted, interruptedLanes, isLaneId, scopeOfTask } from "./task-store";
 import type { TurnGate } from "./turn-gate";
@@ -24,7 +25,12 @@ type Forwarded =
   | "extendTimeBox"
   | "resumeFromNotes"
   | "checkpointBeforeMove"
-  | "idle";
+  | "idle"
+  | "whenSettled"
+  | "reviewRound"
+  | "documentApproved"
+  | "contextRecord"
+  | "addContext";
 
 /** What the board needs from one lane: a TaskManager (its methods have the same names) plus close. */
 export interface LaneHandle extends Partial<Pick<TaskManager, Forwarded>> {
@@ -290,6 +296,52 @@ export class TaskBoard {
         .then(() => need(l, "resumeFromNotes")())
         .catch((err: unknown) => console.error("Could not mark a task to resume", err));
     }
+  }
+
+  /** `read()` once the focused lane is settled (as TaskManager's); at the start view, the idle lane's. */
+  whenSettled<T>(read: () => Promise<T>): Promise<T> {
+    return need(this.focused(), "whenSettled")(read);
+  }
+
+  /**
+   * A review round (review spec §5.3): to the focused task, which must wait for it; at the start view, a new
+   * "Review <title>" task in a lane of its own.
+   */
+  async reviewRound(r: Parameters<TaskManager["reviewRound"]>[0]): ReturnType<TaskManager["reviewRound"]> {
+    const open = this.focusId === null ? undefined : this.lanes.get(this.focusId);
+    if (open) return this.settleAfter(open, need(open, "reviewRound")(r));
+    let to: Awaited<ReturnType<TaskManager["reviewRound"]>> = "new";
+    let ran = false;
+    try {
+      await this.begin(async (l) => {
+        ran = true;
+        to = await need(l, "reviewRound")(r);
+      });
+    } catch (err) {
+      // No lane (too many open tasks): no turn started, so the items go back to the person.
+      throw ran ? err : new RoundNotStarted(err);
+    }
+    return to;
+  }
+
+  /** An approval (review spec §5.4) reaches the record's task when it is open, else the focused one. */
+  async documentApproved(a: Parameters<TaskManager["documentApproved"]>[0]): Promise<void> {
+    const l = (a.task !== null ? this.lanes.get(a.task) : undefined) ?? this.focused();
+    await this.settleAfter(l, need(l, "documentApproved")(a));
+  }
+
+  /** Task `taskId`'s context record (context-panel spec §5.1) when it is open; null otherwise. */
+  async contextRecord(taskId: string): ReturnType<TaskManager["contextRecord"]> {
+    const l = this.lanes.get(taskId);
+    return l ? need(l, "contextRecord")(taskId) : null;
+  }
+
+  /** "Add now" (context-panel spec §4.1) in task `taskId`'s lane; a task that is not open is refused. */
+  addContext(taskId: string, file: string): ReturnType<TaskManager["addContext"]> {
+    const l = this.lanes.get(taskId);
+    if (!l) return { accepted: Promise.resolve({ ok: false, reason: "no-task" }), done: Promise.resolve() };
+    const r = need(l, "addContext")(taskId, file);
+    return { ...r, done: this.settleAfter(l, r.done) };
   }
 
   isBusy(): boolean {

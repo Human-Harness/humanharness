@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type ElectronApplication, type Page, expect, test } from "@playwright/test";
 import type { ClaudeScript } from "@humanharness/fake-agent";
-import { type Sandbox, closeAndClean, launch, makeSandbox, readJsonl, shellDir } from "./helpers";
+import { type Sandbox, answerGoBack, closeAndClean, goBackAsks, launch, makeSandbox, readJsonl, shellDir } from "./helpers";
 
 // Parallel tasks (parallel spec §11): a harness that declares `parallel` keeps several tasks open, each with its own
 // chat and session, and runs up to the cap of them at once.
@@ -115,14 +115,14 @@ const userLines = (page: Page) => page.getByRole("main").locator('[data-role="us
 const box = (page: Page) => page.getByRole("main").getByRole("textbox");
 
 /** A launch of the fixture's build; the sandbox and the app go away at the end, whatever happens. */
-async function withApp(name: string, script: ClaudeScript, run: (page: Page, s: Sandbox) => Promise<void>) {
+async function withApp(name: string, script: ClaudeScript, run: (page: Page, s: Sandbox, app: ElectronApplication) => Promise<void>) {
   const s = makeSandbox(name);
   let app: ElectronApplication | undefined;
   try {
     const launched = await launch(s, { claude: script }, path.join(outDir, "main", "index.js"));
     app = launched.app;
     await launched.page.getByRole("button", { name: "Start Parallel" }).click();
-    await run(launched.page, s);
+    await run(launched.page, s, launched.app);
   } finally {
     if (app) await closeAndClean(app, s);
     else fs.rmSync(s.root, { recursive: true, force: true });
@@ -144,7 +144,7 @@ test.afterAll(() => {
 });
 
 test("two tasks run at once, the inbox follows them, and undoing one leaves the other's file and task", async () => {
-  await withApp("parallel-two", scenarios.slow, async (page, s) => {
+  await withApp("parallel-two", scenarios.slow, async (page, s, app) => {
     await topic(page, "Write A").click();
     // The first task works (5 s) when the second starts from the start view.
     await expect.poll(() => laneOf(s.folder, "write-a")?.status).toBe("running");
@@ -186,10 +186,14 @@ test("two tasks run at once, the inbox follows them, and undoing one leaves the 
     const rowB = panel.locator("li", { has: page.getByRole("button", { name: /^Write B.*1 file changed/ }) });
     const header = rowB.getByRole("button", { name: /^Write B.*1 file changed/ });
     if ((await header.getAttribute("aria-expanded")) !== "true") await header.click();
+    // Main asks with its native dialog (answered through the test hook), naming no later task; the window draws none.
+    await answerGoBack(app, "Go back");
     await rowB.getByRole("button", { name: "Undo this task" }).click();
-    await expect(rowB.getByText("Undo “Write B”?")).toBeVisible();
-    await expect(rowB.getByText(/later task/)).toHaveCount(0);
-    await rowB.getByRole("button", { name: "Undo task", exact: true }).click();
+    await expect.poll(async () => (await goBackAsks(app)).length).toBe(1);
+    const [asked] = await goBackAsks(app);
+    expect(asked).toMatchObject({ message: "Undo “Write B”?", detail: "Everything it changed in your files will be undone.", buttons: ["Go back", "Cancel"], attached: true });
+    expect(asked.detail).not.toMatch(/later task/);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await expect(panel).toBeHidden();
     await expect.poll(() => exists(s.folder, "b.md")).toBe(false);
     expect(fs.readFileSync(path.join(s.folder, "a.md"), "utf8")).toBe("a\n");

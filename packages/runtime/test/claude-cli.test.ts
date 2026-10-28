@@ -549,16 +549,20 @@ describe("activity extras (context-panel spec §3.2)", () => {
     ]);
   });
 
-  it("D0: a Bash or Write activity carries nothing new", () => {
+  it("D0: a Bash or Write activity carries nothing new (a Write only the stack's parallel-spec `edits`)", () => {
+    // The context-panel extras add nothing to either.
+    expect(activityExtras("Write", { file_path: "/w/a.md" })).toEqual({});
+    expect(activityExtras("Bash", { command: "ls /w" })).toEqual({});
     const events: Event[] = [];
     const reader = new StreamJsonReader((e) => events.push(e), () => {});
     reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "/w/a.md" } }] } }));
     reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "ls /w" } }] } }));
+    // The Write's `edits` (parallel spec §5.2, "edit paths" below) is kept out of the window by the turn controller.
     expect(events.map((e) => Object.keys(e).sort())).toEqual([
-      ["detail", "id", "kind", "state", "type"],
+      ["detail", "edits", "id", "kind", "state", "type"],
       ["detail", "id", "kind", "state", "type"],
     ]);
-    expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "start" });
+    expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", edits: ["/w/a.md"], state: "start" });
   });
 });
 

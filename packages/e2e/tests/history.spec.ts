@@ -35,7 +35,7 @@ test("a turn edits a file; going back to before the task brings it back, and the
     // The text shows before the turn ends: wait until the task waits (its commit is made by then).
     await expect.poll(() => readTasks(s.folder).current?.status).toBe("waiting");
     expect(plan(s.folder)).toBe("cambiado por la IA\n");
-    const task: string = readTasks(s.folder).current.id;
+    const taskId: string = readTasks(s.folder).current.id;
 
     await page.getByRole("button", { name: "History", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "History" });
@@ -72,7 +72,7 @@ test("a turn edits a file; going back to before the task brings it back, and the
     // no Job: or Shared: trailers, no Shared: commit. The task id is the only thing that changes between runs.
     expect(await messages(s.userData, s.folder)).toEqual([
       "Start",
-      `Turn: # Topic: the manifest Explain what a harness declares in \`h\n\nTask: ${task}\nAction: manifest`,
+      `Turn: # Topic: the manifest Explain what a harness declares in \`h\n\nTask: ${taskId}\nAction: manifest`,
       "Went back to before the task",
     ]);
   } finally {

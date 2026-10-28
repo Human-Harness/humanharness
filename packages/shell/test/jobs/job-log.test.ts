@@ -56,6 +56,23 @@ describe("JobLog (parallel spec §8, J5)", () => {
     expect((await log.all()).length).toBe(1);
     expect((await log.lastRuns()).size).toBe(1);
   });
+  it("a torn last line does not swallow the next run (J5: the daily cap still counts it)", async () => {
+    const base = fs.mkdtempSync(path.join(root, "b-"));
+    const log = new JobLog(base);
+    await log.append(rec({ run: "1", tokens: 100 }));
+    fs.appendFileSync(jobsFile(base), '{"run":"torn","job":"sy');
+    await log.append(rec({ run: "2", tokens: 5000 }));
+    expect((await log.all()).map((r) => r.run)).toEqual(["1", "2"]);
+    expect(await log.tokensToday("sync", new Date("2026-10-28T12:00:00"))).toBe(5100);
+  });
+  it("a line with a wrong field type, an unknown status or trigger, or negative tokens is skipped", async () => {
+    const base = fs.mkdtempSync(path.join(root, "b-"));
+    const log = new JobLog(base);
+    await log.append(rec({ run: "ok" }));
+    const bad = [{ tokens: -1 }, { status: "maybe" }, { trigger: "cron" }, { summary: 3 }, { run: 1 }, { endedAt: null }, { action: 5 }];
+    fs.appendFileSync(jobsFile(base), bad.map((b) => JSON.stringify({ ...rec({}), ...b })).join("\n") + "\n");
+    expect((await log.all()).map((r) => r.run)).toEqual(["ok"]);
+  });
   it("D0: reading a missing log is empty and creates nothing", async () => {
     const base = fs.mkdtempSync(path.join(root, "b-"));
     const log = new JobLog(base);

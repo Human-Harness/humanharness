@@ -25,17 +25,44 @@ export interface JobRunRecord {
 /** The key runs are deduped and summarised by: one per job and scope (`-` for an app-wide run). */
 export const dedupeKey = (job: string, scope: string | null): string => `${job}:${scope ?? "-"}`;
 
+const TRIGGERS: readonly string[] = ["start", "manual", "afterTask", "every"] satisfies JobTrigger[];
+const STATUSES: readonly string[] = ["ok", "needs-you", "failed"] satisfies JobStatus[];
+
 const isRecord = (r: unknown): r is JobRunRecord => {
-  if (typeof r !== "object" || r === null) return false;
+  if (typeof r !== "object" || r === null || Array.isArray(r)) return false;
   const o = r as Record<string, unknown>;
   return (
+    typeof o.run === "string" &&
     typeof o.job === "string" &&
     (typeof o.scope === "string" || o.scope === null) &&
+    typeof o.trigger === "string" &&
+    TRIGGERS.includes(o.trigger) &&
+    typeof o.status === "string" &&
+    STATUSES.includes(o.status) &&
+    typeof o.summary === "string" &&
+    (o.action === undefined || typeof o.action === "string") &&
     typeof o.tokens === "number" &&
     Number.isFinite(o.tokens) &&
-    typeof o.startedAt === "string"
+    o.tokens >= 0 &&
+    typeof o.startedAt === "string" &&
+    typeof o.endedAt === "string"
   );
 };
+
+/** True when the file exists, is not empty and its last byte is not a newline: a torn last line. */
+async function endsTorn(file: string): Promise<boolean> {
+  const h = await fs.open(file, "r").catch(() => null);
+  if (!h) return false;
+  try {
+    const { size } = await h.stat();
+    if (size === 0) return false;
+    const buf = Buffer.alloc(1);
+    await h.read(buf, 0, 1, size - 1);
+    return buf[0] !== 0x0a;
+  } finally {
+    await h.close();
+  }
+}
 
 /** The log of job runs: appends only, one at a time. Nothing is written until a run ends (D0: no file without jobs). */
 export class JobLog {
@@ -49,7 +76,9 @@ export class JobLog {
   append(r: JobRunRecord): Promise<void> {
     const run = this.queue.then(async () => {
       await fs.mkdir(path.dirname(this.file), { recursive: true });
-      await fs.appendFile(this.file, JSON.stringify(r) + "\n");
+      // A torn last line (a crash mid-write) is closed first, so this run is not glued onto it and lost.
+      const lead = (await endsTorn(this.file)) ? "\n" : "";
+      await fs.appendFile(this.file, lead + JSON.stringify(r) + "\n");
     });
     this.queue = run.catch(() => undefined);
     return run;

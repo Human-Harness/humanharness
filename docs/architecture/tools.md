@@ -142,12 +142,12 @@ This is a decision (Task 6 review, per D3 "one host for every tool"), and a devi
 
 - **Entry** (`TraceEntry`): `{ at, tool, caller, task?, job?, run?, phase?, args, result?, resultSummary, ms, ok, error?, accesses }`. `caller` is `"ui" | "agent" | "pre" | "job"` (`ToolCaller`; slice 2 makes `ui` and `agent`). `args` and `result` are the value, or `{ cut: true, text }` past 2 KB (`TRACE_CUT`), keys hidden before the cut.
 - **Files**: the id must pass `isTaskId` ("Not a task or run id"), never a path from a caller. Folders below the base walked with `lstat`; files opened `O_APPEND | O_NOFOLLOW`, 0600, not hard-linked. A torn last line gets a newline before the next entry. A file stops at 16 MB (`TRACE_FILE_MAX_BYTES`): later entries are dropped, logged once. `read(id)` reads the task file, then the jobs file, skipping lines that don't parse.
-- **Prune** (`prune()`, at start, for the base current then): files untouched for 30 days (`TRACE_DAYS`) removed, older lines dropped; never throws, creates nothing, skips (and logs) a linked folder.
+- **Prune** (`prune()`): each base once per run, before its trace is first used: the base current at start, and one reached later by a profile or folder switch. Files untouched for 30 days (`TRACE_DAYS`) removed, older lines dropped; never throws, creates nothing, skips (and logs) a linked folder.
 - Nothing is created until a call is traced. The history never tracks `.harness/trace/` (it is under `.harness/`, not in the keep list).
 
 ## The three callers
 
-`createToolsHost` (`tools/tools-host.ts`) is built in `index.ts` only under `hasTools(harness)`. `start()` (once, memoised, after the window is created) reads `tools.json`, starts the host (its throw turns tools off with "Tools are off: <message>"), writes the catalogue, prunes the trace and tells the window (`hh:toolsChange`).
+`createToolsHost` (`tools/tools-host.ts`) is built in `index.ts` only under `hasTools(harness)`. `start()` (once, memoised, after the window is created) reads `tools.json`, starts the host (its throw turns tools off with "Tools are off: <message>"), writes the catalogue, prunes the current base's trace and tells the window (`hh:toolsChange`).
 
 - **The agent** (`caller: "agent"`), through the `tools` MCP server. The caller comes from the asking slot, never the request: a task slot gives `task`, its `scope` and its `phase` (`slotTask`: board mode, the lane's task manager; otherwise the open task; `slotTaskOf` drops a trailer of another task); a job slot gives `job` and `run` (`jobs-host.ts` `runOf`), whatever the job runs. No task or run: "No task is running in this session". A malformed request: "Invalid request". The agent reads only the registry's answers (its own texts, or the tool's error with keys hidden) or "Something went wrong running the tool": never a path, stack or key (T7).
 - **The harness UI** (`caller: "ui"`): `hh:toolsCall` runs in the scope main has open (or none), with no task (Decision 14), and works before a task opens. The page names a tool and its arguments, never a caller, task or scope (T9).
@@ -253,7 +253,6 @@ The plan's Decisions 1–18 hold as written, with these notes:
 - **Job inbox lines** (D4): slice 4.
 - **`files: "write"`**: refused until a harness needs it (§17).
 - **Isolation between tools** is per harness, not per tool (above).
-- **Prune** runs once at start for the base current then: after a profile switch the other base's trace waits for the next start.
 - `localhost` and IP literals pass `HOST_PATTERN` in `uses.hosts` (as plugins'); the broker refuses them at call time.
 
 ## Where to look

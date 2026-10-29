@@ -225,6 +225,37 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     expect(seen.stopped).toBe(1);
   });
 
+  it("a base reached after start (a profile or folder switch) is pruned once, before its trace is used; one with no trace gets no folder", async () => {
+    await built();
+    const other = path.join(path.dirname(root), "other");
+    const empty = path.join(path.dirname(root), "empty");
+    await fs.mkdir(other);
+    await fs.mkdir(empty);
+    const stale = async (dir: string) => {
+      const file = path.join(dir, ".harness", "trace", "ui", "2020-01-01.jsonl");
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, `${JSON.stringify({ at: "2020-01-01T00:00:00.000Z", tool: "count" })}\n`);
+      const long = new Date(Date.now() - 60 * 24 * 60 * 60_000);
+      await fs.utimes(file, long, long);
+      return file;
+    };
+    let current = base;
+    const { t } = wire({ over: { base: async () => current } });
+    await t.start();
+    const old = await stale(other);
+    current = other;
+    expect(await t.trace(TASK)).toEqual([]);
+    await expect(fs.access(old)).rejects.toThrow();
+    // Once per base: a file made stale later in the same run waits for the next start.
+    const again = await stale(other);
+    expect(await t.uiCall("count", {})).toMatchObject({ ok: true });
+    await expect(fs.access(again)).resolves.toBeUndefined();
+    // Never creates anything: a base with no trace stays without .harness.
+    current = empty;
+    expect(await t.trace(TASK)).toEqual([]);
+    await expect(fs.access(path.join(empty, ".harness"))).rejects.toThrow();
+  });
+
   it("a harness id the host can't serve (over 63 characters) turns tools off with the reason", async () => {
     await built();
     const { t, seen } = wire({ startThrows: new Error("Not a harness id the tool host can serve") });

@@ -176,7 +176,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   let started: Promise<void> | null = null;
   let catalogue: string | null = null;
   const brokers = new Map<string, ToolBroker>();
-  const traces = new Map<string, ToolTrace>();
+  const traces = new Map<string, Promise<ToolTrace>>();
   /**
    * The calling task's trailer for the call in progress: set around each registry call and each `ctx` call, so the
    * tool's data write (reached through the host page, out of the registry's own chain) is committed under it.
@@ -184,12 +184,17 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   const callTrailer = new AsyncLocalStorage<{ trailer?: HistoryTrailer }>();
   const trailers = new Map<string, HistoryTrailer | undefined>();
 
+  /**
+   * The trace of the current base. Each base is pruned once, before its trace is first used: the base at start, and
+   * one reached later by a profile or folder switch (prune never throws and creates nothing).
+   */
   const traceFor = async (): Promise<ToolTrace> => {
     const base = await d.base();
     if (!base) throw new Error("The app is not set up yet");
     let t = traces.get(base);
     if (!t) {
-      t = new ToolTrace({ base, log: d.log });
+      const trace = new ToolTrace({ base, log: d.log });
+      t = trace.prune().catch(() => undefined).then(() => trace);
       traces.set(base, t);
     }
     return t;
@@ -304,8 +309,8 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
         }
       }
       await writeCatalogue().catch((err: unknown) => d.log("Could not write the tools catalogue", err));
-      const t = await traceFor().catch(() => null);
-      await t?.prune();
+      // Prunes the current base's trace (traceFor prunes each base once).
+      await traceFor().catch(() => null);
       changed();
     })();
     return started;

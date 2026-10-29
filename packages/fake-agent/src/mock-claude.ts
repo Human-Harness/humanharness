@@ -172,6 +172,9 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
   if (step) {
     const rec = loadStepRecording(env.dir, step);
     print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });
+    // A request round is told by its prompt: "### request" as a heading of its own in the step's data. A heuristic with
+    // known limits (end follow-up M15): a pre-step or tool step saved `as: "request"` puts the same heading in the first
+    // round's data, and a retried round of a request answers as its first prompt did. Mock mode only; docs say so.
     if (rec) await callOn(mcpServers, "ui", STEP_OUTPUT_TOOL, prompt.includes("\n### request\n") ? (rec.request ?? rec.output) : rec.output);
     print({ type: "result", subtype: "success", is_error: false, result: "", session_id: sessionId, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
     return;

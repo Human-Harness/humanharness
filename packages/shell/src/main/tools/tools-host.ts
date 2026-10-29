@@ -272,7 +272,11 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   const mock = d.mock;
   /** The keys: the store's, or in mock mode `fixture-<id>` without touching it (A7). */
   const store: Pick<SecretStore, "harnessValues"> = mock ? { harnessValues: async (ids) => Object.fromEntries(ids.map((id) => [id, `fixture-${id}`])) } : d.store;
-  /** Mock mode: each tool's recorded transport, made on its first access. */
+  /**
+   * Mock mode: each tool's recorded transport, made on its first access and kept for the host's life — a read that
+   * failed too (its fetch and exec then fail with that error): files added to or fixed in mock/tools/ count from the
+   * next start (end follow-up M17).
+   */
   const recorded = new Map<string, Promise<ReturnType<typeof recordedToolTransport>>>();
   const recordedOf = (dir: string, tool: string) => {
     let t = recorded.get(tool);

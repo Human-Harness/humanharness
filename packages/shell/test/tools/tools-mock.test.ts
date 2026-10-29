@@ -6,7 +6,7 @@ import type { ToolMeta } from "@humanharness/harness-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolChannel, ToolHostAnswer, ToolHostCall } from "../../src/main/tools/tool-host";
 import { recordedToolTransport as fromEntry } from "../../src/main/tools/tool-cli";
-import { recordedToolTransport } from "../../src/main/tools/recorded-transport";
+import { readToolRecordings, recordedToolTransport } from "../../src/main/tools/recorded-transport";
 import { type ToolsHarness, type ToolsHostDeps, createToolsHost } from "../../src/main/tools/tools-host";
 
 const TASK = randomUUID();
@@ -225,5 +225,32 @@ describe("tools in mock mode (tools spec §12, A2, A7)", () => {
 
   it("recordedToolTransport is the CLI's too (@humanharness/shell/tools)", () => {
     expect(fromEntry).toBe(recordedToolTransport);
+  });
+});
+
+describe("readToolRecordings: hostile folders (A4, end follow-up M16)", () => {
+  it("a tool name that isn't a tool id is refused before any path is made", async () => {
+    await expect(readToolRecordings(mockDir, "../x", () => undefined)).rejects.toThrow('"../x" is not a tool id');
+  });
+
+  it("a linked mock/tools is no recordings, though its target holds some", async () => {
+    const elsewhere = path.join(path.dirname(root), "elsewhere");
+    await fs.mkdir(path.join(elsewhere, "net"), { recursive: true });
+    await fs.writeFile(path.join(elsewhere, "net", "001.json"), JSON.stringify(GET_A));
+    await fs.mkdir(path.dirname(mockDir), { recursive: true });
+    await fs.symlink(elsewhere, mockDir);
+    expect(await readToolRecordings(elsewhere, "net", () => undefined)).toHaveLength(1);
+    expect(await readToolRecordings(mockDir, "net", () => undefined)).toEqual([]);
+  });
+
+  it("a linked mock/tools/<tool>/ is no recordings, though its target holds some", async () => {
+    const elsewhere = path.join(path.dirname(root), "elsewhere-net");
+    await fs.mkdir(elsewhere, { recursive: true });
+    await fs.writeFile(path.join(elsewhere, "001.json"), JSON.stringify(GET_A));
+    await fs.mkdir(mockDir, { recursive: true });
+    await fs.symlink(elsewhere, path.join(mockDir, "net"));
+    await recorded("other", "001.json", GET_A);
+    expect(await readToolRecordings(mockDir, "other", () => undefined)).toHaveLength(1);
+    expect(await readToolRecordings(mockDir, "net", () => undefined)).toEqual([]);
   });
 });

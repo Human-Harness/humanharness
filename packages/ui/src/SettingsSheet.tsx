@@ -11,18 +11,19 @@ import { ownName, systemLanguage } from "./language";
 import type { LanguageControl } from "./language-control";
 import { LanguageChooser } from "./LanguageChooser";
 import { ModelsTab } from "./ModelsTab";
+import { PluginsTab } from "./plugins/PluginsTab";
 import { ProfilesSection } from "./ProfilesSection";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab } from "./sidekick/SidekickTab";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "usage";
+export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "usage";
 /**
  * `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4); Sidekick
- * after Models (sidekick spec §8).
+ * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7).
  */
-const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "usage"];
+const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "plugins", "usage"];
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
@@ -63,12 +64,14 @@ export function SettingsSheet({
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
   const panelId = `${baseId}-panel`;
   // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
-  // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0).
+  // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0);
+  // Plugins only when the harness takes them (plugins D0).
   const tabs = TABS.filter(
     (id) =>
       (id !== "models" || state.models !== undefined) &&
       (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
-      (id !== "sidekick" || state.sidekick !== undefined),
+      (id !== "sidekick" || state.sidekick !== undefined) &&
+      (id !== "plugins" || state.plugins !== undefined),
   );
   const configured = isConfigured(state.config);
   // The tab reads "Sidekicks" once there are two or more (spec §8); its id stays "sidekick".
@@ -168,7 +171,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : t(`settings.tabs.${id}`)}
+                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : id === "plugins" ? t("plugins.tab") : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -197,6 +200,7 @@ export function SettingsSheet({
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
+          {tab === "plugins" && configured && <PluginsTab client={client} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
           {tab === "harness" && configured && (
             <>

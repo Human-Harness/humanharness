@@ -360,6 +360,16 @@ describe("TurnController for tasks", () => {
     expect(fake.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", action: "engines" } });
   });
 
+  it("a plugin's prepared task: the runtime's trailer names the plugin, so every turn commit carries it (e2e found it missing)", async () => {
+    const fake = fakeRuntime();
+    const { controller } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("Explain this event", { task: "t1", plugin: "on-this-day" });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(fake.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", plugin: "on-this-day" } });
+  });
+
   it("sends no trailer for a turn outside any task", async () => {
     const fake = fakeRuntime();
     const { controller } = setup({ ensureRuntime: async () => fake.runtime });

@@ -11,6 +11,7 @@ export { type LanguageControl, useLanguage } from "./language-control";
 // A harness's own legal blocks (keys under `legal.`, Decision 13) use these: lang="en" and the "shown in English" line.
 export { LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
+export { PluginSlot } from "./plugins/PluginSlot";
 export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
 export { ContextPanel, type ContextPanelProps } from "./ContextPanel";
 export { FileDiff, type FileDiffProps, type DiffLayout } from "./FileDiff";

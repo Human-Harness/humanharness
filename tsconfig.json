@@ -14,8 +14,10 @@
       "@humanharness/cli/sdk": ["./packages/cli/src/sdk.ts"],
       "@humanharness/cli/ui": ["./packages/cli/src/ui.ts"],
       // Only for the fake-agent quiz fixture's screen (packages/fake-agent/fixtures/input-harness/ui).
-      "@humanharness/ui": ["./packages/ui/src/index.ts"]
+      "@humanharness/ui": ["./packages/ui/src/index.ts"],
+      // A plugin's panel import, which `humanharness plugin build` aliases the same way (plugin-build.ts).
+      "@humanharness/plugin-ui": ["./packages/ui/src/plugin-ui/index.ts"]
     }
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test", "packages/cli/template/*.ts", "packages/cli/template/ui"]
+  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test", "packages/cli/template/*.ts", "packages/cli/template/ui", "packages/cli/plugin-template/*.ts", "packages/cli/plugin-template/panels", "harnesses/*/plugins/*/*.ts", "harnesses/*/plugins/*/panels"]
 }

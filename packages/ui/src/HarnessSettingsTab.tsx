@@ -5,14 +5,14 @@ import type { HarnessClient, SettingFieldView, SettingsResult, SettingsState, Se
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-interface Group {
+export interface Group {
   id: string | null;
   label?: string;
   fields: SettingFieldView[];
 }
 
 /** The fields with no section first, then each section in manifest order; empty groups are left out. */
-function groups(view: SettingsView, fields: SettingFieldView[]): Group[] {
+export function groups(view: SettingsView, fields: SettingFieldView[]): Group[] {
   const known = new Set(view.sections.map((s) => s.id));
   const loose: Group = { id: null, fields: fields.filter((f) => f.section === undefined || !known.has(f.section)) };
   const sectioned = view.sections.map((s): Group => ({ id: s.id, label: s.label, fields: fields.filter((f) => f.section === s.id) }));
@@ -158,7 +158,8 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
   );
 }
 
-function SettingRow({
+/** One setting with the core's control (also drawn by a plugin's detail, whose labels are the plugin's: bidi-isolated). */
+export function SettingRow({
   field,
   value,
   error,
@@ -202,9 +203,11 @@ function SettingRow({
   return (
     <div className="hh-row hh-row-wrap">
       {field.control === "segmented" ? (
-        <span className="hh-row-label">{field.label}</span>
+        <span className="hh-row-label" dir="auto">
+          {field.label}
+        </span>
       ) : (
-        <label className="hh-row-label" htmlFor={id}>
+        <label className="hh-row-label" htmlFor={id} dir="auto">
           {field.label}
         </label>
       )}
@@ -218,7 +221,7 @@ function SettingRow({
         {field.unit && <span className="hh-caption">{field.unit}</span>}
       </span>
       {field.help && (
-        <p className="hh-caption hh-row-note" id={helpId}>
+        <p className="hh-caption hh-row-note" id={helpId} dir="auto">
           {field.help}
         </p>
       )}

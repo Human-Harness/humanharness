@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
+import { PLUGIN_ID } from "@humanharness/harness-sdk";
 import { CONTEXT_PREFIX, DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
 import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
 import { type TimelineCommit, type TimelineEntry, groupTimeline, namedPath } from "./file-timeline";
@@ -73,6 +74,8 @@ export interface HistoryEntry {
   scope?: string;
   /** The task's phase (its `Phase:` trailer), only for an action with phases. */
   phase?: string;
+  /** The plugin whose prepared task this is (its `Plugin:` trailer), only for such tasks. */
+  plugin?: string;
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
@@ -83,6 +86,8 @@ export interface HistoryTrailer {
   scope?: string;
   /** The task's phase now (task-phases spec §6); only for an action with phases. */
   phase?: string;
+  /** The plugin whose prepared task this is, plugins spec §5.3; only for such tasks. */
+  plugin?: string;
 }
 
 /** A file a task added, changed or deleted (tracked files only). */
@@ -172,17 +177,25 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   // Checked on its own: `_app` is a scope folder, but not a valid TRAILER_ID.
   if (trailer.scope !== undefined && isScopeDir(trailer.scope)) lines.push(`Scope: ${trailer.scope}`);
   if (trailer.phase !== undefined && TRAILER_ID.test(trailer.phase)) lines.push(`Phase: ${trailer.phase}`);
+  if (trailer.plugin !== undefined && PLUGIN_ID.test(trailer.plugin)) lines.push(`Plugin: ${trailer.plugin}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action|Scope|Phase): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin): \S+$/;
 
 /**
- * A commit message's subject and its trailers (null when absent or not a valid id; `scope` and `phase` only when
- * present). Only a last paragraph made entirely of trailer lines counts.
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase` and `plugin` only
+ * when present). Only a last paragraph made entirely of trailer lines counts.
  */
-export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null; scope?: string; phase?: string } {
+export function parseCommitMessage(raw: string): {
+  subject: string;
+  task: string | null;
+  action: string | null;
+  scope?: string;
+  phase?: string;
+  plugin?: string;
+} {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
   const last = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
@@ -193,12 +206,14 @@ export function parseCommitMessage(raw: string): { subject: string; task: string
   };
   const scope = /^Scope: (.+)$/m.exec(trailers)?.[1];
   const phase = value("Phase");
+  const plugin = /^Plugin: (.+)$/m.exec(trailers)?.[1];
   return {
     subject: text.split("\n")[0],
     task: value("Task"),
     action: value("Action"),
     ...(isScopeDir(scope) ? { scope } : {}),
     ...(phase ? { phase } : {}),
+    ...(plugin !== undefined && PLUGIN_ID.test(plugin) ? { plugin } : {}),
   };
 }
 
@@ -626,8 +641,17 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action, scope, phase } = parseCommitMessage(e.commit.message);
-      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action, ...(scope ? { scope } : {}), ...(phase ? { phase } : {}) };
+      const { subject, task, action, scope, phase, plugin } = parseCommitMessage(e.commit.message);
+      return {
+        sha: e.oid,
+        message: subject,
+        date: new Date(e.commit.author.timestamp * 1000),
+        task,
+        action,
+        ...(scope ? { scope } : {}),
+        ...(phase ? { phase } : {}),
+        ...(plugin ? { plugin } : {}),
+      };
     });
   }
 

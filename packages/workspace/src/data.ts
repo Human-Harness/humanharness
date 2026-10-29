@@ -3,7 +3,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { type Collection, type DataKey, type DataRecord, type DataWho, type RulesContext, SETTINGS_COLLECTION, z } from "@humanharness/harness-sdk";
-import { APP_SCOPE, dataFile, dataMetaFile, dataPath, isScopeDir } from "./layout";
+import { APP_SCOPE, collectionName, dataFile, dataMetaFile, dataPath, isScopeDir, scopeDir } from "./layout";
+import { stable } from "./data-diff";
+import { LinkRefused, TooLarge, readNoLinks, removeNoLinks, writeNoLinks } from "./no-links";
 
 export type DataErrorCode = "unknown-collection" | "refused" | "invalid" | "not-found" | "broken-file" | "no-scope";
 
@@ -15,6 +17,13 @@ export class DataError extends Error {
   ) {
     super(message);
     this.name = "DataError";
+  }
+}
+
+/** A store with its own folder: a file over its cap (replaceAll can still clear it). */
+class FileTooLarge extends DataError {
+  constructor(message: string) {
+    super("invalid", message);
   }
 }
 
@@ -45,11 +54,13 @@ export interface DataChange {
   collection: string;
   scope: string;
   who: DataWho;
-  op: "put" | "patch" | "delete";
+  op: "put" | "patch" | "delete" | "replaceAll";
   key?: DataKey;
 }
 
 export const QUERY_LIMIT = 50;
+/** The largest file a store with its own folder reads. */
+const DIR_FILE_MAX = 8 * 1024 * 1024;
 export const QUERY_MAX = 200;
 
 /** Rules slower than this are logged (spec §7.4: a synchronous function can't be stopped, only reported). */
@@ -135,8 +146,71 @@ export class DataStore {
   constructor(
     private readonly base: string,
     private readonly collections: Record<string, Collection>,
-    private readonly opts: { now?: () => Date; log?: (message: string) => void; rulesSlowMs?: number } = {},
+    private readonly opts: {
+      now?: () => Date;
+      log?: (message: string) => void;
+      rulesSlowMs?: number;
+      /**
+       * A folder of its own under the base (a plugin's data, plugins spec §3.3) instead of `<base>/.harness/data/`.
+       * Its files are read and written without following links, below the base (the agent can plant one anywhere).
+       */
+      dir?: string;
+      /**
+       * With `dir`: a write whose text is larger than this is refused before anything is written, unless it shrinks a
+       * file already over it; a file is read up to twice this, so one over the cap can still be fixed (default 8 MB).
+       */
+      maxFileBytes?: number;
+      /** With `dir`: a record larger than this, as stored (after the schema's defaults), is refused. */
+      maxRecordBytes?: number;
+    } = {},
   ) {}
+
+  /** A collection's file: `.harness/data/<scope>/<name>.json`, or `<dir>/<scope>/<name>.json` for a store with its own folder. */
+  private file(scope: string, name: string): string {
+    return this.opts.dir ? path.join(this.opts.dir, scopeDir(scope), `${collectionName(name)}.json`) : dataFile(this.base, scope, name);
+  }
+
+  /** Reads a file: null when missing. With `dir`, never through a link and at most `maxFileBytes`. */
+  private async readText(file: string): Promise<string | null> {
+    if (!this.opts.dir) {
+      try {
+        return await fs.readFile(file, "utf8");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw err;
+      }
+    }
+    return this.noLinks(() => readNoLinks(this.base, file, 2 * (this.opts.maxFileBytes ?? DIR_FILE_MAX)));
+  }
+
+  private writeText(file: string, text: string): Promise<void> {
+    if (!this.opts.dir) return writeAtomic(file, text);
+    return this.noLinks(() => writeNoLinks(this.base, file, text, this.opts.maxFileBytes ?? DIR_FILE_MAX));
+  }
+
+  private removeFile(file: string): Promise<void> {
+    return this.opts.dir ? this.noLinks(() => removeNoLinks(this.base, file)) : fs.rm(file, { force: true });
+  }
+
+  private async noLinks<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof TooLarge) throw new FileTooLarge(err.message);
+      if (err instanceof LinkRefused) throw new DataError("refused", err.message);
+      throw err;
+    }
+  }
+
+  /** A collection file as messages name it: relative to the base, with forward slashes. */
+  private shown(scope: string, name: string): string {
+    return this.opts.dir ? path.relative(this.base, this.file(scope, name)).split(path.sep).join("/") : dataPath(scope, name);
+  }
+
+  /** When its records changed: `.harness/data-meta/…`, or `<dir>/.meta/<scope>/<name>.json`. */
+  private metaFile(scope: string, name: string): string {
+    return this.opts.dir ? path.join(this.opts.dir, ".meta", scopeDir(scope), `${collectionName(name)}.json`) : dataMetaFile(this.base, scope, name);
+  }
 
   /** Called after every write, from any writer (spec §4.5 `subscribe`). */
   onChange(listener: (change: DataChange) => void): () => void {
@@ -274,7 +348,7 @@ export class DataStore {
       const prev = c.single ? file.records[0] : file.records.find((r) => r[c.key!] === key);
       if (!prev) return false;
       await this.checkRules(name, c, scope, null, prev, ctx);
-      if (c.single) await fs.rm(dataFile(this.base, scope, name), { force: true });
+      if (c.single) await this.removeFile(this.file(scope, name));
       else await this.save(name, c, scope, file.records.filter((r) => r[c.key!] !== key));
       await this.touch(name, scope, c.single ? undefined : key, false);
       this.emit({ collection: name, scope, who: ctx.who, op: "delete", ...(key !== undefined && !c.single ? { key } : {}) });
@@ -282,10 +356,72 @@ export class DataStore {
     });
   }
 
+  /**
+   * Replaces every record of a collection in one write (a plugin source's refresh, plugins spec §4.2). Each record is
+   * checked like `put` (permission, schema, key); a key listed twice is refused. The rules run for every removed, then
+   * every new or changed record against the previous file, as `delete` and `put` calls in a row would (a record can
+   * take over a removed one's unique value); any refusal writes none. A store with its own folder can clear a file too
+   * large to read when the collection has no rules (they need the previous records).
+   */
+  replaceAll(name: string, records: unknown[], ctx: DataContext): Promise<DataRecord[]> {
+    return this.serialize(async () => {
+      const c = this.writable(name, ctx);
+      const scope = this.scopeFor(name, ctx.scope);
+      if (c.single && records.length > 1) throw new DataError("invalid", `"${name}" holds one record`);
+      const next = records.map((record) => this.parse(name, c, record));
+      const keyOf = (r: DataRecord): string => (c.single ? "" : String(this.keyOf(c, r)));
+      const keys = new Set<string>();
+      for (const r of next) {
+        const k = keyOf(r);
+        if (keys.has(k)) throw new DataError("invalid", `Key "${k}" is listed twice in "${name}"`);
+        keys.add(k);
+      }
+      let file: Loaded;
+      let unread = false;
+      try {
+        file = await this.loadForWrite(name, c, scope);
+      } catch (err) {
+        if (!(err instanceof FileTooLarge) || c.rules) throw err;
+        file = { records: [], invalid: 0, broken: false };
+        unread = true;
+      }
+      const before = new Map(file.records.map((r) => [keyOf(r), r] as const));
+      const changed = next.filter((r) => {
+        const prev = before.get(keyOf(r));
+        return !prev || stable(prev) !== stable(r);
+      });
+      const removed = file.records.filter((r) => !keys.has(keyOf(r)));
+      if (c.rules) {
+        const snapshot = await this.rulesSnapshot(name, scope);
+        let current = file.records;
+        const without = (k: string): DataRecord[] => current.filter((r) => keyOf(r) !== k);
+        for (const r of removed) {
+          snapshot.set(name, current);
+          await this.checkRules(name, c, scope, null, r, ctx, snapshot);
+          current = without(keyOf(r));
+        }
+        for (const r of changed) {
+          snapshot.set(name, current);
+          await this.checkRules(name, c, scope, r, before.get(keyOf(r)) ?? null, ctx, snapshot);
+          current = [...without(keyOf(r)), r];
+        }
+      }
+      if (c.single && next.length === 0) await this.removeFile(this.file(scope, name));
+      else await this.save(name, c, scope, next);
+      const stampKey = (r: DataRecord): DataKey | undefined => (c.single ? undefined : this.keyOf(c, r));
+      // The records of a file too large to read are unknown: their stamps go with them.
+      if (unread) await this.removeFile(this.metaFile(scope, name)).catch(() => {});
+      if (removed.length > 0) await this.touch(name, scope, removed.map(stampKey), false);
+      if (changed.length > 0) await this.touch(name, scope, changed.map(stampKey), true);
+      this.emit({ collection: name, scope, who: ctx.who, op: "replaceAll" });
+      return next;
+    });
+  }
+
   /** When each record last changed, by key (`""` for a `single` record). Best effort: {} when unknown. */
   async changedAt(name: string, scope: string): Promise<Record<string, string>> {
     try {
-      const raw: unknown = JSON.parse(await fs.readFile(dataMetaFile(this.base, scope, name), "utf8"));
+      const raw: unknown = JSON.parse((await this.readText(this.metaFile(scope, name))) ?? "{}");
       return isObject(raw) ? Object.fromEntries(Object.entries(raw).filter((e): e is [string, string] => typeof e[1] === "string")) : {};
     } catch {
       return {};
@@ -309,6 +445,10 @@ export class DataStore {
   private parse(name: string, c: Collection, record: unknown): DataRecord {
     const parsed = c.schema.safeParse(record);
     if (!parsed.success) throw new DataError("invalid", `Not a valid "${name}" record: ${issues(parsed.error)}`);
+    const max = this.opts.dir ? this.opts.maxRecordBytes : undefined;
+    if (max !== undefined && Buffer.byteLength(JSON.stringify(parsed.data), "utf8") > max) {
+      throw new DataError("invalid", `The "${name}" record is too large (at most ${Math.floor(max / 1024)} KB)`);
+    }
     return parsed.data as DataRecord;
   }
 
@@ -333,7 +473,7 @@ export class DataStore {
         continue;
       }
       const loaded = await this.load(other, oc, folder);
-      if (loaded.broken) this.log(`${dataPath(folder, other)} is not valid JSON: the rules of "${name}" see "${other}" as empty`);
+      if (loaded.broken) this.log(`${this.shown(folder, other)} is not valid JSON: the rules of "${name}" see "${other}" as empty`);
       snapshot.set(other, loaded.records);
     }
     return snapshot;
@@ -380,13 +520,8 @@ export class DataStore {
   }
 
   private async load(name: string, c: Collection, scope: string): Promise<Loaded> {
-    let text: string;
-    try {
-      text = await fs.readFile(dataFile(this.base, scope, name), "utf8");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return { records: [], invalid: 0, broken: false };
-      throw err;
-    }
+    const text = await this.readText(this.file(scope, name));
+    if (text === null) return { records: [], invalid: 0, broken: false };
     let raw: unknown;
     try {
       raw = JSON.parse(text);
@@ -423,7 +558,8 @@ export class DataStore {
   private async loadForWrite(name: string, c: Collection, scope: string): Promise<Loaded> {
     const file = await this.load(name, c, scope);
     if (file.broken || file.invalid > 0) {
-      throw new DataError("broken-file", `${dataPath(scope, name)} was changed by hand and no longer matches "${name}": fix it, or go back in History`);
+      const fix = this.opts.dir ? "fix it, or delete it" : "fix it, or go back in History";
+      throw new DataError("broken-file", `${this.shown(scope, name)} was changed by hand and no longer matches "${name}": ${fix}`);
     }
     return file;
   }
@@ -431,7 +567,7 @@ export class DataStore {
   /** Sorted by key, two-space indented, one record per block, so history diffs stay readable (spec §4.2). */
   private async save(name: string, c: Collection, scope: string, records: DataRecord[]): Promise<void> {
     const value = c.single ? records[0] : [...records].sort(byKey(c.key!));
-    await writeAtomic(dataFile(this.base, scope, name), `${JSON.stringify(value, null, 2)}\n`);
+    await this.writeText(this.file(scope, name), `${JSON.stringify(value, null, 2)}\n`);
   }
 
   /** Stamps (or forgets) when the records with `key` changed: one key, or a batch's keys in one write. */
@@ -444,7 +580,7 @@ export class DataStore {
         if (changed) stamps[id] = at;
         else delete stamps[id];
       }
-      await writeAtomic(dataMetaFile(this.base, scope, name), `${JSON.stringify(stamps)}\n`);
+      await this.writeText(this.metaFile(scope, name), `${JSON.stringify(stamps)}\n`);
     } catch (err) {
       this.log(`Could not stamp the change in "${name}": ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -484,8 +620,9 @@ export const dataRequestSchema = z.discriminatedUnion("op", [
 ]);
 export type DataRequest = z.output<typeof dataRequestSchema>;
 
+/** A request that would change data: the agent's and UI's ops, plus a plugin's `replaceAll` (its own data only). */
 export const isDataWrite = (request: unknown): boolean =>
-  isObject(request) && (request.op === "put" || request.op === "patch" || request.op === "delete");
+  isObject(request) && (request.op === "put" || request.op === "patch" || request.op === "delete" || request.op === "replaceAll");
 
 /** Runs one request against the store, as `ctx` (who asks, in which scope). */
 export async function runDataRequest(store: DataStore, request: unknown, ctx: DataContext): Promise<unknown> {

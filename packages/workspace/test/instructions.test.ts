@@ -262,6 +262,16 @@ describe("refreshInstructions", () => {
   });
 });
 
+describe("writeInstructions: plugin sentences (plugins spec §8, Decision 16)", () => {
+  it("writes the plugins' sentences after the harness's under the one heading", async () => {
+    const folder = tmp();
+    await writeInstructions({ folder, base: "x", language: "en", blocks, settings: ["Use a Patient tone.", "On-call: Our team is docs."], engine: getEngine("codex") });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("### How to work with this person\n\n- Use a Patient tone.\n- On-call: Our team is docs.\n");
+    expect(agents.split("### How to work with this person")).toHaveLength(2);
+  });
+});
+
 describe("writing for the reader (document-reader spec §4)", () => {
   const GUIDE_START = "### Writing for the reader";
 

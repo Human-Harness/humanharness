@@ -1,0 +1,4 @@
+/* The probe panel's own stylesheet: the control for the inline styles the panel CSP must refuse (P2, spike P-S7). */
+#css-control {
+  width: 77px;
+}

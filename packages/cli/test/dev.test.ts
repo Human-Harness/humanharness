@@ -186,3 +186,36 @@ describe("dev --mock", () => {
     expect(out).toContain("Could not prepare");
   });
 });
+
+describe("devCommand env (plugin dev)", () => {
+  it("without env spawns exactly the environment it always did, inherited HH_PLUGIN_* included (D0)", async () => {
+    const dir = await harness();
+    process.env.HH_PLUGIN_DIRS = "/stray";
+    try {
+      const f = fakeSpawn();
+      expect(await devCommand({ harnessDir: dir, out: memoryStream().stream, spawn: f.spawn })).toBe(0);
+      const expected: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: dir };
+      delete expected.ELECTRON_RUN_AS_NODE;
+      for (const k of Object.keys(expected)) if (k.startsWith("HH_TEST_") || k.startsWith("HH_FAKE_") || k === "HH_DEV_ENGINE") delete expected[k];
+      expect(f.calls[0].env).toEqual(expected);
+      expect(f.calls[0].env?.HH_PLUGIN_FIXTURES).toBeUndefined();
+    } finally {
+      delete process.env.HH_PLUGIN_DIRS;
+    }
+  });
+
+  it("env is added to the spawned environment and replaces inherited HH_PLUGIN_* variables", async () => {
+    const dir = await harness();
+    process.env.HH_PLUGIN_FIXTURES = "1";
+    process.env.HH_PLUGIN_DIRS = "/stray";
+    try {
+      const f = fakeSpawn();
+      expect(await devCommand({ harnessDir: dir, env: { HH_PLUGIN_DIRS: "/p" }, out: memoryStream().stream, spawn: f.spawn })).toBe(0);
+      expect(f.calls[0].env).toMatchObject({ HH_HARNESS_DIR: dir, HH_PLUGIN_DIRS: "/p" });
+      expect(f.calls[0].env?.HH_PLUGIN_FIXTURES).toBeUndefined();
+    } finally {
+      delete process.env.HH_PLUGIN_FIXTURES;
+      delete process.env.HH_PLUGIN_DIRS;
+    }
+  });
+});

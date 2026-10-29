@@ -56,7 +56,8 @@ const SEPARATOR = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 const PERMISSION = /^\s*(?:[-*]\s+)?`?(edit|exec|web)`?\s*:\s*`?"?([A-Za-z]+)"?`?\s*(?:(?:—|–|--|-)\s*(.*?))?\s*$/i;
 const ENGINES_LINE = /^\s*(?:[-*]\s+)?`?engines`?\s*:\s*(.+?)\s*$/i;
 
-const cells = (row: string) =>
+/** A Markdown table row's cells, trimmed, with a cell's surrounding backticks removed. */
+export const cells = (row: string) =>
   row
     .trim()
     .replace(/^\|/, "")
@@ -65,6 +66,15 @@ const cells = (row: string) =>
     .map((c) => c.trim().replace(/^`(.*)`$/, "$1"));
 
 export function parseHarnessMd(text: string): HarnessDoc {
+  const sections = parseSections(text, HARNESS_SECTIONS);
+  return { sections, flow: parseFlow(sections.get("Flow")), ...parsePermissions(sections.get("Permissions and engines")) };
+}
+
+/**
+ * A Markdown file's `## ` sections, outside code fences. A heading in `known` (any case) is keyed by its canonical
+ * name, any other by its text; the first of two equal headings wins.
+ */
+export function parseSections(text: string, known: readonly string[]): Map<string, Section> {
   const sections = new Map<string, Section>();
   const lines = text.split(/\r?\n/);
   let current: Section | null = null;
@@ -75,11 +85,24 @@ export function parseHarnessMd(text: string): HarnessDoc {
     const heading = fence === null && !marker ? HEADING.exec(lines[i]) : null;
     if (heading) {
       current = { title: heading[1], line: i + 1, lines: [] };
-      const key = HARNESS_SECTIONS.find((s) => s.toLowerCase() === heading[1].toLowerCase()) ?? heading[1];
+      const key = known.find((s) => s.toLowerCase() === heading[1].toLowerCase()) ?? heading[1];
       if (!sections.has(key)) sections.set(key, current);
     } else current?.lines.push({ text: lines[i], line: i + 1 });
   }
-  return { sections, flow: parseFlow(sections.get("Flow")), ...parsePermissions(sections.get("Permissions and engines")) };
+  return sections;
+}
+
+/** The rows under a section's first table whose header line matches `header`; null when there is no such table. */
+export function tableRows(section: Section | undefined, header: RegExp): { cells: string[]; line: number }[] | null {
+  if (!section) return null;
+  const at = section.lines.findIndex((l) => header.test(l.text));
+  if (at < 0 || !SEPARATOR.test(section.lines[at + 1]?.text ?? "")) return null;
+  const rows: { cells: string[]; line: number }[] = [];
+  for (const l of section.lines.slice(at + 2)) {
+    if (!l.text.trim().startsWith("|")) break;
+    rows.push({ cells: cells(l.text), line: l.line });
+  }
+  return rows;
 }
 
 /** A section's text without HTML comments, trimmed: "" means the section is empty. */
@@ -93,16 +116,15 @@ export function sectionText(section: Section | undefined): string {
 }
 
 function parseFlow(section: Section | undefined): FlowRow[] | null {
-  if (!section) return null;
-  const header = section.lines.findIndex((l) => FLOW_HEADER.test(l.text));
-  if (header < 0 || !SEPARATOR.test(section.lines[header + 1]?.text ?? "")) return null;
-  const rows: FlowRow[] = [];
-  for (const l of section.lines.slice(header + 2)) {
-    if (!l.text.trim().startsWith("|")) break;
-    const [action = "", tier = "", cost = "", purpose = ""] = cells(l.text);
-    rows.push({ action, tier: tier.toLowerCase(), cost: cost.toLowerCase(), purpose, line: l.line });
-  }
-  return rows;
+  return (
+    tableRows(section, FLOW_HEADER)?.map(({ cells: [action = "", tier = "", cost = "", purpose = ""], line }) => ({
+      action,
+      tier: tier.toLowerCase(),
+      cost: cost.toLowerCase(),
+      purpose,
+      line,
+    })) ?? null
+  );
 }
 
 function parsePermissions(section: Section | undefined): Pick<HarnessDoc, "permissions" | "malformedPermissions" | "engines"> {

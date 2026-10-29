@@ -3,7 +3,24 @@ import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, type IpcMainInvokeEvent, type WebContents, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell, webContents } from "electron";
+import {
+  BrowserWindow,
+  type IpcMainInvokeEvent,
+  Notification,
+  type WebContents,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  powerMonitor,
+  protocol,
+  safeStorage,
+  session,
+  shell,
+  webContents,
+} from "electron";
 import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import {
@@ -28,6 +45,7 @@ import {
   languageName,
   loadHarness,
   materialStageKey,
+  pluginsAccepted,
   profileFormSpec,
   resolveInHarness,
   settingsView,
@@ -102,11 +120,11 @@ import { ConfigStore, historyDir } from "./config";
 import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
-import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
+import { cliCommand, engineCommand, loginShellPath, resolveBinary } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, pinnedBudget, resolveProfile, tierSpec } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, pinnedBudget, resolveProfile, tierSpec } from "./models";
 import { ContextService } from "./context";
 import { contextHandlers } from "./context-ipc";
 import { languageHandlers } from "./language-ipc";
@@ -144,6 +162,13 @@ import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readIm
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
+import { runFile } from "./plugin-exec";
+import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
+import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
+import { PluginPointers } from "./plugin-load";
+import { SecretStore } from "./plugin-secrets";
+import { PLUGIN_STATE_DIR } from "./plugin-state";
+import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
@@ -221,6 +246,26 @@ let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 let settingsCtl: SettingsController | null = null;
 /** Sidekick, the core's prompt coach (sidekick spec D1): every harness gets it once loaded; it does nothing while off. */
 let sidekickCtl: SidekickController | null = null;
+/**
+ * Plugins (plugins spec); null for a harness that takes none and no dev folders (D0): no `hh-plugin` scheme, no
+ * backend window, no IPC handler, no file.
+ */
+let pluginsCtl: PluginsController | null = null;
+/** The plugins' backend windows (Electron), with pluginsCtl. */
+let pluginHost: PluginBackendHost | null = null;
+/**
+ * The panel handler, request filter and frame guards (P1–P3, P7), installed when the first plugin with panels starts
+ * (D0: a harness that takes plugins but runs none with panels gets none of them).
+ */
+const pluginPanels = new PluginPanelsOnDemand<BrowserWindow>(
+  (win) => installPluginPanels(win, pluginHost, pluginsCtl),
+  () => (window && !window.isDestroyed() ? window : null),
+);
+/** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
+let pluginStateRoot: string | null = null;
+const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
+/** The base changed (profile switch, folder change or move, set up): the old base's plugins stop, the new base's start. */
+const rebasePlugins = (): Promise<void> => pluginsCtl?.rebase().catch((err: unknown) => pluginLog("Could not move the plugins to the new folder", err)) ?? Promise.resolve();
 /** The harness's setup steps (setup-steps spec); null without any (D0): no `.harness/setup.json` is ever read or written. */
 let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
@@ -485,6 +530,8 @@ async function appState(): Promise<AppState> {
     ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
     // Only a harness with material sends what it takes (material D0).
     ...materialAppState(harness),
+    // Only a harness that takes plugins (or dev folders) sends this: the Plugins tab and the inbox (plugins D0).
+    ...(pluginsCtl ? { plugins: { local: pluginsAccepted(harness) && (harness.plugins?.local ?? false) } } : {}),
     // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
     ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
     // Documents can be reviewed only when the agent may edit the folder (review spec D0).
@@ -501,6 +548,12 @@ async function appState(): Promise<AppState> {
 async function validConfig(): Promise<ConfiguredApp | null> {
   const c = await config.load();
   return isConfigured(c) && (await configProblem(c, validation())) === null && baseFor(c, profilesOn()) !== null ? c : null;
+}
+
+/** The current base, or null before the app is set up. */
+async function currentBase(): Promise<string | null> {
+  const c = await validConfig().catch(() => null);
+  return c ? baseOf(c) : null;
 }
 
 /** The harness declares profiles (profiles spec); without them the base is the folder itself (D4). */
@@ -623,6 +676,8 @@ async function scopesChanged(): Promise<void> {
  * read afresh, the scopes migrate and are sent, and the setup steps and tasks of the new folder reach the window.
  */
 async function arrivedInProfile(): Promise<void> {
+  // Before anything reads the new base: the old profile's plugins stop, and nothing of theirs reaches the new one.
+  await rebasePlugins();
   // Another profile is another folder: the reader's watches were checked against the old one.
   documentSessions.closeAll();
   await tasks.interrupt();
@@ -702,6 +757,10 @@ const runtime = memoise<HarnessRuntime>(async () => {
   }
   if (!cmd) return null;
   const settings = settingsCtl;
+  const plugins = pluginsCtl;
+  // The running plugins' collections the agent reads (plugins spec §3.2), written for this base; none: no file (D0).
+  const extra = plugins ? await plugins.catalogueFile(base).catch((err: unknown) => (pluginLog("Could not write the plugin data catalogue", err), null)) : null;
+  plugins?.markRuntimeBuilt(extra !== null);
   const rt = await createRuntime({
     harness,
     engine,
@@ -712,7 +771,10 @@ const runtime = memoise<HarnessRuntime>(async () => {
     uiServerEntry: path.join(here, "ui-server.js"),
     dataServerEntry: path.join(here, "data-server.js"),
     // The person's store (one write queue per base), for the folder this runtime runs in.
-    data: (request) => agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask() }, request),
+    // A dotted collection name is a running plugin's (read only); absent without plugins (D0).
+    data: (request) =>
+      agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask(), ...(plugins ? { plugin: (r: unknown) => plugins.agentData(r) } : {}) }, request),
+    ...(extra ? { extraData: { catalogue: extra } } : {}),
     // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
     // built for, so a request never reaches another profile's material. Absent without material (D0).
     ...(harness.material ? { material: { request: (request: unknown) => materialRequest(base, request), entry: path.join(here, "material-server.js") } } : {}),
@@ -723,7 +785,10 @@ const runtime = memoise<HarnessRuntime>(async () => {
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
     // The settings' sentences, read now and on every refresh (harness-settings spec §5). Absent without settings (D0).
-    ...(settings ? { instructionSettings: () => settings.sentences() } : {}),
+    // Plugins' sentences follow the harness's own (Decision 16); none on: the same AGENTS.md as without them.
+    ...(settings || plugins
+      ? { instructionSettings: async () => [...(settings ? await settings.sentences() : []), ...(plugins ? await plugins.sentences() : [])] }
+      : {}),
     onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
     onModels: (offer) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
@@ -875,12 +940,17 @@ const tasks = new TaskManager({
     ),
   // Spec §4.4: only a harness with a collection that goes into the context gets the hook (D2).
   // A getter, because the harness is loaded after this object is built.
+  // Plugins' tables follow the harness's (Decision 16); none: "" adds nothing to the first message.
   get dataContext() {
-    if (!Object.values(harness.data).some((c) => c.context !== false)) return undefined;
+    const own = Object.values(harness.data).some((c) => c.context !== false);
+    const plugins = pluginsCtl;
+    if (!own && !plugins) return undefined;
     return async (scope: string, action: string | undefined) => {
       const c = await validConfig();
       // One part per collection: the context panel lists each (context-panel spec §3.1); the agent gets them joined.
-      return c ? buildDataContextParts(dataStoreFor(baseOf(c)), harness.data, scope, action) : [];
+      const tables = c && own ? await buildDataContextParts(dataStoreFor(baseOf(c)), harness.data, scope, action) : [];
+      const extra = plugins ? await plugins.contextParts(action) : [];
+      return [...tables, ...extra];
     };
   },
   // Context panel (context-panel spec §3.1): the size of AGENTS.md in the agent's working folder.
@@ -919,10 +989,14 @@ const tasks = new TaskManager({
   get betweenTasks() {
     const settings = settingsCtl;
     const sidekick = sidekickCtl;
-    if (!settings && !sidekick) return undefined;
+    const plugins = pluginsCtl;
+    if (!settings && !sidekick && !plugins) return undefined;
     return async () => {
       await settings?.betweenTasks();
       await sidekick?.betweenTasks();
+      // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
+      await plugins?.betweenTasks();
+      if (plugins?.takeRuntimeStale()) await closeRuntime();
     };
   },
   // Sidekick's after-reply moment (sidekick spec §4.2). Getters: undefined until the controller exists (D0).
@@ -989,10 +1063,10 @@ const tasks = new TaskManager({
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
-    // `tier`: a core review task's (review spec §11.3); otherwise the action's, or the free questions'.
-    const manifestTier = tier ?? (action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier);
+    // `tier`: a plugin action's prepared task (plugins spec §5.3) or a core review task (review spec §11.3); otherwise
+    // the action's, or the free questions'.
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
-    const profile = resolveProfile({ engine, action, manifestTier, models, ...(floor ? { floor } : {}) });
+    const profile = resolveProfile({ engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
     const saved = await savedOffer(engine);
     return supportedEffort(firstOffered(profile, models, saved.models), saved);
@@ -1475,20 +1549,26 @@ function registerIpc() {
     // Spec §7: a bad entry under models is dropped, never stored.
     const patch: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
     const before = await config.load();
+    const baseBefore = pluginsCtl ? await currentBase() : null;
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
     // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
-      saveConfigPatch(patch, before),
-    );
-    if (patch.folder !== undefined && patch.folder !== before.folder) {
-      // The reader's watches were checked against the old folder.
-      documentSessions.closeAll();
-      if (before.folder) dropDataStoresUnder(before.folder);
-      await settleScopes()
-        .then(scopesChanged)
-        .catch((err: unknown) => console.error("Could not prepare the scopes", err));
+    try {
+      await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+        saveConfigPatch(patch, before),
+      );
+      if (patch.folder !== undefined && patch.folder !== before.folder) {
+        // The reader's watches were checked against the old folder.
+        documentSessions.closeAll();
+        if (before.folder) dropDataStoresUnder(before.folder);
+        await settleScopes()
+          .then(scopesChanged)
+          .catch((err: unknown) => console.error("Could not prepare the scopes", err));
+      }
+    } finally {
+      // Set up now, or another folder: the plugins follow the base, even when something above threw after the save.
+      if (pluginsCtl && (await currentBase().catch(() => null)) !== baseBefore) await rebasePlugins();
     }
     // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
@@ -1586,6 +1666,15 @@ function registerIpc() {
   handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
   // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
   registerSidekickIpc(handle, () => sidekickCtl);
+  // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
+  // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.
+  if (pluginsCtl) {
+    registerPluginsIpc(handle, pluginsCtl, {
+      startPrepared: (p) => tasks.startPrepared(p),
+      startBlocked: () => (quitting ? "The app is closing" : (turnBlocked() ?? (tasks.isBusy() ? "A turn is already running" : null))),
+      ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
+    });
+  }
   // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
   // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
   // it stands, never a thrown error.
@@ -1926,10 +2015,12 @@ function registerIpc() {
       saveFolder: async (folder) => void (await config.replaceFolder(folder)),
       historyDir: (folder) => historyDir(userData, folder),
       journal: moveJournal(userData),
+      ...(pluginStateRoot ? { pluginStateRoot } : {}),
       ops: { trash: (p) => shell.trashItem(p) },
     };
     // Checked and set with no await in between, so two requests can't both start a move.
     if (moving) return { ok: false, error: "busy" };
+    let pluginsStopped = false;
     const run = guardedMove({
       guards,
       isBusy: hold.folderBusy,
@@ -1942,7 +2033,12 @@ function registerIpc() {
         // The file indexes waiting to be written go with the history, not after it.
         await flushFileIndexes();
       },
-      closeRuntime,
+      // The plugins work on the old folder too: stopped with the runtime, started again after (rebase, below).
+      closeRuntime: async () => {
+        await closeRuntime();
+        pluginsStopped = true;
+        await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins before the move", err));
+      },
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
       move: () => moveFolder(c.folder, to, deps),
@@ -1953,6 +2049,8 @@ function registerIpc() {
       result = await run;
     } finally {
       moving = null;
+      // Moved or not, the plugins start again in whichever folder is the app's now.
+      if (pluginsStopped) await rebasePlugins();
       // The reader's watches were checked against the folder as it was.
       documentSessions.closeAll();
     }
@@ -1988,6 +2086,19 @@ async function createWindow() {
     if (window === win) window = null;
     documentSessions.closeOwner(contentsId);
   });
+  // The agent may have edited attention.json (no listener fires for it): the inbox is read again when the window comes back.
+  const plugins = pluginsCtl;
+  if (plugins) {
+    // Every app window, once a plugin with panels has started: the panel-only handler, the request filter and the
+    // frame guard (D0: none without plugins, none while no plugin with panels has run).
+    pluginPanels.window(win);
+    win.on("focus", () => {
+      void plugins.attention.view().then(
+        (view) => sendToWindow("hh:attention", view),
+        (err: unknown) => pluginLog("Could not read the Attention inbox", err),
+      );
+    });
+  }
   // A reload starts a new page with no watches of its own: the old page's go.
   win.webContents.on("did-navigate", () => documentSessions.closeOwner(contentsId));
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -2162,6 +2273,64 @@ if (loaded) {
       await (await currentHistory())?.save(`${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) => console.error("Could not record Sidekick's learning", err));
     },
   });
+  // Plugins (plugins spec): only a harness that takes them, or dev folders (HH_PLUGIN_DIRS, development builds). D0:
+  // otherwise no scheme, no controller, no window, no IPC handler and no file.
+  if (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0) {
+    // Before "ready" (spike S2): the backend windows' own scheme. Nothing else registers one.
+    protocol.registerSchemesAsPrivileged([PLUGIN_SCHEME]);
+    // The app's own per-harness folder (outside every base, B8/B13): pointers, approvals, keys, the inbox's tag key.
+    const appDir = path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id);
+    const host = new PluginBackendHost({ resources: path.join(here, "../../resources"), devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
+    pluginHost = host;
+    pluginStateRoot = path.join(appDir, PLUGIN_STATE_DIR);
+    pluginsCtl = new PluginsController({
+      harness: { id: harness.id, name: harness.name, root: harness.root, ...(harness.plugins ? { plugins: harness.plugins } : {}), ...(harness.slots ? { slots: harness.slots } : {}) },
+      devDirs: hooks.pluginDirs ?? [],
+      pointers: new PluginPointers(path.join(appDir, "plugins.json")),
+      // Keys only where the OS encrypts them (Decision 17): never in the clear on a Linux without a keyring.
+      secrets: new SecretStore(path.join(appDir, "secrets"), safeStorageCrypto(safeStorage)),
+      appDir,
+      base: currentBase,
+      host,
+      fetch: globalThis.fetch,
+      exec: {
+        resolve: async (cmd) => resolveBinary(cmd, await loginShellPath(commandDeps), commandDeps),
+        run: runFile,
+        // The controller keeps only PATH, HOME and LANG of this, and sets TERM=dumb (B7).
+        env: async () => ({ PATH: await loginShellPath(commandDeps), HOME: os.homedir(), LANG: process.env.LANG ?? "en_US.UTF-8" }),
+      },
+      userData: app.getPath("userData"),
+      // The inbox's HMAC key (Attention review): its own file, not Sidekick's, where the agent can't reach it.
+      tagKey: (create) => sourceTagKey(path.join(appDir, "attention-key"), create),
+      pickFolder: async () => {
+        if (!window || window.isDestroyed()) return null;
+        const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+        return r.canceled ? null : (r.filePaths[0] ?? null);
+      },
+      notify: (title, body) => {
+        if (Notification.isSupported()) new Notification({ title, body }).show();
+      },
+      whenNoTask: (fn) => tasks.whenNoTask(fn),
+      // As the settings' (harness-settings D4): only from betweenTasks or a whenNoTask callback; peek, never get.
+      refreshInstructions: async () => {
+        const rt = await runtime.peek()?.catch(() => null);
+        return rt ? rt.refreshInstructions() : false;
+      },
+      runLimitMs: hooks.pluginRunLimitMs ?? 120_000,
+      // Mock mode and HH_PLUGIN_FIXTURES: plugins run on their fixtures, never the network or the key store (P10).
+      ...(hooks.mock || hooks.pluginFixtures ? { fixtures: true } : {}),
+      // `plugin dev` (Decision 22): a dev plugin's dist/ rebuilt → its backend restarts and its panels remount.
+      ...(app.isPackaged
+        ? {}
+        : { watch: (dir: string, onChange: (name: string | null) => void) => watchPluginFolder(dir, onChange, (err) => pluginLog(`Stopped watching ${dir}`, err)) }),
+      changed: (view) => sendToWindow("hh:plugins", view),
+      attentionChanged: (view) => sendToWindow("hh:attention", view),
+      surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),
+      panelsNeeded: () => pluginPanels.needed(),
+      dataChanged: (plugin, collections) => sendToWindow("hh:pluginData", { plugin, collections }),
+      log: pluginLog,
+    });
+  }
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {
     const settings = settingsCtl;
@@ -2273,6 +2442,12 @@ if (primary) {
     // AI stages an earlier run left to do (the queue looks only once the app is set up).
     if (await validConfig()) kickMaterial();
     await createWindow();
+    // The plugins of the current base (none before setup); a computer that slept runs the sources that came due.
+    if (pluginsCtl) {
+      const plugins = pluginsCtl;
+      void plugins.start().catch((err: unknown) => pluginLog("Could not start the plugins", err));
+      powerMonitor.on("resume", () => plugins.resumed());
+    }
     // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
     void sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
@@ -2293,6 +2468,9 @@ if (primary) {
       // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
       await moving?.catch(() => undefined);
       await Promise.all([setupStopped, testStopped]);
+      // Every plugin backend stops (and its window closes) before the agent goes.
+      await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
+      await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
       // A translation run stops; the batches it saved stay.
       await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
       try {

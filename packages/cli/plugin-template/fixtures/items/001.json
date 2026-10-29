@@ -1,0 +1,9 @@
+{
+  "kind": "fetch",
+  "request": { "method": "GET", "url": "https://api.example.com/items" },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "text": "[{\"id\":\"1\",\"title\":\"First example item\"},{\"id\":\"2\",\"title\":\"Second example item\"},{\"id\":\"3\",\"title\":\"Third example item\"}]"
+  }
+}

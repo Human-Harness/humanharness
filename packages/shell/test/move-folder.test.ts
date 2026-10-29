@@ -18,6 +18,7 @@ import {
   recoverMove,
   sameContents,
 } from "../src/main/move-folder";
+import { PLUGIN_STATE_DIR, pluginStateKey } from "../src/main/plugin-state";
 import { RestoreGuard } from "../src/main/restore-guard";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
@@ -650,6 +651,65 @@ describe("moveFolder", () => {
     await moveFolder(t.from, t.to, t.deps);
     expect(fs.existsSync(ancient)).toBe(false);
     expect(fs.existsSync(recent)).toBe(true);
+  });
+});
+
+describe("moveFolder carries the plugins' run state (plugins spec: approvals live outside the base)", () => {
+  /** `<appDir>/plugin-state/<key of folder>/oncall.json`, written before the move. */
+  const stateOf = (states: string, folder: string) => path.join(states, pluginStateKey(fs.realpathSync(folder)));
+  const write = (dir: string, text: string) => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "oncall.json"), text);
+  };
+
+  it("renames the old base's state folder to the new base's key, so approvals survive the move", async () => {
+    const t0 = await setup();
+    const states = path.join(t0.base, "app", PLUGIN_STATE_DIR);
+    const t = { ...t0, deps: { ...t0.deps, pluginStateRoot: states } };
+    const oldState = stateOf(states, t.from);
+    write(oldState, '{"on":true}');
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    await moved(t);
+    expect(fs.readFileSync(path.join(stateOf(states, t.to), "oncall.json"), "utf8")).toBe('{"on":true}');
+    expect(fs.existsSync(oldState)).toBe(false);
+  });
+
+  it("keeps a state folder the new place already had, and logs", async () => {
+    const t0 = await setup();
+    const states = path.join(t0.base, "app", PLUGIN_STATE_DIR);
+    const t = { ...t0, deps: { ...t0.deps, pluginStateRoot: states } };
+    const oldState = stateOf(states, t.from);
+    write(oldState, "old");
+    // The new key, from the path the copy will have (its parent exists already).
+    const newState = path.join(states, pluginStateKey(path.join(fs.realpathSync(path.dirname(t.to)), path.basename(t.to))));
+    write(newState, "new");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    expect(fs.readFileSync(path.join(newState, "oncall.json"), "utf8")).toBe("new");
+    expect(fs.readFileSync(path.join(oldState, "oncall.json"), "utf8")).toBe("old");
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("plugin state"), expect.anything());
+  });
+
+  it("with profiles, each profile's state follows its folder", async () => {
+    const t0 = await setupProfiles();
+    const states = path.join(t0.base, "app", PLUGIN_STATE_DIR);
+    const t = { ...t0, deps: { ...t0.deps, pluginStateRoot: states } };
+    for (const id of ["sofi", "tomas"]) write(stateOf(states, path.join(t.from, id)), id);
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    for (const id of ["sofi", "tomas"]) expect(fs.readFileSync(path.join(stateOf(states, path.join(t.to, id)), "oncall.json"), "utf8")).toBe(id);
+    expect(fs.readdirSync(states).sort()).toEqual(["sofi", "tomas"].map((id) => pluginStateKey(path.join(fs.realpathSync(t.to), id))).sort());
+  });
+
+  it("a failed move leaves the state where it was; without plugins nothing is created (D0)", async () => {
+    const t0 = await setup({ rename: async () => Promise.reject(errno("EIO")) });
+    const states = path.join(t0.base, "app", PLUGIN_STATE_DIR);
+    const oldState = stateOf(states, t0.from);
+    write(oldState, "x");
+    expect(await code(moveFolder(t0.from, t0.to, { ...t0.deps, pluginStateRoot: states }))).toBe("failed");
+    expect(fs.readdirSync(states)).toEqual([path.basename(oldState)]);
+    const d0 = await setup();
+    expect(await moveFolder(d0.from, d0.to, d0.deps)).toEqual(DONE);
+    expect(fs.existsSync(path.join(d0.base, "app"))).toBe(false);
   });
 });
 

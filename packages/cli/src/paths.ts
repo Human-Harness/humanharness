@@ -15,6 +15,9 @@ export const HARNESS_MD = "HARNESS.md";
 export const cliDirOf = (core: string) => path.join(core, "packages", "cli");
 export const templateDirOf = (core: string) => path.join(cliDirOf(core), "template");
 export const guideFileOf = (core: string) => path.join(cliDirOf(core), "guide", "new-harness.md");
+/** What `plugin init` copies and installs (plugins spec §9.1, §9.4). */
+export const pluginTemplateDirOf = (core: string) => path.join(cliDirOf(core), "plugin-template");
+export const pluginGuideFileOf = (core: string) => path.join(cliDirOf(core), "guide", "new-plugin.md");
 
 /** packages/shell, resolved as this package's dependency: `dev` runs its electron-vite there. */
 export function shellDir(): string {

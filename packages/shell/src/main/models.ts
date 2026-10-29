@@ -96,6 +96,16 @@ export function tierSpec(engine: string, tier: Tier, models: ModelsConfig): Mode
 }
 
 /**
+ * The manifest's tier for a task: a plugin's prepared task's own `tier` (plugins spec §5.3), else the action's, else
+ * the free questions'. The person's choice in Settings › Models still wins (resolveProfile).
+ */
+export function manifestTier(harness: { actions: Record<string, { tier?: Tier }>; questions?: { tier?: Tier } }, action: string | undefined, tier?: Tier): Tier | undefined {
+  if (tier !== undefined) return tier;
+  if (action === undefined) return harness.questions?.tier;
+  return Object.hasOwn(harness.actions, action) ? harness.actions[action].tier : undefined;
+}
+
+/**
  * The task's profile (spec §5): the user's custom setting for this engine, else the user's tier for the
  * task, else the manifest's, else "standard", through the user's table, else the core's. `floor` (a mode's
  * `minTier`, task-modes spec §5.3) raises a lower tier to it and never lowers one; a custom setting stays.

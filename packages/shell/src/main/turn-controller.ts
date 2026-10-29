@@ -67,6 +67,8 @@ export interface TurnOptions extends SendOptions {
   modeSwitch?: boolean;
   /** The task's phase while this turn runs: usage.jsonl and the history trailer record it (task-phases spec §6). */
   taskPhase?: string;
+  /** The plugin whose prepared task this is: the history trailer records it (plugins spec §5.3). */
+  plugin?: string;
   /** The task enters this phase: the chat's user entry is a separator line naming it, never the brief (spec §4.4). */
   phaseChange?: string;
   /** The time box's wrap-up: the chat's user entry is a system line saying the time is almost up (spec §5). */
@@ -159,7 +161,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin } = options;
     const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = current;
     try {
@@ -268,7 +270,7 @@ export class TurnController {
             this.emit(forWindow(e));
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}) } } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}) });
       await current.running.done;
       await finished;
     } finally {

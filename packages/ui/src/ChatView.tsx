@@ -47,6 +47,12 @@ import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
+import { AttentionInbox } from "./plugins/AttentionInbox";
+import { PluginChips } from "./plugins/PluginChips";
+import { PluginsSection } from "./plugins/PluginsSection";
+import { PreparedTask } from "./plugins/PreparedTask";
+import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, reloadOf, usePluginSurface } from "./plugins/surface";
+import { useAttention } from "./plugins/usePlugins";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
 import { FirstOpenOffer } from "./sidekick/PresetOffer";
@@ -229,6 +235,30 @@ export function ChatView({
   const [skRefresh, setSkRefresh] = useState(0);
   const skEnabled = state.sidekick !== undefined && !slim;
   const sidekick = useSidekick(client, skEnabled, skRefresh);
+  // The Attention inbox (plugins spec §6): only when main sends `state.plugins`, never in slim mode (D0).
+  const attention = useAttention(client, state.plugins !== undefined && !slim);
+  // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
+  const surface = usePluginSurface(client, state.plugins !== undefined && !slim);
+  /** The panel last opened, and its plugin's dev reload count then: a reloaded frame doesn't get the old focus again. */
+  const [panelTarget, setPanelTarget] = useState<(PanelTarget & { reloadAt: number }) | null>(null);
+  const surfaceNow = useRef(surface);
+  surfaceNow.current = surface;
+  const openPanel = useCallback((plugin: string, panel: string, focus?: string) => {
+    const reloadAt = surfaceNow.current ? reloadOf(surfaceNow.current, plugin) : 0;
+    setPanelTarget((prev) => ({ plugin, panel, ...(focus !== undefined ? { focus } : {}), n: (prev?.n ?? 0) + 1, reloadAt }));
+  }, []);
+  // Once its plugin reloaded, the open is spent: no target (so no old focus, no tab pulled back). Kept as one object
+  // per open otherwise, so a surface push doesn't count as a new open.
+  const targetLive = panelTarget !== null && surface !== null && reloadOf(surface, panelTarget.plugin) === panelTarget.reloadAt;
+  const target = useMemo<PanelTarget | null>(() => {
+    if (!panelTarget || !targetLive) return null;
+    const { reloadAt: _, ...rest } = panelTarget;
+    return rest;
+  }, [panelTarget, targetLive]);
+  const surfaceCtx = useMemo<PluginSurfaceContextValue | null>(
+    () => surface && { surface, client, target, open: openPanel },
+    [surface, client, target, openPanel],
+  );
   /** Under 720 px the panel can't show: no paid review the person can't see (styles.css). */
   const narrow = useNarrow();
   const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
@@ -1281,6 +1311,8 @@ export function ChatView({
       // Keyed by scope: another scope's panel starts fresh (its form, notices and cards are not this one's).
       <Panel key={materialScope} client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
     ) : null;
+  // The core's Plugins section: only while a running plugin has a panel there (none: the side panel as before, D0).
+  const pluginsSection = surfaceCtx && surfaceCtx.surface.panels.some((p) => p.slot === PLUGINS_SLOT) ? <PluginsSection ctx={surfaceCtx} /> : null;
 
   return (
     <DocumentContext.Provider value={documentHost}>
@@ -1292,6 +1324,7 @@ export function ChatView({
             {/* Without actions there is no flow side: the meter, and so the context panel's button, sits here. */}
             {!flow && tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} />}
             <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+            {surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
             {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
             {sidekick && (
               <SidekickToggle
@@ -1304,6 +1337,7 @@ export function ChatView({
                 }}
               />
             )}
+            {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={openPanel} />}
             <button
               onClick={() => {
                 // One panel at a time: Escape closes the one on screen.
@@ -1338,13 +1372,15 @@ export function ChatView({
                 setNotesPanel({ expanded: slug });
               }}
               material={material}
+              {...(pluginsSection ? { plugins: pluginsSection } : {})}
               {...(tasks.current ? { onContext: openContext } : {})}
             />
           )}
-          {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
-          {!flow && material && (
-            <nav className="hh-flow-side" aria-label={t("material.title")}>
+          {/* Without actions there is no flow side panel: the material panel (and the Plugins section) get one of their own. */}
+          {!flow && (material || pluginsSection) && (
+            <nav className="hh-flow-side" aria-label={material ? t("material.title") : t("plugins.panels.section")}>
               {material}
+              {pluginsSection}
             </nav>
           )}
           <Main className="hh-main">
@@ -1591,6 +1627,34 @@ export function ChatView({
               )}
               <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
             </section>
+            {/* A plugin's prepared task (plugins part 2): only while main sends one, and nothing starts without Start (P6). */}
+            {surfaceCtx?.surface.prepared && (
+              <PreparedTask
+                key={surfaceCtx.surface.prepared.token}
+                client={client}
+                prepared={surfaceCtx.surface.prepared}
+                blocked={blocked()}
+                needScope={surfaceCtx.surface.prepared.scope === "open" && state.scopes && !openScope ? state.scopes.label : null}
+                closesTask={tasks.current !== null}
+                onStart={() => {
+                  // Like a sent question: the task goes on screen at once, the card's title as the person's line (main
+                  // saves the same display); a refusal puts the screen back as it was, a failure after main took the task
+                  // keeps the line and ends the turn as failed, as a failed send does.
+                  const before = { since, placed: placed.current };
+                  const at = new Date().toISOString();
+                  stick.current = true;
+                  pinNext.current = true;
+                  if (flow) showNewTask();
+                  dispatch({ type: "user", text: surfaceCtx.surface.prepared?.title ?? "", at });
+                  return (outcome, message) => {
+                    if (outcome === "failed") return failTurn(new Error(message));
+                    placed.current = before.placed;
+                    setSince(before.since);
+                    dispatch({ type: "withdrawn", at });
+                  };
+                }}
+              />
+            )}
             {composer && (
               <form className="hh-composer" onSubmit={onSubmit}>
                 {(() => {
@@ -1648,7 +1712,10 @@ export function ChatView({
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
           </Main>
           {(() => {
-            const harnessSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
+            const ownSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
+            // The harness's `<PluginSlot>`s read the surface from here; without one, exactly its side panel (D0).
+            const harnessSide =
+              ownSide !== undefined && surfaceCtx ? <PluginSurfaceContext.Provider value={surfaceCtx}>{ownSide}</PluginSurfaceContext.Provider> : ownSide;
             // D0: without Sidekick, exactly the harness's side panel as before.
             // Narrow, the panel and rail hide (styles.css): the harness's side panel shows as before (D0).
             if (!sidekick || narrow) return harnessSide !== undefined ? <aside className="hh-side">{harnessSide}</aside> : null;

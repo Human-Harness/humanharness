@@ -92,6 +92,24 @@ describe("History", () => {
     expect(read(".harness/sidekick/events.jsonl")).toBe('{"outcome":"used"}\n{"outcome":"dismissed"}\n');
   });
 
+  it("never tracks plugin state, plugin data or the attention inbox (plugins spec §3.3)", async () => {
+    const app = new History(folder, gitdir, [".harness/", "AGENTS.md"], appHistoryKeep(false));
+    write(".harness/plugins/oncall/state.json", '{"on":true}');
+    write(".harness/plugin-data/oncall/_app/queues.json", "[]");
+    write(".harness/attention.json", "[]");
+    write("a.md", "1");
+    const before = (await app.save("before"))!;
+    write(".harness/plugins/oncall/state.json", '{"on":false}');
+    write(".harness/plugin-data/oncall/_app/queues.json", '[{"key":"x"}]');
+    write(".harness/attention.json", '[{"key":"y"}]');
+    write("a.md", "2");
+    await app.restore(before, "undo");
+    expect(read("a.md")).toBe("1");
+    expect(read(".harness/plugins/oncall/state.json")).toBe('{"on":false}');
+    expect(read(".harness/plugin-data/oncall/_app/queues.json")).toBe('[{"key":"x"}]');
+    expect(read(".harness/attention.json")).toBe('[{"key":"y"}]');
+  });
+
   it("lists entries newest first", async () => {
     write("a.md", "1");
     await history.save("one");
@@ -618,6 +636,44 @@ describe("Scope trailer", () => {
     expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: _app")).toEqual({ subject: "Note: x", task: "t1", action: null, scope: "_app" });
     expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: ../x")).toEqual({ subject: "Note: x", task: "t1", action: null });
     expect(parseCommitMessage("Note: x\n\nTask: t1")).toEqual({ subject: "Note: x", task: "t1", action: null });
+  });
+});
+
+describe("Plugin trailer (plugins spec §5.3)", () => {
+  it("D0: without plugin the message is byte-identical", () => {
+    expect(withTrailer("Before message", { task: "t-1", action: "a" })).toBe("Before message\n\nTask: t-1\nAction: a");
+  });
+
+  it("writes Plugin: <id> after the others and reads it back", () => {
+    const msg = withTrailer("Before message", { task: "t-1", scope: "_app", plugin: "on-this-day" });
+    expect(msg).toBe("Before message\n\nTask: t-1\nScope: _app\nPlugin: on-this-day");
+    expect(parseCommitMessage(msg)).toEqual({ subject: "Before message", task: "t-1", action: null, scope: "_app", plugin: "on-this-day" });
+  });
+
+  it("drops an id that isn't a plugin id, written or read", () => {
+    expect(withTrailer("m", { task: "t", plugin: "Bad Id" })).toBe("m\n\nTask: t");
+    expect(withTrailer("m", { task: "t", plugin: "-x" })).toBe("m\n\nTask: t");
+    expect(parseCommitMessage("m\n\nTask: t\nPlugin: Bad_Id")).toEqual({ subject: "m", task: "t", action: null });
+  });
+
+  it("ignores a forged Plugin line outside the trailer block", () => {
+    expect(parseCommitMessage("m\n\nPlugin: evil\n\nTask: t")).toEqual({ subject: "m", task: "t", action: null });
+    expect(parseCommitMessage("m\n\nSome text\nTask: t\nPlugin: evil")).toEqual({ subject: "m", task: null, action: null });
+    expect(parseCommitMessage(withTrailer("m\n\nPlugin: evil", { task: "t" }))).not.toHaveProperty("plugin");
+  });
+
+  it("D0: an old message parses exactly as before (no plugin key)", () => {
+    expect(parseCommitMessage("m\n\nTask: t\nAction: a")).toEqual({ subject: "m", task: "t", action: "a" });
+  });
+
+  it("reaches the history list", async () => {
+    write("a.md", "plugin-1");
+    await history.save("Turn: explain", { task: "t-7", scope: "_app", plugin: "on-this-day" });
+    write("a.md", "plugin-2");
+    await history.save("Turn: other", { task: "t-8" });
+    const [other, mine] = await history.list();
+    expect(mine).toMatchObject({ task: "t-7", plugin: "on-this-day" });
+    expect(other).not.toHaveProperty("plugin");
   });
 });
 

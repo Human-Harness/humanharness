@@ -8,6 +8,7 @@ import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
+import { harnessPluginsSchema, harnessSlotsSchema } from "./plugin";
 import { REVIEW_TOOLS, validApproveGlob } from "./review";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
@@ -26,6 +27,9 @@ export * from "./setup";
 export * from "./profiles";
 export * from "./material";
 export * from "./sidekick";
+export * from "./plugin";
+export * from "./plugin-permissions";
+export * from "./plugin-actions";
 export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
@@ -214,6 +218,10 @@ const manifestSchema = z.object({
   material: materialSchema.optional(),
   /** The prompt coach's hints and per-action review modes (sidekick spec §3). Absent: available, default off (D0). */
   sidekick: sidekickSchema.optional(),
+  /** Plugins the harness ships and whether the person may add their own (plugins spec §3.4). Absent: none (D0). */
+  plugins: harnessPluginsSchema.optional(),
+  /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */
+  slots: harnessSlotsSchema.optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
   /**

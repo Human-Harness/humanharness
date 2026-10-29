@@ -55,13 +55,15 @@ export function dataServerSpec(opts: {
   launcher: Launcher;
   /** Built entry for the data server (app); defaults to the TS source (dev). */
   entry?: string;
+  /** The plugin collections the agent reads (plugins spec §3.2), as a catalogue file. Absent: today's env (D0). */
+  extra?: string;
 }): McpServerSpec {
   const entry = opts.entry ?? fileURLToPath(new URL("./data-server-bin.ts", import.meta.url));
   return {
     name: "data",
     command: opts.launcher.command,
     args: [...opts.launcher.args, entry],
-    env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token },
+    env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token, ...(opts.extra ? { HH_DATA_EXTRA: opts.extra } : {}) },
   };
 }
 

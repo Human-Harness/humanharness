@@ -162,7 +162,8 @@ export interface TaskDeps {
   /**
    * The model profile a new task runs on, resolved once when it starts (resources spec §5). `floor`: a mode's `minTier`
    * the new task must reach (task-modes spec §5.3), passed only when there is one. `tier`: a core review task's tier
-   * (review spec §11.3), passed only for one. Absent: the engine's defaults.
+   * (review spec §11.3) or a plugin action's (plugins spec §5.3, a prepared task), passed only for one: it replaces the
+   * manifest tier. Absent: the engine's defaults.
    */
   profileFor?(action: string | undefined, floor?: Tier, tier?: Tier): Promise<ModelProfile>;
   /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
@@ -427,6 +428,32 @@ export class TaskManager {
     return this.op(async () => {
       if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
       return this.askNow(text, display);
+    });
+  }
+
+  /**
+   * A plugin's prepared task, after the person pressed Start (plugins spec §5.3): a free question with this exact text,
+   * at the action's tier, whose commits carry `Plugin: <id>`. `scope` is the action's: "none" runs in `_app`, "required"
+   * in the open scope (refused with none open, before anything closes); absent, where a free question runs. The open
+   * task closes first, as for `start`.
+   */
+  startPrepared(p: { prompt: string; display: string; tier: Tier; plugin: string; scope?: "none" | "required" }): Promise<void> {
+    return this.op(async () => {
+      const state = await this.d.store.load();
+      const where = !this.d.scoped ? MAIN_SCOPE : p.scope === "none" ? APP_SCOPE : p.scope === "required" ? state.open : this.scopeFor(state, undefined);
+      if (where === undefined) throw new ScopeRequired();
+      // A new task, like `start`: the open one closes first (its note), so Start never loses the person's work.
+      if (!(await this.closeCurrent())) return this.stopped();
+      const language = await this.d.language();
+      await this.begin(
+        { ...keptQuestion(p.prompt), plugin: p.plugin },
+        where,
+        language,
+        (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: p.prompt }),
+        p.display,
+        undefined,
+        p.tier,
+      );
     });
   }
 
@@ -878,6 +905,7 @@ export class TaskManager {
       ...(c.action ? { action: c.action } : {}),
       ...(c.scope ? { scope: c.scope } : {}),
       ...(c.phase ? { phase: c.phase.id } : {}),
+      ...(c.plugin ? { plugin: c.plugin } : {}),
     };
   }
 
@@ -1597,6 +1625,7 @@ export class TaskManager {
       phase?: { id: string; startedAt: string };
       phases?: { id: string; at: string; by: PhaseBy }[];
       timeBox?: TimeBoxState;
+      plugin?: string;
       review?: string;
     },
     scope: string,
@@ -1615,8 +1644,9 @@ export class TaskManager {
     const briefLabel = task.review !== undefined ? "Review round" : task.action !== undefined ? "Task brief" : "Question";
     const start = await this.startItems(first, items, briefLabel);
     const engine = await this.d.engine();
-    // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3).
-    // Only the defined arguments are passed: callers compare the call's arguments.
+    // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3),
+    // a tier only from a review task or a plugin action (plugins §5.3). Only the defined arguments are passed: callers
+    // compare the call's arguments.
     const profile =
       tier !== undefined
         ? await this.d.profileFor?.(task.action, floor, tier)
@@ -1732,6 +1762,8 @@ export class TaskManager {
         ...(task.mode ? { mode: task.mode } : {}),
         // The task's phase (usage.jsonl, history): a change turn's is the new one, already saved. None without phases (D0).
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
+        // A plugin's prepared task: its turn commits carry `Plugin: <id>` too. None otherwise (D0).
+        ...(task.plugin ? { plugin: task.plugin } : {}),
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),

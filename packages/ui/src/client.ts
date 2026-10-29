@@ -365,6 +365,8 @@ export interface AppState {
   profiles?: ProfilesInfo;
   /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
   material?: MaterialInfo;
+  /** The harness takes plugins (manifest `plugins`). Absent: no Plugins tab, no inbox (plugins D0). */
+  plugins?: PluginsInfo;
   /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
   documents?: { kinds: Record<string, DocumentKind> };
   /** The harness's agent may edit the folder: documents can be reviewed (review spec). Absent: no review UI (D0). */
@@ -1230,6 +1232,56 @@ export interface HarnessClient {
     setScope(scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }): Promise<{ ok: boolean; message?: string }>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
+  /**
+   * Plugins (plugins spec §7). Only with `state.plugins`: a main without them registers none of these channels (D0).
+   * Refusals come back as data.
+   */
+  plugins: {
+    get(): Promise<PluginsView | null>;
+    rescan(): Promise<PluginsView | null>;
+    setOn(id: string, on: boolean): Promise<PluginResult>;
+    /** Main shows the folder dialog itself; the renderer never sends a path. Pass the token to `add`, once, soon. */
+    pick(): Promise<PluginPick>;
+    add(token: string): Promise<PluginResult>;
+    /** Approves what the review showed: send its `distHash` back (a plugin that changed since is refused). */
+    approve(id: string, distHash: string): Promise<PluginResult>;
+    remove(id: string): Promise<PluginResult>;
+    detail(id: string): Promise<PluginDetail | null>;
+    setSetting(id: string, field: string, value: unknown): Promise<PluginResult>;
+    resetSettings(id: string): Promise<PluginResult>;
+    setWorkHours(id: string, wh: PluginWorkHours): Promise<PluginResult>;
+    /** Stores a key (at most 8,192 characters); its value never comes back, only whether it is stored (B6). */
+    setSecret(id: string, secret: string, value: string): Promise<PluginResult>;
+    deleteSecret(id: string, secret: string): Promise<PluginResult>;
+    setNotify(id: string, on: boolean): Promise<PluginResult>;
+    test(id: string): Promise<PluginTestResult[]>;
+    /** Runs a source now; one at a time per source and a few per minute. */
+    refresh(id: string, source: string): Promise<PluginResult>;
+    onChange(listener: (view: PluginsView) => void): () => void;
+    /** What the window draws for the running plugins: panels, chips, the prepared task (plugins part 2). */
+    surface(): Promise<PluginSurfaceView>;
+    /**
+     * A panel's call (Decision 7), sent by the PanelFrame that made the frame: `plugin` and `panel` are the frame's,
+     * never the message's. Main checks both again. A prepared task comes only from `requestAction` here.
+     */
+    panel(plugin: string, panel: string, call: PanelCall, args?: unknown): Promise<PanelAnswer>;
+    /** The person's Start on the prepared card: only its token goes; main starts what the card showed. */
+    startPrepared(token: string): Promise<PluginResult>;
+    cancelPrepared(token: string): Promise<void>;
+    onSurface(listener: (view: PluginSurfaceView) => void): () => void;
+    /** A run wrote these collections: a signal only, panels query again (Decision 8). */
+    onPluginData(listener: (change: PluginDataChange) => void): () => void;
+  };
+  /** The Attention inbox (plugins spec §6). Only with `state.plugins` (D0). */
+  attention: {
+    get(): Promise<AttentionView | null>;
+    dismiss(plugin: string, key: string): Promise<void>;
+    /** No arguments: every item; a plugin: its items; both: that one. */
+    read(plugin?: string, key?: string): Promise<void>;
+    /** A click on an item in the core's inbox: marks it read and answers what to open (Decision 12). */
+    open(plugin: string, key: string): Promise<AttentionTarget>;
+    onChange(listener: (view: AttentionView) => void): () => void;
+  };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {
     get(): Promise<SetupStepsState>;
@@ -1483,6 +1535,133 @@ export type SidekickImportResult =
 /** An imported sidekick's files: as read, changed since, gone (or now refused); `none` when it wasn't imported from files. */
 export type SidekickOriginal = "unchanged" | "changed" | "gone" | "none";
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";
+
+/** Plugins (plugins spec §7): the harness takes them; `local`: the person may add their own from a folder. */
+export interface PluginsInfo {
+  local: boolean;
+}
+export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
+export interface PluginRow {
+  id: string;
+  name: string;
+  version: string;
+  origin: "bundled" | "local" | "dev";
+  folder?: string;
+  status: PluginStatus;
+  /** Its code changed since the person last opened its detail (no new permissions). */
+  updated?: true;
+  lastSync?: string;
+  lastError?: string;
+  /** Why it can't load or start. */
+  error?: string;
+}
+export interface PluginsView {
+  local: boolean;
+  plugins: PluginRow[];
+}
+/** One line of the permission review, as plain data the UI words (never markup, B12). */
+export type PluginLine = { kind: "hosts"; hosts: string[] } | { kind: "exec"; command: string; readOnly: boolean; wide: boolean } | { kind: "secrets"; labels: string[] } | { kind: "tasks" };
+export interface PluginReview {
+  id: string;
+  name: string;
+  version: string;
+  folder: string;
+  /** The dist this review shows; Approve sends it back, and a plugin that changed since is refused. */
+  distHash: string;
+  lines: PluginLine[];
+  /** What this version adds to the approved permissions. */
+  added?: { kind: string; value: string }[];
+}
+export type PluginPick = { ok: true; token: string; review: PluginReview } | { ok: false; message: string } | { ok: false; cancelled: true };
+/** With both `message` and `review`: refused because the plugin changed since the review; `review` is the current one. */
+/** `started`: only from Start of a prepared task, failing after the task manager took it (a turn may have run). */
+export type PluginResult = { ok: true } | { ok: false; message: string; started?: true } | { ok: false; review: PluginReview; message?: string };
+export interface PluginWorkHours {
+  days: number[];
+  from: string;
+  to: string;
+  timezone: string;
+}
+export interface PluginDetail {
+  row: PluginRow;
+  review: PluginReview;
+  settings?: SettingsView;
+  values: Record<string, unknown>;
+  workHours?: PluginWorkHours;
+  /** Which keys are stored: never their values (B6). */
+  secrets: { id: string; label: string; help?: string; stored: boolean }[];
+  sources: { id: string; ttl: number; running: boolean; lastOk?: string; lastError?: string }[];
+  errors: { at: string; source?: string; message: string }[];
+  notify: boolean;
+}
+export interface PluginTestResult {
+  source: string;
+  ok: boolean;
+  writes?: number;
+  error?: string;
+}
+export interface AttentionItemView {
+  plugin: string;
+  pluginName: string;
+  key: string;
+  severity: "info" | "warn" | "action";
+  title: string;
+  body?: string;
+  at: string;
+  read: boolean;
+  hasTarget: boolean;
+}
+export interface AttentionView {
+  items: AttentionItemView[];
+  badge: number;
+  show: boolean;
+}
+/** A running plugin's panel in a slot (plugins part 2): served from `url` into a sandboxed frame. */
+export interface PluginPanelView {
+  plugin: string;
+  pluginName: string;
+  id: string;
+  title: string;
+  slot: string;
+  url: string;
+}
+/** A chip the core draws as text; a click opens `panel` (the plugin's first) when there is one. */
+export interface PluginChipView {
+  plugin: string;
+  pluginName: string;
+  id: string;
+  slot: string;
+  text: string;
+  severity: "info" | "warn" | "action";
+  panel?: string;
+}
+/** The one prepared task waiting for the person's Start (P6, P13): `prompt` is exactly the task's question. */
+export interface PreparedTaskView {
+  token: string;
+  plugin: string;
+  pluginName: string;
+  title: string;
+  prompt: string;
+  tier: "light" | "standard" | "deep";
+  /** "app": runs app-wide (`scope: "none"`); "open": needs the open scope. */
+  scope: "open" | "app";
+  expiresAt: string;
+}
+export interface PluginSurfaceView {
+  panels: PluginPanelView[];
+  chips: PluginChipView[];
+  prepared?: PreparedTaskView;
+  /** Per plugin, bumped when its dist changed in dev: the renderer remounts its frames. */
+  reloads: Record<string, number>;
+}
+export type PanelCall = "data.query" | "settings.get" | "refresh" | "requestAction";
+export type PanelAnswer = { ok: true; value: unknown } | { ok: false; error: string };
+export type AttentionTarget = { kind: "panel"; plugin: string; panel: string; focus?: string } | { kind: "prepared" } | { kind: "none" };
+/** A run of `plugin` wrote `collections` (plugins part 2, Decision 8). */
+export interface PluginDataChange {
+  plugin: string;
+  collections: string[];
+}
 
 /** Why a review action did nothing (review spec; errors over IPC are data). */
 export type ReviewRefusal =

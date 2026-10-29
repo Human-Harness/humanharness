@@ -234,6 +234,32 @@ describe("agentDataRequest", () => {
     await expect(agentDataRequest({ ...deps, store: async () => null }, { op: "query", collection: "concepts" })).rejects.toThrow("The app is not set up yet");
   });
 
+  it("sends a plugin collection (`<id>.<collection>`) to the plugin route, never a harness one (plugins spec §3.2)", async () => {
+    const t = setup();
+    const seen: unknown[] = [];
+    const deps = {
+      store: async () => t.store,
+      runningTask: async () => ({ id: "t1", scope: "fracciones" }),
+      plugin: async (request: unknown) => (seen.push(request), { records: [], total: 0 }),
+    };
+    expect(await agentDataRequest(deps, { op: "query", collection: "oncall.queues" })).toEqual({ records: [], total: 0 });
+    expect(seen).toEqual([{ op: "query", collection: "oncall.queues" }]);
+    await agentDataRequest(deps, { op: "put", collection: "concepts", record: { id: "a", name: "A" } });
+    expect(seen).toHaveLength(1);
+    // The route's refusals reach the agent as today's.
+    const refusing = { ...deps, plugin: async () => Promise.reject(new DataError("refused", "The agent may not change plugin data: it is read-only")) };
+    await expect(agentDataRequest(refusing, { op: "put", collection: "oncall.queues", record: {} })).rejects.toMatchObject({ code: "refused" });
+    // Still only while a task runs.
+    await expect(agentDataRequest({ ...deps, runningTask: async () => null }, { op: "query", collection: "oncall.queues" })).rejects.toThrow(/No task/);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("D0: without a plugin route a dotted name is an unknown collection, as today", async () => {
+    const t = setup();
+    const deps = { store: async () => t.store, runningTask: async () => ({ id: "t1", scope: "fracciones" }) };
+    await expect(agentDataRequest(deps, { op: "query", collection: "oncall.queues" })).rejects.toMatchObject({ code: "unknown-collection" });
+  });
+
   it("gives a store refusal back to the agent as the data tool's error", { timeout: 30_000 }, async () => {
     const study = await loadHarness(STUDY);
     const store = new DataStore(fs.mkdtempSync(path.join(root, "t-")), study.data);

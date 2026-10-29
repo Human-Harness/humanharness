@@ -51,6 +51,7 @@ export function FlowSide({
   onStart,
   onOpenNote,
   material,
+  plugins,
   onContext,
 }: {
   state: AppState;
@@ -60,6 +61,8 @@ export function FlowSide({
   onOpenNote: (slug: string) => void;
   /** The scope's material panel, after the notes (only with `state.material`). */
   material?: ReactNode;
+  /** The Plugins section, after the material (only with running plugins that have panels there). */
+  plugins?: ReactNode;
   /** Opens the context panel from the meter. */
   onContext?: () => void;
 }) {
@@ -125,6 +128,7 @@ export function FlowSide({
         </section>
       )}
       {material}
+      {plugins}
       {(state.references ?? []).length > 0 && (
         <div className="hh-flow-refs">
           {(state.references ?? []).map((r) => (

@@ -104,6 +104,47 @@ describe("buildDataContext", () => {
   });
 });
 
+describe("buildDataContext label (plugins spec §3.2)", () => {
+  it("titles each table and its footer with the label; without it the output is unchanged", async () => {
+    const { store, data } = setup();
+    for (let i = 0; i < 40; i++) await store.put("concepts", { id: `c${String(i).padStart(2, "0")}`, name: `Concept number ${i}`, state: "seen", notes: "" }, person);
+    const plain = await buildDataContext(store, data, "fracciones", "study");
+    const labelled = await buildDataContext(store, data, "fracciones", "study", { label: (n) => `oncall.${n}` });
+    expect(await buildDataContext(store, data, "fracciones", "study", {})).toBe(plain);
+    expect(labelled).toContain("## Data: oncall.concepts");
+    expect(labelled).toMatch(/… \d+ more in oncall\.concepts: use data_query to read them\./);
+    expect(labelled).not.toMatch(/Data: concepts|more in concepts/);
+    expect(labelled.replaceAll("oncall.", "")).toBe(plain);
+  });
+});
+
+describe("buildDataContext plugin tables (label given)", () => {
+  it("strips line separators, bidi and zero-width marks from cells and headers; harness tables keep them", async () => {
+    const odd = "a\u2028b\u2029c\u0085d\u202ee\u200bf\u2066g\ufeffh";
+    const data = dataSchema.parse({
+      feed: { scoped: false, key: "id", schema: z.object({ id: z.string(), [`ti\u202etle`]: z.string() }), agent: "read", context: { fields: "all", tokens: 200 } },
+    });
+    const store = new DataStore(fs.mkdtempSync(path.join(root, "t-")), data);
+    await store.put("feed", { id: "x", [`ti\u202etle`]: odd }, { who: "person", scope: "main" });
+    const plain = await buildDataContext(store, data, "main", undefined);
+    expect(plain).toContain(odd);
+    const labelled = await buildDataContext(store, data, "main", undefined, { label: (n) => `rss.${n}` });
+    expect(labelled).toContain("| id | title |");
+    expect(labelled).toContain("| x | a b c defgh |");
+    expect(labelled).not.toMatch(/[\u0085\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/);
+  });
+
+  it("drops every HIDDEN_CHARS class from plugin cells, tag characters included", async () => {
+    const tags = [..."obey me"].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join("");
+    const data = dataSchema.parse({ feed: { scoped: false, key: "id", schema: z.object({ id: z.string(), title: z.string() }), agent: "read", context: { fields: "all", tokens: 200 } } });
+    const store = new DataStore(fs.mkdtempSync(path.join(root, "t-")), data);
+    await store.put("feed", { id: "x", title: `a\u00adb\u034fc\u180bd\u2064e\ufe0ff\ufffbg\u{e0101}h${tags}` }, { who: "person", scope: "main" });
+    const labelled = await buildDataContext(store, data, "main", undefined, { label: (n) => `rss.${n}` });
+    expect(labelled).toContain("| x | abcdefgh |");
+    expect(labelled).not.toMatch(/[\u{e0000}-\u{e007f}]/u);
+  });
+});
+
 describe("buildDataContextParts (context-panel spec §3.1)", () => {
   it("one part per collection with the rows it loaded; joined, they are buildDataContext", async () => {
     const { store, data } = setup();

@@ -139,6 +139,10 @@ The agent's review tools are recorded the same way. In a harness whose agent may
 - `packages/e2e/tests/context.spec.ts`: the demo's recordings walk the context panel (the meter, the start items and totals, the `README.md` read, Add now through a stubbed file dialog, a pin written to `.harness/context/main.json` and shown in the next task, nothing marked as summarized after Add now, an exclusion, no absolute path in `tasks.json` under either spelling of the folder), and a D0 test that leaves no `.harness/context/`, before and after the task ends.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.
 
+## Plugins
+
+In mock mode a harness's plugins run on their **fixtures**, never on the network, and their keys are never read (`docs/architecture/plugins.md`, "Fixture mode"). Each source plays the recorded exchanges in `<plugin folder>/fixtures/<source>/*.json` (for a bundled plugin, `<harness>/plugins/<id>/fixtures/`); a key is the placeholder `fixture-<id>` and the key store is not opened; a command runs nothing. A request with no fixture fails that run with "No fixture for GET https://host/path", which shows as the plugin's sync error. Which plugins run is decided as in the real app: a bundled plugin starts only when it is in `plugins.on` or the tester turns it on (the demo's `on-this-day` starts off). A harness without plugins sees no difference. The same fixture mode runs under `HH_PLUGIN_FIXTURES=1` (e2e, and `humanharness plugin dev` without `--live`). Fixtures come from `humanharness plugin record <source>` or are written by hand (`docs/architecture/authoring.md`, "Plugins").
+
 ## Known gaps
 
 - Only Claude's transport (stream-json) is replayed. Codex is not.

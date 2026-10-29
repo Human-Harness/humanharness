@@ -34,6 +34,11 @@ export interface RuntimeOptions {
    */
   data?: (request: unknown) => Promise<unknown>;
   /**
+   * Plugin collections the agent reads (plugins spec §3.2): the catalogue file the `data` server reads, which starts
+   * it even when the harness has no collection for the agent (with `data`). Absent: no change (D0).
+   */
+  extraData?: { catalogue: string };
+  /**
    * Answers the `material` server's tools (material spec §9) for the running task; `entry` is the built server (app),
    * defaulting to the TS source (dev). Only with `material` in the manifest; absent: no `material` server, no Material
    * part in AGENTS.md, the same history keep list (D0).
@@ -155,7 +160,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   let materialRpc: Rpc | null = null;
   let reviewRpc: Rpc | null = null;
   try {
-    if (opts.data && hasAgentData(harness)) rpc = await openRpc(opts.data);
+    if (opts.data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc(opts.data);
     if (material) materialRpc = await openRpc(material.request);
     if (review) reviewRpc = await openRpc(review);
     return await buildRuntime(bridge, rpc, materialRpc, reviewRpc);
@@ -174,7 +179,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
       session,
       mcp: [
         uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) }),
-        ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry })] : []),
+        ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
         ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
         ...harnessMcpServers(harness, launcher),
       ],

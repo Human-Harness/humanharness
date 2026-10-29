@@ -1,0 +1,41 @@
+/* plugin-ui's look: the app's tokens and a few .hhp-* classes. `build` bundles this into panel-<id>.css (the panel CSP
+   allows no inline styles). Colours only through the --hh-* tokens. */
+@import "./tokens.css";
+
+html, body { margin: 0; background: var(--hh-sheet); }
+.hhp-root {
+  font-family: var(--hh-font);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--hh-ink);
+  background: var(--hh-sheet);
+  padding: 8px 10px;
+  display: grid;
+  gap: 8px;
+  -webkit-font-smoothing: antialiased;
+}
+.hhp-button { font: inherit; display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); cursor: default; white-space: nowrap; }
+.hhp-button:disabled { opacity: 0.5; }
+.hhp-button:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
+
+.hhp-table { width: 100%; border-collapse: collapse; }
+.hhp-table th { text-align: left; font-weight: 600; font-size: 12px; color: var(--hh-muted); padding: 4px 6px; border-bottom: 1px solid var(--hh-line-strong); }
+.hhp-table td { padding: 6px; border-bottom: 1px solid var(--hh-line); vertical-align: top; overflow-wrap: anywhere; }
+.hhp-table tr:last-child td { border-bottom: 0; }
+.hhp-table-action { width: 1%; text-align: right; }
+
+.hhp-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 11px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); font-size: 12px; white-space: nowrap; }
+.hhp-chip-ok { color: var(--hh-ok); }
+.hhp-chip-warn { color: var(--hh-warn); }
+
+.hhp-clock { display: inline-flex; align-items: baseline; gap: 6px; }
+.hhp-clock-label { color: var(--hh-muted); font-size: 12px; }
+.hhp-clock-time { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.hhp-stat { display: grid; gap: 2px; }
+.hhp-stat-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hhp-stat-label { color: var(--hh-slate); font-size: 12px; }
+.hhp-stat-hint { color: var(--hh-muted); font-size: 11px; }
+
+.hhp-empty { margin: 0; padding: 12px 0; color: var(--hh-muted); text-align: center; }
+.hhp-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--hh-error-bg); }

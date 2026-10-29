@@ -2,6 +2,7 @@ import { CliError, type Io, UsageError } from "./cli";
 import { checkCommand } from "./check";
 import { devCommandLine } from "./dev";
 import { initCommand } from "./init";
+import { pluginCommand } from "./plugin";
 import { runCommand } from "./run";
 
 type Command = (args: string[], io: Io) => Promise<number>;
@@ -17,6 +18,7 @@ export const USAGE = [
   "                                           Run one task against a real engine in the terminal",
   "  dev [--engine <id>] [--mock [--keep]] [--build <dir>]",
   "                                           Check the harness, then open the app with it (--mock: replay mock/, no AI)",
+  "  plugin <command>                         Build, check and try a plugin (humanharness plugin --help)",
   "",
   "check, run and dev take --harness <dir> to work on another folder than the current one.",
   "",
@@ -28,7 +30,17 @@ const COMMANDS: Record<string, Command> = {
   check: checkCommand,
   run: runCommand,
   dev: devCommandLine,
+  plugin: pluginCommand,
 };
+
+/**
+ * Commands that end the process once they have printed: `plugin test` and `record` run plugin code in this process
+ * (P12), and what it leaves behind (a timer or a request made through this realm, past the run's time limit) would
+ * otherwise keep the command alive.
+ */
+export function exitsWhenDone(argv: string[]): boolean {
+  return argv[0] === "plugin" && (argv[1] === "test" || argv[1] === "record");
+}
 
 export async function main(argv: string[], io: Io): Promise<number> {
   const [name, ...args] = argv;

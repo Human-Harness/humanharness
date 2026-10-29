@@ -1,0 +1,4 @@
+/* The events panel's own look, on plugin-ui's tokens. `build` bundles it into panel-events.css (no inline styles). */
+.otd-year { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.otd-page { display: block; margin-top: 2px; color: var(--hh-muted); font-size: 11px; overflow-wrap: anywhere; }
+.otd-focus td { background: var(--hh-highlight); }

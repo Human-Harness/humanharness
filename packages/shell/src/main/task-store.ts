@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
-import { BLOCK_ID, MODE_ID, PHASE_ID, refusedShape } from "@humanharness/harness-sdk";
+import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID, refusedShape } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
@@ -84,6 +84,8 @@ export interface CurrentTask {
   timeBox?: TimeBoxState;
   /** A mode the current phase doesn't allow, kept to come back (modes spec §7). Never next to `mode`. */
   suspendedMode?: string;
+  /** The plugin whose prepared task this is (plugins spec §5.3): its commits carry `Plugin: <id>`. */
+  plugin?: string;
   /** A core "Review <title>" task: the document it reviews (review spec §5.3). */
   review?: string;
   /** Lines the app puts before the task's next message (review spec §5.4 "the document's task is told"). */
@@ -296,6 +298,7 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     ...(proposal ? { phaseProposal: proposal } : {}),
     ...(timeBox ? { timeBox } : {}),
     ...(!mode && isMode(c.suspendedMode) ? { suspendedMode: c.suspendedMode } : {}),
+    ...(typeof c.plugin === "string" && PLUGIN_ID.test(c.plugin) ? { plugin: c.plugin } : {}),
     ...(typeof c.review === "string" && !refusedShape(c.review) ? { review: c.review } : {}),
     ...(notices.length > 0 ? { notices } : {}),
     ...(start ? { start } : {}),

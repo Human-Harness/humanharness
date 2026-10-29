@@ -1073,6 +1073,8 @@ export interface SetupStepView {
   cost?: ActionCost;
   /** component: the name the harness registers its component under. */
   component?: string;
+  /** connect: the secrets it asks for, in the step's order (ids, labels, help; never a value). */
+  secrets?: { id: string; label: string; help?: string }[];
 }
 
 /** What a harness's own setup step component gets (setup-steps spec §3 `component`). */

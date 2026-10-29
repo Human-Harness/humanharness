@@ -3401,6 +3401,8 @@ if (loaded) {
       openAction: async () => (await tasks.runningTask())?.action,
       // A folder that ran tasks before these steps existed counts as set up (spec §8 Q3).
       ranBefore: (base) => fs.access(tasksFile(base)).then(() => true, () => false),
+      // A connect step is done once its secrets are set (tools spec §9); the schema gives one only with `secrets`.
+      ...(hasSecrets(harness) ? { secretsSet: (ids: readonly string[]) => connections().allSet(ids) } : {}),
       quitting: () => quitting,
       changed: (state) => sendToWindow("hh:setupSteps", state),
     });

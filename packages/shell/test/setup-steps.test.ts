@@ -41,6 +41,8 @@ function setup(
     ranBefore?: boolean | (() => Promise<boolean>);
     settingFails?: boolean;
     writeFails?: boolean;
+    /** The connections controller's `allSet`; absent: no such dep. */
+    secretsSet?: (ids: readonly string[]) => Promise<boolean>;
   } = {},
 ) {
   const folder = opts.base === null ? null : (opts.base ?? fs.mkdtempSync(path.join(root, "f-")));
@@ -72,6 +74,7 @@ function setup(
     quitting: () => quitting,
     changed: (s) => void pushed.push(s),
     now: () => new Date(NOW),
+    ...(opts.secretsSet ? { secretsSet: opts.secretsSet } : {}),
   });
   const file = () => (folder ? JSON.parse(fs.readFileSync(path.join(folder, ".harness", "setup.json"), "utf8")) : null);
   return { ctl, store, folder, pushed, settingSets, file, setOpen: (a?: string) => (open = a), quit: () => (quitting = true) };
@@ -333,6 +336,67 @@ describe("setupStepViews", () => {
     // `goal` is z.string().min(3) with no max: a long text field.
     expect(views[2].form?.fields.map((f) => [f.name, f.kind, f.min])).toEqual([["goal", "longText", 3]]);
     expect(views[3]).toEqual({ id: "ready", kind: "component", label: "Ready check", required: true, component: "ReadyStep" });
+    expect(setupStepViews({ actions: {}, data: {} })).toEqual([]);
+  });
+});
+
+describe("SetupSteps: a connect step (tools spec §9)", () => {
+  const connect: HarnessSetupStep = { id: "jira", kind: "connect", label: "Connect Jira", required: false, secrets: ["jira", "github"] };
+
+  it("its view carries the secrets' ids, labels and help, never a value", () => {
+    const secrets = [
+      { id: "github", label: "GitHub token" },
+      { id: "jira", label: "Jira API token", help: "Paste it." },
+      { id: "slack", label: "Slack token" },
+    ];
+    expect(setupStepViews({ setup: [connect], actions: {}, data: {}, secrets })).toEqual([
+      { id: "jira", kind: "connect", label: "Connect Jira", required: false, secrets: [{ id: "jira", label: "Jira API token", help: "Paste it." }, { id: "github", label: "GitHub token" }] },
+    ]);
+  });
+
+  it("complete refuses while a listed secret is not set, then marks it done", async () => {
+    let set = false;
+    const asked: (readonly string[])[] = [];
+    const t = setup({ steps: [connect], secretsSet: async (ids) => (asked.push(ids), set) });
+    expect(await t.ctl.complete("jira")).toEqual({ ok: false, reason: "incomplete" });
+    expect(asked).toEqual([["jira", "github"]]);
+    set = true;
+    expect(await t.ctl.complete("jira")).toMatchObject({ ok: true });
+    expect(t.file().steps.jira.state).toBe("done");
+  });
+
+  it("complete refuses without a way to check the secrets, or when the check fails", async () => {
+    const none = setup({ steps: [connect] });
+    expect(await none.ctl.complete("jira")).toEqual({ ok: false, reason: "incomplete" });
+    const failing = setup({ steps: [connect], secretsSet: async () => { throw new Error("keychain locked"); } });
+    expect(await failing.ctl.complete("jira")).toEqual({ ok: false, reason: "incomplete" });
+    expect((await failing.ctl.state()).steps.jira).toBe("missing");
+  });
+
+  it("complete refuses a connect step that lists no secrets, without asking", async () => {
+    const empty: HarnessSetupStep = { id: "jira", kind: "connect", label: "Connect Jira", required: false, secrets: [] };
+    let asked = 0;
+    const t = setup({ steps: [empty], secretsSet: async () => (asked++, true) });
+    expect(await t.ctl.complete("jira")).toEqual({ ok: false, reason: "incomplete" });
+    expect(asked).toBe(0);
+  });
+
+  it("D0: views of form, interview and component steps are unchanged by connect", () => {
+    const views = setupStepViews(harness);
+    expect(harness).not.toHaveProperty("secrets");
+    expect(views.map((v) => [v.id, v.kind, v.label, v.required])).toEqual([
+      ["conocerte", "interview", "Get to know you", true],
+      ["estilo", "form", "How the AI talks", false],
+      ["goal", "form", "Your goal", false],
+      ["ready", "component", "Ready check", true],
+    ]);
+    expect(views[0]).toEqual({ id: "conocerte", kind: "interview", label: "Get to know you", required: true, action: "conocerte", cost: "light" });
+    const [, estilo] = harness.setup!;
+    expect(views[1].form).toEqual(setupFormSpec(estilo as SetupFormStep, harness));
+    expect(views[1].form?.fields.map((f) => [f.name, f.kind])).toEqual([["tone", "choice"]]);
+    expect(views[2].form?.fields.map((f) => [f.name, f.kind, f.min])).toEqual([["goal", "longText", 3]]);
+    expect(views[3]).toEqual({ id: "ready", kind: "component", label: "Ready check", required: true, component: "ReadyStep" });
+    expect(views.some((v) => "secrets" in v)).toBe(false);
     expect(setupStepViews({ actions: {}, data: {} })).toEqual([]);
   });
 });

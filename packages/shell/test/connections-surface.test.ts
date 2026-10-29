@@ -25,8 +25,9 @@ describe("connections surface (tools spec §9, D0)", () => {
     const index = await read("index.ts");
     expect(count(index, /registerConnectionsIpc\(/)).toBe(1);
     expect(index).toContain("  if (hasSecrets(harness)) registerConnectionsIpc(handle, connections());\n");
-    // The controller (and so the push) is built only there.
-    expect(count(index, /\bconnections\(\)/)).toBe(2); // the definition and that one call
+    // The controller (and so the push) is built only there, or by a connect step's check, also under hasSecrets.
+    expect(index).toContain("      ...(hasSecrets(harness) ? { secretsSet: (ids: readonly string[]) => connections().allSet(ids) } : {}),\n");
+    expect(count(index, /\bconnections\(\)/)).toBe(3); // the definition and those two calls
     expect(count(index, /new ConnectionsController\(/)).toBe(1);
     const ctl = group(index, index.indexOf("function connections(): ConnectionsController"), /\{/);
     expect(count(ctl, /new ConnectionsController\(/)).toBe(1);

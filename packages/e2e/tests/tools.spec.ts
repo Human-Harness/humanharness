@@ -188,6 +188,11 @@ test("the saved chat keeps the calls", async () => {
     ["probe", true],
   ]);
   expect(chats().map((f) => fs.readFileSync(f, "utf8")).join("\n")).not.toContain(NOTE);
+  // Saved on the reply: the one entry carrying them is the assistant's answer of that turn.
+  const carriers = chats()
+    .flatMap((f) => readJsonl<{ role?: string; text?: string; tools?: unknown[] }>(f))
+    .filter((e) => e.tools !== undefined);
+  expect(carriers.map((e) => [e.role, e.text])).toEqual([["assistant", REPLY]]);
 
   // Saved on the reply: after the window reloads (Home), reopening reopens the task, whose chat draws them again from
   // the log (the refused one open).
@@ -240,6 +245,8 @@ test("no key value or header appears in the page, the chat log or the trace", as
     const text = fs.readFileSync(f).toString("latin1");
     expect(text.includes(TOKEN), f).toBe(false);
     if (f.startsWith(s.folder)) expect(/Bearer|api\.example\.invalid/.test(text), f).toBe(false);
+    // The refused peek never carried notes.md's text anywhere (the trace, the chat): only the note itself holds it.
+    if (f.startsWith(s.folder) && f !== path.join(s.folder, "notes.md")) expect(text.includes(NOTE), f).toBe(false);
   }
   await page.getByRole("button", { name: "Done", exact: true }).click();
 });
@@ -280,6 +287,17 @@ test("D0: a harness without tools has no hh-tools handler", async () => {
         return "taken";
       }
     })).toBe("free");
+    // A turn runs: the agent gets no `tools` server, and nothing is traced or catalogued.
+    await launched.page.getByRole("button", { name: "Start Demo" }).click();
+    await launched.page.getByRole("region", { name: "Which part do you want to understand?" }).getByRole("button", { name: /The manifest/ }).click();
+    await expect(launched.page.getByRole("main").getByText("Una pregunta corta.")).toBeVisible({ timeout: 30_000 });
+    const runs = readJsonl<Run>(d0.claudePrompts);
+    expect(runs).toHaveLength(1);
+    const at = runs[0].argv.indexOf("--mcp-config");
+    expect(at).toBeGreaterThan(-1);
+    const servers = (JSON.parse(runs[0].argv[at + 1]) as { mcpServers: Record<string, McpServer> }).mcpServers;
+    expect(Object.keys(servers).length).toBeGreaterThan(0);
+    expect(Object.keys(servers)).not.toContain("tools");
     expect(fs.existsSync(path.join(d0.folder, ".harness", "trace"))).toBe(false);
     expect(fs.existsSync(path.join(d0.userData, "tools-catalogue"))).toBe(false);
   } finally {

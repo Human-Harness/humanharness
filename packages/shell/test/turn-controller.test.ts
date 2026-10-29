@@ -927,6 +927,31 @@ describe("TurnController.addToTurn (tools spec §8.2)", () => {
     expect(events.some((e) => e.type === "tool-call")).toBe(false);
   });
 
+  it("refuses a call once the reply is being saved", async () => {
+    const fake = fakeRuntime();
+    const held = deferred<void>();
+    const saving = deferred<void>();
+    const entries: ChatEntry[] = [];
+    const { controller } = setup({
+      ensureRuntime: async () => fake.runtime,
+      append: async (e) => {
+        entries.push(e);
+        if (e.role === "assistant") {
+          saving.resolve();
+          await held.promise;
+        }
+      },
+    });
+    const sent = controller.send("check", { task: "t1" });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "text", delta: "Green." }, { type: "done", ok: true }]);
+    await saving.promise;
+    expect(controller.addToTurn("t1", { type: "tool-call", call })).toBe(false);
+    held.resolve();
+    await sent;
+    expect(entries[1]).not.toHaveProperty("tools");
+  });
+
   it("a quiet turn saves nothing and shows nothing", async () => {
     const fake = fakeRuntime();
     const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime });

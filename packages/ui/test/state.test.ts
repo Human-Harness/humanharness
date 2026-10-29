@@ -248,3 +248,15 @@ describe("reduceChat: tool calls (tools spec §8.2)", () => {
     expect(s.entries[1]).not.toHaveProperty("tools");
   });
 });
+
+describe("isToolLine (tools spec §8.2)", () => {
+  const call = { tool: "a", caller: "ui" as const, ok: true, ms: 1, summary: "x", args: "{}", accesses: [], at: "t" };
+  it("only a tool call's own line outside a turn; a turn's reply with calls is not one", async () => {
+    const { isToolLine } = await import("../src/state");
+    const alone = reduceChat(initialChat([]), { type: "tool-call", call }).entries[0];
+    expect(isToolLine(alone)).toBe(true);
+    const turn = run([{ type: "user", text: "go", at: "t" }, { type: "tool-call", call }, { type: "done", ok: true }]).entries[1];
+    expect(isToolLine(turn)).toBe(false);
+    expect(isToolLine({ role: "assistant", text: "", blocks: [], error: { code: "agent-crashed" }, tools: [call] })).toBe(false);
+  });
+});

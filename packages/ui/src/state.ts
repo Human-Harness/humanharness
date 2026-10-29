@@ -223,6 +223,14 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
+/**
+ * A tool call's own line, from a call that came with no turn on screen: no text, blocks, parts or error of its own. It
+ * never counts as a reply (the chat's last turn or last answer).
+ */
+export function isToolLine(e: Pick<ChatEntry, "role" | "text" | "blocks" | "parts" | "error" | "tools">): boolean {
+  return e.role === "assistant" && e.tools !== undefined && e.parts === undefined && !e.text && e.blocks.length === 0 && e.error === undefined;
+}
+
 /** A notice's own entry: no text of its own (a system line, never a reply). */
 function noticeEntry(notice: ChatNotice): ChatEntry {
   return { id: newId(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), notice };

@@ -23,37 +23,36 @@ export function ToolCallLine({ call }: { call: ToolCallView }) {
       <button type="button" className="hh-tool-line" aria-expanded={open} aria-controls={details} onClick={() => setOpen((o) => !o)}>
         {line}
       </button>
-      {open && (
-        <dl id={details} className="hh-tool-details">
-          <dt>{t("tools.args")}</dt>
-          <dd>
-            <pre dir="auto">{call.args}</pre>
-          </dd>
-          {call.ok && call.result !== undefined && (
-            <>
-              <dt>{t("tools.result")}</dt>
-              <dd>
-                <pre dir="auto">{call.result}</pre>
-              </dd>
-            </>
-          )}
-          {call.accesses.length > 0 && (
-            <>
-              <dt>{t("tools.accesses")}</dt>
-              <dd>
-                <ul>
-                  {call.accesses.map((a, i) => (
-                    <li key={i}>
-                      {a.kind} <span dir="auto">{a.target}</span>
-                      {!a.allowed && <> · {t("tools.accessDenied")}</>}
-                    </li>
-                  ))}
-                </ul>
-              </dd>
-            </>
-          )}
-        </dl>
-      )}
+      {/* Always in the page, so aria-controls names it even when folded. */}
+      <dl id={details} className="hh-tool-details" hidden={!open}>
+        <dt>{t("tools.args")}</dt>
+        <dd>
+          <pre dir="auto">{call.args}</pre>
+        </dd>
+        {call.ok && call.result !== undefined && (
+          <>
+            <dt>{t("tools.result")}</dt>
+            <dd>
+              <pre dir="auto">{call.result}</pre>
+            </dd>
+          </>
+        )}
+        {call.accesses.length > 0 && (
+          <>
+            <dt>{t("tools.accesses")}</dt>
+            <dd>
+              <ul>
+                {call.accesses.map((a, i) => (
+                  <li key={i}>
+                    {a.kind} <span dir="auto">{a.target}</span>
+                    {!a.allowed && <> · {t("tools.accessDenied")}</>}
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        )}
+      </dl>
     </div>
   );
 }

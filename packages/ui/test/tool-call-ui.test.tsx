@@ -52,8 +52,8 @@ describe("tool calls in a chat (tools spec §8.2)", () => {
     await renderIn("en", <ToolCallLine call={call()} />);
     const line = screen.getByRole("button", { name: "pr-ci · 12 items · 0.3 s · 0 tokens" });
     expect(line.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Arguments")).toBeNull();
-    expect(screen.queryByText('{"repo":"acme/app"}')).toBeNull();
+    expect(screen.queryByRole("definition")).toBeNull();
+    expect((document.getElementById(line.getAttribute("aria-controls")!) as HTMLElement).hidden).toBe(true);
   });
 
   it("a saved entry's calls show above its reply, in order", async () => {
@@ -98,7 +98,15 @@ describe("tool calls in a chat (tools spec §8.2)", () => {
     expect(details.querySelector("li")?.textContent).toBe("fetch GET https://api.github.com/repos/acme/app/pulls");
     fireEvent.click(line);
     expect(line.getAttribute("aria-expanded")).toBe("false");
-    expect(document.getElementById(line.getAttribute("aria-controls")!)).toBeNull();
+    expect(details.hidden).toBe(true);
+  });
+
+  it("folded, aria-controls still names the details, which are hidden", async () => {
+    await renderIn("en", <ToolCallLine call={call()} />);
+    const line = screen.getByRole("button", { name: /^pr-ci/ });
+    const details = document.getElementById(line.getAttribute("aria-controls")!);
+    expect(details?.tagName).toBe("DL");
+    expect(details?.hidden).toBe(true);
   });
 
   it("an error is always unfolded and says '<id> failed · <message>'", async () => {
@@ -130,9 +138,65 @@ describe("tool calls in a chat (tools spec §8.2)", () => {
 
   it("an ok call with a refused access shows 'access denied' once unfolded", async () => {
     await renderIn("en", <ToolCallLine call={call({ accesses: [{ kind: "exec", target: "rm -rf x", allowed: false }] })} />);
-    expect(screen.queryByText(/access denied/)).toBeNull();
+    expect((document.querySelector(".hh-tool-details") as HTMLElement).hidden).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /^pr-ci/ }));
     expect(screen.getByText(/access denied/).closest("li")?.textContent).toBe("exec rm -rf x · access denied");
+  });
+
+  it("a saved entry with malformed tools still renders: bad calls are dropped, a well-formed one beside them shows", async () => {
+    const client = new FakeClient(ready);
+    const bad = [
+      { ...call(), tool: 7 },
+      { ...call(), args: { repo: "x" } },
+      { ...call(), accesses: "x" },
+      "not a call",
+      null,
+    ];
+    const good = call({ accesses: [{ kind: "fetch", target: "GET https://a.example/", allowed: true }, { kind: "shell", target: "evil", allowed: false } as never] });
+    client.chat = [
+      user,
+      reply({ id: "2", text: "First.", tools: "nope" as never }),
+      { id: "3", role: "user", text: "again", blocks: [], activities: [], at: "t", task: "t1" },
+      reply({ id: "4", text: "Second.", tools: [...bad, good] as never }),
+    ];
+    render(<HarnessApp client={client} />);
+    await clickStart();
+    await screen.findByText("Second.");
+    expect(screen.getByText("First.")).toBeTruthy();
+    const lines = [...document.querySelectorAll(".hh-tool-call > button")];
+    expect(lines.map((b) => b.textContent)).toEqual(["pr-ci · 12 items · 0.3 s · 0 tokens"]);
+    // The access with an unknown kind is dropped; the well-formed one stays.
+    expect([...document.querySelectorAll(".hh-tool-call li")].map((li) => li.textContent)).toEqual(["fetch GET https://a.example/"]);
+  });
+
+  it("a tool line outside a turn never takes the reply's place: its choices stay answerable", async () => {
+    const client = new FakeClient(ready);
+    client.chat = [user, reply({ text: "Pick one.", blocks: [{ name: "choices", data: { options: [{ label: "Tell me more" }] } }] })];
+    client.tasks = { current: { id: "t1", status: "waiting" }, actions: {}, notes: [] };
+    render(<HarnessApp client={client} />);
+    await clickStart();
+    await screen.findByText("Pick one.");
+    client.emit({ type: "tool-call", call: call() });
+    await screen.findByRole("button", { name: "pr-ci · 12 items · 0.3 s · 0 tokens" });
+    const more = screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement;
+    await waitFor(() => expect(more.disabled).toBe(false));
+    fireEvent.click(more);
+    await waitFor(() => expect(client.chosenTasks).toEqual(["t1"]));
+  });
+
+  it("a failed turn keeps its error and Try again after a tool line outside a turn", async () => {
+    const client = new FakeClient(ready);
+    client.chat = [
+      { id: "1", role: "user", text: "earlier question", blocks: [], activities: [], at: "t" },
+      { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "agent-crashed" } },
+    ];
+    render(<HarnessApp client={client} />);
+    await clickStart();
+    await screen.findByRole("button", { name: "Try again" });
+    client.emit({ type: "tool-call", call: call() });
+    await screen.findByRole("button", { name: /^pr-ci/ });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(client.sent).toEqual(["earlier question"]));
   });
 
   it("Tools off: the chat's top line says so when state.tools.off is the crash reason", async () => {

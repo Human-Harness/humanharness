@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolCallView } from "../src/client";
 import { ErrorCard } from "../src/ErrorCard";
 import { ToolCallLines } from "../src/tools/ToolCallLine";
+import { I18nextProvider } from "react-i18next";
+import { createI18n } from "@humanharness/i18n";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -71,6 +73,19 @@ describe("the prepared group (tools spec §8.2)", () => {
     const group = screen.getByRole("button", { name: "Prepared 2 items · 0.6 s · 0 tokens" });
     expect(group.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("button", { name: "warmup-cards failed · the API is down" })).toBeTruthy();
+  });
+
+  it("the group unfolds when a later pre call fails after it was drawn", async () => {
+    const ok = call("due-today");
+    const { rerender } = await renderIn("en", <ToolCallLines calls={[ok]} />);
+    expect(screen.getByRole("button", { name: /^Prepared/ }).getAttribute("aria-expanded")).toBe("false");
+    const i18n = await createI18n("en");
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <ToolCallLines calls={[ok, call("warmup-cards", { ok: false, error: "the API is down" })]} />
+      </I18nextProvider>,
+    );
+    expect(screen.getByRole("button", { name: /^Prepared/ }).getAttribute("aria-expanded")).toBe("true");
   });
 
   it("N counts distinct tools: forEach calls of one step count once, notes not at all", async () => {

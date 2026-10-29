@@ -10,13 +10,17 @@ import type { ToolCallView } from "../client";
 export function PreparedGroup({ calls, children }: { calls: ToolCallView[]; children: ReactNode }) {
   const { t } = useTranslation();
   const steps = calls.filter((c) => c.note === undefined);
-  const [open, setOpen] = useState(() => steps.some((c) => !c.ok));
+  // Open while a call failed, even one that arrives after the group was drawn (live calls come one by one), until the
+  // person folds or unfolds it.
+  const failed = steps.some((c) => !c.ok);
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? failed;
   const details = useId();
   const count = new Set(steps.map((c) => c.tool)).size;
   const seconds = (steps.reduce((n, c) => n + Math.max(0, c.ms), 0) / 1000).toFixed(1);
   return (
     <div className="hh-tool-group">
-      <button type="button" className="hh-tool-line" aria-expanded={open} aria-controls={details} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="hh-tool-line" aria-expanded={open} aria-controls={details} onClick={() => setToggled(!open)}>
         {t("tools.prepared", { count, seconds })}
       </button>
       {/* Always in the page, so aria-controls names it even when folded. */}

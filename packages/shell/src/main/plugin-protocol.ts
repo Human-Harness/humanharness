@@ -72,7 +72,7 @@ function segments(url: string, id: string): string[] | null {
   return out;
 }
 
-const inside = (root: string, file: string): boolean => {
+export const inside = (root: string, file: string): boolean => {
   const rel = path.relative(root, file);
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 };
@@ -209,7 +209,7 @@ export const RPC_MAX_DEPTH = 40;
  * Whether `json` nests deeper than `max`, counted in one pass over the text (brackets inside strings skipped), so a
  * deeply nested payload is refused before JSON.parse spends time on it or a recursive reader overflows on its result.
  */
-function tooDeep(json: string, max: number): boolean {
+export function tooDeep(json: string, max: number): boolean {
   let depth = 0;
   let inString = false;
   for (let i = 0; i < json.length; i++) {
@@ -225,13 +225,13 @@ function tooDeep(json: string, max: number): boolean {
   return false;
 }
 
-const plain = (v: unknown): v is Record<string, unknown> => {
+export const plain = (v: unknown): v is Record<string, unknown> => {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 };
-const only = (v: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(v).every((k) => keys.includes(k));
-const text = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
+export const only = (v: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(v).every((k) => keys.includes(k));
+export const text = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
 
 /**
  * One `rpc(method, payload)` from a backend window, checked before anything else sees it: `payload` must be a JSON

@@ -38,7 +38,7 @@ describe("measurePre (tools spec §8.4)", () => {
     });
   });
 
-  it("a task's first turn is its first run line; close, checkpoint, job and material lines don't count", () => {
+  it("a task's first turn is its first run line; close, checkpoint, sidekick, phase-change, job and material lines don't count", () => {
     const records: UsageRecord[] = [
       // Lines before the task's first run turn that are not it.
       turn("A", "study", usage(9_000), { phase: "close" }),
@@ -46,6 +46,9 @@ describe("measurePre (tools spec §8.4)", () => {
       turn("A", "study", undefined, { kind: "compaction" }),
       { at: "2026-10-29T10:00:00.000Z", engine: "claude", phase: "job", job: "nightly", task: "A", ok: true, usage: usage(9_000) },
       { at: "2026-10-29T10:00:00.000Z", engine: "claude", phase: "material", stage: "label", scope: "main", ok: true, usage: usage(9_000) },
+      // Sidekick's and a phase change's lines carry the task and action: still not its first run turn.
+      turn("A", "study", usage(9_000), { phase: "sidekick" }),
+      turn("A", "study", usage(9_000), { phase: "phase-change" }),
       turn("A", "study", usage(1_000)),
       // A follow-up turn of the same task: not its first.
       turn("A", "study", usage(5_000)),

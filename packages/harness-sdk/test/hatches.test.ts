@@ -102,18 +102,26 @@ describe("backend (hatches spec §4.1)", () => {
 
   it("loadHarness refuses a backend outside the harness folder", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-backend-"));
-    const file = path.join(dir, "harness.config.mjs");
-    const manifest = { ...base, backend: "../escape.ts" };
-    fs.writeFileSync(file, `export default ${JSON.stringify(manifest)};`);
-    await expect(loadHarness(file)).rejects.toThrow("Path escapes the harness folder: ../escape.ts");
+    try {
+      const file = path.join(dir, "harness.config.mjs");
+      const manifest = { ...base, backend: "../escape.ts" };
+      fs.writeFileSync(file, `export default ${JSON.stringify(manifest)};`);
+      await expect(loadHarness(file)).rejects.toThrow("Path escapes the harness folder: ../escape.ts");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("loadHarness keeps a backend inside the harness folder", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-backend-"));
-    const file = path.join(dir, "harness.config.mjs");
-    fs.writeFileSync(file, `export default ${JSON.stringify({ ...base, backend: "backend/index.ts" })};`);
-    const h = await loadHarness(file);
-    expect(resolveInHarness(h, h.backend!)).toBe(path.join(dir, "backend", "index.ts"));
+    try {
+      const file = path.join(dir, "harness.config.mjs");
+      fs.writeFileSync(file, `export default ${JSON.stringify({ ...base, backend: "backend/index.ts" })};`);
+      const h = await loadHarness(file);
+      expect(resolveInHarness(h, h.backend!)).toBe(path.join(dir, "backend", "index.ts"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("the limits main enforces", () => {

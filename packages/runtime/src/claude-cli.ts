@@ -168,15 +168,17 @@ const GLOBAL_DENIED = ["Edit(.mcp.json)", "Write(.mcp.json)", "MultiEdit(.mcp.js
 
 /**
  * Checks a preset at the last boundary before the CLI: a known base, servers named `scope-<name>` that take no core
- * server's name, and absolute snapshot paths (nothing that reads as a flag).
+ * server's name nor each other's, and absolute snapshot paths (nothing that reads as a flag).
  */
 function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
   if (preset.base !== "isolated" && preset.base !== "global") throw new Error(`Unknown engine preset base: ${JSON.stringify(preset.base)}`);
   const core = new Set(mcp.map((s) => s.name));
+  const seen = new Set<string>();
   for (const s of preset.servers) {
-    if (!/^scope-[a-z0-9][a-z0-9-]{0,39}$/.test(s.name) || core.has(s.name)) {
+    if (!/^scope-[a-z0-9][a-z0-9-]{0,39}$/.test(s.name) || core.has(s.name) || seen.has(s.name)) {
       throw new Error(`Refusing an engine preset server name: ${JSON.stringify(s.name)}`);
     }
+    seen.add(s.name);
   }
   for (const p of [preset.pluginDir, preset.agentsFile]) {
     if (p !== undefined && (!path.isAbsolute(p) || p.startsWith("-"))) throw new Error(`Refusing an engine preset path: ${JSON.stringify(p)}`);

@@ -343,8 +343,10 @@ const PRESET_SERVER = /^scope-[a-z0-9][a-z0-9-]{0,39}$/;
 function checkPreset(preset: EnginePreset, o: TransportOptions): void {
   if (o.noTools || o.mcpOnly) throw new Error("Refusing an engine preset on a session without tools");
   const core = new Set(o.mcp.map((s) => s.name));
+  const seen = new Set<string>();
   for (const s of preset.servers) {
-    if (!PRESET_SERVER.test(s.name) || core.has(s.name)) throw new Error(`Refusing the engine preset's server name ${JSON.stringify(s.name)}`);
+    if (!PRESET_SERVER.test(s.name) || core.has(s.name) || seen.has(s.name)) throw new Error(`Refusing the engine preset's server name ${JSON.stringify(s.name)}`);
+    seen.add(s.name);
   }
 }
 

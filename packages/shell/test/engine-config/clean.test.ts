@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanCodex, cleanMcp, cleanSettings } from "../../src/main/engine-config/clean";
+import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey } from "../../src/main/engine-config/clean";
 
 const ctx = { folder: "/w", linked: ["/repo"], edit: "folder" as const, reserved: new Set(["ui", "data", "translate", "review", "harness"]) };
 
@@ -66,6 +66,22 @@ describe("cleanSettings (spec §5.4, E4, E5)", () => {
     const r = cleanSettings(s, ctx);
     s.permissions.allow.push("Edit");
     expect(r.settings.permissions?.allow).toEqual(["Read"]);
+  });
+});
+
+describe("duplicateJsonKey", () => {
+  it("names the first key an object repeats, with its path", () => {
+    expect(duplicateJsonKey('{"mcpServers":{"lint":{"command":"a"},"lint":{"command":"b"}}}')).toBe("mcpServers.lint");
+    expect(duplicateJsonKey('{"a":1,"a":2}')).toBe("a");
+    expect(duplicateJsonKey('{"a":[{"x":1,"x":2}]}')).toBe("a[].x");
+    // Escapes count: "\u006cint" is "lint".
+    expect(duplicateJsonKey('{"s":{"lint":1,"\\u006cint":2}}')).toBe("s.lint");
+  });
+
+  it("is null when no object repeats a key, whatever the values say", () => {
+    expect(duplicateJsonKey('{"a":{"b":1},"c":{"b":1},"d":["a","a"],"e":"a\\",\\"a"}')).toBeNull();
+    expect(duplicateJsonKey('[{"a":1},{"a":2}]')).toBeNull();
+    expect(duplicateJsonKey(" {\n \"a\" : 1 ,\n \"b\" : { } } ")).toBeNull();
   });
 });
 

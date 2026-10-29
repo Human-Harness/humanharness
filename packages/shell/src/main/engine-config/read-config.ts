@@ -3,7 +3,7 @@ import fs, { type FileHandle } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
-import { cleanCodex, cleanMcp, cleanSettings, type CleanContext, type CleanSettings, type Hooks } from "./clean";
+import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
 import { commandWords, scriptRefs, type ScriptCommand } from "./script-refs";
 import { parseToml } from "./toml-lite";
@@ -243,12 +243,20 @@ export function configFromFiles(
   const json = (rel: string): unknown => {
     const t = text(rel);
     if (t === undefined) return undefined;
+    let parsed: unknown;
     try {
-      return JSON.parse(t) as unknown;
+      parsed = JSON.parse(t) as unknown;
     } catch {
       refuse(rel, "is not valid JSON");
       return undefined;
     }
+    // JSON.parse keeps a repeated key's last value: refused, so what is shown is all the file says.
+    const repeated = duplicateJsonKey(t);
+    if (repeated !== null) {
+      refuse(rel, `${repeated} is repeated`);
+      return undefined;
+    }
+    return parsed;
   };
   const commands: ScriptCommand[] = [];
   /** A command joins the scripts' search only when its paths can be placed; otherwise it is refused naming it. */

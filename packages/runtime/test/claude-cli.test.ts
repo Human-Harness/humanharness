@@ -774,6 +774,11 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
     expect(() => claudeArgs({ ...o, mcp: [uiServer, { ...uiServer, name: "scope-lint" }], scope: { linked: [], engine: preset } })).toThrow(/server/);
   });
 
+  it("refuses a preset that names one server twice", () => {
+    const twice = { ...preset, servers: [...preset.servers, { name: "scope-lint", command: "sh", args: [], env: {} }] };
+    expect(() => claudeArgs({ ...o, scope: { linked: [], engine: twice } })).toThrow(/scope-lint/);
+  });
+
   it("skills and agents from the snapshot, after --settings and before the session flags", () => {
     const args = claudeArgs({ ...o, references: ["/r"], scope: { linked: [], engine: preset } });
     expect(argAfter(args, "--plugin-dir")).toBe(preset.pluginDir);

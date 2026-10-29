@@ -96,6 +96,18 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     expect(bad.refusals).toEqual([{ file: "base", message: 'base: must be "isolated" or "global"' }]);
   });
 
+  it("a JSON file that repeats a key is refused naming it (one server name twice)", async () => {
+    const c = (await setup({
+      "mcp.json": '{"mcpServers":{"lint":{"command":"node"},"lint":{"command":"sh"}}}',
+      "actions/review/settings.json": '{"permissions":{"deny":[],"deny":["x"]}}',
+    }).read())!;
+    expect(c.refusals).toEqual([
+      { file: "actions/review/settings.json", message: "actions/review/settings.json: permissions.deny is repeated" },
+      { file: "mcp.json", message: "mcp.json: mcpServers.lint is repeated" },
+    ]);
+    expect(c.servers).toEqual([]);
+  });
+
   it("refusals are collected with the file and key, not thrown", async () => {
     const c = (await setup({
       "settings.json": JSON.stringify({ env: { A: "1" } }),

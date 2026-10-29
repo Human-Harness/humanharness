@@ -1487,6 +1487,14 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     }
   });
 
+  it("refuses a preset that names one server twice", async () => {
+    const { transport: t, log } = setup({ turns: [[chunk("never")]] });
+    const servers = [{ name: "scope-lint", command: "node", args: [], env: {} }, { name: "scope-lint", command: "sh", args: [], env: {} }];
+    const events = await turnWith(t, { linked: [], engine: preset({ servers }) });
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+    expect(log().some((l) => l.method === "initialize")).toBe(false);
+  });
+
   it("refuses a preset on an mcpOnly session", async () => {
     const { transport: t, log } = setup({ turns: [[chunk("never")]] }, undefined, { mcpOnly: true });
     const events = await turnWith(t, { linked: [], engine: preset() });

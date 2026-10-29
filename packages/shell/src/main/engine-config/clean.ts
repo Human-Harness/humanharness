@@ -96,6 +96,38 @@ function cleanHooks(file: string, hooks: unknown): Hooks {
 }
 
 /**
+ * The first key an object of `text` (valid JSON) repeats, as a dotted path (`[]` for a list item), or null. JSON.parse
+ * keeps the last one silently: the person would review one server and the file would name two, so the reader refuses
+ * a repeat (one preset server name twice).
+ */
+export function duplicateJsonKey(text: string): string | null {
+  // One frame per open object (its keys so far, whether the next string is a key, the current key) or list (null keys).
+  const stack: { keys: Set<string> | null; expectKey: boolean; key: string }[] = [];
+  const pathOf = (key: string) =>
+    [...stack.slice(0, -1).map((f) => (f.keys ? `.${f.key}` : "[]")), `.${key}`].join("").replace(/^\./, "").replace(/\.\[\]/g, "[]");
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const top = stack.at(-1);
+    if (c === "{" || c === "[") stack.push({ keys: c === "{" ? new Set() : null, expectKey: c === "{", key: "" });
+    else if (c === "}" || c === "]") stack.pop();
+    else if (c === "," && top?.keys) top.expectKey = true;
+    else if (c === ":" && top) top.expectKey = false;
+    else if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      if (top?.keys && top.expectKey) {
+        const key = JSON.parse(text.slice(i, j + 1)) as string;
+        if (top.keys.has(key)) return pathOf(key);
+        top.keys.add(key);
+        top.key = key;
+      }
+      i = j;
+    }
+  }
+  return null;
+}
+
+/**
  * The folder a path rule's specifier is confined to, or null when it can't be placed safely. With a glob, the folder
  * is the part before the last `/` ahead of the first glob character, so `//w*` is confined to `/`, not to `/w`.
  */

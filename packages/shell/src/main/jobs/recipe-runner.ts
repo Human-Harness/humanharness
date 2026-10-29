@@ -36,6 +36,11 @@ export interface RecipeRunDeps {
   now?: () => Date;
   newId?: () => string;
   maxMs?: number;
+  /**
+   * The scope a tool step's call sees (`ctx.scope`), as an agent call's from a prompt job's slot: `_app` or `main` for
+   * an app-wide run. Absent: the run's own scope. The record, the trailer and the AI step keep the run's scope.
+   */
+  toolScope?: string;
 }
 
 /** The longest summary kept (part 3's limit). */
@@ -97,7 +102,7 @@ export async function runRecipe(
   const maxAi = job.maxAi ?? 1;
   const values: StepValues = new Map();
   // Set at the walk's start, inside the try that frees the gate's slot (the limits read may throw).
-  let base: StepCallBase = { caller: "job", job: id, run, scope };
+  let base: StepCallBase = { caller: "job", job: id, run, scope: d.toolScope ?? scope };
   const trailer = jobRunTrailer(run, id, scope);
   let toolSteps = 0;
   let aiSteps = 0;

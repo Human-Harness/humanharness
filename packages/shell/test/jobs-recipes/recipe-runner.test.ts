@@ -42,6 +42,7 @@ function wire(o: {
   maxMs?: number;
   last?: { tool: string; resultSummary: string } | null;
   ids?: string[];
+  toolScope?: string;
 } = {}) {
   const answers: Record<string, Answer | Answer[]> = { "pr-ci": okAnswer(RED), "apply-triage": okAnswer({ done: 1 }), notify: okAnswer("sent"), ...o.answers };
   const calls: (ToolCall & { trailer?: HistoryTrailer })[] = [];
@@ -91,6 +92,7 @@ function wire(o: {
     now: () => new Date((clock += 10)),
     newId: () => ids.shift() ?? "rX",
     ...(o.maxMs !== undefined ? { maxMs: o.maxMs } : {}),
+    ...(o.toolScope !== undefined ? { toolScope: o.toolScope } : {}),
   };
   const run = (j: HarnessJob, signal?: AbortSignal, scope: string | null = null) => runRecipe(deps, "sync", j, scope, "manual", signal);
   return { deps, run, calls, aiCalls, notes, logged, rows, gate };
@@ -116,6 +118,17 @@ describe("runRecipe (tools spec §7)", () => {
     await w.run(job(full), undefined, "intro");
     expect(w.calls.every((c) => c.scope === "intro")).toBe(true);
     expect(w.aiCalls[0]!.scope).toBe("intro");
+  });
+
+  it("an app-wide run's tool calls see the tool scope; the record, the AI step and the trailer keep the run's null", async () => {
+    const w = wire({ toolScope: "_app" });
+    const r = await w.run(job(full));
+    expect(w.calls.map((c) => c.scope)).toEqual(["_app", "_app", "_app"]);
+    expect(w.aiCalls[0]!.scope).toBeNull();
+    expect(w.calls.map((c) => c.trailer)).toEqual(Array(3).fill({ task: "r1", job: "sync" }));
+    expect(r!.scope).toBeNull();
+    expect(w.logged[0]!.scope).toBeNull();
+    expect(Object.hasOwn(w.rows[0] as object, "scope")).toBe(false);
   });
 
   it("every tool call runs with the run's history trailer (a tool's data write commits under it)", async () => {

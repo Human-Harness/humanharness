@@ -222,6 +222,7 @@ export function createJobsHost(d: JobsHostDeps) {
     runId: string,
     recordUsage: (e: Usage, meta: { job: string; task: string; scope?: string }) => Promise<void>,
     stillValid: () => Promise<boolean>,
+    toolScope: string,
   ): RecipeRunDeps => {
     const tools = d.tools;
     return {
@@ -257,6 +258,7 @@ export function createJobsHost(d: JobsHostDeps) {
       newId: () => runId,
       stillValid,
       ...(d.maxMs !== undefined ? { maxMs: d.maxMs } : {}),
+      toolScope,
     };
   };
 
@@ -277,11 +279,13 @@ export function createJobsHost(d: JobsHostDeps) {
     const stillValid = async () => (await d.base()) === base;
     const key = `job:${runId}`;
     // The run's history trailer, the same one its own commits carry: a harness tool's data write from this slot commits under it.
-    runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE), job: id, trailer: jobRunTrailer(runId, id, scope) });
+    // The scope its tool calls see: an agent call's from this slot and a recipe's tool steps alike (`_app`/`main` app-wide).
+    const toolScope = scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE);
+    runs.set(key, { id: runId, scope: toolScope, job: id, trailer: jobRunTrailer(runId, id, scope) });
     try {
       // A job is a prompt or a recipe (tools spec §7): a recipe goes to its own runner, a prompt job to part 3's.
       const record = job.steps
-        ? await runRecipe(recipeDeps(base, runId, recordUsage, stillValid), id, job, scope, trigger, signal)
+        ? await runRecipe(recipeDeps(base, runId, recordUsage, stillValid, toolScope), id, job, scope, trigger, signal)
         : await runJob(
             {
               workspace: () => d.workspace(),

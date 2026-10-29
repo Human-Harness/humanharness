@@ -182,7 +182,7 @@ describe("the jobs host with recipes (tools spec §7, §14)", () => {
     expect(t.briefsRead).toEqual([]);
     expect(f.calls.map((c) => c.tool)).toEqual(["pr-ci", "notify"]);
     for (const c of f.calls) {
-      expect(c).toMatchObject({ caller: "job", job: "triage", run: rec.run, scope: null, limits: { job: "triage", web: false, exec: true } });
+      expect(c).toMatchObject({ caller: "job", job: "triage", run: rec.run, scope: "main", limits: { job: "triage", web: false, exec: true } });
       // The run's history trailer, the one its slot key's runOf gives a data write.
       expect(c.trailer).toStrictEqual({ task: rec.run, job: "triage" });
     }
@@ -226,6 +226,19 @@ describe("the jobs host with recipes (tools spec §7, §14)", () => {
     expect(raised).toEqual([
       { origin: { kind: "job", id: "triage:-" }, item: expect.objectContaining({ key: "result", severity: "action", title: "Stopped after 1 AI step", target: { action: "implement", vars: {} } }) },
     ]);
+  });
+
+  it("an app-wide recipe's tool calls see _app (scoped) or main, as a prompt job's agent calls; its record keeps scope null", async () => {
+    for (const [scoped, want] of [
+      [true, "_app"],
+      [false, "main"],
+    ] as const) {
+      const f = fakeTools();
+      const t = host({ jobs: { triage: toolsOnly() }, tools: f.tools, deps: { scoped: () => scoped } });
+      const rec = await t.runOnce("triage");
+      expect(f.calls.map((c) => c.scope)).toEqual([want, want]);
+      expect(rec.scope).toBeNull();
+    }
   });
 
   it("a recipe's run logs in jobs.jsonl and its usage row goes to usage.jsonl", async () => {

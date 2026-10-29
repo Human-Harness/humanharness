@@ -8,7 +8,7 @@ const ENTRY = /harnesses\/demo\/backend\/index\.ts/;
 /** The demo's backend process: a child of the app's main process whose command line names its entry (POSIX). */
 function backendPid(app: ElectronApplication): number | null {
   const main = app.process().pid;
-  const rows = execFileSync("ps", ["-A", "-o", "pid=,ppid=,command="], { encoding: "utf8" }).split("\n");
+  const rows = execFileSync("ps", ["-A", "-ww", "-o", "pid=,ppid=,command="], { encoding: "utf8" }).split("\n");
   for (const row of rows) {
     const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(row);
     if (m && Number(m[2]) === main && ENTRY.test(m[3])) return Number(m[1]);

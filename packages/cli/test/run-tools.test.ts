@@ -8,6 +8,7 @@ import { CliError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { runTask } from "../src/run";
 import { TOOL_P12_NOTE } from "../src/tool-host-node";
+import { recordedArgs } from "../src/run-tools";
 import type { ToolRunDeps } from "../src/tool-run";
 import { CORE, dropExampleTool, memoryStream, replaceIn, tempRoot } from "./helpers";
 
@@ -192,6 +193,8 @@ describe("tools in a terminal run (tools spec §6, §12)", () => {
   it("a refused start's message is one plain line with the keys hidden", { timeout: 60_000 }, async () => {
     const dir = path.join(root, `loud-${++n}`);
     await initHarness({ dir, core: CORE, install: false });
+    // The template's example tool out first: the test's own `tools:` is then the manifest's only one (end follow-up M26).
+    dropExampleTool(dir);
     replaceIn(dir, "harness.config.ts", "web: false", "web: true");
     replaceIn(
       dir,
@@ -223,6 +226,7 @@ describe("tools in a terminal run (tools spec §6, §12)", () => {
   it("a build problem stops the run before the engine starts", { timeout: 60_000 }, async () => {
     const dir = path.join(root, `broken-${++n}`);
     await initHarness({ dir, core: CORE, install: false });
+    dropExampleTool(dir);
     replaceIn(dir, "harness.config.ts", "  actions: {\n", '  tools: { broken: "./tools/broken.ts" },\n  actions: {\n');
     fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
     fs.writeFileSync(path.join(dir, "tools", "broken.ts"), 'import { nothing } from "./missing";\nexport default nothing;\n');
@@ -251,3 +255,14 @@ describe("tools in a terminal run (tools spec §6, §12)", () => {
 
 const D0_OUTPUT =
   "Folder: <folder>\nFirst turn here.\n\nType a follow-up, or q to close the task: \nNote: <folder>/.harness/notes/example.md\n\nReport\n  tier          standard\n  model         sonnet\n  effort        medium\n  cap           200,000 tokens\n\n  phase        turns     input    output  cache read  cache write\n  run              1     1,200        80           0            0\n  close            1     1,200        80           0            0\n\n  peak context  1,200 of 200,000 (1%)\n  verdict       used about 2,560 tokens (input+output, uncached), plus 0 cache read and 0 cache write; cost hint says light\n  usage log     <folder>/.harness/usage.jsonl\n  note          <folder>/.harness/notes/example.md\n";
+
+describe("run --record keeps an agent call's args only when replay can send the same (end follow-up M23)", () => {
+  it("an object as is, none as {}", () => {
+    expect(recordedArgs({ a: 1 })).toEqual({ a: 1 });
+    expect(recordedArgs(undefined)).toEqual({});
+  });
+
+  it("anything else is left out", () => {
+    for (const bad of [null, 5, "x", [1], true]) expect(recordedArgs(bad), JSON.stringify(bad)).toBeNull();
+  });
+});

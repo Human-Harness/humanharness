@@ -96,6 +96,15 @@ function dataRequest(op: BrokerDataOp): unknown {
   return op;
 }
 
+/**
+ * The args `run --record` keeps for an agent call: none is `{}` (the registry runs it as `{}`), an object as is; anything
+ * else is null and the call is left out, since replay would send something else (end follow-up M23).
+ */
+export function recordedArgs(args: unknown): Record<string, unknown> | null {
+  if (args === undefined) return {};
+  return typeof args === "object" && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : null;
+}
+
 /** A call's line ("tool echo · 3 ms · ok"), or a trace note's (a pre-step's cut). */
 function callLine(e: TraceEntry): string {
   if (typeof e.note === "string") return `tool ${e.tool} · ${e.note}`;
@@ -290,8 +299,12 @@ export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
                 }
                 if (!answer.ok) throw new Error(answer.error);
                 // Only a call that answered: replay makes the call again, and a refused one would fail the turn.
-                if (typeof args === "object" && args !== null && !Array.isArray(args)) o.record?.call(tool, args as Record<string, unknown>);
-                else o.record?.call(tool, {});
+                if (o.record) {
+                  const kept = recordedArgs(args);
+                  // Replay sends the recorded args as they are: a call whose args aren't an object can't be replayed the same.
+                  if (kept) o.record.call(tool, kept);
+                  else say(`Note: a call to ${tool} was left out of the recording: its arguments aren't an object.`);
+                }
                 return answer.result;
               },
             },

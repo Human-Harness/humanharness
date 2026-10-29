@@ -1448,6 +1448,10 @@
     "result": "Result",
     "accesses": "Accesses",
     "logs": "Log",
-    "off": "Tools are off after repeated crashes. Restart the app to turn them on."
+    "off": "Tools are off after repeated crashes. Restart the app to turn them on.",
+    "jobSteps": "Steps",
+    "jobStepsNone": "No steps recorded for this run.",
+    "jobStepsLoading": "Reading the steps…",
+    "jobStepsError": "Couldn't read this run's steps."
   }
 }

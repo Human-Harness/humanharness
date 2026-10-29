@@ -262,7 +262,7 @@ A rejected call carries a plain message: the backend's own `error.message` (cut 
 
 `backend.log` in the app's data folder (`<userData>/backend.log`, `BackendLog` in `backend-log.ts`): one line per entry, `<ISO time> <stream> <text>`, where `stream` is `stderr` (the backend's own stderr, line by line) or `app` (the app's notes: refused requests, dropped lines and events, spawn failures, a failing event listener). Blank lines are skipped and a line is cut at 8 KB. Writes run one at a time. When the next write would take a non-empty file past 5 MB, the file is renamed to `backend.log.1` (replacing the older one), so a noisy backend holds at most two files. It never throws: the first failure to write is reported once to the main log. The file is created only on its first line; a harness without `backend` never gets one.
 
-Today the log follows a symlink at `backend.log` (`fs.appendFile`) and is written with the default file mode. Refusing links (`O_NOFOLLOW`) and mode `0600` are a pending follow-up; until it lands, don't count on the log ignoring a link.
+The file is created with mode `0600`. A symlink at `backend.log` is refused: the log neither writes through it nor rotates it (an `lstat` check, and the file opened with `O_NOFOLLOW` against a link swapped in after it); the write is skipped and reported once like any failure (`backend-log.test.ts`, "never follows a symlink at backend.log: the target is untouched, reported once").
 
 ### Mock mode
 
@@ -319,7 +319,6 @@ End to end: `packages/e2e/tests/backend.spec.ts` (mock mode) runs the demo's ech
 - **No harness update path.** Nothing in the app updates a harness yet, so nothing stops and starts the backend around one (Decision 6).
 - **One backend per app, not per window.** The app has one window per data folder today (spec §10 Q2).
 - **No OS sandbox** (B1): the backend runs as the person's user with the app's environment.
-- **The log follows a symlink** at `backend.log` and uses the default file mode until the pending `O_NOFOLLOW`/`0600` fix.
 - **Windows**: no process group, so a stop kills only the backend itself, not processes it started; and there is no SIGTERM grace there.
 - **A stale scopes read** that a rebase overtakes is dropped by a generation counter in `index.ts` (`backendGen`) that no test pins yet.
 

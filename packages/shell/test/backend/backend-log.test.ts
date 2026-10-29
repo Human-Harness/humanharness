@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,5 +76,37 @@ describe("BackendLog (spec §4.3)", () => {
     await Promise.all(Array.from({ length: 50 }, (_, i) => log.write("stderr", `line ${i} ${"z".repeat(500)}\n`)));
     const lines = read("backend.log").trimEnd().split("\n");
     expect(lines).toEqual(Array.from({ length: 50 }, (_, i) => `${PREFIX}line ${i} ${"z".repeat(500)}`));
+  });
+
+  it.skipIf(process.platform === "win32")("creates backend.log with mode 0600", async () => {
+    const log = new BackendLog(dir, { max: 1000, now: () => at });
+    await log.write("stderr", "x\n");
+    expect(statSync(path.join(dir, "backend.log")).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === "win32")("never follows a symlink at backend.log: the target is untouched, reported once", async () => {
+    const target = path.join(dir, "target.txt");
+    writeFileSync(target, "keep\n");
+    symlinkSync(target, path.join(dir, "backend.log"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = new BackendLog(dir, { max: 1000, now: () => at });
+    await expect(log.write("stderr", "one\n")).resolves.toBeUndefined();
+    await expect(log.write("stderr", "two\n")).resolves.toBeUndefined();
+    expect(read("target.txt")).toBe("keep\n");
+    expect(lstatSync(path.join(dir, "backend.log")).isSymbolicLink()).toBe(true);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain("Could not write backend.log");
+  });
+
+  it.skipIf(process.platform === "win32")("a symlink at backend.log to a large file is not rotated either", async () => {
+    const target = path.join(dir, "big.txt");
+    writeFileSync(target, "b".repeat(500));
+    symlinkSync(target, path.join(dir, "backend.log"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = new BackendLog(dir, { max: 100, now: () => at });
+    await log.write("stderr", "one\n");
+    expect(read("big.txt")).toBe("b".repeat(500));
+    expect(lstatSync(path.join(dir, "backend.log")).isSymbolicLink()).toBe(true);
+    expect(() => lstatSync(path.join(dir, "backend.log.1"))).toThrow();
   });
 });

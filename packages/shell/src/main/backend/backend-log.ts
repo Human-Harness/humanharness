@@ -1,9 +1,12 @@
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { BACKEND_LOG_MAX_BYTES } from "@humanharness/harness-sdk";
 
 /** One logged line is cut to this many bytes (UTF-8), so one runaway line can't fill the log. */
 const LINE_MAX_BYTES = 8 * 1024;
+
+/** Append, create mode 0600, and never through a symlink (`O_NOFOLLOW` is absent on Windows). */
+const OPEN_FLAGS = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0);
 
 export type BackendLogStream = "stderr" | "app";
 
@@ -21,7 +24,8 @@ function cutLine(text: string, max: number): string {
  * The harness backend's log (hatches spec §4.3; threat model B5): `backend.log` in the app's data folder, the
  * backend's stderr and the app's notes about it, one time-stamped line each. Past `max` bytes the file is rotated to
  * `backend.log.1` (replacing the older one), so a noisy backend holds at most two files. Writes run one at a time.
- * It never throws: a failure is reported once to the main log and the write resolves.
+ * It never throws: a failure is reported once to the main log and the write resolves. A symlink at `backend.log` is
+ * refused (neither written through nor rotated): that write is skipped as a failure. The file is created mode 0600.
  */
 export class BackendLog {
   private readonly dir: string;
@@ -55,9 +59,17 @@ export class BackendLog {
   private async append(chunk: string): Promise<void> {
     try {
       await fs.mkdir(this.dir, { recursive: true });
-      const size = await fs.stat(this.file).then((s) => s.size, () => 0);
+      const st = await fs.lstat(this.file).catch(() => null);
+      if (st?.isSymbolicLink()) throw new Error("backend.log is a symlink; not following it");
+      const size = st?.size ?? 0;
       if (size > 0 && size + Buffer.byteLength(chunk) > this.max) await fs.rename(this.file, `${this.file}.1`);
-      await fs.appendFile(this.file, chunk);
+      // O_NOFOLLOW also refuses a link swapped in after the lstat.
+      const handle = await fs.open(this.file, OPEN_FLAGS, 0o600);
+      try {
+        await handle.appendFile(chunk);
+      } finally {
+        await handle.close();
+      }
     } catch (err) {
       if (this.reported) return;
       this.reported = true;

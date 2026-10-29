@@ -4,7 +4,7 @@ export { classifyError } from "./classify";
 export { ClaudeCliTransport, ALL_BUILTIN_TOOLS, allowedTools, claudeArgs, editPaths, profileArgs, ruleUnsafePath } from "./claude-cli";
 export { AcpTransport, acpEditPaths, codexConfig, decidePermission, isUiTool, offeredModels, type PermissionPolicy } from "./acp";
 export { createRuntime, runtimeOnSlot, type HarnessRuntime, type RunningTurn, type RuntimeOptions } from "./runtime";
-export { createWorkspace, type HarnessWorkspace, type SessionSlot, type SlotOptions, type SlotRef, type SlotSendOptions, type WorkspaceOptions } from "./workspace";
+export { createWorkspace, STEP_CLAUDE_ONLY, StepClaudeOnlyError, type HarnessWorkspace, type SessionSlot, type SlotOptions, type SlotRef, type SlotSendOptions, type WorkspaceOptions } from "./workspace";
 export { TurnLedger, samePath, type TurnWindow } from "./turn-ledger";
 export { beginTurn, endTurn, type TurnAttribution } from "./turn-commit";
 export { runSystemTask, type SystemTaskOptions, type SystemTaskResult } from "./system";

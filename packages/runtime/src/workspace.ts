@@ -162,6 +162,17 @@ interface LinkedRepo {
   ledger: TurnLedger;
 }
 
+/** The fixed text of a step slot's refusal on an engine other than Claude: safe to show (no engine words, no path). */
+export const STEP_CLAUDE_ONLY = "An AI step runs only with Claude for now";
+
+/** openSlot's own refusal of a step slot on an ACP engine; main tells it from any other failure by its class. */
+export class StepClaudeOnlyError extends Error {
+  constructor() {
+    super(STEP_CLAUDE_ONLY);
+    this.name = "StepClaudeOnlyError";
+  }
+}
+
 export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWorkspace> {
   const { harness, engine, folder } = opts;
   const launcher = opts.launcher ?? devLauncher();
@@ -245,7 +256,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       // mode still reads the whole disk and runs read-only shell commands without asking; OpenCode's read, glob, grep
       // and list tools never ask), so injected `## Data` could copy any file into step_output. Lifted only with
       // engine-level hardening.
-      if (engine.transport.kind !== "claude-cli") throw new Error("An AI step runs only with Claude for now");
+      if (engine.transport.kind !== "claude-cli") throw new StepClaudeOnlyError();
       if (!o.job) throw new Error("A step slot needs its job");
       const job = harness.jobs && Object.hasOwn(harness.jobs, o.job) ? harness.jobs[o.job] : undefined;
       if (!job || !aiStepOf(job)) throw new Error(`No AI step for job "${o.job}"`);

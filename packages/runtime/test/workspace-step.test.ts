@@ -9,7 +9,7 @@ import { getEngine } from "@humanharness/engines";
 import { type AcpScript, type ClaudeScript, claudeResultLine, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type LoadedHarness, loadHarness, z } from "@humanharness/harness-sdk";
 import { TurnLedger } from "../src/turn-ledger";
-import { type HarnessWorkspace, createWorkspace } from "../src/workspace";
+import { type HarnessWorkspace, STEP_CLAUDE_ONLY, StepClaudeOnlyError, createWorkspace } from "../src/workspace";
 
 // Counts the sockets a slot opens: a step slot opens none besides its bridge.
 vi.mock("@humanharness/blocks", async (importOriginal) => {
@@ -269,7 +269,14 @@ describe("a step slot's own folder (tools spec §7.1, R1)", () => {
     const openRpc = vi.mocked(blocks.openRpc);
     openBridge.mockClear();
     openRpc.mockClear();
-    await expect(ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" })).rejects.toThrow("An AI step runs only with Claude for now");
+    const refusal = await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" }).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    // Our own refusal, by its class: main shows its fixed text as the run's summary (any other failure stays hidden).
+    expect(refusal).toBeInstanceOf(StepClaudeOnlyError);
+    expect((refusal as Error).message).toBe(STEP_CLAUDE_ONLY);
+    expect(STEP_CLAUDE_ONLY).toBe("An AI step runs only with Claude for now");
     expect(openBridge).not.toHaveBeenCalled();
     expect(openRpc).not.toHaveBeenCalled();
     expect(fs.existsSync(parent)).toBe(false);

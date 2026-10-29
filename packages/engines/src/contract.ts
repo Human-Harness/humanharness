@@ -1,6 +1,7 @@
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { Permissions } from "@humanharness/harness-sdk";
 import type { Effort, ModelChoice, ModelProfile } from "./models";
+import type { EngineDef } from "./types";
 
 export type ActivityKind = "read" | "edit" | "search" | "web" | "exec" | "other";
 
@@ -120,4 +121,24 @@ export interface Transport {
   /** Ends the current engine session; the next turn starts a new one. Never called during a turn. */
   endSession(): Promise<void>;
   close(): Promise<void>;
+}
+
+/** What an engine can do beyond a turn, for policies to ask (spec §7.2). */
+export interface Capabilities {
+  /** A new session can start as a copy of another (a warm prefix). */
+  forkSession: boolean;
+  /** The engine keeps its own memory across sessions. */
+  nativeMemory: boolean;
+}
+
+/**
+ * Everything engine-specific the app needs beyond the definition (spec §4.2). It is given the definition rather
+ * than holding one, so a test's copy of a definition is read as given.
+ */
+export interface EngineAdapter {
+  capabilities: Capabilities;
+  /** The engine's CLI before the app looks it up on PATH: [binary, ...args]. */
+  command(engine: EngineDef): string[];
+  /** A transport for `engine`; the adapter adds its own fields to the common options. */
+  createTransport(engine: EngineDef, options: CommonOptions): Transport;
 }

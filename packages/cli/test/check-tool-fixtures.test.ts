@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { checkCommand, checkHarness } from "../src/check";
 import { initHarness } from "../src/init";
 import { TOOL_P12_NOTE } from "../src/tool-host-node";
-import { CORE, memoryIo, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryIo, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-tool-fixtures-");
 afterAll(cleanup);
@@ -98,6 +98,8 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
   it("D0: no tools, no fixture findings", { timeout: 60_000 }, async () => {
     const dir = path.join(root, `t${++n}`);
     await initHarness({ dir, core: CORE, install: false });
+    // The template without its example tool (Task 12): a harness that declares no tools.
+    dropExampleTool(dir);
     const { code, out, err } = await check(dir);
     // The template's check output, recorded before this task: byte for byte.
     expect(out).toBe("No problems found.\n");

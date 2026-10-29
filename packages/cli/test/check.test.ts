@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type CheckResult, checkHarness, findBrand, formatFindings } from "../src/check";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
+import { TOOL_P12_NOTE } from "../src/tool-host-node";
 import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-");
@@ -371,7 +372,8 @@ describe("humanharness check", () => {
   it("says so when there is nothing to report, with exit code 0", async () => {
     const m = memoryIo(await fixture());
     expect(await main(["check"], m.io)).toBe(0);
-    expect(m.out()).toBe("No problems found.\n");
+    // The template has an example tool with a fixture: check runs it after the note.
+    expect(m.out()).toBe(`${TOOL_P12_NOTE}\nNo problems found.\n`);
   });
 
   it("lists the findings and exits with 1 on errors; --harness points at another folder", async () => {

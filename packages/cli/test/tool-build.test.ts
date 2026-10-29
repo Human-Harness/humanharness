@@ -9,7 +9,7 @@ import { type DevSpawn, devCommand } from "../src/dev";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { buildTools } from "../src/tool-build";
-import { CORE, memoryIo, memoryStream, read, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryIo, memoryStream, read, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-tool-build-");
 afterAll(cleanup);
@@ -29,10 +29,11 @@ export default defineTool({
 });
 `;
 
-/** A harness repo from the template; `tools` is added to its manifest (none: D0) and each file written. */
+/** A harness repo from the template without its example tool; `tools` is added to its manifest (none: D0) and each file written. */
 async function harness(tools?: Record<string, string>): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  dropExampleTool(dir);
   if (tools) {
     const map = Object.fromEntries(Object.keys(tools).map((id) => [id, `./tools/${id}.ts`]));
     replaceIn(dir, "harness.config.ts", "  actions: {\n", `  tools: ${JSON.stringify(map)},\n  actions: {\n`);

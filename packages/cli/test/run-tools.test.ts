@@ -9,7 +9,7 @@ import { initHarness } from "../src/init";
 import { runTask } from "../src/run";
 import { TOOL_P12_NOTE } from "../src/tool-host-node";
 import type { ToolRunDeps } from "../src/tool-run";
-import { CORE, memoryStream, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryStream, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-tools-");
 afterAll(cleanup);
@@ -94,6 +94,8 @@ describe("tools in a terminal run (tools spec §6, §12)", () => {
   it("D0: a harness without tools starts no tool host", { timeout: 60_000 }, async () => {
     const dir = path.join(root, "notes");
     await initHarness({ dir, core: CORE, install: false });
+    // The template without its example tool (Task 12): a harness that declares no tools.
+    dropExampleTool(dir);
     const fake = fakeDeps();
     const script: ClaudeScript = {
       steps: [...claudeTextLines("Done."), result],

@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "jsx": "react-jsx"
   },
-  "include": ["harness.config.ts", "ui"]
+  "include": ["harness.config.ts", "ui", "tools"]
 }

@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkCommand, checkHarness } from "../src/check";
 import { initHarness } from "../src/init";
-import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryIo, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-mock-tools-");
 afterAll(cleanup);
@@ -28,13 +28,14 @@ const RECIPE = `[{ tool: "pr-ci", as: "ci" }, ${AI}, { tool: "apply-triage", inp
 const recording = (turns: unknown[]) => ({ version: 1, action: "example", match: "# Task: example", turns });
 
 /**
- * The template, with (unless `tools` is false) the tools `pr-ci` (returns), `apply-triage` (`agent: "none"`) and
+ * The template without its example tool, with (unless `tools` is false) the tools `pr-ci` (returns), `apply-triage` (`agent: "none"`) and
  * `open-prs`, and the jobs `sync` (`steps`) and `plain` (a recipe with no AI step). `mock` files are written under
  * `mock/` (an object as JSON, a string as is).
  */
 async function fixture(o: { tools?: boolean; steps?: string; mock?: Record<string, unknown> } = {}): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  dropExampleTool(dir);
   if (o.tools !== false) {
     replaceIn(dir, "harness.config.ts", "  actions: {\n", '  tools: { "pr-ci": "./tools/pr-ci.ts", "apply-triage": "./tools/apply-triage.ts", "open-prs": "./tools/open-prs.ts" },\n  actions: {\n');
     replaceIn(

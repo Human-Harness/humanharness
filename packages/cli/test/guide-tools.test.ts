@@ -123,7 +123,7 @@ describe("D0: a HARNESS.md written before the Mechanical work section", () => {
     const without = path.join(root, "without");
     await initHarness({ dir: withIt, core: CORE, install: false });
     await initHarness({ dir: without, core: CORE, install: false });
-    replaceIn(without, "HARNESS.md", "## Mechanical work\n\n| Moment | Code or AI | Tool or step | Why |\n|---|---|---|---|\n\n", "");
+    replaceIn(without, "HARNESS.md", "## Mechanical work\n\n| Moment | Code or AI | Tool or step | Why |\n|---|---|---|---|\n| (example) counting words | Code | word-count | the agent doesn't spend a turn counting |\n\n", "");
     expect(parseHarnessMd(read(without, "HARNESS.md")).sections.has("Mechanical work")).toBe(false);
     const strip = (r: Awaited<ReturnType<typeof checkHarness>>) => r.findings.map((f) => ({ ...f, line: undefined }));
     expect(strip(await checkHarness(without))).toEqual(strip(await checkHarness(withIt)));

@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { initHarness } from "../src/init";
 import { USAGE, exitsWhenDone, main } from "../src/main";
 import { TOOL_USAGE } from "../src/tool-command";
-import { CORE, memoryIo, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryIo, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-tool-cli-");
 afterAll(cleanup);
@@ -12,6 +12,8 @@ describe("the tool command", () => {
   it("D0: tool refuses without tools; USAGE lists tool once", { timeout: 60_000 }, async () => {
     const dir = path.join(root, "plain");
     await initHarness({ dir, core: CORE, install: false });
+    // The template without its example tool (Task 12): a harness that declares no tools.
+    dropExampleTool(dir);
     const m = memoryIo(dir);
     expect(await main(["tool", "test"], m.io)).toBe(1);
     expect(m.err()).toBe("This harness declares no tools.\n");

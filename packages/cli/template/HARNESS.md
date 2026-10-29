@@ -27,6 +27,7 @@ The living decision log of this harness. The `/new-harness` guide fills each sec
 
 | Moment | Code or AI | Tool or step | Why |
 |---|---|---|---|
+| (example) counting words | Code | word-count | the agent doesn't spend a turn counting |
 
 ## Context
 

@@ -73,15 +73,13 @@ async function run(harnessDir: string) {
 }
 
 describe("run: pre-steps (tools Decision 18)", () => {
-  it("prints 'Pre-steps are not run in the terminal yet.' once before the first turn, and the first message has no Prepared data", { timeout: 60_000 }, async () => {
+  it("runs the pre-steps and prints no notice", { timeout: 60_000 }, async () => {
+    // Slice 5 Task 8: the terminal runs pre-steps, so slice 3's notice is gone and the first message has the section.
     const { text, first } = await run(await fixture(true));
-    expect(text.split(NOTICE)).toHaveLength(2);
-    expect(text.indexOf(NOTICE)).toBeGreaterThan(-1);
-    expect(text.indexOf(NOTICE)).toBeLessThan(text.indexOf("First turn here."));
-    expect(text).toContain(`${NOTICE}\n`);
+    expect(text).not.toContain(NOTICE);
     expect(first).toContain("# Task: example");
-    expect(first).not.toContain("Prepared data");
-    expect(first).not.toContain("card one");
+    expect(first).toContain("## Prepared data");
+    expect(first).toContain("card one");
   });
 
   it("D0: an action without pre prints nothing new", { timeout: 60_000 }, async () => {

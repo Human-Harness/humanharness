@@ -15,6 +15,9 @@ export default defineHarness({
   blocks: {},
   actions: {
     look: { label: "Look", prompt: "./agent/tasks/look.md", cost: "light" },
+    // Task 8: a terminal run's pre-steps (study) and a required one that fails (stuck).
+    study: { label: "Study", prompt: "./agent/tasks/study.md", cost: "light", pre: [{ tool: "echo", args: { a: 1 }, as: "one" }] },
+    stuck: { label: "Stuck", prompt: "./agent/tasks/stuck.md", cost: "light", pre: [{ tool: "wait", required: true }] },
   },
   path: ["look"],
   tools: {

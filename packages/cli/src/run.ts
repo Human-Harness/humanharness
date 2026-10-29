@@ -22,6 +22,8 @@ import {
   blockToolName,
   dataCollections,
   hasModes,
+  hasPre,
+  hasTools,
   inputBlocks,
   inputSpecs,
   interviewCollections,
@@ -79,7 +81,9 @@ import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";
 import { Recorder, briefMatch } from "./record";
 import { type RunReport, UsageTally, formatReport } from "./report";
+import { type RunTools, readyTools, startRunTools } from "./run-tools";
 import { TerminalView, errorMessage } from "./terminal";
+import { type ToolRunDeps, liveToolRunDeps } from "./tool-run";
 
 export interface RunOptions {
   harnessDir: string;
@@ -112,6 +116,8 @@ export interface RunOptions {
   minuteMs?: number;
   /** Tests: where the readiness check looks (default: the official CLIs and `~/.humanharness/engines.json`). */
   readiness?: { deps: CommandDeps; shared: SharedConfigStore };
+  /** Tests: the tools' fetch, runner, key prompt, host check and resolver (default: the live ones, as `tool run`). */
+  toolDeps?: ToolRunDeps;
 }
 
 /** A source of Ctrl-C presses; `on` returns the function that removes the listener. */
@@ -241,6 +247,12 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     throw new CliError(`${path.relative(process.cwd(), mockFile(o.action)) || mockFile(o.action)} already exists. Delete it, or pass --force to overwrite it.`);
   }
 
+  // A harness with tools (tools spec §12): the P12 note, the build and the keys, before the engine or the folder. None
+  // without tools (D0).
+  const toolDeps = hasTools(harness) ? (o.toolDeps ?? liveToolRunDeps(o.input, o.output)) : undefined;
+  const ready = toolDeps ? await readyTools(harness, o.action, o.output, toolDeps) : undefined;
+  let toolsRun: RunTools | undefined;
+
   const command =
     o.engineCommand ??
     (await readyEngine(engine, o.readiness?.deps ?? createCommandDeps(process.execPath), o.readiness?.shared ?? new SharedConfigStore(sharedConfigDir())));
@@ -354,6 +366,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       ...(canReview ? { review: (request: unknown) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request) } : {}),
       // The harness's settings, as the app writes them (harness-settings spec §5). Absent without settings (D0).
       ...(harness.settings ? { instructionSettings: () => instructionSettings(harness.settings!) } : {}),
+      // The core `tools` server, as the app passes it: only with tools on and a tool the agent may call (D0).
+      ...(toolsRun?.workspace ? { tools: toolsRun.workspace } : {}),
     }),
   );
   const turns = new TurnController({
@@ -421,7 +435,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       if (v.current) taskAction = v.current.action;
       if (v.current?.context) tally.context(v.current.context.used);
     },
-    emit: (e) => view.event(e),
+    // A refused start's line is the run's own error (below), not the window's card.
+    emit: (e) => (toolsRun?.failed !== undefined && e.type === "done" && !e.ok && e.error.code === "prepare-failed" ? undefined : view.event(e)),
     profileFor: async (id, floor) =>
       resolveProfile({
         engine: engine.id,
@@ -454,6 +469,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     ...(o.minuteMs ? { minuteMs: o.minuteMs } : {}),
     // As the app wires them: an interview's task gets the core's interview section; undefined without one (setup-steps D0).
     ...(Object.keys(interviews).length > 0 ? { interviews } : {}),
+    // An action's pre-steps, as the app wires them: only with tools and an action that declares them (D0).
+    ...(ready && hasPre(harness) ? { prepare: (p: { action: string; scope: string; task: string; phase?: string }) => toolsRun!.prepare(p) } : {}),
   });
 
   // Ctrl-C during an operation cancels its turn; at the prompt it closes the task like q, and once a close was
@@ -489,12 +506,27 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       return next.done ? null : next.value;
     };
     try {
+      if (ready && toolDeps) {
+        toolsRun = await startRunTools({
+          harness,
+          ready,
+          deps: toolDeps,
+          folder,
+          references: references.map((r) => ({ id: r.id, path: r.path })),
+          dataStore,
+          scopes,
+          usageLog,
+          engine: engine.id,
+          tasks,
+          line: (text) => view.toolLine(text),
+        });
+      }
       // A task an earlier run left open in this folder can't continue: its session is gone.
       await tasks.interrupt();
       const scope = scoped ? await runScope(folder, actionScope(harness, o.action) === "required", (await store.load()).open) : undefined;
-      // The terminal has no tool host yet (tools Decision 18): the first message goes without the prepared data.
-      if (action.pre?.length) out.write("Pre-steps are not run in the terminal yet.\n");
       await tasks.start(o.action, undefined, scope, o.mode, o.time !== undefined ? { timeBox: o.time } : {});
+      // A required pre-step failed: the task didn't start (tools spec §6).
+      if (toolsRun?.failed !== undefined) throw new CliError(`Couldn't prepare this task: ${toolsRun.failed}`);
       let proposalKey: string | undefined;
       for (;;) {
         const current = (await store.load()).current;
@@ -646,6 +678,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       await turns.flush();
       const rt = await runtime.peek()?.catch(() => null);
       await rt?.close();
+      await toolsRun?.close();
     }
     if (recorder) {
       let written = 0;

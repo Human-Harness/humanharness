@@ -451,6 +451,7 @@ const manifestSchema = z.object({
         seen.add(id);
         if (!m.secrets.some((x) => x.id === id)) issue(["secrets"], `"${id}" is not declared in secrets`);
       }
+      if (s.test !== undefined && !Object.hasOwn(m.tools ?? {}, s.test)) issue(["test"], `"${s.test}" is not a tool of this harness`);
       return;
     }
     if (s.writes !== undefined && !Object.hasOwn(m.data, s.writes)) issue(["writes"], `Collection "${s.writes}" is not declared in data`);

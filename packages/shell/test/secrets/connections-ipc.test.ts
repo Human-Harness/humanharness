@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONNECTIONS_IPC_CHANNELS, registerConnectionsIpc } from "../../src/main/secrets/connections-ipc";
+import { CONNECTIONS_IPC_CHANNELS, CONNECTIONS_TEST_CHANNEL, registerConnectionsIpc } from "../../src/main/secrets/connections-ipc";
 
 const VIEW = { connections: [{ id: "jira", label: "Jira API token", set: false }] };
 
@@ -50,5 +50,30 @@ describe("connections IPC (tools spec §9)", () => {
     expect(await w.call("hh:connectionsSet", "jira", "tok-123456789")).toEqual(WRONG);
     expect(await w.call("hh:connectionsDelete", "jira")).toEqual(WRONG);
     expect(await w.call("hh:connectionsGet")).toBeNull();
+  });
+});
+
+describe("hh:connectionsTest (tools spec §9, slice 2)", () => {
+  it("D0: registered only when a connect step names a test", () => {
+    expect(CONNECTIONS_TEST_CHANNEL).toBe("hh:connectionsTest");
+    expect(wire().handlers.has(CONNECTIONS_TEST_CHANNEL)).toBe(false);
+    expect(wire({ testable: false, test: async () => ({ ok: true }) }).handlers.has(CONNECTIONS_TEST_CHANNEL)).toBe(false);
+    const w = wire({ testable: true, test: async () => ({ ok: true }) });
+    expect([...w.handlers.keys()].sort()).toEqual([...CONNECTIONS_IPC_CHANNELS, CONNECTIONS_TEST_CHANNEL].sort());
+  });
+
+  it("passes a well-formed id to the controller and its answer back", async () => {
+    const calls: unknown[] = [];
+    const w = wire({ testable: true, test: async (id: string) => (calls.push(id), { ok: false, message: "401 Unauthorized" }) });
+    expect(await w.call(CONNECTIONS_TEST_CHANNEL, "jira")).toEqual({ ok: false, message: "401 Unauthorized" });
+    expect(calls).toEqual(["jira"]);
+  });
+
+  it("refuses a malformed id and answers a fixed refusal when the controller rejects", async () => {
+    const calls: unknown[] = [];
+    const w = wire({ testable: true, test: async (id: string) => (calls.push(id), { ok: true }) });
+    for (const id of [42, undefined, "Jira", "../jira", "a".repeat(41)]) expect(await w.call(CONNECTIONS_TEST_CHANNEL, id)).toEqual(INVALID);
+    expect(calls).toEqual([]);
+    expect(await wire({ testable: true, test: reject }).call(CONNECTIONS_TEST_CHANNEL, "jira")).toEqual(WRONG);
   });
 });

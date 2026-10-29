@@ -1856,6 +1856,16 @@ export interface ConnectionView {
   label: string;
   help?: string;
   set: boolean;
+  /** A connect step names a test for this key: Test connection is offered (slice 2). Absent otherwise (D0). */
+  test?: true;
+  /** The last Test connection's outcome; absent until one ran, and again once the key is replaced or deleted. */
+  lastTest?: ConnectionLastTest;
+}
+/** When the last test ran, whether it worked, and, when it didn't, the error with the stored keys hidden. */
+export interface ConnectionLastTest {
+  at: string;
+  ok: boolean;
+  message?: string;
 }
 export interface ConnectionsView {
   connections: ConnectionView[];
@@ -1871,6 +1881,8 @@ export interface ConnectionsClient {
   /** Stores a key (at most 8,192 characters once trimmed); its value never comes back. */
   set(id: string, value: string): Promise<ConnectionResult>;
   delete(id: string): Promise<ConnectionResult>;
+  /** Runs the key's test tool once (only for a key whose view says `test`); ok, or the error to show. */
+  test(id: string): Promise<ConnectionResult>;
   onChange(listener: (view: ConnectionsView) => void): () => void;
 }
 export type { ToolCallView } from "@humanharness/runtime";

@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AppState, ConnectionsView } from "../src/client";
+import type { AppState, ConnectionsView, SetupStepView } from "../src/client";
+import { ConnectStep } from "../src/connections/ConnectStep";
 import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -264,5 +265,77 @@ describe("Settings › Connections (tools spec §9)", () => {
     await act(async () => answers.at(-1)!(now));
     await act(async () => answers.slice(0, -1).forEach((answer) => answer(old)));
     expect(within(row("GitHub token")).getByText("Set")).toBeTruthy();
+  });
+});
+
+describe("Test connection (tools spec §9, slice 2)", () => {
+  const test = (label: string) => within(row(label)).queryByRole("button", { name: "Test connection" }) as HTMLButtonElement | null;
+
+  it("no Test button when no connect step names a test for that secret", async () => {
+    const c = client();
+    c.connectionsTests = { jira: { ok: true } };
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    expect(test("Jira API token")).toBeTruthy();
+    expect(test("GitHub token")).toBeNull();
+    // D0: no test anywhere, no button anywhere.
+    cleanup();
+    await renderIn("en", <Sheet c={client()} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("Test shows Works or the error under the row", async () => {
+    const c = client();
+    c.connectionsTests = { jira: { ok: true } };
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    fireEvent.click(test("Jira API token")!);
+    expect((await within(row("Jira API token")).findByRole("status")).textContent).toBe("Works");
+    expect(c.connectionsCalls).toEqual([["test", "jira"]]);
+
+    c.connectionsTests = { jira: { ok: false, message: "Jira answered 401 Unauthorized" } };
+    fireEvent.click(test("Jira API token")!);
+    await waitFor(() => expect(within(row("Jira API token")).getByRole("status").textContent).toBe("Didn't work: Jira answered 401 Unauthorized"));
+    // Under its own row only; the sheet's alert is for refused saves.
+    expect(within(row("GitHub token")).queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("the last test shows before any click, and goes once the key is replaced", async () => {
+    const c = client();
+    c.connectionsTests = { jira: { ok: true } };
+    c.connectionsLastTest = { jira: { at: "2026-10-29T10:00:00.000Z", ok: false, message: "Jira answered 401" } };
+    await renderIn("en", <Sheet c={c} />);
+    expect((await within(await screen.findByRole("group", { name: "Jira API token" })).findByRole("status")).textContent).toBe("Didn't work: Jira answered 401");
+    fireEvent.change(field("Jira API token"), { target: { value: "tok-123456789" } });
+    fireEvent.click(within(row("Jira API token")).getByRole("button", { name: "Replace" }));
+    await waitFor(() => expect(within(row("Jira API token")).queryByRole("status")).toBeNull());
+  });
+
+  it("Test is disabled while it runs, and a test that throws says it couldn't run", async () => {
+    const c = client();
+    c.connectionsTests = { jira: { ok: true } };
+    let fail!: (e: Error) => void;
+    vi.spyOn(c.connections, "test").mockImplementation(() => new Promise((_, reject) => (fail = reject)));
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    fireEvent.click(test("Jira API token")!);
+    expect(test("Jira API token")!.disabled).toBe(true);
+    await act(async () => fail(new Error("ipc gone /Users/me")));
+    await waitFor(() => expect(within(row("Jira API token")).getByRole("status").textContent).toBe("Didn't work: The test couldn't run."));
+    expect(test("Jira API token")!.disabled).toBe(false);
+  });
+
+  it("the connect step offers Test for its keys that have one", async () => {
+    const c = client();
+    c.connectionsTests = { jira: { ok: true } };
+    const step: SetupStepView = { id: "keys", kind: "connect", label: "Connect", required: false, secrets: [{ id: "jira", label: "Jira API token" }, { id: "gh", label: "GitHub token" }] };
+    await renderIn("en", <ConnectStep client={c} step={step} onReady={() => {}} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    expect(test("GitHub token")).toBeNull();
+    fireEvent.click(test("Jira API token")!);
+    expect((await within(row("Jira API token")).findByRole("status")).textContent).toBe("Works");
   });
 });

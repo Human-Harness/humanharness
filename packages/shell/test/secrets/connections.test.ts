@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ConnectionsController, missingSecretMessage } from "../../src/main/secrets/connections";
+import { ConnectionsController, connectTests, missingSecretMessage } from "../../src/main/secrets/connections";
 import { SecretStore } from "../../src/main/secrets/secret-store";
 
 /** Reversible, never the Keychain. */
@@ -123,5 +123,147 @@ describe("ConnectionsController (tools spec §9: Settings › Connections)", () 
 
   it("missingSecretMessage names the label and where to set it", () => {
     expect(missingSecretMessage("Jira API token")).toBe("Jira API token is not set — Settings › Connections");
+  });
+});
+
+describe("Test connection (tools spec §9, slice 2)", () => {
+  type Answer = { ok: true; result: unknown } | { ok: false; error: string };
+  async function testing(answer: (tool: string) => Promise<Answer>) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hh-conn-"));
+    const store = new SecretStore(path.join(dir, "secrets"), crypto);
+    const file = path.join(dir, "connections.json");
+    const runs: string[] = [];
+    const changes: { connections: Record<string, unknown>[] }[] = [];
+    const logs: unknown[][] = [];
+    const c = new ConnectionsController({
+      secrets,
+      store,
+      changed: (v) => changes.push(v as never),
+      log: (...a) => void logs.push(a),
+      test: {
+        steps: [{ secrets: ["jira"], tool: "jira-check" }],
+        file,
+        run: (tool) => (runs.push(tool), answer(tool)),
+        now: () => new Date("2026-10-29T10:00:00.000Z"),
+      },
+    });
+    return { c, store, file, runs, changes, logs };
+  }
+
+  it("connectTests lists each connect step that names a test, and nothing else", () => {
+    expect(
+      connectTests([
+        { kind: "form", id: "a" },
+        { kind: "connect", id: "b", secrets: ["jira"], test: "jira-check" },
+        { kind: "connect", id: "c", secrets: ["gh"] },
+      ] as never),
+    ).toEqual([{ secrets: ["jira"], tool: "jira-check" }]);
+    expect(connectTests(undefined)).toEqual([]);
+  });
+
+  it("test runs the tool as ui with {} and keeps { at, ok, message? } per secret in connections.json (0600), never a value", async () => {
+    const t = await testing(async () => ({ ok: true, result: { user: "me" } }));
+    await t.c.set("jira", "tok-SECRET-123456");
+    expect(await t.c.test("jira")).toEqual({ ok: true });
+    expect(t.runs).toEqual(["jira-check"]);
+    expect(JSON.parse(await fs.readFile(t.file, "utf8"))).toEqual({ tests: { jira: { at: "2026-10-29T10:00:00.000Z", ok: true } } });
+    expect((await fs.stat(t.file)).mode & 0o777).toBe(0o600);
+    expect(await fs.readFile(t.file, "utf8")).not.toContain("tok-SECRET-123456");
+
+    // A failure keeps the tool's error, with every stored key hidden and cut to 300 characters.
+    const failing = await testing(async () => ({ ok: false, error: `401 for tok-SECRET-123456 ${"x".repeat(400)}` }));
+    await failing.c.set("jira", "tok-SECRET-123456");
+    const answer = await failing.c.test("jira");
+    expect(answer.ok).toBe(false);
+    const stored = JSON.parse(await fs.readFile(failing.file, "utf8")).tests.jira;
+    expect(stored.ok).toBe(false);
+    expect([...stored.message].length).toBeLessThanOrEqual(300);
+    expect(stored.message).toMatch(/^401 for /);
+    expect(answer).toEqual({ ok: false, message: stored.message });
+    const all = JSON.stringify([answer, stored, failing.changes, failing.logs, await fs.readFile(failing.file, "utf8")]);
+    expect(all).not.toContain("tok-SECRET-123456");
+  });
+
+  it("a run that throws keeps a fixed text, logged, never its error", async () => {
+    const t = await testing(async () => {
+      throw new Error("at /Users/me/secret/path.ts:1");
+    });
+    expect(await t.c.test("jira")).toEqual({ ok: false, message: "The test couldn't run" });
+    expect(JSON.parse(await fs.readFile(t.file, "utf8")).tests.jira).toMatchObject({ ok: false, message: "The test couldn't run" });
+    expect(t.logs).toHaveLength(1);
+  });
+
+  it("a secret's test state shows in the view as lastTest", async () => {
+    const t = await testing(async () => ({ ok: false, error: "Jira API token is not set — Settings › Connections" }));
+    expect((await t.c.view()).connections).toEqual([
+      { id: "jira", label: "Jira API token", help: "Create one at id.atlassian.com.", set: false, test: true },
+      { id: "gh", label: "GitHub token", set: false },
+    ]);
+    await t.c.test("jira");
+    const lastTest = { at: "2026-10-29T10:00:00.000Z", ok: false, message: "Jira API token is not set — Settings › Connections" };
+    expect((await t.c.view()).connections[0]).toMatchObject({ test: true, lastTest });
+    // Pushed to the window.
+    expect(t.changes.at(-1)!.connections[0]).toMatchObject({ lastTest });
+    // Kept across a new controller (the file is the record).
+    const again = new ConnectionsController({
+      secrets,
+      store: t.store,
+      changed: () => {},
+      test: { steps: [{ secrets: ["jira"], tool: "jira-check" }], file: t.file, run: async () => ({ ok: true, result: null }) },
+    });
+    expect((await again.view()).connections[0]).toMatchObject({ lastTest });
+  });
+
+  it("storing or deleting the key forgets its last test", async () => {
+    const t = await testing(async () => ({ ok: true, result: null }));
+    await t.c.test("jira");
+    expect((await t.c.view()).connections[0]).toHaveProperty("lastTest");
+    await t.c.set("jira", "tok-123456789");
+    expect((await t.c.view()).connections[0]).not.toHaveProperty("lastTest");
+    await t.c.test("jira");
+    await t.c.delete("jira");
+    expect((await t.c.view()).connections[0]).not.toHaveProperty("lastTest");
+  });
+
+  it("a key with no test, an undeclared key or a prototype name is refused and runs nothing", async () => {
+    const t = await testing(async () => ({ ok: true, result: null }));
+    expect(await t.c.test("gh")).toEqual({ ok: false, message: "This key has no test" });
+    expect(await t.c.test("other")).toEqual({ ok: false, message: "This harness declares no such key" });
+    expect(await t.c.test("constructor")).toEqual({ ok: false, message: "This harness declares no such key" });
+    expect(t.runs).toEqual([]);
+    await expect(fs.stat(t.file)).rejects.toThrow();
+  });
+
+  it("a connections.json that is not ours (bad JSON, a link, undeclared ids, bad fields) reads as no tests", async () => {
+    const t = await testing(async () => ({ ok: true, result: null }));
+    await fs.writeFile(t.file, "{nope");
+    expect((await t.c.view()).connections[0]).not.toHaveProperty("lastTest");
+    await fs.writeFile(t.file, '{"tests":{"gh":{"at":"x","ok":true},"jira":{"at":1,"ok":"yes"},"__proto__":{"at":"x","ok":true}}}');
+    expect((await t.c.view()).connections.map((c) => "lastTest" in c)).toEqual([false, false]);
+    await fs.rm(t.file);
+    const elsewhere = path.join(path.dirname(t.file), "elsewhere.json");
+    await fs.writeFile(elsewhere, JSON.stringify({ tests: { jira: { at: "2026-10-29T10:00:00.000Z", ok: true } } }));
+    await fs.symlink(elsewhere, t.file);
+    expect((await t.c.view()).connections[0]).not.toHaveProperty("lastTest");
+    // Nor is it written through.
+    await t.c.test("jira");
+    expect(JSON.parse(await fs.readFile(elsewhere, "utf8")).tests.jira.at).toBe("2026-10-29T10:00:00.000Z");
+  });
+
+  it("D0: without a test tool there is no Test and no connections.json", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hh-conn-"));
+    const store = new SecretStore(path.join(dir, "secrets"), crypto);
+    for (const test of [undefined, { steps: [], file: path.join(dir, "connections.json"), run: async () => ({ ok: true as const, result: null }) }]) {
+      const c = new ConnectionsController({ secrets, store, changed: () => {}, ...(test ? { test } : {}) });
+      expect(c.testable).toBe(false);
+      await c.set("jira", "tok-123456789");
+      await c.delete("jira");
+      expect((await c.view()).connections).toEqual([
+        { id: "jira", label: "Jira API token", help: "Create one at id.atlassian.com.", set: false },
+        { id: "gh", label: "GitHub token", set: false },
+      ]);
+      expect(await c.test("jira")).toEqual({ ok: false, message: "This key has no test" });
+    }
+    expect(await fs.readdir(dir)).toEqual(["secrets"]);
   });
 });

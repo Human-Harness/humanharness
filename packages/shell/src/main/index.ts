@@ -190,7 +190,7 @@ import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
-import { ConnectionsController } from "./secrets/connections";
+import { ConnectionsController, connectTests } from "./secrets/connections";
 import { registerConnectionsIpc } from "./secrets/connections-ipc";
 import { testCrypto } from "./secrets/test-crypto";
 import { isPublicHost } from "./material-fetch";
@@ -354,10 +354,23 @@ const secretCrypto = () => (hooks.fakeSecrets ? testCrypto() : safeStorageCrypto
 let connections_: ConnectionsController | undefined;
 /** Settings › Connections (tools spec §9): only when the harness declares secrets, so the store exists. Built once. */
 function connections(): ConnectionsController {
+  const steps = connectTests(harness.setup);
   connections_ ??= new ConnectionsController({
     secrets: harness.secrets!,
     store: secretStore()!,
     changed: (view) => sendToWindow("hh:connectionsChange", view),
+    // Test connection (slice 2): only when a connect step names a test, whose tool the manifest declares (D0).
+    ...(steps.length > 0
+      ? {
+          test: {
+            steps,
+            file: path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "connections.json"),
+            // Built after this controller: looked up at each test. As the UI, with {}, in no scope.
+            run: (tool: string) =>
+              toolsHost ? toolsHost.registry.call({ tool, args: {}, caller: "ui", scope: null }) : Promise.resolve({ ok: false as const, error: "Tools are off" }),
+          },
+        }
+      : {}),
   });
   return connections_;
 }

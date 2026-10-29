@@ -260,6 +260,7 @@ const client: HarnessClient = {
     get: () => ipcRenderer.invoke("hh:connectionsGet"),
     set: (id, value) => ipcRenderer.invoke("hh:connectionsSet", id, value),
     delete: (id) => ipcRenderer.invoke("hh:connectionsDelete", id),
+    test: (id) => ipcRenderer.invoke("hh:connectionsTest", id),
     onChange: (listener) => subscribe<ConnectionsView>("hh:connectionsChange", listener),
   },
   // Main registers these only when the harness declares tools (D0). The page names a tool and its arguments, never a

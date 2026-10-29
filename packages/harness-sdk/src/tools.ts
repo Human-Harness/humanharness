@@ -102,6 +102,8 @@ export interface ToolsManifest {
   data: Record<string, unknown>;
   secrets?: readonly { id: string }[];
   tools?: Record<string, string>;
+  /** Setup steps: a connect step's `test` names a tool run with {} (tools spec §9). */
+  setup?: readonly { kind: string; test?: string }[];
 }
 /** A problem of one tool: its id and an English line that starts with it. */
 export interface ToolProblem {
@@ -140,6 +142,8 @@ function usesProblems(m: ToolsManifest, uses: ToolMeta["uses"]): string[] {
 export function toolProblems(m: ToolsManifest, json: ToolsJson): ToolProblem[] {
   const out: ToolProblem[] = [];
   const declared = Object.keys(m.tools ?? {});
+  // "Test connection" runs these with {} (tools spec §9).
+  const tests = new Set((m.setup ?? []).flatMap((s) => (s.kind === "connect" && s.test !== undefined ? [s.test] : [])));
   for (const id of declared) if (!Object.hasOwn(json.tools, id)) out.push({ tool: id, message: `${id}: not built (run humanharness build)` });
   for (const [id, t] of Object.entries(json.tools)) {
     const add = (message: string) => out.push({ tool: id, message: `${id}: ${message}` });
@@ -154,6 +158,8 @@ export function toolProblems(m: ToolsManifest, json: ToolsJson): ToolProblem[] {
     if (t.agent === "call" && (text.length < TOOL_DESCRIPTION_MIN || text === id)) {
       add(`an agent: call tool needs a description of at least ${TOOL_DESCRIPTION_MIN} characters that says what it does`);
     }
+    const required = t.params.required;
+    if (tests.has(id) && Array.isArray(required) && required.length > 0) add("a connect step's test tool can't have required params");
   }
   return out;
 }

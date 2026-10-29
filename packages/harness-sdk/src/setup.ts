@@ -51,8 +51,10 @@ export const setupStepSchema = z.discriminatedUnion("kind", [
   z.object({
     ...common,
     kind: z.literal("connect"),
-    /** The declared secrets this step asks for (tools spec §9). A test tool comes with slice 2. */
+    /** The declared secrets this step asks for (tools spec §9). */
     secrets: z.array(z.string().regex(PLUGIN_LOCAL_ID)).min(1).max(SECRETS_MAX),
+    /** A tool of this harness that takes no required params: "Test connection" runs it once with {} (tools spec §9). */
+    test: z.string().min(1).optional(),
   }),
 ]);
 export type HarnessSetupStep = z.output<typeof setupStepSchema>;

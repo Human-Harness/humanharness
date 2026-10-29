@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SECRETS_MAX, defineHarness, hasSecrets, setupStepSchema } from "../src";
+import { SECRETS_MAX, type ToolMeta, defineHarness, hasSecrets, setupStepSchema, toolProblems } from "../src";
 
 const base = {
   id: "t", name: "T", core: "^0.1.0", engines: ["claude"], folder: { suggested: "Documents/T" }, instructions: "./AGENTS.md",
@@ -83,5 +83,45 @@ describe("the connect setup step (tools spec §9)", () => {
 
   it("a connect step needs secrets in the manifest", () => {
     expect(() => defineHarness({ ...base, setup: [connect] })).toThrow(/declare secrets/);
+  });
+});
+
+describe("a connect step's test (tools spec §9, slice 2)", () => {
+  const connect = { id: "jira", kind: "connect" as const, label: "Connect Jira", secrets: ["jira"] };
+  const withTools = { ...base, secrets: [jira], tools: { "jira-check": "./tools/jira-check.ts" } };
+  const meta = (params: Record<string, unknown>): ToolMeta => ({
+    description: "Checks that the Jira key works.",
+    agent: "none",
+    uses: { secrets: ["jira"] },
+    params,
+    timeout: 30,
+    file: "tools/jira-check.js",
+  });
+
+  it("D0: a connect step without test parses as before", () => {
+    const h = defineHarness({ ...base, secrets: [jira], setup: [connect] });
+    expect(h.setup?.[0]).toEqual({ ...connect, required: false });
+  });
+
+  it("a connect step's test names a declared tool", () => {
+    const h = defineHarness({ ...withTools, setup: [{ ...connect, test: "jira-check" }] });
+    expect(h.setup?.[0]).toMatchObject({ kind: "connect", test: "jira-check" });
+    expect(() => defineHarness({ ...withTools, setup: [{ ...connect, test: "nope" }] })).toThrow(/\\"nope\\" is not a tool of this harness/);
+    expect(() => defineHarness({ ...base, secrets: [jira], setup: [{ ...connect, test: "jira-check" }] })).toThrow(/is not a tool of this harness/);
+    expect(() => defineHarness({ ...withTools, setup: [{ ...connect, test: "toString" }] })).toThrow(/is not a tool of this harness/);
+    expect(setupStepSchema.safeParse({ ...connect, test: "" }).success).toBe(false);
+  });
+
+  it("its tool takes no required params", () => {
+    const h = defineHarness({ ...withTools, setup: [{ ...connect, test: "jira-check" }] });
+    const problems = (params: Record<string, unknown>) =>
+      toolProblems(h, { version: 1, tools: { "jira-check": meta(params) } }).map((p) => p.message);
+    expect(problems({ type: "object", properties: { project: { type: "string" } } })).toEqual([]);
+    expect(problems({ type: "object", properties: { project: { type: "string" } }, required: ["project"] })).toEqual([
+      "jira-check: a connect step's test tool can't have required params",
+    ]);
+    // Not named by a connect step: required params are fine.
+    const plain = defineHarness({ ...withTools, setup: [connect] });
+    expect(toolProblems(plain, { version: 1, tools: { "jira-check": meta({ type: "object", properties: {}, required: ["x"] }) } })).toEqual([]);
   });
 });

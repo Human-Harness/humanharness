@@ -36,7 +36,11 @@ export type StepCallBase = Omit<ToolCall, "tool" | "args" | "inputs">;
 /** Earlier results by `as`: a value, or which tool failed to give it. */
 export type StepValues = Map<string, { ok: true; value: unknown } | { ok: false; tool: string }>;
 
-type StepOutcome = { ok: true; value: unknown } | { ok: false; error: string };
+/**
+ * One tool step's outcome. `summary` and `requestAi` are a job step's (slice 4, tools spec §7.3, §7.4): present only when
+ * a call's answer had them (a pre-step's never does).
+ */
+export type StepOutcome = { ok: true; value: unknown; summary?: string; requestAi?: { input: unknown } } | { ok: false; error: string; summary?: string };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -62,7 +66,9 @@ export async function runToolStep(r: StepRegistry, step: ToolStep, values: StepV
   }
   const one = async (args: Record<string, unknown>): Promise<StepOutcome> => {
     const a = await r.call({ ...base, tool: step.tool, args, ...(step.input ? { inputs } : {}) });
-    return a.ok ? { ok: true, value: a.result } : { ok: false, error: a.error };
+    const line = a.summary !== undefined ? { summary: a.summary } : {};
+    if (!a.ok) return { ok: false, error: a.error, ...line };
+    return { ok: true, value: a.result, ...line, ...(a.ok && a.requestAi ? { requestAi: a.requestAi } : {}) };
   };
   if (step.forEach === undefined) return one({ ...(step.args ?? {}) });
   const src = earlier(values, step.forEach);
@@ -74,6 +80,9 @@ export async function runToolStep(r: StepRegistry, step: ToolStep, values: StepV
   const props = meta?.params?.properties;
   const names = isObject(props) ? Object.keys(props) : [];
   const out: unknown[] = new Array(items.length);
+  // Each item's summary and request by its index: workers end out of order, item order decides (Decision 7).
+  const lines: (string | undefined)[] = new Array(items.length);
+  const asks: ({ input: unknown } | undefined)[] = new Array(items.length);
   let failed: string | null = null;
   let stop = false;
   let next = 0;
@@ -90,12 +99,20 @@ export async function runToolStep(r: StepRegistry, step: ToolStep, values: StepV
         stop = true;
         throw e;
       }
+      lines[i] = got.summary;
       if (!got.ok) failed ??= got.error;
-      else out[i] = got.value;
+      else {
+        out[i] = got.value;
+        asks[i] = got.requestAi;
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(FOR_EACH_PARALLEL, items.length) }, worker));
-  return failed !== null ? { ok: false, error: failed } : { ok: true, value: out };
+  const last = lines.findLast((l) => l !== undefined);
+  const line = last !== undefined ? { summary: last } : {};
+  if (failed !== null) return { ok: false, error: failed, ...line };
+  const ask = asks.find((x) => x !== undefined);
+  return { ok: true, value: out, ...line, ...(ask ? { requestAi: ask } : {}) };
 }
 
 /** An action's pre-steps (tools spec §6), in order, before its session opens. A failed step is a result. */

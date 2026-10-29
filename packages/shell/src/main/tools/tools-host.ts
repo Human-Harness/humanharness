@@ -311,8 +311,8 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
     broker: (tool) => {
       const b = brokerOf(tool);
       return {
-        startCall: (scope, limits) => {
-          const run = limits ? b.startCall(scope, limits) : b.startCall(scope);
+        startCall: (scope, limits, o) => {
+          const run = o?.post ? b.startCall(scope, limits, o) : limits ? b.startCall(scope, limits) : b.startCall(scope);
           trailers.set(run.id, callTrailer.getStore()?.trailer);
           return run;
         },

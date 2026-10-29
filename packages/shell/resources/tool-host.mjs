@@ -73,6 +73,9 @@ function contextOf(rpc, callId, scope, inputs) {
     log(level, message) {
       call("log", level, message).catch(() => undefined);
     },
+    // A job run's line and its next AI round (tools spec §7.3, §7.4); main decides who may, a refusal throws.
+    summary: (text) => call("summary", text).then(() => undefined),
+    requestAi: (input) => call("requestAi", input).then(() => undefined),
   });
 }
 

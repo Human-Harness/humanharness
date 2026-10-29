@@ -58,8 +58,8 @@ function broker(uses: ToolMeta["uses"], over: Partial<ToolBrokerDeps> = {}) {
 }
 
 describe("ToolBroker: one core broker per tool, bound to its uses (tools spec §4.2, D7)", () => {
-  it("TOOL_CALLS is fetch, exec, data.get/query/put/patch/delete, files.read, files.list, scope, log", () => {
-    expect([...TOOL_CALLS].sort()).toEqual(["data.delete", "data.get", "data.patch", "data.put", "data.query", "exec", "fetch", "files.list", "files.read", "log", "scope"]);
+  it("TOOL_CALLS is fetch, exec, data.get/query/put/patch/delete, files.read, files.list, scope, log, summary, requestAi", () => {
+    expect([...TOOL_CALLS].sort()).toEqual(["data.delete", "data.get", "data.patch", "data.put", "data.query", "exec", "fetch", "files.list", "files.read", "log", "requestAi", "scope", "summary"]);
   });
 
   it("a call outside TOOL_CALLS (data.replaceAll) is refused as unknown", async () => {

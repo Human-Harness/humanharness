@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { EngineDef } from "@humanharness/engines";
+import { commandLine } from "@humanharness/engines/registry";
 
 export interface RunResult {
   stdout: string;
@@ -97,16 +98,13 @@ export async function engineCommand(
   o: { sharedPath?: boolean } = {},
 ): Promise<{ command: string[]; env: Record<string, string> } | null> {
   const PATH = o.sharedPath ? await engineSearchPath(d) : await loginShellPath(d);
-  if (engine.transport.kind === "claude-cli") {
-    const binary = await resolveBinary(engine.transport.binary, PATH, d);
-    return binary ? { command: [binary], env: { PATH } } : null;
-  }
-  const pkg = engine.transport.command.find((part) => part.replace(/@[^@/]+$/, "") in BUNDLED_ADAPTERS);
+  const line = commandLine(engine);
+  const pkg = line.find((part) => part.replace(/@[^@/]+$/, "") in BUNDLED_ADAPTERS);
   if (pkg) {
     const entry = d.resolveModule(BUNDLED_ADAPTERS[pkg.replace(/@[^@/]+$/, "")]);
     return { command: [d.electronPath, entry], env: { PATH, ELECTRON_RUN_AS_NODE: "1" } };
   }
-  const [binaryName, ...args] = engine.transport.command;
+  const [binaryName, ...args] = line;
   const binary = await resolveBinary(binaryName, PATH, d);
   return binary ? { command: [binary, ...args], env: { PATH } } : null;
 }

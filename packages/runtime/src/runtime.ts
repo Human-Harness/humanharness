@@ -1,5 +1,6 @@
 import type { Launcher } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice } from "@humanharness/engines";
+import type { Registry } from "@humanharness/engines/registry";
 import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
 import type { History, LinkedFolderLine, ReferenceFolder } from "@humanharness/workspace";
 import type { Event } from "./events";
@@ -43,6 +44,8 @@ export interface RuntimeOptions {
   launcher?: Launcher;
   /** Override the engine's CLI command (tests, dev). */
   command?: string[];
+  /** The engine adapters (tests add their own engine); default: the app's registry. */
+  registry?: Registry;
   /** Extra CLI environment (tests, dev). Never credentials. */
   env?: Record<string, string>;
   /** Folders the agent may read but never change (absolute paths), with the label `AGENTS.md` shows. */

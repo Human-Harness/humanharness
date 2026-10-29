@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { AcpTransport } from "./acp";
-import { ClaudeCliTransport } from "./claude-cli";
+import type { CommonOptions, EngineDef, ModelProfile, Transport } from "@humanharness/engines";
+import { createTransport } from "@humanharness/engines/registry";
 import type { EngineError, Event, LimitWindow } from "./events";
 import type { SystemTaskResult } from "./system";
-import { type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface SidekickSessionOptions {
   engine: EngineDef;
@@ -15,7 +13,7 @@ export interface SidekickSessionOptions {
   /** Fixed for the session (plan 3c). */
   profile: ModelProfile;
   /** Tests only: builds the transport. */
-  transport?: (o: TransportOptions) => Transport;
+  transport?: (o: CommonOptions) => Transport;
 }
 
 export interface SidekickAnswer {
@@ -40,19 +38,18 @@ export class SidekickSession {
   private closed = false;
 
   constructor(readonly o: SidekickSessionOptions) {
-    const options: TransportOptions = {
+    // The ACP adapter adds the read-only session mode from `permissions.edit`.
+    const options: CommonOptions = {
       folder: o.folder,
       session: { id: randomUUID(), started: false },
       mcp: [],
       permissions: { edit: "none", exec: false, web: false },
-      ...acpFields(o.engine, "none"),
       noTools: true,
       command: o.command,
       ...(o.env ? { env: o.env } : {}),
       onSessionStarted: () => {},
     };
-    this.transport =
-      o.transport?.(options) ?? (o.engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(options) : new AcpTransport(options));
+    this.transport = o.transport?.(options) ?? createTransport(o.engine, options);
   }
 
   get profile(): ModelProfile {

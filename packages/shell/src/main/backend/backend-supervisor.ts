@@ -27,6 +27,8 @@ export class BackendSupervisor {
   private init: BackendInit | null = null;
   /** False after stop(): an exit then is never a crash and nothing restarts. */
   private wanted = false;
+  /** True after stop({ quit: true }): start, rebase and restart do nothing any more (the app is going away). */
+  private closed = false;
   /** Transitions asked for and not done yet: calls are refused meanwhile (a rebase's old process is going away). */
   private transitions = 0;
   private crashes: number[] = [];
@@ -40,6 +42,7 @@ export class BackendSupervisor {
 
   /** Starts it with `init` unless it's already up. After stop() (a folder move's start), starts it again. */
   start(init: BackendInit): Promise<void> {
+    if (this.closed) return Promise.resolve();
     this.init = init;
     this.wanted = true;
     return this.enqueue(async () => {
@@ -50,6 +53,7 @@ export class BackendSupervisor {
 
   /** The person's Restart: clears the crash count and starts it again, from any state. */
   restart(): Promise<void> {
+    if (this.closed) return Promise.resolve();
     this.wanted = true;
     return this.enqueue(async () => {
       if (!this.init || !this.wanted) return;
@@ -61,6 +65,7 @@ export class BackendSupervisor {
 
   /** Folder moved or profile switched: stops it and starts it with the new `init`. */
   rebase(init: BackendInit): Promise<void> {
+    if (this.closed) return Promise.resolve();
     this.init = init;
     this.wanted = true;
     return this.enqueue(async () => {
@@ -82,9 +87,13 @@ export class BackendSupervisor {
     return this.proc.call(method, params);
   }
 
-  /** For quit and a folder move's start: stops it; nothing restarts until start() or rebase(). */
-  stop(): Promise<void> {
+  /**
+   * For a folder move's start: stops it; nothing restarts until start() or rebase(). With `quit`, for good: start,
+   * rebase and restart are no-ops afterwards, so nothing brings a backend back while the app quits.
+   */
+  stop(opts: { quit?: boolean } = {}): Promise<void> {
     this.wanted = false;
+    if (opts.quit) this.closed = true;
     return this.enqueue(async () => {
       await this.stopProcess();
       this.setState("stopped");
@@ -119,7 +128,7 @@ export class BackendSupervisor {
       return;
     }
     this.proc = proc;
-    this.setState("running");
+    // Watch it before anything else can throw (onState is the caller's), so no process is left unwatched.
     void proc.exited.then((exit) => {
       // A process stopped or replaced on purpose is no longer `this.proc`.
       if (this.proc !== proc) return;
@@ -127,6 +136,9 @@ export class BackendSupervisor {
       if (exit.expected || !this.wanted) return;
       void this.enqueue(() => this.crashed()).catch(() => {});
     });
+    // Scopes that changed while it was starting. Only the scopes: a queued rebase's folder is not this process's.
+    if (this.init && this.init.scopes !== init.scopes) proc.notify("scopesChanged", { ...init, scopes: this.init.scopes });
+    this.setState("running");
   }
 
   /** Runs inside a transition: restarts within the limit, or `failed`. */

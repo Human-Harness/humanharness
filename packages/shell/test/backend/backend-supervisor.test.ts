@@ -43,7 +43,7 @@ class FakeProcess implements SupervisedProcess {
 /** Lets every pending promise callback run. */
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-function rig(opts: { failStarts?: number } = {}) {
+function rig(opts: { failStarts?: number; startGate?: () => Promise<void>; throwOnState?: BackendState } = {}) {
   let t = 0;
   let failStarts = opts.failStarts ?? 0;
   const procs: FakeProcess[] = [];
@@ -53,6 +53,7 @@ function rig(opts: { failStarts?: number } = {}) {
   const sup = new BackendSupervisor({
     startProcess: async (i, onEvent) => {
       startedWith.push(i);
+      if (opts.startGate) await opts.startGate();
       if (failStarts > 0) {
         failStarts--;
         throw new Error("spawn failed");
@@ -63,7 +64,10 @@ function rig(opts: { failStarts?: number } = {}) {
       return p;
     },
     onEvent: (e, d) => events.push([e, d]),
-    onState: (s) => states.push(s),
+    onState: (s) => {
+      states.push(s);
+      if (s === opts.throwOnState) throw new Error("listener failed");
+    },
     now: () => t,
   });
   return {
@@ -232,6 +236,47 @@ describe("BackendSupervisor (hatches spec §4.3, B6)", () => {
     expect(r.procs).toHaveLength(2);
     expect(r.last().init.scopes).toEqual([scope]);
     expect(r.last().notified).toEqual([]);
+  });
+
+  it("scopes that change while it starts reach the new backend", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((res) => {
+      open = res;
+    });
+    const r = rig({ startGate: () => gate });
+    const starting = r.sup.start(init);
+    await settle();
+    expect(r.startedWith).toHaveLength(1);
+    r.sup.scopesChanged([scope]);
+    open();
+    await starting;
+    expect(r.last().init.scopes).toEqual([]);
+    expect(r.last().notified).toEqual([{ method: "scopesChanged", params: { ...init, scopes: [scope] } }]);
+  });
+
+  it("a running backend with unchanged scopes gets no scopesChanged at start", async () => {
+    const r = rig();
+    await r.sup.start(init);
+    expect(r.last().notified).toEqual([]);
+  });
+
+  it("a throwing onState still leaves the process watched: its crash restarts it", async () => {
+    const r = rig({ throwOnState: "running" });
+    await expect(r.sup.start(init)).rejects.toThrow("listener failed");
+    r.last().crash();
+    await settle().then(settle);
+    expect(r.procs).toHaveLength(2);
+  });
+
+  it("after stop({ quit: true }) nothing brings it back", async () => {
+    const r = rig();
+    await r.sup.start(init);
+    await r.sup.stop({ quit: true });
+    await r.sup.restart();
+    await r.sup.rebase({ ...init, folder: "/b" });
+    await r.sup.start(init);
+    expect(r.procs).toHaveLength(1);
+    expect(r.sup.state()).toBe("stopped");
   });
 
   it("call when not running rejects 'The backend isn't running'", async () => {

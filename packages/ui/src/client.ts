@@ -469,6 +469,8 @@ export interface AppState {
   backup?: { status: SyncStatus | null; locations: SyncLocationView[] };
   /** The hatches the harness declares (hatches spec). Absent: none (D0). */
   hatches?: HatchesState;
+  /** The harness declares secrets (tools spec §9). Absent: none (D0). */
+  connections?: ConnectionsInfo;
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -1838,6 +1840,22 @@ export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";
 /** Plugins (plugins spec §7): the harness takes them; `local`: the person may add their own from a folder. */
 export interface PluginsInfo {
   local: boolean;
+}
+
+/** A harness secret as Settings › Connections shows it (tools spec §9): never its value. */
+export interface ConnectionView {
+  id: string;
+  label: string;
+  help?: string;
+  set: boolean;
+}
+export interface ConnectionsView {
+  connections: ConnectionView[];
+}
+export type ConnectionResult = { ok: true } | { ok: false; message: string };
+/** The harness declares secrets (tools spec §9). Absent from AppState without (D0). */
+export interface ConnectionsInfo {
+  count: number;
 }
 export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
 export interface PluginRow {

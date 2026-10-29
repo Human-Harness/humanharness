@@ -44,6 +44,7 @@ import {
   hasModes,
   hasPhases,
   hasProfiles,
+  hasSecrets,
   inputBlocks,
   inputSpecs,
   interviewCollections,
@@ -188,6 +189,8 @@ import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
+import { ConnectionsController } from "./secrets/connections";
+import { registerConnectionsIpc } from "./secrets/connections-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
@@ -324,6 +327,28 @@ let sidekickCtl: SidekickController | null = null;
 let pluginsCtl: PluginsController | null = null;
 /** The plugins' backend windows (Electron), with pluginsCtl. */
 let pluginHost: PluginBackendHost | null = null;
+let secretStore_: SecretStore | null | undefined;
+/**
+ * The one key store (tools spec §9, Decision 8), in the app's own per-harness folder (outside every base): for the
+ * plugins or the harness's secrets; none otherwise (D0). Built on first use, then shared.
+ */
+function secretStore(): SecretStore | null {
+  if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0 && !hasSecrets(harness)) return null;
+  secretStore_ ??= new SecretStore(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "secrets"), secretCrypto());
+  return secretStore_;
+}
+/** How keys are encrypted: the OS's (Electron safeStorage). */
+const secretCrypto = () => safeStorageCrypto(safeStorage);
+let connections_: ConnectionsController | undefined;
+/** Settings › Connections (tools spec §9): only when the harness declares secrets, so the store exists. Built once. */
+function connections(): ConnectionsController {
+  connections_ ??= new ConnectionsController({
+    secrets: harness.secrets!,
+    store: secretStore()!,
+    changed: (view) => sendToWindow("hh:connectionsChange", view),
+  });
+  return connections_;
+}
 /**
  * The panel handler, request filter and frame guards (P1–P3, P7), installed when the first plugin with panels starts
  * (D0: a harness that takes plugins but runs none with panels gets none of them).
@@ -694,6 +719,8 @@ async function appState(): Promise<AppState> {
     ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
     // Only a harness that declares a hatch sends this: Scope settings (hatches D0).
     ...(hatches ? { hatches } : {}),
+    // Only a harness that declares secrets sends this: Settings › Connections (tools spec §9, D0).
+    ...(hasSecrets(harness) ? { connections: { count: harness.secrets!.length } } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -3294,8 +3321,9 @@ if (loaded) {
       harness: { id: harness.id, name: harness.name, root: harness.root, ...(harness.plugins ? { plugins: harness.plugins } : {}), ...(harness.slots ? { slots: harness.slots } : {}) },
       devDirs: hooks.pluginDirs ?? [],
       pointers: new PluginPointers(path.join(appDir, "plugins.json")),
-      // Keys only where the OS encrypts them (Decision 17): never in the clear on a Linux without a keyring.
-      secrets: new SecretStore(path.join(appDir, "secrets"), safeStorageCrypto(safeStorage)),
+      // Keys only where the OS encrypts them (Decision 17): never in the clear on a Linux without a keyring. The one
+      // store, shared with Settings › Connections; never null here (this block runs only when it is built).
+      secrets: secretStore()!,
       appDir,
       base: currentBase,
       host,
@@ -3350,6 +3378,8 @@ if (loaded) {
       log: pluginLog,
     });
   }
+  // Settings › Connections (tools spec §9): only a harness that declares secrets (D0: no channel, no controller).
+  if (hasSecrets(harness)) registerConnectionsIpc(handle, connections());
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {
     const settings = settingsCtl;

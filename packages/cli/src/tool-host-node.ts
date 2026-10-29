@@ -170,19 +170,21 @@ function safeJson(v: unknown): string {
 }
 
 /**
- * Calls `fn(args, ctx)` inside the tool's context with a time limit on its synchronous part, so a tool stuck in an
- * endless loop before its first `await` is stopped. A loop after an `await` can't be stopped in this process; the
+ * Calls `fn(...args)` (a tool's `run` or `summary`) inside the tool's context with a time limit on its synchronous
+ * part, so a tool stuck in an endless loop before its first `await` is stopped. A loop after an `await` can't be stopped in this process; the
  * registry's timer still answers the call.
  */
-function callWithLimit(context: vm.Context, fn: unknown, args: unknown, ctx: unknown, limitMs: number, tool: string): unknown {
-  (context as { __hhCall?: unknown }).__hhCall = { fn, args, ctx };
+function callWithLimit(context: vm.Context, fn: unknown, args: unknown[], limitMs: number, tool: string): unknown {
+  (context as { __hhCall?: unknown }).__hhCall = { fn, args };
   try {
-    return vm.runInContext("(() => { const c = globalThis.__hhCall; delete globalThis.__hhCall; return c.fn(c.args, c.ctx); })()", context, { timeout: limitMs });
+    return vm.runInContext("(() => { const c = globalThis.__hhCall; delete globalThis.__hhCall; return c.fn(...c.args); })()", context, { timeout: limitMs });
   } catch (e) {
-    if ((e as { code?: unknown } | null)?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") throw new Error(`${tool} took longer than ${limitMs / 1000} s`);
+    if (timedOut(e)) throw new Error(`${tool} took longer than ${limitMs / 1000} s`);
     throw e;
   }
 }
+
+const timedOut = (e: unknown) => (e as { code?: unknown } | null)?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT";
 
 /**
  * The registry's host in the terminal: each built tool (`dist/tools/<id>.js`, the bytes the app runs) evaluated once
@@ -221,7 +223,8 @@ export function nodeToolHost(root: string, o: NodeToolHostOptions): Host & { clo
     structuredClone,
   });
 
-  const load = async (tool: string): Promise<Loaded> => {
+  // The bundle's top level runs under the first call's time limit: a tool stuck while it loads is stopped too.
+  const load = async (tool: string, limitMs: number): Promise<Loaded> => {
     // The registry hands only a tools.json id; the bundle is found by that id alone, never by a path it names.
     if (!TOOL_ID.test(tool)) throw new Error(`No tool "${tool.slice(0, 64)}"`);
     const rel = path.posix.join("dist", "tools", `${tool}.js`);
@@ -236,17 +239,22 @@ export function nodeToolHost(root: string, o: NodeToolHostOptions): Host & { clo
       throw new Error(`${rel} can't be loaded: ${errorText(err, 500)}`);
     }
     const context = vm.createContext({ ...globalsOf(tool) });
-    vm.runInContext(iife, context, { filename: `${tool}.js` });
+    try {
+      vm.runInContext(iife, context, { filename: `${tool}.js`, timeout: limitMs });
+    } catch (e) {
+      if (timedOut(e)) throw new Error(`${tool} took longer than ${limitMs / 1000} s to load`);
+      throw e;
+    }
     const def = (context as { __hhTool?: { default?: unknown } }).__hhTool?.default as Loaded["def"] | undefined;
     delete (context as { __hhTool?: unknown }).__hhTool;
     if (def === null || typeof def !== "object" || typeof def.run !== "function") throw new Error("its default export has no run function");
     return { def, context };
   };
 
-  const loadOnce = (tool: string): Promise<Loaded> => {
+  const loadOnce = (tool: string, limitMs: number): Promise<Loaded> => {
     let p = loaded.get(tool);
     if (!p) {
-      p = load(tool);
+      p = load(tool, limitMs);
       loaded.set(tool, p);
     }
     return p;
@@ -255,12 +263,14 @@ export function nodeToolHost(root: string, o: NodeToolHostOptions): Host & { clo
   const runOne = async (c: HostCall, timeoutMs: number): Promise<HostAnswer> => {
     let value: unknown;
     let def: Loaded["def"];
+    let context: vm.Context;
     try {
-      const l = await loadOnce(c.tool);
+      const l = await loadOnce(c.tool, timeoutMs);
       def = l.def;
+      context = l.context;
       const ctx = toolContext((name, args) => o.ctx(c.tool, c.callId, name, args), c.scope, c.inputs);
       // The tool gets its own copy of the args, as the app's IPC gives it.
-      value = await callWithLimit(l.context, def.run, structuredClone(c.args), ctx, timeoutMs, c.tool);
+      value = await callWithLimit(l.context, def.run, [structuredClone(c.args), ctx], timeoutMs, c.tool);
     } catch (e) {
       // As the app's host: the message only.
       return { ok: false, error: errorText(e) };
@@ -275,7 +285,8 @@ export function nodeToolHost(root: string, o: NodeToolHostOptions): Host & { clo
     const answer: HostAnswer = { ok: true, value: out };
     if (typeof def.summary === "function") {
       try {
-        const s = (def.summary as (v: unknown) => unknown)(value);
+        // Inside the tool's context with the same limit: a summary stuck in a loop gives no summary, never a stuck call.
+        const s = callWithLimit(context, def.summary, [value], timeoutMs, c.tool);
         if (typeof s === "string") answer.summary = s.slice(0, SUMMARY_CHARS);
       } catch {
         // No summary: the registry writes a generic one.
@@ -284,20 +295,32 @@ export function nodeToolHost(root: string, o: NodeToolHostOptions): Host & { clo
     return answer;
   };
 
+  // Each call in flight: its time-limit timer, and how to answer it early when the host closes.
+  const inFlight = new Set<{ timer: NodeJS.Timeout; settle(a: HostAnswer): void }>();
   return {
     call(c, timeoutMs) {
       if (closed) return Promise.resolve({ ok: false, error: "Tools stopped" });
-      let timer: NodeJS.Timeout | undefined;
+      let pending: { timer: NodeJS.Timeout; settle(a: HostAnswer): void } | undefined;
       const late = new Promise<HostAnswer>((settle) => {
-        timer = setTimeout(() => settle({ ok: false, error: `${c.tool} took longer than ${timeoutMs / 1000} s` }), timeoutMs);
+        pending = { timer: setTimeout(() => settle({ ok: false, error: `${c.tool} took longer than ${timeoutMs / 1000} s` }), timeoutMs), settle };
+        inFlight.add(pending);
       });
-      return Promise.race([runOne(c, timeoutMs), late]).finally(() => clearTimeout(timer));
+      return Promise.race([runOne(c, timeoutMs), late]).finally(() => {
+        clearTimeout(pending!.timer);
+        inFlight.delete(pending!);
+      });
     },
     off: () => null,
     close() {
       closed = true;
       for (const t of timers) clearTimeout(t);
       timers.clear();
+      // A call still running is answered now, and its timer can't keep the command alive.
+      for (const p of inFlight) {
+        clearTimeout(p.timer);
+        p.settle({ ok: false, error: "Tools stopped" });
+      }
+      inFlight.clear();
       loaded.clear();
     },
   };

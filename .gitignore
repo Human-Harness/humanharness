@@ -8,6 +8,8 @@ dist/
 !packages/fake-agent/fixtures/tools-harness/dist/
 # The recipes e2e fixture's built tools (tools slice 4; packages/cli/test/recipes-fixture-dist.test.ts checks it).
 !packages/fake-agent/fixtures/recipes-harness/dist/
+# The terminal tool host's fixture (tools slice 5; packages/cli/test/tool-host-node.test.ts checks it).
+!packages/cli/test/fixtures/tools-mini/dist/
 # The build's swap folders (plugin-build.ts), left behind only by an interrupted build.
 **/plugins/*/dist.tmp-*/
 **/plugins/*/dist.old-*/

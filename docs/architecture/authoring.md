@@ -95,6 +95,19 @@ Declare `backend: "./backend/index.ts"` when the harness UI needs work the windo
 
 `check` reports the manifest rule as a `schema` finding. `run` starts no backend: try it in the app (`humanharness dev`). There, an edit of the backend's files restarts nothing: reopen the app, or kill the backend's process so the crash restart loads the new file. The demo's `harnesses/demo/backend/index.ts` is a complete one (an `echo` call and a `stream` of `tick` events), and `harnesses/demo/ui/BackendPanel.tsx` is the side panel that calls it with `useBackend`.
 
+### Engine config per scope
+
+Declare `enginePresets: true` (it needs `scopes`) when each scope should give the engine its own instructions, MCP servers, skills or agents: a project's coding rules and its own tools, a course's tutor agent. The files live in the person's folder, `.harness/engine/<scope>/`, written by the harness UI or backend, by an agent, or by hand; nothing reaches the engine until the person approves the scope's config in Scope settings › Engine config, and any change asks again (`docs/architecture/hatches.md`, H3).
+
+- **Files.** `base` (`isolated` or `global`), `instructions.md`, `mcp.json`, `settings.json`, `skills/<name>/SKILL.md`, `agents/<name>.md`, `codex.toml`, and `actions/<action id>/` with `instructions.md`, `mcp.json` and `settings.json` for one action's tasks. Anything else in the folder is refused.
+- **What passes.** `mcp.json`: stdio servers (`command`, `args`, `env`), renamed `scope-<name>`; no `url`, no `$`, no credential or loader env names. `settings.json`: `hooks` (command hooks) and `permissions.allow/deny/ask`; `defaultMode` is ignored; allow path rules must stay in the folder or a linked folder; an allow rule for a server's tools must name `mcp__scope-<name>`. Skills: a `description`, no `hooks`. Agents: a `description`; `tools`, `disallowedTools`, `model`, `color`, `skills`, `memory` (`project` or `local`); `permissionMode` ignored; no `hooks` or `mcpServers`. `codex.toml`: the reasoning display keys, `hooks`, and the web keys only with `permissions.web: true`.
+- **Never.** Credentials, `env`, `apiKeyHelper`, `additionalDirectories`, providers, profile keys (`model`, effort, compaction), `url` servers. Each is refused naming the file and key, and a config with a refusal can't be approved.
+- **Limits.** 256 KB per file, 2 MB with its scripts, 200 files, 4 path parts; no symlinks or hard links.
+- **Scripts.** A file a hook or server command names inside the folder or a linked folder joins the hash, so editing it asks for approval again. What it imports, and packages `npx` or `uvx` fetch, are not covered: the screen warns about them. Keep hook commands plain (no `$` other than `$CLAUDE_PROJECT_DIR`, no backquotes, globs or `cd`) or they are refused.
+- **Per engine.** Instructions and servers reach every engine; settings, skills and agents only Claude; `codex.toml` only Codex. On Codex the person's own Codex config always applies, `isolated` or not.
+
+`check` reports the manifest rule as a `schema` finding; it doesn't read a scope's engine folder. `run` passes no engine config: try it in the app (`humanharness dev`).
+
 ## run's report
 
 Per phase (`run`, `follow-up`, `checkpoint`, `close`; a phase change turn and the wrap-up count as follow-ups here, while `usage.jsonl` keeps their own kinds): turns, input, output, cache read and cache write tokens; the tier, model (asked and reported), effort and cap; the peak context against the cap; and the verdict, "used about N tokens (input+output, uncached)" with the total cache reads and writes printed next to it (not added), then the action's cost hint. The same lines go to `<folder>/.harness/usage.jsonl`, as in the app.

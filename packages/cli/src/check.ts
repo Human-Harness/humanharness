@@ -30,6 +30,7 @@ import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, pa
 import { clashMessage, matchClashes } from "./mock-match";
 import { HARNESS_MD, MANIFEST } from "./paths";
 import { ToolBuildError, buildTools } from "./tool-build";
+import { toolFixtureFindings } from "./tool-test";
 
 export type Severity = "error" | "warning";
 export type RuleId =
@@ -66,7 +67,8 @@ export type RuleId =
   | "job-daily-tokens"
   | "tool-build"
   | "tool-uses"
-  | "tool-steps";
+  | "tool-steps"
+  | "tool-fixture";
 
 export interface Finding {
   rule: RuleId;
@@ -92,8 +94,12 @@ const warning = finding("warning");
 const read = (file: string) => fs.readFile(file, "utf8").catch(() => null);
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
 
-/** Validates the harness in `dir` (spec §7). Errors make the CLI exit with 1. */
-export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Promise<CheckResult> {
+/**
+ * Validates the harness in `dir` (spec §7). Errors make the CLI exit with 1.
+ * `fixtures`: run each tool's fixtures (rule `tool-fixture`, tools Decision 4), with `note` where the P12 note for tools
+ * goes before any of them runs. `check` passes it; without it no fixture runs (as before).
+ */
+export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: { note(line: string): void } } = {}): Promise<CheckResult> {
   const root = path.resolve(dir);
   const findings: Finding[] = [];
   const harness = await loadManifest(root, findings);
@@ -108,7 +114,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await modeFindings(harness)));
   findings.push(...(await phaseFindings(harness)));
   findings.push(...(await jobFindings(harness)));
-  findings.push(...(await toolBuildFindings(root, harness)));
+  findings.push(...(await toolBuildFindings(root, harness, opts.fixtures)));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
@@ -609,22 +615,27 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
 /**
  * Tools (tools spec §3.3): the build runs in memory, nothing written; each tool that fails is one `tool-build` error. A
  * build that passes is checked against the manifest: each problem is one `tool-uses` error, then each pre-step and
- * expects problem one `tool-steps` error (`stepProblems`), then each job recipe's (`recipeSourceProblems`). None without tools (D0).
+ * expects problem one `tool-steps` error (`stepProblems`), then each job recipe's (`recipeSourceProblems`), then (with
+ * `fixtures`) each failing or unreadable fixture one `tool-fixture` error. None without tools (D0); no fixture runs
+ * when the build fails.
  */
-async function toolBuildFindings(root: string, h: LoadedHarness): Promise<Finding[]> {
+async function toolBuildFindings(root: string, h: LoadedHarness, fixtures?: { note(line: string): void }): Promise<Finding[]> {
   if (!hasTools(h)) return [];
+  let built: Awaited<ReturnType<typeof buildTools>>;
   try {
-    const { json } = await buildTools(root, { write: false, harness: h });
-    const tools = h.tools ?? {};
-    return [
-      ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),
-      ...stepProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
-      ...recipeSourceProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
-    ];
+    built = await buildTools(root, { write: false, harness: h });
   } catch (err) {
     if (err instanceof ToolBuildError) return err.problems.map((p) => error("tool-build", p.message, p.file));
     return [error("tool-build", err instanceof Error ? err.message : String(err), MANIFEST)];
   }
+  const { json, files } = built;
+  const tools = h.tools ?? {};
+  return [
+    ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),
+    ...stepProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
+    ...recipeSourceProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
+    ...(fixtures ? (await toolFixtureFindings(root, h, files, fixtures)).map((p) => error("tool-fixture", p.message, p.file)) : []),
+  ];
 }
 
 function tierCostFindings(h: LoadedHarness): Finding[] {
@@ -686,7 +697,9 @@ export function formatFindings(findings: Finding[]): string {
 export async function checkCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, { json: { type: "boolean" }, harness: { type: "string" } });
   if (positionals.length > 0) throw new UsageError("Usage: humanharness check [--json] [--harness <dir>]");
-  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."));
+  // P12 for tools, only when a fixture runs: on stderr with --json, so stdout stays one JSON document.
+  const note = (line: string) => (values.json ? io.stderr : io.stdout).write(`${line}\n`);
+  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."), { fixtures: { note } });
   io.stdout.write(values.json ? `${JSON.stringify(findings, null, 2)}\n` : formatFindings(findings));
   return findings.some((f) => f.severity === "error") ? 1 : 0;
 }

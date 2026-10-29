@@ -270,3 +270,66 @@ export function formatToolReports(reports: ToolTestReport[]): string {
   out.push("", failed === 0 ? `${plural(total, "fixture")} passed.` : `${failed} of ${total} fixtures failed.`);
   return `${out.join("\n")}\n`;
 }
+
+/** One `tool-fixture` problem for `check`: the message and the fixture file, relative to the harness folder. */
+export interface ToolFixtureProblem {
+  message: string;
+  file: string;
+}
+
+/** Why a fixture file was skipped, in one line: a schema refusal names its first issue, not zod's JSON. */
+const skippedWhy = (err: unknown): string => {
+  const issues = (err as { issues?: unknown } | null)?.issues;
+  if (Array.isArray(issues) && issues.length > 0) {
+    const first = issues[0] as { path?: unknown[]; message?: unknown };
+    const at = Array.isArray(first.path) && first.path.length > 0 ? `${first.path.map(String).join(".")}: ` : "";
+    return `${at}${String(first.message ?? "invalid")}`;
+  }
+  return errText(err);
+};
+
+/**
+ * `check`'s rule `tool-fixture` (tools spec §3.3, Decision 4): every tool's `tools/<id>/fixtures/*.json` run as
+ * `tool test` runs them (`runCase`), from bundles `check`'s in-memory build already made (`files`). Each failing case and
+ * each file that isn't a valid case is one problem: `Tool "<id>": fixtures/<file>: <why>`. When no tool has a valid
+ * case nothing runs and `note` is never called; else the P12 note for tools goes to `note` once, before any tool code.
+ */
+export async function toolFixtureFindings(
+  root: string,
+  harness: LoadedHarness,
+  files: Map<string, Uint8Array | string>,
+  o: { note(line: string): void; temp?: string },
+): Promise<ToolFixtureProblem[]> {
+  const problems: ToolFixtureProblem[] = [];
+  const runs: { tool: string; file: string; fixture: ToolFixture }[] = [];
+  for (const tool of Object.keys(harness.tools ?? {}).sort()) {
+    const fixtures = await readToolFixtures(root, tool, (message, err) => {
+      const file = message.replace(/ skipped$/, "");
+      problems.push({ message: `Tool "${tool}": ${file.slice(`tools/${tool}/`.length)}: ${skippedWhy(err)}`, file });
+    });
+    for (const f of fixtures) runs.push({ tool, ...f });
+  }
+  if (runs.length === 0) return problems;
+  o.note(TOOL_P12_NOTE);
+  const base = o.temp ?? os.tmpdir();
+  const built = await fs.mkdtemp(path.join(base, "hh-tool-check-"));
+  try {
+    await fs.mkdir(path.join(built, "dist", "tools"), { recursive: true });
+    for (const [name, content] of files) await fs.writeFile(path.join(built, "dist", ...name.split("/")), content);
+    for (const { tool, file, fixture } of runs) {
+      let why: string | null;
+      try {
+        const c = await runCase(harness, built, base, tool, file, fixture);
+        why = c.ok ? null : (c.why ?? "failed");
+      } catch (err) {
+        // A result JSON can't carry (a BigInt, a cycle) throws in the comparison: a finding, never a crashed check.
+        why = err instanceof TypeError ? `got a result that isn't JSON: ${errText(err)}` : errText(err);
+      }
+      if (why !== null) problems.push({ message: `Tool "${tool}": fixtures/${file}: ${why}`, file: `tools/${tool}/fixtures/${file}` });
+    }
+  } finally {
+    await fs.rm(built, { recursive: true, force: true });
+  }
+  // Per tool, in file-name order, whether the file was skipped or ran.
+  return problems.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+}

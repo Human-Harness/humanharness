@@ -13,7 +13,8 @@ export type { EngineConfigView };
 // reads it, and its approval. Registered only for a harness that declares `enginePresets` (D0). The window never
 // names a hash it made up: it sends back the one it was shown, main computes the folder's hash again right then and
 // approves only when the two are equal, signing the approval with the app's key (`.harness/scopes.json` is in the
-// folder the agent writes).
+// folder the agent writes). A revoke bumps the scope's epoch before it clears the approval, so the old signed entry,
+// pasted back, no longer verifies.
 
 const HASH = /^[0-9a-f]{64}$/;
 const CHANGED = "hh:engineConfigChanged";
@@ -26,8 +27,12 @@ export interface EngineIpcDeps {
   store(): Promise<{ store: ScopeStore; profile: string }>;
   /** The app's approval key, made by the first approval (`linkedSecret(userData)(true)`). */
   secret(): Promise<Buffer | null>;
+  /** The scopes' approval epochs in `<userData>` (epochs.ts): approvals sign at `sign`'s, a revoke `bump`s. */
+  epochs: { sign(profile: string, scope: string): Promise<number>; bump(profile: string, scope: string): Promise<number> };
   /** Decision 14: the harness supports Codex (its `engines` list it). Read on each view: a harness update changes it. */
   codexLimit(): boolean;
+  /** Decision 10: the engine the person chose ("" before one is), so the screen marks what it leaves out. */
+  activeEngine(): Promise<string>;
   send(channel: string, value: unknown): void;
   now?(): Date;
 }
@@ -209,7 +214,7 @@ export function engineConfigView(scope: string, config: EngineConfig, approval: 
  * Every id from the window is checked here (E10): a registered, active scope; a hash of 64 lowercase hex characters.
  */
 export function registerEngineIpc(handle: (channel: string, fn: (...args: never[]) => unknown) => void, d: EngineIpcDeps): EngineIpc {
-  // One approval at a time: each reads the folder and writes scopes.json.
+  // One approval or revoke at a time: each reads the folder and writes scopes.json.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
     const run = chain.then(fn);
@@ -225,7 +230,9 @@ export function registerEngineIpc(handle: (channel: string, fn: (...args: never[
   };
   const viewOf = async (id: string): Promise<EngineConfigView | null> => {
     const now = await d.current(id);
-    return now ? engineConfigView(id, now.config, now.approval, d.codexLimit()) : null;
+    if (!now) return null;
+    const engine = await d.activeEngine();
+    return { ...engineConfigView(id, now.config, now.approval, d.codexLimit()), ...(engine ? { engine } : {}) };
   };
 
   handle("hh:engineConfig", async (scope: unknown): Promise<EngineConfigView | null> => viewOf((await scopeOf(scope)).id));
@@ -240,12 +247,25 @@ export function registerEngineIpc(handle: (channel: string, fn: (...args: never[
       if (now.config.refusals.length > 0) return { ok: false, reason: "refused" };
       const secret = await d.secret();
       if (!secret) throw new Error("Could not read the app's key");
-      await store.approveEngine(id, hash, (a) => engineApprovalTag(profile, id, a, secret), d.now?.());
+      const epoch = await d.epochs.sign(profile, id);
+      await store.approveEngine(id, hash, (a) => engineApprovalTag(profile, id, a, secret, epoch), d.now?.());
       d.send(CHANGED, id);
       const view = await viewOf(id);
       return view ? { ok: true, view } : { ok: false, reason: "changed" };
     });
   });
+
+  // Revokes the scope's approval (spec §5.3): new tasks start without its config, and running ones drop it from their
+  // next turn. The epoch goes first, so even a failed clear leaves the old approval void.
+  handle("hh:engineRevoke", async (scope: unknown): Promise<EngineConfigView | null> =>
+    serial(async () => {
+      const { store, profile, id } = await scopeOf(scope);
+      await d.epochs.bump(profile, id);
+      if ((await store.list()).some((s) => s.id === id && s.engineApproval !== undefined)) await store.clearEngineApproval(id);
+      d.send(CHANGED, id);
+      return viewOf(id);
+    }),
+  );
 
   return {
     // A commit (a history save, or an outside change the history took) that touched a scope's engine folder: that

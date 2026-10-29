@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { ScopeStore } from "@humanharness/workspace";
 import { engineApprovalTag, engineApprovalValid } from "../../src/main/engine-config/approval";
 import { EngineHost } from "../../src/main/engine-config/engine-host";
+import { EngineEpochs } from "../../src/main/engine-config/epochs";
 import { type EngineConfigView, registerEngineIpc } from "../../src/main/engine-config/engine-ipc";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-engine-ipc-")));
@@ -16,7 +17,11 @@ const NOW = new Date("2026-10-28T11:00:00.000Z");
 
 let n = 0;
 /** A base with scope `intro` registered, `files` under `.harness/engine/intro/`, `extra` at its top, the channels registered. */
-async function setup(files: Record<string, string> | null, extra: Record<string, string> = {}, o: { codex?: boolean; key?: boolean } = {}) {
+async function setup(
+  files: Record<string, string> | null,
+  extra: Record<string, string> = {},
+  o: { codex?: boolean; key?: boolean; profile?: string; hostProfile?: string; now?: () => Date; engine?: string } = {},
+) {
   const at = path.join(root, `w${++n}`);
   const base = path.join(at, "folder");
   const userData = path.join(at, "userData");
@@ -36,14 +41,16 @@ async function setup(files: Record<string, string> | null, extra: Record<string,
   let key: Buffer | null = o.key === false ? null : randomBytes(32);
   const made = randomBytes(32);
   const secret = vi.fn(async () => (key ??= made));
+  const epochs = new EngineEpochs(path.join(userData, "engine-epochs.json"));
   const scopes = new ScopeStore(base);
   await scopes.add({ id: "intro", title: "Intro", createdAt: "2026-10-28T09:00:00.000Z", archived: false });
   await scopes.add({ id: "old", title: "Old", createdAt: "2026-10-28T09:00:00.000Z", archived: true });
   const host = new EngineHost({
     userData,
-    context: async () => ({ base, profile: "", scopes }),
+    context: async () => ({ base, profile: o.hostProfile ?? o.profile ?? "", scopes }),
     linked: async () => [],
     secret: async () => key,
+    epoch: (profile, scope) => epochs.get(profile, scope),
     harness,
     log: vi.fn(),
   });
@@ -51,17 +58,20 @@ async function setup(files: Record<string, string> | null, extra: Record<string,
   const send = vi.fn();
   const ipc = registerEngineIpc((channel, fn) => void handlers.set(channel, fn as (...args: unknown[]) => unknown), {
     current: (scope) => host.current(scope),
-    store: async () => ({ store: scopes, profile: "" }),
+    store: async () => ({ store: scopes, profile: o.profile ?? "" }),
     secret,
+    epochs,
     codexLimit: () => o.codex ?? false,
+    activeEngine: async () => o.engine ?? "",
     send,
-    now: () => NOW,
+    now: o.now ?? (() => NOW),
   });
   const call = <T>(channel: string, ...args: unknown[]) => Promise.resolve(handlers.get(channel)!(...args)) as Promise<T>;
   const view = (...args: unknown[]) => call<EngineConfigView | null>("hh:engineConfig", ...(args.length > 0 ? args : ["intro"]));
   const approve = (scope: unknown, hash: unknown) => call<{ ok: boolean; reason?: string }>("hh:engineApprove", scope, hash);
+  const revoke = (scope: unknown) => call<EngineConfigView | null>("hh:engineRevoke", scope);
   const entry = async () => (await scopes.list()).find((s) => s.id === "intro")!;
-  return { base, dir, scopes, host, handlers, send, secret, ipc, view, approve, entry, write, key: () => key };
+  return { base, dir, userData, scopes, host, handlers, send, secret, ipc, view, approve, revoke, entry, write, key: () => key };
 }
 
 const SERVER = JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } });
@@ -289,5 +299,101 @@ describe("engine IPC (E10)", () => {
     const v = (await w.view())!;
     expect(v.approved).toBe(false);
     expect(v.changed).toBe(true);
+  });
+
+  it("the view names the active engine (Decision 10), and none before one is chosen", async () => {
+    expect((await (await setup({ "instructions.md": "a" }, {}, { engine: "opencode" })).view())!.engine).toBe("opencode");
+    expect(await (await setup({ "instructions.md": "a" })).view()).not.toHaveProperty("engine");
+  });
+
+  it("approvals in a profile: signed for it, valid in it, never in another", async () => {
+    const w = await setup({ "instructions.md": "a" }, {}, { profile: "work" });
+    const { hash } = (await w.view())!;
+    expect(await w.approve("intro", hash)).toMatchObject({ ok: true, view: { approved: true } });
+    const a = (await w.entry()).engineApproval!;
+    expect(engineApprovalValid(a, "work", "intro", w.key())).toBe(true);
+    expect(engineApprovalValid(a, "", "intro", w.key())).toBe(false);
+    expect((await w.host.presetFor("intro", undefined)).preset?.hash).toBe(hash);
+    // The host checks with another profile than the one that signed: not approved, no preset.
+    const m = await setup({ "instructions.md": "a" }, {}, { profile: "work", hostProfile: "home" });
+    // Written, but the view (as the host reads it) says not approved.
+    expect(await m.approve("intro", (await m.view())!.hash)).toMatchObject({ ok: true, view: { approved: false } });
+    expect((await m.entry()).engineApproval).toBeDefined();
+    expect((await m.view())!.approved).toBe(false);
+    expect(await m.host.presetFor("intro", undefined)).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+  });
+
+  it("two approvals at once run one after the other: the second sees the first's", async () => {
+    let t = 0;
+    const w = await setup({ "instructions.md": "a" }, {}, { now: () => new Date(Date.UTC(2026, 9, 28, 11, 0, ++t)) });
+    const { hash } = (await w.view())!;
+    // The first one's key read is slow: without the chain the second would write first and the first overwrite it.
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const key = await w.secret();
+    w.secret.mockImplementationOnce(async () => {
+      await slow;
+      return key;
+    });
+    const first = w.approve("intro", hash);
+    const second = w.approve("intro", hash);
+    release();
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1).toMatchObject({ ok: true, view: { approvedAt: "2026-10-28T11:00:01.000Z" } });
+    expect(r2).toMatchObject({ ok: true, view: { approvedAt: "2026-10-28T11:00:02.000Z" } });
+    expect((await w.entry()).engineApproval!.at).toBe("2026-10-28T11:00:02.000Z");
+    expect((await w.view())!.approved).toBe(true);
+  });
+
+  it("hh:engineRevoke clears the approval for good: a replayed old approval gives no preset, approving again works", async () => {
+    const w = await setup({ "instructions.md": "Use tabs.\n", "mcp.json": SERVER }, TOOLS);
+    const { hash } = (await w.view())!;
+    await w.approve("intro", hash);
+    const old = (await w.entry()).engineApproval!;
+    expect((await w.host.presetFor("intro", undefined)).preset?.hash).toBe(hash);
+    // Approving made no revocation record: approvals made before epochs keep their tag (epoch 0).
+    const record = path.join(w.userData, "engine-epochs.json");
+    expect(fs.existsSync(record)).toBe(false);
+    const task = { id: "t1", scope: "intro", engineHash: hash, engineTag: (await w.host.pinTag("intro", "t1", hash))! };
+    expect((await w.host.presetForTask(task)).preset?.hash).toBe(hash);
+
+    w.send.mockClear();
+    const v = (await w.revoke("intro"))!;
+    expect(v.approved).toBe(false);
+    expect(v).not.toHaveProperty("changed");
+    expect((await w.entry()).engineApproval).toBeUndefined();
+    expect(w.send).toHaveBeenCalledWith("hh:engineConfigChanged", "intro");
+    expect(fs.existsSync(record)).toBe(true);
+    // A running task loses the preset from its next turn.
+    expect(await w.host.presetForTask(task)).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+
+    // The agent pastes the old signed approval back into scopes.json: not the app's any more.
+    await w.scopes.approveEngine("intro", old.hash, () => old.tag, new Date(old.at));
+    expect((await w.entry()).engineApproval).toEqual(old);
+    expect((await w.view())!.approved).toBe(false);
+    expect(await w.host.presetFor("intro", undefined)).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+    expect((await w.host.presetForTask(task)).preset).toBeNull();
+
+    // Approving again signs at the new epoch and works; the pin made before the revoke stays void, a new one holds.
+    expect(await w.approve("intro", hash)).toMatchObject({ ok: true, view: { approved: true } });
+    expect((await w.host.presetFor("intro", undefined)).preset?.hash).toBe(hash);
+    expect((await w.host.presetForTask(task)).preset).toBeNull();
+    const repinned = { ...task, engineTag: (await w.host.pinTag("intro", "t1", hash))! };
+    expect((await w.host.presetForTask(repinned)).preset?.hash).toBe(hash);
+  });
+
+  it("hh:engineRevoke checks the scope, and runs after an approval in flight", async () => {
+    const w = await setup({ "instructions.md": "a" });
+    for (const scope of ["nope", "old", "__proto__", "a".repeat(65), 7, null]) {
+      await expect(w.revoke(scope), String(scope)).rejects.toThrow("Unknown scope");
+    }
+    const { hash } = (await w.view())!;
+    const [approved, revoked] = await Promise.all([w.approve("intro", hash), w.revoke("intro")]);
+    expect(approved).toMatchObject({ ok: true });
+    expect(revoked!.approved).toBe(false);
+    expect((await w.entry()).engineApproval).toBeUndefined();
+    // No engine folder: nothing to show, the record still bumped.
+    const none = await setup(null);
+    expect(await none.revoke("intro")).toBeNull();
   });
 });

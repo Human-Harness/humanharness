@@ -201,6 +201,7 @@ import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
+import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import { BackendLog } from "./backend/backend-log";
 import { BackendProcess } from "./backend/backend-process";
@@ -281,6 +282,8 @@ let linkedUnsupported = false;
 let linkedParts: { access: ScopeAccess; instructions: LinkedInstructions } | null = null;
 /** The scopes' engine presets (hatches spec §5), made on first use: only a harness with `enginePresets` (D0: null). */
 let engineHost: EngineHost | null = null;
+/** The scopes' engine approval epochs (revocation record), shared by the host and the channels: one writer. */
+let engineEpochs: EngineEpochs | null = null;
 /** The Engine config channels (hatches spec §5.3), registered only under `enginePresets` (D0: null, nothing sent). */
 let engineIpc: EngineIpc | null = null;
 /** The linked-folder channels' deps, made once when they are registered (hasLinkedFolders only). */
@@ -2067,6 +2070,7 @@ function engineHost_(): EngineHost | undefined {
   if (!hasEnginePresets(harness)) return undefined;
   if (engineHost) return engineHost;
   const userData = app.getPath("userData");
+  const epochs = (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE)));
   engineHost = new EngineHost({
     userData,
     context: async () => {
@@ -2078,6 +2082,7 @@ function engineHost_(): EngineHost | undefined {
     // The folders a turn of the scope reaches now: preset path rules outside them are refused (E5).
     linked: async (scope) => ((await linked_()?.access.access(scope))?.linked ?? []).map((l) => l.path),
     secret: () => linkedSecret(userData)(false),
+    epoch: (profile, scope) => epochs.get(profile, scope),
     // Read on each use: a harness update changes them.
     get harness() {
       return { permissions: harness.permissions, actions: harness.actions, mcp: harness.mcp };
@@ -2101,7 +2106,9 @@ function engineIpcDeps(): EngineIpcDeps {
       return { store: scopeStoreFor(baseOf(c)), profile: profilesOn() ? (c.profile ?? "") : "" };
     },
     secret: () => linkedSecret(userData)(true),
+    epochs: (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
     codexLimit: () => harness.engines.includes("codex"),
+    activeEngine: async () => (await config.load()).engineId ?? "",
     send: sendToWindow,
   };
 }

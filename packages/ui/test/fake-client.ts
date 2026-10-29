@@ -132,9 +132,10 @@ export interface FakeJobs extends JobsClient {
   set(jobs: JobSummary[]): void;
 }
 
-/** `client.engineConfig` with a spy on approvals. */
+/** `client.engineConfig` with spies on approvals and revokes. */
 export interface FakeEngineConfig extends EngineConfigClient {
   approve: Mock<EngineConfigClient["approve"]>;
+  revoke: Mock<EngineConfigClient["revoke"]>;
 }
 
 /** `client.backend` with a spy on calls and restarts. */
@@ -359,6 +360,16 @@ export class FakeClient implements HarnessClient {
       const view = { ...v, approved: true, approvedAt: "2026-10-28T10:00:00.000Z" };
       this.engineConfigSet(scope, view);
       return { ok: true, view };
+    }),
+    // As main: the approval is gone (not "changed"); null without engine config.
+    revoke: vi.fn(async (scope: string): Promise<EngineConfigView | null> => {
+      this.needEngine();
+      const v = Object.hasOwn(this.engineConfigs, scope) ? this.engineConfigs[scope] : undefined;
+      if (!v) return null;
+      const { approvedAt: _at, changed: _changed, ...rest } = v;
+      const view = { ...rest, approved: false };
+      this.engineConfigSet(scope, view);
+      return view;
     }),
     onChanged: (listener) => {
       this.engineListeners.add(listener);

@@ -322,6 +322,7 @@ const client: HarnessClient = {
   engineConfig: {
     get: (scope) => ipcRenderer.invoke("hh:engineConfig", scope),
     approve: (scope, hash) => ipcRenderer.invoke("hh:engineApprove", scope, hash),
+    revoke: (scope) => ipcRenderer.invoke("hh:engineRevoke", scope),
     onChanged: (listener) => subscribe<string | null>("hh:engineConfigChanged", listener),
   },
 };

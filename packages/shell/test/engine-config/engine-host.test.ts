@@ -45,6 +45,7 @@ async function setup(files: Record<string, string> | null, extra: Record<string,
     context: async () => ({ base, profile: "", scopes }),
     linked: async () => [],
     secret: async () => secret,
+    epoch: async () => 0,
     harness,
     log,
   });

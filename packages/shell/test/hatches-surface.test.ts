@@ -94,11 +94,11 @@ describe("hatches IPC surface (hatches D0)", () => {
     // No other file registers or sends them: the channel names appear only in engine-ipc.ts (hh:engineStatus is the core's).
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
       if (f === path.join("engine-config", "engine-ipc.ts")) continue;
-      expect(await read(f), f).not.toMatch(/hh:engine(Config|Approve)/);
+      expect(await read(f), f).not.toMatch(/hh:engine(Config|Approve|Revoke)/);
     }
     // The preload and the window name them, but main answers only under enginePresets.
     const ipc = await read(path.join("engine-config", "engine-ipc.ts"));
-    expect(count(ipc, /handle\("hh:engine(Config|Approve)/)).toBe(2);
+    expect(count(ipc, /handle\("hh:engine(Config|Approve|Revoke)/)).toBe(3);
   });
 
   it("hatchesState carries enginePresets: true only with enginePresets (D0)", () => {

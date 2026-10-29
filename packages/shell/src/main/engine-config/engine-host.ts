@@ -35,6 +35,8 @@ export interface EngineHostDeps {
   linked(scope: string): Promise<string[]>;
   /** The app's approval key (`linkedSecret(userData)(false)`); null when there is none yet. */
   secret(): Promise<Buffer | null>;
+  /** The scope's approval epoch (`EngineEpochs.get`, bumped by a revoke); null when the record is damaged. */
+  epoch(profile: string, scope: string): Promise<number | null>;
   /** The manifest's permissions, actions and MCP servers (cleaning context, reserved names). */
   harness: { permissions: { edit: "folder" | "none"; web: boolean }; actions: Readonly<Record<string, unknown>>; mcp: readonly string[] };
   log?(message: string, err?: unknown): void;
@@ -122,7 +124,8 @@ export class EngineHost {
     if (!config) return null;
     const entry = (await ctx.scopes.list()).find((s) => s.id === scope && !s.archived);
     const approval = entry?.engineApproval;
-    const signed = engineApprovalValid(approval, ctx.profile, scope, approval ? await this.d.secret() : null);
+    // Signed by the app at the scope's epoch now: one from before a revoke (pasted back) no longer holds.
+    const signed = approval ? engineApprovalValid(approval, ctx.profile, scope, await this.d.secret(), await this.d.epoch(ctx.profile, scope)) : false;
     return { config, o, approvedHash: signed ? approval!.hash : null, approval: signed ? approval! : null };
   }
 
@@ -170,13 +173,14 @@ export class EngineHost {
   async pinTag(scope: string, task: string, hash: string): Promise<string | null> {
     const ctx = await this.d.context();
     const secret = await this.d.secret();
-    return ctx && secret ? enginePinTag(ctx.profile, scope, task, hash, secret) : null;
+    const epoch = ctx ? await this.d.epoch(ctx.profile, scope) : null;
+    return ctx && secret && epoch !== null ? enginePinTag(ctx.profile, scope, task, hash, secret, epoch) : null;
   }
 
   /**
    * For a later turn (or a resumed session) of a task that started with `engineHash`: its pinned snapshot (Decision 2).
    * Only while the scope has an approval the app signed (clearing it stops running tasks too), the pin carries the
-   * app's tag (tasks.json is agent-writable), and the live folder holds approved bytes. Pinned to the approved hash:
+   * app's tag at the scope's epoch (tasks.json is agent-writable; a revoke ends every pin made before it), and the live folder holds approved bytes. Pinned to the approved hash:
    * the folder must hash to it. Pinned to an older one: the folder must hold either hash, and every file the pinned
    * commands run must still be the pinned bytes (scripts run in place; one only the pin runs is in no live approval).
    * Otherwise none and a notice. A task that started without a preset stays without one.
@@ -193,7 +197,8 @@ export class EngineHost {
     // approved hash into tasks.json.
     const ctx = await this.d.context();
     const secret = await this.d.secret();
-    if (!ctx || task.id === undefined || !enginePinValid(task.engineTag, ctx.profile, task.scope, task.id, task.engineHash, secret)) return unapproved;
+    const epoch = ctx ? await this.d.epoch(ctx.profile, task.scope) : null;
+    if (!ctx || task.id === undefined || !enginePinValid(task.engineTag, ctx.profile, task.scope, task.id, task.engineHash, secret, epoch)) return unapproved;
     if (approvedHash === task.engineHash) {
       if (config.hash !== task.engineHash) return unapproved;
     } else {

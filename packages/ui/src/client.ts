@@ -940,6 +940,8 @@ export interface EngineConfigView {
   base: "isolated" | "global";
   /** Decision 14: the harness supports Codex ("On Codex, your own Codex config always applies"). */
   codexLimit: boolean;
+  /** Decision 10: the active engine's id (`claude`, `codex`, `opencode`…); absent before one is chosen. */
+  engine?: string;
   /** Shown first: hooks, then servers; the scope's own, then each action layer's. */
   runsCommands: EngineRunsCommandView[];
   instructions: { layer: string; text: string }[];
@@ -984,6 +986,12 @@ export interface EngineConfigClient {
   get(scope: string): Promise<EngineConfigView | null>;
   /** `hash` is the view's: what the person saw. */
   approve(scope: string, hash: string): Promise<EngineApproveResult>;
+  /**
+   * Revokes the scope's approval: new tasks start without its config, running ones drop it from their next turn, and
+   * an old approval pasted back no longer counts. Resolves to the view afterwards (`approved: false`); null when the
+   * scope has no engine config.
+   */
+  revoke(scope: string): Promise<EngineConfigView | null>;
   /** A scope's engine config (or its approval) changed; null: any scope may have. Returns the unsubscribe. */
   onChanged(listener: (scope: string | null) => void): () => void;
 }

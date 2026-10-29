@@ -1,0 +1,5 @@
+{
+  "kind": "fetch",
+  "request": { "method": "GET", "url": "https://api.weather.test/v1/lima", "headers": { "authorization": "Bearer {{secret:weather}}" } },
+  "response": { "status": 200, "headers": { "content-type": "application/json" }, "text": "{\"city\":\"lima\",\"sky\":\"clear\"}" }
+}

@@ -3,6 +3,9 @@ import {
   JOB_CANNOT_ASK,
   JOB_NO_NOTE,
   JOB_RESULT_TOOL,
+  type LoadedHarness,
+  STEP_OUTPUT_TOOL,
+  aiStepOf,
   allBlocks,
   blockToolName,
   jobResultSchema,
@@ -78,14 +81,16 @@ const JOB_REFUSED: readonly string[] = ["choices", "save_note", "set_phase", "re
  * MCP server with one tool per harness block. Valid calls are forwarded to the runtime through the bridge.
  * `job`: a background job's slot (`HH_JOB=1`): it adds `job_result` and refuses every block that asks the person.
  * `review`: the review channel: it also has the review tools (review spec §4), never in a job (they ask the person).
- * Without either, exactly today's tools (D0).
+ * `step`: a recipe's AI step (`HH_STEP=<job>`, tools spec §7.1): `step_output` alone, nothing else (it wins over `job`).
+ * Without any, exactly today's tools (D0).
  */
 export async function createUiServer(
   harnessConfig: string,
   bridge: { path: string; token: string },
-  opts: { job?: boolean; review?: { path: string; token: string } } = {},
+  opts: { job?: boolean; review?: { path: string; token: string }; step?: string } = {},
 ): Promise<McpServer> {
   const harness = await loadHarness(harnessConfig);
+  if (opts.step !== undefined) return stepServer(harness, opts.step, bridge);
   const server = new McpServer({ name: "ui", version: "0.1.0" });
   const phases = phaseIds(harness);
   for (const [name, block] of Object.entries(allBlocks(harness))) {
@@ -146,5 +151,38 @@ export async function createUiServer(
     );
   }
   if (opts.review && !opts.job) addReviewTools(server, opts.review);
+  return server;
+}
+
+/**
+ * A recipe's AI step (tools spec §7.1, R1): one tool, `step_output`, whose input schema is the job's AI step `output`.
+ * No block, no review tool, no job_result: the model's only way out is its result. Throws (the server never starts)
+ * when the job has no AI step or its output has no JSON Schema: a step with a half-made tool would fail later and less
+ * clearly.
+ */
+export function stepServer(harness: LoadedHarness, job: string, bridge: { path: string; token: string }): McpServer {
+  const j = harness.jobs && Object.hasOwn(harness.jobs, job) ? harness.jobs[job] : undefined;
+  const step = j ? aiStepOf(j) : undefined;
+  if (!step) throw new Error(`No AI step for job "${job}"`);
+  // The manifest refuses such an output at load; the server checks again rather than trust that it ran (a date, a
+  // transform: the MCP SDK would fail on it only when the engine lists the tools).
+  try {
+    z.toJSONSchema(step.output);
+  } catch {
+    throw new Error(`The AI step's output of job "${job}" can't be a tool's input: it must convert to JSON Schema`);
+  }
+  const server = new McpServer({ name: "ui", version: "0.1.0" });
+  server.registerTool(
+    STEP_OUTPUT_TOOL,
+    { description: "Ends this step with its result. Call it once, with the whole result.", inputSchema: step.output.shape },
+    async (args) => {
+      try {
+        await sendToBridge(bridge, { name: STEP_OUTPUT_TOOL, data: args });
+      } catch (e) {
+        return { isError: true, content: [{ type: "text" as const, text: `Could not reach the app (${e instanceof Error ? e.message : String(e)}).` }] };
+      }
+      return { content: [{ type: "text" as const, text: "Done: the result is recorded. End your turn now." }] };
+    },
+  );
   return server;
 }

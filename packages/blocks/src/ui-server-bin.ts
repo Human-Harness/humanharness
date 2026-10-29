@@ -1,3 +1,4 @@
+import { JOB_ID } from "@humanharness/harness-sdk";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createUiServer } from "./ui-server";
 
@@ -12,7 +13,13 @@ try {
   const reviewPath = process.env.HH_REVIEW_RPC;
   const reviewToken = process.env.HH_REVIEW_RPC_TOKEN;
   const review = reviewPath && reviewToken ? { path: reviewPath, token: reviewToken } : undefined;
-  const server = await createUiServer(harnessConfig, { path: bridgePath, token }, { job: process.env.HH_JOB === "1", ...(review ? { review } : {}) });
+  // A recipe's AI step (tools spec §7.1): empty is no step; anything else must be a job id.
+  const step = process.env.HH_STEP ?? "";
+  if (step !== "" && !JOB_ID.test(step)) {
+    console.error("HH_STEP is not a job id");
+    process.exit(1);
+  }
+  const server = await createUiServer(harnessConfig, { path: bridgePath, token }, { job: process.env.HH_JOB === "1", ...(review ? { review } : {}), ...(step ? { step } : {}) });
   await server.connect(new StdioServerTransport());
 } catch (e) {
   console.error(e instanceof Error ? e.message : String(e));

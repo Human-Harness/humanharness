@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, toolsServerSpec, uiServerSpec } from "@humanharness/blocks";
 import type { ModelProfile } from "@humanharness/engines";
-import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasEnginePresets, hasJobs, hasMaterial, hasTools, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, type Permissions, type PermissionsOverride, aiStepOf, allBlocks, hasEnginePresets, hasJobs, hasMaterial, hasRecipes, hasTools, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -38,10 +38,15 @@ export interface SlotOptions {
   session?: Session;
   /** Called when the slot's engine starts a session. */
   onSession?: (session: Session) => void;
-  /** A job's slot (Decision 11): its `ui` server gets `HH_JOB=1`. Default: a task's, exactly today's specs. */
-  kind?: "task" | "job";
-  /** A job's own permissions: only ever narrower than the harness's (spec §8, T5). Ignored for a task's slot. */
+  /**
+   * A job's slot (Decision 11): its `ui` server gets `HH_JOB=1`. A recipe's AI step (tools spec §7.1, R1): `step`, whose
+   * `ui` server serves `job`'s `step_output` alone, with nothing else reachable. Default: a task's, exactly today's specs.
+   */
+  kind?: "task" | "job" | "step";
+  /** A job's own permissions: only ever narrower than the harness's (spec §8, T5). Ignored for a task's or step's slot. */
   permissions?: PermissionsOverride;
+  /** A step slot's job: its `ui` server serves that job's AI step `step_output`. */
+  job?: string;
 }
 
 export interface SlotSendOptions {
@@ -229,6 +234,13 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   async function openSlotNow(o: SlotOptions): Promise<SessionSlot> {
     if (closing) throw new Error("The workspace is closing");
     if (slots.has(o.key)) throw new Error(`A slot is already open for ${o.key}`);
+    // A recipe's AI step reaches its step_output and nothing else (tools spec §7.1, R1): none of the sockets below.
+    const step = o.kind === "step";
+    if (step) {
+      if (!o.job) throw new Error("A step slot needs its job");
+      const job = harness.jobs && Object.hasOwn(harness.jobs, o.job) ? harness.jobs[o.job] : undefined;
+      if (!job || !aiStepOf(job)) throw new Error(`No AI step for job "${o.job}"`);
+    }
     const ref: SlotRef = { key: o.key };
     const session: Session = o.session ?? { id: randomUUID(), started: false };
     let emitCurrent: ((e: Event) => void) | null = null;
@@ -239,12 +251,12 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     let toolsRpc: Rpc | null = null;
     try {
       const data = opts.data;
-      if (data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc((r) => data(r, ref));
-      if (material) materialRpc = await openRpc((r) => material.request(r, ref));
+      if (!step && data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc((r) => data(r, ref));
+      if (!step && material) materialRpc = await openRpc((r) => material.request(r, ref));
       // Task and job slots alike (Decision 9): a job's agent may call the tools too.
-      if (tools) toolsRpc = await openRpc((r) => tools.request(r, ref));
+      if (!step && tools) toolsRpc = await openRpc((r) => tools.request(r, ref));
       // The review tools ask the person (review spec §4): a task's slot only, never a job's (it can't ask, J1).
-      if (review && o.kind !== "job") reviewRpc = await openRpc(review);
+      if (!step && review && o.kind !== "job") reviewRpc = await openRpc(review);
     } catch (err) {
       await toolsRpc?.close().catch(() => {});
       await reviewRpc?.close().catch(() => {});
@@ -263,7 +275,12 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       throw new Error(closing ? "The workspace is closing" : `A slot is already open for ${o.key}`);
     }
 
-    const permissions: Permissions = o.kind === "job" ? narrowPermissions(harness.permissions, o.permissions) : harness.permissions;
+    const permissions: Permissions =
+      step ? narrowPermissions(harness.permissions, { edit: "none", exec: false, web: false })
+      : o.kind === "job" ? narrowPermissions(harness.permissions, o.permissions)
+      : harness.permissions;
+    // A task or job slot clears HH_STEP so an outer one can't make it a step slot; only with a recipe declared (D0).
+    const noStep: Record<string, string> = hasRecipes(harness) ? { HH_STEP: "" } : {};
     const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) });
     const transportOptions: TransportOptions = {
       folder,
@@ -271,14 +288,19 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       mcp: [
         // The engine hands its own env to MCP servers: a task slot clears HH_JOB so an outer one can't make it a job.
         // Only with jobs declared: without them the spec is today's (D0).
-        o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1" } } : hasJobs(harness) ? { ...ui, env: { ...ui.env, HH_JOB: "" } } : ui,
+        step ? { ...ui, env: { ...ui.env, HH_STEP: o.job as string, HH_JOB: "" } }
+        : o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1", ...noStep } }
+        : hasJobs(harness) ? { ...ui, env: { ...ui.env, HH_JOB: "", ...noStep } }
+        : ui,
         ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
         ...(toolsRpc && tools ? [toolsServerSpec({ catalogue: tools.catalogue, rpc: toolsRpc, launcher, entry: tools.entry })] : []),
         ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
-        ...harnessMcpServers(harness, launcher),
+        ...(step ? [] : harnessMcpServers(harness, launcher)),
       ],
       permissions,
-      references: references.map((r) => r.path),
+      references: step ? [] : references.map((r) => r.path),
+      // Its only tool is step_output: nothing is read, not even the folder (R1).
+      ...(step ? { mcpOnly: true } : {}),
       ...acpFields(engine, permissions.edit),
       // Codex reads CODEX_CONFIG by name: only it takes an engine preset's codex part. Other ACP engines (Kimi,
       // Gemini, Qwen) leave the method unset in the registry, and the registry's Codex entry is pinned as it is.
@@ -344,9 +366,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // each other's paths. Checked against the ledger before any await, like the window it guards.
         const task = options.trailer?.task;
         if (task !== undefined && ledger.running().some((w) => w.task === task)) throw new Error(`A turn of task ${task} is already running`);
+        // A step slot reaches no scope (tools spec §7.1, R1): whatever it is given, no linked folder and no preset.
+        const scope = step ? undefined : options.scope;
         // Tracked linked folders (hatches spec §3.4): write folders with no git of their own. None without linkedGitdir (D0).
         const gitdirOf = opts.linkedGitdir;
-        const tracked = gitdirOf ? (options.scope?.linked ?? []).filter((l) => l.tracked && l.mode === "write") : [];
+        const tracked = gitdirOf ? (scope?.linked ?? []).filter((l) => l.tracked && l.mode === "write") : [];
         busy = true;
         const controller = new AbortController();
         let doneEmitted = false;
@@ -402,7 +426,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
               },
               controller.signal,
               options.profile,
-              options.scope,
+              scope,
             );
             emitCurrent = null;
             const f = (final ?? { type: "done", ok: false, error: { code: "agent-crashed" } }) as Extract<Event, { type: "done" }>;

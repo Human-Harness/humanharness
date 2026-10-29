@@ -12,3 +12,4 @@ export { preparedSection, type PreparedPart } from "./prepared-section";
 export { readToolsJson, type ToolsState } from "./tools-json";
 export { readToolFixtures } from "./tool-fixture-files";
 export { recordedToolTransport, readToolRecordings } from "./recorded-transport";
+export { prepareTask, type PrepareTaskDeps, type PreparedTask, type PreRowFields } from "./prepare-task";

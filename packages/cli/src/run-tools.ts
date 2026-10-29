@@ -3,11 +3,11 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Writable } from "node:stream";
-import { type LoadedHarness, PRE_TOKENS_DEFAULT } from "@humanharness/harness-sdk";
+import type { LoadedHarness } from "@humanharness/harness-sdk";
 import { type FixtureExchange, hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { BrokerDataOp, runFile } from "@humanharness/shell/plugins";
 import { PREPARE_FAILED, type TaskDeps, type UsageLog, dataWriteQueue, preRecord, toolDataRequests } from "@humanharness/shell/tasks";
-import { ToolTrace, type TraceEntry, preparedSection, readToolsJson, runPreSteps } from "@humanharness/shell/tools";
+import { ToolTrace, type TraceEntry, prepareTask, readToolsJson } from "@humanharness/shell/tools";
 import { APP_SCOPE, type DataStore, MAIN_SCOPE, type ScopeStore } from "@humanharness/workspace";
 import { CliError } from "./cli";
 import type { ToolExchange } from "./record";
@@ -247,34 +247,21 @@ export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
     const run: RunTools = {
       exchanges,
       async prepare(p) {
-        const action = Object.hasOwn(h.actions, p.action) ? h.actions[p.action] : undefined;
-        const steps = action?.pre ?? [];
-        const phase = p.phase !== undefined ? { phase: p.phase } : {};
         try {
-          const done = await runPreSteps({ registry, steps, task: p.task, scope: p.scope, ...phase });
-          const descriptions: Record<string, string> = state.on ? Object.fromEntries(Object.entries(state.tools).map(([id, m]) => [id, m.description])) : {};
-          const part = preparedSection(done.results, { descriptions, preTokens: action?.preTokens ?? PRE_TOKENS_DEFAULT });
-          for (const c of part.cuts) await registry.note({ tool: c.tool, caller: "pre", task: p.task, ...phase, text: c.text });
-          await o.usageLog
-            .append(
-              preRecord({
-                engine: o.engine,
-                action: p.action,
-                task: p.task,
-                ...(scoped ? { scope: p.scope } : {}),
-                steps: steps.length,
-                ms: done.ms,
-                preparedTokens: done.requiredFailure ? 0 : part.tokens,
-                ok: done.results.every((r) => r.ok),
-              }),
-            )
-            .catch(() => say("Could not record the pre-steps in usage.jsonl"));
-          if (done.requiredFailure) {
+          // Shared with the app's tools host (prepare-task.ts): steps, section, cut notes, the `pre` row.
+          const answer = await prepareTask(p, {
+            registry,
+            action: Object.hasOwn(h.actions, p.action) ? h.actions[p.action] : undefined,
+            scoped,
+            descriptions: async () => (state.on ? Object.fromEntries(Object.entries(state.tools).map(([id, m]) => [id, m.description])) : {}),
+            row: (f) => o.usageLog.append(preRecord({ engine: o.engine, ...f })).catch(() => say("Could not record the pre-steps in usage.jsonl")),
+          });
+          if (answer.failed !== undefined) {
             // The tool's error goes to stderr: one plain line, keys hidden, cut, as every other tool line.
-            run.failed = [...clean(`${done.requiredFailure.tool} failed: ${done.requiredFailure.error}`)].slice(0, FAILED_CHARS).join("");
-            return { text: "", items: [], views: [], failed: run.failed };
+            run.failed = [...clean(answer.failed)].slice(0, FAILED_CHARS).join("");
+            return { ...answer, failed: run.failed };
           }
-          return { text: part.text, items: part.items, views: [] };
+          return answer;
         } catch (err) {
           // Never the thrown text to the person (P5), as the app: it goes to the run's log only.
           o.log(clean(`Could not run the pre-steps: ${err instanceof Error ? err.message : String(err)}`));

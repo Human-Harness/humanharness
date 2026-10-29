@@ -100,7 +100,7 @@ function cleanHooks(file: string, hooks: unknown): Hooks {
  * is the part before the last `/` ahead of the first glob character, so `//w*` is confined to `/`, not to `/w`.
  */
 function rulePath(spec: string, folder: string): string | null {
-  // `~/x` is the home folder; `/x` is relative to the settings file, which the engine reads from the snapshot.
+  // A leading tilde is the home folder; `/x` is relative to the settings file, read by the engine from the snapshot.
   if (spec.startsWith("~") || (spec.startsWith("/") && !spec.startsWith("//"))) return null;
   if (spec.split(/[\\/]/).includes("..")) return null;
   const glob = spec.search(/[*?[{]/);

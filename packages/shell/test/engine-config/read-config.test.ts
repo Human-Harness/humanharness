@@ -283,7 +283,7 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     for (const f of files) {
       const text = fs.readFileSync(path.join(src, f), "utf8");
       expect(text, f).not.toMatch(home);
-      expect(text, f).not.toMatch(/homedir\s*\(|process\.env\.HOME\b|["']~\//);
+      expect(text, f).not.toMatch(/homedir\s*\(|process\.env\.HOME\b|["'`]~\//);
     }
     expect('/** a */ x = "~/.claude"').toMatch(home);
     expect("// ~/.codex").toMatch(home);

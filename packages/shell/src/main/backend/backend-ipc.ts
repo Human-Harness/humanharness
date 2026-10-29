@@ -1,6 +1,6 @@
 import path from "node:path";
 import { BACKEND_CALLS_IN_FLIGHT, BACKEND_LINE_MAX, type BackendInit, type BackendScope, hasBackend } from "@humanharness/harness-sdk";
-import type { LinkedFolderEntry, ScopeEntry } from "@humanharness/workspace";
+import { type LinkedFolderEntry, type ScopeEntry, isProfileId } from "@humanharness/workspace";
 import type { BackendLog } from "./backend-log";
 import { isBackendName } from "./backend-protocol";
 import { BackendSupervisor, type BackendState, type SupervisedProcess } from "./backend-supervisor";
@@ -93,12 +93,26 @@ export function registerBackendIpc(
   });
 }
 
-/** A profile id as a folder name under backend-data/: one plain segment. */
-const SEGMENT = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+/**
+ * Each active scope's links as a turn would use them now: `usable(scope)` is the scope access's `entries` (signed,
+ * live, declared, today's mode, still the folder linked, the picker's refusals passed). A scope without links reads
+ * nothing.
+ */
+export async function usableLinks(
+  scopes: ScopeEntry[],
+  usable: (scope: string) => Promise<ScopeEntry[]>,
+): Promise<(s: ScopeEntry) => LinkedFolderEntry[]> {
+  const by = new Map<string, LinkedFolderEntry[]>();
+  for (const s of scopes) {
+    if (s.archived || !s.linked?.length) continue;
+    by.set(s.id, (await usable(s.id)).find((e) => e.id === s.id)?.linked ?? []);
+  }
+  return (s) => by.get(s.id) ?? [];
+}
 
 /**
  * The backend's `init` for a base (Decisions 3, 4; threat model B7): exactly BackendInit's keys, no credential. Scopes
- * are the active ones; their links only those `links` vouches for (the app's signed ones), none without it.
+ * are the active ones; their links only those `links` vouches for (usableLinks: a turn's checks), none without it.
  */
 export function backendInit(o: {
   base: string;
@@ -111,7 +125,7 @@ export function backendInit(o: {
   profile?: string;
   mock: boolean;
 }): BackendInit {
-  if (o.profile !== undefined && (!SEGMENT.test(o.profile) || o.profile.includes(".."))) throw new Error("Invalid profile id");
+  if (o.profile !== undefined && !isProfileId(o.profile)) throw new Error("Invalid profile id");
   const scopes: BackendScope[] = o.scopes
     .filter((s) => !s.archived)
     .map((s) => ({ id: s.id, title: s.title, linked: (o.links?.(s) ?? []).map((l) => ({ key: l.key, path: l.path, mode: l.mode })) }));

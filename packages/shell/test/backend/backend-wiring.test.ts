@@ -141,7 +141,7 @@ describe("the backend's wiring in main", () => {
     const got = backendInit({ base: "/w/p1", scopes, language: "en", coreVersion: "1", userData: "/u", profile: "p1", mock: false });
     expect(got.scopes).toEqual([{ id: "a", title: "A", linked: [] }]);
     expect(got.dataDir).toBe(path.join("/u", "backend-data", "p1"));
-    for (const bad of ["..", ".", "a/b", "../x", ""]) {
+    for (const bad of ["..", ".", "a/b", "../x", "", "P1", "a.b", "-x"]) {
       expect(() => backendInit({ base: "/w", scopes: [], language: "en", coreVersion: "1", userData: "/u", profile: bad, mock: false })).toThrow();
     }
   });

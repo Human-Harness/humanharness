@@ -107,7 +107,6 @@ import {
   DataStore,
   History,
   MAIN_SCOPE,
-  type ScopeEntry,
   ScopeStore,
   appendSidekickEvent,
   DEFAULT_PINNED_TOKENS,
@@ -198,8 +197,8 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, hatchesState, linkChecker, linkedSigning, registerLinkedIpc } from "./linked-ipc";
-import { backendFor, backendInit, registerBackendIpc } from "./backend/backend-ipc";
+import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import { BackendLog } from "./backend/backend-log";
 import { BackendProcess } from "./backend/backend-process";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
@@ -283,6 +282,8 @@ let linkedDeps: LinkedIpcDeps | null = null;
 let backend: BackendSupervisor | null = null;
 /** The backend was started in this process (Decision 5): from then on a base change is a rebase. */
 let backendStarted = false;
+/** Bumped when the backend's base changes: a scopes update read before it is stale and dropped. */
+let backendGen = 0;
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** The first web address the running step printed, for a screen that reopens while it runs. */
@@ -830,6 +831,8 @@ async function scopesChanged(): Promise<void> {
 async function arrivedInProfile(): Promise<void> {
   // Before anything reads the new base: the old profile's plugins stop, and nothing of theirs reaches the new one.
   await rebasePlugins();
+  // The old profile's backend too: stopped now, started in the new one once its scopes are settled (below).
+  await backendLeaveBase();
   // Another profile is another folder: the reader's watches were checked against the old one.
   documentSessions.closeAll();
   await interruptTasks();
@@ -1854,7 +1857,7 @@ async function jobsReady(): Promise<void> {
 
 /**
  * The backend's `init` for the base the app is in now (hatches Decisions 3, 4), its data folder made; null before
- * setup. Only the links the app signed reach it (L1), none without linked folders.
+ * setup. Each scope's links are the ones a turn there would use (the scope access's checks), none without linked folders.
  */
 async function backendInitNow(): Promise<BackendInit | null> {
   await scopesSettled();
@@ -1862,11 +1865,12 @@ async function backendInitNow(): Promise<BackendInit | null> {
   if (!c) return null;
   const base = baseOf(c);
   const profile = profilesOn() ? (c.profile ?? "") : "";
-  const check = linkedDeps ? await linkChecker(linkedDeps.signing) : null;
+  const scopes = scoped() ? await scopeStoreFor(base).list() : [];
+  const access = linked_()?.access;
   const init = backendInit({
     base,
-    scopes: scoped() ? await scopeStoreFor(base).list() : [],
-    ...(check ? { links: (s: ScopeEntry) => check(s, profile) } : {}),
+    scopes,
+    ...(access ? { links: await usableLinks(scopes, (id) => access.entries(id)) } : {}),
     language: c.language,
     coreVersion: app.getVersion(),
     userData: app.getPath("userData"),
@@ -1881,6 +1885,7 @@ async function backendInitNow(): Promise<BackendInit | null> {
 async function backendReady(): Promise<void> {
   const b = backend;
   if (!b || quitting || backendStarted) return;
+  backendGen++;
   const init = await backendInitNow();
   if (!init || quitting || backendStarted) return;
   backendStarted = true;
@@ -1892,6 +1897,7 @@ async function backendRebase(): Promise<void> {
   const b = backend;
   if (!b || quitting) return;
   if (!backendStarted) return backendReady();
+  backendGen++;
   const init = await backendInitNow();
   if (init && !quitting) await b.rebase(init);
 }
@@ -1899,8 +1905,16 @@ async function backendRebase(): Promise<void> {
 async function backendScopes(): Promise<void> {
   const b = backend;
   if (!b || !backendStarted || quitting) return;
+  const gen = backendGen;
   const init = await backendInitNow();
-  if (init) b.scopesChanged(init.scopes);
+  // A rebase began meanwhile: its own init is newer than these scopes.
+  if (init && gen === backendGen) b.scopesChanged(init.scopes);
+}
+
+/** A profile switch begins: a started backend stops before anything reads the new base (backendRebase starts it). */
+async function backendLeaveBase(): Promise<void> {
+  backendGen++;
+  if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
 }
 
 /**

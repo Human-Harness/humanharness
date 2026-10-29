@@ -7,6 +7,7 @@ import { type LinkedFolderEntry, type ScopeEntry, ScopeStore, scopesFile } from 
 import { type LinkSigning, linkedSigning, registerLinkedIpc } from "../src/main/linked-ipc";
 import { LinkedInstructions, checkGitChanges, refreshUnlessBusy, createScopeAccess, linkedLines, linkedSection, scopeAccessFor } from "../src/main/scope-access";
 import { folderProblem } from "../src/main/validate";
+import { backendInit, usableLinks } from "../src/main/backend/backend-ipc";
 
 const entries: ScopeEntry[] = [
   {
@@ -498,5 +499,39 @@ describe("LinkedInstructions (AGENTS.md between tasks)", () => {
     const m = make({ refresh: async () => Promise.reject(new Error("boom")) });
     await expect(m.li.changed()).resolves.toBeUndefined();
     await expect(m.li.betweenTasks()).resolves.toBeUndefined();
+  });
+});
+
+/** The backend's init (hatches spec §4.2) takes each scope's links from the same checks as a turn. */
+describe("the backend's links: the turns' verdicts", () => {
+  it("an undeclared key, a changed mode and a deleted folder are left out of the init; archived scopes too", async () => {
+    const s = setup({ decls: { ...DECLS, notes: { label: "Notes", mode: "write", history: "auto", many: false } } });
+    await s.store.create("App");
+    await s.store.create("Old");
+    const repo = fs.realpathSync.native(mk(path.join(s.code, "app")));
+    const docs = fs.realpathSync.native(mk(path.join(s.code, "docs")));
+    const notes = fs.realpathSync.native(mk(path.join(s.code, "notes")));
+    const gone = fs.realpathSync.native(mk(path.join(s.code, "gone")));
+    const old = fs.realpathSync.native(mk(path.join(s.code, "old")));
+    await s.link("app", "repos", repo);
+    await s.link("app", "repos", gone);
+    await s.link("app", "docs", docs);
+    await s.link("app", "notes", notes);
+    await s.link("old", "repos", old);
+    await s.store.setArchived("old", true);
+    fs.rmSync(gone, { recursive: true });
+    // The harness is updated: `notes` no longer declared, `docs` is now a write folder.
+    const access = s.update({ repos: DECLS.repos, docs: { ...DECLS.docs, mode: "write" } });
+    const scopes = await s.store.list();
+    const init = backendInit({
+      base: s.work,
+      scopes,
+      links: await usableLinks(scopes, (id) => access.entries(id)),
+      language: "en",
+      coreVersion: "0.1.0",
+      userData: path.join(s.t, "userData"),
+      mock: false,
+    });
+    expect(init.scopes).toEqual([{ id: "app", title: "App", linked: [{ key: "repos", path: repo, mode: "write" }] }]);
   });
 });

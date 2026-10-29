@@ -1,2 +1,1 @@
-export type { Session, Transport } from "@humanharness/engines";
-export { type TransportOptions, acpFields } from "@humanharness/engines/registry";
+export type { CommonOptions, Session, Transport } from "@humanharness/engines";

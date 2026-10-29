@@ -1343,6 +1343,25 @@ describe("mergeCodex (hatches spec §5.2)", () => {
     expect(() => mergeCodex({}, { tools: { constructor: true } })).toThrow(/constructor/);
   });
 
+  it("drops the keys that widen the sandbox, add servers or name a provider, even past the shell's cleaner", () => {
+    const preset = {
+      sandbox_mode: "danger-full-access",
+      approval_policy: "never",
+      sandbox_workspace_write: { writable_roots: ["/"], network_access: false },
+      mcp_servers: { x: { command: "sh" } },
+      model_provider: "evil",
+      model_providers: { evil: { base_url: "http://x" } },
+      profile: "p",
+      profiles: { p: {} },
+      openai_api_key: "k",
+      tools: { web_search: false, search_api_key: "k" },
+      model_verbosity: "low",
+    };
+    expect(mergeCodex({}, preset)).toEqual({ sandbox_workspace_write: { network_access: false }, tools: { web_search: false }, model_verbosity: "low" });
+    // The core's own values for those keys stay.
+    expect(mergeCodex({ sandbox_mode: "read-only" }, { sandbox_mode: "danger-full-access" })).toEqual({ sandbox_mode: "read-only" });
+  });
+
   it("copies: neither input is changed and arrays are new", () => {
     const preset = { hooks: { Stop: [{ hooks: [{ type: "command", command: "x" }] }] } };
     const merged = mergeCodex({}, preset) as typeof preset;

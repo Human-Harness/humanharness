@@ -274,6 +274,21 @@ export function codexConfig(profile: ModelProfile, preset?: Record<string, unkno
 /** The keys the core owns in `CODEX_CONFIG` (the profile's): a preset never sets them, even when the profile leaves one out. */
 const PROFILE_KEYS = new Set(["model", "model_reasoning_effort", "model_auto_compact_token_limit"]);
 const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+/**
+ * Preset keys dropped whatever the shell's cleaner let through (defense in depth): they widen the sandbox, skip
+ * approvals, add servers outside the preset's list, or pick a provider, a profile or a key.
+ */
+const DENIED_CODEX = new Set([
+  "sandbox_mode",
+  "approval_policy",
+  "sandbox_workspace_write.writable_roots",
+  "mcp_servers",
+  "model_provider",
+  "model_providers",
+  "profile",
+  "profiles",
+]);
+const deniedCodex = (key: string, k: string): boolean => DENIED_CODEX.has(key) || k.endsWith("_api_key");
 
 function plainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -296,8 +311,11 @@ function mergeInto(core: Record<string, unknown>, preset: Record<string, unknown
   for (const k of Object.keys(preset)) {
     if (PROTO_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${at ? `${at}.` : ""}${k}`);
     const key = at ? `${at}.${k}` : k;
+    if (deniedCodex(key, k)) continue;
     if (!Object.hasOwn(out, k)) {
-      Object.defineProperty(out, k, { value: copyJson(preset[k], key), enumerable: true, writable: true, configurable: true });
+      // A table only the preset has goes through the merge too, so the denied keys inside it are dropped.
+      const value = plainObject(preset[k]) ? mergeInto({}, preset[k] as Record<string, unknown>, key) : copyJson(preset[k], key);
+      Object.defineProperty(out, k, { value, enumerable: true, writable: true, configurable: true });
     } else if (plainObject(out[k]) && plainObject(preset[k])) {
       out[k] = mergeInto(out[k] as Record<string, unknown>, preset[k] as Record<string, unknown>, key);
     }
@@ -308,8 +326,8 @@ function mergeInto(core: Record<string, unknown>, preset: Record<string, unknown
 
 /**
  * A scope's cleaned `codex.toml` (hatches spec §5.2) merged under the core's `CODEX_CONFIG`: deep, the core's keys
- * first and winning at every depth. The profile's keys are refused outright (the shell's cleaner already refuses
- * them: a last guard).
+ * first and winning at every depth. The profile's keys are refused outright and DENIED_CODEX's are dropped (the
+ * shell's cleaner already refuses both: a last guard).
  */
 export function mergeCodex(core: Record<string, unknown>, preset: Record<string, unknown>): Record<string, unknown> {
   for (const k of Object.keys(preset)) {

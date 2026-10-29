@@ -1,5 +1,5 @@
 import type { McpServerSpec } from "@humanharness/blocks";
-import type { EnginePreset } from "@humanharness/runtime";
+import { absoluteSearchPath, type EnginePreset } from "@humanharness/runtime";
 import { type EngineApproval, type ScopeEntry, engineConfigDir, isScopeId } from "@humanharness/workspace";
 import { engineApprovalValid, enginePinTag, enginePinValid } from "./approval";
 import type { CleanSettings } from "./clean";
@@ -39,8 +39,8 @@ interface EngineHostDeps {
   epoch(profile: string, scope: string): Promise<number | null>;
   /** The manifest's permissions, actions and MCP servers (cleaning context, reserved names). */
   harness: { permissions: { edit: "folder" | "none"; web: boolean }; actions: Readonly<Record<string, unknown>>; mcp: readonly string[] };
-  /** The PATH the engines get, absolute entries only: where a bare interpreter, npx or uvx is looked up (E2). */
-  searchPath?(): Promise<string>;
+  /** The login PATH the engines get (`engineSearchPath`): cleaned per scope as a preset turn's (`absoluteSearchPath`), it is where a bare interpreter, npx or uvx is looked up (E2). */
+  loginPath?(): Promise<string>;
   log?(message: string, err?: unknown): void;
 }
 
@@ -102,14 +102,16 @@ export class EngineHost {
   /** The cleaning context of `scope` today, and its live engine folder. */
   private async options(base: string, scope: string): Promise<ReadEngineOptions & { dir: string }> {
     const h = this.d.harness;
+    const linked = await this.d.linked(scope);
     return {
       folder: base,
-      linked: await this.d.linked(scope),
+      linked,
       edit: h.permissions.edit,
       reserved: new Set([...CORE_SERVERS, ...h.mcp]),
       actions: h.actions,
       web: h.permissions.web,
-      ...(this.d.searchPath ? { searchPath: await this.d.searchPath() } : {}),
+      // The PATH a preset turn of this scope gets: without the folder and its linked folders.
+      ...(this.d.loginPath ? { searchPath: absoluteSearchPath(await this.d.loginPath(), [base, ...linked]) } : {}),
       dir: engineConfigDir(base, scope),
     };
   }

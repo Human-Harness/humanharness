@@ -461,6 +461,8 @@ export class AcpTransport implements Transport {
   private spawnedConfig: string | undefined;
   /** The engine preset hash the last process was started with (undefined: none, D0). */
   private spawnedHash: string | undefined;
+  /** The PATH the last process got on a preset turn (`presetPath`); undefined without a preset (D0). */
+  private spawnedPath: string | undefined;
   /** The turn's engine preset (hatches part 3); undefined without one (D0). */
   private engine: EnginePreset | undefined;
   /** The profile of the turn being run. */
@@ -548,6 +550,12 @@ export class AcpTransport implements Transport {
     return this.o.profileMethod === "config-option";
   }
 
+  /** A preset turn's PATH: `value` without the work folder and the turn's linked folders (`absoluteSearchPath`). */
+  private presetPath(value: string, scope?: TurnScope): string {
+    const linked = scope ? scope.linked : this.linked;
+    return absoluteSearchPath(value, [this.o.folder, ...linked.map((l) => l.path)]);
+  }
+
   /** Starts the agent process and initializes the connection. */
   private async connect(config: string | undefined): Promise<void> {
     const [binary, ...args] = this.o.command;
@@ -558,7 +566,7 @@ export class AcpTransport implements Transport {
     if (config !== undefined) env.CODEX_CONFIG = config;
     else delete env.CODEX_CONFIG;
     // With a preset, its hooks and servers find programs on an absolute-only PATH (E2); without one, D0.
-    if (this.engine && env.PATH !== undefined) env.PATH = absoluteSearchPath(env.PATH);
+    if (this.engine) env.PATH = this.presetPath(env.PATH ?? "");
     const child = spawn(binary, args, {
       cwd: this.o.folder,
       env,
@@ -569,6 +577,7 @@ export class AcpTransport implements Transport {
     this.spawned = true;
     this.spawnedConfig = config;
     this.spawnedHash = this.engine?.hash;
+    this.spawnedPath = this.engine ? env.PATH : undefined;
     this.stderrTail = "";
     child.on("exit", () => {
       if (this.child === child) this.reset();
@@ -885,6 +894,11 @@ export class AcpTransport implements Transport {
     if (this.spawned && (config !== this.spawnedConfig || engine?.hash !== this.spawnedHash)) {
       await this.close();
       this.o.session = { id: randomUUID(), started: false };
+    }
+    // A preset turn's PATH leaves out the turn's roots (`absoluteSearchPath`): linked folders changed since the agent
+    // started need a new process (the session is kept, and loaded again where the agent can).
+    if (this.spawned && engine && this.spawnedPath !== this.presetPath({ ...process.env, ...this.o.env, ...this.o.engineEnv }.PATH ?? "", scope)) {
+      await this.close();
     }
     // config-option: a session can't go back to the default model, so a profile without one starts afresh (D2).
     if (this.byConfigOption && this.appliedModel !== undefined && profile?.model === undefined) {

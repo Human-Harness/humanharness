@@ -1410,11 +1410,16 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     });
   });
 
-  it("a preset turn's agent (and so its hooks and servers) gets a PATH of absolute entries only; D0 keeps it", async () => {
-    const dirty = ":.:rel/bin:/usr/bin::/bin";
-    const withPreset = setup({ turns: [[chunk("a")]] }, undefined, { engineEnv: { PATH: dirty } });
+  it("a preset turn's agent (and so its hooks and servers) gets a PATH without the folder and linked folders; D0 keeps it", async () => {
+    const linked = fs.realpathSync(fs.mkdtempSync(path.join(root, "l-")));
+    const withPreset = setup((folder) => ({ turns: [[chunk("a")], [chunk("b")]] }), undefined, {});
+    const dirty = `:.:rel/bin:${fs.realpathSync(withPreset.folder)}/bin:/usr/bin::${linked}/bin:/bin`;
+    (withPreset.transport as unknown as { o: { engineEnv?: Record<string, string> } }).o.engineEnv = { PATH: dirty };
+    await turnWith(withPreset.transport, { linked: [{ path: linked, mode: "read", tracked: false }], engine: preset() }, deep);
+    expect(withPreset.log().filter((l) => l.method === "env").map((l) => l.params.PATH)).toEqual(["/usr/bin:/bin"]);
+    // The linked folder unlinked: a new process, whose PATH keeps that folder's entry again.
     await turnWith(withPreset.transport, { linked: [], engine: preset() }, deep);
-    expect(withPreset.log().find((l) => l.method === "env")!.params.PATH).toBe("/usr/bin:/bin");
+    expect(withPreset.log().filter((l) => l.method === "env").map((l) => l.params.PATH)).toEqual(["/usr/bin:/bin", `/usr/bin:${linked}/bin:/bin`]);
     await withPreset.transport.close();
     const d0 = setup({ turns: [[chunk("a")]] }, undefined, { engineEnv: { PATH: dirty } });
     await turnWith(d0.transport, { linked: [] }, deep);

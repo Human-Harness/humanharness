@@ -201,7 +201,8 @@ function parse(command: ScriptCommand, folder: string): Parsed {
     const pkg = words[at];
     if (pkg === undefined || !NPM_NAME.test(pkg)) refuse(`runs npx with ${pkg === undefined ? "no package" : JSON.stringify(pkg.slice(0, 60))}, not a remote npm package`);
     out.remote = true;
-    out.checks.push({ word: "npx", role: "interp" }, { word: pkg!, role: "npm" });
+    // npx is `#!/usr/bin/env node`: the node PATH finds runs it.
+    out.checks.push({ word: "npx", role: "interp" }, { word: "node", role: "interp" }, { word: pkg!, role: "npm" });
     rest(at + 1);
     return out;
   }
@@ -209,7 +210,8 @@ function parse(command: ScriptCommand, folder: string): Parsed {
     const pkg = words[1];
     if (pkg === undefined || !PYPI_NAME.test(pkg)) refuse(`runs uvx with ${pkg === undefined ? "no package" : JSON.stringify(pkg.slice(0, 60))}, not a remote PyPI package`);
     out.remote = true;
-    out.checks.push({ word: "uvx", role: "interp" }, { word: pkg!, role: "pypi" });
+    // uvx may run a Python it finds on PATH.
+    out.checks.push({ word: "uvx", role: "interp" }, { word: "python3", role: "interp" }, { word: "python", role: "interp" }, { word: pkg!, role: "pypi" });
     rest(2);
     return out;
   }

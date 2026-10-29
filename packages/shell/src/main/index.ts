@@ -73,7 +73,6 @@ import {
   createWorkspace,
   runSystemSession,
   runSystemTask,
-  absoluteSearchPath,
 } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -140,7 +139,7 @@ import { ConfigStore, cleanJobs, historyDir } from "./config";
 import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
-import { cliCommand, engineCommand, loginShellPath, resolveBinary } from "./engine-command";
+import { cliCommand, engineCommand, engineSearchPath, loginShellPath, resolveBinary } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
@@ -2068,9 +2067,6 @@ async function linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHis
  * Which engine preset a task gets (hatches spec §5.2, §5.3): only a harness that declares `enginePresets` makes it
  * (D0: undefined, and `.harness/engine/` is never read). Approvals are checked with the links' key, never created here.
  */
-/** The engines' PATH for the engine-config checks (`EngineHostDeps.searchPath`), read once. */
-let engineSearchPath: Promise<string> | undefined;
-
 function engineHost_(): EngineHost | undefined {
   if (!hasEnginePresets(harness)) return undefined;
   if (engineHost) return engineHost;
@@ -2088,10 +2084,9 @@ function engineHost_(): EngineHost | undefined {
     linked: async (scope) => ((await linked_()?.access.access(scope))?.linked ?? []).map((l) => l.path),
     secret: () => linkedSecret(userData)(false),
     epoch: (profile, scope) => epochs.get(profile, scope),
-    // The engines' PATH as their preset turns get it (absolute entries only): a bare interpreter found first inside
-    // the folder is refused (E2).
-    // Read once: a login shell per turn would be slow.
-    searchPath: () => (engineSearchPath ??= loginShellPath(commandDeps).then(absoluteSearchPath)),
+    // The engines' login PATH, the one value `engineCommand` gives them: cleaned per scope, a bare interpreter, npx or
+    // uvx found first inside a root is refused (E2).
+    loginPath: () => engineSearchPath(commandDeps),
     // Read on each use: a harness update changes them.
     get harness() {
       return { permissions: harness.permissions, actions: harness.actions, mcp: harness.mcp };

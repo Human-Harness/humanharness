@@ -37,11 +37,36 @@ async function run(t: ClaudeCliTransport, message = "hi", signal = new AbortCont
 }
 
 describe("PATH on a preset turn (hatches spec §5.3, E2)", () => {
-  it("keeps absolute entries only with a preset; D0 keeps the PATH as given", async () => {
+  it("absoluteSearchPath keeps absolute entries outside the roots; nothing left falls back to /usr/bin:/bin (probe 6)", () => {
+    const r = fs.realpathSync(fs.mkdtempSync(path.join(root, "roots-")));
+    fs.mkdirSync(path.join(r, "work/bin"), { recursive: true });
+    fs.mkdirSync(path.join(r, "Linked"), { recursive: true });
+    const roots = [path.join(r, "work"), path.join(r, "Linked")];
     expect(absoluteSearchPath(":.:rel/bin:/usr/bin::/bin:./x")).toBe("/usr/bin:/bin");
-    const dirty = ":.:rel/bin:/usr/bin::/bin";
+    for (const [value, want] of [
+      ["", "/usr/bin:/bin"],
+      [".", "/usr/bin:/bin"],
+      ["~/bin:/usr/bin", "/usr/bin"],
+      ["$HOME/bin:/usr/bin", "/usr/bin"],
+      ["bin:/usr/bin", "/usr/bin"],
+      ["/a::/b:", "/a:/b"],
+      ["./x:/usr/bin", "/usr/bin"],
+      [`${r}/work/bin:/usr/bin`, "/usr/bin"],
+      [`${r}/WORK/bin:/opt/x`, "/opt/x"],
+      [`${r}/work/not-yet/bin:/usr/bin`, "/usr/bin"],
+      [`${r}/work/../Linked/bin:/usr/bin`, "/usr/bin"],
+      [`${r}/work`, "/usr/bin:/bin"],
+      [`${r}/other:/usr/bin`, `${r}/other:/usr/bin`],
+    ] as const) {
+      expect(absoluteSearchPath(value, roots), value).toBe(want);
+    }
+  });
+
+  it("a preset turn's CLI (and its hooks and servers) gets that PATH without the folder and linked folders; D0 keeps it as given", async () => {
     for (const engine of [{ hash: "a".repeat(64), base: "isolated" as const, servers: [] }, undefined]) {
-      const folder = fs.mkdtempSync(path.join(root, "t-"));
+      const folder = fs.realpathSync(fs.mkdtempSync(path.join(root, "t-")));
+      const linked = fs.realpathSync(fs.mkdtempSync(path.join(root, "l-")));
+      const dirty = `:.:rel/bin:${folder}/bin:/usr/bin::${linked}/bin:/bin`;
       const pathFile = path.join(folder, "..", `path-${path.basename(folder)}.txt`);
       const transport = new ClaudeCliTransport({
         folder,
@@ -52,7 +77,8 @@ describe("PATH on a preset turn (hatches spec §5.3, E2)", () => {
         env: { HH_FAKE_SCRIPT: writeScript(root, { steps: [...claudeTextLines("ok"), claudeResultLine(true)] }), HH_FAKE_PATH: pathFile, PATH: dirty },
         onSessionStarted: () => {},
       });
-      await transport.turn("hi", () => {}, new AbortController().signal, undefined, { linked: [], ...(engine ? { engine } : {}) });
+      const scope = { linked: [{ path: linked, mode: "read" as const, tracked: false }], ...(engine ? { engine } : {}) };
+      await transport.turn("hi", () => {}, new AbortController().signal, undefined, scope);
       expect(fs.readFileSync(pathFile, "utf8"), engine ? "preset" : "D0").toBe(engine ? "/usr/bin:/bin" : dirty);
     }
   });

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import fsp from "node:fs/promises";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { absoluteSearchPath } from "@humanharness/runtime";
 import { readEngineConfig } from "../../src/main/engine-config/read-config";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-read-config-")));
@@ -304,10 +305,38 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
       { mcpServers: { x: { command: "npx", args: ["-y", "srv"] } } },
       { mcpServers: { x: { command: "./tools/run" } } },
     ]) {
-      expect(await run(mcp, onPath), JSON.stringify(mcp)).toEqual([expect.stringContaining("found first on PATH")]);
+      const got = await run(mcp, onPath);
+      expect(got.length, JSON.stringify(mcp)).toBeGreaterThan(0);
+      for (const m of got) expect(m, JSON.stringify(mcp)).toContain("found first on PATH");
       expect(await run(mcp, "/usr/bin:/bin"), JSON.stringify(mcp)).toEqual([]);
     }
     expect((await read())!.refusals).toEqual([]);
+  });
+
+  it("npx and uvx are refused when the node or python they run is found first inside a root (probe 6)", async () => {
+    const { folder, dir, o } = setup({}, { "bin/node": "#!/bin/sh\n", "bin/python3": "#!/bin/sh\n", "tools/x.py": "print(1)\n" });
+    for (const b of ["node", "python3"]) fs.chmodSync(path.join(folder, "bin", b), 0o755);
+    const sp = `${folder}/bin:/usr/bin:/bin`;
+    const run = async (mcp: unknown, searchPath: string) => {
+      fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify(mcp));
+      return (await readEngineConfig(dir, { ...o, searchPath }))!.refusals.map((r) => r.file);
+    };
+    expect(await run({ mcpServers: { x: { command: "npx", args: ["-y", "cowsay"] } } }, sp)).toEqual([path.join(folder, "bin/node")]);
+    expect(await run({ mcpServers: { x: { command: "uvx", args: ["ruff"] } } }, sp)).toEqual([path.join(folder, "bin/python3")]);
+    // The PATH a preset turn gets leaves the folder out, so nothing there is found.
+    expect(await run({ mcpServers: { x: { command: "npx", args: ["-y", "cowsay"] } } }, absoluteSearchPath(sp, [folder]))).toEqual([]);
+  });
+
+  it("an interpreter nowhere on PATH, then created in a root's folder on PATH, is refused (probe 6)", async () => {
+    const { folder, dir, o } = setup({}, { "tools/x.py": "print(1)\n" });
+    fs.mkdirSync(path.join(folder, "bin"));
+    const sp = `${folder}/bin:/usr/bin:/bin`;
+    fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ mcpServers: { x: { command: "python", args: ["tools/x.py"] } } }));
+    expect((await readEngineConfig(dir, { ...o, searchPath: sp }))!.refusals).toEqual([]);
+    fs.writeFileSync(path.join(folder, "bin/python"), "#!/bin/sh\n", { mode: 0o755 });
+    expect((await readEngineConfig(dir, { ...o, searchPath: sp }))!.refusals.map((r) => r.file)).toEqual([path.join(folder, "bin/python")]);
+    // A preset turn's PATH never had that folder.
+    expect(absoluteSearchPath(sp, [folder])).toBe("/usr/bin:/bin");
   });
 
   it("refuses hard links, in the engine folder and as scripts", async () => {

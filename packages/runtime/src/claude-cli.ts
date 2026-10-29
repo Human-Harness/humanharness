@@ -166,9 +166,9 @@ function presetRules(preset: EnginePreset | undefined): { allow?: string[]; deny
 /** Under the `global` base the CLI reads the folder's `.mcp.json`: the agent may not write one. */
 const GLOBAL_DENIED = ["Edit(.mcp.json)", "Write(.mcp.json)", "MultiEdit(.mcp.json)", "NotebookEdit(.mcp.json)"];
 
-/** The CLI's environment: with a preset, its `PATH` keeps absolute entries only (`absoluteSearchPath`); without one, as given (D0). */
-function presetEnv(env: NodeJS.ProcessEnv, preset: boolean): NodeJS.ProcessEnv {
-  return preset && env.PATH !== undefined ? { ...env, PATH: absoluteSearchPath(env.PATH) } : env;
+/** The CLI's environment: with a preset, its `PATH` keeps absolute entries outside `roots` only (`absoluteSearchPath`); without one, as given (D0). */
+function presetEnv(env: NodeJS.ProcessEnv, preset: boolean, roots: readonly string[]): NodeJS.ProcessEnv {
+  return preset ? { ...env, PATH: absoluteSearchPath(env.PATH ?? "", roots) } : env;
 }
 
 /**
@@ -469,7 +469,7 @@ export class ClaudeCliTransport implements Transport {
       const [binary, ...leading] = this.o.command;
       const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile, scope })], {
         cwd: this.o.folder,
-        env: presetEnv({ ...process.env, ...this.o.env }, scope?.engine !== undefined),
+        env: presetEnv({ ...process.env, ...this.o.env }, scope?.engine !== undefined, [this.o.folder, ...(scope?.linked ?? []).map((l) => l.path)]),
         stdio: ["pipe", "pipe", "pipe"],
         detached: useGroup,
       });

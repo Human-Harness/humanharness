@@ -256,6 +256,19 @@ describe("toolsHost.prepare (tools spec §6)", () => {
     expect(loose.seen.usage).toEqual([expect.objectContaining({ ok: false })]);
   });
 
+  it("a refused start's pre row reports preparedTokens 0 (no section was sent); a started one its section's size", async () => {
+    await built();
+    const answer: Answer = async (c) => (c.tool === "apply" ? { ok: false, error: "the folder is gone" } : { ok: true, value: [1, 2, 3] });
+    const { t, seen } = wire({ actions: withPre([{ tool: "count", as: "counts" }, { tool: "apply", required: true }]), answer });
+    expect((await t.prepare({ action: "draft", scope: "intro", task: TASK })).failed).toBeDefined();
+    expect(seen.usage).toEqual([expect.objectContaining({ kind: "pre", ok: false, preparedTokens: 0 })]);
+    const loose = wire({ actions: withPre([{ tool: "count", as: "counts" }, { tool: "apply" }]), answer });
+    const b = await loose.t.prepare({ action: "draft", scope: "intro", task: randomUUID() });
+    expect(b.failed).toBeUndefined();
+    expect(loose.seen.usage).toEqual([expect.objectContaining({ kind: "pre", ok: false, preparedTokens: Math.ceil(b.text.length / 4) })]);
+    expect(Math.ceil(b.text.length / 4)).toBeGreaterThan(0);
+  });
+
   it("a failed start's calls stay readable under its id and are pruned by age like any task's", async () => {
     await built();
     const answer: Answer = async () => ({ ok: false, error: "no" });

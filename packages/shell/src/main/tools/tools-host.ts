@@ -467,8 +467,9 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
       const part = preparedSection(run.results, { descriptions, preTokens: action?.preTokens ?? PRE_TOKENS_DEFAULT });
       // After the calls, so each cut joins the group under them; sent even when nothing is left of the section.
       for (const c of part.cuts) await registry.note({ tool: c.tool, caller: "pre", task: o.task, ...phase, text: c.text });
+      // A refused start sent no section: its row counts no prepared tokens.
       await row((engine) =>
-        preRecord({ engine, action: o.action, task: o.task, ...(scoped() ? { scope: o.scope } : {}), steps: steps.length, ms: run.ms, preparedTokens: part.tokens, ok: run.results.every((r) => r.ok) }),
+        preRecord({ engine, action: o.action, task: o.task, ...(scoped() ? { scope: o.scope } : {}), steps: steps.length, ms: run.ms, preparedTokens: run.requiredFailure ? 0 : part.tokens, ok: run.results.every((r) => r.ok) }),
       );
       // The step's message is the registry's (secrets hidden, P5).
       if (run.requiredFailure) return { text: "", items: [], views, failed: `${run.requiredFailure.tool} failed: ${run.requiredFailure.error}` };

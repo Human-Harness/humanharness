@@ -22,7 +22,8 @@ const workspacePackages = [
 
 export default defineConfig({
   main: {
-    define: { __HARNESS_DIR__: JSON.stringify(harnessDir) },
+    // __SHELL_RESOURCES__: the plugin and tool hosts' files and the Dock icon, wherever HH_OUT_DIR puts main.
+    define: { __HARNESS_DIR__: JSON.stringify(harnessDir), __SHELL_RESOURCES__: JSON.stringify(path.join(__dirname, "resources")) },
     // The build fails on a bare __dirname/__filename: its ESM shim once landed inside a bundled comment.
     plugins: [noBareDirname()],
     build: {

@@ -162,6 +162,7 @@ import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChang
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
+import { shellResourcesDir } from "./shell-resources";
 import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
 import {
   type UsageRecord,
@@ -268,6 +269,7 @@ import {
 } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
+declare const __SHELL_RESOURCES__: string;
 
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
@@ -279,6 +281,8 @@ const requireFromHere = createRequire(import.meta.url);
 // The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
 // `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
 const here = import.meta.dirname;
+/** The plugin and tool hosts' files and the Dock icon: the build's packages/shell/resources, or the packaged app's. */
+const shellResources = shellResourcesDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __SHELL_RESOURCES__ });
 const commandDeps = createCommandDeps(process.execPath);
 
 let harness: LoadedHarness;
@@ -3347,7 +3351,7 @@ if (loaded) {
     protocol.registerSchemesAsPrivileged(hasTools(harness) ? [PLUGIN_SCHEME, TOOL_SCHEME] : [PLUGIN_SCHEME]);
     // The app's own per-harness folder (outside every base, B8/B13): pointers, approvals, keys, the inbox's tag key.
     const appDir = path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id);
-    const host = new PluginBackendHost({ resources: path.join(here, "../../resources"), devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
+    const host = new PluginBackendHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
     pluginHost = host;
     pluginStateRoot = path.join(appDir, PLUGIN_STATE_DIR);
     // Board mode: the inbox's store is shared with the waiting tasks (Decision 10). Plain mode passes nothing (D0).
@@ -3420,7 +3424,7 @@ if (loaded) {
   if (hasTools(harness)) {
     // Before "ready". Electron takes one call: with plugins, theirs above registers this scheme too.
     if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0) protocol.registerSchemesAsPrivileged([TOOL_SCHEME]);
-    const sandbox = new ToolHost({ resources: path.join(here, "../../resources"), devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: toolsLog });
+    const sandbox = new ToolHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: toolsLog });
     const toolData = toolDataRequests({
       store: async () => {
         const c = await validConfig();
@@ -3544,10 +3548,10 @@ if (primary) {
   });
 
   app.whenReady().then(async () => {
-    // Development builds: the harness's logo in the Dock, else Human Harness's (`resources/` beside `out/`).
+    // Development builds: the harness's logo in the Dock, else Human Harness's (packages/shell/resources).
     if (process.platform === "darwin" && !app.isPackaged) {
       const icon = devDockIcon(
-        [() => (harness.logo ? resolveInHarness(harness, harness.logo) : undefined), () => path.join(here, "../../resources/hh-logo.png")],
+        [() => (harness.logo ? resolveInHarness(harness, harness.logo) : undefined), () => path.join(shellResources, "hh-logo.png")],
         (file) => nativeImage.createFromPath(file),
       );
       if (icon) app.dock?.setIcon(icon);

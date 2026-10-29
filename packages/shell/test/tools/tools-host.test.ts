@@ -231,7 +231,16 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     await t.start();
     expect(t.info().off).toBe("Tools are off: Not a harness id the tool host can serve");
     expect(await t.uiCall("count", {})).toEqual({ ok: false, error: "Tools are off: Not a harness id the tool host can serve" });
-    expect(seen.logs.some((l) => l.startsWith("Tools are off: the tools host could not start"))).toBe(true);
+    expect(seen.logs.some((l) => l.startsWith("Tools are off: Not a harness id the tool host can serve"))).toBe(true);
+  });
+
+  it("the host's files missing turns tools off with a logged reason, never a silent timeout", async () => {
+    await built();
+    const { t, seen } = wire({ startThrows: new Error("the tool host's files are missing") });
+    await t.start();
+    expect(seen.logs).toContain("Tools are off: the tool host's files are missing");
+    expect(t.info().off).toBe("Tools are off: the tool host's files are missing");
+    expect(await t.uiCall("count", {})).toEqual({ ok: false, error: "Tools are off: the tool host's files are missing" });
   });
 
   it("a UI call runs as ui in the open scope with no task; it traces under ui/<day>", async () => {

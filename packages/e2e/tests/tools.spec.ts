@@ -14,13 +14,11 @@ import { type Sandbox, closeAndClean, launch, makeSandbox, readJsonl, shellDir }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = path.resolve(here, "../../fake-agent/fixtures/tools-harness");
-const out = path.join(shellDir, "out", "tools");
 /**
- * The build lands one level down, so main's `<main>/../../resources` (the tool host's page, script and preload) is
- * `out/resources`, a copy made here: with HH_OUT_DIR directly under out/, it would point at out/resources, shared by
- * every spec, and the host window would load no preload and never answer.
+ * Built straight into out/tools: main finds the tool host's page, script and preload through the build's
+ * `__SHELL_RESOURCES__`, never `<main>/../../resources` (here out/resources, which no build writes).
  */
-const build = path.join(out, "app");
+const out = path.join(shellDir, "out", "tools");
 const HARNESS_ID = "toolbox";
 const NOTE = "a private line the peek must never show";
 const TOKEN = "tok-tools-e2e-987654321";
@@ -75,10 +73,9 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   // electron-vite directly (as connections.spec): `humanharness dev --build` would first run `check`.
   test.setTimeout(600_000);
-  const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: build };
+  const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: out };
   delete env.ELECTRON_RUN_AS_NODE;
   execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
-  fs.cpSync(path.join(shellDir, "resources"), path.join(out, "resources"), { recursive: true });
   s = makeSandbox("tools");
   // The person's folder: notes the counting tool reads, and the one file the peek may not.
   fs.writeFileSync(path.join(s.folder, "notes.md"), `${NOTE}\n`);
@@ -86,7 +83,7 @@ test.beforeAll(async () => {
     fs.mkdirSync(path.dirname(path.join(s.folder, f)), { recursive: true });
     fs.writeFileSync(path.join(s.folder, f), `# ${f}\n`);
   }
-  const launched = await launch(s, { claude: script }, path.join(build, "main", "index.js"), { HH_TEST_FAKE_SECRETS: "1", HH_TEST_MOCK: "1" });
+  const launched = await launch(s, { claude: script }, path.join(out, "main", "index.js"), { HH_TEST_FAKE_SECRETS: "1", HH_TEST_MOCK: "1" });
   app = launched.app;
   page = launched.page;
 });

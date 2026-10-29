@@ -6,6 +6,8 @@ import type { BrokerAnswer } from "../../src/main/broker/broker";
 import {
   TOOLS_BUSY,
   TOOLS_OFF,
+  TOOL_HOST_FILES,
+  TOOL_HOST_FILES_MISSING,
   TOOL_CALLS_IN_FLIGHT,
   TOOL_RPC_CHANNEL,
   TOOL_RPC_IN_FLIGHT,
@@ -144,6 +146,27 @@ describe("the tool host (tools spec §4.1; T1, T2, T6)", () => {
     expect(fake.fromPartition).not.toHaveBeenCalled();
     expect(fake.ipcMain.handle).not.toHaveBeenCalled();
     expect(fake.windows).toHaveLength(0);
+  });
+
+  it("start with a host file missing throws 'the tool host's files are missing', logs which, and opens nothing", async () => {
+    const partial = await fs.mkdtemp(path.join(os.tmpdir(), "hh-tool-res-"));
+    await fs.copyFile(path.join(resources, "tool-host.html"), path.join(partial, "tool-host.html"));
+    await fs.copyFile(path.join(resources, "tool-host.mjs"), path.join(partial, "tool-host.mjs"));
+    const fake = fakeElectron();
+    const log = vi.fn();
+    const host = new ToolHost({ resources: partial, devTools: false, electron: fake.electron as never, log });
+    expect(() => host.start({ harnessId: "demo", dist: "/nowhere", ids: ["count"], channel: { ctx: vi.fn() } })).toThrow(TOOL_HOST_FILES_MISSING);
+    expect(TOOL_HOST_FILES_MISSING).toBe("the tool host's files are missing");
+    expect(log).toHaveBeenCalledWith(`demo: the tool host's files are missing: ${path.join(partial, "tool-preload.cjs")}`);
+    expect(fake.windows).toHaveLength(0);
+    expect(fake.fromPartition).not.toHaveBeenCalled();
+    expect(fake.ipcMain.handle).not.toHaveBeenCalled();
+    expect(await host.call({ callId: "c1", tool: "count", args: {}, scope: null }, 1000)).toEqual({ ok: false, error: "Tools stopped" });
+  });
+
+  it("the host files it checks are the page, the script and the preload, all present in packages/shell/resources", async () => {
+    expect([...TOOL_HOST_FILES]).toEqual(["tool-host.html", "tool-host.mjs", "tool-preload.cjs"]);
+    for (const f of TOOL_HOST_FILES) await expect(fs.access(path.join(resources, f))).resolves.toBeUndefined();
   });
 
   it("start opens one hidden sandboxed window with the plugin settings (sandbox, contextIsolation, no node, no webview)", async () => {

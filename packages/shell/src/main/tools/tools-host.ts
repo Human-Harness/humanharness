@@ -296,9 +296,11 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
             },
           });
         } catch (err) {
-          // The host refuses a harness id it can't use as its URL's host (over 63 characters): tools are off.
-          d.log("Tools are off: the tools host could not start", err);
-          state = { on: false, reason: `Tools are off: ${err instanceof Error ? err.message : String(err)}` };
+          // The host refuses a harness id it can't use as its URL's host (over 63 characters), or starts without its
+          // page, script or preload: tools are off, with the reason logged once.
+          const reason = `Tools are off: ${err instanceof Error ? err.message : String(err)}`;
+          d.log(reason);
+          state = { on: false, reason };
         }
       }
       await writeCatalogue().catch((err: unknown) => d.log("Could not write the tools catalogue", err));

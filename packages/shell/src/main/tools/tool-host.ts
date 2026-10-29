@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import type { BrowserWindow as ElectronWindow, IpcMainInvokeEvent, Session } from "electron";
 import type { BrokerAnswer } from "../broker/broker";
@@ -37,6 +38,11 @@ export const TOOL_IDLE_MS = 25_000;
 export const TOOL_CRASHES = { max: 5, windowMs: 60 * 60_000, firstDelayMs: 1_000, maxDelayMs: 30_000 } as const;
 
 export const TOOLS_OFF = "Tools are off after repeated crashes";
+
+/** The host's page, script and preload, in `resources`. Without one the window would never say ready. */
+export const TOOL_HOST_FILES = ["tool-host.html", "tool-host.mjs", "tool-preload.cjs"] as const;
+/** What `start` throws when one of them is missing: tools are off, never a silent timeout per call. */
+export const TOOL_HOST_FILES_MISSING = "the tool host's files are missing";
 export const TOOLS_BUSY = "Too many tool calls at once";
 const STOPPED = "Tools stopped";
 const ENDED = "Unknown tool call";
@@ -63,7 +69,7 @@ export interface ToolChannel {
 }
 
 export interface ToolHostDeps {
-  /** packages/shell/resources: the preload and the core host page and script. */
+  /** The shell's resources folder (shell-resources.ts): the preload and the core host page and script. */
   resources: string;
   /** Development builds only. */
   devTools: boolean;
@@ -115,6 +121,11 @@ export class ToolHost {
   /** Opens the host window for `harnessId`'s built tools `ids` (the ones tools.json names). */
   start(p: Started): void {
     if (!/^[a-z][a-z0-9-]{0,62}$/.test(p.harnessId)) throw new Error("Not a harness id the tool host can serve");
+    const missing = TOOL_HOST_FILES.map((f) => path.join(this.d.resources, f)).filter((f) => !existsSync(f));
+    if (missing.length > 0) {
+      this.d.log?.(`${p.harnessId}: ${TOOL_HOST_FILES_MISSING}: ${missing.join(", ")}`);
+      throw new Error(TOOL_HOST_FILES_MISSING);
+    }
     this.stop();
     this.s = { ...p, ids: [...p.ids] };
     this.offReason = null;

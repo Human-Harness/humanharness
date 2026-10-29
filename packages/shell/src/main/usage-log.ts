@@ -211,6 +211,8 @@ export interface PreMeasure {
  * task's first turn is its first `run` line (a line without a turn kind counts as one; tool rows, checkpoints and
  * compactions don't), and its tokens are what it read: input, cache reads and cache writes. A task whose first turn
  * reported no usage is left out, and so are free questions (no action). A task "with" pre-steps has a `pre` row.
+ * A first turn whose engine reported neither usage nor limits writes no line at all: the task's next run line is then
+ * taken as its first turn.
  */
 export function measurePre(records: UsageRecord[]): Record<string, PreMeasure> {
   const pre = new Map<string, UsageRecord>();

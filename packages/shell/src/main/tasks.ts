@@ -11,7 +11,7 @@ export { pinnedContext } from "./context-pins";
 export { nearestTier, nextFallback, pinnedBudget, resolveProfile } from "./models";
 export { resolveReferences } from "./references";
 export { SharedConfigStore, sharedConfigDir } from "./shared-config";
-export { type TaskDeps, TaskManager } from "./task-manager";
+export { PREPARE_FAILED, type TaskDeps, TaskManager } from "./task-manager";
 export { TaskStore } from "./task-store";
 export { EngineUnavailable, TurnController, type TurnOptions, memoise } from "./turn-controller";
 export { type PreMeasure, type TurnKind, UsageLog, type UsageMeta, measurePre, preRecord, usageRecord } from "./usage-log";

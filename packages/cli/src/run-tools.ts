@@ -5,7 +5,7 @@ import type { Writable } from "node:stream";
 import { type LoadedHarness, PRE_TOKENS_DEFAULT } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { BrokerDataOp } from "@humanharness/shell/plugins";
-import { type TaskDeps, type UsageLog, dataWriteQueue, preRecord, toolDataRequests } from "@humanharness/shell/tasks";
+import { PREPARE_FAILED, type TaskDeps, type UsageLog, dataWriteQueue, preRecord, toolDataRequests } from "@humanharness/shell/tasks";
 import { ToolTrace, type TraceEntry, preparedSection, readToolsJson, runPreSteps } from "@humanharness/shell/tools";
 import { APP_SCOPE, type DataStore, MAIN_SCOPE, type ScopeStore } from "@humanharness/workspace";
 import { CliError } from "./cli";
@@ -28,6 +28,9 @@ const NO_TASK = "No task is running in this session";
 
 /** One line for the terminal: no control characters, no line break (as tool-run.ts). */
 const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+
+/** A refused start's reason is cut here: it goes to stderr as one short line. */
+const FAILED_CHARS = 300;
 
 /** The broker's data op as the person path's request (`query` flat), as the app's tools host does. */
 function dataRequest(op: BrokerDataOp): unknown {
@@ -89,6 +92,8 @@ export interface RunToolsOptions {
   tasks: { runningTask(): Promise<{ id: string; scope: string } | null>; trailerNow(): Promise<{ task?: string; phase?: string } | undefined> };
   /** One line on the terminal (already one plain line, keys hidden). */
   line(text: string): void;
+  /** The run's own log (stderr), never stdout: what the app's main would log. Already one plain line, keys hidden. */
+  log(text: string): void;
 }
 
 export interface RunTools {
@@ -96,7 +101,7 @@ export interface RunTools {
   prepare: NonNullable<TaskDeps["prepare"]>;
   /** The runtime's `tools` option: only with tools on and an `agent: "call"` tool (else no server). */
   workspace?: { catalogue: string; request(request: unknown): Promise<unknown> };
-  /** Why the last start's required pre-step failed (the task didn't start). */
+  /** Why the last start's required pre-step failed (the task didn't start): one plain line, keys hidden, cut. */
   failed?: string;
   /** Waits for the trace's writes, stops the host and removes the build. */
   close(): Promise<void>;
@@ -106,12 +111,15 @@ export interface RunTools {
 export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
   const h = o.harness;
   const keys = [...o.ready.keys.values()];
-  const say = (text: string) => o.line(keys.length > 0 ? hideSecrets(plain(text), keys) : plain(text));
+  const clean = (text: string) => (keys.length > 0 ? hideSecrets(plain(text), keys) : plain(text));
+  const say = (text: string) => o.line(clean(text));
   const scoped = h.scopes !== undefined;
   // The registry and host read dist/ from a root of their own: the harness's own dist/ is never read or touched.
   const built = await fs.mkdtemp(path.join(os.tmpdir(), "hh-run-tools-"));
   let tools: ReturnType<typeof cliTools> | null = null;
   const trace = new ToolTrace({ base: o.folder });
+  // As the app at start: entries past the trace's age go (prune never throws and creates nothing).
+  void trace.prune().catch(() => undefined);
   let writes: Promise<unknown> = Promise.resolve();
   // Log lines the catalogue's read already printed ("Tools are off: …"): the registry's read says them again.
   const said = new Set<string>();
@@ -196,13 +204,15 @@ export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
             )
             .catch(() => say("Could not record the pre-steps in usage.jsonl"));
           if (done.requiredFailure) {
-            run.failed = `${done.requiredFailure.tool} failed: ${done.requiredFailure.error}`;
+            // The tool's error goes to stderr: one plain line, keys hidden, cut, as every other tool line.
+            run.failed = [...clean(`${done.requiredFailure.tool} failed: ${done.requiredFailure.error}`)].slice(0, FAILED_CHARS).join("");
             return { text: "", items: [], views: [], failed: run.failed };
           }
           return { text: part.text, items: part.items, views: [] };
-        } catch {
-          // Never the thrown text (P5), as the app.
-          run.failed = "the pre-steps could not run";
+        } catch (err) {
+          // Never the thrown text to the person (P5), as the app: it goes to the run's log only.
+          o.log(clean(`Could not run the pre-steps: ${err instanceof Error ? err.message : String(err)}`));
+          run.failed = PREPARE_FAILED;
           return { text: "", items: [], views: [], failed: run.failed };
         }
       },

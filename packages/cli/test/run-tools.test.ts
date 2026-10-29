@@ -187,6 +187,37 @@ describe("tools in a terminal run (tools spec §6, §12)", () => {
     expect((err as Error).message).toBe("run asks for the tools' keys in a terminal");
   });
 
+  it("a refused start's message is one plain line with the keys hidden", { timeout: 60_000 }, async () => {
+    const dir = path.join(root, `loud-${++n}`);
+    await initHarness({ dir, core: CORE, install: false });
+    replaceIn(dir, "harness.config.ts", "web: false", "web: true");
+    replaceIn(
+      dir,
+      "harness.config.ts",
+      "  actions: {\n",
+      '  tools: { loud: "./tools/loud.ts", keyed: "./tools/keyed.ts" },\n  secrets: [{ id: "api", label: "API key", help: "Any text." }],\n  actions: {\n',
+    );
+    replaceIn(dir, "harness.config.ts", '      tier: "standard",\n', '      tier: "standard",\n      pre: [{ tool: "loud", required: true }],\n');
+    fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
+    // loud declares no key, so the registry hides none: only the run's own hiding keeps the typed key out.
+    fs.writeFileSync(
+      path.join(dir, "tools", "loud.ts"),
+      `import { defineTool, z } from "@humanharness/cli/tool";\n\nexport default defineTool({\n  description: "Fails loudly with terminal escapes in its error.",\n  params: z.object({}),\n  agent: "none",\n  uses: {},\n  async run() {\n    throw new Error("\\u001b[2Jbad \\r\\nfake · 1 ms · ok \\u009b ${KEY}");\n  },\n});\n`,
+    );
+    fs.writeFileSync(
+      path.join(dir, "tools", "keyed.ts"),
+      `import { defineTool, z } from "@humanharness/cli/tool";\n\nexport default defineTool({\n  description: "Reads the example service with the API key.",\n  params: z.object({}),\n  agent: "call",\n  uses: { hosts: ["api.example.test"], secrets: ["api"] },\n  async run() {\n    return null;\n  },\n});\n`,
+    );
+    const fake = fakeDeps();
+    const err = await run(dir, "example", studyScript, fake).catch((e: unknown) => e);
+    expect(fake.asked).toHaveLength(1);
+    expect(err).toBeInstanceOf(CliError);
+    const message = (err as Error).message;
+    expect(message).toMatch(/^Couldn't prepare this task: loud failed: /);
+    expect(message).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(message).not.toContain(KEY);
+  });
+
   it("a build problem stops the run before the engine starts", { timeout: 60_000 }, async () => {
     const dir = path.join(root, `broken-${++n}`);
     await initHarness({ dir, core: CORE, install: false });

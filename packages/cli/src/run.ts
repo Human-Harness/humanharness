@@ -519,6 +519,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           engine: engine.id,
           tasks,
           line: (text) => view.toolLine(text),
+          log: (text) => process.stderr.write(`${text}\n`),
         });
       }
       // A task an earlier run left open in this folder can't continue: its session is gone.

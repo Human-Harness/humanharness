@@ -295,6 +295,18 @@ export class TurnController {
         if (surface) this.emit(done);
       };
 
+      // The pre-step calls (tools spec §8.2) come first, on the engine's events' path, before anything can end the turn
+      // (an engine that can't start, a Stop): saved on the reply, and shown at once, or with a held attempt's first
+      // content (a held attempt that fails shows none; its retry carries them again).
+      if (!quiet) {
+        for (const call of options.prepared ?? []) {
+          const e: Event = { type: "tool-call", call };
+          recorder.add(e);
+          if (pending) pending.push(e);
+          else this.emit(e);
+        }
+      }
+
       if (current.cancelled) return await finish(fail("cancelled") as Done);
       let rt: TurnRunner | null;
       try {
@@ -315,17 +327,6 @@ export class TurnController {
           : undefined;
       const access = withEngine(folders, engine);
       if (current.cancelled) return await finish(fail("cancelled") as Done);
-
-      // The pre-step calls (tools spec §8.2) come first, on the engine's events' path: saved on the reply, and shown at
-      // once, or with a held attempt's first content (a held attempt that fails shows none; its retry carries them again).
-      if (!quiet) {
-        for (const call of options.prepared ?? []) {
-          const e: Event = { type: "tool-call", call };
-          recorder.add(e);
-          if (pending) pending.push(e);
-          else this.emit(e);
-        }
-      }
 
       let finished: Promise<void> = Promise.resolve();
       current.running = rt.send(message, (raw) => {

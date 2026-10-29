@@ -82,7 +82,9 @@ describe("prepared calls on the first turn (tools spec §8.2)", () => {
     expect(events).toEqual(prepared.map((call) => ({ type: "tool-call", call })));
     fake.finish([{ type: "text", delta: "Hello" }, { type: "done", ok: true }]);
     await sent;
-    expect(order).toEqual(["log:user", "emit:tool-call", "emit:tool-call", "emit:text", "log:assistant", "emit:done"]);
+    // The user entry is queued for the log first; the window gets the calls before anything the engine says.
+    expect(order.filter((o) => o.startsWith("emit:"))).toEqual(["emit:tool-call", "emit:tool-call", "emit:text", "emit:done"]);
+    expect(order.filter((o) => o.startsWith("log:"))).toEqual(["log:user", "log:assistant"]);
   });
 
   it("they are saved on the turn's assistant entry in the chat log, first in its tools", async () => {
@@ -143,5 +145,21 @@ describe("prepared calls on the first turn (tools spec §8.2)", () => {
     await sent;
     expect(events).toEqual([]);
     expect(entries).toEqual([]);
+  });
+
+  it("a turn whose engine can't start still shows and saves them, before its error", async () => {
+    const { controller, entries, events } = setup(async () => null);
+    await controller.send("hi", { task: "t1", prepared });
+    expect(events.map((e) => e.type)).toEqual(["tool-call", "tool-call", "done"]);
+    expect(events.slice(0, 2)).toEqual(prepared.map((call) => ({ type: "tool-call", call })));
+    expect(entries.map((e) => e.role)).toEqual(["user", "assistant"]);
+    expect(entries[1]!.tools).toEqual(prepared);
+  });
+
+  it("a held attempt (model fallback) whose engine can't start shows them with its error", async () => {
+    const { controller, entries, events } = setup(async () => null);
+    await controller.send("hi", { task: "t1", prepared, holdModelError: true });
+    expect(events.map((e) => e.type)).toEqual(["tool-call", "tool-call", "done"]);
+    expect(entries[1]!.tools).toEqual(prepared);
   });
 });

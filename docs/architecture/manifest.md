@@ -32,7 +32,7 @@ Every text in the manifest is one English string.
 | `sidekick` | Optional. The prompt coach: its `default` state, `tips`, the pre-send mode per action, `checks`, and the harness's `places` and `presets` (below; `docs/architecture/sidekick.md`) |
 | `plugins` | Optional. Whether the harness takes plugins: `bundled` (ids under `<harness>/plugins/<id>/dist/`), `on` (bundled ones that start on, without a review) and `local` (the person may add plugins from a folder; default `false`). Absent, or with no bundled plugin and `local: false`, nothing of plugins runs (`docs/architecture/plugins.md`) |
 | `parallel` | Optional. Suggested caps on turns running at once, `{ tasks, jobs }`, each an integer 1–8, default 1 (strict: a typo is refused). Declared, the app keeps several tasks open, each with its own chat and session, and queues turns past the cap; absent, the app runs one task at a time as before. The person can change the caps in Settings › General (`docs/architecture/parallel.md`) |
-| `jobs` | Optional. Background jobs by id: `label`, `prompt` (the brief), `tier` (default `light`), `on` (`start`, `manual`, `afterTask`, `every`), `scope` (`none`, `each`, `trigger`), `dailyTokens` (required with `every`) and `permissions` that only narrow the harness's. Each run has no chat, can't ask the person and ends with `job_result`. Without `parallel` the app keeps one task at a time and runs the jobs beside it (`docs/architecture/jobs.md`) |
+| `jobs` | Optional. Background jobs by id: `label`, `prompt` (the brief) or `steps` (a recipe: tool steps and at most one AI step, with `maxAi` and `onLimit`; below), `tier` (default `light`), `on` (`start`, `manual`, `afterTask`, `every`), `scope` (`none`, `each`, `trigger`), `dailyTokens` (required with `every` for a job that uses AI) and, for a prompt job, `permissions` that only narrow the harness's. Each run has no chat and can't ask the person; a prompt job's ends with `job_result`. Without `parallel` the app keeps one task at a time and runs the jobs beside it (`docs/architecture/jobs.md`) |
 | `inbox` | Optional; matters only with `parallel`. `false` hides the core inbox and its button; `client.tasks` stays for the harness's own panel. Top level, since `ui` is the custom UI path (`docs/architecture/parallel.md`) |
 | `linkedFolders` | Optional; needs `scopes`. Kinds of folders outside the work folder a scope may link, by key: `label`, `mode` (`read` or `write`), `history` (`auto`: tracked by the core unless it has git; `own`: must be a git repository) and `many`. The person links each folder through the system picker in Scope settings; the agent of a task in that scope gets file access to it. Absent or empty, nothing of it runs (`docs/architecture/hatches.md`) |
 | `backend` | Optional. A relative path to the harness's own Node process (`.ts`, `.mts`, `.js` or `.mjs`; a `.ts` one uses erasable syntax only). Main launches it after setup on the MCP servers' launcher, with the harness folder as cwd, sends it `init`, and the harness UI talks to it with `client.backend` (JSON-RPC 2.0 over stdio). It restarts after a crash (3 times in 5 minutes, then a card with Restart) and stops on quit and around a folder move or profile switch. Absent, nothing of it runs (`docs/architecture/hatches.md`, H2) |
@@ -90,6 +90,32 @@ study: {
 - `preTokens`: an integer 500–20,000, the cap on that section; 4000 when absent. Only with `pre`.
 - A phase's `expects`: 1 to 10 tool ids; each one the agent didn't call by the time the task leaves the part is counted (`docs/architecture/phases.md`).
 - A manifest without them parses to the same object as before (D0).
+
+### Job recipes
+
+With `tools`, a job may declare `steps` instead of `prompt` (`docs/architecture/jobs.md`, "Recipes"):
+
+```ts
+sync: {
+  label: "Sync",
+  on: { manual: true },
+  steps: [
+    { tool: "open-prs", as: "prs" },
+    { tool: "pr-ci", forEach: "prs", as: "ci" },
+    { ai: "./jobs/classify-ci.md", input: ["ci"], when: { from: "ci", where: { failed: true } },
+      output: z.object({ ids: z.array(z.string()), again: z.boolean() }), as: "triage" },
+    { tool: "apply-triage", input: ["triage"] },
+  ],
+  maxAi: 2,
+  onLimit: "review-ci",
+},
+```
+
+- `steps`: 1 to 20. A tool step is a pre-step without `required` (`tool`, `args?`, `input?`, `forEach?`, `as?`). The AI step, at most one: `ai` (a brief in the harness folder), `input` (1 to 10 earlier `as` names), `output` (a zod object that converts to JSON Schema), `when?`, `tier?` (default `light`), `as?`.
+- `when`: `{ from }` (that earlier result exists and isn't empty) or `{ from, where }` (it is a list with an item whose fields equal every value; 1 to 10 fields, each a string ≤ 200, a number, a boolean or null). `from` and every `where` field name must match `TOOL_ID`, so they are lowercase: a camelCase result field can't be matched.
+- `maxAi`: 1 to 3, default 1, the AI steps one run may run. `onLimit`: an action id, offered when a run stops at `maxAi`. Both only with an AI step.
+- A recipe has no `permissions`; `dailyTokens` is needed with `every` only when it has an AI step.
+- A manifest whose jobs all declare `prompt` parses to the same object as before (D0).
 
 ### Sidekick places and presets
 
@@ -168,6 +194,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Phases: ids unique within the action; `close` only on the last phase; an `approve` glob that is relative, ends in `.md`, isn't under `.harness/`, has no `..`, `[`, `]`, `{`, `}` or backslash and is at most 200 characters; a phase's list of `modes` only on an action with modes, each one of its modes. A time box's options are each offered once and its `default` is one of them or `null`. `humanharness check` also reports a phase brief that is missing or empty (`brief-missing`).
 - Secrets: 1 to 10 (`SECRETS_MAX`), strict objects; `id` matches `^[a-z][a-z0-9_-]{0,39}$` (the plugin key id pattern) and is declared once; `label` 1 to 80 and `help` 1 to 200 characters, one line each, no hidden characters (`secretsSchema`). A manifest without `secrets` parses to the same object as before (D0).
 - Tools: at most 50 (`TOOLS_MAX`); an id matches `^[a-z][a-z0-9_-]{0,63}$` (`TOOL_ID`) and can't be an action id, a job id, a block tool name (the harness's, the core's, the review tools, `job_result`) or a core MCP server name (`ui`, `data`, `translate`, `review`, `material`, `tools`); a file is a `./` path to a `.ts`, `.mts`, `.js` or `.mjs` file, which `loadHarness` resolves inside the folder. A connect step's `test` must be one of the tools. `humanharness check` builds them in memory (`tool-build`) and then checks each tool's `uses` against the harness and `dist/tools.json` (`tool-uses`, `toolProblems`): hosts need `web`, commands `exec`, collections and secret ids must be declared, `files: "write"` is refused for now, an `agent: "call"` tool needs a description of at least 20 characters, and a test tool has no required params; then `tool-steps` (`stepProblems`): a result read through `input` or `forEach` comes from a tool with `returns`, a `forEach` result is an array whose items carry the tool's required params that `args` doesn't give, and `expects` names `agent: "call"` tools (`docs/architecture/tools.md`). Pre-steps and expects: each step's tool and each `expects` id is a declared tool, each `as` once, `input` and `forEach` name an earlier step's `as`, `preTokens` only with `pre`. A manifest without `tools` parses to the same object as before (D0).
+- Jobs: an id has the action id shape and isn't an action id; `prompt` or `steps`, not both and not neither; at least one trigger; `every` 15 minutes or more and, for a job that uses AI, `dailyTokens`; `afterTask` names actions; a scope other than `none` needs `scopes`, and `trigger` needs `afterTask` or `manual` and no other; `permissions` only narrow, and not on a recipe. Recipes (`recipeProblems`): at most one AI step; each tool is declared; each `as` once; `input`, `forEach` and `when.from` name an earlier `as`; the AI step's output converts to JSON Schema; `maxAi` (1–3) and `onLimit` only with an AI step, `onLimit` an action. `step_output` is reserved like `job_result`. `humanharness check` reports a missing or empty AI step brief (`brief-missing`), the recipe's `tool-steps` lines against `tools.json` (`recipeSourceProblems`: a result read through `input` or `forEach` comes from a tool with `returns`) and warns about `dailyTokens` on a recipe with no AI step (`job-daily-tokens`) (`docs/architecture/jobs.md`).
 - Setup steps: 1 to 8, ids unique. A connect step needs `secrets` and lists 1 to 10 of its ids, each once. A form takes a `single`, unscoped collection and fields the core form can draw, or settings of the harness, not both. An interview's action isn't in `path`, isn't `deep`, runs app-wide and backs one interview; its `writes` collection is `single`, unscoped and `agent: "write"`. `humanharness check` also warns about a component it can't find in `ui/` (`setup-component`), an interview's action without a recording once `mock/` has recordings (`setup-mock`) and an interview's collection without `context` (`setup-context`) (`docs/architecture/setup.md`).
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
 - Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
@@ -190,6 +217,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/setup.ts`: the `setup` schema, `interviewCollections`, `setupFormSpec`.
 - `packages/harness-sdk/src/secrets.ts`: the `secrets` schema (`secretsSchema`, `harnessSecretSchema`, `SECRETS_MAX`) and `hasSecrets`.
 - `packages/harness-sdk/src/tools.ts`: the `tools` schema (`toolsSchema`, `TOOL_ID`, `TOOLS_MAX`, `CORE_SERVER_NAMES`), `hasTools`, `toolsJsonSchema`, `toolMeta`, `toolProblems`; `tool.ts`: `defineTool` and `ToolContext`; `steps.ts`: the `pre`, `preTokens` and `expects` schemas, `hasPre`, `hasExpects`, `preProblems`, `stepProblems`.
+- `packages/harness-sdk/src/jobs.ts`: the `jobs` schema (`jobSchema`, `jobProblems`, `jobResultSchema`, `hasJobs`); `recipes.ts`: `steps`, the AI step, `when`, `maxAi`, `onLimit` (`aiStepSchema`, `whenSchema`, `recipeProblems`, `recipeSourceProblems`, `hasRecipes`, `jobUsesAi`).
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
 - `packages/harness-sdk/src/sidekick.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.

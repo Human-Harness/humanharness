@@ -122,6 +122,17 @@ An action's `pre` steps run its tools when the task starts and put the results i
 
 `humanharness measure` reads the `run` lines and `pre` rows of a folder's `usage.jsonl`. A task's first turn is its first `run` line (input + cache read + cache write); a task with a `pre` row counts as "with". `run`'s tasks always count as "without". To compare, run the same actions in two fresh folders, one on a build without the pre-steps and one with them, on the same engine and tier, then `humanharness measure --folder <folder>` on each (`docs/architecture/tools.md`, "Measuring").
 
+### Writing a recipe
+
+A background job can be a recipe (`steps`) instead of a brief (`prompt`): the harness's tools do the work as code, and a model is asked only when a result needs judgment (`docs/architecture/jobs.md`, "Recipes"; the keys in `manifest.md`, "Job recipes").
+
+- **Tools first.** Put everything a rule can decide in tool steps: fetch, filter, count, write. A recipe with no AI step costs 0 tokens and is never paused by a daily cap.
+- **One AI step at most**, with a short brief of its own (`ai`), the earlier results it reads (`input`, shown to it as JSON under `## Data`) and a zod `output` it must fill through `step_output`. Keep the output small and plain (no dates or transforms: it must convert to JSON Schema). An invalid output gets one retry; a second fails the run.
+- **`when` to skip it.** `{ from: "ci", where: { failed: true } }` runs the AI step only when some item of `ci` has `failed: true`; `{ from: "ci" }` only when `ci` isn't empty. When it doesn't hold, the AI step and every step after it are skipped and the run is `ok`. Name the result fields `when` reads in the `TOOL_ID` shape (lowercase, `failed`, `has-errors`): a camelCase field can't be matched.
+- **The post-step applies the judgment.** The first tool step after the AI step reads its `as` through `input` and does what it decided. Only that step may call `ctx.requestAi(data)` to ask for a second look: the AI step runs again with `data` as its only `## Data` part (`### request`), then the post-step again. `maxAi` (1–3, default 1) caps the AI steps of one run; a request past it stops the run as "Needs you" and offers the `onLimit` action.
+- **Say what happened.** `ctx.summary("Triaged 3 PRs")` from any step sets the run's line (the last one wins, one line, ≤ 300 characters); without one the line is "N steps · 1 AI step · <tool>: <summary>".
+- **Engines and trying it.** AI steps run only with Claude for now: on Codex or OpenCode a recipe with an AI step fails "Could not run the AI step". `dev --mock` has no recording for an AI step yet (slice 5), so such a recipe fails there; a recipe without one runs as in the app. The run's tool calls and AI rounds show under "Steps" in the inbox and Settings › Jobs.
+
 ## Plugins
 
 A plugin (`docs/architecture/plugins.md`) is authored in a folder of its own, inside a harness (`<harness>/plugins/<id>/`) or anywhere else, with `humanharness plugin <command>` (`packages/cli/src/plugin*.ts`). Every command but `init` works on the plugin in the current folder, or on `--plugin <dir>`. A plugin folder needs no `node_modules`: `build` resolves `@humanharness/plugin-ui`, `@humanharness/harness-sdk` (and its `/plugin-backend` sub-path), React and zod to the CLI's own copies.

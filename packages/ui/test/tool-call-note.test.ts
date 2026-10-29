@@ -22,4 +22,10 @@ describe("a saved call's trace note (tools spec §6.3)", () => {
     expect(cleanToolCalls([saved({ note: 7 })])[0]).not.toHaveProperty("note");
     expect(cleanToolCalls([saved()])[0]).not.toHaveProperty("note");
   });
+
+  it("cleanToolCalls keeps a note of 200 code points and drops a longer one, as the trace reader does", () => {
+    const at200 = "é".repeat(199) + "😀";
+    expect(cleanToolCalls([saved({ note: at200 })])[0]!.note).toBe(at200);
+    expect(cleanToolCalls([saved({ note: "x".repeat(201) })])[0]).not.toHaveProperty("note");
+  });
 });

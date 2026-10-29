@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { aiStepOf, defineHarness, hasRecipes, jobUsesAi, loadHarness, MAX_AI_CAP, postStepIndex, RESERVED_BLOCK_NAMES, STEP_OUTPUT_TOOL } from "../src";
+import { aiStepOf, defineBlock, defineHarness, hasRecipes, jobUsesAi, loadHarness, MAX_AI_CAP, postStepIndex, RESERVED_BLOCK_NAMES, STEP_OUTPUT_TOOL } from "../src";
 
 const base = {
   id: "t", name: "T", core: "^0.1.0", engines: ["claude"], folder: { suggested: "Documents/T" }, instructions: "./AGENTS.md",
@@ -35,7 +35,7 @@ function refusal(run: () => unknown): string {
 describe("job recipes in the manifest (tools spec §3, §7)", () => {
   it("D0: a prompt job parses as before, with no steps, maxAi or onLimit", () => {
     const h = make({ sync: { label: "Sync", prompt: "./jobs/sync.md", on: { manual: true } } });
-    expect(h.jobs!.sync).toEqual({ label: "Sync", prompt: "./jobs/sync.md", tier: "light", on: { manual: true }, scope: "none" });
+    expect(h.jobs!.sync).toStrictEqual({ label: "Sync", prompt: "./jobs/sync.md", tier: "light", on: { manual: true }, scope: "none" });
     expect(hasRecipes(h)).toBe(false);
     expect(jobUsesAi(h.jobs!.sync)).toBe(true);
     expect(postStepIndex(h.jobs!.sync)).toBe(-1);
@@ -112,6 +112,8 @@ describe("job recipes in the manifest (tools spec §3, §7)", () => {
   });
   it("refuses a block named step_output", () => {
     expect(RESERVED_BLOCK_NAMES).toContain(STEP_OUTPUT_TOOL);
+    const block = defineBlock({ description: "x", schema: z.object({}), example: {}, visible: false });
+    expect(refusal(() => defineHarness({ ...base, blocks: { step_output: block } } as never))).toContain('"step_output" is a core block name');
   });
 });
 

@@ -91,7 +91,7 @@ describe("check: job recipes (tools spec §3.3, §7)", () => {
     replaceIn(dir, "harness.config.ts", 'on: { manual: true }, steps:', 'on: { every: "1h" }, dailyTokens: 1000, steps:');
     const r = await checkHarness(dir);
     expect(r.findings.filter((f) => f.rule === "job-daily-tokens")).toEqual([
-      { rule: "job-daily-tokens", severity: "warning", message: 'Job "sync": dailyTokens caps only runs that use AI and its recipe has no AI step, so it caps nothing.', file: "harness.config.ts" },
+      { rule: "job-daily-tokens", severity: "warning", message: 'Job "sync": dailyTokens caps only runs that use AI, and this recipe has no AI step, so it caps nothing.', file: "harness.config.ts" },
     ]);
   });
 

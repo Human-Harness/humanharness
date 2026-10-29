@@ -306,7 +306,7 @@ async function jobFindings(h: LoadedHarness): Promise<Finding[]> {
       out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only periodic runs and the job has no every, so it caps nothing.`, MANIFEST));
     } else if (job.dailyTokens !== undefined && !jobUsesAi(job)) {
       // A recipe without an AI step costs no tokens and is never paused by a daily cap (Decision 2).
-      out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only runs that use AI and its recipe has no AI step, so it caps nothing.`, MANIFEST));
+      out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only runs that use AI, and this recipe has no AI step, so it caps nothing.`, MANIFEST));
     }
   }
   return out;

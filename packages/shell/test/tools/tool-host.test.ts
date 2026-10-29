@@ -267,6 +267,21 @@ describe("the tool host (tools spec §4.1; T1, T2, T6)", () => {
     expect(await failing).toEqual({ ok: false, error: "HTTP 500" });
   });
 
+  it("T2: a done for a call still queued (not yet handed to the page) is ignored, and the call still runs", async () => {
+    const t = await started();
+    // Before the page's ready, the call waits in the queue.
+    const answer = t.host.call({ callId: "c1", tool: "count", args: {}, scope: null }, 30_000);
+    expect(await t.done({ callId: "c1", ok: true, value: "forged" })).toBeNull();
+    let settled = false;
+    void answer.then(() => (settled = true));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(settled).toBe(false);
+    await t.ready();
+    expect(await t.next()).toMatchObject({ kind: "call", callId: "c1", tool: "count" });
+    await t.done({ callId: "c1", ok: true, value: "real" });
+    expect(await answer).toEqual({ ok: true, value: "real" });
+  });
+
   it("T2: a ctx call naming a call id main didn't hand out, or one already answered, is refused and reaches nothing", async () => {
     const t = await started();
     await t.ready();

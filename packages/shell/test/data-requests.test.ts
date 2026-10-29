@@ -7,7 +7,7 @@ import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
 import { callMcpTool } from "@humanharness/fake-agent";
 import { SIDEKICK_COLLECTION, dataCollections, dataSchema, loadHarness, settingsSchema, sidekickCollection, z } from "@humanharness/harness-sdk";
 import { type CommitTrailer, DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
-import { DataUnavailable, type PersonDataDeps, type ToolDataDeps, agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords, toolDataRequests } from "../src/main/data-requests";
+import { DataUnavailable, type PersonDataDeps, type ToolDataDeps, agentDataRequest, dataWriteQueue, harnessUiDataRequests, personDataRequests, saveAnswerRecords, toolDataRequests } from "../src/main/data-requests";
 
 const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -337,6 +337,7 @@ describe("toolDataRequests (tools spec §8.3)", () => {
       blocked: () => opts.blocked ?? null,
       scopeExists: async (id) => (opts.registered ?? ["fracciones"]).includes(id),
       noScope: () => "_app",
+      serial: dataWriteQueue(),
     };
     return { base, store, changes, save, commitPaths, run: toolDataRequests(deps) };
   }
@@ -403,5 +404,63 @@ describe("toolDataRequests (tools spec §8.3)", () => {
     await t.run(put, undefined);
     expect(changes).toEqual([{ collection: "concepts", scope: "fracciones", who: "person", op: "put", key: "a" }]);
     expect(t.commits).toEqual([{ message: "Data: concepts", trailer: { task: "t1" }, files: ["concepts"] }]);
+  });
+});
+
+describe("person and tool writes share one queue (tools spec §8.3)", () => {
+  it("an interleaved person write and tool write each get their own commit, files and trailer", async () => {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const store = new DataStore(base, data);
+    const files = { concepts: dataFile(base, "fracciones", "concepts"), profile: dataFile(base, "_app", "profile") };
+    const commits: { message: string; trailer?: CommitTrailer; files: string[] }[] = [];
+    const history = async () => ({
+      save: async (message: string, trailer?: CommitTrailer) => {
+        // Slow commits: without one shared queue the other write would land in this commit.
+        await new Promise((r) => setTimeout(r, 20));
+        const held = Object.entries(files)
+          .filter(([, f]) => fs.existsSync(f))
+          .map(([name]) => name);
+        commits.push({ message, ...(trailer ? { trailer } : {}), files: held });
+      },
+    });
+    const serial = dataWriteQueue();
+    const common = { store: async () => store, history, blocked: () => null, scopeExists: async () => true, serial };
+    const person = personDataRequests({ ...common, chatScope: async () => "fracciones", trailer: async () => ({ task: "t1" }) });
+    const tool = toolDataRequests({ ...common, noScope: () => "_app" });
+    await Promise.all([
+      tool({ op: "put", collection: "profile", record: { name: "Ana" } }, { scope: null, tool: "due-today" }),
+      person({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined),
+    ]);
+    expect(commits).toEqual([
+      { message: "Data: profile", trailer: { task: null, tool: "due-today" }, files: ["profile"] },
+      { message: "Data: concepts", trailer: { task: "t1" }, files: ["concepts", "profile"] },
+    ]);
+  });
+
+  it("a scope archived while a tool write waits in the queue is not written", async () => {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const store = new DataStore(base, data);
+    const registered = new Set(["fracciones"]);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const serial = dataWriteQueue();
+    const held = serial(() => gate);
+    const save = vi.fn(async () => {});
+    const run = toolDataRequests({
+      store: async () => store,
+      history: async () => ({ save }),
+      blocked: () => null,
+      scopeExists: async (id) => registered.has(id),
+      noScope: () => "_app",
+      serial,
+    });
+    const write = run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, { scope: "fracciones", tool: "x" });
+    await new Promise((r) => setTimeout(r, 10));
+    registered.delete("fracciones");
+    release();
+    await held;
+    await expect(write).rejects.toThrow("Unknown scope");
+    expect(fs.existsSync(dataFile(base, "fracciones", "concepts"))).toBe(false);
+    expect(save).not.toHaveBeenCalled();
   });
 });

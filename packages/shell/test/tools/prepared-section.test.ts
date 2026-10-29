@@ -163,6 +163,18 @@ describe("preparedSection (tools spec §6.3, §6.4)", () => {
     expect(s.tokens).toBe(Math.ceil(s.text.length / 4));
   });
 
+  it("items only with text: when not even the title fits, no text and no items, every block reported cut", () => {
+    const s = preparedSection([r("today", "due-today", items(3)), r("cards", "warmup-cards", [])], { descriptions: desc, preTokens: 10 });
+    expect(s.text).toBe("");
+    expect(s.items).toEqual([]);
+    expect(s.tokens).toBe(0);
+    expect(s.cuts.map((c) => c.text)).toEqual(["today: cut: too large", "cards: cut: too large"]);
+    for (const preTokens of [10, 40, 60, 100, 500, 4000]) {
+      const p = preparedSection([r("today", "due-today", items(50))], { descriptions: desc, preTokens });
+      expect(p.items.length === 0 || p.text.length > 0).toBe(true);
+    }
+  });
+
   it("no results: no text, no items", () => {
     expect(preparedSection([], { descriptions: desc, preTokens: 4000 })).toEqual({ text: "", items: [], cuts: [], tokens: 0 });
   });

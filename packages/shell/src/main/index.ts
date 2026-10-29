@@ -3337,9 +3337,8 @@ if (loaded) {
   });
   // Board and single mode (parallel spec §9.2): one Attention store per base for the plugins, the waiting tasks and
   // the jobs, with the plugins' tag key (outside every base, P5). A task's items show while it is an open lane; a job's
-  // while the harness declares it. Plain mode: none (D0), unless the harness has tools and plugins: then the plugins'
-  // inbox is this shared store, so the tools' item (tools Decision 7) has one store to go to.
-  if (hostMode(harness) !== "plain" || (hasTools(harness) && (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0))) {
+  // while the harness declares it; the harness tools' item while it has tools (tools Decision 7). Plain mode: none (D0).
+  if (hostMode(harness) !== "plain") {
     const stores = attentionStores({ tagKey: (create) => sourceTagKey(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "attention-key"), create), log: pluginLog });
     stores.registerKnown("task", (id) => host?.board.laneIds().includes(id) ?? false);
     if (harness.jobs) stores.registerKnown("job", jobOriginKnown(harness.jobs));

@@ -48,6 +48,14 @@ describe("the tool host script (tools spec §4.1)", () => {
     expect(calls[1]).toEqual(["next", undefined]);
   });
 
+  it("summary() is cut at 16000 characters, not 200: main hides the keys first, then cuts (T4)", async () => {
+    const tools: Record<string, unknown> = { long: bundle({ run: async () => 1, summary: () => "s".repeat(20_000) }) };
+    const { rpc, of } = fakeRpc([call("c1", "long")]);
+    void runHost(rpc, Object.keys(tools), async (id: string) => tools[id]);
+    await settle();
+    expect(of("done")).toEqual([{ callId: "c1", ok: true, value: 1, summary: "s".repeat(16_000) }]);
+  });
+
   it("a call runs run(args, ctx) and answers done with the value and summary(result) when the tool has one", async () => {
     const seen: unknown[] = [];
     const tools: Record<string, unknown> = {

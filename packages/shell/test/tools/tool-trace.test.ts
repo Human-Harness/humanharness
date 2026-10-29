@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TRACE_DAYS, ToolTrace, type TraceEntry } from "../../src/main/tools/tool-trace";
+import { TRACE_DAYS, TRACE_FILE_MAX_BYTES, ToolTrace, type TraceEntry } from "../../src/main/tools/tool-trace";
 
 let base: string;
 const NOW = new Date("2026-10-29T12:00:00.000Z");
@@ -88,6 +88,48 @@ describe("ToolTrace (tools spec §8.1, Decision 8)", () => {
     await fs.symlink(outside, path.join(traceDir(), `${TASK}.jsonl`));
     await expect(new ToolTrace({ base }).append(entry({ task: TASK }))).rejects.toThrow();
     expect(await fs.readFile(outside, "utf8")).toBe("");
+  });
+
+  it("a hard-linked trace file (nlink > 1) is refused, nothing written to it", async () => {
+    const other = path.join(base, "other.txt");
+    await fs.writeFile(other, "");
+    await fs.mkdir(traceDir(), { recursive: true });
+    await fs.link(other, path.join(traceDir(), `${TASK}.jsonl`));
+    await expect(new ToolTrace({ base }).append(entry({ task: TASK }))).rejects.toThrow(/not a plain file/);
+    expect(await fs.readFile(other, "utf8")).toBe("");
+  });
+
+  it("a file at the 16 MB cap takes no more entries, logged once", async () => {
+    const file = path.join(traceDir(), `${TASK}.jsonl`);
+    await fs.mkdir(traceDir(), { recursive: true });
+    await fs.writeFile(file, "");
+    await fs.truncate(file, TRACE_FILE_MAX_BYTES);
+    const logs: string[] = [];
+    const t = new ToolTrace({ base, log: (m) => void logs.push(m) });
+    await t.append(entry({ task: TASK }));
+    await t.append(entry({ task: TASK }));
+    expect((await fs.stat(file)).size).toBe(TRACE_FILE_MAX_BYTES);
+    expect(logs).toHaveLength(1);
+  });
+
+  it("an entry after a torn last line starts its own line", async () => {
+    const t = new ToolTrace({ base });
+    await t.append(entry({ task: TASK, ms: 1 }));
+    const file = path.join(traceDir(), `${TASK}.jsonl`);
+    await fs.appendFile(file, '{"at":"2026-10-29T12:00:00.000Z","tool":"cou');
+    await t.append(entry({ task: TASK, ms: 2 }));
+    expect((await t.read(TASK)).map((e) => e.ms)).toEqual([1, 2]);
+    expect((await fs.readFile(file, "utf8")).split("\n")).toHaveLength(4);
+  });
+
+  it("prune removes a whole file by its mtime even when its lines are fresh", async () => {
+    const t = new ToolTrace({ base, now: () => NOW });
+    await t.append(entry({ task: TASK }));
+    const file = path.join(traceDir(), `${TASK}.jsonl`);
+    const old = new Date(NOW.getTime() - 31 * DAY);
+    await fs.utimes(file, old, old);
+    await t.prune();
+    await expect(fs.stat(file)).rejects.toThrow();
   });
 
   it("ids that aren't task/run ids are refused (no path from a caller)", async () => {

@@ -5,10 +5,10 @@
 // (parseToolRpc, the call id it made, the tool broker), and the window's sandbox and CSP keep the page off Node and
 // the network.
 
-// Main's TOOL_RPC_LIMITS: errors are cut at 16,000 characters (main hides secret values, then the trace cuts again),
-// a summary at 200.
+// Main's TOOL_RPC_LIMITS: errors and summaries are cut at 16,000 characters (main hides secret values first, then cuts
+// again: 4096 for an error, 200 for a summary), so a key across main's cut never leaves its start behind (T4).
 const ERROR_CHARS = 16000;
-const SUMMARY_CHARS = 200;
+const SUMMARY_CHARS = 16000;
 const TOOL_ID = /^[a-z][a-z0-9_-]{0,63}$/;
 
 const errorText = (e) => String(e instanceof Error ? e.message : e).slice(0, ERROR_CHARS);

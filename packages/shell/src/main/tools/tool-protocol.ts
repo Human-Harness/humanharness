@@ -182,10 +182,10 @@ export type ToolRpc =
   | { method: "ctx"; callId: string; name: string; args: unknown[] };
 
 /**
- * `errorChars` bounds an error's raw text: main hides the tool's secret values in it before the trace cuts it (T4),
- * so a value across the cut can't leave its start behind. The host script cuts at the same length.
+ * `errorChars` and `summaryChars` bound an error's and a summary's raw text: main hides the tool's secret values in
+ * it before it cuts it (T4), so a value across the cut can't leave its start behind. The host script cuts at the same length.
  */
-export const TOOL_RPC_LIMITS = { tools: TOOLS_MAX, errorChars: 16_000, summaryChars: 200, callIdChars: 64, nameChars: 40, args: 8 } as const;
+export const TOOL_RPC_LIMITS = { tools: TOOLS_MAX, errorChars: 16_000, summaryChars: 16_000, callIdChars: 64, nameChars: 40, args: 8 } as const;
 
 /** The largest `rpc` payload, in UTF-8 bytes: one JSON string (the preload stringifies it), as the plugins'. */
 export const TOOL_RPC_MAX_BYTES = 12 * 1024 * 1024;

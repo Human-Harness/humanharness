@@ -242,7 +242,7 @@ describe("parseToolRpc (every rpc argument checked before anything sees it; T6)"
     // A tool that returns nothing: JSON drops the key.
     expect(rpc("done", { callId: "c1", ok: true })).toEqual({ method: "done", callId: "c1", ok: true, value: null });
     expect(rpc("done", { callId: "c1", ok: false, error: "x".repeat(20_000) })).toEqual({ method: "done", callId: "c1", ok: false, error: "x".repeat(16_000) });
-    expect(rpc("done", { callId: "c1", ok: true, value: 1, summary: "s".repeat(500) })).toEqual({ method: "done", callId: "c1", ok: true, value: 1, summary: "s".repeat(200) });
+    expect(rpc("done", { callId: "c1", ok: true, value: 1, summary: "s".repeat(20_000) })).toEqual({ method: "done", callId: "c1", ok: true, value: 1, summary: "s".repeat(16_000) });
     expect(rpc("ctx", { callId: "c1", name: "files.read", args: ["notes.md"] })).toEqual({ method: "ctx", callId: "c1", name: "files.read", args: ["notes.md"] });
     expect(rpc("ready", { tools: [], errors: [{ tool: "pr-ci", error: "y".repeat(20_000) }] })).toEqual({
       method: "ready",

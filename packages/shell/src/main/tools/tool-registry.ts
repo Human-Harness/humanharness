@@ -2,6 +2,7 @@ import { TOOL_ID, type ToolMeta, jsonSchemaToZod } from "@humanharness/harness-s
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { ToolBroker, TraceAccess } from "./tool-broker";
 import type { ToolHostAnswer, ToolHostCall } from "./tool-host";
+import { TOOL_RPC_LIMITS } from "./tool-protocol";
 import type { ToolCaller, ToolTrace, TraceEntry } from "./tool-trace";
 import type { ToolsState } from "./tools-json";
 
@@ -83,6 +84,18 @@ function hiddenHead(text: string, keys: readonly string[], limit: number): { tex
   if (keys.length === 0) return { text: head, cut: true };
   const shown = hideSecrets(head, keys);
   return { text: shown.slice(0, Math.max(0, shown.length - longestForm(keys))), cut: true };
+}
+
+/**
+ * A text from the host (an error, a summary) as main shows it: the keys hidden first, and only then cut to `out` code
+ * points. A text that arrived at the host's cap (`cap`) was already cut there, maybe through a key: it loses its last
+ * `longestForm` units too, so that key never shows its start.
+ */
+function shownText(text: string, keys: readonly string[], out: number, cap: number): string {
+  const shown = hiddenHead(text, keys, TRACE_LOOK);
+  let t = shown.text;
+  if (!shown.cut && keys.length > 0 && text.length >= cap) t = t.slice(0, Math.max(0, t.length - longestForm(keys)));
+  return upTo(t, out);
 }
 
 /** A value as a trace entry keeps it: itself when its JSON is short and holds no key, else `{ cut: true, text }`. */
@@ -189,8 +202,8 @@ export class ToolRegistry {
 
     const ms = Math.max(0, this.now().getTime() - started.getTime());
     const result = ran.ok && keys.length > 0 ? hideIn(ran.value, keys) : ran.ok ? ran.value : undefined;
-    const error = ran.ok ? undefined : hiddenHead(upTo(ran.error, ERROR_CHARS), keys, ERROR_CHARS * 2).text;
-    const summary = ran.ok ? upTo(hideSecrets(ran.summary || genericSummary(result), keys), SUMMARY_CHARS) : "failed";
+    const error = ran.ok ? undefined : shownText(ran.error, keys, ERROR_CHARS, TOOL_RPC_LIMITS.errorChars) || "The tool failed; its error can't be shown";
+    const summary = !ran.ok ? "failed" : (ran.summary && shownText(ran.summary, keys, SUMMARY_CHARS, TOOL_RPC_LIMITS.summaryChars)) || genericSummary(result);
     const entry: TraceEntry = {
       at: started.toISOString(),
       tool: id,
@@ -238,19 +251,28 @@ export class ToolRegistry {
       timer = setTimeout(() => settle({ ok: false, error: `${id} took longer than ${meta.timeout} s` }), timeoutMs);
     });
     let ran: Ran;
+    let accesses: TraceAccess[] = [];
     try {
       ran = await Promise.race([
-        this.d.host.call({ callId, tool: id, args, scope }, timeoutMs).catch((err: unknown): Ran => {
-          this.d.log?.(`Tool ${id} failed in the host`, err);
-          return { ok: false, error: BROKE };
-        }),
+        // A host that throws, even before it returns a promise, is this call's failure.
+        Promise.resolve()
+          .then(() => this.d.host.call({ callId, tool: id, args, scope }, timeoutMs))
+          .catch((err: unknown): Ran => {
+            this.d.log?.(`Tool ${id} failed in the host`, err);
+            return { ok: false, error: BROKE };
+          }),
         late,
       ]);
     } finally {
       clearTimeout(timer);
+      // Ends the run (its fetches and commands abort) and takes its accesses, whatever happened.
+      try {
+        accesses = broker.endCall(callId).accesses;
+      } catch (err) {
+        this.d.log?.(`A run of tool ${id} did not end cleanly`, err);
+      }
     }
-    // Ends the run (its fetches and commands abort) and takes its accesses.
-    return { ran, accesses: broker.endCall(callId).accesses };
+    return { ran, accesses };
   }
 
   /** The result against `returns` when the tool declares it: a mismatch is the tool's error. */

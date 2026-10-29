@@ -201,6 +201,75 @@ describe("ToolRegistry (tools spec §4.3)", () => {
     expect(seen.entries[0]!.accesses[0]!.target).toBe("https://api.x.com/?k=[redacted]");
   });
 
+  it("a key across the error's 4096-character cut is hidden before the cut, never kept half", async () => {
+    const { r, seen } = registry({ answer: () => ({ ok: false, error: "x".repeat(4090) + SECRET }) });
+    const a = await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(!a.ok && a.error).toBe("x".repeat(4090) + "[redac");
+    expect(JSON.stringify(seen.entries)).not.toContain("tok-SE");
+  });
+
+  it("an error that arrived at the host's 16000 cap loses its tail, so a key the host cut never shows its start", async () => {
+    // 31 hidden keys shrink 16000 characters to under 4096, so the half key the host's cut left would be kept.
+    const key = `LONGKEY-${"q".repeat(492)}`;
+    const { deps } = registry({ answer: () => ({ ok: false, error: key.repeat(32).slice(0, 16_000) }) });
+    const r = new ToolRegistry({ ...deps, secretValues: async () => [key] });
+    const a = await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(a).toEqual({ ok: false, error: "The tool failed; its error can't be shown" });
+    // Short of the cap, nothing is dropped.
+    const { r: r2 } = registry({ answer: () => ({ ok: false, error: `plain error ${SECRET}` }) });
+    expect(await r2.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null })).toEqual({ ok: false, error: "plain error [redacted]" });
+  });
+
+  it("a key across the summary's 200-character cut is hidden before the cut", async () => {
+    const { r, seen } = registry({ answer: () => ({ ok: true, value: 1, summary: "s".repeat(195) + SECRET }) });
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(seen.entries[0]!.resultSummary).toBe("s".repeat(195) + "[reda");
+  });
+
+  it("a summary that arrived at the host's 16000 cap loses its tail before its 200 are kept", async () => {
+    const key = `LONGKEY-${"q".repeat(15_792)}`;
+    const { deps, seen } = registry({ answer: () => ({ ok: true, value: 1, summary: (key + key).slice(0, 16_000) }) });
+    const r = new ToolRegistry({ ...deps, secretValues: async () => [key] });
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(seen.entries[0]!.resultSummary).not.toContain("LONGKEY");
+  });
+
+  it("a host call that throws answers 'Something went wrong running the tool' and still ends the run", async () => {
+    const { deps, seen } = registry();
+    const r = new ToolRegistry({
+      ...deps,
+      host: {
+        off: () => null,
+        call: () => {
+          throw new Error("sync boom");
+        },
+      },
+    });
+    expect(await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null })).toEqual({ ok: false, error: "Something went wrong running the tool" });
+    expect(seen.ended).toEqual(["run-1"]);
+    const r2 = new ToolRegistry({ ...deps, host: { off: () => null, call: async () => Promise.reject(new Error("async boom")) } });
+    expect(await r2.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null })).toEqual({ ok: false, error: "Something went wrong running the tool" });
+    expect(seen.ended).toEqual(["run-1", "run-2"]);
+  });
+
+  it("an endCall that throws is logged; the call still answers and is traced", async () => {
+    const { deps, seen } = registry();
+    const logs: string[] = [];
+    const r = new ToolRegistry({
+      ...deps,
+      log: (m) => void logs.push(m),
+      broker: () => ({
+        startCall: () => ({ id: "run-x", signal: new AbortController().signal }),
+        endCall: () => {
+          throw new Error("gone");
+        },
+      }),
+    });
+    expect(await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null })).toEqual({ ok: true, result: [1, 2, 3] });
+    expect(seen.entries[0]).toMatchObject({ ok: true, accesses: [] });
+    expect(logs).toHaveLength(1);
+  });
+
   it("a secret in a result is hidden in the answer, the summary and the trace", async () => {
     const { r, seen } = registry({ answer: () => ({ ok: true, value: { echo: `got ${SECRET}` }, summary: `said ${SECRET}` }) });
     const a = await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });

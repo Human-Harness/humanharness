@@ -1,10 +1,10 @@
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { EnginePreset } from "@humanharness/runtime";
 import { type EngineApproval, type ScopeEntry, engineConfigDir, isScopeId } from "@humanharness/workspace";
-import { engineApprovalValid } from "./approval";
+import { engineApprovalValid, enginePinTag, enginePinValid } from "./approval";
 import type { CleanSettings } from "./clean";
 import { type EngineConfig, type ReadEngineOptions, readEngineConfig } from "./read-config";
-import { type EngineSnapshot, loadSnapshot, writeSnapshot } from "./snapshot";
+import { type EngineSnapshot, loadSnapshot, pinnedScriptsUnchanged, writeSnapshot } from "./snapshot";
 
 // Which engine preset a task gets (hatches spec §5.2, §5.3, E1, Decision 2). A new task gets its scope's config only
 // when the person approved exactly what the engine folder holds now (the app's signed approval, the hash computed
@@ -166,18 +166,38 @@ export class EngineHost {
     return { preset: presetOf(snap, action), instructions: section(snap, action), notice: null, hash: snap.hash };
   }
 
+  /** The tag a new task `task` stores with its pin to `hash` in `scope` (`engineTag`); null without a key or a setup. */
+  async pinTag(scope: string, task: string, hash: string): Promise<string | null> {
+    const ctx = await this.d.context();
+    const secret = await this.d.secret();
+    return ctx && secret ? enginePinTag(ctx.profile, scope, task, hash, secret) : null;
+  }
+
   /**
-   * For a later turn (or a resumed session) of a task that started with `engineHash`: its pinned snapshot (Decision 2),
-   * while the live folder still holds approved bytes (the pinned hash, or the one the person approved since: scripts
-   * run in place). Otherwise none and a notice. A task that started without a preset stays without one.
+   * For a later turn (or a resumed session) of a task that started with `engineHash`: its pinned snapshot (Decision 2).
+   * Only while the scope has an approval the app signed (clearing it stops running tasks too), and the live folder
+   * holds approved bytes. Pinned to the approved hash: the folder must hash to it. Pinned to an older one: the pin must
+   * carry the app's tag (tasks.json is agent-writable), the folder must hold either hash, and every file the pinned
+   * commands run must still be the pinned bytes (scripts run in place; one only the pin runs is in no live approval).
+   * Otherwise none and a notice. A task that started without a preset stays without one.
    */
-  async presetForTask(task: { scope?: string; action?: string; engineHash?: string }): Promise<TaskPreset> {
+  async presetForTask(task: { id?: string; scope?: string; action?: string; engineHash?: string; engineTag?: string }): Promise<TaskPreset> {
     if (task.engineHash === undefined || task.scope === undefined) return NONE;
+    const unapproved: TaskPreset = { ...NONE, notice: "unapproved" };
     const now = await this.live(task.scope);
-    if (!now) return { ...NONE, notice: "unapproved" };
+    if (!now) return unapproved;
     const { config, o, approvedHash } = now;
     if (config.refusals.length > 0) return { ...NONE, notice: "refused" };
-    if (config.hash !== task.engineHash && config.hash !== approvedHash) return { ...NONE, notice: "unapproved" };
+    if (approvedHash === null) return unapproved;
+    if (approvedHash === task.engineHash) {
+      if (config.hash !== task.engineHash) return unapproved;
+    } else {
+      const ctx = await this.d.context();
+      const secret = await this.d.secret();
+      if (!ctx || task.id === undefined || !enginePinValid(task.engineTag, ctx.profile, task.scope, task.id, task.engineHash, secret)) return unapproved;
+      if (config.hash !== task.engineHash && config.hash !== approvedHash) return unapproved;
+      if (!(await pinnedScriptsUnchanged(this.d.userData, task.engineHash, o))) return unapproved;
+    }
     const snap = await this.load(task.engineHash, task.scope, o);
     if (snap === "refused") return { ...NONE, notice: "refused" };
     if (!snap) return { ...NONE, notice: "unapproved" };

@@ -114,6 +114,12 @@ describe("the backend in the window (hatches spec §4.3)", () => {
     expect(screen.getByText('tick: {"n":1}')).toBeTruthy();
   });
 
+  it("the fake answers only its own methods: an inherited name like toString answers null", async () => {
+    const client = withBackend("running");
+    await expect(client.backend.call("toString")).resolves.toBeNull();
+    await expect(client.backend.call("constructor")).resolves.toBeNull();
+  });
+
   it("useBackend keeps a state change that arrives before the first answer", async () => {
     const client = withBackend("starting");
     let answer: (s: "starting") => void = () => undefined;

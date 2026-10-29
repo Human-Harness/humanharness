@@ -296,7 +296,7 @@ export class FakeClient implements HarnessClient {
     call: vi.fn(async (method: string, _params?: unknown) => {
       this.needBackend();
       if (this.backendState !== "running") throw new Error("The backend isn't running");
-      return this.backendAnswers[method] ?? null;
+      return (Object.hasOwn(this.backendAnswers, method) ? this.backendAnswers[method] : undefined) ?? null;
     }),
     on: (event, listener) => {
       const l = (m: { event: string; data: unknown }) => {

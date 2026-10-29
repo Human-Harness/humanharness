@@ -2,12 +2,12 @@
 // dependency). Only `key: value`, `key: [a, b]` and `key: |` blocks; anything else is refused
 // naming the key, so a file the parser can't read never reaches an engine half-understood.
 
-export type FrontmatterValue = string | string[];
-export type Frontmatter = { fields: Record<string, FrontmatterValue>; body: string };
+type FrontmatterValue = string | string[];
+type Frontmatter = { fields: Record<string, FrontmatterValue>; body: string };
 
 const KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-export const PLAIN_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const PLAIN_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MAX_BYTES = 256 * 1024;
 // A lone \r, U+2028/U+2029 and NEL are line breaks to a YAML parser but not to this one: a key
 // hidden behind one would pass the checks here and still load in the engine. Refuse every

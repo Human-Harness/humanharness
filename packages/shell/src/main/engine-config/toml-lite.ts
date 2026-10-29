@@ -8,7 +8,7 @@
  */
 
 /** The largest `codex.toml` read (the engine folder's per-file cap). */
-export const TOML_MAX_BYTES = 256 * 1024;
+const TOML_MAX_BYTES = 256 * 1024;
 
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const BARE_KEY = /^[A-Za-z0-9_-]$/;

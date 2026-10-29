@@ -13,7 +13,7 @@ import path from "node:path";
 // sure is refused instead: any other `$`, a backquote, a glob (`*`, `?`, `[`) or a change of folder (`cd`).
 
 /** Splits a command like a shell would for words: quotes, backslashes, and `;|&<>()` as separators. */
-export function commandTokens(command: string): string[] {
+function commandTokens(command: string): string[] {
   const tokens: string[] = [];
   let cur = "";
   let started = false;

@@ -52,9 +52,9 @@ export interface ReadEngineOptions extends CleanContext {
 
 export const ENGINE_FILE_MAX = 256 * 1024;
 export const ENGINE_FOLDER_MAX = 2 * 1024 * 1024;
-export const ENGINE_FILES_MAX = 200;
+const ENGINE_FILES_MAX = 200;
 /** A file's path has at most this many parts (`skills/<name>/<dir>/<file>`). */
-export const ENGINE_DEPTH_MAX = 4;
+const ENGINE_DEPTH_MAX = 4;
 
 const TOP_FILES = new Set(["base", "instructions.md", "mcp.json", "settings.json", "codex.toml"]);
 const TOP_DIRS = new Set(["skills", "agents", "actions"]);

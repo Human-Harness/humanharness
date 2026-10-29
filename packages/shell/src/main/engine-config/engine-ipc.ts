@@ -148,7 +148,7 @@ function skillView(s: { name: string; description: string }, files: ReadonlyMap<
 }
 
 /** The view of `config` (plain data: it crosses the bridge by copy). Commands come first: the screen leads with them. */
-export function engineConfigView(scope: string, config: EngineConfig, approval: EngineApproval | null, codexLimit: boolean): EngineConfigView {
+function engineConfigView(scope: string, config: EngineConfig, approval: EngineApproval | null, codexLimit: boolean): EngineConfigView {
   const actions = Object.keys(config.actions).sort();
   const runsCommands = [
     ...layerItems(config, "", "", isPlainObject(config.codex?.hooks) ? (config.codex.hooks as Hooks) : undefined),

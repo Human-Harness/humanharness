@@ -53,13 +53,13 @@ export interface EngineSnapshot {
   refusals: EngineRefusal[];
 }
 
-export interface LoadSnapshotOptions extends ReadEngineOptions {
+interface LoadSnapshotOptions extends ReadEngineOptions {
   /** The scope's live engine folder: scripts inside it are its files, not referenced scripts. */
   dir: string;
 }
 
 /** How long a snapshot nothing keeps stays in the data folder (Decision 13). */
-export const SNAPSHOT_KEEP_DAYS = 30;
+const SNAPSHOT_KEEP_DAYS = 30;
 const HASH = /^[0-9a-f]{64}$/;
 const TEMP = /^\.tmp-[0-9a-f]{16}$/;
 const CHANGED = "The approved engine config changed on disk";

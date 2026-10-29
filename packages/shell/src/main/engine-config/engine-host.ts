@@ -26,7 +26,7 @@ export interface TaskPreset {
   hash?: string;
 }
 
-export interface EngineHostDeps {
+interface EngineHostDeps {
   /** The app's data folder: snapshots live in `<userData>/engine-config/`. */
   userData: string;
   /** The open base (the folder, or the profile's), its profile id ("" without profiles) and its scope registry; null when not set up. */

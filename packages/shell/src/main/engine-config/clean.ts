@@ -17,12 +17,12 @@ export interface CleanContext {
   reserved: ReadonlySet<string>;
 }
 
-export interface CommandHook {
+interface CommandHook {
   type: "command";
   command: string;
   timeout?: number;
 }
-export interface HookMatcher {
+interface HookMatcher {
   matcher?: string;
   hooks: CommandHook[];
 }

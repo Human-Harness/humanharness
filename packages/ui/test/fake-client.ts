@@ -1,4 +1,7 @@
 import type {
+  EngineApproveResult,
+  EngineConfigClient,
+  EngineConfigView,
   BackendClient,
   BackendState,
   AppConfig,
@@ -127,6 +130,11 @@ export interface FakeTasks extends TasksClient {
 export interface FakeJobs extends JobsClient {
   run: Mock<JobsClient["run"]>;
   set(jobs: JobSummary[]): void;
+}
+
+/** `client.engineConfig` with a spy on approvals. */
+export interface FakeEngineConfig extends EngineConfigClient {
+  approve: Mock<EngineConfigClient["approve"]>;
 }
 
 /** `client.backend` with a spy on calls and restarts. */
@@ -329,6 +337,38 @@ export class FakeClient implements HarnessClient {
   backendStateSet(s: BackendState): void {
     this.backendState = s;
     for (const l of this.backendStateListeners) l(s);
+  }
+  /** Engine config views by scope (hatches spec §5.3); `engineConfigSet` replaces one and tells `onChanged`. */
+  engineConfigs: Record<string, EngineConfigView> = {};
+  private engineListeners = new Set<(scope: string | null) => void>();
+  /** Like main and the preload: without `state.hatches.enginePresets` every call rejects (D0). */
+  private needEngine() {
+    if (!this.state.hatches?.enginePresets) throw new Error("This harness has no engine presets");
+  }
+  readonly engineConfig: FakeEngineConfig = {
+    get: async (scope) => {
+      this.needEngine();
+      return Object.hasOwn(this.engineConfigs, scope) ? this.engineConfigs[scope] : null;
+    },
+    // As main: only the hash the view carries now, and never with refusals.
+    approve: vi.fn(async (scope: string, hash: string): Promise<EngineApproveResult> => {
+      this.needEngine();
+      const v = Object.hasOwn(this.engineConfigs, scope) ? this.engineConfigs[scope] : undefined;
+      if (!v || v.hash !== hash) return { ok: false, reason: "changed" };
+      if (v.refusals.length > 0) return { ok: false, reason: "refused" };
+      const view = { ...v, approved: true, approvedAt: "2026-10-28T10:00:00.000Z" };
+      this.engineConfigSet(scope, view);
+      return { ok: true, view };
+    }),
+    onChanged: (listener) => {
+      this.engineListeners.add(listener);
+      return () => void this.engineListeners.delete(listener);
+    },
+  };
+  engineConfigSet(scope: string, view: EngineConfigView | null): void {
+    if (view) this.engineConfigs[scope] = view;
+    else delete this.engineConfigs[scope];
+    for (const l of this.engineListeners) l(scope);
   }
   get tasks(): TaskView & FakeTasks {
     return Object.assign(Object.create(this.tasksApi) as FakeTasks, this.taskView);

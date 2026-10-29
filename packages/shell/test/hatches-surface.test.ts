@@ -53,8 +53,12 @@ describe("hatches IPC surface (hatches D0)", () => {
     expect(count(engine, /\blinkedSecret\(userData\)\(false\)/)).toBe(1);
     // Only the key: no live set, no prune, no key file named there (the sum below can't hide one).
     for (const name of [/\blinkedSigning\(/, /\bpruneUnlinked\(/, /linked-key/, /linked-live\.json/]) expect(count(engine, name), String(name)).toBe(0);
+    // Approving one signs with it, made then if needed: only from the engine channels' deps (registered under enginePresets).
+    const approve = group(index, index.indexOf("function engineIpcDeps(): EngineIpcDeps"), /\{/);
+    expect(count(approve, /\blinkedSecret\(userData\)\(true\)/)).toBe(1);
+    expect(count(approve, /\blinkedSecret\(/)).toBe(1);
     for (const name of [/\blinkedSigning\(/, /\blinkedSecret\(/, /\bpruneUnlinked\(/, /"linked-key"/, /"linked-live\.json"/]) {
-      expect(count(index, name), String(name)).toBe(count(deps, name) + count(engine, name));
+      expect(count(index, name), String(name)).toBe(count(deps, name) + count(engine, name) + count(approve, name));
     }
     expect(count(deps, /\blinkedSigning\(/)).toBe(1);
     expect(count(deps, /\bpruneUnlinked\(/)).toBe(1);
@@ -76,6 +80,34 @@ describe("hatches IPC surface (hatches D0)", () => {
     expect(hatchesState(defineHarness({ ...base, linkedFolders: {} }))).toBeUndefined();
     expect(hatchesState(defineHarness({ ...base, linkedFolders: { repos: { label: "Repos", mode: "write" } } }))).toEqual({
       linkedFolders: { repos: { label: "Repos", mode: "write", history: "auto", many: false } },
+    });
+  });
+
+  it("engine channels are registered only under enginePresets", async () => {
+    const index = await read("index.ts");
+    expect(count(index, /registerEngineIpc\(/)).toBe(1);
+    expect(index).toContain("  if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());\n");
+    // Its deps (and so the approval key) are built only there; the commit signal reaches it only once registered.
+    expect(count(index, /\bengineIpcDeps\(\)/)).toBe(2); // the definition and that one call
+    expect(count(index, /\bengineIpc = /)).toBe(1);
+    expect(index).toMatch(/let engineIpc: EngineIpc \| null = null;/);
+    // No other file registers or sends them: the channel names appear only in engine-ipc.ts (hh:engineStatus is the core's).
+    for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
+      if (f === path.join("engine-config", "engine-ipc.ts")) continue;
+      expect(await read(f), f).not.toMatch(/hh:engine(Config|Approve)/);
+    }
+    // The preload and the window name them, but main answers only under enginePresets.
+    const ipc = await read(path.join("engine-config", "engine-ipc.ts"));
+    expect(count(ipc, /handle\("hh:engine(Config|Approve)/)).toBe(2);
+  });
+
+  it("hatchesState carries enginePresets: true only with enginePresets (D0)", () => {
+    expect(hatchesState(defineHarness(base))).toBeUndefined();
+    expect(hatchesState(defineHarness({ ...base, enginePresets: true }))).toEqual({ enginePresets: true });
+    expect(hatchesState(defineHarness({ ...base, backend: "b.ts" }))).not.toHaveProperty("enginePresets");
+    expect(hatchesState(defineHarness({ ...base, enginePresets: true, linkedFolders: { repos: { label: "Repos", mode: "read" } } }))).toEqual({
+      linkedFolders: { repos: { label: "Repos", mode: "read", history: "auto", many: false } },
+      enginePresets: true,
     });
   });
 

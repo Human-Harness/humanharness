@@ -200,6 +200,7 @@ import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
+import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import { BackendLog } from "./backend/backend-log";
 import { BackendProcess } from "./backend/backend-process";
@@ -280,6 +281,8 @@ let linkedUnsupported = false;
 let linkedParts: { access: ScopeAccess; instructions: LinkedInstructions } | null = null;
 /** The scopes' engine presets (hatches spec §5), made on first use: only a harness with `enginePresets` (D0: null). */
 let engineHost: EngineHost | null = null;
+/** The Engine config channels (hatches spec §5.3), registered only under `enginePresets` (D0: null, nothing sent). */
+let engineIpc: EngineIpc | null = null;
 /** The linked-folder channels' deps, made once when they are registered (hasLinkedFolders only). */
 let linkedDeps: LinkedIpcDeps | null = null;
 /** The harness's backend (hatches spec §4); null without `backend` (D0: no process, no file, no channel). */
@@ -2081,6 +2084,26 @@ function engineHost_(): EngineHost | undefined {
 }
 
 /**
+ * The Engine config channels' deps (hatches spec §5.3), made only when they are registered (enginePresets). Approving
+ * signs with the links' key, made then if there is none yet, for the same profile id the host checks it with.
+ */
+function engineIpcDeps(): EngineIpcDeps {
+  const host = engineHost_()!;
+  const userData = app.getPath("userData");
+  return {
+    current: (scope) => host.current(scope),
+    store: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The folder is not set up");
+      return { store: scopeStoreFor(baseOf(c)), profile: profilesOn() ? (c.profile ?? "") : "" };
+    },
+    secret: () => linkedSecret(userData)(true),
+    codexLimit: () => harness.engines.includes("codex"),
+    send: sendToWindow,
+  };
+}
+
+/**
  * The linked-folder parts, made on first use once the channels' deps exist: only a harness that declares
  * `linkedFolders` registers them (D0: null, and nothing of it runs). The IPC and the turns share one signing (one
  * writer of the live set).
@@ -2297,7 +2320,11 @@ async function sendContext(task: string): Promise<void> {
 }
 
 /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
-const commitAnnouncements = commitAnnouncer((paths) => sendToWindow("hh:fileCommits", paths));
+const commitAnnouncements = commitAnnouncer((paths) => {
+  sendToWindow("hh:fileCommits", paths);
+  // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
+  engineIpc?.committed(paths);
+});
 const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
 function registerIpc() {
@@ -2451,6 +2478,8 @@ function registerIpc() {
   });
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
   if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
+  // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
+  if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());
   // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
   if (hasBackend(harness)) {
     const backendLog = new BackendLog(app.getPath("userData"));

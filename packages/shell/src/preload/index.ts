@@ -317,6 +317,13 @@ const client: HarnessClient = {
   language: languageClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
   // The harness's backend (hatches spec §4.2): main registers its channels only with `backend` (D0).
   backend: backendClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
+  // A scope's engine config (hatches spec §5.3): main registers these channels only with `enginePresets` (D0). The
+  // hash sent back is the one the view carried; main computes it again and approves only when equal.
+  engineConfig: {
+    get: (scope) => ipcRenderer.invoke("hh:engineConfig", scope),
+    approve: (scope, hash) => ipcRenderer.invoke("hh:engineApprove", scope, hash),
+    onChanged: (listener) => subscribe<string | null>("hh:engineConfigChanged", listener),
+  },
 };
 
 contextBridge.exposeInMainWorld("hh", client);

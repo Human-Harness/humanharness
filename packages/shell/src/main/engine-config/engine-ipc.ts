@@ -1,0 +1,176 @@
+import type { EngineApproval, ScopeStore } from "@humanharness/workspace";
+import { ENGINE_PREFIX, isScopeId } from "@humanharness/workspace";
+import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView } from "@humanharness/ui/client";
+import { engineApprovalTag } from "./approval";
+import type { Hooks } from "./clean";
+import { agentFromMarkdown } from "./frontmatter";
+import type { EngineConfig, EngineLayer } from "./read-config";
+
+export type { EngineConfigView };
+
+// The scope settings' "Engine config" (hatches spec §5.3, E10): what a scope's engine folder holds, as the person
+// reads it, and its approval. Registered only for a harness that declares `enginePresets` (D0). The window never
+// names a hash it made up: it sends back the one it was shown, main computes the folder's hash again right then and
+// approves only when the two are equal, signing the approval with the app's key (`.harness/scopes.json` is in the
+// folder the agent writes).
+
+const HASH = /^[0-9a-f]{64}$/;
+const CHANGED = "hh:engineConfigChanged";
+const SCOPES_FILE = ".harness/scopes.json";
+
+export interface EngineIpcDeps {
+  /** The live config of a scope and its app-signed approval (`EngineHost.current`); null without engine config. */
+  current(scope: string): Promise<{ config: EngineConfig; approval: EngineApproval | null } | null>;
+  /** The open base's scope registry and profile id ("" without profiles); throws before setup. */
+  store(): Promise<{ store: ScopeStore; profile: string }>;
+  /** The app's approval key, made by the first approval (`linkedSecret(userData)(true)`). */
+  secret(): Promise<Buffer | null>;
+  /** Decision 14: the harness supports Codex (its `engines` list it). Read on each view: a harness update changes it. */
+  codexLimit(): boolean;
+  send(channel: string, value: unknown): void;
+  now?(): Date;
+}
+
+/** What `registerEngineIpc` gives back: index.ts hands it each history commit's paths (`announcedPaths`). */
+export interface EngineIpc {
+  committed(paths: string[] | null): void;
+}
+
+/** The commands a hooks object runs, as the screen lists them: event (and matcher), command. */
+function hookItems(hooks: Hooks | undefined, layer: string, file: string): EngineRunsCommandView[] {
+  return Object.entries(hooks ?? {}).flatMap(([event, matchers]) =>
+    matchers.flatMap((m) =>
+      m.hooks.map((h) => ({ kind: "hook" as const, label: m.matcher ? `${event} · ${m.matcher}` : event, command: h.command, args: [], layer, file })),
+    ),
+  );
+}
+
+/** A layer's hooks then its servers (`layer` "" for the scope's own; `prefix` the layer's folder). */
+function layerItems(l: EngineLayer, layer: string, prefix: string, codexHooks?: Hooks): EngineRunsCommandView[] {
+  return [
+    ...hookItems(l.settings?.hooks, layer, `${prefix}settings.json`),
+    ...hookItems(codexHooks, layer, "codex.toml"),
+    ...l.servers.map((s) => ({ kind: "server" as const, label: s.name, command: s.command, args: [...s.args], layer, file: `${prefix}mcp.json` })),
+  ];
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The cleaned codex.toml's keys, dotted to their leaves; its hooks are listed with the other commands. */
+function codexKeys(codex: Record<string, unknown> | null): string[] {
+  const out: string[] = [];
+  const walk = (v: Record<string, unknown>, at: string) => {
+    for (const [k, child] of Object.entries(v)) {
+      const key = at ? `${at}.${k}` : k;
+      if (!at && k === "hooks") continue;
+      if (isPlainObject(child)) walk(child, key);
+      else out.push(key);
+    }
+  };
+  if (codex) walk(codex, "");
+  return out;
+}
+
+/** The view of `config` (plain data: it crosses the bridge by copy). Commands come first: the screen leads with them. */
+export function engineConfigView(scope: string, config: EngineConfig, approval: EngineApproval | null, codexLimit: boolean): EngineConfigView {
+  const actions = Object.keys(config.actions).sort();
+  const runsCommands = [
+    ...layerItems(config, "", "", isPlainObject(config.codex?.hooks) ? (config.codex.hooks as Hooks) : undefined),
+    ...actions.flatMap((id) => layerItems(config.actions[id]!, id, `actions/${id}/`)),
+  ];
+  const instructions = [
+    { layer: "", text: config.instructions },
+    ...actions.map((id) => ({ layer: id, text: config.actions[id]!.instructions })),
+  ].filter((i) => i.text.trim() !== "");
+  // An agent's dropped keys (`permissionMode`) show with the agent: its file read again for them (the parse is pure).
+  const agentIgnored = new Map<string, string[]>();
+  for (const [rel, data] of config.files) {
+    const parts = rel.split("/");
+    if (parts[0] !== "agents" || parts.length !== 2 || !rel.endsWith(".md")) continue;
+    try {
+      const a = agentFromMarkdown(parts[1]!, data.toString("utf8"));
+      if (!agentIgnored.has(a.name)) agentIgnored.set(a.name, a.ignored);
+    } catch {
+      // Refused: listed with the refusals.
+    }
+  }
+  const approved = approval !== null && approval.hash === config.hash;
+  return {
+    scope,
+    base: config.base,
+    codexLimit,
+    runsCommands,
+    instructions,
+    skills: config.skills.map((s) => s.name),
+    agents: Object.entries(config.agents).map(([name, a]) => ({ name, description: a.description, ignored: agentIgnored.get(name) ?? [] })),
+    codexKeys: codexKeys(config.codex),
+    ignored: [...config.ignored.filter((i) => !i.startsWith("agents/")), ...actions.flatMap((id) => config.actions[id]!.ignored)],
+    scripts: [...config.scripts],
+    refusals: config.refusals.map((r) => ({ file: r.file, message: r.message })),
+    hash: config.hash,
+    approved,
+    ...(approved ? { approvedAt: approval.at } : {}),
+  };
+}
+
+/**
+ * The Engine config channels (hatches spec §5.3), registered only for a harness that declares `enginePresets` (D0).
+ * Every id from the window is checked here (E10): a registered, active scope; a hash of 64 lowercase hex characters.
+ */
+export function registerEngineIpc(handle: (channel: string, fn: (...args: never[]) => unknown) => void, d: EngineIpcDeps): EngineIpc {
+  // One approval at a time: each reads the folder and writes scopes.json.
+  let chain: Promise<unknown> = Promise.resolve();
+  const serial = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = chain.then(fn);
+    chain = run.catch(() => undefined);
+    return run;
+  };
+  /** The registry and the scope `id`: registered and not archived (an id compared, never used as a key). */
+  const scopeOf = async (id: unknown): Promise<{ store: ScopeStore; profile: string; id: string }> => {
+    if (!isScopeId(id)) throw new Error("Unknown scope");
+    const { store, profile } = await d.store();
+    if (!(await store.list()).some((s) => s.id === id && !s.archived)) throw new Error("Unknown scope");
+    return { store, profile, id };
+  };
+  const viewOf = async (id: string): Promise<EngineConfigView | null> => {
+    const now = await d.current(id);
+    return now ? engineConfigView(id, now.config, now.approval, d.codexLimit()) : null;
+  };
+
+  handle("hh:engineConfig", async (scope: unknown): Promise<EngineConfigView | null> => viewOf((await scopeOf(scope)).id));
+
+  // Approves only the hash computed now (E10): a folder changed since the screen showed it answers "changed".
+  handle("hh:engineApprove", async (scope: unknown, hash: unknown): Promise<EngineApproveResult> => {
+    if (typeof hash !== "string" || !HASH.test(hash)) throw new Error("Invalid engine config hash");
+    return serial(async () => {
+      const { store, profile, id } = await scopeOf(scope);
+      const now = await d.current(id);
+      if (!now || now.config.hash !== hash) return { ok: false, reason: "changed" };
+      if (now.config.refusals.length > 0) return { ok: false, reason: "refused" };
+      const secret = await d.secret();
+      if (!secret) throw new Error("Could not read the app's key");
+      await store.approveEngine(id, hash, (a) => engineApprovalTag(profile, id, a, secret), d.now?.());
+      d.send(CHANGED, id);
+      const view = await viewOf(id);
+      return view ? { ok: true, view } : { ok: false, reason: "changed" };
+    });
+  });
+
+  return {
+    // A commit (a history save, or an outside change the history took) that touched a scope's engine folder: that
+    // scope's section reads it again. Too many paths to list, or the approvals file: any scope (null).
+    committed(paths) {
+      if (paths === null || paths.includes(SCOPES_FILE)) {
+        d.send(CHANGED, null);
+        return;
+      }
+      const scopes = new Set<string>();
+      for (const p of paths) {
+        if (!p.startsWith(ENGINE_PREFIX)) continue;
+        const id = p.slice(ENGINE_PREFIX.length).split("/")[0];
+        if (isScopeId(id)) scopes.add(id);
+      }
+      for (const id of scopes) d.send(CHANGED, id);
+    },
+  };
+}

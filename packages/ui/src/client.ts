@@ -902,6 +902,58 @@ export interface HatchesState {
   linkedFolders?: Record<string, { label: string; mode: "read" | "write"; history: "auto" | "own"; many: boolean }>;
   /** The harness declares a backend (hatches spec §4). Absent without one (D0). */
   backend?: true;
+  /** The harness declares `enginePresets` (hatches spec §5): scope settings show "Engine config". Absent without (D0). */
+  enginePresets?: true;
+}
+
+/** A hook or MCP server of a scope's engine config: it runs a command on the person's computer (spec §5.3). */
+export interface EngineRunsCommandView {
+  kind: "hook" | "server";
+  /** A hook's event (and matcher), a server's name as the engine sees it (`scope-<name>`). */
+  label: string;
+  command: string;
+  args: string[];
+  /** "" for the scope's own config, else the action whose layer it is. */
+  layer: string;
+  /** The file it comes from, relative to the scope's engine folder (`codex.toml` hooks run on Codex only). */
+  file: string;
+}
+/** What the scope settings' "Engine config" shows of a scope's engine folder (hatches spec §5.3). */
+export interface EngineConfigView {
+  scope: string;
+  base: "isolated" | "global";
+  /** Decision 14: the harness supports Codex ("On Codex, your own Codex config always applies"). */
+  codexLimit: boolean;
+  /** Shown first: hooks, then servers; the scope's own, then each action layer's. */
+  runsCommands: EngineRunsCommandView[];
+  instructions: { layer: string; text: string }[];
+  skills: string[];
+  /** `ignored`: the keys the app drops from the agent's file (`permissionMode`). */
+  agents: { name: string; description: string; ignored: string[] }[];
+  /** codex.toml's keys, dotted (its hooks are in `runsCommands`). */
+  codexKeys: string[];
+  /** Keys dropped rather than refused, each led by its file (`settings.json: defaultMode`). */
+  ignored: string[];
+  /** Files outside the engine folder its commands name: they join the hash (absolute). */
+  scripts: string[];
+  /** A config with any can't be approved. */
+  refusals: { file: string; message: string }[];
+  /** What `approve` takes back: main computes it again and approves only when equal. */
+  hash: string;
+  /** The person approved exactly this (the app's signature holds). */
+  approved: boolean;
+  approvedAt?: string;
+}
+/** `changed`: the folder no longer hashes to what was shown; `refused`: it holds refusals. */
+export type EngineApproveResult = { ok: true; view: EngineConfigView } | { ok: false; reason: "changed" | "refused" };
+/** A scope's engine config (hatches spec §5.3). Only with `state.hatches.enginePresets`; without, every call rejects (D0). */
+export interface EngineConfigClient {
+  /** Null: the scope has no engine config. */
+  get(scope: string): Promise<EngineConfigView | null>;
+  /** `hash` is the view's: what the person saw. */
+  approve(scope: string, hash: string): Promise<EngineApproveResult>;
+  /** A scope's engine config (or its approval) changed; null: any scope may have. Returns the unsubscribe. */
+  onChanged(listener: (scope: string | null) => void): () => void;
 }
 
 export type BackendState = "stopped" | "starting" | "running" | "failed";
@@ -1517,6 +1569,8 @@ export interface HarnessClient {
   jobs: JobsClient;
   /** The harness's backend (hatches spec §4). Only with `state.hatches.backend`; without, every call rejects (D0). */
   backend: BackendClient;
+  /** A scope's engine config (hatches spec §5.3). Only with `state.hatches.enginePresets` (D0). */
+  engineConfig: EngineConfigClient;
 }
 
 /** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */

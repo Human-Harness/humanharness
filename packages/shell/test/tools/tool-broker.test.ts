@@ -269,4 +269,27 @@ describe("ToolBroker: one core broker per tool, bound to its uses (tools spec §
     await b.call(run.id, "log", ["info", `sent ${SECRET}`]);
     expect(b.endCall(run.id).logs).toEqual([{ level: "info", message: "sent [redacted]" }]);
   });
+
+  it("a job run's narrowed permissions hold: web: false refuses fetch, exec: false refuses exec, naming them; the rest works", async () => {
+    const { b, seen } = broker({ hosts: ["api.x.com"], exec: [{ cmd: "gh", args: ["*"] }], data: { read: ["tickets"] } });
+    const run = b.startCall("s1", { job: "digest", web: false, exec: false });
+    expect(await b.call(run.id, "fetch", ["https://api.x.com/a"])).toEqual({ ok: false, refused: 'The job "digest" runs with web: false: its tools can\'t fetch' });
+    expect(await b.call(run.id, "exec", ["gh", ["pr"]])).toEqual({ ok: false, refused: 'The job "digest" runs with exec: false: its tools can\'t run commands' });
+    expect(await b.call(run.id, "data.get", ["tickets", "a"])).toMatchObject({ ok: true });
+    expect(seen.fetches).toEqual([]);
+    expect(seen.exec).toEqual([]);
+    expect(b.endCall(run.id).accesses).toEqual([
+      { kind: "fetch", target: "https://api.x.com/a", allowed: false },
+      { kind: "exec", target: "gh pr", allowed: false },
+      { kind: "data", target: "get tickets", allowed: true },
+    ]);
+    // Only the one that is off: web on, exec off.
+    const half = b.startCall(null, { job: "digest", web: true, exec: false });
+    expect(await b.call(half.id, "fetch", ["https://api.x.com/a"])).toMatchObject({ ok: true });
+    expect(await b.call(half.id, "exec", ["gh", ["pr"]])).toMatchObject({ ok: false });
+    // A call with no job limits (a task's, the UI's) is as before.
+    const free = b.startCall(null);
+    expect(await b.call(free.id, "exec", ["gh", ["pr"]])).toMatchObject({ ok: true });
+  });
 });
+

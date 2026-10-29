@@ -1,6 +1,6 @@
 import { TOOL_ID, type ToolMeta, jsonSchemaToZod } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
-import { TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
+import { type JobLimits, TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
 import type { ToolHostAnswer, ToolHostCall } from "./tool-host";
 import { TOOL_RPC_LIMITS } from "./tool-protocol";
 import type { ToolCaller, ToolTrace, TraceEntry } from "./tool-trace";
@@ -27,6 +27,8 @@ export interface ToolCall {
   job?: string;
   run?: string;
   phase?: string;
+  /** A job run's narrowed permissions: the tool's fetch and exec stay inside them (never traced). */
+  limits?: JobLimits;
 }
 export type ToolAnswer = { ok: true; result: unknown } | { ok: false; error: string };
 
@@ -198,7 +200,7 @@ export class ToolRegistry {
     else {
       // Only the parsed value reaches the tool: keys params doesn't name are gone.
       args = checked!.data;
-      const out = await this.run(id, meta, args, c.scope);
+      const out = await this.run(id, meta, args, c.scope, c.limits);
       accesses = out.accesses;
       logs = out.logs;
       ran = out.ran.ok ? this.checkReturns(meta, out.ran) : out.ran;
@@ -241,12 +243,12 @@ export class ToolRegistry {
   }
 
   /** One run in the host under a fresh run of the tool's broker; the registry's own timer backs the host's. */
-  private async run(id: string, meta: ToolMeta, args: unknown, scope: string | null): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[] }> {
+  private async run(id: string, meta: ToolMeta, args: unknown, scope: string | null, limits: JobLimits | undefined): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[] }> {
     let broker: Pick<ToolBroker, "startCall" | "endCall">;
     let callId: string;
     try {
       broker = this.d.broker(id);
-      callId = broker.startCall(scope).id;
+      callId = (limits ? broker.startCall(scope, limits) : broker.startCall(scope)).id;
     } catch (err) {
       this.d.log?.(`Tool ${id} could not start`, err);
       return { ran: { ok: false, error: BROKE }, accesses: [], logs: [] };

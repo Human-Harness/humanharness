@@ -346,6 +346,57 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     expect(toolCallView({ ...e, logs: "x" as never })).not.toHaveProperty("logs");
   });
 
+  describe("a job run's narrowed permissions (jobs J2): its tools never reach more than the job may", () => {
+    const NET = { net: meta("net", { uses: { hosts: ["api.x.com"], exec: [{ cmd: "gh", args: ["*"] }] } }) };
+    /** The net tool tries a fetch and a command and answers what the broker said to each. */
+    const tries: Answer = async (c, channel) => {
+      const fetched = await channel.ctx(c.tool, c.callId, "fetch", ["https://api.x.com/a"]);
+      const ran = await channel.ctx(c.tool, c.callId, "exec", ["gh", ["pr"]]);
+      return { ok: true, value: [fetched.ok ? "fetched" : fetched.refused, ran.ok ? "ran" : ran.refused] };
+    };
+    const jobHarness = (jobs: Record<string, unknown>): ToolsHarness => ({
+      ...harness(NET),
+      permissions: { edit: "folder", exec: true, web: true },
+      jobs: jobs as ToolsHarness["jobs"],
+    });
+
+    it("web: false and exec: false: fetch and exec are refused naming them, and the trace shows access denied", async () => {
+      await built(NET);
+      const { t } = wire({ tools: NET, answer: tries, over: { harness: jobHarness({ digest: { permissions: { web: false, exec: false } } }) } });
+      const ws = (await t.workspaceOptions())!;
+      expect(await ws.request({ tool: "net" }, { key: `job:${RUN}` })).toEqual([
+        'The job "digest" runs with web: false: its tools can\'t fetch',
+        'The job "digest" runs with exec: false: its tools can\'t run commands',
+      ]);
+      const [entry] = await traceLines(RUN, "jobs");
+      expect(entry!.accesses).toEqual([
+        { kind: "fetch", target: "https://api.x.com/a", allowed: false },
+        { kind: "exec", target: "gh pr", allowed: false },
+      ]);
+    });
+
+    it("a job that narrows nothing, and a task's slot, are not limited by it", async () => {
+      await built(NET);
+      const { t } = wire({ tools: NET, answer: tries, over: { harness: jobHarness({ digest: { permissions: { edit: "none" } } }) } });
+      const ws = (await t.workspaceOptions())!;
+      for (const key of [`job:${RUN}`, "main"]) {
+        const [fetched, ran] = (await ws.request({ tool: "net" }, { key })) as string[];
+        expect(fetched).not.toContain("runs with");
+        expect(ran).not.toContain("runs with");
+      }
+    });
+
+    it("fails closed: a run whose job the harness doesn't declare gets fetch and exec refused", async () => {
+      await built(NET);
+      const { t } = wire({ tools: NET, answer: tries, over: { harness: jobHarness({}) } });
+      const ws = (await t.workspaceOptions())!;
+      expect(await ws.request({ tool: "net" }, { key: `job:${RUN}` })).toEqual([
+        'The job "digest" runs with web: false: its tools can\'t fetch',
+        'The job "digest" runs with exec: false: its tools can\'t run commands',
+      ]);
+    });
+  });
+
   it("two agent calls at once (a task's and a job run's): each data write carries its own call's trailer, in any order", async () => {
     await built();
     const held: { c: ToolHostCall; channel: ToolChannel; done: (a: ToolHostAnswer) => void }[] = [];

@@ -34,6 +34,17 @@ export interface TraceLog {
 }
 
 /**
+ * What a job run's slot may reach (its `permissions` narrowed from the harness's, jobs J2): a tool it calls never
+ * fetches with `web: false` or runs a command with `exec: false`, whatever the job runs. A task's or the UI's call has
+ * none (the harness's permissions, which `uses` already sits inside).
+ */
+export interface JobLimits {
+  job: string;
+  web: boolean;
+  exec: boolean;
+}
+
+/**
  * `logs`: the `ctx.log` lines kept per call (the first ones); `logLook`: how much of each line is kept for the
  * registry, which hides the keys in it before its own cut.
  */
@@ -77,6 +88,7 @@ interface CallState {
   scope: string | null;
   accesses: TraceAccess[];
   logs: TraceLog[];
+  limits?: JobLimits;
 }
 
 /** localhost, *.localhost or an IP literal (bracketed or not; one final dot as the name's root). */
@@ -93,6 +105,13 @@ export function toolAllowHost(allowHost: (hostname: string) => Promise<boolean>)
 /** A target as the trace keeps it: one line, at most TOOL_BROKER_LIMITS.targetChars code points. */
 function cut(text: string): string {
   return [...text.replace(CONTROLS, " ")].slice(0, TOOL_BROKER_LIMITS.targetChars).join("");
+}
+
+/** The refusal of `name` under a job run's permissions, or null when they allow it. */
+function jobRefusal(l: JobLimits, name: unknown): string | null {
+  if (name === "fetch" && l.web !== true) return `The job "${l.job}" runs with web: false: its tools can't fetch`;
+  if (name === "exec" && l.exec !== true) return `The job "${l.job}" runs with exec: false: its tools can't run commands`;
+  return null;
 }
 
 /** The kind and target of a refused call, read from its arguments (only the URL, the command line, the collection). */
@@ -225,10 +244,13 @@ export class ToolBroker {
     });
   }
 
-  /** A run for one call of the tool, in the caller's scope. Its id is what the host's ctx calls carry. */
-  startCall(scope: string | null): { id: string; signal: AbortSignal } {
+  /**
+   * A run for one call of the tool, in the caller's scope; `limits`: the calling job run's permissions. Its id is what
+   * the host's ctx calls carry.
+   */
+  startCall(scope: string | null, limits?: JobLimits): { id: string; signal: AbortSignal } {
     const key = randomUUID();
-    const state: CallState = { key, scope: typeof scope === "string" ? scope : null, accesses: [], logs: [] };
+    const state: CallState = { key, scope: typeof scope === "string" ? scope : null, accesses: [], logs: [], ...(limits ? { limits: { ...limits } } : {}) };
     this.byKey.set(key, state);
     const run = this.core.startRun(key);
     this.byId.set(run.id, state);
@@ -251,6 +273,13 @@ export class ToolBroker {
 
   async call(id: unknown, name: unknown, args: unknown): Promise<BrokerAnswer> {
     const state = typeof id === "string" ? this.byId.get(id) : undefined;
+    // A job run's narrowed permissions come before the tool's own grant: refused, and shown as access denied.
+    const off = state?.limits ? jobRefusal(state.limits, name) : null;
+    if (state && off) {
+      const t = targetOf(name as string, args);
+      if (t) this.record(state, { ...t, allowed: false });
+      return { ok: false, refused: off };
+    }
     const answer = await this.core.call(id, name, args);
     // A log line the core took (and sent to main's log) goes into the call's trace entry too (spec §4.2).
     if (state && answer.ok && name === "log" && Array.isArray(args)) this.keepLog(state, args[0], args[1]);

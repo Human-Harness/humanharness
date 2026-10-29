@@ -25,6 +25,7 @@ function registry(o: { tools?: Record<string, ToolMeta>; answer?: (tool: string,
   const seen = {
     calls: [] as { callId: string; tool: string; args: unknown; scope: string | null; timeoutMs: number }[],
     started: [] as (string | null)[],
+    limits: [] as unknown[],
     ended: [] as string[],
     entries: [] as TraceEntry[],
     called: [] as TraceEntry[],
@@ -38,7 +39,7 @@ function registry(o: { tools?: Record<string, ToolMeta>; answer?: (tool: string,
       off: () => null,
     },
     broker: () => ({
-      startCall: (scope) => (seen.started.push(scope), { id: `run-${++n}`, signal: new AbortController().signal }),
+      startCall: (scope, limits) => (seen.started.push(scope), seen.limits.push(limits), { id: `run-${++n}`, signal: new AbortController().signal }),
       endCall: (id) => (seen.ended.push(id), { accesses: o.accesses ?? [], logs: o.logs ?? [] }),
     }),
     trace: { append: async (e) => void seen.entries.push(e) },
@@ -60,6 +61,16 @@ describe("ToolRegistry (tools spec §4.3)", () => {
     expect(seen.started).toEqual(["s1"]);
     expect(seen.calls).toEqual([{ callId: "run-1", tool: "count", args: { folder: "notes" }, scope: "s1", timeoutMs: 30_000 }]);
     expect(seen.ended).toEqual(["run-1"]);
+  });
+
+  it("a job run's limits reach the broker run the call starts; a call without them starts one without", async () => {
+    const { r, seen } = registry();
+    const limits = { job: "digest", web: false, exec: true };
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "agent", scope: "s1", job: "digest", run: TASK, limits });
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(seen.limits).toEqual([limits, undefined]);
+    // The trace keeps the job and run as before; the limits are not a trace field.
+    expect(seen.entries[0]).not.toHaveProperty("limits");
   });
 
   it("invalid arguments: the tool does not run; the caller gets the validation error", async () => {

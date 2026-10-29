@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { HarnessSecret, ToolsManifest } from "@humanharness/harness-sdk";
+import { type HarnessSecret, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { Event, ToolCallView } from "@humanharness/runtime";
 import type { ToolsInfo } from "@humanharness/ui/client";
@@ -13,7 +13,7 @@ import type { ToolDataCall } from "../data-requests";
 import { isJobSlot } from "../jobs/jobs-host";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
-import { TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
+import { type JobLimits, TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
 import { toolFiles } from "./tool-files";
 import type { ToolHost } from "./tool-host";
 import { LOG_CHARS, TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
@@ -44,6 +44,8 @@ export interface ToolsHarness extends ToolsManifest {
   id: string;
   root: string;
   secrets?: readonly HarnessSecret[];
+  /** Each job's `permissions` (only narrowing the harness's): a job run's tool calls stay inside them. */
+  jobs?: Record<string, { permissions?: PermissionsOverride }>;
 }
 
 /** The task a slot runs now, with its history trailer (the scope and phase of its commits). */
@@ -111,6 +113,17 @@ export interface ToolsHost {
 }
 
 /** B7 for tools (Decision 6): a command sees PATH, HOME and LANG of `env` and TERM=dumb, nothing else. */
+/**
+ * What a tool called from job `job`'s run may reach: the harness's permissions narrowed by the job's (as its slot,
+ * `narrowPermissions`). Fails closed: a job the harness doesn't declare reaches neither the web nor commands.
+ */
+export function jobLimits(h: Pick<ToolsHarness, "permissions" | "jobs">, job: string | undefined): JobLimits {
+  const declared = job !== undefined && h.jobs !== undefined && Object.hasOwn(h.jobs, job) ? h.jobs[job] : undefined;
+  if (!declared) return { job: job ?? "(unknown)", web: false, exec: false };
+  const p = narrowPermissions(h.permissions, declared.permissions);
+  return { job: job!, web: p.web, exec: p.exec };
+}
+
 export function toolExecEnv(env: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = { TERM: "dumb" };
   for (const k of ["PATH", "HOME", "LANG"]) if (Object.hasOwn(env, k) && typeof env[k] === "string") out[k] = env[k];
@@ -262,8 +275,8 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
     broker: (tool) => {
       const b = brokerOf(tool);
       return {
-        startCall: (scope) => {
-          const run = b.startCall(scope);
+        startCall: (scope, limits) => {
+          const run = limits ? b.startCall(scope, limits) : b.startCall(scope);
           trailers.set(run.id, callTrailer.getStore()?.trailer);
           return run;
         },
@@ -352,7 +365,8 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
       const run = d.jobRun(key);
       if (!run) throw new Safe(NO_TASK);
       trailer = run.trailer;
-      call = { tool, args, caller: "agent", scope: run.scope, run: run.id, ...(run.job !== undefined ? { job: run.job } : {}) };
+      // The run's own permissions bound what its tools reach, whatever the job runs (jobs J2).
+      call = { tool, args, caller: "agent", scope: run.scope, run: run.id, ...(run.job !== undefined ? { job: run.job } : {}), limits: jobLimits(h, run.job) };
     } else {
       const task = await d.slotTask(key);
       if (!task) throw new Safe(NO_TASK);

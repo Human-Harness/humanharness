@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
-import { type EnginePreset, type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, type TurnScope, fail } from "@humanharness/runtime";
+import {
+  type EnginePreset,
+  type Event,
+  type LimitWindow,
+  type RunningTurn,
+  type SessionSlot,
+  type ToolCallView,
+  type TurnAttribution,
+  type TurnScope,
+  fail,
+} from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 import { withEngine } from "./scope-access";
@@ -81,6 +91,8 @@ export interface TurnOptions extends SendOptions {
   onAttribution?: (a: TurnAttribution) => void;
   /** The task's approved engine preset for this turn (hatches spec §5.2), checked by the task manager. Absent: none (D0). */
   engine?: EnginePreset;
+  /** The first turn of a task with pre-steps: their calls, shown first (tools spec §8.2). Absent: none (D0). */
+  prepared?: ToolCallView[];
 }
 
 /** What a turn needs from the engine side: today's runtime, or one session slot (parallel spec §4). */

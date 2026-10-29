@@ -26,7 +26,7 @@ import {
   setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
-import { type EnginePreset, type Event, type Session, fail } from "@humanharness/runtime";
+import { type EnginePreset, type Event, type Session, type ToolCallView, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
   type ContextItem,
@@ -117,7 +117,19 @@ export interface TaskDeps {
    * The harness's actions: their labels (English strings), where each runs with scopes, their modes (task-modes spec
    * §3), their phases and time box (task-phases spec §3).
    */
-  actions: Record<string, { label: string; scope?: ScopeMode; modes?: string[]; defaultMode?: string; phases?: HarnessPhase[]; timeBox?: HarnessTimeBox }>;
+  actions: Record<
+    string,
+    {
+      label: string;
+      scope?: ScopeMode;
+      modes?: string[];
+      defaultMode?: string;
+      phases?: HarnessPhase[];
+      timeBox?: HarnessTimeBox;
+      /** Its pre-steps (tools spec §6); only whether there are any is read here. */
+      pre?: readonly unknown[];
+    }
+  >;
   /** The harness declares scopes (spec D1). Absent or false: one implicit `main` scope and today's layout (D2). */
   scoped?: boolean;
   /** Whether `id` is a registered scope. Absent: any valid id is taken. */
@@ -234,7 +246,27 @@ export interface TaskDeps {
    * one (hatches spec §5.2, §5.3, Decision 2). Only with `enginePresets` and scopes. Absent: none (D0).
    */
   enginePreset?: Pick<EngineHost, "presetFor" | "presetForTask" | "pinTag">;
+  /**
+   * Runs an action's pre-steps before its session opens (tools spec §6). Absent without tools or without `pre` (D0).
+   * Called only for an action that declares `pre`; never for a resumed task, a question, a review or a plugin's task.
+   */
+  prepare?(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer>;
 }
+
+/** What `prepare` answers (tools spec §6): the pre-step results for a new task's first message. */
+export interface PrepareAnswer {
+  /** The `## Prepared data` part ("" for none). */
+  text: string;
+  /** Its start items, one per pre-step result. */
+  items: ContextItem[];
+  /** The pre calls as the chat shows them, for the first turn (tools spec §8.2). */
+  views: ToolCallView[];
+  /** A required step failed: the task doesn't start; the window shows this (already safe to show). */
+  failed?: string;
+}
+
+/** What the window shows when `prepare` itself threw: never the thrown text, which may hold anything. */
+export const PREPARE_FAILED = "the pre-steps could not run";
 
 /** What `phaseMoved` gets (sidekick spec §2a.2). */
 export interface PhaseMoved {
@@ -980,7 +1012,7 @@ export class TaskManager {
    * tables; the person's pins (context-panel spec §4.2); the material. Without scopes, data, pins or material, exactly
    * the notes index as before (D2, D0). `items` say what each part is (context-panel spec §3.1).
    */
-  private async contextFor(scope: string, action: string | undefined): Promise<{ text: string; items: ContextItem[] }> {
+  private async contextFor(scope: string, action: string | undefined, prepared?: { text: string; items: ContextItem[] }): Promise<{ text: string; items: ContextItem[] }> {
     const person = this.d.personContext
       ? await this.d.personContext(scope).catch((err: unknown) => {
           console.error("Could not load the pins and exclusions for the task", err);
@@ -1011,6 +1043,11 @@ export class TaskManager {
           items.push({ id: `data:${p.collection}`, kind: "data", label: `Data · ${p.collection} (${p.rows} rows)`, tokens: approxTokens(p.text.length), count: p.rows });
         }
       }
+    }
+    // A new task's pre-step results (tools spec §6), after the data and before the pins. None otherwise (D0).
+    if (prepared) {
+      parts.push(prepared.text);
+      items.push(...prepared.items);
     }
     if (person?.pinned) {
       parts.push(person.pinned);
@@ -1700,8 +1737,25 @@ export class TaskManager {
     if (this.d.successor && this.begun) return this.d.successor((next) => next.op(() => next.begin(task, scope, language, message, display, floor, tier)));
     await this.endSession();
     await this.between();
+    const id = this.newId();
+    // An action's pre-steps run before anything is written (tools spec §6); none without `prepare` or `pre` (D0).
+    let prepared: PrepareAnswer | null = null;
+    if (task.action !== undefined && task.review === undefined && task.plugin === undefined && this.d.prepare && (this.d.actions[task.action]?.pre?.length ?? 0) > 0) {
+      try {
+        prepared = await this.d.prepare({ action: task.action, scope, task: id, ...(task.phase ? { phase: task.phase.id } : {}) });
+      } catch (err) {
+        console.error("Could not run the pre-steps", err);
+        prepared = { text: "", items: [], views: [], failed: PREPARE_FAILED };
+      }
+      // A Stop while preparing: the running step ended, nothing starts.
+      if (this.cancelRequested) return this.stopped();
+      if (prepared.failed !== undefined) return this.refusedStart(prepared.failed);
+    }
     const preset = await this.presetFor(scope, task.action);
-    const { text: context, items } = withScopeInstructions(await this.contextFor(scope, task.action), preset?.instructions ?? "");
+    const { text: context, items } = withScopeInstructions(
+      await this.contextFor(scope, task.action, prepared && (prepared.text || prepared.items.length > 0) ? prepared : undefined),
+      preset?.instructions ?? "",
+    );
     const first = message(context);
     const briefLabel = task.review !== undefined ? "Review round" : task.action !== undefined ? "Task brief" : "Question";
     const start = await this.startItems(first, items, briefLabel);
@@ -1717,7 +1771,6 @@ export class TaskManager {
           : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
-    const id = this.newId();
     // The pin's tag: a task keeps a hash its scope no longer approves only with it (tasks.json is agent-writable).
     const engineTag = preset?.preset && preset.hash ? await this.d.enginePreset!.pinTag(scope, id, preset.hash).catch(() => null) : null;
     const current: CurrentTask = {
@@ -1748,7 +1801,12 @@ export class TaskManager {
     let done: Done;
     try {
       this.recordStart = current.id;
-      done = await this.firstTurn(current, first, { display, ...(task.action ? { action: task.action } : {}) });
+      // The pre calls go with every attempt: a held attempt never reached the chat, so its retry shows them.
+      done = await this.firstTurn(current, first, {
+        display,
+        ...(task.action ? { action: task.action } : {}),
+        ...(prepared && prepared.views.length > 0 ? { prepared: prepared.views } : {}),
+      });
     } catch (err) {
       // Nothing ran: the task goes away without marking its topic.
       if (err instanceof TurnNotStarted) {
@@ -2389,6 +2447,17 @@ export class TaskManager {
     this.windowDone = true;
     try {
       this.d.emit?.(fail("cancelled"));
+    } catch (err) {
+      console.error("Could not send an event to the window", err);
+    }
+  }
+
+  /** A start a required pre-step stopped (tools spec §6.5): nothing was written; the chat shows why, with Retry. */
+  private refusedStart(detail: string): void {
+    if (this.windowDone) return;
+    this.windowDone = true;
+    try {
+      this.d.emit?.(fail("prepare-failed", detail));
     } catch (err) {
       console.error("Could not send an event to the window", err);
     }

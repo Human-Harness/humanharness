@@ -10,7 +10,9 @@ export type ErrorCode =
   /** The user hasn't accepted the engine's legal notice (at its current version) in this app. */
   | "notice-required"
   /** The plan doesn't include the model the task asked for (resources spec §5.3). */
-  | "model-unavailable";
+  | "model-unavailable"
+  /** A required pre-step failed: the task didn't start (tools spec §6.5). */
+  | "prepare-failed";
 
 export interface EngineError {
   code: ErrorCode;

@@ -3,14 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { OPENCODE_ENV, getEngine } from "@humanharness/engines";
+import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { ReviewRefused, managedSection } from "@humanharness/workspace";
-import { ClaudeCliTransport } from "../src/claude-cli";
+import { ClaudeCliTransport } from "@humanharness/engines/registry";
 import type { Event } from "../src/events";
 import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewHandler } from "../src/runtime";
-import { type Session, acpFields } from "../src/transport";
+import type { Session } from "../src/transport";
 
 /** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
 const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0, rpcOpened: 0 }));
@@ -611,24 +611,5 @@ describe("reviewHandler", () => {
     expect((err as Error).message).toBe(REVIEW_FAILED);
     const ok = reviewHandler(async (r) => ({ echo: r }));
     await expect(ok({ op: "read" })).resolves.toEqual({ echo: { op: "read" } });
-  });
-});
-
-describe("acpFields", () => {
-  it("gives OpenCode its modes and the config-option profile", () => {
-    const engineEnv = { ...OPENCODE_ENV };
-    expect(acpFields(getEngine("opencode"), "folder")).toEqual({ sessionMode: "build", minAdapterVersion: undefined, profileMethod: "config-option", engineEnv });
-    expect(acpFields(getEngine("opencode"), "none")).toEqual({ sessionMode: "plan", minAdapterVersion: undefined, profileMethod: "config-option", engineEnv });
-  });
-
-  it("gives Codex and Claude no engine environment (D0)", () => {
-    for (const id of ["codex", "claude"]) for (const edit of ["folder", "none"] as const) expect(acpFields(getEngine(id), edit)).not.toHaveProperty("engineEnv");
-  });
-
-  it("gives Codex what it had, and Claude nothing (D0)", () => {
-    expect(acpFields(getEngine("codex"), "folder")).toEqual({ sessionMode: "workspace-write", minAdapterVersion: "2.2.2", profileMethod: undefined });
-    expect(acpFields(getEngine("codex"), "none")).toEqual({ sessionMode: "read-only", minAdapterVersion: "2.2.2", profileMethod: undefined });
-    expect(acpFields(getEngine("claude"), "folder")).toEqual({ sessionMode: undefined, minAdapterVersion: undefined, profileMethod: undefined });
-    expect(acpFields(getEngine("claude"), "none")).toEqual({ sessionMode: undefined, minAdapterVersion: undefined, profileMethod: undefined });
   });
 });

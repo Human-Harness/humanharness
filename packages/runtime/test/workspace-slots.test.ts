@@ -6,7 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type AcpScript, type ClaudeScript, claudeResultLine, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
-import { AcpTransport } from "../src/acp";
+import { AcpTransport } from "@humanharness/engines/registry";
 import type { Event } from "../src/events";
 import type { Session } from "../src/transport";
 import { TurnLedger } from "../src/turn-ledger";

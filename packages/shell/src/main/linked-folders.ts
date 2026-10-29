@@ -1,7 +1,7 @@
 import { constants as C, promises as fs } from "node:fs";
 import path from "node:path";
 import { HIDDEN_CHARS } from "@humanharness/harness-sdk";
-import { ruleUnsafePath } from "@humanharness/runtime";
+import { ruleUnsafePath } from "@humanharness/engines/registry";
 import { homeOrDotFolder } from "./references";
 import { folderProblem, realFolder } from "./validate";
 

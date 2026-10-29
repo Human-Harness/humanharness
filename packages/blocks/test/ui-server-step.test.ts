@@ -96,12 +96,12 @@ describe("the ui server's step mode (tools spec §7.1, R1)", () => {
     expect(received).toEqual([]);
   });
 
-  it("answers with a tool error when the bridge is down", async () => {
+  it("answers with a fixed tool error when the bridge is down: no socket path or error text", async () => {
     const c = await connect([], { HH_STEP: "triage" });
     await bridge?.close();
     const r = await c.callTool({ name: STEP_OUTPUT_TOOL, arguments: { ids: [], again: true } });
     expect(r.isError).toBe(true);
-    expect(textOf(r)).toMatch(/^Could not reach the app \(.+\)\.$/);
+    expect(textOf(r)).toBe("Could not reach the app. The result was not recorded.");
   });
 
   it("HH_STEP naming no recipe job with an AI step exits with an error", () => {

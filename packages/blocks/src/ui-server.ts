@@ -175,8 +175,9 @@ export function stepServer(harness: LoadedHarness, job: string, bridge: { path: 
     async (args) => {
       try {
         await sendToBridge(bridge, { name: STEP_OUTPUT_TOOL, data: args });
-      } catch (e) {
-        return { isError: true, content: [{ type: "text" as const, text: `Could not reach the app (${e instanceof Error ? e.message : String(e)}).` }] };
+      } catch {
+        // A fixed line: the cause (its socket path) never reaches the step's model.
+        return { isError: true, content: [{ type: "text" as const, text: "Could not reach the app. The result was not recorded." }] };
       }
       return { content: [{ type: "text" as const, text: "Done: the result is recorded. End your turn now." }] };
     },

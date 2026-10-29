@@ -82,6 +82,8 @@ export interface ToolsHostDeps {
   emitToTask(task: string, event: Event): void;
   /** The built `tools-server.js` (app); absent: the TS source (dev). */
   serverEntry?: string;
+  /** `info()` changed: once started, and when the host goes off after repeated crashes (the window's top line, Task 11). */
+  changed?(): void;
   log(message: string, err?: unknown): void;
 }
 
@@ -288,7 +290,10 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
             // A ctx call goes to the broker of the tool main handed this call id to, under that call's trailer.
             channel: { ctx: (tool, callId, name, args) => callTrailer.run({ ...withTrailer(trailers.get(callId)) }, () => brokerOf(tool).call(callId, name, args)) },
             onCrash: (reason) => d.log(`The tools host crashed (${reason})`),
-            onOff: (reason) => d.log(`Tools are off: ${reason}`),
+            onOff: (reason) => {
+              d.log(`Tools are off: ${reason}`);
+              changed();
+            },
           });
         } catch (err) {
           // The host refuses a harness id it can't use as its URL's host (over 63 characters): tools are off.
@@ -299,8 +304,18 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
       await writeCatalogue().catch((err: unknown) => d.log("Could not write the tools catalogue", err));
       const t = await traceFor().catch(() => null);
       await t?.prune();
+      changed();
     })();
     return started;
+  }
+
+  /** Tells main the info changed; a throwing listener never breaks the start or the host. */
+  function changed(): void {
+    try {
+      d.changed?.();
+    } catch (err) {
+      d.log("Could not tell the window the tools changed", err);
+    }
   }
 
   /** The agent's request on slot `key`: the tool's result, or a throw whose message the agent reads as is. */

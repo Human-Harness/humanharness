@@ -540,6 +540,8 @@ export interface ChatEntry {
   notice?: ChatNotice;
   /** The `.md` files this turn added or changed (document-reader spec §5.1). Absent: none. */
   documents?: DocumentCard[];
+  /** Assistant entries: the tool calls during the turn (tools spec §8.2). Absent: none. */
+  tools?: ToolCallView[];
 }
 
 /** A line the app added to a task's chat (board mode): see the runtime's `TaskNotice`. */
@@ -1893,7 +1895,11 @@ export interface ToolsClient {
   call(id: string, args?: unknown): Promise<ToolCallResult>;
   /** A task's or a job run's calls, oldest first. */
   trace(id: string): Promise<ToolCallView[]>;
+  /** Main's tools info changed (the host started, or went off after repeated crashes). */
+  onChange(listener: (info: ToolsInfo) => void): () => void;
 }
+/** `ToolsInfo.off` when the tools host crashed too often: the chat's top line says so (tools Decision 7). */
+export const TOOLS_OFF_CRASHES = "Tools are off after repeated crashes";
 /** The harness declares tools. Absent without (D0). `off`: why every call fails now (not built, a problem, or crashes). */
 export interface ToolsInfo {
   ids: string[];

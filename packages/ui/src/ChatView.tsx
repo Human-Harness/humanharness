@@ -26,6 +26,7 @@ import {
   type SidekickReview,
   type TaskTurnNotice,
   type TaskView,
+  TOOLS_OFF_CRASHES,
   isTurnEntry,
   nextInPath,
   partsOf,
@@ -34,6 +35,7 @@ import { ContextPanel } from "./ContextPanel";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
+import { ToolCallLines } from "./tools/ToolCallLine";
 import { FileTimelinePanel } from "./FileTimelinePanel";
 import { ContextMeter, FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
@@ -1165,7 +1167,7 @@ export function ChatView({
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);
   const liveEntry: ChatEntry | null = chat.live
-    ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "" }
+    ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "", ...(chat.live.tools ? { tools: chat.live.tools } : {}) }
     : null;
   const showStart = flow && since === null && !chat.live;
   // The cards on screen, checked once per change of the list, when the window gets focus back, and when the reader
@@ -1476,6 +1478,12 @@ export function ChatView({
                   {t("chat.loadError")}
                 </p>
               )}
+              {/* Tools spec Decision 7: only a harness with tools has `state.tools`, and only crashes put this line here. */}
+              {state.tools?.off === TOOLS_OFF_CRASHES && (
+                <p className="hh-caption hh-tools-off" role="status">
+                  {t("tools.off")}
+                </p>
+              )}
               {/* The last turn's card already offers the fix for this same problem: one fix button is enough. */}
               {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
                 <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
@@ -1507,6 +1515,7 @@ export function ChatView({
               {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
                 <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
                   <div data-entry={entry.id} data-role={entry.role}>
+                    {entry.role === "assistant" && entry.tools !== undefined && <ToolCallLines calls={entry.tools} />}
                     <Message
                       key={pickResets}
                       entry={entry}

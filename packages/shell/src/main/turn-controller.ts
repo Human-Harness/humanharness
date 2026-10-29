@@ -133,14 +133,33 @@ export function forWindow(e: Event): Event {
   return rest;
 }
 
+/** The turn running now: `task` its task, `add` takes an event from outside the engine until its reply is saved. */
+interface CurrentTurn {
+  cancelled: boolean;
+  running: RunningTurn | null;
+  task?: string;
+  add?: (e: Event) => void;
+}
+
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
 export class TurnController {
-  private turn: { cancelled: boolean; running: RunningTurn | null } | null = null;
+  private turn: CurrentTurn | null = null;
   private writes: Promise<void> = Promise.resolve();
   private active: Promise<void> = Promise.resolve();
   private closed = false;
 
   constructor(private readonly deps: TurnDeps) {}
+
+  /**
+   * An event from outside the engine (a harness tool call, tools spec §8.2) for task `task`'s running turn: saved on its
+   * reply and shown as the turn's other events are. False when no turn of that task is running: the caller shows it.
+   */
+  addToTurn(task: string, e: Event): boolean {
+    const turn = this.turn;
+    if (!turn?.add || turn.task !== task) return false;
+    turn.add(e);
+    return true;
+  }
 
   /** A turn is starting or running. */
   isBusy(): boolean {
@@ -179,7 +198,7 @@ export class TurnController {
 
   private async run(message: string, options: TurnOptions): Promise<void> {
     const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution, engine } = options;
-    const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
+    const current: CurrentTurn = { cancelled: false, running: null, ...(task ? { task } : {}) };
     this.turn = current;
     try {
       const log = await this.deps.chatLog(chat);
@@ -229,7 +248,15 @@ export class TurnController {
         pending = null;
         for (const e of events) this.emit(e);
       };
+      current.add = (e) => {
+        recorder.add(e);
+        if (quiet) return;
+        release();
+        this.emit(e);
+      };
       const finish = async (done: Done) => {
+        // Nothing joins the reply once it is being saved.
+        current.add = undefined;
         const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
         if (isHeld(done, options)) {
           // The attempt is discarded, but plan limits are about the plan: the usage meter still updates.

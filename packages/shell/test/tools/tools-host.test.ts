@@ -6,7 +6,8 @@ import type { ToolMeta } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDataCall } from "../../src/main/data-requests";
-import type { ToolChannel, ToolHostAnswer, ToolHostCall } from "../../src/main/tools/tool-host";
+import { TOOLS_OFF_CRASHES } from "@humanharness/ui/client";
+import { TOOLS_OFF, type ToolChannel, type ToolHostAnswer, type ToolHostCall } from "../../src/main/tools/tool-host";
 import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, createToolsHost, slotTaskOf, toolExecEnv } from "../../src/main/tools/tools-host";
 
 const TASK = randomUUID();
@@ -346,5 +347,25 @@ describe("createToolsHost (tools spec §4, §5)", () => {
       HOME: "/h",
       LANG: "en_US.UTF-8",
     });
+  });
+
+  it("main tells the window when the tools info changes: once started, and when the host goes off after crashes", async () => {
+    await built();
+    let onOff: ((reason: string) => void) | undefined;
+    let off: string | null = null;
+    const pushed: unknown[] = [];
+    const { t } = wire({
+      over: {
+        host: { start: (p) => void (onOff = p.onOff), stop: () => {}, call: async () => ({ ok: true, value: 1 }), off: () => off },
+        changed: () => void pushed.push(t.info()),
+      },
+    });
+    await t.start();
+    expect(pushed).toEqual([{ ids: ["count", "hidden", "leak", "write"] }]);
+    off = TOOLS_OFF;
+    onOff?.(TOOLS_OFF);
+    expect(pushed.at(-1)).toEqual({ ids: ["count", "hidden", "leak", "write"], off: TOOLS_OFF });
+    // The window's top line keys on this text (ui TOOLS_OFF_CRASHES): the two must stay the same.
+    expect(TOOLS_OFF_CRASHES).toBe(TOOLS_OFF);
   });
 });

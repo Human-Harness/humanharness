@@ -14,6 +14,7 @@ import type {
   ConnectionResult,
   ToolCallResult,
   ToolCallView,
+  ToolsInfo,
   ConnectionsView,
   ContextPick,
   ContextResult,
@@ -1620,12 +1621,22 @@ export class FakeClient implements HarnessClient {
   toolAnswers: Record<string, ToolCallResult> = {};
   toolCalls: { id: string; args: unknown }[] = [];
   toolTraces: Record<string, ToolCallView[]> = {};
+  private toolsListeners = new Set<(info: ToolsInfo) => void>();
+  /** Main pushes new tools info (the host went off). */
+  toolsChanged(info: ToolsInfo): void {
+    this.state.tools = info;
+    for (const l of [...this.toolsListeners]) l(info);
+  }
   tools = {
     call: async (id: string, args?: unknown): Promise<ToolCallResult> => {
       this.toolCalls.push({ id, args });
       return Object.hasOwn(this.toolAnswers, id) ? this.toolAnswers[id]! : { ok: false, error: `Unknown tool "${id}"` };
     },
     trace: async (id: string): Promise<ToolCallView[]> => (Object.hasOwn(this.toolTraces, id) ? this.toolTraces[id]! : []),
+    onChange: (listener: (info: ToolsInfo) => void) => {
+      this.toolsListeners.add(listener);
+      return () => void this.toolsListeners.delete(listener);
+    },
   };
 
   /** client.language (plan 5b): what state() answers, calls made, and listeners. Every answer is data. */

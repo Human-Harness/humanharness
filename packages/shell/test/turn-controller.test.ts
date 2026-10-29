@@ -898,3 +898,44 @@ describe("TurnController: the turn's scope's linked folders (hatches L5)", () =>
     expect(await run(withAccess(undefined), { task: "t1", scope: "other", engine })).toEqual({ trailer: { task: "t1", scope: "other" }, scope: { linked: [], engine } });
   });
 });
+
+describe("TurnController.addToTurn (tools spec §8.2)", () => {
+  const call = { tool: "pr-ci", caller: "agent" as const, ok: true, ms: 300, summary: "12 items", args: "{}", accesses: [], at: "t" };
+
+  it("a tool call of the running task's turn is shown and saved on its reply", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, order } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("check", { task: "t1" });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    expect(controller.addToTurn("t1", { type: "tool-call", call })).toBe(true);
+    fake.finish([{ type: "text", delta: "Green." }, { type: "done", ok: true }]);
+    await sent;
+    expect(order).toEqual(["log:user", "emit:tool-call", "emit:text", "log:assistant", "emit:done"]);
+    expect(entries[1].tools).toEqual([call]);
+  });
+
+  it("refuses a call for another task, or with no turn running: the caller shows it", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    expect(controller.addToTurn("t1", { type: "tool-call", call })).toBe(false);
+    const sent = controller.send("check", { task: "t1" });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    expect(controller.addToTurn("t2", { type: "tool-call", call })).toBe(false);
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(controller.addToTurn("t1", { type: "tool-call", call })).toBe(false);
+    expect(events.some((e) => e.type === "tool-call")).toBe(false);
+  });
+
+  it("a quiet turn saves nothing and shows nothing", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("close", { task: "t1", quiet: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    expect(controller.addToTurn("t1", { type: "tool-call", call })).toBe(true);
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(entries).toEqual([]);
+    expect(events.some((e) => e.type === "tool-call")).toBe(false);
+  });
+});

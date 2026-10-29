@@ -28,6 +28,7 @@ import type {
   TaskTurnNotice,
   TasksState,
   TaskView,
+  ToolsInfo,
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
@@ -268,6 +269,7 @@ const client: HarnessClient = {
   tools: {
     call: (id, args) => ipcRenderer.invoke("hh:toolsCall", id, args),
     trace: (id) => ipcRenderer.invoke("hh:toolsTrace", id),
+    onChange: (listener) => subscribe<ToolsInfo>("hh:toolsChange", listener),
   },
   // Main's board-mode inbox channels; plain mode refuses every call and never sends hh:tasksChange (D0).
   tasks: {

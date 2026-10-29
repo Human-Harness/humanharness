@@ -1435,5 +1435,14 @@
     "works": "Works",
     "testFailed": "Didn't work: {{message}}",
     "testCouldNotRun": "The test couldn't run."
+  },
+  "tools": {
+    "line": "{{tool}} · {{summary}} · {{seconds}} s · 0 tokens",
+    "failed": "{{tool}} failed · {{message}}",
+    "accessDenied": "access denied",
+    "args": "Arguments",
+    "result": "Result",
+    "accesses": "Accesses",
+    "off": "Tools are off after repeated crashes. Restart the app to turn them on."
   }
 }

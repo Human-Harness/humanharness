@@ -5,6 +5,8 @@ import type { ToolsHost } from "./tools-host";
 
 /** `client.tools` (tools spec §5). Registered only when the harness declares tools (D0). */
 export const TOOLS_IPC_CHANNELS = ["hh:toolsCall", "hh:toolsTrace"] as const;
+/** Main to the window: the tools info changed (`ToolsInfo`; sent only when the harness declares tools). */
+export const TOOLS_CHANGE_CHANNEL = "hh:toolsChange";
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
 

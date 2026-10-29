@@ -197,7 +197,7 @@ import { isPublicHost } from "./material-fetch";
 import { ToolHost } from "./tools/tool-host";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
 import { type ToolsHost, createToolsHost, slotTaskOf } from "./tools/tools-host";
-import { registerToolsIpc } from "./tools/tools-ipc";
+import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
@@ -3459,14 +3459,20 @@ if (loaded) {
       // Board mode: the lane whose slot asks; otherwise the open task (the `main` slot).
       slotTask: (key) => slotTaskOf(host ? host.lane(key)?.manager : tasks),
       jobRun: (key) => jobsHost?.runOf(key) ?? null,
+      // A call during the task's turn is saved on its reply (tools spec §8.2); otherwise it is only shown.
       emitToTask: (task, event) => {
         if (host) {
-          host.lane(task)?.emit(event);
+          const lane = host.lane(task);
+          if (lane && !lane.controller.addToTurn(task, event)) lane.emit(event);
           return;
         }
+        if (turns.addToTurn(task, event)) return;
         void tasks.runningTask().then((t) => {
           if (t?.id === task) emit(event);
         });
+      },
+      changed: () => {
+        if (toolsHost) sendToWindow(TOOLS_CHANGE_CHANNEL, toolsHost.info());
       },
       serverEntry: path.join(here, "tools-server.js"),
       log: toolsLog,

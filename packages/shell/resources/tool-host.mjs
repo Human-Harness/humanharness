@@ -28,8 +28,20 @@ function refusing(rpc) {
   };
 }
 
+/** `v` and everything in it frozen (a structured-cloned copy: the tool's own, never main's). */
+function deepFreeze(v) {
+  if (v !== null && typeof v === "object" && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const x of Object.values(v)) deepFreeze(x);
+  }
+  return v;
+}
+
+/** A step's earlier results (tools spec §6; P3): the command's `inputs` when it is a plain object, else {}; frozen. */
+const inputsOf = (raw) => deepFreeze(raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw : {});
+
 /** The `ctx` of one call (ToolContext): each call carries the call's id; a refusal throws an Error named "ToolRefused". */
-function contextOf(rpc, callId, scope) {
+function contextOf(rpc, callId, scope, inputs) {
   const call = async (name, ...args) => {
     // JSON turns a trailing undefined into null; the broker counts arguments.
     while (args.length > 0 && args[args.length - 1] === undefined) args.pop();
@@ -56,6 +68,7 @@ function contextOf(rpc, callId, scope) {
       list: (dir, glob) => call("files.list", dir, glob),
     }),
     scope: typeof scope === "string" ? scope : null,
+    inputs: inputsOf(inputs),
     // Fire-and-forget (ToolContext.log returns nothing): a refused or failed log line never fails the tool.
     log(level, message) {
       call("log", level, message).catch(() => undefined);
@@ -64,12 +77,12 @@ function contextOf(rpc, callId, scope) {
 }
 
 async function runOne(rpc, tools, cmd) {
-  const { callId, tool, args, scope } = cmd;
+  const { callId, tool, args, scope, inputs } = cmd;
   let result;
   try {
     const def = typeof tool === "string" && Object.hasOwn(tools, tool) ? tools[tool] : undefined;
     if (!def) throw new Error(`No tool "${String(tool).slice(0, 64)}"`);
-    const value = await def.run(args, contextOf(rpc, callId, scope));
+    const value = await def.run(args, contextOf(rpc, callId, scope, inputs));
     result = { callId, ok: true, value: value === undefined ? null : value };
     if (typeof def.summary === "function") {
       try {

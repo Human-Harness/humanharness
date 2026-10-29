@@ -62,6 +62,8 @@ export interface ToolCallView {
   accesses: { kind: "fetch" | "exec" | "data" | "files"; target: string; allowed: boolean }[];
   /** The tool's `ctx.log` lines, keys hidden; absent when it logged none. */
   logs?: { level: "info" | "warn" | "error"; message: string }[];
+  /** A trace note, not a call (a pre-step's cut, an expected tool not called); one line, at most 200 characters. */
+  note?: string;
   at: string;
 }
 

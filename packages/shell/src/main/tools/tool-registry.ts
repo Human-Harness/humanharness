@@ -3,7 +3,7 @@ import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import { type JobLimits, TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
 import type { ToolHostAnswer, ToolHostCall } from "./tool-host";
 import { TOOL_RPC_LIMITS } from "./tool-protocol";
-import type { ToolCaller, ToolTrace, TraceEntry } from "./tool-trace";
+import { NOTE_CHARS, type ToolCaller, type ToolTrace, type TraceEntry } from "./tool-trace";
 import type { ToolsState } from "./tools-json";
 
 export type { ToolCaller } from "./tool-trace";
@@ -29,6 +29,8 @@ export interface ToolCall {
   phase?: string;
   /** A job run's narrowed permissions: the tool's fetch and exec stay inside them (never traced). */
   limits?: JobLimits;
+  /** A step's earlier results by `as` (tools spec §6), the tool's `ctx.inputs`; absent for a UI or agent call. Never traced. */
+  inputs?: Record<string, unknown>;
 }
 export type ToolAnswer = { ok: true; result: unknown } | { ok: false; error: string };
 
@@ -45,6 +47,26 @@ type Schema = ReturnType<typeof jsonSchemaToZod>;
 /** At most this much of a value's JSON is looked at for the trace (it keeps 2 KB of it). */
 const TRACE_LOOK = 64 * 1024;
 const BROKE = "Something went wrong running the tool";
+/** The largest inputs a call carries, as JSON in UTF-8 bytes (the host page's payload cap is 12 MB, slice 2 T6). */
+export const INPUTS_MAX_BYTES = 8 * 1024 * 1024;
+export const INPUTS_TOO_LARGE = "The inputs are too large";
+
+/** Controls, line and paragraph separators: a space in a note. */
+const NOTE_BREAKS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+/** Hidden characters (zero-width, bidi controls, BOM): removed from a note. */
+const NOTE_HIDDEN = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+
+/** A step's inputs as the host gets them, or why they can't go (P3: too large, or not JSON). */
+function inputsProblem(inputs: Record<string, unknown>): string | null {
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(inputs);
+  } catch {
+    return "The inputs can't be sent";
+  }
+  if (json === undefined) return "The inputs can't be sent";
+  return json.length > INPUTS_MAX_BYTES || Buffer.byteLength(json, "utf8") > INPUTS_MAX_BYTES ? INPUTS_TOO_LARGE : null;
+}
 
 export interface ToolRegistryDeps {
   /** tools.json as read at start (`readToolsJson`). */
@@ -195,12 +217,16 @@ export class ToolRegistry {
     let ran: Ran;
     const params = this.schema(meta.params);
     const checked = typeof params === "string" ? null : params.safeParse(given);
+    const badInputs = c.inputs !== undefined ? inputsProblem(c.inputs) : null;
     if (typeof params === "string") ran = { ok: false, error: `${id}: params can't be checked: ${params}` };
     else if (!checked!.success) ran = { ok: false, error: firstIssue(checked!.error) };
-    else {
+    else if (badInputs !== null) {
+      args = checked!.data;
+      ran = { ok: false, error: badInputs };
+    } else {
       // Only the parsed value reaches the tool: keys params doesn't name are gone.
       args = checked!.data;
-      const out = await this.run(id, meta, args, c.scope, c.limits);
+      const out = await this.run(id, meta, args, c.scope, c.limits, c.inputs);
       accesses = out.accesses;
       logs = out.logs;
       ran = out.ran.ok ? this.checkReturns(meta, out.ran) : out.ran;
@@ -242,8 +268,59 @@ export class ToolRegistry {
     return ran.ok ? { ok: true, result } : { ok: false, error: error! };
   }
 
+  /** A tool's tools.json entry; null when unknown or while tools are off. */
+  async meta(id: string): Promise<ToolMeta | null> {
+    const state = await this.d.json();
+    return state.on && TOOL_ID.test(id) && Object.hasOwn(state.tools, id) ? state.tools[id]! : null;
+  }
+
+  /**
+   * A trace line that is not a call (tools spec §6; P6): a pre-step's cut, an expected tool not called. The text is the
+   * core's own, put on one line (controls a space, hidden characters gone) and cut at NOTE_CHARS; it reaches the chat
+   * through `called` as a call does. A tool id that isn't one writes nothing. Never throws.
+   */
+  async note(n: { tool: string; caller: ToolCaller; task?: string; job?: string; run?: string; phase?: string; text: string }): Promise<void> {
+    if (!TOOL_ID.test(n.tool)) {
+      this.d.log?.("A trace note named no tool and was not written");
+      return;
+    }
+    const text = upTo(n.text.replace(NOTE_HIDDEN, "").replace(NOTE_BREAKS, " ").replace(/\s+/g, " ").trim(), NOTE_CHARS);
+    const entry: TraceEntry = {
+      at: this.now().toISOString(),
+      tool: n.tool,
+      caller: n.caller,
+      ...(n.task !== undefined ? { task: n.task } : {}),
+      ...(n.job !== undefined ? { job: n.job } : {}),
+      ...(n.run !== undefined ? { run: n.run } : {}),
+      ...(n.phase !== undefined ? { phase: n.phase } : {}),
+      args: null,
+      resultSummary: "",
+      ms: 0,
+      ok: true,
+      accesses: [],
+      note: text,
+    };
+    try {
+      await this.d.trace.append(entry);
+    } catch (err) {
+      this.d.log?.(`A note of tool ${n.tool} was not traced`, err);
+    }
+    try {
+      this.d.called?.(entry);
+    } catch (err) {
+      this.d.log?.(`A note of tool ${n.tool} was not shown`, err);
+    }
+  }
+
   /** One run in the host under a fresh run of the tool's broker; the registry's own timer backs the host's. */
-  private async run(id: string, meta: ToolMeta, args: unknown, scope: string | null, limits: JobLimits | undefined): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[] }> {
+  private async run(
+    id: string,
+    meta: ToolMeta,
+    args: unknown,
+    scope: string | null,
+    limits: JobLimits | undefined,
+    inputs: Record<string, unknown> | undefined,
+  ): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[] }> {
     let broker: Pick<ToolBroker, "startCall" | "endCall">;
     let callId: string;
     try {
@@ -265,7 +342,7 @@ export class ToolRegistry {
       ran = await Promise.race([
         // A host that throws, even before it returns a promise, is this call's failure.
         Promise.resolve()
-          .then(() => this.d.host.call({ callId, tool: id, args, scope }, timeoutMs))
+          .then(() => this.d.host.call({ callId, tool: id, args, scope, ...(inputs !== undefined ? { inputs } : {}) }, timeoutMs))
           .catch((err: unknown): Ran => {
             this.d.log?.(`Tool ${id} failed in the host`, err);
             return { ok: false, error: BROKE };

@@ -114,6 +114,7 @@ export function cleanToolCalls(raw: unknown): ToolCallView[] {
       ...(isText(v.result) ? { result: v.result } : {}),
       accesses: (v.accesses as unknown[]).map(cleanAccess).filter((a) => a !== null),
       ...cleanLogs(v.logs),
+      ...(isText(v.note) ? { note: v.note } : {}),
       at: v.at,
     });
   }

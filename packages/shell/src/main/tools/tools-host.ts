@@ -17,7 +17,7 @@ import { type JobLimits, TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
 import { toolFiles } from "./tool-files";
 import type { ToolHost } from "./tool-host";
 import { LOG_CHARS, TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
-import { ToolTrace, type TraceEntry } from "./tool-trace";
+import { NOTE_CHARS, ToolTrace, type TraceEntry } from "./tool-trace";
 import { type ToolsState, readToolsJson } from "./tools-json";
 
 /**
@@ -184,6 +184,7 @@ export function toolCallView(e: TraceEntry): ToolCallView {
     ...(e.ok && e.result !== undefined ? { result: shown(e.result) } : {}),
     accesses: e.accesses.map((a) => ({ kind: a.kind, target: a.target, allowed: a.allowed })),
     ...logsView(e.logs),
+    ...(typeof e.note === "string" ? { note: upTo(e.note, NOTE_CHARS) } : {}),
     at: e.at,
   };
 }

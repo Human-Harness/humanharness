@@ -26,10 +26,15 @@ const agent = call("pr-ci", { caller: "agent", ms: 312, summary: "12 items" });
 describe("the prepared group (tools spec §8.2)", () => {
   it("D0: an entry without pre calls renders as before", async () => {
     const { container } = await renderIn("en", <ToolCallLines calls={[agent, call("pr-list", { caller: "ui" })]} />);
-    const list = container.firstElementChild!;
-    expect(list.className).toBe("hh-tool-calls");
-    // Only slice 2's lines, one per call, in order.
-    expect([...list.children].map((c) => c.className)).toEqual(["hh-tool-call", "hh-tool-call"]);
+    // Slice 2's markup for the same calls (taken from feat/tools' ToolCallLines), React's generated ids aside.
+    const SLICE_2 =
+      '<div class="hh-tool-calls">' +
+      '<div class="hh-tool-call"><button type="button" class="hh-tool-line" aria-expanded="false" aria-controls="ID">pr-ci · 12 items · 0.3 s · 0 tokens</button>' +
+      '<dl id="ID" class="hh-tool-details" hidden=""><dt>Arguments</dt><dd><pre dir="auto">{}</pre></dd></dl></div>' +
+      '<div class="hh-tool-call"><button type="button" class="hh-tool-line" aria-expanded="false" aria-controls="ID">pr-list · 3 items · 0.3 s · 0 tokens</button>' +
+      '<dl id="ID" class="hh-tool-details" hidden=""><dt>Arguments</dt><dd><pre dir="auto">{}</pre></dd></dl></div>' +
+      "</div>";
+    expect(container.innerHTML.replace(/_r_[0-9a-z]+_/g, "ID")).toBe(SLICE_2);
     expect(container.querySelector(".hh-tool-group")).toBeNull();
     expect(screen.queryByText(/^Prepared/)).toBeNull();
   });
@@ -100,6 +105,19 @@ describe("the prepared group (tools spec §8.2)", () => {
     const { container } = await renderIn("en", <ToolCallLines calls={[agent, call("due-today")]} />);
     expect(container.querySelector(".hh-tool-group")).toBeNull();
     expect(screen.getByRole("button", { name: "due-today · 3 items · 0.3 s · 0 tokens" })).toBeTruthy();
+  });
+
+  it("a leading run of notes only draws the notes without a group", async () => {
+    const { container } = await renderIn(
+      "en",
+      <ToolCallLines calls={[call("due-today", { ms: 0, summary: "", note: "today: cut: 12 of 40 items" }), agent]} />,
+    );
+    expect(container.querySelector(".hh-tool-group")).toBeNull();
+    expect(screen.queryByText(/^Prepared/)).toBeNull();
+    const note = screen.getByText("today: cut: 12 of 40 items");
+    expect(note.closest(".hh-tool-note")).not.toBeNull();
+    expect(note.closest("[hidden]")).toBeNull();
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["pr-ci · 12 items · 0.3 s · 0 tokens"]);
   });
 
   it("a note outside a group is drawn as a note line", async () => {

@@ -16,6 +16,8 @@ export function PreparedGroup({ calls, children }: { calls: ToolCallView[]; chil
   const [toggled, setToggled] = useState<boolean | null>(null);
   const open = toggled ?? failed;
   const details = useId();
+  // Only notes (no call to count): they are drawn as they are, never as "Prepared 0 items".
+  if (steps.length === 0) return <>{children}</>;
   const count = new Set(steps.map((c) => c.tool)).size;
   const seconds = (steps.reduce((n, c) => n + Math.max(0, c.ms), 0) / 1000).toFixed(1);
   return (

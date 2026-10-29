@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ToolMeta } from "@humanharness/harness-sdk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TOOL_CALLS, ToolBroker, type ToolBrokerDeps } from "../../src/main/tools/tool-broker";
+import { TOOL_CALLS, ToolBroker, type ToolBrokerDeps, localOrIp, toolAllowHost } from "../../src/main/tools/tool-broker";
 
 const SECRET = "tok-SECRET-1234";
 let userData: string;
@@ -201,5 +201,47 @@ describe("ToolBroker: one core broker per tool, bound to its uses (tools spec §
     await b.call(c.id, "fetch", ["https://api.x.com/c"]);
     expect(b.endCall(a.id).accesses.map((x) => x.target)).toEqual(["https://api.x.com/a"]);
     expect(b.endCall(c.id).accesses.map((x) => x.target)).toEqual(["https://api.x.com/c"]);
+  });
+
+  it("a redirect hop to a local or IP host is refused even when the resolver says yes", async () => {
+    for (const location of ["https://2130706433/x", "http://localhost./", "https://localhost./x"]) {
+      const redirect = (async (url: string) =>
+        url === "https://api.x.com/r" ? new Response(null, { status: 302, headers: { location } }) : new Response("reached")) as unknown as typeof fetch;
+      const { b, seen } = broker({ hosts: ["*.x.com"] }, { fetch: redirect, allowHost: async () => true });
+      const run = b.startCall(null);
+      expect(await b.call(run.id, "fetch", ["https://api.x.com/r"])).toMatchObject({ ok: false });
+      expect(seen.fetches).toEqual([]);
+    }
+  });
+
+  it("the hop guard: localhost, *.localhost and IP literals (a final dot too) never reach the resolver", async () => {
+    const asked: string[] = [];
+    const allow = toolAllowHost(async (h) => (asked.push(h), true));
+    for (const h of ["localhost", "localhost.", "a.localhost", "127.0.0.1", "127.0.0.1.", "[::1]", "::1"]) expect(await allow(h)).toBe(false);
+    expect(asked).toEqual([]);
+    expect(await allow("api.x.com")).toBe(true);
+    expect(localOrIp("localhost.")).toBe(true);
+    expect(localOrIp("127.0.0.1.")).toBe(true);
+    expect(localOrIp("api.x.com.")).toBe(false);
+  });
+
+  it("a key a redirect echoes in its Location never reaches the accesses", async () => {
+    const redirect = (async (url: string) =>
+      url === "https://api.x.com/r"
+        ? new Response(null, { status: 302, headers: { location: `https://api.x.com/ok?t=${SECRET}` } })
+        : new Response("ok")) as unknown as typeof fetch;
+    const { b } = broker({ hosts: ["api.x.com"], secrets: ["jira"] }, { fetch: redirect });
+    const run = b.startCall(null);
+    expect(await b.call(run.id, "fetch", ["https://api.x.com/r", { headers: { Authorization: "{{secret:jira}}" } }])).toMatchObject({ ok: true });
+    const { accesses } = b.endCall(run.id);
+    expect(accesses.map((a) => a.target)).toEqual(["https://api.x.com/r", "https://api.x.com/ok?t=[redacted]"]);
+    expect(JSON.stringify(accesses)).not.toContain(SECRET);
+  });
+
+  it("a data op the data path refuses is recorded as refused", async () => {
+    const { b } = broker({ data: { write: ["tickets"] } }, { data: async () => Promise.reject(new Error("A rule refused the write")) });
+    const run = b.startCall(null);
+    expect(await b.call(run.id, "data.put", ["tickets", { key: "a" }])).toMatchObject({ ok: false, refused: "A rule refused the write" });
+    expect(b.endCall(run.id).accesses).toEqual([{ kind: "data", target: "put tickets", allowed: false }]);
   });
 });

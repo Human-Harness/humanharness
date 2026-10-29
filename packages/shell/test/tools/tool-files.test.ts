@@ -97,6 +97,42 @@ describe("ctx.files (tools spec §4.2; T8)", () => {
   });
 });
 
+describe("ctx.files review fixes", () => {
+  it("refuses .harness and .git in any case, and never lists them", async () => {
+    await put(path.join(base, ".git", "config"), "x");
+    await put(path.join(base, ".harness", "c.json"), "{}");
+    await expect(files().read(".GIT/config")).rejects.toThrow("is not for tools");
+    await expect(files().read(".HARNESS/c.json")).rejects.toThrow("is not for tools");
+    await expect(files().read("notes/.Git/x")).rejects.toThrow("is not for tools");
+    await expect(files().list(".GIT")).rejects.toThrow("is not for tools");
+    // A folder named in another case is skipped too (on a case-sensitive disk it is another folder; never listed).
+    expect((await files().list("", "**")).some((p) => p.toLowerCase().includes(".git") || p.toLowerCase().includes(".harness"))).toBe(false);
+  });
+
+  it("an fs error never shows the folder's place on disk", async () => {
+    await put(path.join(base, "locked", "f.txt"), "x");
+    await put(path.join(base, "closed.txt"), "x");
+    await fs.chmod(path.join(base, "closed.txt"), 0o000);
+    await fs.chmod(path.join(base, "locked"), 0o000);
+    try {
+      const errors = await Promise.all([files().read("closed.txt"), files().read("locked/f.txt"), files().list("locked")].map((p) => p.then(() => null, (e: Error) => e.message)));
+      expect(errors).toEqual(["closed.txt can't be read", "locked/f.txt can't be read", "locked can't be read"]);
+      for (const m of errors) expect(m).not.toContain(root);
+    } finally {
+      await fs.chmod(path.join(base, "locked"), 0o700);
+      await fs.chmod(path.join(base, "closed.txt"), 0o600);
+    }
+  });
+
+  it("a top-level refs folder in the base is never listed (read takes refs/ as references)", async () => {
+    await put(path.join(base, "refs", "x", "y.md"), "y");
+    await put(path.join(base, "notes", "refs", "z.md"), "z");
+    const all = await files().list("", "**");
+    expect(all.some((p) => p.startsWith("refs/"))).toBe(false);
+    expect(all).toContain("notes/refs/z.md");
+  });
+});
+
 describe("globMatch: a matcher over path segments, no RegExp", () => {
   it("* stays within a segment; ** spans segments, zero or more", () => {
     expect(globMatch("*.md", "a.md")).toBe(true);

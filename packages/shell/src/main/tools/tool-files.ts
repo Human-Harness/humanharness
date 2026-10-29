@@ -28,6 +28,22 @@ export class ToolFileRefused extends Error {
   }
 }
 
+/** A file that isn't there, isn't one or is too large: a message of ours, naming only the path the tool wrote. */
+class ToolFileError extends Error {}
+const fileError: (message: string) => never = (message) => {
+  throw new ToolFileError(message);
+};
+
+/** Any other failure (EACCES, ELOOP…) is one fixed line: the system's message would tell where the folder is on disk. */
+async function shielded<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof ToolFileRefused || err instanceof ToolFileError) throw err;
+    throw new ToolFileError(`${name} can't be read`);
+  }
+}
+
 export interface ToolFiles {
   read(rel: string): Promise<string>;
   /**
@@ -37,7 +53,9 @@ export interface ToolFiles {
   list(dir: string, glob?: string): Promise<string[]>;
 }
 
+/** Compared lower-cased: on a disk that ignores case (macOS), `.GIT` is `.git`. */
 const HIDDEN = new Set([".harness", ".git"]);
+const hiddenName = (name: string) => HIDDEN.has(name.toLowerCase());
 const refuse = (message: string): never => {
   throw new ToolFileRefused(message);
 };
@@ -58,7 +76,7 @@ function resolve(rel: unknown, references: readonly { id: string; path: string }
   const parts = text.split("/").filter((p) => p !== "" && p !== ".");
   if (parts.length > FILES_LIMITS.segments) refuse(`${text}: too many folders`);
   if (parts.includes("..")) refuse(`${text}: a path stays inside the folder`);
-  const hidden = parts.find((p) => HIDDEN.has(p));
+  const hidden = parts.find(hiddenName);
   if (hidden !== undefined) refuse(`${text}: ${hidden} is not for tools`);
   if (parts[0] !== "refs") return { root: "", parts, prefix: "" };
   const id = parts[1];
@@ -99,55 +117,62 @@ export function toolFiles({ base, references }: { base: string; references: { id
       const r = rooted(resolve(rel, references));
       const name = shown(r, r.parts.length);
       if (r.parts.length === 0) refuse("A path names a file, not the folder");
-      const st = await walk(r);
-      if (st === null) throw new Error(`${name} is not there`);
-      if (!st.isFile()) throw new Error(`${name} is not a file`);
-      if (st.nlink > 1) refuse(`${name} is not a plain file`);
-      if (st.size > FILES_LIMITS.readBytes) throw new Error(`${name} is larger than 1 MB`);
-      try {
-        // The same rules again at the open: O_NOFOLLOW, a regular file, one link, the size cap.
-        const text = await readNoLinks(r.root, path.join(r.root, ...r.parts), FILES_LIMITS.readBytes);
-        if (text === null) throw new Error(`${name} is not there`);
-        return text;
-      } catch (err) {
-        if (err instanceof TooLarge) throw new Error(`${name} is larger than 1 MB`);
-        if (err instanceof LinkRefused) refuse(`${name} is not a plain file`);
-        throw err;
-      }
+      return shielded(name, async () => {
+        const st = await walk(r);
+        if (st === null) fileError(`${name} is not there`);
+        if (!st.isFile()) fileError(`${name} is not a file`);
+        if (st.nlink > 1) refuse(`${name} is not a plain file`);
+        if (st.size > FILES_LIMITS.readBytes) fileError(`${name} is larger than 1 MB`);
+        try {
+          // The same rules again at the open: O_NOFOLLOW, a regular file, one link, the size cap.
+          const text = await readNoLinks(r.root, path.join(r.root, ...r.parts), FILES_LIMITS.readBytes);
+          if (text === null) fileError(`${name} is not there`);
+          return text;
+        } catch (err) {
+          if (err instanceof TooLarge) fileError(`${name} is larger than 1 MB`);
+          if (err instanceof LinkRefused) refuse(`${name} is not a plain file`);
+          throw err;
+        }
+      });
     },
 
     async list(dir, glob) {
       if (glob !== undefined && (typeof glob !== "string" || glob.length > FILES_LIMITS.globChars)) refuse("A glob is text of at most 256 characters");
       const r = rooted(resolve(dir, references));
       const name = shown(r, r.parts.length) || ".";
-      const st = await walk(r);
-      if (st === null) throw new Error(`${name} is not there`);
-      if (!st.isDirectory()) throw new Error(`${name} is not a folder`);
-      const start = path.join(r.root, ...r.parts);
-      const lead = shown(r, r.parts.length);
-      const found: string[] = [];
-      let visits = 0;
-      // Depth-first, without following anything: links and hard links are skipped, .harness and .git never entered.
-      const stack: { abs: string; below: string[] }[] = [{ abs: start, below: [] }];
-      while (stack.length > 0 && visits < FILES_LIMITS.listVisits) {
-        const { abs, below } = stack.pop()!;
-        const entries = await fs.readdir(abs, { withFileTypes: true }).catch(() => []);
-        for (const e of entries) {
-          if (++visits > FILES_LIMITS.listVisits) break;
-          if (HIDDEN.has(e.name) || e.isSymbolicLink()) continue;
-          const next = [...below, e.name];
-          if (e.isDirectory()) {
-            if (next.length < FILES_LIMITS.segments) stack.push({ abs: path.join(abs, e.name), below: next });
-            continue;
+      return shielded(name, async () => {
+        const st = await walk(r);
+        if (st === null) fileError(`${name} is not there`);
+        if (!st.isDirectory()) fileError(`${name} is not a folder`);
+        const start = path.join(r.root, ...r.parts);
+        const lead = shown(r, r.parts.length);
+        const found: string[] = [];
+        let visits = 0;
+        // Depth-first, without following anything: links and hard links are skipped, .harness and .git never entered.
+        const stack: { abs: string; below: string[] }[] = [{ abs: start, below: [] }];
+        while (stack.length > 0 && visits < FILES_LIMITS.listVisits) {
+          const { abs, below } = stack.pop()!;
+          // The asked folder unreadable is an error; one below it is skipped.
+          const entries = below.length === 0 ? await fs.readdir(abs, { withFileTypes: true }) : await fs.readdir(abs, { withFileTypes: true }).catch(() => []);
+          for (const e of entries) {
+            if (++visits > FILES_LIMITS.listVisits) break;
+            if (hiddenName(e.name) || e.isSymbolicLink()) continue;
+            // The base's own top-level refs folder: `read` takes refs/<id>/ as a reference, so it is never listed.
+            if (r.prefix === "" && r.parts.length === 0 && below.length === 0 && e.name === "refs") continue;
+            const next = [...below, e.name];
+            if (e.isDirectory()) {
+              if (next.length < FILES_LIMITS.segments) stack.push({ abs: path.join(abs, e.name), below: next });
+              continue;
+            }
+            if (!e.isFile()) continue;
+            const est = await lstatOrNull(path.join(abs, e.name)).catch(() => null);
+            if (!est || !est.isFile() || est.nlink > 1) continue;
+            const sub = next.join("/");
+            if (glob === undefined || globMatch(glob, sub)) found.push(lead === "" ? sub : `${lead}/${sub}`);
           }
-          if (!e.isFile()) continue;
-          const est = await lstatOrNull(path.join(abs, e.name));
-          if (!est || !est.isFile() || est.nlink > 1) continue;
-          const sub = next.join("/");
-          if (glob === undefined || globMatch(glob, sub)) found.push(lead === "" ? sub : `${lead}/${sub}`);
         }
-      }
-      return found.sort().slice(0, FILES_LIMITS.listEntries);
+        return found.sort().slice(0, FILES_LIMITS.listEntries);
+      });
     },
   };
 }

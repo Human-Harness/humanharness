@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
-import { type HarnessSecret, SECRETS_MAX, type ToolMeta } from "@humanharness/harness-sdk";
+import { type HarnessSecret, SECRETS_MAX, type ToolMeta, redact } from "@humanharness/harness-sdk";
 import { Broker, type BrokerAnswer, type BrokerDataOp, type BrokerHandler, type BrokerRun, type CoreBrokerDeps } from "../broker/broker";
 import { CONTROLS, str } from "../broker/broker-checks";
 import type { runFile } from "../plugin-exec";
@@ -68,10 +68,15 @@ interface CallState {
   accesses: TraceAccess[];
 }
 
-/** localhost, *.localhost or an IP literal (bracketed or not). */
-function localOrIp(hostname: string): boolean {
-  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+/** localhost, *.localhost or an IP literal (bracketed or not; one final dot as the name's root). */
+export function localOrIp(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
   return isIP(h) !== 0 || h === "localhost" || h.endsWith(".localhost");
+}
+
+/** Each fetch hop's host check for a tool: never this computer or an address by number, then the resolver's say. */
+export function toolAllowHost(allowHost: (hostname: string) => Promise<boolean>): (hostname: string) => Promise<boolean> {
+  return async (hostname) => !localOrIp(hostname) && (await allowHost(hostname));
 }
 
 /** A target as the trace keeps it: one line, at most TOOL_BROKER_LIMITS.targetChars code points. */
@@ -83,12 +88,12 @@ function cut(text: string): string {
 function targetOf(name: string, args: unknown): Omit<TraceAccess, "allowed"> | null {
   if (!Array.isArray(args)) return null;
   const text = (v: unknown) => (typeof v === "string" ? v.slice(0, 8192) : "");
-  if (name === "fetch") return { kind: "fetch", target: cut(text(args[0])) };
+  if (name === "fetch") return { kind: "fetch", target: text(args[0]) };
   if (name === "exec") {
     const list = Array.isArray(args[1]) ? (args[1] as unknown[]).slice(0, 256).map(text) : [];
-    return { kind: "exec", target: cut([text(args[0]), ...list].join(" ")) };
+    return { kind: "exec", target: [text(args[0]), ...list].join(" ") };
   }
-  if (name.startsWith("data.")) return { kind: "data", target: cut(`${name.slice(5)} ${text(args[0])}`) };
+  if (name.startsWith("data.")) return { kind: "data", target: `${name.slice(5)} ${text(args[0])}` };
   return null;
 }
 
@@ -98,6 +103,8 @@ export class ToolBroker {
   /** By run key (what the core's deps see) and by run id (what the host's calls name). */
   private readonly byKey = new Map<string, CallState>();
   private readonly byId = new Map<string, CallState>();
+  /** The key values this tool's fetches were filled with: hidden in every target (a redirect may echo one back). */
+  private readonly filled = new Set<string>();
 
   constructor(private readonly d: ToolBrokerDeps) {
     if (!SAFE_ID.test(d.harnessId)) throw new Error("A harness id names one folder");
@@ -152,8 +159,16 @@ export class ToolBroker {
         run: async (op, run) => {
           const c = this.byKey.get(run.key);
           if (!c) throw new Error(ENDED);
-          this.record(c, { kind: "data", target: cut(`${op.op} ${op.collection}`), allowed: true });
-          return d.data(op, { who: "tool", tool: d.tool, scope: c.scope });
+          const target = `${op.op} ${op.collection}`;
+          try {
+            const value = await d.data(op, { who: "tool", tool: d.tool, scope: c.scope });
+            this.record(c, { kind: "data", target, allowed: true });
+            return value;
+          } catch (err) {
+            // The data path's own refusal (a rule, a scope): this access was not let through.
+            this.record(c, { kind: "data", target, allowed: false });
+            throw err;
+          }
         },
       },
       // Only granted ids reach here (the core refuses any other first); at most SECRETS_MAX, each one asked of the store
@@ -164,11 +179,13 @@ export class ToolBroker {
         const stored = await d.store.harnessValues(asked);
         const missing = asked.find((id) => !Object.hasOwn(stored, id) || typeof stored[id] !== "string");
         if (missing !== undefined) throw new Error(missingSecretMessage(d.secrets.find((s) => s.id === missing)?.label ?? missing));
+        if (this.filled.size > 4 * SECRETS_MAX) this.filled.clear();
+        for (const id of asked) this.filled.add(stored[id]!);
         return Object.fromEntries(asked.map((id) => [id, stored[id]!]));
       },
       log: d.log,
       fetch: d.fetch,
-      allowHost: async (hostname) => !localOrIp(hostname) && (await d.allowHost(hostname)),
+      allowHost: toolAllowHost(d.allowHost),
       exec: {
         resolve: d.exec.resolve,
         run: d.exec.run,
@@ -184,11 +201,11 @@ export class ToolBroker {
         const base = d.transport?.(d.tool) ?? { fetch: d.fetch, run: d.exec.run };
         const c = this.byKey.get(key);
         const fetchHop = ((input: string, init?: RequestInit) => {
-          if (c) this.record(c, { kind: "fetch", target: cut(String(input)), allowed: true });
+          if (c) this.record(c, { kind: "fetch", target: String(input), allowed: true });
           return base.fetch(input, init);
         }) as typeof fetch;
         const run: typeof runFile = (file, args, o) => {
-          if (c) this.record(c, { kind: "exec", target: cut([path.basename(file), ...args].join(" ")), allowed: true });
+          if (c) this.record(c, { kind: "exec", target: [path.basename(file), ...args].join(" "), allowed: true });
           return base.run(file, args, o);
         };
         return { fetch: fetchHop, run };
@@ -231,15 +248,18 @@ export class ToolBroker {
     return answer;
   }
 
+  /** Keeps an access, its target with every filled key hidden first and only then cut (a cut could keep a key's start). */
   private record(state: CallState, access: TraceAccess): void {
-    if (state.accesses.length < TOOL_BROKER_LIMITS.accesses) state.accesses.push(access);
+    if (state.accesses.length >= TOOL_BROKER_LIMITS.accesses) return;
+    const target = cut(this.filled.size > 0 ? redact(access.target.slice(0, 16_384), [...this.filled]) : access.target.slice(0, 16_384));
+    state.accesses.push({ ...access, target });
   }
 
   /** `ctx.files` (arguments already checked): only with `uses.files`; a path refused by the folder rules is "access denied", any other end is an access. */
   private async files(run: BrokerRun, rel: string, fn: (f: ToolFiles) => Promise<unknown>): Promise<BrokerAnswer> {
     const state = this.byKey.get(run.key);
     if (!state) return { ok: false, refused: ENDED };
-    const target = cut(rel);
+    const target = rel;
     if (!this.d.meta.uses.files) {
       this.record(state, { kind: "files", target, allowed: false });
       return { ok: false, refused: NO_FILES };

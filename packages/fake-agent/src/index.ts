@@ -4,7 +4,7 @@ export * from "./script";
 export * from "./mock";
 export * from "./mock-replay";
 export { callMcpTool } from "./mcp-call";
-export { mockSidekickReply } from "./mock-claude";
+export { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "./mock-claude";
 export { pseudoTranslate, type PseudoStrings } from "./pseudo";
 
 const tsx = () => import.meta.resolve("tsx");

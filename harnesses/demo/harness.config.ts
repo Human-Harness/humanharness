@@ -63,6 +63,8 @@ export default defineHarness({
   sidekick: {
     default: "off",
     tips: "The person is learning how Human Harness works. A good prompt names the part (manifest, engines, a turn, blocks, context, history) and what they want to understand about it.",
+    // A ready-made second sidekick the person may add (sidekick spec §2a.7); nothing changes until they do.
+    presets: [{ name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
   },
   tagline: "How Human Harness works",
   tone: "clear and friendly, for developers; short sentences",

@@ -13,7 +13,6 @@ import {
   SETTINGS_COLLECTION,
   SIDEKICK_COLLECTION,
   SIDEKICK_PROCESS,
-  SIDEKICK_SETTINGS_ID,
   type SidekickRecord,
   TIERS,
   type Tier,
@@ -69,20 +68,26 @@ import {
 } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
+  DATA_CHANGE_PREFIX,
   DataStore,
   History,
   MAIN_SCOPE,
   ScopeStore,
+  appendSidekickEvent,
   DEFAULT_PINNED_TOKENS,
   buildDataContextParts,
   dataDiffOf,
+  dataRequestSchema,
   flushFileIndexes,
   isScopeId,
   loadReview,
   migrateToScopes,
   notesPrefix,
+  noteSlug,
   profileDir,
   readNotes,
+  readSidekickEvents,
+  runDataRequest,
   sidekickWorkDir,
   syncLocations,
   syncStatus,
@@ -101,7 +106,7 @@ import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, pinnedBudget, resolveProfile } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, pinnedBudget, resolveProfile, tierSpec } from "./models";
 import { ContextService } from "./context";
 import { contextHandlers } from "./context-ipc";
 import { languageHandlers } from "./language-ipc";
@@ -122,6 +127,7 @@ import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import {
   type UsageRecord,
   UsageLog,
+  capTokens,
   compactionRecord,
   measuredMaterialCosts,
   profileMeta,
@@ -140,11 +146,12 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
-import { SidekickController } from "./sidekick";
+import { SidekickController, localDay } from "./sidekick";
+import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
-import { TaskManager } from "./task-manager";
+import { type PhaseMoved, TaskManager, type TurnEnd } from "./task-manager";
 import { TranslationCache } from "./translation-cache";
 import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
@@ -460,7 +467,7 @@ async function appState(): Promise<AppState> {
     // Only a harness with settings gets its tab (harness-settings D0).
     ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
     // Sidekick is core (sidekick spec D1): every harness sends it; the window draws it only with this.
-    sidekick: { id: "sidekick", name: "Sidekick" },
+    sidekick: { id: "sidekick", name: "Sidekick", mark: "spark" },
     // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
     ...(hasModes(harness)
       ? {
@@ -818,6 +825,12 @@ const turns = new TurnController({
   },
 });
 
+/** A phase's brief text: its `brief` is a file inside the harness folder (the task's phase turn and Sidekick read it). */
+const readPhaseBrief = (action: string, phase: string): Promise<string> => {
+  const p = Object.hasOwn(harness.actions, action) ? harness.actions[action].phases?.find((x) => x.id === phase) : undefined;
+  if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
+  return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
+};
 const tasks = new TaskManager({
   store: {
     load: async () => {
@@ -912,6 +925,20 @@ const tasks = new TaskManager({
       await sidekick?.betweenTasks();
     };
   },
+  // Sidekick's after-reply moment (sidekick spec §4.2). Getters: undefined until the controller exists (D0).
+  get turnStarting() {
+    const sidekick = sidekickCtl;
+    return sidekick ? () => sidekick.turnStarting() : undefined;
+  },
+  get turnEnded() {
+    const sidekick = sidekickCtl;
+    return sidekick ? (end: TurnEnd) => void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err)) : undefined;
+  },
+  // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard). A getter for the same reason (D0).
+  get phaseMoved() {
+    const sidekick = sidekickCtl;
+    return sidekick ? (e: PhaseMoved) => void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err)) : undefined;
+  },
   // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
   get modes() {
     return hasModes(harness) ? harness.modes : undefined;
@@ -920,11 +947,7 @@ const tasks = new TaskManager({
     if (!Object.hasOwn(harness.modes, mode)) return Promise.reject(new Error("Unknown mode"));
     return fs.readFile(resolveInHarness(harness, harness.modes[mode].brief), "utf8");
   },
-  readPhaseBrief: (action, phase) => {
-    const p = Object.hasOwn(harness.actions, action) ? harness.actions[action].phases?.find((x) => x.id === phase) : undefined;
-    if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
-    return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
-  },
+  readPhaseBrief,
   // Before the turn's events: the window draws the change's separator or the wrap-up line (task-phases spec §4.4, §5).
   taskTurn: (notice) => sendToWindow("hh:taskTurn", notice),
   ...(hooks.minuteMs ? { minuteMs: hooks.minuteMs } : {}),
@@ -2037,12 +2060,13 @@ if (loaded) {
     ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
     harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
+    phaseBrief: (action, phase) => readPhaseBrief(action, phase).catch(() => null),
     store: new SidekickStore({
-      read: async () => {
+      // Every record of the collection (settings, learned items, sidekicks, scope records), with no query limit.
+      readAll: async () => {
         const c = await validConfig();
-        if (!c) return null;
-        const store = sidekickStoreFor(baseOf(c));
-        return (await store.get(SIDEKICK_COLLECTION, SIDEKICK_SETTINGS_ID, { who: "person", scope: APP_SCOPE })) as SidekickRecord | null;
+        if (!c) return [];
+        return (await sidekickStoreFor(baseOf(c)).readAll(SIDEKICK_COLLECTION, APP_SCOPE)).records as SidekickRecord[];
       },
       // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: sidekick` commit (open task's trailer).
       write: (request) => personData(request, { scope: APP_SCOPE }),
@@ -2055,14 +2079,16 @@ if (loaded) {
     hasNotice,
     engine: getEngine,
     command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
-    // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens.
-    profile: async (engine) => {
+    // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens; a
+    // sidekick's own tier (or the routing turn's light one) uses that tier's model instead.
+    profile: async (engine, tier) => {
       const models = cleanModels((await config.load()).models);
       const saved = await savedOffer(engine.id);
-      return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models }), models, saved.models), saved);
+      const p = tier ? { engine: engine.id, tier, ...tierSpec(engine.id, tier, models) } : resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models });
+      return supportedEffort(firstOffered(p, models, saved.models), saved);
     },
     // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in the Sidekick session.
-    workDir: (base) => sidekickWorkDir(app.getPath("userData"), base, "sidekick"),
+    workDir: (base, id = "sidekick") => sidekickWorkDir(app.getPath("userData"), base, id),
     writeBrief: writeSidekickBrief,
     open: (o) => new SidekickSession(o),
     task: async () => {
@@ -2082,7 +2108,59 @@ if (loaded) {
     uiLanguage: async () => languageName((await config.load()).language ?? DEFAULT_LANGUAGE),
     usage: (base) => new UsageLog(base).load(2000),
     log: (base, record) => new UsageLog(base).append(record),
+    // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
+    // The task manager can't list open tasks (Open question 7): nothing is open.
+    dailyInput: async (base, day) => {
+      const scopes = scoped() ? [MAIN_SCOPE, ...(await scopeStoreFor(base).list().catch(() => [])).map((sc) => sc.id)] : [MAIN_SCOPE];
+      const notes: string[] = [];
+      for (const scope of new Set(scopes)) {
+        for (const n of await readNotes(base, notesPrefix(scoped(), scope)).catch(() => [])) {
+          if (n.date && localDay(new Date(n.date)) === day) notes.push(n.title);
+        }
+      }
+      const ofDay = (await new UsageLog(base).load(Infinity)).filter((u) => u.usage && localDay(new Date(u.at)) === day);
+      const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
+      return { day, notes, tokens: { tasks: sum(ofDay.filter((u) => u.phase !== "sidekick")), sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")) }, open: [] };
+    },
     changed: (state) => sendToWindow("hh:sidekick", state),
+    events: { read: readSidekickEvents, append: appendSidekickEvent },
+    // Import (sidekick spec §2a.6): a file in an engine's settings folder (under home or moved by env) is refused, links resolved, before any read.
+    importFiles: (paths, signal) => readImportFiles(paths, { home: os.homedir(), env: process.env }, undefined, signal),
+    // The tag key of imported files sources: in userData, where the agent can't reach it (never in the data folder).
+    tagKey: (create) => sourceTagKey(path.join(app.getPath("userData"), "sidekick", "source-key"), create),
+    pickImportFiles: async () => {
+      if (!window || window.isDestroyed()) return [];
+      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"], filters: [{ name: "Text", extensions: ["md", "txt"] }] });
+      return r.canceled ? [] : r.filePaths;
+    },
+    // "Save as decision" (sidekick plan Decision 7): a note like any other, written as the person when they press the button.
+    saveDecision: async ({ scope, action, title, decision }) => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      const base = baseOf(c);
+      const prefix = notesPrefix(scoped(), scope === APP_SCOPE ? MAIN_SCOPE : scope);
+      // Never over another note of the scope: numbered (`-2`, `-3`…) like a question's note.
+      const exists = (slug: string) => fs.access(path.join(base, prefix, `${slug}.md`)).then(() => true, () => false);
+      const first = noteSlug(title);
+      let slug = first;
+      for (let i = 2; await exists(slug); i++) slug = `${first}-${i}`;
+      await writeNote(base, slug, { title, summary: [decision], decisions: [decision], files: [], open: [] }, { ...(action ? { action } : {}), date: new Date().toISOString(), engine: c.engineId }, prefix);
+      await (await currentHistory())?.save(`Note: ${title}`, await tasks.trailerNow());
+    },
+    // Learning (sidekick spec §6.4): Sidekick's own items, written as the app after a task closes, in one `Data: sidekick` commit.
+    writeApp: async (base, requests) => {
+      const blocked = quitting ? "The app is closing" : turnBlocked();
+      if (blocked) throw new Error(blocked);
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      // Learned in another profile (or before a move): never written into this one.
+      if (baseOf(c) !== base) throw new Error("The app's folder changed while Sidekick was learning");
+      // Every request checked before any runs, so a malformed one writes nothing.
+      for (const r of requests) if (!dataRequestSchema.safeParse(r).success) throw new Error("Not a data request");
+      const store = sidekickStoreFor(base);
+      for (const r of requests) await runDataRequest(store, r, { who: "app", scope: APP_SCOPE });
+      await (await currentHistory())?.save(`${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) => console.error("Could not record Sidekick's learning", err));
+    },
   });
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {
@@ -2195,6 +2273,8 @@ if (primary) {
     // AI stages an earlier run left to do (the queue looks only once the app is set up).
     if (await validConfig()) kickMaterial();
     await createWindow();
+    // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
+    void sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
 
   app.on("window-all-closed", () => app.quit());

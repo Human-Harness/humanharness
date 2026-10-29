@@ -55,11 +55,22 @@ import type {
   SetupStep,
   SetupStepResult,
   SetupStepsState,
+  SidekickApproveCheck,
+  SidekickDraftDef,
+  SidekickImportInput,
+  SidekickImportResult,
+  SidekickInScope,
+  SidekickInfo,
+  SidekickOriginal,
+  SidekickPlaceAnswer,
+  SidekickPreset,
+  SidekickLearned,
   SidekickOutcome,
   SidekickReview,
   SidekickSetResult,
   SidekickSettingsPatch,
   SidekickState,
+  SidekickView,
   TaskContext,
   TaskTurnNotice,
   TaskView,
@@ -77,6 +88,9 @@ export function fakeBlob(text: string): string {
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
   return h.toString(16).padStart(8, "0").repeat(5);
 }
+
+/** The token FakeClient's sidekick.pickFiles answers. */
+export const FAKE_PICK_TOKEN = "0".repeat(32);
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -822,7 +836,35 @@ export class FakeClient implements HarnessClient {
   sidekickState: SidekickState | null = null;
   /** What sidekick.review answers, in order; then `send`. */
   sidekickReviews: SidekickReview[] = [];
-  /** What the sidekick namespace was asked, in order. */
+  /** What sidekick.learned answers; forget, forgetAll and editLearned change it. */
+  sidekickLearned: SidekickLearned[] = [];
+  /** When set, forget, forgetAll and editLearned reject with this message. */
+  sidekickLearnedFails: string | null = null;
+  /** What sidekick.beforeApprove answers; null: `approve`. */
+  sidekickApprove: SidekickApproveCheck | null = null;
+  /** What sidekick.ask answers; null: `{ ok: false }`. */
+  sidekickPlace: SidekickPlaceAnswer | null = null;
+  /** What sidekick.presets answers; adoptPreset marks one adopted. */
+  sidekickPresets: SidekickPreset[] = [];
+  /** What sidekick.importDraft answers; null: `{ ok: false, reason: "failed" }`. */
+  sidekickImport: SidekickImportResult | null = null;
+  /** The file names sidekick.pickFiles answers (with token FAKE_PICK_TOKEN); [] answers null (cancelled). */
+  sidekickPicked: string[] = [];
+  /** What sidekick.checkOriginal answers. */
+  sidekickOriginal: SidekickOriginal = "none";
+  /** What sidekick.list answers (the implicit default by default); saveSidekick, remove and reorder change it. */
+  sidekickList: SidekickView[] = [{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }];
+  /** When set, sidekick.saveSidekick rejects with this message. */
+  sidekickSaveFails: string | null = null;
+  /** What sidekick.scope answers (any scope); setScope changes it. */
+  sidekickScope: SidekickInScope[] = [];
+  /** How many times sidekick.scope was read. */
+  sidekickScopeReads = 0;
+  /** When set, sidekick.setScope answers `{ ok: false, message }`. */
+  sidekickScopeFails: string | null = null;
+  /** When set, sidekick.setScope waits for it before answering. */
+  sidekickScopeGate: Promise<void> | null = null;
+  /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
   /** The main process sent a new Sidekick state. */
@@ -839,12 +881,92 @@ export class FakeClient implements HarnessClient {
       this.emitSidekick({ ...this.sidekickState, settings, status: settings.on ? "watching" : "off" });
       return { ok: true, settings };
     },
-    review: async (req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> => {
+    review: async (req: { text: string; force?: boolean; attached?: boolean; block?: boolean }): Promise<SidekickReview> => {
       this.sidekickCalls.push(["review", req]);
       return this.sidekickReviews.shift() ?? { kind: "send" };
     },
     cancelReview: async () => void this.sidekickCalls.push(["cancel"]),
     resolve: async (id: string, outcome: SidekickOutcome) => void this.sidekickCalls.push(["resolve", id, outcome]),
+    mute: async (id: string) => void this.sidekickCalls.push(["mute", id]),
+    unmute: async (sidekick: string, kind: string) => void this.sidekickCalls.push(["unmute", sidekick, kind]),
+    saveDecision: async (id: string) => {
+      this.sidekickCalls.push(["saveDecision", id]);
+      return { ok: true };
+    },
+    learned: async () => this.sidekickLearned.map((i) => ({ ...i })),
+    forget: async (id: string) => {
+      this.sidekickCalls.push(["forget", id]);
+      if (this.sidekickLearnedFails) throw new Error(this.sidekickLearnedFails);
+      this.sidekickLearned = this.sidekickLearned.filter((i) => i.id !== id);
+    },
+    forgetAll: async () => {
+      this.sidekickCalls.push(["forgetAll"]);
+      if (this.sidekickLearnedFails) throw new Error(this.sidekickLearnedFails);
+      this.sidekickLearned = [];
+    },
+    editLearned: async (changes: { id: string; text: string }[]) => {
+      this.sidekickCalls.push(["editLearned", changes]);
+      if (this.sidekickLearnedFails) throw new Error(this.sidekickLearnedFails);
+      const next = new Map(changes.map((c) => [c.id, c.text]));
+      this.sidekickLearned = this.sidekickLearned.map((i) => (next.has(i.id) ? { ...i, text: next.get(i.id) ?? i.text, source: "person" } : i));
+    },
+    beforeApprove: async (doc: { title: string; text: string }): Promise<SidekickApproveCheck> => {
+      this.sidekickCalls.push(["beforeApprove", doc]);
+      return this.sidekickApprove ?? { kind: "approve" };
+    },
+    cancelApprove: async () => void this.sidekickCalls.push(["cancelApprove"]),
+    ask: async (place: string, content: string): Promise<SidekickPlaceAnswer> => {
+      this.sidekickCalls.push(["ask", place, content]);
+      return this.sidekickPlace ?? { ok: false };
+    },
+    presets: async () => this.sidekickPresets.map((p) => ({ ...p })),
+    adoptPreset: async (name: string) => {
+      this.sidekickCalls.push(["adoptPreset", name]);
+      this.sidekickPresets = this.sidekickPresets.map((p) => (p.name === name ? { ...p, adopted: true } : p));
+    },
+    pickFiles: async () => {
+      this.sidekickCalls.push(["pickFiles"]);
+      return this.sidekickPicked.length ? { token: FAKE_PICK_TOKEN, files: [...this.sidekickPicked] } : null;
+    },
+    importDraft: async (input: SidekickImportInput): Promise<SidekickImportResult> => {
+      this.sidekickCalls.push(["importDraft", input]);
+      return this.sidekickImport ?? { ok: false, reason: "failed" };
+    },
+    checkOriginal: async (id: string): Promise<SidekickOriginal> => {
+      this.sidekickCalls.push(["checkOriginal", id]);
+      return this.sidekickOriginal;
+    },
+    saveSidekick: async (def: SidekickDraftDef & { id?: string }, learned?: { text: string; level: "you" | "harness" }[]): Promise<SidekickInfo> => {
+      this.sidekickCalls.push(["saveSidekick", def, learned]);
+      if (this.sidekickSaveFails) throw new Error(this.sidekickSaveFails);
+      const id = def.id ?? def.name.toLowerCase();
+      const old = this.sidekickList.find((k) => k.id === id);
+      const saved: SidekickView = { ...def, id, order: old?.order ?? this.sidekickList.length };
+      this.sidekickList = old ? this.sidekickList.map((k) => (k.id === id ? saved : k)) : [...this.sidekickList, saved];
+      return { id, name: def.name, mark: def.mark };
+    },
+    list: async () => structuredClone(this.sidekickList),
+    remove: async (id: string) => {
+      this.sidekickCalls.push(["remove", id]);
+      if (this.sidekickList.length <= 1) return { ok: false, message: "Keep at least one sidekick" };
+      this.sidekickList = this.sidekickList.filter((k) => k.id !== id);
+      return { ok: true };
+    },
+    reorder: async (ids: string[]) => {
+      this.sidekickCalls.push(["reorder", ids]);
+      this.sidekickList = ids.flatMap((id, order) => this.sidekickList.filter((k) => k.id === id).map((k) => ({ ...k, order })));
+    },
+    scope: async (_scope: string) => {
+      this.sidekickScopeReads++;
+      return structuredClone(this.sidekickScope);
+    },
+    setScope: async (scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }) => {
+      this.sidekickCalls.push(["setScope", scope, sidekick, v]);
+      if (this.sidekickScopeGate) await this.sidekickScopeGate;
+      if (this.sidekickScopeFails) return { ok: false, message: this.sidekickScopeFails };
+      this.sidekickScope = this.sidekickScope.map((k) => (k.id === sidekick ? { id: k.id, name: k.name, mark: k.mark, ...v } : k));
+      return { ok: true };
+    },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);
       return () => void this.sidekickListeners.delete(l);

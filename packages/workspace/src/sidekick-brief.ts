@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { EngineDef } from "@humanharness/engines";
+import type { SidekickPurposeDef } from "@humanharness/harness-sdk";
 
 /** The core's Sidekick rules (spec §5, §11). English: Sidekick thinks in English like every core agent. */
 export const SIDEKICK_RULES: readonly string[] = [
@@ -17,17 +18,41 @@ export const SIDEKICK_RULES: readonly string[] = [
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 
-/** The Sidekick session's AGENTS.md: the core rules, then the harness tips, then (part 2) what it learned. */
-export function sidekickBrief(o: { name: string; harness: string; tips?: string; learned?: readonly string[] }): string {
-  const lines = [
-    `# ${o.name}`,
-    "",
-    `You are ${o.name}, the prompt coach inside the app "${o.harness}".`,
-    "",
-    "## Rules",
-    "",
-    ...SIDEKICK_RULES.map((r) => `- ${r}`),
-  ];
+/** The person's multi-line text, every line quoted (`> `), so a line of it can't open a heading or a list of its own. */
+const quoted = (text: string): string[] => text.trim().split(/\r?\n/).map((l) => (l.trim() ? `> ${l}` : ">"));
+
+/** Each core purpose's tips in a sidekick's brief (spec §2a.2). */
+const PURPOSE_TIPS: Record<Exclude<SidekickPurposeDef["id"], "custom">, { title: string; lines: string[] }> = {
+  "prompt-coach": { title: "Prompt coach", lines: ["Before a send: one ask per prompt, scope named, done defined.", "After a reply: gaps and the next prompt."] },
+  focus: { title: "Focus", lines: ["Say when the task drifts off its phase, repeats an ask, or nears its context limit."] },
+  "process-guard": { title: "Process guard", lines: ["Before a phase change or an approval: what the phase promised and isn't there yet."] },
+  mentor: { title: "Mentor", lines: ["After a reply: one thing worth learning from it, briefly, in the person's words."] },
+  "daily-summary": { title: "Daily summary", lines: ["Once a day: what got done yesterday, what's open, what it cost."] },
+};
+
+/**
+ * The Sidekick session's AGENTS.md: the core rules, then the harness tips, then what it learned. With `sidekick`
+ * (part 2, one brief per sidekick): its name, its personality and only its purposes' tips; without, part 1's brief.
+ */
+export function sidekickBrief(o: {
+  name: string;
+  harness: string;
+  tips?: string;
+  learned?: readonly string[];
+  sidekick?: { name: string; personality: string; purposes: readonly SidekickPurposeDef[] };
+}): string {
+  const k = o.sidekick;
+  // A name is the person's text: one line, so it can't open a section of its own.
+  const name = (k?.name ?? o.name).replace(/\s+/g, " ").trim();
+  const lines = k
+    ? [`# ${name}`, "", `You are ${name}, a sidekick inside the app "${o.harness}". You never act; you only suggest.`]
+    : [`# ${name}`, "", `You are ${name}, the prompt coach inside the app "${o.harness}".`];
+  if (k?.personality.trim()) lines.push("", "## Personality", "", ...quoted(k.personality));
+  lines.push("", "## Rules", "", ...SIDEKICK_RULES.map((r) => `- ${r}`));
+  for (const p of k?.purposes ?? []) {
+    if (p.id === "custom") lines.push("", "## Your purpose", "", ...quoted(p.text));
+    else lines.push("", `## ${PURPOSE_TIPS[p.id].title}`, "", ...PURPOSE_TIPS[p.id].lines.map((l) => `- ${l}`));
+  }
   if (o.tips?.trim()) lines.push("", "## Harness tips", "", o.tips.trim());
   if (o.learned && o.learned.length > 0) lines.push("", "## About this person", "", ...o.learned.map((l) => `- ${l}`));
   return lines.join("\n") + "\n";

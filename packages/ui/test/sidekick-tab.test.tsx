@@ -35,6 +35,16 @@ describe("Settings › Sidekick (spec §8)", () => {
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { on: false }]));
   });
 
+  it("each moment on its own (spec §8)", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = SK_ON;
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "After the reply" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { afterReply: false }]));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Heads-ups" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { headsUps: false }]));
+  });
+
   it("shows why a save failed", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
@@ -51,5 +61,27 @@ describe("Settings › Sidekick (spec §8)", () => {
     await renderIn("en", <SidekickTab client={c} onModels={onModels} />);
     fireEvent.click(await screen.findByRole("button", { name: "Change in Models" }));
     expect(onModels).toHaveBeenCalled();
+  });
+});
+
+describe("Settings › Sidekick, learning (spec §6.3, §8)", () => {
+  it("N of M used, and muted kinds with Undo", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = { ...SK_ON, used: { used: 3, of: 8 }, settings: { ...SK_ON.settings, muted: { sidekick: ["vague"] } } };
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    expect(await screen.findByText("3 of 8 suggestions used this week")).toBeTruthy();
+    expect(screen.getByText("Not flagged")).toBeTruthy();
+    expect(screen.getByText("Sidekick · Vague words")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Flag “Vague words” again" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["unmute", "sidekick", "vague"]));
+  });
+
+  it("no share without cards, no Not flagged list without mutes", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = SK_ON;
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    await screen.findByRole("checkbox", { name: "Sidekick" });
+    expect(screen.queryByText(/suggestions used this week/)).toBeNull();
+    expect(screen.queryByText("Not flagged")).toBeNull();
   });
 });

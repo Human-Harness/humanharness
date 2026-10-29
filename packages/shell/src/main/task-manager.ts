@@ -21,6 +21,7 @@ import {
   matchGlob,
   parseAnswer,
   phaseModes,
+  readAnswer,
   saveNoteSchema,
   setPhaseSchema,
   tierBelow,
@@ -96,6 +97,7 @@ import {
 } from "./task-store";
 import { EXTEND_MINUTES, MINUTE_MS, formatTimeLeft, nextDue, paused, remainingMs, running, usedMs } from "./time-box";
 import { type TurnOptions, isHeld, takesInputs } from "./turn-controller";
+import type { TurnKind } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -203,6 +205,39 @@ export interface TaskDeps {
   timer?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   now?: () => Date;
   newId?: () => string;
+  /** A task's run turn is about to start (Sidekick drops its after-reply turn, sidekick spec §5 "Sending cancels"). Absent: nothing (D0). */
+  turnStarting?(): void;
+  /** A task turn ended (sidekick spec §4.2). Never awaited: it never delays the task. Absent: nothing (D0). */
+  turnEnded?(end: TurnEnd): void;
+  /**
+   * A task's phase moved (sidekick spec §2a.2 "phase-change"), by the person, the agent or the app: the phase left and
+   * the phase entered, right after the state is written. Never awaited: it never delays the move. Absent: nothing (D0).
+   */
+  phaseMoved?(e: PhaseMoved): void;
+}
+
+/** What `phaseMoved` gets (sidekick spec §2a.2). */
+export interface PhaseMoved {
+  task: { id: string; action?: string; scope: string };
+  from: string;
+  to: string;
+}
+
+/** What `turnEnded` gets (sidekick spec §4.2). */
+export interface TurnEnd {
+  task: { id: string; action?: string; scope: string; phase?: string };
+  kind: TurnKind;
+  ok: boolean;
+  /** What the person sent (the display text when the engine got a brief). */
+  prompt: string;
+  /** The reply's text (paragraphs joined by a blank line). */
+  reply: string;
+  /** The turn answered an input block (no free text). */
+  fromBlock: boolean;
+  /** The turn was a mode switch's (its prompt is the mode's brief; `prompt` is the "Switched to" line): no after-reply. */
+  modeSwitch: boolean;
+  /** Context used and the task's cap, when the engine reported it (heads-ups). */
+  context?: { used: number; cap?: number };
 }
 
 /** A `required` action was started with no scope open (spec §3.3): nothing was closed or started. */
@@ -1673,12 +1708,21 @@ export class TaskManager {
     const real = given ? await fs.realpath(given).catch(() => given) : null;
     const base = given && real && real !== given ? [given, real] : given;
     const shownInputs: Promise<void>[] = [];
+    // The reply's text, by paragraph, only for Sidekick's hook.
+    const parts = [""];
     this.lastPhaseAsk = null;
     const kind = options.phase ?? "run";
     // A proposal the person didn't take goes as soon as they send anything else (spec §4.1 "ignores it"). A mode
     // switch's turn is a run turn too, so picking a mode drops it as well, by design.
     if (kind === "run" && task.phaseProposal) await this.dropProposal(task.id);
     if (kind === "run") await this.personWorks(task);
+    if (kind === "run" && this.d.turnStarting) {
+      try {
+        this.d.turnStarting();
+      } catch (err) {
+        console.error("Sidekick's turn hook failed", err);
+      }
+    }
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -1695,6 +1739,8 @@ export class TaskManager {
         ...(this.hasInputs() && takesInputs(options.phase) ? { turn: task.turns } : {}),
         task: task.id,
         onEvent: (e) => {
+          if (this.d.turnEnded && e.type === "text") parts[parts.length - 1] += e.delta;
+          else if (this.d.turnEnded && e.type === "paragraph") parts.push("");
           if (e.type === "done") seen.done = e;
           else if (e.type === "block" && e.name === "save_note") {
             const parsed = saveNoteSchema.safeParse(e.data);
@@ -1740,7 +1786,30 @@ export class TaskManager {
     const startTokens = this.recordStart === task.id && seen.input !== undefined ? seen.input : undefined;
     if (startTokens !== undefined) this.recordStart = null;
     if (seen.reads.length > 0 || startTokens !== undefined) await this.recordTurn(task.id, seen.reads, startTokens, seen.compactedAt);
+    if (this.d.turnEnded) this.turnEnded(task, kind, result, message, options, parts, seen.used);
     return result;
+  }
+
+  /** Tells Sidekick the turn ended (sidekick spec §4.2); a throwing hook is logged, never the task's failure. */
+  private turnEnded(task: CurrentTask, kind: TurnKind, result: Done, message: string, options: { display?: string; modeSwitch?: boolean }, parts: string[], used: number | undefined): void {
+    const end: TurnEnd = {
+      task: { id: task.id, ...(task.action ? { action: task.action } : {}), scope: scopeOfTask(task), ...(task.phase ? { phase: task.phase.id } : {}) },
+      kind,
+      ok: result.ok,
+      prompt: options.display ?? message,
+      reply: parts
+        .filter((p) => p.trim())
+        .join("\n\n")
+        .trim(),
+      fromBlock: readAnswer(message) !== null,
+      modeSwitch: options.modeSwitch === true,
+      ...(used !== undefined ? { context: { used, ...(task.profile ? { cap: task.profile.cap } : {}) } } : {}),
+    };
+    try {
+      this.d.turnEnded?.(end);
+    } catch (err) {
+      console.error("Sidekick's turn hook failed", err);
+    }
   }
 
   private async afterRun(id: string, done: Done, first: boolean): Promise<void> {
@@ -1857,8 +1926,10 @@ export class TaskManager {
       if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
     }
     const at = this.now().toISOString();
+    let moved = false;
     await this.update((s) => {
       if (s.current?.id !== c.id) return s;
+      moved = true;
       const { phaseProposal: _proposal, ...rest } = s.current;
       let next: CurrentTask = { ...rest, phase: { id: to.id, startedAt: at }, phases: [...(rest.phases ?? []), { id: to.id, at, by }].slice(-PHASE_LOG_MAX) };
       if (plan.modes) {
@@ -1867,6 +1938,7 @@ export class TaskManager {
       }
       return { ...s, current: next };
     });
+    if (moved && c.phase && c.phase.id !== to.id) this.phaseMoved(c, c.phase.id, to.id);
     if (!plan.message) return;
     const now = (await this.d.store.load()).current;
     if (now?.id !== c.id) return this.stopped();
@@ -1894,6 +1966,15 @@ export class TaskManager {
       throw unwrap(err);
     }
     return this.afterRun(c.id, done, false);
+  }
+
+  /** Tells Sidekick the phase moved (never awaited; a throwing hook never stops the move). */
+  private phaseMoved(c: CurrentTask, from: string, to: string): void {
+    try {
+      this.d.phaseMoved?.({ task: { id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) }, from, to });
+    } catch (err) {
+      console.error("Sidekick's phase hook failed", err);
+    }
   }
 
   /**

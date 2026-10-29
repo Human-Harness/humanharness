@@ -73,7 +73,7 @@ describe("SettingsSheet", () => {
     const first = await renderIn("en", <Sheet client={client} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
     first.unmount();
-    client.state.sidekick = { id: "sidekick", name: "Sidekick" };
+    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
     client.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, on: false }, status: "off" };
     await renderIn("en", <Sheet client={client} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Sidekick", "Usage"]);

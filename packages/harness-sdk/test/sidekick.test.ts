@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_SIDEKICK,
   RESERVED_COLLECTIONS,
   SIDEKICK_COLLECTION,
   SIDEKICK_MIN_WORDS,
+  SIDEKICK_MUTED_MAX,
   SIDEKICK_SETTINGS_ID,
   dataCollections,
   defineHarness,
+  purposeMoments,
   sidekickCollection,
   sidekickMinWords,
   sidekickMode,
   sidekickSettings,
   sidekickTips,
+  speaksAt,
 } from "../src";
 
 const minimal = {
@@ -85,17 +89,81 @@ describe("sidekick collection", () => {
     expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", wait: 7 }).success).toBe(false);
     expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", cap: 1 }).success).toBe(false);
     expect(schema.safeParse({ id: "x", type: "settings" }).success).toBe(false);
+    expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "sidekick", name: "S", mark: "s", personality: "", purposes: [{ id: "mentor" }], order: 1 }).success).toBe(false);
   });
 
   it("settings fall back to the manifest default and the core defaults", () => {
-    expect(sidekickSettings(null, undefined)).toEqual({ on: false, preSend: true, wait: 6, cap: 20_000, introSeen: false });
+    expect(sidekickSettings(null, undefined)).toEqual({ on: false, preSend: true, afterReply: true, headsUps: true, wait: 6, cap: 20_000, introSeen: false, presetsOffered: false, muted: {} });
     expect(sidekickSettings(null, { default: "on" }).on).toBe(true);
-    expect(sidekickSettings({ id: "settings", type: "settings", on: false, cap: 50_000 }, { default: "on" })).toEqual({ on: false, preSend: true, wait: 6, cap: 50_000, introSeen: false });
+    expect(sidekickSettings({ id: "settings", type: "settings", on: false, cap: 50_000 }, { default: "on" })).toEqual({ on: false, preSend: true, afterReply: true, headsUps: true, wait: 6, cap: 50_000, introSeen: false, presetsOffered: false, muted: {} });
   });
 
   it("D0: dataCollections never includes it", () => {
     const h = defineHarness({ ...minimal });
     expect(dataCollections(h)).toBe(h.data);
     expect(Object.hasOwn(dataCollections(h), SIDEKICK_COLLECTION)).toBe(false);
+  });
+});
+
+describe("several sidekicks (spec §2a)", () => {
+  const schema = () => sidekickCollection().schema;
+
+  it("D0: a block without places and presets parses as before", () => {
+    const h = defineHarness({ ...minimal, sidekick: { default: "on" } });
+    expect(h.sidekick).toEqual({ default: "on" });
+  });
+
+  it("places: action-id pattern, unique", () => {
+    expect(defineHarness({ ...minimal, sidekick: { places: [{ id: "terminal", label: "Terminal", description: "Agent output." }] } }).sidekick?.places).toHaveLength(1);
+    expect(() => defineHarness({ ...minimal, sidekick: { places: [{ id: "Bad", label: "x", description: "y" }] } })).toThrow();
+    expect(() => defineHarness({ ...minimal, sidekick: { places: [{ id: "t", label: "a", description: "b" }, { id: "t", label: "c", description: "d" }] } })).toThrow(/unique/);
+  });
+
+  it("presets: known purposes, custom with text and known moments, personality within 1,500", () => {
+    const ok = { name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" as const }, { id: "custom" as const, text: "Watch the terminal.", moments: ["place:terminal"] }] };
+    const h = defineHarness({ ...minimal, sidekick: { places: [{ id: "terminal", label: "Terminal", description: "x" }], presets: [ok] } });
+    expect(h.sidekick?.presets?.[0].name).toBe("Guard");
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, purposes: [{ id: "wizard" }] }] } as never })).toThrow();
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, purposes: [{ id: "custom", text: "x", moments: ["place:nope"] }] }] } })).toThrow(/place/);
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, personality: "x".repeat(1501) }] } })).toThrow();
+  });
+
+  it("presets: names unique (adopting one finds it by name)", () => {
+    const p = { name: "Guard", mark: "x", personality: "", purposes: [{ id: "focus" as const }] };
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, mark: "y" }] } })).toThrow(/unique/);
+    expect(defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, name: "Guard 2" }] } }).sidekick?.presets).toHaveLength(2);
+  });
+
+  it("purpose moments and speaksAt", () => {
+    expect(purposeMoments({ id: "prompt-coach" })).toEqual(["pre-send", "after-reply"]);
+    expect(purposeMoments({ id: "custom", text: "x", moments: ["daily"] })).toEqual(["daily"]);
+    expect(speaksAt(DEFAULT_SIDEKICK, "pre-send")).toBe(true);
+    expect(speaksAt(DEFAULT_SIDEKICK, "heads-up")).toBe(true);
+    expect(speaksAt(DEFAULT_SIDEKICK, "daily")).toBe(false);
+  });
+
+  it("record types: learned, sidekick and scope, each with its own fields", () => {
+    expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "Takes scope fixes.", level: "you", source: "learned", updatedAt: "2026-10-27T10:00:00Z" }).success).toBe(true);
+    expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "x", level: "team", source: "learned", updatedAt: "x" }).success).toBe(false);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], order: 1 }).success).toBe(true);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [], order: 1 }).success).toBe(false);
+    expect(schema().safeParse({ id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false, purposeText: "No spec without AC." }).success).toBe(true);
+    expect(schema().safeParse({ id: "settings", type: "settings", afterReply: false, headsUps: true, muted: { sidekick: ["vague"] }, learnedAt: "2026-10-27T10:00:00Z", lastDaily: "2026-10-27" }).success).toBe(true);
+  });
+
+  it("muted: up to SIDEKICK_MUTED_MAX (20) kinds per sidekick", () => {
+    const kinds = (n: number) => Array.from({ length: n }, (_, i) => `kind-${i}`);
+    expect(SIDEKICK_MUTED_MAX).toBe(20);
+    expect(schema().safeParse({ id: "settings", type: "settings", muted: { sidekick: kinds(20) } }).success).toBe(true);
+    expect(schema().safeParse({ id: "settings", type: "settings", muted: { sidekick: kinds(21) } }).success).toBe(false);
+  });
+
+  it("record types: missing fields and a misplaced source are refused", () => {
+    expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "x", level: "you", updatedAt: "2026-10-27T10:00:00Z" }).success).toBe(false);
+    expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "x", level: "you", source: { kind: "paste" }, updatedAt: "2026-10-27T10:00:00Z" }).success).toBe(false);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" }], order: 1, source: "person" }).success).toBe(false);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" }], order: 1, source: { kind: "paste" } }).success).toBe(true);
+    expect(schema().safeParse({ id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo" }).success).toBe(false);
+    expect(schema().safeParse({ id: "rulo", type: "settings" }).success).toBe(false);
   });
 });

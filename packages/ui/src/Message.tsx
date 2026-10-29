@@ -19,6 +19,7 @@ import {
 import { cleanDocumentCards } from "./card-shape";
 import { DocumentCards } from "./DocumentCards";
 import { InputHost } from "./InputBlock";
+import type { InputFormProps } from "./InputForm";
 import { Markdown } from "./markdown";
 import { type Reveal, wordsOf } from "./pace";
 import type { LiveActivity } from "./state";
@@ -50,6 +51,10 @@ export interface InputContext {
   /** The task waits and nothing runs: the pending question may be answered. */
   ready: boolean;
   respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult>;
+  /** Sidekick's review of a free-text answer in the core form (sidekick spec §4.1); absent with Sidekick off (D0). */
+  review?: InputFormProps["review"];
+  cancelReview?: () => void;
+  reviewWait?: InputFormProps["reviewWait"];
 }
 
 export interface BlockProps {

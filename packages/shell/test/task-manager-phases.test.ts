@@ -670,3 +670,44 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
     expect(t2.turns.map((x) => x.options.phase)).toEqual(["checkpoint", "wrap-up"]);
   });
 });
+
+describe("TaskManager: the phaseMoved hook (sidekick spec §2a.2 phase-change)", () => {
+  it("is told the phase left and the one entered, for the agent's move and the person's", async () => {
+    const moved: unknown[] = [];
+    const t = setup({ script: [[ask("main", "Recall done"), ok], [ok]], extra: { phaseMoved: (e) => void moved.push(e) } });
+    await t.manager.start("session");
+    expect(moved).toEqual([{ task: { id: "t1", action: "session", scope: "main" }, from: "warmup", to: "main" }]);
+    const r = t.manager.setPhase("close", "t1");
+    await r.accepted;
+    await r.done;
+    expect(moved.at(-1)).toEqual({ task: { id: "t1", action: "session", scope: "main" }, from: "main", to: "close" });
+    // The same phase moves nothing.
+    const same = t.manager.setPhase("close", "t1");
+    await same.accepted;
+    await same.done;
+    expect(moved).toHaveLength(2);
+  });
+
+  it("a throwing hook never stops the move", async () => {
+    const t = setup({
+      script: [[ask("main"), ok], [ok]],
+      extra: {
+        phaseMoved: () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await t.manager.start("session");
+    expect(t.state().current?.phase?.id).toBe("main");
+    expect(t.turns).toHaveLength(2);
+    err.mockRestore();
+  });
+
+  it("D0: no hook, the same moves", async () => {
+    const t = setup({ script: [[ask("main", "Recall done"), ok], [ok]] });
+    await t.manager.start("session");
+    expect(t.state().current?.phase?.id).toBe("main");
+    expect(t.turns).toHaveLength(2);
+  });
+});

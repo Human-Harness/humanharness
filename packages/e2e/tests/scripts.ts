@@ -1,4 +1,4 @@
-import { type AcpScript, type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
+import { type AcpScript, type ClaudeScript, MOCK_SIDEKICK_MARKS, claudeTextLines } from "@humanharness/fake-agent";
 
 /** A result line with usage, so usage.jsonl gets a record per turn. */
 const result = {
@@ -124,13 +124,32 @@ export const templateScript: ClaudeScript = {
 };
 
 const sidekickReply = (o: unknown) => [...claudeTextLines(JSON.stringify(o)), result];
+/** Sidekick's after-reply turn (on by default with Sidekick on): nothing to show, so no card (sidekick spec §4.2). */
+const afterReplyTurn = { match: `^${MOCK_SIDEKICK_MARKS.after}`, steps: sidekickReply({}) };
+/** Sidekick's learning turn at task close (sidekick spec §6.4): no changes. */
+const learnTurn = { match: `^${MOCK_SIDEKICK_MARKS.learn}`, steps: sidekickReply({}) };
+/** Sidekick's routing turn (sidekick spec §2a.3): no known id, so the person's order picks the speaker. */
+const routeTurn = { match: `^${MOCK_SIDEKICK_MARKS.route}`, steps: [...claudeTextLines("none"), result] };
+/** Sidekick's phase-change turn (sidekick spec §2a.2 process-guard): nothing missing, so no card. */
+const phaseTurn = { match: `^${MOCK_SIDEKICK_MARKS.phase}`, steps: sidekickReply({ missing: [] }) };
+/** Sidekick's before-approve turn (sidekick spec §2a.2 process-guard): nothing missing, so approve. */
+const approveTurn = { match: `^${MOCK_SIDEKICK_MARKS.approve}`, steps: sidekickReply({ missing: [] }) };
+/** Sidekick's daily turn (sidekick spec §2a.2 daily-summary): an empty answer, so no card. */
+const dailyTurn = { match: `^${MOCK_SIDEKICK_MARKS.daily}`, steps: [...claudeTextLines(""), result] };
+/** Sidekick's place turn (sidekick spec §2a.5): a short plain-text answer. */
+const placeTurn = { match: `^${MOCK_SIDEKICK_MARKS.place}`, steps: [...claudeTextLines("Nothing needs your attention."), result] };
+/** Sidekick's import turn (sidekick spec §2a.6): a mentor draft, one thing it knows, tool permissions skipped. */
+const importTurn = {
+  match: `^${MOCK_SIDEKICK_MARKS.import}`,
+  steps: sidekickReply({ name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] }),
+};
 
 /** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */
 export const sidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
   turns: [
     {
-      match: "^Sidekick: pre-send review",
+      match: `^${MOCK_SIDEKICK_MARKS.pre}`,
       steps: sidekickReply({
         verdict: "suggest",
         issues: [{ kind: "vague", text: "Say which part should be better." }],
@@ -138,11 +157,51 @@ export const sidekickScript: ClaudeScript = {
         confidence: 0.8,
       }),
     },
+    afterReplyTurn,
+    learnTurn,
+    routeTurn,
+    phaseTurn,
+    dailyTurn,
+    approveTurn,
+    placeTurn,
+    importTurn,
   ],
 };
 
 /** Sidekick's turn never answers in time: the prompt goes as typed after the wait. */
 export const slowSidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
-  turns: [{ match: "^Sidekick: pre-send review", steps: [{ sleep: 15_000 }] }],
+  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn, phaseTurn, dailyTurn, approveTurn, placeTurn, importTurn],
+};
+
+/**
+ * Two sidekicks (sidekick spec §2a): the default Sidekick's pre-send review flags a vague prompt, or two asks with an
+ * ask kept for later; Guard's phase-change turn finds something missing. First match wins: the two-asks review names
+ * its local flag, so it comes before the vague one.
+ */
+export const twoSidekicksScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [
+    {
+      match: `^${MOCK_SIDEKICK_MARKS.pre}[\\s\\S]*\\n- two-asks:`,
+      steps: sidekickReply({
+        verdict: "suggest",
+        issues: [{ kind: "two-asks", text: "Ask one thing at a time." }],
+        queued: ["Ask for the sources of claim 2"],
+        confidence: 0.9,
+      }),
+    },
+    {
+      match: `^${MOCK_SIDEKICK_MARKS.pre}`,
+      steps: sidekickReply({ verdict: "suggest", issues: [{ kind: "vague", text: "Say which part should be better." }], confidence: 0.8 }),
+    },
+    { match: `^${MOCK_SIDEKICK_MARKS.phase}`, steps: sidekickReply({ missing: ["No agreed section list"] }) },
+    afterReplyTurn,
+    learnTurn,
+    routeTurn,
+    dailyTurn,
+    approveTurn,
+    placeTurn,
+    importTurn,
+  ],
 };

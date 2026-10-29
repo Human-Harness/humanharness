@@ -37,7 +37,7 @@ import { FileTimelinePanel } from "./FileTimelinePanel";
 import { ContextMeter, FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPanel } from "./HistoryPanel";
-import { pruneDrafts } from "./InputForm";
+import { type AnswerHold, pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
 import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
@@ -49,8 +49,9 @@ import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
-import { SidekickMark } from "./sidekick/mark";
-import { SidekickPanel } from "./sidekick/SidekickPanel";
+import { FirstOpenOffer } from "./sidekick/PresetOffer";
+import { ReviewHint } from "./sidekick/ReviewHint";
+import { SidekickPanel, SidekickRail, waitingCards } from "./sidekick/SidekickPanel";
 import { useNarrow } from "./sidekick/useNarrow";
 import { useSidekick } from "./sidekick/useSidekick";
 import { type StartViewCopy, StartView } from "./StartView";
@@ -234,22 +235,52 @@ export function ChatView({
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
+  /** A block answer's review (spec §4.1): its number, the composer review's number when it started, the form a card holds. */
+  const answerSeq = useRef(0);
+  const answerRun = useRef<{ seq: number; composerSeq: number } | null>(null);
+  const answerHold = useRef<{ cardId: string; hold: AnswerHold } | null>(null);
   /** The panel opened or collapsed by the person; null: expanded when Sidekick is on. */
   const [skOpen, setSkOpen] = useState<boolean | null>(null);
   const [skView, setSkView] = useState<"sidekick" | "harness">("sidekick");
   const skExpanded = sidekick !== null && (skOpen ?? sidekick.settings.on);
   const skCard = sidekick?.card?.id;
-  const skAnnounced = useRef<string | undefined>(undefined);
-  // Each new card is announced once (spec §7 accessibility); the panel itself never takes focus.
+  /** Queued asks "For later" (spec §4.1): the live card's, then those of cards that were sent, which outlive them. */
+  const [later, setLater] = useState<{ key: string; text: string }[]>([]);
+  /** The live card's asks the person dropped, by key (`<card id>:<position>`): equal texts are told apart. */
+  const [droppedLive, setDroppedLive] = useState<string[]>([]);
+  const liveQueued = (sidekick?.card?.queued ?? [])
+    .map((text, at) => ({ key: `${skCard}:${at}`, text }))
+    .filter((q) => !droppedLive.includes(q.key));
+  // They belong to the task: another task (or none) starts with none. The first send opening a task keeps them.
+  const laterTask = useRef(tasks.current?.id);
+  useEffect(() => {
+    const was = laterTask.current;
+    laterTask.current = tasks.current?.id;
+    if (was !== undefined && was !== tasks.current?.id) setLater([]);
+  }, [tasks.current?.id]);
+  // The live card's dropped asks belong to it: another card starts with none dropped.
+  useEffect(() => setDroppedLive((d) => (d.length ? [] : d)), [skCard]);
+  const skAnnounced = useRef(new Set<string>());
+  const skFrame = useRef(0);
+  const skWaiting = sidekick ? waitingCards(sidekick) : [];
+  const skWaitingIds = skWaiting.map((c) => c.id).join(" ");
+  const skWaitingRef = useRef(skWaiting);
+  skWaitingRef.current = skWaiting;
+  // Each new card is announced once (spec §7 accessibility), heads-ups and other moments too; the panel never takes focus.
   // Cleared, then set on the next frame: two cards in a row put the same words, which a screen reader would skip.
   useEffect(() => {
-    const isNew = skCard && skCard !== skAnnounced.current;
-    skAnnounced.current = skCard;
-    if (!isNew) return;
+    const fresh = skWaitingRef.current.filter((c) => !skAnnounced.current.has(c.id));
+    for (const c of fresh) skAnnounced.current.add(c.id);
+    // The live pre-send card says the most; else the newest other card, by who speaks.
+    const card = fresh.find((c) => c.id === skCard) ?? fresh.at(-1);
+    if (!card) return;
+    const text = card.id === skCard ? t("sidekick.card.announce") : t("sidekick.card.announceFrom", { name: card.speaker.name });
     setAnnouncement("");
-    const frame = requestAnimationFrame(() => setAnnouncement(t("sidekick.card.announce")));
-    return () => cancelAnimationFrame(frame);
-  }, [skCard, t]);
+    // Only a newer announcement cancels a pending one: a card leaving in between must not swallow it.
+    cancelAnimationFrame(skFrame.current);
+    skFrame.current = requestAnimationFrame(() => setAnnouncement(text));
+  }, [skWaitingIds, skCard, t]);
+  useEffect(() => () => cancelAnimationFrame(skFrame.current), []);
   /** Collapse ↔ open unmounts the focused button: focus moves to its counterpart (rail ↔ collapse). */
   const skFocus = useRef(false);
   const railRef = useRef<HTMLButtonElement>(null);
@@ -774,11 +805,13 @@ export function ChatView({
     if (!task || blocked() || pending || task.status !== "waiting") return;
     taskCall(() => client.setPhase(task.id, id).then((r) => r.ok));
   };
-  /** Finish: the core closing turn. False back means it was stopped and the task stays open. */
-  const finishTask = () => {
-    if (!tasks.current || blocked() || pending) return;
+  /** Finish: the core closing turn. False back means it was stopped and the task stays open. Says whether it started.
+   *  The same guards as the stepper's Finish: a second click or one during a phase move does nothing. */
+  const finishTask = (): boolean => {
+    if (!tasks.current || blocked() || phasing || pending || tasks.current.status !== "waiting") return false;
     // A stopped closing turn is not a failure: the task simply stays open, as the tasks read again show.
     taskCall(() => client.finishTask().then(() => true));
+    return true;
   };
   const openTier = (ask: { mode: string; task: string; required: Tier; current: Tier }) => {
     questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -867,6 +900,57 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
+  /**
+   * A block answer's free text before it goes (spec §4.1): `card` holds the form, anything else sends it. The same
+   * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
+   * goes first, so the answer is never held behind it.
+   */
+  const reviewAnswer = async (text: string, hold: AnswerHold): Promise<{ kind: "send" } | { kind: "card"; drop: () => void }> => {
+    const held = answerHold.current;
+    const card = sidekick?.card;
+    if (held && card?.id === held.cardId && card.prompt === text) {
+      answerHold.current = null;
+      resolveCard(card, "sent-anyway");
+      return { kind: "send" };
+    }
+    if (reviewing) return { kind: "send" };
+    const seq = ++answerSeq.current;
+    const composerSeq = reviewSeq.current;
+    answerRun.current = { seq, composerSeq };
+    const r: SidekickReview = await client.sidekick.review({ text, block: true }).catch(() => ({ kind: "error" }) as const);
+    if (answerRun.current?.seq === seq) answerRun.current = null;
+    // Stopped by Send now (the form already sent), or replaced by a composer review in main: a card that came anyway
+    // is about an answer that went, and leaves as sent anyway.
+    if (seq !== answerSeq.current || composerSeq !== reviewSeq.current || r.kind !== "card") {
+      if (r.kind === "card") void client.sidekick.resolve(r.card.id, "sent-anyway").catch(() => undefined);
+      return { kind: "send" };
+    }
+    const cardId = r.card.id;
+    answerHold.current = { cardId, hold };
+    setSkOpen(true);
+    setSkView("sidekick");
+    // Skip on the held answer: the card leaves with it.
+    const drop = () => {
+      if (answerHold.current?.cardId !== cardId) return;
+      answerHold.current = null;
+      void client.sidekick.resolve(cardId, "dismissed").catch(() => undefined);
+    };
+    return { kind: "card", drop };
+  };
+  /** Send now on the answer form: stops its review in main, never a composer review that started since. */
+  const cancelAnswerReview = () => {
+    const run = answerRun.current;
+    answerRun.current = null;
+    answerSeq.current++;
+    if (run && run.composerSeq === reviewSeq.current) void client.sidekick.cancelReview().catch(() => undefined);
+  };
+  /** The form a block card holds, while that card is the live one. */
+  const heldBy = (card: SidekickCard): AnswerHold | null => {
+    const held = answerHold.current;
+    if (!held || held.cardId !== card.id) return null;
+    answerHold.current = null;
+    return held.hold;
+  };
   const inputs: InputContext | undefined = state.inputs
     ? {
         specs: state.inputs,
@@ -874,6 +958,8 @@ export function ChatView({
         waiting: tasks.current?.status === "waiting",
         ready: tasks.current?.status === "waiting" && !blocked() && !pending,
         respond: respondTo,
+        // D0: without Sidekick (or with the review off) the form sends as before.
+        ...(reviewOn && sidekick ? { review: reviewAnswer, cancelReview: cancelAnswerReview, reviewWait: sidekick.settings.wait } : {}),
       }
     : undefined;
   const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
@@ -975,8 +1061,14 @@ export function ChatView({
     setDraft("");
     if (sidekick?.card) resolveCard(sidekick.card, "sent-anyway");
   };
-  const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") =>
+  const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") => {
+    // A card that was sent keeps its queued asks for later; Edit sends nothing, and the next review finds them again.
+    if (outcome !== "edited" && card.id === skCard && liveQueued.length > 0) {
+      const keep = liveQueued;
+      setLater((l) => [...keep, ...l.filter((q) => !keep.some((k) => k.key === q.key))]);
+    }
     void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
+  };
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     void submit(draft);
@@ -1564,17 +1656,7 @@ export function ChatView({
               return (
                 <>
                   {harnessSide !== undefined && <aside className="hh-side">{harnessSide}</aside>}
-                  <div className="hh-sk-rail">
-                    <button
-                      ref={railRef}
-                      type="button"
-                      aria-label={sidekick.card ? t("sidekick.waiting") : t("sidekick.open")}
-                      onClick={() => toggleSk(true)}
-                    >
-                      <SidekickMark off={!sidekick.settings.on} />
-                      {sidekick.card && <span className="hh-sk-dot" aria-hidden="true" />}
-                    </button>
-                  </div>
+                  <SidekickRail state={sidekick} buttonRef={railRef} onOpen={() => toggleSk(true)} />
                 </>
               );
             }
@@ -1586,6 +1668,19 @@ export function ChatView({
                 {...(harnessSide !== undefined ? { harnessSide } : {})}
                 sendKey={SEND_KEY}
                 onCollapse={() => toggleSk(false)}
+                offer={<FirstOpenOffer client={client} offered={sidekick.settings.presetsOffered} />}
+                onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
+                onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(() => undefined)}
+                onSaveDecision={(id) => client.sidekick.saveDecision(id)}
+                // The heads-up leaves as used only when the closing turn really started.
+                onFinishTask={(id) => {
+                  if (finishTask()) void client.sidekick.resolve(id, "used").catch(() => undefined);
+                }}
+                queued={[...liveQueued, ...later]}
+                onDropQueued={(key) => {
+                  setLater((l) => l.filter((q) => q.key !== key));
+                  setDroppedLive((d) => [...d, key]);
+                }}
                 {...(onSidekickSettings ? { onTier: onSidekickSettings } : {})}
                 onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
                 onNotNow={() => {
@@ -1595,16 +1690,41 @@ export function ChatView({
                 // A suggestion goes through `send`, never `submit`: it is never reviewed again.
                 // The card leaves only once the send went: a refused one keeps the rewrite.
                 onSendSuggested={(card) => {
+                  // A block answer's rewrite goes to the composer: the person sends it, or copies it into the form.
+                  if (card.block) {
+                    heldBy(card);
+                    resolveCard(card, "used");
+                    if (card.rewrite) setDraft(card.rewrite);
+                    inputRef.current?.focus();
+                    return;
+                  }
                   if (!card.rewrite || !send(card.rewrite)) return;
                   setDraft("");
                   resolveCard(card, "used");
                 }}
                 onEdit={(card) => {
+                  if (card.block) {
+                    const hold = heldBy(card);
+                    resolveCard(card, "edited");
+                    hold?.focus();
+                    return;
+                  }
                   resolveCard(card, "edited");
                   setDraft(card.rewrite ?? card.prompt);
                   inputRef.current?.focus();
                 }}
                 onSendAnyway={(card) => {
+                  // A block answer's card sends its form as it is, unreviewed.
+                  if (card.block) {
+                    const held = answerHold.current;
+                    if (held?.cardId === card.id) {
+                      // The form it held is gone (another task) or can't send now: nothing went, the card stays.
+                      if (!held.hold.anyway()) return;
+                      answerHold.current = null;
+                    }
+                    resolveCard(card, "sent-anyway");
+                    return;
+                  }
                   if (!send(card.prompt)) return;
                   setDraft("");
                   resolveCard(card, "sent-anyway");
@@ -1696,18 +1816,3 @@ function cardSpans(card: SidekickCard): [number, number][] {
 /** "⌘" on macOS, "Ctrl" elsewhere: the key that sends at once. */
 const SEND_KEY = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
-/** "Sends anyway in N s · ⌘⏎ sends now": the countdown's text equivalent (sidekick spec §7 accessibility). */
-function ReviewHint({ until, sendKey }: { until: number | null; sendKey: string }) {
-  const { t } = useTranslation();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, []);
-  const left = until === null ? null : Math.max(0, Math.ceil((until - now) / 1000));
-  return (
-    <p className="hh-sk-composer-hint">
-      {left === null ? t("sidekick.composer.waitingLong") : t("sidekick.composer.countdown", { seconds: left })} · {t("sidekick.sendNow", { key: sendKey })}
-    </p>
-  );
-}

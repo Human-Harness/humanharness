@@ -22,12 +22,15 @@ const CARD: SidekickCard = {
   rewrite: "make the intro shorter",
   confidence: 0.8,
   at: "2026-10-27T10:00:00Z",
+  moment: "pre",
+  speaker: SK_ON.info,
+  kind: "vague",
 };
 
 function client(withSidekick = true) {
   const c = new FakeClient(ready);
   if (withSidekick) {
-    c.state.sidekick = { id: "sidekick", name: "Sidekick" };
+    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
     c.sidekickState = SK_ON;
   }
   return c;
@@ -407,7 +410,7 @@ describe("Sidekick when a send can't go out, or the panel can't show", () => {
     const box = await openWithPreflight(c);
     type(box, "make it better");
     act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: CARD }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sidekick has a suggestion" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sidekick · 1 waiting" }));
     fireEvent.click(await screen.findByRole("button", { name }));
     await act(async () => undefined);
     expect(c.sent).toEqual([]);
@@ -439,5 +442,136 @@ describe("Sidekick when a send can't go out, or the panel can't show", () => {
     expect(side?.tagName).toBe("ASIDE");
     expect(side?.className).toBe("hh-side");
     expect(document.querySelector(".hh-sk-rail, .hh-sk-panel")).toBeNull();
+  });
+});
+
+describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
+  const QUEUED: SidekickCard = { ...CARD, queued: ["Translate chapter 2", "Add a summary"] };
+  const AFTER: SidekickCard = { id: "a1", moment: "after", kind: "gap", speaker: SK_ON.info, prompt: "Outline", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", after: { gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" } };
+
+  it("a sent card's queued asks stay For later after it leaves; Drop takes the one pressed; Put in composer fills the field", async () => {
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: QUEUED }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: QUEUED }));
+    expect(await screen.findByText("Translate chapter 2")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Drop" })[0]!);
+    expect(screen.queryByText("Translate chapter 2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send suggested" }));
+    await waitFor(() => expect(c.sent).toEqual(["make the intro shorter"]));
+    // Main takes the card away: the queued ask outlives it.
+    act(() => c.emitSidekick(SK_ON));
+    expect(screen.queryByRole("button", { name: "Send suggested" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "For later" })).toBeTruthy();
+    expect(screen.queryByText("Translate chapter 2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Put in composer" }));
+    expect(box.value).toBe("Add a summary");
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(screen.queryByText("Add a summary", { selector: "p" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "For later" })).toBeNull();
+  });
+
+  it("Edit sends nothing: the card's queued asks leave with it (a new review finds them again)", async () => {
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: QUEUED }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: QUEUED }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    act(() => c.emitSidekick(SK_ON));
+    expect(screen.queryByRole("heading", { name: "For later" })).toBeNull();
+  });
+
+  it("an after-reply card: Put in composer fills the field and resolves used; Dismiss resolves dismissed", async () => {
+    const c = client();
+    const box = await open(c);
+    act(() => c.emitSidekick({ ...SK_ON, cards: [AFTER] }));
+    fireEvent.click(await screen.findByRole("button", { name: "Put in composer" }));
+    expect(box.value).toBe("Add a source for claim 2");
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["resolve", "a1", "used"]));
+    expect(c.sent).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["resolve", "a1", "dismissed"]));
+  });
+
+  it("heads-ups: Finish task resolves used and finishes the task; Save as decision asks main", async () => {
+    const hu = (id: string, headsUp: NonNullable<SidekickCard["headsUp"]>): SidekickCard => ({ id, moment: "heads-up", kind: headsUp.kind, speaker: SK_ON.info, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp });
+    const c = client();
+    c.tasks = { current: { id: "t1", action: "session", status: "waiting" }, actions: {}, notes: [] };
+    const box = await open(c);
+    box.focus();
+    act(() => c.emitSidekick({ ...SK_ON, cards: [hu("h1", { kind: "context", share: 0.8 }), hu("h2", { kind: "repeated", topic: "APA", decision: "Use APA 7." })] }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save as decision" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["saveDecision", "h2"]));
+    // Heads-ups never take focus.
+    expect(document.activeElement).toBe(box);
+    fireEvent.click(screen.getByRole("button", { name: "Finish task" }));
+    await waitFor(() => expect(c.taskCalls).toEqual(["finish"]));
+    expect(c.sidekickCalls).toContainEqual(["resolve", "h1", "used"]);
+  });
+
+  it("heads-ups: a double-click on Finish task finishes once and resolves the card once", async () => {
+    const hu = (id: string, headsUp: NonNullable<SidekickCard["headsUp"]>): SidekickCard => ({ id, moment: "heads-up", kind: headsUp.kind, speaker: SK_ON.info, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp });
+    const c = client();
+    c.tasks = { current: { id: "t1", action: "session", status: "waiting" }, actions: {}, notes: [] };
+    await open(c);
+    act(() => c.emitSidekick({ ...SK_ON, cards: [hu("h1", { kind: "context", share: 0.8 })] }));
+    const finish = await screen.findByRole("button", { name: "Finish task" });
+    fireEvent.click(finish);
+    fireEvent.click(finish);
+    await waitFor(() => expect(c.taskCalls).toEqual(["finish"]));
+    expect(c.sidekickCalls.filter((x) => x[0] === "resolve")).toEqual([["resolve", "h1", "used"]]);
+  });
+});
+
+describe("several sidekicks in the chat (spec §7, §2a.7)", () => {
+  const RULO = { id: "rulo", name: "Rulo", mark: "🦊" };
+  const HEADS_UP: SidekickCard = { id: "h1", moment: "heads-up", kind: "context", speaker: RULO, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp: { kind: "context", share: 0.8 } };
+  const GUARD = { name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false };
+  const live = () => document.querySelector('[aria-live="polite"]')?.textContent;
+
+  it("a heads-up is announced once, by who speaks; the rail counts it", async () => {
+    const c = client();
+    await open(c);
+    act(() => c.emitSidekick({ ...SK_ON, cards: [HEADS_UP] }));
+    await waitFor(() => expect(live()).toBe("Rulo has a new card."));
+    act(() => c.emitSidekick({ ...SK_ON, cards: [HEADS_UP], spent: 1300 }));
+    await act(async () => undefined);
+    expect(live()).toBe("Rulo has a new card.");
+    fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
+    expect(screen.getByRole("button", { name: "Sidekick · 1 waiting" }).textContent).toContain("🦊");
+  });
+
+  it("the panel's first open offers the presets once and marks them offered", async () => {
+    const c = client();
+    c.sidekickPresets = [GUARD];
+    await open(c);
+    expect(await screen.findByRole("region", { name: "Suggested by the harness" })).toBeTruthy();
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { presetsOffered: true }]));
+    // Still there while the panel stays open; gone once collapsed and opened again.
+    expect(screen.getByRole("button", { name: "Add Guard" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Sidekick" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Sidekick" }));
+    await screen.findByRole("button", { name: "Collapse Sidekick" });
+    await act(async () => undefined);
+    expect(screen.queryByRole("region", { name: "Suggested by the harness" })).toBeNull();
+  });
+
+  it("already offered (Settings answered it), or nothing to offer: no offer and nothing written", async () => {
+    const c = client();
+    c.sidekickPresets = [GUARD];
+    c.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, presetsOffered: true } };
+    await open(c);
+    await act(async () => undefined);
+    expect(screen.queryByRole("region", { name: "Suggested by the harness" })).toBeNull();
+    cleanup();
+    const d = client();
+    await open(d);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("region", { name: "Suggested by the harness" })).toBeNull();
+    expect(d.sidekickCalls.filter(([k]) => k === "set")).toEqual([]);
   });
 });

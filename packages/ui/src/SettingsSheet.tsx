@@ -14,6 +14,7 @@ import { ModelsTab } from "./ModelsTab";
 import { ProfilesSection } from "./ProfilesSection";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab } from "./sidekick/SidekickTab";
+import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
 export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "usage";
@@ -70,6 +71,9 @@ export function SettingsSheet({
       (id !== "sidekick" || state.sidekick !== undefined),
   );
   const configured = isConfigured(state.config);
+  // The tab reads "Sidekicks" once there are two or more (spec §8); its id stays "sidekick".
+  const sidekick = useSidekick(client, state.sidekick !== undefined);
+  const sidekickTab = (sidekick?.sidekicks?.length ?? 1) > 1 ? t("sidekick.list.title") : t("sidekick.tab");
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -164,7 +168,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? t("sidekick.tab") : t(`settings.tabs.${id}`)}
+                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -192,7 +196,7 @@ export function SettingsSheet({
           {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
-          {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} />}
+          {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
           {tab === "harness" && configured && (
             <>

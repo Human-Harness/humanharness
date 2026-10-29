@@ -1156,13 +1156,78 @@ export interface HarnessClient {
     set(patch: SidekickSettingsPatch): Promise<SidekickSetResult>;
     /**
      * Reviews the prompt before it goes out; the composer sends as typed unless a card comes back or it was cancelled.
-     * `attached`: the send carries attachments or material (mutes the missing-context flag).
+     * `attached`: the send carries attachments or material (mutes the missing-context flag). `block`: the text is a
+     * block answer's free text, its card marked `block`.
      */
-    review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview>;
+    review(req: { text: string; force?: boolean; attached?: boolean; block?: boolean }): Promise<SidekickReview>;
     /** Stops a running review (⌘⏎ sends at once). */
     cancelReview(): Promise<void>;
     /** What the person did with a card; it leaves the panel. */
     resolve(cardId: string, outcome: SidekickOutcome): Promise<void>;
+    /** "Don't flag …": mutes the card's kind for its sidekick at once, and remembers it as the person's (spec §6.3). */
+    mute(cardId: string): Promise<void>;
+    /** Undoes a mute (Settings). */
+    unmute(sidekick: string, kind: string): Promise<void>;
+    /** "Save as decision" on a repeated-ask heads-up: a note written as the person; the card goes. */
+    saveDecision(cardId: string): Promise<{ ok: boolean; message?: string }>;
+    /** What Sidekick learned (spec §6.4), both levels. */
+    learned(): Promise<SidekickLearned[]>;
+    /** "Forget this": deletes one learned item, as the person. */
+    forget(id: string): Promise<void>;
+    /** "Forget everything": deletes every learned item of both levels, the person's too. */
+    forgetAll(): Promise<void>;
+    /** Edits from the person: their items become `source: "person"` (learning never changes them again). */
+    editLearned(changes: { id: string; text: string }[]): Promise<void>;
+    /**
+     * For the document-review flow: call before approving; on a card, show it next to Approve (approve anyway stays
+     * possible). Never waits longer than the person's wait setting; any failure answers `approve`.
+     */
+    beforeApprove(doc: { title: string; text: string }): Promise<SidekickApproveCheck>;
+    /** The approval was answered or withdrawn: a running before-approve check stops (its answer is `approve`). */
+    cancelApprove(): Promise<void>;
+    /**
+     * For a harness UI with places (spec §2a.5): asks the sidekick on for `place` (a manifest place id) about `content`
+     * (at most 4,000 characters). A short plain-text answer and who gave it, never a card; `{ ok: false }` when Sidekick
+     * is off, no sidekick answers there, or anything fails. The harness shows the answer in its place.
+     */
+    ask(place: string, content: string): Promise<SidekickPlaceAnswer>;
+    /** "Suggested by the harness" (spec §2a.7): the manifest's presets, each with whether the person adopted it. */
+    presets(): Promise<SidekickPreset[]>;
+    /** "Add <name>": the preset becomes one of the person's sidekicks, and the presets count as offered. */
+    adoptPreset(name: string): Promise<void>;
+    /**
+     * "Choose files" for an import: the system picker's choice as a token and the files' names (null when cancelled).
+     * The paths stay in the app; nothing is read yet. Pass the token to importDraft, once, soon (a newer pick replaces it).
+     */
+    pickFiles(): Promise<SidekickPick | null>;
+    /**
+     * An import (spec §2a.6): pasted text (at most 64 KB), a pick's files (its token) or a stored sidekick's own
+     * files again ("Bring the changes": `original`), at most 4 plain-text files of 64 KB, never inside an engine's
+     * settings folder, turned into a draft sidekick and what it knows. Nothing is saved: the preview's Save does that.
+     * Works with Sidekick off once the engine notice was accepted.
+     */
+    importDraft(input: SidekickImportInput): Promise<SidekickImportResult>;
+    /** Whether an imported sidekick's files changed since ("The original changed"); `none` when it wasn't imported from files. */
+    checkOriginal(sidekickId: string): Promise<SidekickOriginal>;
+    /**
+     * Saves a sidekick as the person: new without `def.id`, else every field of that one is replaced (send the full
+     * def, `source` too). `learned`: the import's items, written as the person's. A files `source` must come from an
+     * import (or be the one it already has). Rejects when it can't be written.
+     */
+    saveSidekick(def: SidekickDraftDef & { id?: string }, learned?: { text: string; level: "you" | "harness" }[]): Promise<SidekickInfo>;
+    /** The person's sidekicks by order (Settings › Sidekicks); the implicit default alone when none was written. */
+    list(): Promise<SidekickView[]>;
+    /** Removes a sidekick, as the person; the last one stays (`ok: false` with why). */
+    remove(id: string): Promise<{ ok: boolean; message?: string }>;
+    /** Orders the sidekicks as `ids` (the higher one speaks when two could). */
+    reorder(ids: string[]): Promise<void>;
+    /** "Sidekicks in this <scope>" (spec §2a.4): every sidekick by order, on or off in `scope`, and its purpose text there. */
+    scope(scope: string): Promise<SidekickInScope[]>;
+    /**
+     * A sidekick in a scope, as the person: on or off and its purpose text there (at most 600 characters; none when
+     * absent). Send the `places` it had, or they are dropped. `ok: false` with why (e.g. the sidekick was removed).
+     */
+    setScope(scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }): Promise<{ ok: boolean; message?: string }>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1221,10 +1286,12 @@ export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIs
 
 // ── Sidekick (sidekick spec; plan 2026-10-27 part 1) ──
 
-/** The sidekick that speaks. Part 1 has one: `{ id: "sidekick", name: "Sidekick" }`. */
+/** The sidekick that speaks. Part 1's one: `{ id: "sidekick", name: "Sidekick", mark: "spark" }`. */
 export interface SidekickInfo {
   id: string;
   name: string;
+  /** Its mark: "spark" names the core's SVG mark; else a short text (an emoji). */
+  mark: string;
 }
 
 export interface SidekickSettings {
@@ -1237,6 +1304,27 @@ export interface SidekickSettings {
   cap: 20_000 | 50_000 | "none";
   /** The off-state intro was answered. */
   introSeen: boolean;
+  /** The after-reply moment (spec §4.2). */
+  afterReply: boolean;
+  /** The heads-ups (spec §4.3). */
+  headsUps: boolean;
+  /** The harness's presets were offered once (spec §2a.7). */
+  presetsOffered: boolean;
+  /** Muted kinds per sidekick id (spec §6.3). */
+  muted: Record<string, string[]>;
+  /** The newest event the last learning turn read (spec §6.4); absent until it first ran. */
+  learnedAt?: string;
+  /** The day of the last daily card (YYYY-MM-DD); absent until the first one. */
+  lastDaily?: string;
+}
+
+/** An item of "What Sidekick learned" (spec §6.4). `person`: written or edited by the person; learning never changes it. */
+export interface SidekickLearned {
+  id: string;
+  text: string;
+  level: "you" | "harness";
+  source: "learned" | "person";
+  kind?: string;
 }
 export type SidekickSettingsPatch = Partial<SidekickSettings>;
 export type SidekickSetResult = { ok: true; settings: SidekickSettings } | { ok: false; message: string };
@@ -1258,13 +1346,35 @@ export interface SidekickCard {
   id: string;
   /** The prompt as typed. */
   prompt: string;
+  /** About a block answer's free text (spec §4.1): its Send anyway sends the form, not the composer. */
+  block?: true;
   flags: SidekickFlagView[];
   issues: SidekickIssue[];
   rewrite?: string;
   queued?: string[];
   confidence: number;
   at: string;
+  /** Which moment it belongs to; and who speaks (spec §7 "every card names who speaks"). */
+  moment: SidekickCardMoment;
+  speaker: SidekickInfo;
+  /** The kind its threshold and muting use: the first issue's (or flag's) kind; "gap", "next"… for other moments. */
+  kind: string;
+  /** "You took N of your last M <kind> suggestions" (spec §4.1 step 4); absent with fewer than 3. */
+  why?: { used: number; of: number };
+  /** After the reply (spec §4.2): a gap, the next prompt (Put in composer), a repeated ask; a mentor's lesson ("Worth knowing"). */
+  after?: { gap?: { title: string; text: string }; next?: string; repeated?: { topic: string; decision: string }; lesson?: string };
+  /** A process-guard's card (spec §2a.2): what the phase left (or the document) is missing. */
+  guard?: { missing: string[] };
+  /** The daily card (spec §2a.2 daily-summary): yesterday in a few plain sentences. */
+  text?: string;
+  /** A heads-up (spec §4.3): the context near full, an ask that keeps coming back, prompts drifting off the phase. */
+  headsUp?: SidekickHeadsUp;
 }
+
+/** Context near full → Finish task; a repeated ask → Save as decision; off-phase drift → Finish task (plan Decision 7). */
+export type SidekickHeadsUp = { kind: "context"; share: number } | { kind: "repeated"; topic: string; decision: string } | { kind: "off-phase"; phase?: string };
+
+export type SidekickCardMoment = "pre" | "after" | "heads-up" | "before-approve" | "phase-change" | "daily" | "place";
 
 /** Off · Watching · Reading your prompt… · Has a suggestion · Past its cap (spec §7). */
 export type SidekickStatus = "off" | "watching" | "reading" | "suggestion" | "capped";
@@ -1280,10 +1390,20 @@ export interface SidekickState {
   /** The tier Sidekick's turns run at (Settings › Models), or "custom". */
   tier: string;
   card: SidekickCard | null;
+  /** The open task's waiting cards other than the live pre-send one (after the reply). */
+  cards: SidekickCard[];
   /** Sidekick's tokens in the last 7 days. */
   week: number;
   /** The last review could not finish: the prompt went as typed (spec §5 "Errors"). */
   notice?: "failed" | "timeout";
+  /** The current task's earlier cards, one line each ("Earlier · used"). */
+  past: { id: string; kind: string; outcome: SidekickOutcome | "muted" | "timeout"; speaker: string }[];
+  /** "N of M suggestions used" over the last 7 days (spec §8). */
+  used: { used: number; of: number };
+  /** The person's sidekicks by order (Settings names the tab "Sidekicks" with two or more); absent from older mains. */
+  sidekicks?: SidekickInfo[];
+  /** The harness's places (spec §2a.5), for a custom purpose's moments; absent when it has none. */
+  places?: { id: string; label: string }[];
 }
 
 /**
@@ -1292,6 +1412,76 @@ export interface SidekickState {
  * sent at once or the review was replaced).
  */
 export type SidekickReview = { kind: "send" } | { kind: "card"; card: SidekickCard } | { kind: "timeout" } | { kind: "error" } | { kind: "cancelled" };
+/** What the document-review flow does before approving (spec §2a.2): approve, or show the card next to Approve. */
+export type SidekickApproveCheck = { kind: "approve" } | { kind: "card"; card: SidekickCard };
+/** A harness place's answer (spec §2a.5, plan Decision 13): free text, at most 600 characters. */
+export type SidekickPlaceAnswer = { ok: true; text: string; speaker: SidekickInfo } | { ok: false };
+/** A sidekick's purpose as the UI shows it: a core purpose id, or `custom` with its text and moments. */
+export interface SidekickPurposeView {
+  id: string;
+  text?: string;
+  moments?: string[];
+}
+/** A ready-made sidekick the harness offers (spec §2a.7); `adopted` once the person added it. */
+export interface SidekickPreset {
+  name: string;
+  mark: string;
+  personality: string;
+  purposes: SidekickPurposeView[];
+  adopted: boolean;
+}
+/** Where an imported sidekick came from: pasted text, or files with the hash of what was read. */
+export type SidekickSource = { kind: "paste" } | { kind: "files"; paths: string[]; hash: string; tag?: string };
+export type SidekickImportInput = { kind: "paste"; text: string } | { kind: "files"; token: string } | { kind: "original"; sidekickId: string };
+/** A pick for an import: a token for the paths the app kept (used once by importDraft) and the files' names to show. */
+export interface SidekickPick {
+  token: string;
+  files: string[];
+}
+/** An imported sidekick before it is saved. */
+export interface SidekickDraft {
+  name: string;
+  mark: string;
+  personality: string;
+  purposes: SidekickPurposeView[];
+  source: SidekickSource;
+}
+/** A sidekick to save: an import's draft, or the editor's full definition. */
+export interface SidekickDraftDef {
+  name: string;
+  mark: string;
+  personality: string;
+  purposes: SidekickPurposeView[];
+  source?: SidekickSource;
+  tier?: "light" | "standard" | "deep";
+  preset?: string;
+  defaultOn?: boolean;
+}
+/** A sidekick in one scope (spec §2a.4): on or off there, its purpose text there, and the places it answers there. */
+export interface SidekickInScope {
+  id: string;
+  name: string;
+  mark: string;
+  on: boolean;
+  purposeText?: string;
+  places?: string[];
+}
+/** A stored sidekick as Settings shows and edits it: its full definition and its place in the order. */
+export interface SidekickView extends SidekickDraftDef {
+  id: string;
+  order: number;
+}
+/**
+ * Why an import gave no draft: a file in an engine's settings folder, too many files, one too big (paste too), not
+ * plain text, unreadable, nothing pasted, no engine set up (or its notice not accepted), the turn failed or gave
+ * nothing usable, a newer import replaced it, or the pick's token is unknown, used or too old (choose the files again).
+ */
+export type SidekickImportFailure = "engine-settings" | "too-many" | "too-big" | "type" | "unreadable" | "empty" | "unavailable" | "failed" | "cancelled" | "expired";
+export type SidekickImportResult =
+  | { ok: true; draft: SidekickDraft; learned: { text: string; level: "you" | "harness" }[]; skipped: string[] }
+  | { ok: false; reason: SidekickImportFailure; file?: string };
+/** An imported sidekick's files: as read, changed since, gone (or now refused); `none` when it wasn't imported from files. */
+export type SidekickOriginal = "unchanged" | "changed" | "gone" | "none";
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";
 
 /** Why a review action did nothing (review spec; errors over IPC are data). */

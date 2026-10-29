@@ -27,13 +27,14 @@ type Ctx = (name: string, ...args: unknown[]) => Promise<{ ok: boolean; refused?
  * A registry with a real ToolBroker; the host double runs `tool(ctx)`, whose ctx calls go to the broker under the
  * call's id as the host script's do, then answers what `tool` returns (or its throw as the tool's error).
  */
-function rig(tool: (ctx: Ctx) => Promise<unknown>) {
+function rig(tool: (ctx: Ctx) => Promise<unknown>, o: { uses?: ToolMeta["uses"]; secretValues?: string[] } = {}) {
+  const m: ToolMeta = { ...meta, uses: o.uses ?? meta.uses };
   const entries: TraceEntry[] = [];
   const answers: { name: string; ok: boolean; refused?: string }[] = [];
   const deps: ToolBrokerDeps = {
     harnessId: "dev",
     tool: "sync",
-    meta,
+    meta: m,
     secrets: [{ id: "jira", label: "Jira token" }],
     store: { harnessValues: async () => ({ jira: SECRET }) },
     data: async () => null,
@@ -46,7 +47,7 @@ function rig(tool: (ctx: Ctx) => Promise<unknown>) {
   };
   const broker = new ToolBroker(deps);
   const registry = new ToolRegistry({
-    json: async () => ({ on: true, tools: { sync: meta } }),
+    json: async () => ({ on: true, tools: { sync: m } }),
     host: {
       call: async (c) => {
         const ctx: Ctx = async (name, ...args) => {
@@ -64,7 +65,7 @@ function rig(tool: (ctx: Ctx) => Promise<unknown>) {
     },
     broker: () => broker,
     trace: { append: async (e) => void entries.push(e) },
-    secretValues: async () => [SECRET],
+    secretValues: async () => o.secretValues ?? [SECRET],
   });
   return { registry, entries, answers };
 }
@@ -99,6 +100,47 @@ describe("ctx.summary and ctx.requestAi (tools spec §4.2, §7.3, §7.4)", () =>
     expect(a.summary).toBe(`Synced 3 tickets · ${"y".repeat(280)}[`);
     expect(a.summary).not.toContain("tok-");
     expect([...a.summary!].length).toBe(300);
+  });
+
+  it("summary: a key a fetch of the call used is hidden even when the stored keys no longer hold it", async () => {
+    // The key changed during the call: the registry's stored keys don't name it, the broker's filled ones do.
+    const { registry, answers } = rig(
+      async (ctx) => {
+        await ctx("fetch", "https://api.x.com/a", { headers: { Authorization: "Bearer {{secret:jira}}" } });
+        await ctx("summary", `Synced with ${SECRET}`);
+        return 1;
+      },
+      { uses: { hosts: ["api.x.com"], secrets: ["jira"] }, secretValues: [] },
+    );
+    const a = (await registry.call(job())) as { summary?: string };
+    expect(answers.map((x) => x.ok)).toEqual([true, true]);
+    expect(a.summary).toBe("Synced with [redacted]");
+  });
+
+  it("summary: a stored key across the broker's cut never shows its start", async () => {
+    const { registry } = rig(async (ctx) => {
+      await ctx("summary", "y".repeat(16_380) + SECRET);
+      return 1;
+    });
+    const a = (await registry.call(job())) as { summary?: string };
+    expect(a.summary).toBe("y".repeat(300));
+    expect(a.summary).not.toContain("tok-");
+  });
+
+  it("summary: a long stored key cut through at the broker's limit loses the start it would show", async () => {
+    // The only way the 300-character line reaches a key cut at SUMMARY_LOOK: the key starts within it and is longer
+    // than the rest of the look. Uncut, it is hidden; cut, the registry can't match it and drops the tail instead.
+    const long = `tok-${"q".repeat(16_100)}`;
+    const { registry } = rig(
+      async (ctx) => {
+        await ctx("summary", "y".repeat(290) + long);
+        return 1;
+      },
+      { secretValues: [long] },
+    );
+    const a = (await registry.call(job())) as { summary?: string };
+    expect(a).toStrictEqual({ ok: true, result: 1 });
+    expect(JSON.stringify(a)).not.toContain("tok-");
   });
 
   it("summary is accepted from every caller (ui, agent, pre, job); only a job run's answer keeps it", async () => {

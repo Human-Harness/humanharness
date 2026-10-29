@@ -28,6 +28,44 @@ describe("parseFrontmatter (Decision 4)", () => {
   ])("refuses %j naming %s", (md, name) => {
     expect(() => parseFrontmatter(md)).toThrow(name);
   });
+  it.each([
+    ["a lone \\r", "\r"],
+    ["NUL", "\u0000"],
+    ["a vertical tab", "\u000b"],
+    ["ESC", "\u001b"],
+    ["DEL", "\u007f"],
+    ["NEL (C1)", "\u0085"],
+    ["U+2028", "\u2028"],
+    ["U+2029", "\u2029"],
+    ["U+FEFF", "\ufeff"],
+  ])("refuses %s inside the frontmatter, naming the key", (_label, ch) => {
+    expect(() => parseFrontmatter(`---\ndescription: d${ch}hooks: x\n---\n`)).toThrow("frontmatter: description has a control");
+  });
+  it("names the line when the bad character is before any key", () => {
+    expect(() => parseFrontmatter("---\na: 1\n\u2028hooks: x\n---\n")).toThrow("line 3");
+  });
+  it("keeps tabs and CRLF", () => {
+    expect(parseFrontmatter("---\r\na: x\ty\r\n---\r\n").fields).toEqual({ a: "x\ty" });
+  });
+  it("a lone \\r can't smuggle hooks into a skill", () => {
+    expect(() => skillFromMarkdown("fmt", "---\ndescription: d\rhooks:\r  Stop:\r    - x\n---\n")).toThrow("skills/fmt/SKILL.md: frontmatter: description");
+  });
+  it.each([
+    ["a trailing space", "--- \ndescription: d\nhooks: [x]\n---\n"],
+    ["a leading BOM", "\ufeff---\ndescription: d\nhooks: [x]\n---\n"],
+    ["a lone \\r after it", "---\rdescription: d\rhooks: [x]\n---\n"],
+  ])("an opening line with %s is refused, not read as no frontmatter", (_label, md) => {
+    expect(() => parseFrontmatter(md)).toThrow("the opening line must be exactly ---");
+    expect(() => skillFromMarkdown("fmt", md)).toThrow("skills/fmt/SKILL.md: frontmatter: the opening line");
+  });
+  it("refuses a file over 256 KB", () => {
+    expect(() => parseFrontmatter("x".repeat(256 * 1024 + 1))).toThrow("over 256 KB");
+    expect(parseFrontmatter("x".repeat(256 * 1024)).body).toHaveLength(256 * 1024);
+  });
+  it("a | block as long as the cap allows is read in a plain loop", () => {
+    const md = `---\nnotes: |\n${" l\n".repeat(85_000)}---\n`;
+    expect((parseFrontmatter(md).fields.notes as string).split("\n")).toHaveLength(85_000);
+  });
   it("never builds a field through the prototype", () => {
     expect(() => parseFrontmatter("---\nprototype: x\n---\n")).toThrow("prototype");
     expect(({} as Record<string, unknown>).x).toBeUndefined();
@@ -57,6 +95,11 @@ describe("agentFromMarkdown (spec §5.2, E6)", () => {
       memory: "project",
       prompt: "p",
     });
+  });
+  it("memory: project and local only; user is refused (it lives under ~/.claude)", () => {
+    expect(agentFromMarkdown("a.md", "---\ndescription: d\nmemory: local\n---\np").agent.memory).toBe("local");
+    expect(() => agentFromMarkdown("a.md", "---\ndescription: d\nmemory: user\n---\np")).toThrow("agents/a.md: memory user is not allowed");
+    expect(() => agentFromMarkdown("a.md", "---\ndescription: d\nmemory: elsewhere\n---\np")).toThrow("memory elsewhere is not allowed");
   });
   it("permissionMode is dropped and reported as ignored", () => {
     const parsed = agentFromMarkdown("a.md", "---\ndescription: d\npermissionMode: bypassPermissions\n---\np");

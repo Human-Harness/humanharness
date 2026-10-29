@@ -8,6 +8,11 @@ export type Frontmatter = { fields: Record<string, FrontmatterValue>; body: stri
 const KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 export const PLAIN_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const MAX_BYTES = 256 * 1024;
+// A lone \r, U+2028/U+2029 and NEL are line breaks to a YAML parser but not to this one: a key
+// hidden behind one would pass the checks here and still load in the engine. Refuse every
+// control character but \t (a trailing \r of CRLF is stripped first), plus U+2028, U+2029, U+FEFF.
+const UNSAFE_CHAR = /[\u0000-\u0008\u000A-\u001F\u007F-\u009F\u2028\u2029\uFEFF]/;
 
 function unquote(raw: string, key: string): string {
   const v = raw.trim();
@@ -51,11 +56,23 @@ function parseList(raw: string, key: string): string[] {
 
 /** Splits `---` frontmatter from the body. No leading `---` line: no fields, the whole text is the body. */
 export function parseFrontmatter(text: string): Frontmatter {
+  if (Buffer.byteLength(text, "utf8") > MAX_BYTES) throw new Error("frontmatter: the file is over 256 KB");
   const lines = text.split("\n");
-  if (lines[0]?.replace(/\r$/, "") !== "---") return { fields: {}, body: text };
+  const first = lines[0].replace(/\r$/, "");
+  if (first !== "---") {
+    // "--- ", "\uFEFF---" or "---\r..." may open frontmatter for another parser: never read
+    // such a file as "no frontmatter" (that would skip the key checks).
+    if (/^[\s\uFEFF]*---/.test(first)) throw new Error("frontmatter: the opening line must be exactly ---");
+    return { fields: {}, body: text };
+  }
   const close = lines.findIndex((l, i) => i > 0 && l.replace(/\r$/, "") === "---");
   if (close < 0) throw new Error("frontmatter: no closing --- line");
   const head = lines.slice(1, close).map((l) => l.replace(/\r$/, ""));
+  head.forEach((line, n) => {
+    if (!UNSAFE_CHAR.test(line)) return;
+    const key = /^([A-Za-z_][A-Za-z0-9_-]*):/.exec(line)?.[1];
+    throw new Error(`frontmatter: ${key ?? `line ${n + 2}`} has a control or line-break character`);
+  });
   const body = lines.slice(close + 1).join("\n");
 
   const fields: Record<string, FrontmatterValue> = {};
@@ -78,7 +95,8 @@ export function parseFrontmatter(text: string): Frontmatter {
       const block: string[] = [];
       while (i < head.length && (head[i].trim() === "" || /^\s/.test(head[i]))) block.push(head[i++]);
       while (block.length && block[block.length - 1].trim() === "") block.pop();
-      const indent = Math.min(...block.filter((l) => l.trim() !== "").map((l) => l.length - l.trimStart().length));
+      let indent = Infinity;
+      for (const l of block) if (l.trim() !== "") indent = Math.min(indent, l.length - l.trimStart().length);
       value = block.map((l) => l.slice(indent)).join("\n");
     } else if (raw.startsWith("[")) {
       if (!raw.endsWith("]")) throw new Error(`frontmatter: ${key} has an unclosed list`);
@@ -109,6 +127,8 @@ const AGENT_KEPT = ["tools", "disallowedTools", "model", "color", "skills", "mem
 const AGENT_LIST_OK = new Set(["tools", "disallowedTools", "skills"]);
 /** Dropped and shown as "ignored" (E6): a scope can't pick the agent's permission mode. */
 const AGENT_IGNORED = new Set(["permissionMode"]);
+/** `user` memory lives under the person's ~/.claude: a scope agent may only use the folder's. */
+const AGENT_MEMORY = new Set(["project", "local"]);
 
 function parseIn(where: string, text: string): Frontmatter {
   try {
@@ -150,6 +170,7 @@ export function agentFromMarkdown(
     const v = fields[key];
     if (v === undefined) continue;
     if (Array.isArray(v) && !AGENT_LIST_OK.has(key)) throw new Error(`${where}: ${key} must be a single value`);
+    if (key === "memory" && !AGENT_MEMORY.has(v as string)) throw new Error(`${where}: memory ${String(v)} is not allowed`);
     (agent as Record<string, FrontmatterValue>)[key] = v;
   }
   return { name, agent, ignored };

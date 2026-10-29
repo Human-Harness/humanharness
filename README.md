@@ -44,7 +44,7 @@ Planned: `harnesses/socrates`, `tooling/`.
 
 ## Development
 
-Requires Node ≥ 22 and pnpm (via corepack).
+Requires Node ≥ 22.18 (the demo backend's test runs its `.ts` entry on plain Node, which strips types by default from 22.18) and pnpm (via corepack).
 
     corepack pnpm install
     corepack pnpm test

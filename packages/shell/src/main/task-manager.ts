@@ -233,7 +233,7 @@ export interface TaskDeps {
    * The scope's approved engine preset for a new task, and again before each later turn of a task that started with
    * one (hatches spec §5.2, §5.3, Decision 2). Only with `enginePresets` and scopes. Absent: none (D0).
    */
-  enginePreset?: Pick<EngineHost, "presetFor" | "presetForTask">;
+  enginePreset?: Pick<EngineHost, "presetFor" | "presetForTask" | "pinTag">;
 }
 
 /** What `phaseMoved` gets (sidekick spec §2a.2). */
@@ -1717,8 +1717,11 @@ export class TaskManager {
           : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
+    const id = this.newId();
+    // The pin's tag: a task keeps a hash its scope no longer approves only with it (tasks.json is agent-writable).
+    const engineTag = preset?.preset && preset.hash ? await this.d.enginePreset!.pinTag(scope, id, preset.hash).catch(() => null) : null;
     const current: CurrentTask = {
-      id: this.newId(),
+      id,
       ...task,
       status: "running",
       startedAt: this.now().toISOString(),
@@ -1727,7 +1730,7 @@ export class TaskManager {
       ...(this.d.scoped ? { scope } : {}),
       ...(below ? { belowMinTier: true as const } : {}),
       start,
-      ...(preset?.preset && preset.hash ? { engineHash: preset.hash } : {}),
+      ...(preset?.preset && preset.hash ? { engineHash: preset.hash, ...(engineTag ? { engineTag } : {}) } : {}),
       ...(preset?.notice ? { engineNotice: preset.notice } : {}),
     };
     this.begun = true;
@@ -1764,7 +1767,7 @@ export class TaskManager {
    * next profile down, which the task keeps (spec §5.3). The failed attempt is held from the chat and the
    * window only when there is a fallback; the retry doesn't log the person's message again.
    */
-  private async firstTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
+  private async firstTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile" | "engine">): Promise<Done> {
     const tried: string[] = [];
     let current = task;
     for (let attempt = 0; ; attempt++) {
@@ -1796,7 +1799,7 @@ export class TaskManager {
    * Runs one turn of `task`; a valid `save_note` in it becomes the task's note. Throws TurnNotStarted when
    * the turn was refused before it began (no `done` came).
    */
-  private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
+  private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile" | "engine">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number; compactedAt?: number } = { reads: [] };
     // Read paths become folder paths; without the folder, file names only (nothing is read from them).
     const given = this.d.folder ? await this.d.folder().catch(() => null) : null;

@@ -103,6 +103,8 @@ export interface CurrentTask {
   reads?: ContextRead[];
   /** The approved engine config hash the task started with (hatches Decision 2): its turns use that snapshot. Absent: none (D0). */
   engineHash?: string;
+  /** The app's tag over the task's pin (hatches E1): needed to keep a hash the scope no longer approves. */
+  engineTag?: string;
   /** The task runs without its scope's engine config: never approved, changed since, or refused (hatches spec §5.3). */
   engineNotice?: "unapproved" | "refused";
 }
@@ -334,6 +336,7 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     ...(isCount(c.startTokens) ? { startTokens: c.startTokens } : {}),
     ...(reads ? { reads } : {}),
     ...(typeof c.engineHash === "string" && ENGINE_HASH.test(c.engineHash) ? { engineHash: c.engineHash } : {}),
+    ...(typeof c.engineHash === "string" && typeof c.engineTag === "string" && ENGINE_HASH.test(c.engineTag) ? { engineTag: c.engineTag } : {}),
     ...(c.engineNotice === "unapproved" || c.engineNotice === "refused" ? { engineNotice: c.engineNotice } : {}),
   };
 }

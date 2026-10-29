@@ -62,7 +62,7 @@ const LAYER_FILES = new Set(["instructions.md", "mcp.json", "settings.json"]);
 /** Finder's metadata: never read, never hashed, never copied. */
 const SKIPPED = new Set([".DS_Store"]);
 
-type Read =
+export type Read =
   | { kind: "file"; data: Buffer }
   | { kind: "symlink" }
   | { kind: "large" }
@@ -75,7 +75,7 @@ type Read =
  * link could be a second name of a file outside, like an account file), and the same file the lstat before saw (a
  * parent folder swapped in between would show another device or inode).
  */
-async function readRegular(abs: string, max: number): Promise<Read> {
+export async function readRegular(abs: string, max: number): Promise<Read> {
   const before = await fs.lstat(abs);
   if (before.isSymbolicLink()) return { kind: "symlink" };
   let h: FileHandle;

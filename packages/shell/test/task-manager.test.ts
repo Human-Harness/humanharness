@@ -1248,13 +1248,14 @@ describe("TaskManager: the scope's engine preset (hatches spec §5.2, Decision 2
   const withPreset = (start: Awaited<ReturnType<NonNullable<TaskDeps["enginePreset"]>["presetFor"]>>, turn = start, script?: Event[][]) => {
     const presetForTask = vi.fn(async (t: { engineHash?: string }) => (t.engineHash ? turn : { preset: null, instructions: "", notice: null }));
     const presetFor = vi.fn(async () => start);
+    const pinTag = vi.fn(async (scope: string, task: string, hash: string) => `${scope === "intro" && task === "t1" && hash === HASH ? "cd" : "ef"}`.repeat(32));
     const t = setup({
       state: { ...emptyTasks(), open: "intro" },
       notes: [earlier],
       ...(script ? { script } : {}),
-      deps: { scoped: true, instructionsSize: async () => 400, enginePreset: { presetFor, presetForTask } },
+      deps: { scoped: true, instructionsSize: async () => 400, enginePreset: { presetFor, presetForTask, pinTag } },
     });
-    return { ...t, presetFor, presetForTask };
+    return { ...t, presetFor, presetForTask, pinTag };
   };
 
   it("instructions in the first message: after the brief, under Scope instructions", async () => {
@@ -1281,16 +1282,19 @@ describe("TaskManager: the scope's engine preset (hatches spec §5.2, Decision 2
   it("records engineHash on the task when a preset was used; none without", async () => {
     const t = withPreset({ preset, instructions, notice: null, hash: HASH });
     await t.manager.start("manifest");
-    expect(t.state().current).toMatchObject({ engineHash: HASH });
+    // With the app's tag over this task's pin.
+    expect(t.state().current).toMatchObject({ engineHash: HASH, engineTag: "cd".repeat(32) });
     expect(t.state().current).not.toHaveProperty("engineNotice");
     // A later turn asks again for the task's pinned hash.
     await t.manager.ask("And then?");
-    expect(t.presetForTask).toHaveBeenLastCalledWith(expect.objectContaining({ engineHash: HASH, scope: "intro", action: "manifest" }));
+    expect(t.presetForTask).toHaveBeenLastCalledWith(expect.objectContaining({ id: "t1", engineHash: HASH, engineTag: "cd".repeat(32), scope: "intro", action: "manifest" }));
     expect(t.turns[1]!.options.engine).toEqual(preset);
 
     const none = withPreset({ preset: null, instructions: "", notice: "unapproved" });
     await none.manager.start("manifest");
     expect(none.state().current).not.toHaveProperty("engineHash");
+    expect(none.state().current).not.toHaveProperty("engineTag");
+    expect(none.pinTag).not.toHaveBeenCalled();
     expect(none.state().current).toMatchObject({ engineNotice: "unapproved" });
     expect(none.views.at(-1)?.current).toMatchObject({ engineNotice: "unapproved" });
     expect(none.turns[0]!.options).not.toHaveProperty("engine");

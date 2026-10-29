@@ -5,7 +5,9 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { isScopeId } from "@humanharness/workspace";
 import type { CleanSettings } from "./clean";
+import { scriptRefs } from "./script-refs";
 import {
+  ENGINE_FILE_MAX,
   ENGINE_FOLDER_MAX,
   configFromFiles,
   engineHash,
@@ -14,6 +16,7 @@ import {
   type EngineLayer,
   type EngineRefusal,
   type ReadEngineOptions,
+  readRegular,
 } from "./read-config";
 
 // The approved engine config's snapshot, `<userData>/engine-config/<hash>/` (hatches spec §5.2, E3). Engines get only
@@ -248,19 +251,8 @@ export async function writeSnapshot(userData: string, config: EngineConfig, scop
   return final;
 }
 
-/**
- * Loads the snapshot of `hash` for scope `scope`: re-hashes its source, derives the config again from it with today's
- * context `o` (`o.dir` the scope's live engine folder), and checks the folder holds exactly what `writeSnapshot` would
- * write for those bytes. Throws "The approved engine config changed on disk" when anything differs, is missing, or is
- * a link. The scope's plugin, when missing, is written from the verified bytes. What today's context refuses comes
- * back in `refusals`, and so does a change in which scripts the commands name.
- */
-export async function loadSnapshot(userData: string, hash: string, scope: string, o: LoadSnapshotOptions): Promise<EngineSnapshot> {
-  const dir = snapshotDir(userData, hash);
-  const plugin = pluginName(scope);
-  const tree = await readTree(dir);
-  if (!tree) throw new Error(CHANGED);
-
+/** A snapshot's hashed source: the engine folder's files and the scripts by path. Throws when it doesn't hash to `hash`. */
+function sourceOf(tree: ReadonlyMap<string, Buffer>, hash: string): { files: Map<string, Buffer>; scripts: Map<string, Buffer> } {
   let scriptList: unknown;
   try {
     scriptList = JSON.parse(tree.get("source/scripts.json")?.toString("utf8") ?? "");
@@ -277,7 +269,50 @@ export async function loadSnapshot(userData: string, hash: string, scope: string
     scripts.set(abs, data);
   }
   if (engineHash(files, scripts) !== hash) throw new Error(CHANGED);
+  return { files, scripts };
+}
 
+/**
+ * Whether every file the commands of snapshot `hash` run (its referenced scripts, and the engine folder's files they
+ * name) holds on disk now exactly the bytes approved with it, each read as the reader reads (no link, one name, the
+ * file the lstat saw). For a task pinned to `hash` while the scope approves another: scripts run in place, and a file
+ * only `hash` runs is covered by no live approval (E1). False when anything differs or can't be read.
+ */
+export async function pinnedScriptsUnchanged(userData: string, hash: string, o: LoadSnapshotOptions): Promise<boolean> {
+  const tree = await readTree(snapshotDir(userData, hash));
+  if (!tree) return false;
+  try {
+    const { files, scripts } = sourceOf(tree, hash);
+    const { commands } = configFromFiles(files, scripts, o);
+    const root = path.resolve(o.dir);
+    for (const abs of await scriptRefs(commands, o)) {
+      const rel = path.relative(root, abs);
+      const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+      const want = inside ? files.get(rel.split(path.sep).join("/")) : scripts.get(abs);
+      if (!want) return false;
+      const got = await readRegular(abs, ENGINE_FILE_MAX);
+      if (got.kind !== "file" || !got.data.equals(want)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Loads the snapshot of `hash` for scope `scope`: re-hashes its source, derives the config again from it with today's
+ * context `o` (`o.dir` the scope's live engine folder), and checks the folder holds exactly what `writeSnapshot` would
+ * write for those bytes. Throws "The approved engine config changed on disk" when anything differs, is missing, or is
+ * a link. The scope's plugin, when missing, is written from the verified bytes. What today's context refuses comes
+ * back in `refusals`, and so does a change in which scripts the commands name.
+ */
+export async function loadSnapshot(userData: string, hash: string, scope: string, o: LoadSnapshotOptions): Promise<EngineSnapshot> {
+  const dir = snapshotDir(userData, hash);
+  const plugin = pluginName(scope);
+  const tree = await readTree(dir);
+  if (!tree) throw new Error(CHANGED);
+
+  const { files, scripts } = sourceOf(tree, hash);
   const { config, commands } = configFromFiles(files, scripts, o);
   const skills = skillsOf(files);
   const scopes = pluginsIn(tree, layout(files, scripts, config.agents), skills);

@@ -51,6 +51,8 @@ describe("hatches IPC surface (hatches D0)", () => {
     const engine = group(index, index.indexOf("function engineHost_(): EngineHost | undefined"), /\{/);
     expect(engine).toMatch(/^function engineHost_\(\): EngineHost \| undefined \{\s*if \(!hasEnginePresets\(harness\)\) return undefined;/);
     expect(count(engine, /\blinkedSecret\(userData\)\(false\)/)).toBe(1);
+    // Only the key: no live set, no prune, no key file named there (the sum below can't hide one).
+    for (const name of [/\blinkedSigning\(/, /\bpruneUnlinked\(/, /linked-key/, /linked-live\.json/]) expect(count(engine, name), String(name)).toBe(0);
     for (const name of [/\blinkedSigning\(/, /\blinkedSecret\(/, /\bpruneUnlinked\(/, /"linked-key"/, /"linked-live\.json"/]) {
       expect(count(index, name), String(name)).toBe(count(deps, name) + count(engine, name));
     }

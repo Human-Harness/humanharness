@@ -1,9 +1,9 @@
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { EnginePreset } from "@humanharness/runtime";
-import { type ScopeEntry, engineConfigDir, isScopeId } from "@humanharness/workspace";
+import { type EngineApproval, type ScopeEntry, engineConfigDir, isScopeId } from "@humanharness/workspace";
 import { engineApprovalValid } from "./approval";
 import type { CleanSettings } from "./clean";
-import { type ReadEngineOptions, readEngineConfig } from "./read-config";
+import { type EngineConfig, type ReadEngineOptions, readEngineConfig } from "./read-config";
 import { type EngineSnapshot, loadSnapshot, writeSnapshot } from "./snapshot";
 
 // Which engine preset a task gets (hatches spec §5.2, §5.3, E1, Decision 2). A new task gets its scope's config only
@@ -123,7 +123,16 @@ export class EngineHost {
     const entry = (await ctx.scopes.list()).find((s) => s.id === scope && !s.archived);
     const approval = entry?.engineApproval;
     const signed = engineApprovalValid(approval, ctx.profile, scope, approval ? await this.d.secret() : null);
-    return { config, o, approvedHash: signed ? approval!.hash : null };
+    return { config, o, approvedHash: signed ? approval!.hash : null, approval: signed ? approval! : null };
+  }
+
+  /**
+   * What the scope settings' Engine config shows (spec §5.3): the live folder's config and the approval the app
+   * signed (none when the tag isn't the app's). Null when the scope has no engine config (D0 for it).
+   */
+  async current(scope: string): Promise<{ config: EngineConfig; approval: EngineApproval | null } | null> {
+    const now = await this.live(scope);
+    return now && { config: now.config, approval: now.approval };
   }
 
   /** The snapshot of `hash` for `scope`, derived again with today's context; null (logged) when it can't be used. */

@@ -91,7 +91,7 @@ export interface ToolsHostDeps {
   /** The built `tools-server.js` (app); absent: the TS source (dev). */
   serverEntry?: string;
   /**
-   * The current base's Attention store, only in an app that has one (plugins, board or single mode; absent: none, D0):
+   * The current base's Attention store, only in board or single mode (the shared store; absent: none, D0):
    * tools off after repeated crashes raise TOOLS_OFF_ITEM there, and a start with tools on resolves one left behind.
    * `create`: the inbox's key may be made.
    */
@@ -124,7 +124,6 @@ export interface ToolsHost {
   openRuns(): number;
 }
 
-/** B7 for tools (Decision 6): a command sees PATH, HOME and LANG of `env` and TERM=dumb, nothing else. */
 /**
  * What a tool called from job `job`'s run may reach: the harness's permissions narrowed by the job's (as its slot,
  * `narrowPermissions`). Fails closed: a job the harness doesn't declare reaches neither the web nor commands.
@@ -136,6 +135,7 @@ export function jobLimits(h: Pick<ToolsHarness, "permissions" | "jobs">, job: st
   return { job: job!, web: p.web, exec: p.exec };
 }
 
+/** B7 for tools (Decision 6): a command sees PATH, HOME and LANG of `env` and TERM=dumb, nothing else. */
 export function toolExecEnv(env: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = { TERM: "dumb" };
   for (const k of ["PATH", "HOME", "LANG"]) if (Object.hasOwn(env, k) && typeof env[k] === "string") out[k] = env[k];

@@ -184,7 +184,7 @@ A call with a `task` emits a runtime event `{ type: "tool-call", call: ToolCallV
 
 - During the task's turn it is saved on the reply (`TurnRecorder`, `TurnController.addToTurn`): `ChatEntry.tools` on the assistant entry, there after a reload. A call outside any turn is shown, not saved. Board mode routes it to the task's lane.
 - `ToolCallLine` (`packages/ui/src/tools/ToolCallLine.tsx`, Decision 10, §8.2): a folded button "<tool id> · <resultSummary> · <seconds> s · 0 tokens" ("pr-ci · 12 items · 0.3 s · 0 tokens"), seconds with one decimal, that unfolds to Arguments, Result, Accesses (a refused one ends " · access denied") and Log (the tool's `ctx.log` lines as "<level>: <message>", when it logged; `toolCallView` and `cleanToolCalls` keep only well-formed lines, at most 20 of 300). A failed call reads "<tool id> failed · <message>" and starts unfolded. The lines sit above the assistant entry's message. A tool-only entry is never "the reply" (`isToolLine`): choices and Try again stay on the real last reply. A saved entry's `tools` is read unchecked from the chat log, so `cleanToolCalls` drops malformed items.
-- Strings: the `tools` block of `en.json` (`line`, `failed`, `accessDenied`, `args`, `result`, `accesses`, `off`).
+- Strings: the `tools` block of `en.json` (`line`, `failed`, `accessDenied`, `args`, `result`, `accesses`, `logs`, `off`).
 - **Tools off after crashes**: when `state.tools.off` is exactly `TOOLS_OFF_CRASHES`, the chat's top shows `tools.off` in a `role="status"` line (not for "not built" or a problem).
 
 ## "Test connection"

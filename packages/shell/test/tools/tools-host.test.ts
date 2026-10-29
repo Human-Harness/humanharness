@@ -561,4 +561,3 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     });
   });
 });
-

@@ -76,4 +76,3 @@ describe("tools surface (tools spec §4, §5; D0)", () => {
     expect(deps).toContain("sharedAttention.forBase(base, create)");
   });
 });
-

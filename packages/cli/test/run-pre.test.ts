@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { initHarness } from "../src/init";
 import { runTask } from "../src/run";
-import { CORE, memoryStream, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryStream, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-pre-");
 afterAll(cleanup);
@@ -46,6 +46,8 @@ export default defineTool({
 async function fixture(withPre: boolean): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  // The template's own example tool out first: the manifest gets one `tools` key, this test's.
+  dropExampleTool(dir);
   replaceIn(dir, "harness.config.ts", "  actions: {\n", '  tools: { "due-today": "./tools/due-today.ts" },\n  actions: {\n');
   if (withPre) replaceIn(dir, "harness.config.ts", '      tier: "standard",\n', '      tier: "standard",\n      pre: [{ tool: "due-today", as: "today" }],\n');
   fs.mkdirSync(path.join(dir, "tools"), { recursive: true });

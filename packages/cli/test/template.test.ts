@@ -18,6 +18,7 @@ const FILES = [
   "tsconfig.json",
   "tools/word-count.ts",
   "tools/word-count/fixtures/basic.json",
+  "tools/word-count/fixtures/outside.json",
 ];
 
 describe("template", () => {

@@ -42,7 +42,11 @@ describe("the template's example tool (tools spec §11)", () => {
     const reports = await testTools(dir, { tool: "word-count", out: out.stream });
     expect(reports.map((r) => r.tool)).toEqual(["word-count"]);
     expect(reports[0].skipped).toEqual([]);
-    expect(reports[0].cases.map((c) => [c.file, c.ok, c.why])).toEqual([["basic.json", true, undefined]]);
+    expect(reports[0].cases.map((c) => [c.file, c.ok, c.why])).toEqual([
+      ["basic.json", true, undefined],
+      // A path out of the folder is refused: the fixture expects that error.
+      ["outside.json", true, undefined],
+    ]);
   });
 
   it("dropExampleTool (the D0 pins' harness) takes the tool out entirely", { timeout: 60_000 }, async () => {
@@ -52,5 +56,7 @@ describe("the template's example tool (tools spec §11)", () => {
     expect(read(plain, "harness.config.ts")).not.toMatch(/\btools: |word-count/);
     expect(read(plain, "HARNESS.md")).toContain("| Moment | Code or AI | Tool or step | Why |\n|---|---|---|---|\n\n## Context");
     expect(fs.existsSync(path.join(plain, "tools"))).toBe(false);
+    // tsconfig.json as the template had it before the tool.
+    expect(JSON.parse(read(plain, "tsconfig.json")).include).toEqual(["harness.config.ts", "ui"]);
   });
 });

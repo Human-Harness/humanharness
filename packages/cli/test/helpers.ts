@@ -46,8 +46,9 @@ export function replaceIn(dir: string, file: string, from: string, to: string): 
 }
 
 /**
- * Takes the template's example tool (`word-count`) out of a harness made with `init`: its manifest line, its HARNESS.md row and
- * `tools/`. What is left is the template as it was before it had a tool — the "harness without tools" of the D0 pins.
+ * Takes the template's example tool (`word-count`) out of a harness made with `init`: its manifest line, its HARNESS.md row,
+ * `tools/` and tsconfig.json's "tools" include. What is left is the template as it was before it had a tool — the
+ * "harness without tools" of the D0 pins.
  */
 export function dropExampleTool(dir: string): void {
   const cfg = read(dir, "harness.config.ts");
@@ -56,4 +57,5 @@ export function dropExampleTool(dir: string): void {
   replaceIn(dir, "harness.config.ts", line, "");
   replaceIn(dir, "HARNESS.md", "| (example) counting words | Code | word-count | the agent doesn't spend a turn counting |\n", "");
   fs.rmSync(path.join(dir, "tools"), { recursive: true });
+  replaceIn(dir, "tsconfig.json", '"include": ["harness.config.ts", "ui", "tools"]', '"include": ["harness.config.ts", "ui"]');
 }

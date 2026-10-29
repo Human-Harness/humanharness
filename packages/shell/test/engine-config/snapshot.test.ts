@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { readEngineConfig } from "../../src/main/engine-config/read-config";
-import { loadSnapshot, pruneSnapshots, snapshotDir, writeSnapshot } from "../../src/main/engine-config/snapshot";
+import { loadSnapshot, pinnedScriptsUnchanged, pruneSnapshots, snapshotDir, writeSnapshot } from "../../src/main/engine-config/snapshot";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-snapshot-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -284,6 +284,17 @@ describe("engine snapshot (spec §5.2, E3)", () => {
     expect((await load(c.hash)).refusals).toEqual([]);
     fs.writeFileSync(path.join(folder, "tools", "rules.js"), "unapproved()");
     expect((await load(c.hash)).refusals.map((r) => r.message)).toEqual(["The scripts the approved commands run are not the ones approved"]);
+  });
+
+  it("a load and a pin check the #! line of a script run directly on the snapshot's bytes, with today's rules", async () => {
+    const { userData, read, load, o, folder } = setup({ "mcp.json": JSON.stringify({ mcpServers: { srv: { command: "./tools/srv.sh" } } }) }, { "tools/srv.sh": "#!/bin/sh -x\necho\n" });
+    const c = await read();
+    expect(c.refusals.map((r) => r.message)).toEqual([expect.stringContaining("starts with no allowed #! line")]);
+    // As if approved under an older rule: written all the same, its bytes are what a load and a pin judge.
+    c.refusals = [];
+    await writeSnapshot(userData, c, "s");
+    expect((await load(c.hash)).refusals).toEqual([{ file: path.join(folder, "tools/srv.sh"), message: expect.stringContaining("starts with no allowed #! line") }]);
+    expect(await pinnedScriptsUnchanged(userData, c.hash, o)).toBe(false);
   });
 
   it("writing a snapshot that is already there makes it young again: an old hash approved anew is not pruned", async () => {

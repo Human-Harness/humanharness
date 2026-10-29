@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { commandWords, scanScripts, scriptRefs, shebangProblem, type ScriptCommand } from "../../src/main/engine-config/script-refs";
+import { commandWords, directScripts, scanScripts, scriptRefs, shebangProblem, type ScriptCommand } from "../../src/main/engine-config/script-refs";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-script-refs-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -104,10 +104,12 @@ describe("the command grammar (E2: <interpreter> <script> [args], <script> [args
     }
     const s = tree("g-shebang", { "plain.sh": "echo x\n", "opt.sh": "#!/bin/bash -p\n", "ok.sh": "#!/usr/bin/env bash\n" });
     const so = { folder: s, linked: [] };
-    expect((await scanScripts([["./ok.sh"]], so)).files).toEqual([path.join(s, "ok.sh")]);
-    for (const c of [["./plain.sh"], ["./opt.sh"]]) expect(await refused(c, so), c[0]).toBe(true);
-    // Through an interpreter, the #! line is not what runs.
-    expect((await scanScripts([["sh", "./plain.sh"]], so)).files).toEqual([path.join(s, "plain.sh")]);
+    // The scan never reads the line: it is judged on the bytes hashed (read-config). It lists the scripts run directly.
+    expect((await scanScripts([["./plain.sh"]], so)).files).toEqual([path.join(s, "plain.sh")]);
+    expect(directScripts([["./ok.sh"], ["sh", "./plain.sh"], 'bash "$CLAUDE_PROJECT_DIR"/opt.sh', `${P}/opt.sh x`, ["npx", "y"], "git status"], s)).toEqual([
+      { path: path.join(s, "ok.sh"), command: "./ok.sh" },
+      { path: path.join(s, "opt.sh"), command: `${P}/opt.sh x` },
+    ]);
   });
 
   it("an interpreter named by a path inside a root is refused", async () => {

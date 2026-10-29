@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import fsp from "node:fs/promises";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { readEngineConfig } from "../../src/main/engine-config/read-config";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-read-config-")));
@@ -230,6 +231,29 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     expect(c1.scripts).toEqual([path.join(folder, "tools/x.js")]);
     fs.writeFileSync(path.join(folder, "tools/x.js"), "two");
     expect((await read())!.hash).not.toBe(c1.hash);
+  });
+
+  it.each([
+    ["an allowed line at the scan, a bad one when hashed", "#!/bin/sh\n", "#!/bin/sh -x\n", true],
+    ["a bad line at the scan, an allowed one when hashed", "#!/bin/sh -x\n", "#!/bin/sh\n", false],
+  ])("the #! line is judged on the bytes hashed: %s", async (_case, first, then, refused) => {
+    const { folder, read } = setup({ "mcp.json": JSON.stringify({ mcpServers: { srv: { command: "./tools/srv.sh" } } }) }, { "tools/srv.sh": first });
+    const script = path.join(folder, "tools/srv.sh");
+    // The agent rewrites the script after anything the scan may read, just before the read for the hash: any first
+    // line judged on an earlier read would be `first`, the one that runs is `then`.
+    const open = fsp.open;
+    const spy = vi.spyOn(fsp, "open").mockImplementation(async (p, ...rest) => {
+      if (p === script && new Error().stack?.includes("readRegular")) fs.writeFileSync(script, then);
+      return (open as (...a: unknown[]) => Promise<never>)(p, ...rest);
+    });
+    try {
+      const c = (await read())!;
+      expect(c.scriptFiles.get(script)?.toString()).toBe(then);
+      expect(spy).toHaveBeenCalled();
+      expect(c.refusals.some((r) => r.file === script && r.message.includes("no allowed #! line"))).toBe(refused);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("refuses hard links, in the engine folder and as scripts", async () => {

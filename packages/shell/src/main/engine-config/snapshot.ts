@@ -17,6 +17,7 @@ import {
   type EngineRefusal,
   type ReadEngineOptions,
   readRegular,
+  shebangRefusals,
 } from "./read-config";
 
 // The approved engine config's snapshot, `<userData>/engine-config/<hash>/` (hatches spec §5.2, E3). Engines get only
@@ -287,6 +288,7 @@ export async function pinnedScriptsUnchanged(userData: string, hash: string, o: 
   try {
     const { files, scripts } = sourceOf(tree, hash);
     const { commands } = configFromFiles(files, scripts, o);
+    if (shebangRefusals(commands, o.dir, files, scripts, o.folder).length > 0) return false;
     const root = path.resolve(o.dir);
     // The scripts the pin recorded count too: one replaced by a link is no longer found by scriptRefs (it takes
     // regular files only), and must not slip past this check.
@@ -324,7 +326,8 @@ export async function loadSnapshot(userData: string, hash: string, scope: string
   if (!scopes) throw new Error(CHANGED);
   if (skills.size > 0 && !scopes.has(scope)) await addPlugin(dir, scope, skills);
 
-  const refusals = [...config.refusals];
+  // The `#!` lines that run are the approved bytes': checked on them again, with today's rules.
+  const refusals = [...config.refusals, ...shebangRefusals(commands, o.dir, files, scripts, o.folder)];
   const now = await externalScripts(commands, o.dir, o);
   if (now.length !== config.scripts.length || now.some((s, i) => s !== config.scripts[i])) {
     refusals.push({ file: ".", message: "The scripts the approved commands run are not the ones approved" });

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
-import { commandText, commandWords, scanScripts, scriptRefs, type ScriptCommand } from "./script-refs";
+import { commandText, commandWords, directScripts, scanScripts, scriptRefs, shebangProblem, type ScriptCommand } from "./script-refs";
 import { parseToml } from "./toml-lite";
 
 // Reads a scope's engine folder, `.harness/engine/<scope>/` (hatches spec §5.1–5.4), into an EngineConfig: what each
@@ -366,6 +366,31 @@ export function configFromFiles(
   return { config: finish(config), commands };
 }
 
+/**
+ * A script run directly whose `#!` line is not allowed (`shebangProblem`), judged on the bytes that are hashed or were
+ * approved: `files` (the engine folder `dir`'s, by relative path) or `scripts` (outside it, by absolute path). Never a
+ * read of its own, so the line checked is the line that runs. A script missing from both is refused elsewhere.
+ */
+export function shebangRefusals(
+  commands: readonly ScriptCommand[],
+  dir: string,
+  files: ReadonlyMap<string, Buffer>,
+  scripts: ReadonlyMap<string, Buffer>,
+  folder: string,
+): EngineRefusal[] {
+  const root = path.resolve(dir);
+  const out: EngineRefusal[] = [];
+  for (const d of directScripts(commands, folder)) {
+    const rel = path.relative(root, d.path);
+    const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+    const data = inside ? files.get(rel.split(path.sep).join("/")) : scripts.get(d.path);
+    if (!data) continue;
+    const why = shebangProblem(data.subarray(0, 256).toString("utf8"));
+    if (why) out.push({ file: d.path, message: `${d.path}: ${why}, named by ${JSON.stringify(d.command)}; a command must name a plain script file` });
+  }
+  return out;
+}
+
 /** The files `commands` name outside the engine folder `dir` (those inside are already in its files), sorted. */
 export async function externalScripts(commands: readonly ScriptCommand[], dir: string, o: ReadEngineOptions): Promise<string[]> {
   const engineRoot = path.resolve(dir);
@@ -422,5 +447,6 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
     else if (read.kind === "hardlink") refusals.push({ file: script, message: `${script}: the script has hard links, which are not allowed` });
     else refusals.push({ file: script, message: `${script}: the script could not be read as a regular file` });
   }
+  refusals.push(...shebangRefusals(commands, dir, config.files, config.scriptFiles, o.folder));
   return finish(config);
 }

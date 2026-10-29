@@ -333,26 +333,13 @@ export interface ScriptIssue {
   command: string;
 }
 
-/** The first bytes of the regular file `p` (enough for a `#!` line); "" when it can't be read. */
-async function head(p: string): Promise<string> {
-  const h = await fs.open(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW).catch(() => null);
-  if (!h) return "";
-  try {
-    const buf = Buffer.alloc(256);
-    const { bytesRead } = await h.read(buf, 0, buf.length, 0);
-    return buf.subarray(0, bytesRead).toString("utf8");
-  } finally {
-    await h.close();
-  }
-}
-
 /**
  * What `commands` run from `folder` and its linked folders: `files`, the regular files they name (hashed), absolute,
- * sorted; `issues`, what can't be hashed: a script that is not a regular file in a root (or, run directly, has no
- * allowed `#!` line), an argument or env value naming a root, a folder, a link or a FIFO there (a root passes only as a
+ * sorted; `issues`, what can't be hashed: a script that is not a regular file in a root, an argument or env value naming a root, a folder, a link or a FIFO there (a root passes only as a
  * remote-package server's argument), a remote package that is local or whose runner would read the folders' config, an
  * interpreter inside a root. Relative paths are taken from `folder`, the engines' working folder. Throws as
- * `commandWords` does: check each command with it first.
+ * `commandWords` does: check each command with it first. A script run directly also needs an allowed `#!` line: that is
+ * checked on the bytes hashed (`directScripts`, `shebangProblem`), never on a read of its own.
  */
 export async function scanScripts(
   commands: ReadonlyArray<ScriptCommand>,
@@ -391,9 +378,7 @@ export async function scanScripts(
           issue(p, kind === "missing" || kind === "outside" ? "is not a script file in the folder or a linked folder" : kind === "root" ? "is a folder" : kind);
           continue;
         }
-        const bad = role === "direct" ? shebangProblem(await head(p)) : null;
-        if (bad) issue(p, bad);
-        else files.add(p);
+        files.add(p);
         continue;
       }
       for (const t of candidates(word)) {
@@ -411,6 +396,27 @@ export async function scanScripts(
   }
   for (const p of issues.keys()) files.delete(p);
   return { files: [...files].sort(), issues: [...issues.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) };
+}
+
+/**
+ * The scripts `commands` run directly (no interpreter: their `#!` line picks it), absolute from `folder`, with the
+ * command that names each. Commands outside the grammar are left out (they are refused anyway).
+ */
+export function directScripts(commands: ReadonlyArray<ScriptCommand>, folder: string): { path: string; command: string }[] {
+  const out: { path: string; command: string }[] = [];
+  for (const command of commands) {
+    let parsed: Parsed;
+    try {
+      parsed = parse(command, folder);
+    } catch {
+      continue;
+    }
+    const shown = commandText(command);
+    for (const { word, role } of parsed.checks) {
+      if (role === "direct") out.push({ path: path.resolve(folder, word), command: shown.length > 120 ? `${shown.slice(0, 120)}…` : shown });
+    }
+  }
+  return out;
 }
 
 /**

@@ -1553,23 +1553,31 @@ export class FakeClient implements HarnessClient {
   connectionsDeclared: { id: string; label: string; help?: string }[] = [];
   connectionsSet = new Set<string>();
   /** What connections was asked to change, in order, without values: ["set", id], ["delete", id]. */
-  connectionsCalls: [string, string][] = [];
+  connectionsCalls: ["set" | "delete", string][] = [];
   private connectionsListeners = new Set<(v: ConnectionsView) => void>();
   private connectionsView(): ConnectionsView {
-    return { connections: this.connectionsDeclared.map((s) => ({ ...s, set: this.connectionsSet.has(s.id) })) };
+    return { connections: this.connectionsDeclared.map(({ id, label, help }) => ({ id, label, ...(help ? { help } : {}), set: this.connectionsSet.has(id) })) };
   }
-  private connectionsChange(op: "set" | "delete", id: string): ConnectionResult {
+  /** Main's checks in order, with its texts: the IPC's id pattern, the controller's declared ids, the store's value rules. */
+  private connectionsChange(op: "set" | "delete", id: string, value?: string): ConnectionResult {
     this.connectionsCalls.push([op, id]);
+    if (typeof id !== "string" || !/^[a-z][a-z0-9_-]{0,39}$/.test(id)) return { ok: false, message: "Invalid request" };
+    if (op === "set" && typeof value !== "string") return { ok: false, message: "Invalid request" };
     if (!this.connectionsDeclared.some((s) => s.id === id)) return { ok: false, message: "This harness declares no such key" };
-    if (op === "set") this.connectionsSet.add(id);
-    else this.connectionsSet.delete(id);
+    if (op === "set") {
+      const v = value!.trim();
+      if (v.length < 8) return { ok: false, message: "A key is at least 8 characters" };
+      if (v.length > 8192) return { ok: false, message: "A key is at most 8192 characters" };
+      if (/[\u0000-\u001f\u007f]/.test(v)) return { ok: false, message: "A key is one line" };
+      this.connectionsSet.add(id);
+    } else this.connectionsSet.delete(id);
     const view = this.connectionsView();
     for (const l of this.connectionsListeners) l(view);
     return { ok: true };
   }
   connections = {
     get: async (): Promise<ConnectionsView | null> => this.connectionsView(),
-    set: async (id: string, _value: string) => this.connectionsChange("set", id),
+    set: async (id: string, value: string) => this.connectionsChange("set", id, value),
     delete: async (id: string) => this.connectionsChange("delete", id),
     onChange: (l: (v: ConnectionsView) => void) => {
       this.connectionsListeners.add(l);

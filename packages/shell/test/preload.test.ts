@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { HarnessClient } from "@humanharness/ui/client";
+import { CONNECTIONS_IPC_CHANNELS } from "../src/main/secrets/connections-ipc";
 
 const electron = vi.hoisted(() => ({
   exposed: {} as Record<string, unknown>,
@@ -176,5 +177,43 @@ describe("the preload's backend client", () => {
     const ipc = await fs.readFile(path.resolve(__dirname, "../src/main/backend/backend-ipc.ts"), "utf8");
     for (const ch of ["hh:backendCall", "hh:backendState", "hh:backendRestart"]) expect(ipc).toContain(`handle("${ch}"`);
     for (const ch of ["hh:backendEvent", "hh:backendStateChange"]) expect(ipc).toContain(`d.send("${ch}"`);
+  });
+});
+
+/** `client.connections` (tools spec §9): main registers these only when the harness declares secrets (D0). */
+describe("the preload's connections namespace", () => {
+  it("invokes main's connections channels with the id and value as given (main checks both)", async () => {
+    electron.invoke.mockClear();
+    await client.connections.get();
+    await client.connections.set("jira", "tok-123456789");
+    await client.connections.delete("jira");
+    expect(electron.invoke.mock.calls).toEqual([["hh:connectionsGet"], ["hh:connectionsSet", "jira", "tok-123456789"], ["hh:connectionsDelete", "jira"]]);
+  });
+
+  it("passes main's answer through unchanged", async () => {
+    electron.invoke.mockResolvedValueOnce({ ok: false, message: "Invalid request" });
+    expect(await client.connections.set("Jira", "tok-123456789")).toEqual({ ok: false, message: "Invalid request" });
+  });
+
+  it("onChange listens on hh:connectionsChange and unsubscribes the same handler", () => {
+    const heard: unknown[] = [];
+    const off = client.connections.onChange((v) => heard.push(v));
+    const [channel, handler] = electron.on.mock.calls.at(-1)!;
+    expect(channel).toBe("hh:connectionsChange");
+    const view = { connections: [{ id: "jira", label: "Jira API token", set: true }] };
+    (handler as (e: unknown, v: unknown) => void)({}, view);
+    expect(heard).toEqual([view]);
+    off();
+    expect(electron.removeListener).toHaveBeenCalledWith("hh:connectionsChange", handler);
+  });
+
+  it("uses only channels connections-ipc.ts registers and main sends", async () => {
+    const used = new Set(electron.invoke.mock.calls.map((c) => c[0]));
+    for (const ch of ["hh:connectionsGet", "hh:connectionsSet", "hh:connectionsDelete"]) expect(CONNECTIONS_IPC_CHANNELS).toContain(ch);
+    const ipc = await fs.readFile(path.resolve(__dirname, "../src/main/secrets/connections-ipc.ts"), "utf8");
+    for (const ch of CONNECTIONS_IPC_CHANNELS) expect(ipc).toContain(`handle("${ch}"`);
+    expect([...used].filter((ch) => typeof ch === "string" && ch.startsWith("hh:connections")).every((ch) => (CONNECTIONS_IPC_CHANNELS as readonly unknown[]).includes(ch))).toBe(true);
+    const main = await fs.readFile(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
+    expect(main).toContain('sendToWindow("hh:connectionsChange"');
   });
 });

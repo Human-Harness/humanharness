@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { type BackendIpcSupervisor, registerBackendIpc } from "../../src/main/backend/backend-ipc";
+import { BackendGeneration, type BackendIpcSupervisor, registerBackendIpc } from "../../src/main/backend/backend-ipc";
 import type { BackendState } from "../../src/main/backend/backend-supervisor";
 
 /** The channels registered, by name, as `handle()` would keep them. */
@@ -93,5 +93,27 @@ describe("registerBackendIpc (threat model B2)", () => {
     await invoke("hh:backendRestart");
     expect(supervisor.restart).toHaveBeenCalledTimes(1);
     expect(await invoke("hh:backendState")).toBe("running");
+  });
+});
+
+describe("BackendGeneration (a stale scopes read is dropped)", () => {
+  it("a read with no base change in between gives its value", async () => {
+    const gen = new BackendGeneration();
+    gen.bump();
+    await expect(gen.readFresh(async () => "scopes")).resolves.toBe("scopes");
+  });
+
+  it("a read that a base change overtakes gives null", async () => {
+    const gen = new BackendGeneration();
+    let finish!: (v: string) => void;
+    const read = gen.readFresh(() => new Promise<string>((r) => (finish = r)));
+    gen.bump();
+    finish("old scopes");
+    await expect(read).resolves.toBeNull();
+    await expect(gen.readFresh(async () => "new scopes")).resolves.toBe("new scopes");
+  });
+
+  it("a read that gives null stays null", async () => {
+    await expect(new BackendGeneration().readFresh(async () => null)).resolves.toBeNull();
   });
 });

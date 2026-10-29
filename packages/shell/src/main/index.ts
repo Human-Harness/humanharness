@@ -198,7 +198,7 @@ import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
-import { backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
+import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import { BackendLog } from "./backend/backend-log";
 import { BackendProcess } from "./backend/backend-process";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
@@ -283,7 +283,7 @@ let backend: BackendSupervisor | null = null;
 /** The backend was started in this process (Decision 5): from then on a base change is a rebase. */
 let backendStarted = false;
 /** Bumped when the backend's base changes: a scopes update read before it is stale and dropped. */
-let backendGen = 0;
+const backendGen = new BackendGeneration();
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** The first web address the running step printed, for a screen that reopens while it runs. */
@@ -1885,7 +1885,7 @@ async function backendInitNow(): Promise<BackendInit | null> {
 async function backendReady(): Promise<void> {
   const b = backend;
   if (!b || quitting || backendStarted) return;
-  backendGen++;
+  backendGen.bump();
   const init = await backendInitNow();
   if (!init || quitting || backendStarted) return;
   backendStarted = true;
@@ -1897,7 +1897,7 @@ async function backendRebase(): Promise<void> {
   const b = backend;
   if (!b || quitting) return;
   if (!backendStarted) return backendReady();
-  backendGen++;
+  backendGen.bump();
   const init = await backendInitNow();
   if (init && !quitting) await b.rebase(init);
 }
@@ -1905,15 +1905,14 @@ async function backendRebase(): Promise<void> {
 async function backendScopes(): Promise<void> {
   const b = backend;
   if (!b || !backendStarted || quitting) return;
-  const gen = backendGen;
-  const init = await backendInitNow();
-  // A rebase began meanwhile: its own init is newer than these scopes.
-  if (init && gen === backendGen) b.scopesChanged(init.scopes);
+  // Null when a rebase began meanwhile: its own init is newer than these scopes.
+  const init = await backendGen.readFresh(backendInitNow);
+  if (init) b.scopesChanged(init.scopes);
 }
 
 /** A profile switch begins: a started backend stops before anything reads the new base (backendRebase starts it). */
 async function backendLeaveBase(): Promise<void> {
-  backendGen++;
+  backendGen.bump();
   if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
 }
 

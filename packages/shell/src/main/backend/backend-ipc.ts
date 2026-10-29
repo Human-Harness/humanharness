@@ -132,3 +132,23 @@ export function backendInit(o: {
   const dataDir = o.profile !== undefined ? path.join(o.userData, "backend-data", o.profile) : path.join(o.userData, "backend-data");
   return { folder: o.base, scopes, language: o.language, coreVersion: o.coreVersion, dataDir, mock: o.mock };
 }
+
+/**
+ * The backend's base generation: bumped when the base changes (a start, a rebase, a profile switch's start), so a
+ * scopes update read before the change is stale and dropped (the rebase's own init is newer).
+ */
+export class BackendGeneration {
+  private gen = 0;
+
+  /** The base changes now: reads already under way become stale. */
+  bump(): void {
+    this.gen++;
+  }
+
+  /** `read`'s value, or null when the base changed while it ran. */
+  async readFresh<T>(read: () => Promise<T | null>): Promise<T | null> {
+    const gen = this.gen;
+    const value = await read();
+    return gen === this.gen ? value : null;
+  }
+}

@@ -66,6 +66,8 @@ A plugin is a `dist/` folder: `plugin.json` (plain data) and `backend.js` (an ES
 
 `PluginBackendHost` (`packages/shell/src/main/plugin-host.ts`) is the only module that touches `BrowserWindow`, `session` and the plugin channel; every decision it makes is a pure function in `plugin-protocol.ts`, unit-tested.
 
+The harness tools' host (`ToolHost`, `tools/tool-host.ts`) mirrors this window's settings, session rules, CSP and navigation guards with a class, scheme (`hh-tools:`), session and channel (`hh-tools:rpc`) of its own: one window per harness, not per plugin (`docs/architecture/tools.md`).
+
 - **One hidden window per running plugin**: `show: false`, `sandbox: true`, `contextIsolation: true`, `nodeIntegration`, `nodeIntegrationInSubFrames`, `nodeIntegrationInWorker` and `webviewTag` false, `webSecurity: true`, `disableDialogs`, `navigateOnDragDrop: false`, devtools only in development builds. The preload (`packages/shell/resources/plugin-preload.cjs`) exposes one function, `window.hh.rpc(method, args)`, which sends `JSON.stringify(args ?? null)` on `hh-plugin:rpc`.
 - **Its own in-memory session** per plugin (`session.fromPartition("hh-plugin-<id>")`, no `persist:`), set up once: the scheme handler, a request filter, every permission request and check denied, device permissions denied, downloads cancelled.
 - **The `hh-plugin:` scheme** is registered as privileged (`standard`, `secure`; no `supportFetchAPI`, `corsEnabled` or `bypassCSP`) before the app is ready, and only when the harness takes plugins or dev folders are set. Each session's handler serves only `hh-plugin://<its own id>/`.

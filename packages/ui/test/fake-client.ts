@@ -1,4 +1,6 @@
 import type {
+  BackendClient,
+  BackendState,
   AppConfig,
   AppState,
   AttentionTarget,
@@ -125,6 +127,12 @@ export interface FakeTasks extends TasksClient {
 export interface FakeJobs extends JobsClient {
   run: Mock<JobsClient["run"]>;
   set(jobs: JobSummary[]): void;
+}
+
+/** `client.backend` with a spy on calls and restarts. */
+export interface FakeBackend extends BackendClient {
+  call: Mock<BackendClient["call"]>;
+  restart: Mock<BackendClient["restart"]>;
 }
 
 export class FakeClient implements HarnessClient {
@@ -274,6 +282,54 @@ export class FakeClient implements HarnessClient {
       for (const l of this.jobsListeners) l(jobs);
     },
   };
+  /** The backend's state (hatches spec §4); `backendStateSet` changes it and tells `onState`. */
+  backendState: BackendState = "running";
+  /** What `backend.call` answers, by method; a method without one answers null. */
+  backendAnswers: Record<string, unknown> = {};
+  private backendListeners = new Set<(m: { event: string; data: unknown }) => void>();
+  private backendStateListeners = new Set<(s: BackendState) => void>();
+  /** Like main and the preload: without `state.hatches.backend` every backend call rejects (D0). */
+  private needBackend() {
+    if (!this.state.hatches?.backend) throw new Error("This harness has no backend");
+  }
+  readonly backend: FakeBackend = {
+    call: vi.fn(async (method: string, _params?: unknown) => {
+      this.needBackend();
+      if (this.backendState !== "running") throw new Error("The backend isn't running");
+      return this.backendAnswers[method] ?? null;
+    }),
+    on: (event, listener) => {
+      const l = (m: { event: string; data: unknown }) => {
+        if (m.event === event) listener(m.data);
+      };
+      this.backendListeners.add(l);
+      return () => void this.backendListeners.delete(l);
+    },
+    state: async () => {
+      this.needBackend();
+      return this.backendState;
+    },
+    onState: (listener) => {
+      this.backendStateListeners.add(listener);
+      return () => void this.backendStateListeners.delete(listener);
+    },
+    restart: vi.fn(async () => {
+      this.needBackend();
+      if (this.backendState === "failed") this.backendStateSet("running");
+    }),
+  };
+  /** The calls made to `backend.call`, as [method, params]. */
+  get backendCalls(): unknown[][] {
+    return this.backend.call.mock.calls;
+  }
+  /** The backend sends `event` (as hh:backendEvent would). */
+  backendEmit(event: string, data: unknown): void {
+    for (const l of this.backendListeners) l({ event, data });
+  }
+  backendStateSet(s: BackendState): void {
+    this.backendState = s;
+    for (const l of this.backendStateListeners) l(s);
+  }
   get tasks(): TaskView & FakeTasks {
     return Object.assign(Object.create(this.tasksApi) as FakeTasks, this.taskView);
   }

@@ -2,7 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { promises as fs, realpath } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { LINKED_MANY_MAX, type LinkedFolderDecl, hasLinkedFolders } from "@humanharness/harness-sdk";
+import { LINKED_MANY_MAX, type LinkedFolderDecl, hasBackend, hasLinkedFolders } from "@humanharness/harness-sdk";
 import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/ui/client";
 import { type LinkedFolderEntry, type ScopeEntry, type ScopeStore, isScopeId } from "@humanharness/workspace";
 import { checkLink, isGitRepo } from "./linked-folders";
@@ -130,12 +130,13 @@ export async function signedLinks(s: ScopeEntry, profile: string, signing: LinkS
   return (await linkChecker(signing))(s, profile);
 }
 
-/** What the window gets of the hatches a harness declares; undefined without any (D0: AppState has no `hatches`). */
-export function hatchesState(h: { linkedFolders?: Record<string, LinkedFolderDecl> }): HatchesState | undefined {
-  if (!hasLinkedFolders(h)) return undefined;
+/** What the window gets of the hatches a harness declares; undefined without any (D0: AppState has no `hatches`); `backend` only with one. */
+export function hatchesState(h: { linkedFolders?: Record<string, LinkedFolderDecl>; backend?: string }): HatchesState | undefined {
+  const backend = hasBackend(h);
+  if (!hasLinkedFolders(h)) return backend ? { backend: true } : undefined;
   const linkedFolders: NonNullable<HatchesState["linkedFolders"]> = {};
   for (const [key, d] of Object.entries(h.linkedFolders ?? {})) linkedFolders[key] = { label: d.label, mode: d.mode, history: d.history, many: d.many };
-  return { linkedFolders };
+  return { linkedFolders, ...(backend ? { backend: true as const } : {}) };
 }
 
 export interface LinkedIpcDeps {

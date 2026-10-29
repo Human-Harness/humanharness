@@ -24,6 +24,7 @@ import {
 import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import {
+  type BackendInit,
   DEFAULT_LANGUAGE,
   type LoadedHarness,
   PROFILE_COLLECTION,
@@ -36,6 +37,7 @@ import {
   allBlocks,
   choiceOptionSchema,
   dataCollections,
+  hasBackend,
   hasJobs,
   hasLinkedFolders,
   hasModes,
@@ -105,6 +107,7 @@ import {
   DataStore,
   History,
   MAIN_SCOPE,
+  type ScopeEntry,
   ScopeStore,
   appendSidekickEvent,
   DEFAULT_PINNED_TOKENS,
@@ -195,7 +198,11 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, hatchesState, linkChecker, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { backendFor, backendInit, registerBackendIpc } from "./backend/backend-ipc";
+import { BackendLog } from "./backend/backend-log";
+import { BackendProcess } from "./backend/backend-process";
+import type { BackendSupervisor } from "./backend/backend-supervisor";
 import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
 import {
@@ -272,6 +279,10 @@ let linkedUnsupported = false;
 let linkedParts: { access: ScopeAccess; instructions: LinkedInstructions } | null = null;
 /** The linked-folder channels' deps, made once when they are registered (hasLinkedFolders only). */
 let linkedDeps: LinkedIpcDeps | null = null;
+/** The harness's backend (hatches spec §4); null without `backend` (D0: no process, no file, no channel). */
+let backend: BackendSupervisor | null = null;
+/** The backend was started in this process (Decision 5): from then on a base change is a rebase. */
+let backendStarted = false;
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** The first web address the running step printed, for a screen that reopens while it runs. */
@@ -803,6 +814,8 @@ async function scopesView(): Promise<ScopesView> {
 async function scopesChanged(): Promise<void> {
   // A scope made, archived or brought back: the Jobs section's rows follow (each active scope has its own).
   jobsChanged();
+  // A running backend hears the active scopes and their links (hatches spec §4.2). Without one, nothing (D0).
+  void backendScopes().catch((err: unknown) => console.error("Could not tell the backend the scopes", err));
   try {
     sendToWindow("hh:scopes", await scopesView());
   } catch (err) {
@@ -836,6 +849,8 @@ async function arrivedInProfile(): Promise<void> {
   void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
   // A profile chosen for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
   void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
+  // The backend follows the base: started, or stopped and started in the new profile. Without one, nothing (D0).
+  void backendRebase().catch((err: unknown) => console.error("Could not move the backend to the profile", err));
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -1838,6 +1853,57 @@ async function jobsReady(): Promise<void> {
 }
 
 /**
+ * The backend's `init` for the base the app is in now (hatches Decisions 3, 4), its data folder made; null before
+ * setup. Only the links the app signed reach it (L1), none without linked folders.
+ */
+async function backendInitNow(): Promise<BackendInit | null> {
+  await scopesSettled();
+  const c = await validConfig();
+  if (!c) return null;
+  const base = baseOf(c);
+  const profile = profilesOn() ? (c.profile ?? "") : "";
+  const check = linkedDeps ? await linkChecker(linkedDeps.signing) : null;
+  const init = backendInit({
+    base,
+    scopes: scoped() ? await scopeStoreFor(base).list() : [],
+    ...(check ? { links: (s: ScopeEntry) => check(s, profile) } : {}),
+    language: c.language,
+    coreVersion: app.getVersion(),
+    userData: app.getPath("userData"),
+    ...(profile ? { profile } : {}),
+    mock: hooks.mock === true,
+  });
+  await fs.mkdir(init.dataDir, { recursive: true });
+  return init;
+}
+
+/** The backend starts the first time the app is set up in this process (Decision 5); never while quitting. */
+async function backendReady(): Promise<void> {
+  const b = backend;
+  if (!b || quitting || backendStarted) return;
+  const init = await backendInitNow();
+  if (!init || quitting || backendStarted) return;
+  backendStarted = true;
+  await b.start(init);
+}
+
+/** The base changed (profile switch, another folder, a move's end): a started backend starts again there. */
+async function backendRebase(): Promise<void> {
+  const b = backend;
+  if (!b || quitting) return;
+  if (!backendStarted) return backendReady();
+  const init = await backendInitNow();
+  if (init && !quitting) await b.rebase(init);
+}
+
+async function backendScopes(): Promise<void> {
+  const b = backend;
+  if (!b || !backendStarted || quitting) return;
+  const init = await backendInitNow();
+  if (init) b.scopesChanged(init.scopes);
+}
+
+/**
  * Board mode's waiting tasks (parallel spec §9.2, Decisions 10–11): an item in the base's shared Attention store, the
  * Dock badge (with the plugins' count) and, when Settings › General asks and the window isn't focused, a notification
  * whose click shows that task. Only a count and the task's label leave the board (P4).
@@ -2235,6 +2301,9 @@ function registerIpc() {
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     // Set up for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
     void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
+    // The backend starts now that the app is set up, or follows a new folder. Without one, nothing (D0).
+    const folderChanged = patch.folder !== undefined && patch.folder !== before.folder;
+    void (folderChanged ? backendRebase() : backendReady()).catch((err: unknown) => console.error("Could not start the backend", err));
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
     // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
@@ -2331,6 +2400,26 @@ function registerIpc() {
   });
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
   if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
+  // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
+  if (hasBackend(harness)) {
+    const backendLog = new BackendLog(app.getPath("userData"));
+    backend = backendFor(harness, {
+      // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
+      startProcess: (init, onEvent) =>
+        BackendProcess.start({
+          launcher: electronLauncher(process.execPath),
+          entry: resolveInHarness(harness, harness.backend!),
+          cwd: harness.root,
+          init,
+          log: backendLog,
+          onEvent,
+        }),
+      send: sendToWindow,
+      log: backendLog,
+      mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
+    });
+    if (backend) registerBackendIpc(handle, { supervisor: backend });
+  }
   handle("hh:data", async (request: unknown, options: unknown) => {
     // After the migration: it opens `main`, the scope a request made on mount acts in.
     await scopesSettled();
@@ -2799,6 +2888,7 @@ function registerIpc() {
     // Checked and set with no await in between, so two requests can't both start a move.
     if (moving) return { ok: false, error: "busy" };
     let pluginsStopped = false;
+    let backendStopped = false;
     const run = guardedMove({
       guards,
       isBusy: hold.folderBusy,
@@ -2817,6 +2907,9 @@ function registerIpc() {
         await closeRuntime();
         pluginsStopped = true;
         await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins before the move", err));
+        // The backend works in the old folder too: stopped with the runtime, started again after (below).
+        backendStopped = backend !== null;
+        await backend?.stop().catch((err: unknown) => console.error("Could not stop the backend before the move", err));
       },
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
@@ -2832,6 +2925,8 @@ function registerIpc() {
       host?.board.moveEnded();
       // Moved or not, the plugins start again in whichever folder is the app's now.
       if (pluginsStopped) await rebasePlugins();
+      // Moved or not, the backend starts again in whichever folder is the app's now (never while quitting).
+      if (backendStopped) void backendRebase().catch((err: unknown) => console.error("Could not start the backend after the move", err));
       // The reader's watches were checked against the folder as it was.
       documentSessions.closeAll();
     }
@@ -3275,6 +3370,8 @@ if (primary) {
     }
     // Jobs: the `start` runs and `every` timers, once the app is set up (now, or when setup or a profile finishes).
     void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
+    // The harness's backend, the same moment (hatches Decision 5). Without one, nothing (D0).
+    void backendReady().catch((err: unknown) => console.error("Could not start the backend", err));
     // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
     void sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
@@ -3305,6 +3402,8 @@ if (primary) {
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
+      // The backend stops for good (SIGTERM, SIGKILL after 3 s) before the agent goes; nothing starts it again.
+      await backend?.stop({ quit: true }).catch((err: unknown) => console.error("Could not stop the backend", err));
       // A translation run stops; the batches it saved stay.
       await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
       try {

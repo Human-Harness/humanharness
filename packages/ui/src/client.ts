@@ -898,6 +898,22 @@ export interface LinkedHistoryView {
 /** The hatches a harness declares (hatches spec). Absent from AppState without any (D0). */
 export interface HatchesState {
   linkedFolders?: Record<string, { label: string; mode: "read" | "write"; history: "auto" | "own"; many: boolean }>;
+  /** The harness declares a backend (hatches spec §4). Absent without one (D0). */
+  backend?: true;
+}
+
+export type BackendState = "stopped" | "starting" | "running" | "failed";
+/** The harness's own backend (hatches spec §4). Harnesses without `backend`: every call rejects. */
+export interface BackendClient {
+  /** Rejects with the backend's error message, "The backend didn't answer in time" or "The backend isn't running". */
+  call(method: string, params?: unknown): Promise<unknown>;
+  /** Listens to one event the backend sends; returns the unsubscribe. */
+  on(event: string, listener: (data: unknown) => void): () => void;
+  /** Decision 1: a method, since values cross the bridge by copy. */
+  state(): Promise<BackendState>;
+  onState(listener: (s: BackendState) => void): () => void;
+  /** From `failed`: starts it again. */
+  restart(): Promise<void>;
 }
 
 /** The open scope and the registry, sent whenever either changes. */
@@ -1497,6 +1513,8 @@ export interface HarnessClient {
   tasks: TasksClient;
   /** Background jobs (parallel spec §9.1). Only with `state.jobs` (D0). */
   jobs: JobsClient;
+  /** The harness's backend (hatches spec §4). Only with `state.hatches.backend`; without, every call rejects (D0). */
+  backend: BackendClient;
 }
 
 /** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */

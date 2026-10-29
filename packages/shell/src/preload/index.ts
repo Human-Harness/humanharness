@@ -30,6 +30,7 @@ import type {
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
+import { backendClient } from "./backend";
 import { askContext, contextListener } from "./context";
 import { documentWatcher } from "./document-watch";
 import { fileCommitListeners } from "./file-commits";
@@ -314,6 +315,8 @@ const client: HarnessClient = {
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
   // Language on demand (language spec): every answer is data, a rejected invoke included.
   language: languageClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
+  // The harness's backend (hatches spec §4.2): main registers its channels only with `backend` (D0).
+  backend: backendClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

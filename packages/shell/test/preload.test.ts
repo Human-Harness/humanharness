@@ -123,3 +123,58 @@ describe("the preload's linked-folder calls", () => {
     for (const ch of ["hh:scopeLinked", "hh:scopeLinkFolder", "hh:scopeUnlinkFolder", "hh:scopeConfirmGit"]) expect(ipc).toContain(`handle("${ch}"`);
   });
 });
+
+/** `client.backend` (hatches spec §4.2): main registers its channels only with `backend` (D0). */
+describe("the preload's backend client", () => {
+  it("call invokes hh:backendCall with the method and params; state and restart their channels", async () => {
+    electron.invoke.mockClear();
+    electron.invoke.mockResolvedValueOnce({ echo: 1 });
+    expect(await client.backend.call("echo", { a: 1 })).toEqual({ echo: 1 });
+    electron.invoke.mockResolvedValueOnce("running");
+    expect(await client.backend.state()).toBe("running");
+    await client.backend.restart();
+    expect(electron.invoke.mock.calls).toEqual([["hh:backendCall", "echo", { a: 1 }], ["hh:backendState"], ["hh:backendRestart"]]);
+  });
+
+  it("a refusal reaches the harness with main's own message; without a backend, 'This harness has no backend'", async () => {
+    electron.invoke.mockRejectedValueOnce(new Error("Error invoking remote method 'hh:backendCall': Error: The backend didn't answer in time"));
+    await expect(client.backend.call("slow")).rejects.toThrow(/^The backend didn't answer in time$/);
+    electron.invoke.mockRejectedValueOnce(new Error("Error invoking remote method 'hh:backendCall': Error: No handler registered for 'hh:backendCall'"));
+    await expect(client.backend.call("echo")).rejects.toThrow(/^This harness has no backend$/);
+    electron.invoke.mockRejectedValueOnce(new Error("Error invoking remote method 'hh:backendState': Error: No handler registered for 'hh:backendState'"));
+    await expect(client.backend.state()).rejects.toThrow(/^This harness has no backend$/);
+  });
+
+  it("on subscribes to hh:backendEvent and calls the listener only for its event", () => {
+    const heard: unknown[] = [];
+    const off = client.backend.on("tick", (d) => heard.push(d));
+    const [channel, handler] = electron.on.mock.calls.at(-1)!;
+    expect(channel).toBe("hh:backendEvent");
+    const send = handler as (e: unknown, v: unknown) => void;
+    send({}, { event: "tick", data: { n: 1 } });
+    send({}, { event: "tock", data: { n: 2 } });
+    send({}, null);
+    send({}, "tick");
+    send({}, { event: "tick" });
+    expect(heard).toEqual([{ n: 1 }, undefined]);
+    off();
+    expect(electron.removeListener).toHaveBeenCalledWith("hh:backendEvent", handler);
+  });
+
+  it("onState listens on hh:backendStateChange and passes only known states", () => {
+    const heard: unknown[] = [];
+    const off = client.backend.onState((s) => heard.push(s));
+    const [channel, handler] = electron.on.mock.calls.at(-1)!;
+    expect(channel).toBe("hh:backendStateChange");
+    for (const s of ["starting", "running", "bogus", "failed", "stopped", 3]) (handler as (e: unknown, v: unknown) => void)({}, s);
+    expect(heard).toEqual(["starting", "running", "failed", "stopped"]);
+    off();
+    expect(electron.removeListener).toHaveBeenCalledWith("hh:backendStateChange", handler);
+  });
+
+  it("uses only channels backend-ipc.ts registers and main sends", async () => {
+    const ipc = await fs.readFile(path.resolve(__dirname, "../src/main/backend/backend-ipc.ts"), "utf8");
+    for (const ch of ["hh:backendCall", "hh:backendState", "hh:backendRestart"]) expect(ipc).toContain(`handle("${ch}"`);
+    for (const ch of ["hh:backendEvent", "hh:backendStateChange"]) expect(ipc).toContain(`d.send("${ch}"`);
+  });
+});

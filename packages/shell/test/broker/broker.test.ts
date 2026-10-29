@@ -84,10 +84,25 @@ describe("Broker (tools spec §4.2: the core service)", () => {
     expect(await b.call(run.id, "data.get", ["other"])).toMatchObject({ ok: false });
     expect(seen.data).toHaveLength(1);
   });
+  it("data: a read-only grant refuses every write call", async () => {
+    const { b, seen } = core({ calls: ["data.patch", "data.delete", "data.replaceAll"] });
+    const run = b.startRun("t");
+    const refused = (name: string) => ({ ok: false, refused: `The collection is not declared in uses.data (${name})` });
+    expect(await b.call(run.id, "data.patch", ["tickets", "a", { x: 1 }])).toEqual(refused("data.patch"));
+    expect(await b.call(run.id, "data.delete", ["tickets", "a"])).toEqual(refused("data.delete"));
+    expect(await b.call(run.id, "data.replaceAll", ["tickets", [{ key: "a" }]])).toEqual(refused("data.replaceAll"));
+    expect(seen.data).toEqual([]);
+    expect(b.endRun(run.id)).toEqual({ writes: 0 });
+  });
   it("extra handlers from the owner join the surface under their names", async () => {
     const { b } = core({ calls: ["log", "settings.get"], extra: new Map([["settings.get", { max: 0, fn: async () => ({ ok: true as const, value: { a: 1 } }) }]]) });
     const run = b.startRun("t");
     expect(await b.call(run.id, "settings.get", [])).toEqual({ ok: true, value: { a: 1 } });
+  });
+  it("an extra can't take a core call's name", () => {
+    for (const name of CORE_CALLS) {
+      expect(() => core({ calls: [name], extra: new Map([[name, { max: 2, fn: async () => ({ ok: true as const, value: null }) }]]) })).toThrow(name);
+    }
   });
   it("transport(key) replaces fetch and the runner after every check (fixture mode)", async () => {
     let fixtureCalls = 0;

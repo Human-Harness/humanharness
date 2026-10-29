@@ -106,6 +106,8 @@ export class Broker {
       ["data.replaceAll", { max: 2, fn: (run, [c, rs]) => data({ op: "replaceAll", collection: collection(c, true), records: records(rs) }, run, true) }],
       ["log", { max: 2, fn: async (_run, [level, message]) => ok(await this.log(logLevel(level), oneLine(message))) }],
     ];
+    // An owner's handler never takes a core call's name: it would skip every grant check above.
+    for (const name of d.extra?.keys() ?? []) if (CORE_CALLS.has(name)) throw new Error(`An extra call can't take the core call's name ${name}`);
     this.handlers = new Map([...core, ...(d.extra ?? [])].filter(([name]) => d.calls.includes(name)));
   }
 

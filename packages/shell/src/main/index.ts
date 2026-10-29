@@ -265,6 +265,7 @@ import {
   isMockEngine,
   mockEngineText,
   mockModels,
+  mockToolsDir,
   offeredEngines,
   readTestHooks,
   testEngineStatus,
@@ -3468,8 +3469,7 @@ if (loaded) {
       noScope: () => (scoped() ? APP_SCOPE : MAIN_SCOPE),
       serial: dataWrites,
     });
-    const replayed = hooks.mock ? hooks.engines?.claude?.env.HH_FAKE_MOCK_DIR : undefined;
-    const toolRecordings = replayed && path.isAbsolute(replayed) ? replayed : null;
+    const toolRecordings = mockToolsDir(hooks);
     toolsHost = createToolsHost({
       harness,
       base: currentBase,
@@ -3529,9 +3529,9 @@ if (loaded) {
       engine: async () => (await config.load()).engineId ?? "",
       scoped,
       // Mock mode replaying recordings (`dev --mock`, tools spec §12): tools run for real, their fetch and exec answer
-      // from <recordings>/tools/<tool>/, keys are fixture-<id>. The recordings are the fake engine's (HH_FAKE_MOCK_DIR,
-      // <harness>/mock in `dev --mock`), as its AI step recordings are. Otherwise the real transport (D0).
-      ...(toolRecordings ? { mock: { dir: path.join(toolRecordings, "tools") } } : {}),
+      // from <recordings>/tools/<tool>/, keys are fixture-<id>. When that applies: mockToolsDir (test-hooks.ts).
+      // Otherwise the real transport (D0).
+      ...(toolRecordings ? { mock: { dir: toolRecordings } } : {}),
       log: toolsLog,
     });
     registerToolsIpc(handle, toolsHost);

@@ -25,6 +25,6 @@ describe("the tools e2e fixture", () => {
       const fresh = Buffer.from(content);
       expect(fs.readFileSync(path.join(DIST, name)).equals(fresh), name).toBe(true);
     }
-    expect(Object.keys(built.json.tools)).toEqual(["check-key", "count-notes", "hidden", "peek-folder", "probe"]);
+    expect(Object.keys(built.json.tools)).toEqual(["always-fails", "check-key", "count-notes", "due-today", "hidden", "peek-folder", "pick-two", "probe"]);
   }, 120_000);
 });

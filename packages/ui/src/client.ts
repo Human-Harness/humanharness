@@ -919,6 +919,8 @@ export interface EngineRunsCommandView {
   file: string;
   /** It runs a package runner (`npx`, `uvx`) or the like: it may load code the approval doesn't cover. */
   loadsOtherCode?: true;
+  /** A server's environment variables, names and values (absent when it sets none). */
+  env?: Record<string, string>;
 }
 /** A skill of a scope's engine config, with what its frontmatter asks for while it runs. */
 export interface EngineSkillView {
@@ -929,6 +931,8 @@ export interface EngineSkillView {
   model?: string;
   /** `context: fork`: it runs in a context of its own. */
   fork?: true;
+  /** The other files in its folder (scripts, references), relative to it. */
+  files: string[];
 }
 /** What the scope settings' "Engine config" shows of a scope's engine folder (hatches spec §5.3). */
 export interface EngineConfigView {
@@ -941,9 +945,19 @@ export interface EngineConfigView {
   instructions: { layer: string; text: string }[];
   skills: EngineSkillView[];
   /** `ignored`: the keys the app drops from the agent's file (`permissionMode`). */
-  agents: { name: string; description: string; ignored: string[] }[];
-  /** codex.toml's keys, dotted (its hooks are in `runsCommands`). */
-  codexKeys: string[];
+  agents: {
+    name: string;
+    description: string;
+    ignored: string[];
+    tools?: string[];
+    disallowedTools?: string[];
+    model?: string;
+    skills?: string[];
+    /** `project` or `local`. */
+    memory?: string;
+  }[];
+  /** codex.toml's keys, dotted, each with its value as JSON (its hooks are in `runsCommands`). */
+  codexKeys: { key: string; value: string }[];
   /** Keys dropped rather than refused, each led by its file (`settings.json: defaultMode`). */
   ignored: string[];
   /** settings.json's permission rules per layer ("" the scope's own); only layers with any. */

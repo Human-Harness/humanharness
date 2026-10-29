@@ -146,6 +146,15 @@ describe("the backend's wiring in main", () => {
     }
   });
 
+  it("a scope's engine approval (and its tag) never reaches the backend", () => {
+    const scopes: ScopeEntry[] = [
+      { id: "a", title: "A", createdAt: "x", archived: false, engineApproval: { hash: "a".repeat(64), at: "2026-10-28T10:00:00.000Z", tag: "t" } },
+    ];
+    const got = backendInit({ base: "/w", scopes, language: "en", coreVersion: "1", userData: "/u", mock: false });
+    expect(got.scopes).toEqual([{ id: "a", title: "A", linked: [] }]);
+    expect(JSON.stringify(got)).not.toMatch(/engineApproval|"tag"|aaaaaaaa/);
+  });
+
   it("never names an engine home (B9)", async () => {
     const dir = path.resolve(__dirname, "../../src/main/backend");
     const files = (await fs.readdir(dir)).filter((f) => f.endsWith(".ts"));

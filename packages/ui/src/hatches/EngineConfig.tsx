@@ -1,8 +1,53 @@
 import { forwardRef, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { Nodes } from "mdast";
+import { splitFrontMatter } from "@humanharness/harness-sdk/documents";
 import type { EngineConfigView, EngineRunsCommandView, HarnessClient } from "../client";
 import { shownLanguage } from "../language";
-import { Markdown } from "../markdown";
+import { Markdown, parseMarkdown, textOf } from "../markdown";
+
+// Characters that draw as nothing (zero-width, bidi controls, BOM): text the agent reads that nobody sees.
+const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/;
+
+/**
+ * Instructions the agent gets in full but the rendering doesn't show whole: front matter, link-reference definitions
+ * (`[//]: # (do X)`), a link's or image's address or title, invisible characters. The screen then says so.
+ */
+export function hidesText(source: string): boolean {
+  if (INVISIBLE.test(source)) return true;
+  const { body } = splitFrontMatter(source);
+  if (body !== source) return true;
+  const hidden = (n: Nodes): boolean => {
+    if (n.type === "definition" || n.type === "image") return true;
+    if (n.type === "link" && (n.title || n.url !== textOf(n))) return true;
+    return "children" in n && (n.children as Nodes[]).some(hidden);
+  };
+  return hidden(parseMarkdown(body));
+}
+
+/** One layer's instructions: rendered, with the exact text the agent gets one click away. */
+function Instructions({ title, text, path }: { title: string; text: string; path: string }) {
+  const { t } = useTranslation();
+  const [raw, setRaw] = useState(false);
+  const sourceId = useId();
+  return (
+    <div className="hh-engine-instructions">
+      <h4>{title}</h4>
+      {hidesText(text) && <p className="hh-engine-warn">{t("hatches.engineHiddenText")}</p>}
+      <div className="hh-engine-doc">
+        <Markdown source={text} document path={path} />
+      </div>
+      <button type="button" className="hh-link" aria-expanded={raw} {...(raw ? { "aria-controls": sourceId } : {})} onClick={() => setRaw(!raw)}>
+        {t(raw ? "hatches.engineHideSource" : "hatches.engineShowSource")}
+      </button>
+      {raw && (
+        <pre id={sourceId} className="hh-engine-source">
+          <code>{text}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
 
 /**
  * Scope settings › Engine config (hatches spec §5.3): everything the scope's engine folder holds, commands first, and
@@ -80,6 +125,11 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
         <span className="hh-caption">
           {[layerName(c.layer), t("hatches.engineFrom", { file: c.file })].filter((x) => x !== null).join(" · ")}
         </span>
+        {c.env && (
+          <span className="hh-caption">
+            {t("hatches.engineEnv")} <code>{Object.entries(c.env).map(([k, v]) => `${k}=${v}`).join(" ")}</code>
+          </span>
+        )}
         {c.kind === "server" && <span className="hh-caption">{t("hatches.engineServerAllow", { name: c.label })}</span>}
         {c.loadsOtherCode && <strong className="hh-engine-warn">{t("hatches.engineLoadsOther")}</strong>}
       </li>
@@ -94,7 +144,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
         {view === null && <p className="hh-caption">{t("hatches.engineNone", { scope: scopeLabel })}</p>}
         {view && (
           <>
-            <p className="hh-engine-status">
+            <p className="hh-engine-status" aria-live="polite">
               {view.approved && view.approvedAt
                 ? t("hatches.engineApproved", { date: date(view.approvedAt) })
                 : view.changed
@@ -103,7 +153,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
             </p>
             {changed && <p role="alert">{t("hatches.engineChangedWhileShown")}</p>}
             {view.refusals.map((r, i) => (
-              <p key={i} className="hh-engine-refusal">
+              <p key={i} id={`${baseId}-refusal-${i}`} className="hh-engine-refusal">
                 {t("hatches.engineRefused", { reason: r.file === "." ? r.message : `${r.file}: ${r.message}` })}
               </p>
             ))}
@@ -158,12 +208,12 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
               </div>
             )}
             {view.instructions.map((ins) => (
-              <div key={ins.layer} className="hh-engine-instructions">
-                <h4>{ins.layer === "" ? t("hatches.engineScopeInstructions") : t("hatches.engineActionInstructions", { action: labelOf(ins.layer) })}</h4>
-                <div className="hh-engine-doc">
-                  <Markdown source={ins.text} document path={`.harness/engine/${scope}/${ins.layer === "" ? "" : `actions/${ins.layer}/`}instructions.md`} />
-                </div>
-              </div>
+              <Instructions
+                key={ins.layer}
+                title={ins.layer === "" ? t("hatches.engineScopeInstructions") : t("hatches.engineActionInstructions", { action: labelOf(ins.layer) })}
+                text={ins.text}
+                path={`.harness/engine/${scope}/${ins.layer === "" ? "" : `actions/${ins.layer}/`}instructions.md`}
+              />
             ))}
             {view.skills.length > 0 && (
               <div>
@@ -177,6 +227,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
                       {s.allowedTools.length > 0 && <span className="hh-caption">{t("hatches.engineSkillTools", { tools: s.allowedTools.join(", ") })}</span>}
                       {s.model && <span className="hh-caption">{t("hatches.engineSkillModel", { model: s.model })}</span>}
                       {s.fork && <span className="hh-caption">{t("hatches.engineSkillFork")}</span>}
+                      {s.files.length > 0 && <span className="hh-caption">{t("hatches.engineSkillFiles", { files: s.files.join(", ") })}</span>}
                     </li>
                   ))}
                 </ul>
@@ -191,6 +242,11 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
                       <span>
                         <code>{a.name}</code> {a.description}
                       </span>
+                      {a.tools && <span className="hh-caption">{t("hatches.engineAgentTools", { tools: a.tools.join(", ") })}</span>}
+                      {a.disallowedTools && <span className="hh-caption">{t("hatches.engineAgentDisallowed", { tools: a.disallowedTools.join(", ") })}</span>}
+                      {a.model && <span className="hh-caption">{t("hatches.engineSkillModel", { model: a.model })}</span>}
+                      {a.skills && <span className="hh-caption">{t("hatches.engineAgentSkills", { skills: a.skills.join(", ") })}</span>}
+                      {a.memory && <span className="hh-caption">{t("hatches.engineAgentMemory", { memory: a.memory })}</span>}
                       {a.ignored.length > 0 && <span className="hh-caption">{t("hatches.engineIgnored", { keys: a.ignored.join(", ") })}</span>}
                     </li>
                   ))}
@@ -200,15 +256,25 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
             {view.codexKeys.length > 0 && (
               <div>
                 <h4>{t("hatches.engineCodexKeys")}</h4>
-                <p>
-                  <code>{view.codexKeys.join(", ")}</code>
-                </p>
+                <ul className="hh-engine-list" aria-label={t("hatches.engineCodexKeys")}>
+                  {view.codexKeys.map((k) => (
+                    <li key={k.key}>
+                      <code>{`${k.key} = ${k.value}`}</code>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             {view.ignored.length > 0 && <p className="hh-caption">{t("hatches.engineIgnored", { keys: view.ignored.join(", ") })}</p>}
             {!view.approved && (
               <div className="hh-engine-actions">
-                <button type="button" className="hh-primary" disabled={busy || view.refusals.length > 0} onClick={() => void approve()}>
+                <button
+                  type="button"
+                  className="hh-primary"
+                  disabled={busy || view.refusals.length > 0}
+                  {...(view.refusals.length > 0 ? { "aria-describedby": view.refusals.map((_, i) => `${baseId}-refusal-${i}`).join(" ") } : {})}
+                  onClick={() => void approve()}
+                >
                   {t("hatches.engineApprove")}
                 </button>
               </div>

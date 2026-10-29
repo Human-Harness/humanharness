@@ -576,6 +576,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-engine-warn { font-size: 12px; }
 .hh-engine-refusal { color: var(--hh-warn); }
 .hh-engine-doc { border-left: 2px solid var(--hh-line); padding-left: 10px; }
+.hh-engine-source { margin: 4px 0 0; padding: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--hh-line); font-size: 12px; }
 .hh-engine-notice { margin: 4px 0; font-size: 12px; color: var(--hh-muted); }
 .hh-linked-git { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .hh-linked-git p { margin: 0; }

@@ -40,16 +40,19 @@ export function commandLoadsOtherCode(command: ScriptCommand): boolean {
 
 // JavaScript/TypeScript (`import x from`, `import(`, `require(`), Python (`import x`, `from x import`), shell
 // (`source x`, `. x`), Ruby and Perl (`require`, `load`, `use`), and any package runner named in the text.
+// Each pattern runs on one line at a time with only `[ \t]` around its words, never `\s` under `m`: a newline-only
+// script would make `^\s*` try every start against every newline after it (quadratic, seconds on 64 KB).
 const IMPORTS = [
-  /(^|[\s;])import\s*[\s{*"'(]/m,
-  /\brequire(_relative)?\s*[("']/,
-  /^\s*from\s+\S+\s+import\s/m,
-  /^\s*(source|\.)\s+\S/m,
-  /^\s*(use|load)\s+\S/m,
-  /\b(npx|pnpx|bunx|uvx|pipx)\s/,
+  /(^|[ \t;])import[ \t]*[ \t{*"'(]/,
+  /(^|[ \t;])import$/,
+  /\brequire(_relative)?[ \t]*[("']/,
+  /^[ \t]*from[ \t]+\S+[ \t]+import[ \t]/,
+  /^[ \t]*(source|\.)[ \t]+\S/,
+  /^[ \t]*(use|load)[ \t]+\S/,
+  /\b(npx|pnpx|bunx|uvx|pipx)[ \t]/,
 ];
 
-/** A script's text loads other code (an import, a `source`, a package runner). */
+/** A script's text loads other code (an import, a `source`, a package runner). Linear in the text's length. */
 export function importsOtherCode(text: string): boolean {
-  return IMPORTS.some((re) => re.test(text));
+  return text.split(/\r?\n|\r/).some((line) => IMPORTS.some((re) => re.test(line)));
 }

@@ -102,9 +102,12 @@ describe("engine IPC (E10)", () => {
       { layer: "", text: "Use tabs.\n" },
       { layer: "study", text: "Quiz me." },
     ]);
-    expect(v.skills).toEqual([{ name: "fmt", description: "Formats files", allowedTools: [] }]);
-    expect(v.agents).toEqual([{ name: "reviewer", description: "Reviews changes", ignored: ["permissionMode"] }]);
-    expect(v.codexKeys).toEqual(["model_verbosity", "hide_agent_reasoning"]);
+    expect(v.skills).toEqual([{ name: "fmt", description: "Formats files", allowedTools: [], files: [] }]);
+    expect(v.agents).toEqual([{ name: "reviewer", description: "Reviews changes", ignored: ["permissionMode"], tools: ["Read", "Grep"] }]);
+    expect(v.codexKeys).toEqual([
+      { key: "model_verbosity", value: '"low"' },
+      { key: "hide_agent_reasoning", value: "true" },
+    ]);
     // The agent's ignored key is shown with the agent; the settings' (the scope's and the layer's) here.
     expect(v.ignored).toEqual(["settings.json: defaultMode", "actions/study/settings.json: permissions.defaultMode"]);
     expect(v.permissions).toEqual([
@@ -247,17 +250,28 @@ describe("engine IPC (E10)", () => {
     const w = await setup(
       {
         "skills/fmt/SKILL.md": "---\nname: fmt\ndescription: Formats files\nallowed-tools: Bash(npm run fmt), Read\nmodel: haiku\ncontext: fork\n---\nGo.\n",
+        "skills/fmt/scripts/run.sh": "echo fmt\n",
+        "skills/fmt/reference.md": "More.\n",
         "skills/peek/SKILL.md": "---\ndescription: Peeks\nallowed-tools: [Read, Grep]\n---\nGo.\n",
-        "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] }, fetch: { command: "uvx", args: ["mcp-fetch"] } } }),
+        "agents/helper.md": "---\ndescription: Helps\ntools: Read, Grep\nmodel: sonnet\nskills: [fmt]\nmemory: project\n---\nYou help.\n",
+        "codex.toml": "hide_agent_reasoning = false\n",
+        "mcp.json": JSON.stringify({
+          mcpServers: { lint: { command: "node", args: ["./tools/lint.js"], env: { LOG_LEVEL: "debug" } }, fetch: { command: "uvx", args: ["mcp-fetch"] } },
+        }),
         "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "npx -y some-tool" }, { type: "command", command: "node ./tools/stop.js" }] }] } }),
       },
       { "tools/lint.js": "const x = require('./helpers');", "tools/stop.js": "console.log('stop')" },
     );
     const v = (await w.view())!;
     expect(v.skills).toEqual([
-      { name: "fmt", description: "Formats files", allowedTools: ["Bash(npm run fmt)", "Read"], model: "haiku", fork: true },
-      { name: "peek", description: "Peeks", allowedTools: ["Read", "Grep"] },
+      { name: "fmt", description: "Formats files", allowedTools: ["Bash(npm run fmt)", "Read"], files: ["reference.md", "scripts/run.sh"], model: "haiku", fork: true },
+      { name: "peek", description: "Peeks", allowedTools: ["Read", "Grep"], files: [] },
     ]);
+    expect(v.agents).toEqual([{ name: "helper", description: "Helps", ignored: [], tools: ["Read", "Grep"], model: "sonnet", skills: ["fmt"], memory: "project" }]);
+    // Values shown: the screen says whether a switch is on or off.
+    expect(v.codexKeys).toEqual([{ key: "hide_agent_reasoning", value: "false" }]);
+    expect(v.runsCommands.find((r) => r.label === "scope-lint")!.env).toEqual({ LOG_LEVEL: "debug" });
+    expect(v.runsCommands.find((r) => r.label === "scope-fetch")).not.toHaveProperty("env");
     expect(v.runsCommands.map((r) => [r.command, r.loadsOtherCode ?? false])).toEqual([
       ["npx -y some-tool", true],
       ["node ./tools/stop.js", false],

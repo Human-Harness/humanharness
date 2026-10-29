@@ -59,22 +59,36 @@ function layerItems(l: EngineLayer, layer: string, prefix: string, codexHooks?: 
     ...hookItems(l.settings?.hooks, layer, `${prefix}settings.json`),
     ...hookItems(codexHooks, layer, "codex.toml"),
     ...l.servers.map((s) =>
-      withOutside({ kind: "server" as const, label: s.name, command: s.command, args: [...s.args], layer, file: `${prefix}mcp.json` }, [s.command, ...s.args]),
+      withOutside(
+        {
+          kind: "server" as const,
+          label: s.name,
+          command: s.command,
+          args: [...s.args],
+          layer,
+          file: `${prefix}mcp.json`,
+          ...(Object.keys(s.env).length > 0 ? { env: { ...s.env } } : {}),
+        },
+        [s.command, ...s.args],
+      ),
     ),
   ];
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** The cleaned codex.toml's keys, dotted to their leaves; its hooks are listed with the other commands. */
-function codexKeys(codex: Record<string, unknown> | null): string[] {
-  const out: string[] = [];
+/**
+ * The cleaned codex.toml's keys, dotted to their leaves, each with its value as JSON (`true`, `"low"`), so the screen
+ * says whether network access or web search is on; its hooks are listed with the other commands.
+ */
+function codexKeys(codex: Record<string, unknown> | null): { key: string; value: string }[] {
+  const out: { key: string; value: string }[] = [];
   const walk = (v: Record<string, unknown>, at: string) => {
     for (const [k, child] of Object.entries(v)) {
       const key = at ? `${at}.${k}` : k;
       if (!at && k === "hooks") continue;
       if (isPlainObject(child)) walk(child, key);
-      else out.push(key);
+      else out.push({ key, value: JSON.stringify(child) ?? String(child) });
     }
   };
   if (codex) walk(codex, "");
@@ -103,7 +117,13 @@ const listOf = (v: string | string[] | undefined): string[] =>
   (v === undefined ? [] : Array.isArray(v) ? v : splitRules(v)).map((x) => x.trim()).filter((x) => x !== "");
 
 /** A skill as the screen shows it: what its frontmatter asks for while it runs, read again from its file. */
-function skillView(s: { name: string; description: string }, data: Buffer | undefined): EngineSkillView {
+function skillView(s: { name: string; description: string }, files: ReadonlyMap<string, Buffer>): EngineSkillView {
+  const dir = `skills/${s.name}/`;
+  const data = files.get(`${dir}SKILL.md`);
+  const others = [...files.keys()]
+    .filter((k) => k.startsWith(dir) && k !== `${dir}SKILL.md`)
+    .map((k) => k.slice(dir.length))
+    .sort();
   let fields: Record<string, string | string[]> = {};
   try {
     if (data) fields = parseFrontmatter(data.toString("utf8")).fields;
@@ -116,6 +136,7 @@ function skillView(s: { name: string; description: string }, data: Buffer | unde
     name: s.name,
     description: s.description,
     allowedTools: listOf(own("allowed-tools")),
+    files: others,
     ...(typeof model === "string" && model !== "" ? { model } : {}),
     ...(own("context") === "fork" ? { fork: true as const } : {}),
   };
@@ -151,8 +172,18 @@ export function engineConfigView(scope: string, config: EngineConfig, approval: 
     codexLimit,
     runsCommands,
     instructions,
-    skills: config.skills.map((s) => skillView(s, config.files.get(`skills/${s.name}/SKILL.md`))),
-    agents: Object.entries(config.agents).map(([name, a]) => ({ name, description: a.description, ignored: agentIgnored.get(name) ?? [] })),
+    skills: config.skills.map((s) => skillView(s, config.files)),
+    agents: Object.entries(config.agents).map(([name, a]) => ({
+      name,
+      description: a.description,
+      ignored: agentIgnored.get(name) ?? [],
+      // What it may use and where it keeps memory (spec §5.3: an agent shows like the settings it carries).
+      ...(a.tools !== undefined ? { tools: listOf(a.tools) } : {}),
+      ...(a.disallowedTools !== undefined ? { disallowedTools: listOf(a.disallowedTools) } : {}),
+      ...(a.model ? { model: a.model } : {}),
+      ...(a.skills !== undefined ? { skills: listOf(a.skills) } : {}),
+      ...(a.memory ? { memory: a.memory } : {}),
+    })),
     codexKeys: codexKeys(config.codex),
     ignored: [...config.ignored.filter((i) => !i.startsWith("agents/")), ...actions.flatMap((id) => config.actions[id]!.ignored)],
     permissions: [{ layer: "", l: config as EngineLayer }, ...actions.map((id) => ({ layer: id, l: config.actions[id]! }))].flatMap(({ layer, l }) => {

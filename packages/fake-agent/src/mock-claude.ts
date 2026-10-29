@@ -226,8 +226,17 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
     event({ type: "content_block_stop", index: 0 });
   }
   const call = (tool: string, args: Record<string, unknown>) => callOn(mcpServers, "ui", tool, args);
-  // The agent's recorded tool calls (tools spec §12): on the `tools` server, in order, before the blocks.
-  for (const c of play.tools) await callOn(mcpServers, "tools", c.tool, c.args);
+  // The agent's recorded tool calls (tools spec §12): on the `tools` server, in order, before the blocks. A call that
+  // fails (the tool's error, "Not recorded: …") doesn't end the turn: a real agent reads the error and carries on, so the
+  // next calls and the blocks still play (end follow-up M18). Only a missing tools server stays fatal: the app is wired wrong.
+  if (play.tools.length > 0 && !Object.hasOwn(mcpServers, "tools")) throw new Error("the app configured no tools MCP server");
+  for (const c of play.tools) {
+    try {
+      await callOn(mcpServers, "tools", c.tool, c.args);
+    } catch (err) {
+      process.stderr.write(`mock: ${(err as Error).message}\n`);
+    }
+  }
   for (const b of play.blocks) await call(b.tool, b.input);
   if (play.note) await call("save_note", play.note);
   const u = play.usage;

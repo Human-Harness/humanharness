@@ -64,14 +64,26 @@ describe("a recorded turn's tool calls in mock mode (tools spec §12, Decision 9
     expect(lines.at(-1)).toMatchObject({ type: "result", subtype: "success", result: "Two checks fail." });
   }, 30_000);
 
-  it("a tools call the server refuses fails the turn with its message", async () => {
-    const env = folder({ text: "Two checks fail.", tools: [{ tool: "checks", args: {} }], blocks: [BLOCK] });
-    const { code, lines } = await turn({ ui: server("ui", env.record), tools: server("tools", env.record, { HH_REFUSE: "checks" }) }, env);
-    expect(code).toBe(1);
-    expect(lines.at(-1)).toMatchObject({ type: "result", subtype: "error_during_execution", is_error: true, result: "mock: the tools server rejected checks: No such thing: checks" });
-    // The turn stops there: no block, and the session doesn't move on.
-    expect(calls(env.record).map((c) => c.server)).toEqual(["tools"]);
-    expect(fs.existsSync(env.state)).toBe(false);
+  it("a tools call that fails doesn't end the turn: the next calls and the blocks still play (end follow-up M18)", async () => {
+    const env = folder({ text: "Two checks fail.", tools: [{ tool: "checks", args: {} }, { tool: "due-today", args: {} }], blocks: [BLOCK] });
+    const err: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((s) => (err.push(String(s)), true));
+    let result: Awaited<ReturnType<typeof turn>>;
+    try {
+      result = await turn({ ui: server("ui", env.record), tools: server("tools", env.record, { HH_REFUSE: "checks" }) }, env);
+    } finally {
+      spy.mockRestore();
+    }
+    // A real agent reads the tool's error and carries on: the turn succeeds and the session moves on.
+    expect(result.code).toBe(0);
+    expect(result.lines.at(-1)).toMatchObject({ type: "result", subtype: "success", is_error: false, result: "Two checks fail." });
+    expect(calls(env.record)).toEqual([
+      { server: "tools", tool: "checks", args: {} },
+      { server: "tools", tool: "due-today", args: {} },
+      { server: "ui", tool: "show_choices", args: BLOCK.input },
+    ]);
+    expect(fs.existsSync(env.state)).toBe(true);
+    expect(err.join("")).toContain("mock: the tools server rejected checks: No such thing: checks");
   }, 30_000);
 
   it("a turn with tools calls but no tools server fails the turn", async () => {

@@ -22,8 +22,6 @@ let s: Sandbox;
 let app: ElectronApplication | undefined;
 let page: Page;
 
-const line = (name: string) => page.locator(".hh-tool-call").filter({ has: page.getByRole("button", { name: new RegExp(`^${name} `) }) });
-
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
@@ -85,6 +83,9 @@ test("an access with no recording fails 'Not recorded'", async () => {
   await expect(button).toHaveAttribute("aria-expanded", "true");
   await expect(button).toHaveText(/^weather failed · .*Not recorded: GET https:\/\/api\.weather\.test\/v1\/oslo/);
   await expect(oslo.locator("pre").first()).toHaveText('{"city":"oslo"}');
+  // The failed call doesn't end the turn (end follow-up M18): the recorded choices still play, and nothing failed.
+  await expect(page.getByRole("button", { name: /Another city/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Something failed")).toHaveCount(0);
 });
 
 test("no key is asked or read", async () => {

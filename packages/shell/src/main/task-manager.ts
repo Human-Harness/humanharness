@@ -2186,8 +2186,9 @@ export class TaskManager {
     return this.boundedEnded(c, c.phase?.id);
   }
 
-  /** `endedPhase`, waited for no longer than EXPECTS_CHECK_MS. */
+  /** `endedPhase`, waited for no longer than EXPECTS_CHECK_MS. Without the dep: nothing, no timer (D0). */
   private async boundedEnded(c: CurrentTask, phase: string | undefined): Promise<void> {
+    if (!this.d.phaseEnded) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const bound = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, EXPECTS_CHECK_MS);
@@ -2402,7 +2403,7 @@ export class TaskManager {
     if (c.noteSaved) {
       // Done without a closing turn: the part it closes in ended all the same (tools spec §6.1).
       const stopped = this.cancelRequested;
-      if (!stopped) await this.closedPhase(c);
+      if (!stopped && this.d.phaseEnded) await this.closedPhase(c);
       await this.endTask(c.id, "done");
       return !this.cancelRequested;
     }
@@ -2435,7 +2436,7 @@ export class TaskManager {
     const saved = after?.noteSaved === true || after?.checkpointNote === true;
     // The part it closes in ended with the closing turn; a cancelled one counts nothing (tools spec §6.1).
     const stopped = this.cancelRequested;
-    if (!cancelled && !stopped) await this.closedPhase(c);
+    if (!cancelled && !stopped && this.d.phaseEnded) await this.closedPhase(c);
     await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
     return !cancelled && !this.cancelRequested;
   }

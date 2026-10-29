@@ -318,3 +318,20 @@ describe("phaseEnded (tools spec §6.1)", () => {
     expect(hooked).toEqual(plain);
   });
 });
+
+describe("phaseEnded absent (D0 timing)", () => {
+  it("D0: without phaseEnded a close arms no bound timer (both close paths)", async () => {
+    for (const script of [[[ok], [saveNote, ok]], [[saveNote, ok]]]) {
+      const spy = vi.spyOn(globalThis, "setTimeout");
+      try {
+        const t = setup({ phases: PHASES, script });
+        await t.manager.start("session");
+        await t.manager.finish();
+        expect(t.state().current).toBeNull();
+        expect(spy.mock.calls.filter((c) => c[1] === EXPECTS_CHECK_MS)).toEqual([]);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+});

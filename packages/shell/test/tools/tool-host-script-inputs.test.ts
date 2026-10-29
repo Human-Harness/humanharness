@@ -72,4 +72,15 @@ describe("ctx.inputs in the tool host script (tools spec §4.2; P3)", () => {
     await settle();
     expect(seen).toEqual([{}, {}, {}]);
   });
+
+  it("a typed array in the inputs reaches the tool (it can't be frozen; the rest still is)", async () => {
+    let seen: Any;
+    const tools: Record<string, unknown> = { due: bundle({ run: async (_a: Any, ctx: Any) => ((seen = ctx.inputs), ctx.inputs.bytes.length) }) };
+    const { rpc, of } = fakeRpc([{ kind: "call", callId: "c1", tool: "due", args: {}, scope: null, inputs: { bytes: new Uint8Array([1, 2, 3]), list: [{ id: 1 }] } }]);
+    void runHost(rpc, Object.keys(tools), async (id: string) => tools[id]);
+    await settle();
+    expect(of("done")).toEqual([{ callId: "c1", ok: true, value: 3 }]);
+    expect(Object.isFrozen(seen)).toBe(true);
+    expect(Object.isFrozen(seen.list[0])).toBe(true);
+  });
 });

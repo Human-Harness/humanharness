@@ -28,9 +28,9 @@ function refusing(rpc) {
   };
 }
 
-/** `v` and everything in it frozen (a structured-cloned copy: the tool's own, never main's). */
+/** `v` and everything in it frozen (a structured-cloned copy: the tool's own, never main's). A typed array or DataView can't be frozen and is left as it is. */
 function deepFreeze(v) {
-  if (v !== null && typeof v === "object" && !Object.isFrozen(v)) {
+  if (v !== null && typeof v === "object" && !ArrayBuffer.isView(v) && !Object.isFrozen(v)) {
     Object.freeze(v);
     for (const x of Object.values(v)) deepFreeze(x);
   }

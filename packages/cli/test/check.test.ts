@@ -753,3 +753,49 @@ describe("check: sidekick (sidekick spec §3)", () => {
     }
   });
 });
+
+describe("check: tools (tools spec §3.3)", () => {
+  const tool = (description: string, uses: string) => `import { defineTool, z } from "@humanharness/cli/tool";
+
+export default defineTool({
+  description: ${JSON.stringify(description)},
+  params: z.object({}),
+  uses: ${uses},
+  async run() {
+    return 1;
+  },
+});
+`;
+  /** The template (permissions all off, no secrets) with one tool, `due-today`. */
+  const withTool = (code: string) => (d: string) => {
+    replaceIn(d, "harness.config.ts", "  actions: {\n", '  tools: { "due-today": "./tools/due-today.ts" },\n  actions: {\n');
+    fs.mkdirSync(path.join(d, "tools"), { recursive: true });
+    fs.writeFileSync(path.join(d, "tools", "due-today.ts"), code);
+  };
+
+  it("tool-uses: one error per problem, on the tool file, after the build", async () => {
+    const r = await checkHarness(await fixture(withTool(tool("due-today", '{ hosts: ["api.x.com"], secrets: ["jira"], files: "write" }'))));
+    expect(r.findings.filter((f) => f.rule === "tool-uses")).toEqual([
+      { rule: "tool-uses", severity: "error", message: "due-today: uses.hosts needs permissions.web", file: "tools/due-today.ts" },
+      { rule: "tool-uses", severity: "error", message: "due-today: uses.files: write comes in a later slice; use read", file: "tools/due-today.ts" },
+      { rule: "tool-uses", severity: "error", message: 'due-today: uses.secrets: "jira" is not declared in secrets', file: "tools/due-today.ts" },
+      {
+        rule: "tool-uses",
+        severity: "error",
+        message: "due-today: an agent: call tool needs a description of at least 20 characters that says what it does",
+        file: "tools/due-today.ts",
+      },
+    ]);
+    expect(fs.existsSync(path.join(r.harness?.root ?? "", "dist"))).toBe(false);
+  });
+
+  it("a tool inside the permissions has no tool-uses finding", async () => {
+    const r = await checkHarness(await fixture(withTool(tool("Lists the notes due today, oldest first.", '{ files: "read" }'))));
+    expect(r.findings.filter((f) => f.rule === "tool-uses" || f.rule === "tool-build")).toEqual([]);
+  });
+
+  it("D0: no tool-uses finding without tools", async () => {
+    const r = await checkHarness(await fixture());
+    expect(r.findings.some((f) => f.rule === "tool-uses")).toBe(false);
+  });
+});

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { checkSchemaSubset, tidyJsonSchema } from "./plugin";
+import { HOST_PATTERN, checkSchemaSubset, execPattern, tidyJsonSchema } from "./plugin";
 import type { ToolDefinition } from "./tool";
 
 /** A tool id: the action-id pattern (tools spec §3, Decision 1). It names the agent's MCP tool and `dist/tools/<id>.js`. */
@@ -94,4 +94,66 @@ export function toolMeta(id: string, def: unknown): ToolMeta {
     timeout: d.timeout ?? 30,
     file: `tools/${id}.js`,
   };
+}
+
+/** What `toolProblems` reads of the manifest. */
+export interface ToolsManifest {
+  permissions: { edit: "folder" | "none"; exec: boolean; web: boolean };
+  data: Record<string, unknown>;
+  secrets?: readonly { id: string }[];
+  tools?: Record<string, string>;
+}
+/** A problem of one tool: its id and an English line that starts with it. */
+export interface ToolProblem {
+  tool: string;
+  message: string;
+}
+/** The shortest description an `agent: "call"` tool has: the agent picks tools by it. */
+export const TOOL_DESCRIPTION_MIN = 20;
+
+/** One tool's `uses` against the harness (tools spec §3.3): inside its permissions, patterns, collections and secrets it declares. */
+function usesProblems(m: ToolsManifest, uses: ToolMeta["uses"]): string[] {
+  const out: string[] = [];
+  if (uses.hosts?.length && !m.permissions.web) out.push("uses.hosts needs permissions.web");
+  for (const h of uses.hosts ?? []) if (!HOST_PATTERN.test(h)) out.push(`uses.hosts: "${h}" is not a host pattern`);
+  if (uses.exec?.length && !m.permissions.exec) out.push("uses.exec needs permissions.exec");
+  for (const e of uses.exec ?? []) {
+    const r = execPattern.safeParse(e);
+    if (r.success) continue;
+    if (r.error.issues.some((i) => i.path[0] === "cmd")) out.push(`uses.exec: "${e.cmd}" is not a bare command name`);
+    for (const i of r.error.issues) if (i.path[0] !== "cmd") out.push(`uses.exec: "${e.cmd}": ${i.message}`);
+  }
+  // Decision 5: ctx.files.write waits for a later slice (spec §17).
+  if (uses.files === "write") out.push("uses.files: write comes in a later slice; use read");
+  for (const kind of ["read", "write"] as const) {
+    for (const c of uses.data?.[kind] ?? []) if (!Object.hasOwn(m.data, c)) out.push(`uses.data.${kind}: "${c}" is not a collection`);
+  }
+  for (const s of uses.secrets ?? []) if (!m.secrets?.some((x) => x.id === s)) out.push(`uses.secrets: "${s}" is not declared in secrets`);
+  return out;
+}
+
+/**
+ * The checks of tools spec §3.3 that need `dist/tools.json` (slice 2): each tool's `uses` inside the harness's permissions,
+ * its file, its description, and the manifest and tools.json listing the same ids. `humanharness check` reports each one;
+ * the app turns tools off on any.
+ */
+export function toolProblems(m: ToolsManifest, json: ToolsJson): ToolProblem[] {
+  const out: ToolProblem[] = [];
+  const declared = Object.keys(m.tools ?? {});
+  for (const id of declared) if (!Object.hasOwn(json.tools, id)) out.push({ tool: id, message: `${id}: not built (run humanharness build)` });
+  for (const [id, t] of Object.entries(json.tools)) {
+    const add = (message: string) => out.push({ tool: id, message: `${id}: ${message}` });
+    if (!declared.includes(id)) {
+      add("not a tool of this harness (run humanharness build)");
+      continue;
+    }
+    // The registry runs tools/<id>.js under <id>'s grant: another tool's bundle must never run with it.
+    if (t.file !== `tools/${id}.js`) add(`file is "${t.file}", not "tools/${id}.js" (run humanharness build)`);
+    for (const p of usesProblems(m, t.uses)) add(p);
+    const text = t.description.trim();
+    if (t.agent === "call" && (text.length < TOOL_DESCRIPTION_MIN || text === id)) {
+      add(`an agent: call tool needs a description of at least ${TOOL_DESCRIPTION_MIN} characters that says what it does`);
+    }
+  }
+  return out;
 }

@@ -230,7 +230,8 @@ const pluginCollectionSchema = z.strictObject({
   context: z.union([z.literal(false), z.strictObject({ fields: z.union([z.literal("all"), z.array(text).min(1)]), tokens: z.number().int().min(50).max(4000) })]).default(false),
 });
 
-const execPattern = z
+/** An `exec` pattern: a bare command and its argument tokens, `*` only last, no secret (Decision 9). */
+export const execPattern = z
   .strictObject({
     cmd: z.string().regex(EXEC_CMD),
     args: z.array(z.string().min(1).max(200)).max(20),

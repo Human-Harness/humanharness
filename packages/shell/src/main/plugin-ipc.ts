@@ -13,7 +13,6 @@ import type {
 } from "@humanharness/ui/client";
 import type { PluginBackendHost } from "./plugin-host";
 import type { PluginsController, PreparedStart } from "./plugins";
-import type { SecretCrypto } from "./plugin-secrets";
 import { ScopeRequired } from "./task-manager";
 
 /**
@@ -335,25 +334,4 @@ export class PluginPanelsOnDemand<W> {
   }
 }
 
-/**
- * The SecretStore's crypto over Electron's safeStorage (Decision 17). On Linux without a keyring safeStorage
- * "encrypts" with a hard-coded key (`basic_text`): that counts as unavailable, so keys are refused, never stored in
- * the clear.
- */
-export function safeStorageCrypto(
-  storage: Pick<typeof import("electron").safeStorage, "isEncryptionAvailable" | "encryptString" | "decryptString" | "getSelectedStorageBackend">,
-  platform: NodeJS.Platform = process.platform,
-): SecretCrypto {
-  return {
-    available: () => {
-      try {
-        if (!storage.isEncryptionAvailable()) return false;
-        return platform !== "linux" || storage.getSelectedStorageBackend() !== "basic_text";
-      } catch {
-        return false;
-      }
-    },
-    encrypt: (text) => storage.encryptString(text),
-    decrypt: (data) => storage.decryptString(data),
-  };
-}
+export { safeStorageCrypto } from "./secrets/safe-storage";

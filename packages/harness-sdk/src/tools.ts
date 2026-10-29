@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { checkSchemaSubset, tidyJsonSchema } from "./plugin";
+import type { ToolDefinition } from "./tool";
 
 /** A tool id: the action-id pattern (tools spec §3, Decision 1). It names the agent's MCP tool and `dist/tools/<id>.js`. */
 export const TOOL_ID = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -39,3 +41,57 @@ export const toolMetaSchema = z.strictObject({
 export const toolsJsonSchema = z.strictObject({ version: z.literal(1), tools: z.record(z.string().regex(TOOL_ID), toolMetaSchema) });
 export type ToolsJson = z.output<typeof toolsJsonSchema>;
 export type ToolMeta = z.output<typeof toolMetaSchema>;
+
+type SchemaNode = Record<string, unknown>;
+const isNode = (v: unknown): v is SchemaNode => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Where in `schema` the allowlist's refusal sits ("params.properties.x"), and why: the deepest part that fails alone. */
+function schemaProblem(schema: unknown, at: string): string | null {
+  const why = checkSchemaSubset(schema);
+  if (!why) return null;
+  if (isNode(schema)) {
+    const children: [string, unknown][] = [];
+    if (isNode(schema.properties)) for (const [k, v] of Object.entries(schema.properties)) children.push([`${at}.properties.${k}`, v]);
+    if (Object.hasOwn(schema, "items")) children.push([`${at}.items`, schema.items]);
+    if (Array.isArray(schema.anyOf)) schema.anyOf.forEach((v, i) => children.push([`${at}.anyOf.${i}`, v]));
+    for (const [where, child] of children) {
+      const inner = schemaProblem(child, where);
+      if (inner) return inner;
+    }
+  }
+  return `${at}: ${why}`;
+}
+
+/** A zod schema as the plugins' allowlisted JSON Schema (Decision 4), or an error naming the tool and the path. */
+function toolSchema(id: string, at: "params" | "returns", s: z.ZodType): Record<string, unknown> {
+  let json: unknown;
+  try {
+    json = z.toJSONSchema(s, { target: "draft-2020-12", unrepresentable: "throw", ...(at === "params" ? { io: "input" as const } : {}) });
+  } catch (err) {
+    throw new Error(`${id}: ${at}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const { $schema: _drop, ...rest } = tidyJsonSchema(json) as SchemaNode;
+  const why = schemaProblem(rest, at);
+  if (why) throw new Error(`${id}: ${why}`);
+  return rest;
+}
+
+/**
+ * A `defineTool` result as its `dist/tools.json` entry (tools spec §3.2). Pure; `humanharness build` runs it inside the
+ * tool's own Node bundle, so `params instanceof z.ZodObject` and `z.toJSONSchema` use the tool's zod.
+ */
+export function toolMeta(id: string, def: unknown): ToolMeta {
+  const d = def as Partial<ToolDefinition> | null;
+  if (typeof d !== "object" || d === null || typeof d.run !== "function") throw new Error(`${id}: the default export is not defineTool({ ... })`);
+  if (typeof d.description !== "string" || d.description.length === 0) throw new Error(`${id}: description is missing`);
+  if (!(d.params instanceof z.ZodObject)) throw new Error(`${id}: params is not z.object({ ... })`);
+  return {
+    description: d.description,
+    agent: d.agent ?? "call",
+    uses: d.uses ?? {},
+    params: toolSchema(id, "params", d.params),
+    ...(d.returns ? { returns: toolSchema(id, "returns", d.returns) } : {}),
+    timeout: d.timeout ?? 30,
+    file: `tools/${id}.js`,
+  };
+}

@@ -1,3 +1,4 @@
+import { buildCommand } from "./build";
 import { CliError, type Io, UsageError } from "./cli";
 import { checkCommand } from "./check";
 import { devCommandLine } from "./dev";
@@ -18,6 +19,7 @@ export const USAGE = [
   "                                           Run one task against a real engine in the terminal",
   "  dev [--engine <id>] [--mock [--keep]] [--build <dir>]",
   "                                           Check the harness, then open the app with it (--mock: replay mock/, no AI)",
+  "  build [--harness <dir>]                  Bundle the harness's tools into dist/ (tools.json)",
   "  plugin <command>                         Build, check and try a plugin (humanharness plugin --help)",
   "",
   "check, run and dev take --harness <dir> to work on another folder than the current one.",
@@ -31,6 +33,7 @@ const COMMANDS: Record<string, Command> = {
   run: runCommand,
   dev: devCommandLine,
   plugin: pluginCommand,
+  build: buildCommand,
 };
 
 /**

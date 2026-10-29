@@ -8,6 +8,7 @@ import {
   SETTINGS_TOKENS_WARN,
   SIDEKICK_TIPS_TOKENS_WARN,
   blockToolName,
+  hasTools,
   inputBlocks,
   inputFields,
   isStringArray,
@@ -23,6 +24,7 @@ import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { clashMessage, matchClashes } from "./mock-match";
 import { HARNESS_MD, MANIFEST } from "./paths";
+import { ToolBuildError, buildTools } from "./tool-build";
 
 export type Severity = "error" | "warning";
 export type RuleId =
@@ -56,7 +58,8 @@ export type RuleId =
   | "material-review-tier"
   | "material-items-scope"
   | "sidekick-tips"
-  | "job-daily-tokens";
+  | "job-daily-tokens"
+  | "tool-build";
 
 export interface Finding {
   rule: RuleId;
@@ -98,6 +101,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await modeFindings(harness)));
   findings.push(...(await phaseFindings(harness)));
   findings.push(...(await jobFindings(harness)));
+  findings.push(...(await toolBuildFindings(root, harness)));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
@@ -579,6 +583,18 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
   const context = doc?.sections.get("Context");
   if (doc && !sectionText(context)) out.push(warning("pillar-context", "HARNESS.md → Context is empty: say what each closed task must keep.", HARNESS_MD, context?.line));
   return out;
+}
+
+/** Tools (tools spec §3.3): the build runs in memory, nothing written; each tool that fails is one error. None without tools (D0). */
+async function toolBuildFindings(root: string, h: LoadedHarness): Promise<Finding[]> {
+  if (!hasTools(h)) return [];
+  try {
+    await buildTools(root, { write: false, harness: h });
+    return [];
+  } catch (err) {
+    if (err instanceof ToolBuildError) return err.problems.map((p) => error("tool-build", p.message, p.file));
+    return [error("tool-build", err instanceof Error ? err.message : String(err), MANIFEST)];
+  }
 }
 
 function tierCostFindings(h: LoadedHarness): Finding[] {

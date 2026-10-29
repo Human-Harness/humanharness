@@ -448,7 +448,7 @@ export const definePlugin = (d: PluginDefinition): PluginDefinition => d;
  * zod's JSON Schema in plugin.json's words: drops the bounds `.int()` adds on its own (±MAX_SAFE_INTEGER, noise,
  * not the author's limit) and writes `z.looseObject`'s `additionalProperties: {}` as the `true` it means.
  */
-function tidyJsonSchema(v: unknown): unknown {
+export function tidyJsonSchema(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(tidyJsonSchema);
   if (!isNode(v)) return v;
   const out: SchemaNode = {};

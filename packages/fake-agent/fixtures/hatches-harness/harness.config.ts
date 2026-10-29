@@ -1,6 +1,6 @@
-// Test fixture for linked folders (hatches spec part 1) and engine config per scope (part 3): a plain harness (no `parallel`, no jobs) whose projects link
-// repos outside the work folder. The e2e test writes its fake-claude script at run time: the folders it edits are the
-// sandbox's.
+// Test fixture for linked folders (hatches spec part 1) and engine config per scope (part 3): a plain harness (no
+// `parallel`, no jobs) whose projects link repos outside the work folder. The e2e test writes its fake-claude script at
+// run time: the folders it edits are the sandbox's.
 import { defineHarness } from "@humanharness/harness-sdk";
 
 export default defineHarness({

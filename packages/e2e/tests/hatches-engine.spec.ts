@@ -71,6 +71,11 @@ async function implement(page: Page, s: Sandbox): Promise<{ argv: string[]; prom
 const flag = (argv: string[], name: string) => argv[argv.indexOf(name) + 1];
 const servers = (argv: string[]) => Object.keys((JSON.parse(flag(argv, "--mcp-config")) as { mcpServers: Record<string, unknown> }).mcpServers);
 
+/** The scope's stored approval in scopes.json, if any. */
+const approvalOf = (s: Sandbox) =>
+  (JSON.parse(fs.readFileSync(path.join(s.folder, ".harness", "scopes.json"), "utf8")) as { id: string; engineApproval?: unknown }[]).find((e) => e.id === "app")!
+    .engineApproval;
+
 /** The task's notice under its header: the engine config is left out. */
 const notice = (page: Page) => page.locator("p[role=status]").filter({ hasText: "Engine config not approved" });
 
@@ -175,6 +180,55 @@ test("editing an approved script outside the engine folder leaves the preset out
     expect(run.prompt).not.toContain("## Scope instructions");
     expect(servers(run.argv)).not.toContain("scope-tools");
     await expect(notice(page)).toBeVisible();
+
+    // The approval is still there, for a hash the folder no longer has: Review says it changed.
+    expect(approvalOf(s)).toBeDefined();
+    await notice(page).getByRole("button", { name: "Review" }).click();
+    const engine = page.getByRole("dialog", { name: "App settings" }).getByRole("region", { name: "Engine config" });
+    await expect(engine.getByText("Changed since you approved it")).toBeVisible();
+    await expect(engine.getByRole("button", { name: "Approve" })).toBeEnabled();
+  });
+});
+
+test("revoking an approval leaves the preset out of the next task", async () => {
+  await withApp("hatches-engine-revoke", async (s, page) => {
+    await createApp(page);
+    writeEngine(s);
+    await approve(page);
+
+    // Revoke asks in the section first; confirmed, the section reads not approved and offers Approve again.
+    const { sheet, engine } = await openEngine(page);
+    await expect(engine.getByText(/^Approved /)).toBeVisible();
+    await engine.getByRole("button", { name: "Revoke approval" }).click();
+    await expect(engine.getByText(/running tasks stop using it from their next turn/)).toBeVisible();
+    await engine.getByRole("button", { name: "Revoke", exact: true }).click();
+    await expect(engine.getByText("Engine config not approved")).toBeVisible();
+    await expect(engine.getByRole("button", { name: "Approve" })).toBeEnabled();
+    await expect(engine.getByRole("button", { name: "Revoke approval" })).toHaveCount(0);
+    await sheet.getByRole("button", { name: "Done" }).click();
+    expect(approvalOf(s)).toBeUndefined();
+
+    const run = await implement(page, s);
+    expect(run.prompt).not.toContain("## Scope instructions");
+    expect(run.prompt).not.toContain(HAIKU);
+    expect(servers(run.argv)).not.toContain("scope-tools");
+    await expect(notice(page)).toBeVisible();
+  });
+});
+
+test("D0 for the scope: an opted-in harness, no engine folder, no notice and no preset", async () => {
+  await withApp("hatches-engine-d0", async (s, page) => {
+    await createApp(page);
+    expect(fs.existsSync(path.join(s.folder, ".harness", "engine"))).toBe(false);
+
+    const run = await implement(page, s);
+    expect(run.prompt).not.toContain("## Scope instructions");
+    expect(servers(run.argv).filter((n) => n.startsWith("scope-"))).toEqual([]);
+    await expect(page.locator("p[role=status]").filter({ hasText: "Engine config" })).toHaveCount(0);
+    // Nothing approved, nothing snapshotted, and the app made no engine folder.
+    expect(approvalOf(s)).toBeUndefined();
+    expect(fs.existsSync(path.join(s.userData, "engine-config"))).toBe(false);
+    expect(fs.existsSync(path.join(s.folder, ".harness", "engine"))).toBe(false);
   });
 });
 

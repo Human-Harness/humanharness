@@ -361,3 +361,17 @@ describe("UsageTab: OpenCode", () => {
     expect(screen.queryByText("Spent in the last 30 days")).toBeNull();
   });
 });
+
+describe("Sidekick's line (sidekick spec §8)", () => {
+  it("shows Sidekick's tokens once it has run, and nothing without (D0)", async () => {
+    const client = claude();
+    client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour", sidekick: 2440 };
+    const first = await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("Sidekick: about 2,440 tokens")).toBeTruthy();
+    first.unmount();
+    client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
+    await renderIn("en", <Sheet client={client} />);
+    await screen.findByRole("tab", { name: "Usage" });
+    expect(screen.queryByText(/^Sidekick: about/)).toBeNull();
+  });
+});

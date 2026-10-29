@@ -37,6 +37,8 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
       {/* Material spec §11: what processing the person's material used (only once a stage has run). */}
       {usage?.material !== undefined && <p className="hh-caption">{t("usage.material", { tokens: usage.material.toLocaleString(shownLanguage(i18n)) })}</p>}
+      {/* Sidekick spec §8: its own spend, apart from the tasks' (only once it has run). */}
+      {usage?.sidekick !== undefined && <p className="hh-caption">{t("sidekick.usage", { tokens: usage.sidekick.toLocaleString(shownLanguage(i18n)) })}</p>}
       {/* OpenCode spec §4: real money, as the engine reported it (only once a turn reported a cost; 0 is a real US$ 0.00). */}
       {usage?.spentUsd !== undefined && engine && (
         <>

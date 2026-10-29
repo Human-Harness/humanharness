@@ -18,6 +18,7 @@ import type {
   SettingsState,
   SetupOutput,
   SetupStepsState,
+  SidekickState,
   TaskTurnNotice,
   TaskView,
   TextSize,
@@ -178,6 +179,14 @@ const client: HarnessClient = {
     set: (field, value) => ipcRenderer.invoke("hh:settingsSet", field, value),
     reset: () => ipcRenderer.invoke("hh:settingsReset"),
     onChange: (listener) => subscribe<SettingsState>("hh:settings", listener),
+  },
+  sidekick: {
+    get: () => ipcRenderer.invoke("hh:sidekickGet"),
+    set: (patch) => ipcRenderer.invoke("hh:sidekickSet", patch),
+    review: (req) => ipcRenderer.invoke("hh:sidekickReview", req),
+    cancelReview: () => ipcRenderer.invoke("hh:sidekickCancel"),
+    resolve: (id, outcome) => ipcRenderer.invoke("hh:sidekickResolve", id, outcome),
+    onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {
     get: () => ipcRenderer.invoke("hh:setupStepsGet"),

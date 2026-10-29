@@ -672,3 +672,31 @@ describe("check: setup steps (setup-steps spec §6)", () => {
     expect(r.findings.filter((f) => f.rule === "setup-mock")).toEqual([]);
   });
 });
+
+describe("check: sidekick (sidekick spec §3)", () => {
+  const AFTER = '  questions: { tier: "light" },';
+  const withSidekick = (block: string) => (d: string) => replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  sidekick: ${block},`);
+  const rules = (r: CheckResult) =>
+    r.findings.filter((f) => f.rule === "sidekick-tips" || f.message.startsWith("sidekick.")).map((f) => `${f.severity}:${f.rule}`);
+
+  it("short tips and known actions: no finding", async () => {
+    const r = await checkHarness(await fixture(withSidekick('{ default: "off", tips: "Claims need a source." }')));
+    expect(errors(r)).toEqual([]);
+    expect(rules(r)).toEqual([]);
+  });
+
+  it("an unknown action is a schema error, reported once", async () => {
+    const r = await checkHarness(await fixture(withSidekick('{ actions: { nope: "auto" } }')));
+    expect(rules(r)).toEqual(["error:schema"]);
+  });
+
+  it("sidekick-tips: warns over 300 tokens, per purpose too", async () => {
+    const long = JSON.stringify("Every claim needs a source from the reading list, cited in APA style with page numbers. ".repeat(20).trim());
+    for (const tips of [long, `{ "prompt-coach": ${long} }`]) {
+      const r = await checkHarness(await fixture(withSidekick(`{ tips: ${tips} }`)));
+      const found = r.findings.filter((f) => f.rule === "sidekick-tips");
+      expect(found.map((f) => f.severity)).toEqual(["warning"]);
+      expect(found[0].message).toMatch(/^Sidekick's tips take about \d+ tokens \(more than 300\)/);
+    }
+  });
+});

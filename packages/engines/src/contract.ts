@@ -103,6 +103,11 @@ export interface CommonOptions {
   mcpOnly?: boolean;
   /** Claude only: false runs the CLI with `--no-session-persistence` (one-off turns such as the setup test). */
   persistSession?: boolean;
+  /**
+   * The Sidekick session (sidekick spec §5): no tools at all. Claude gets `--tools ""` and every built-in denied;
+   * it must come with no MCP servers and no reference folders. ACP sessions get no MCP servers and the read-only mode.
+   */
+  noTools?: boolean;
   /** The CLI to run: [binary, ...leading args]. */
   command: string[];
   /** Extra environment for the CLI (tests and dev only; never credentials). */

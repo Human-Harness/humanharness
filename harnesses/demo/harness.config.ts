@@ -59,6 +59,11 @@ export default defineHarness({
   },
   path: ["manifest", "engines", "turn", "blocks", "context", "history"],
   questions: { tier: "light" },
+  // Sidekick (sidekick spec §3): off by default until dogfooding sets the cap and thresholds (spec §12 Q1).
+  sidekick: {
+    default: "off",
+    tips: "The person is learning how Human Harness works. A good prompt names the part (manifest, engines, a turn, blocks, context, history) and what they want to understand about it.",
+  },
   tagline: "How Human Harness works",
   tone: "clear and friendly, for developers; short sentences",
   author: "Marco Zanger",

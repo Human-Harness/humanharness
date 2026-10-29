@@ -12,6 +12,7 @@ import { REVIEW_TOOLS, validApproveGlob } from "./review";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
+import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
 
 export * from "./block";
 export * from "./core-blocks";
@@ -24,6 +25,7 @@ export * from "./phases";
 export * from "./setup";
 export * from "./profiles";
 export * from "./material";
+export * from "./sidekick";
 export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
@@ -210,6 +212,8 @@ const manifestSchema = z.object({
   profiles: profilesSchema.optional(),
   /** The person's own files, cut into small fragments the agent fetches on demand (material spec). Absent: none (D0). */
   material: materialSchema.optional(),
+  /** The prompt coach's hints and per-action review modes (sidekick spec §3). Absent: available, default off (D0). */
+  sidekick: sidekickSchema.optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
   /**
@@ -255,6 +259,13 @@ const manifestSchema = z.object({
   // Free questions' model setting lives under the "questions" key, next to the action ids.
   if (Object.hasOwn(m.actions, "questions")) {
     ctx.addIssue({ code: "custom", path: ["actions", "questions"], message: '"questions" is reserved for free questions: use another action id' });
+  }
+  // Sidekick's model setting lives under the "sidekick" key, next to the action ids (sidekick spec §5).
+  if (Object.hasOwn(m.actions, SIDEKICK_PROCESS)) {
+    ctx.addIssue({ code: "custom", path: ["actions", SIDEKICK_PROCESS], message: `"${SIDEKICK_PROCESS}" is reserved for Sidekick: use another action id` });
+  }
+  for (const id of Object.keys(m.sidekick?.actions ?? {})) {
+    if (!Object.hasOwn(m.actions, id)) ctx.addIssue({ code: "custom", path: ["sidekick", "actions", id], message: `"${id}" is not an action of this harness` });
   }
   for (const [id, a] of Object.entries(m.actions)) {
     if (a.scope !== undefined && !m.scopes) {

@@ -122,3 +122,27 @@ export const templateScript: ClaudeScript = {
     },
   ],
 };
+
+const sidekickReply = (o: unknown) => [...claudeTextLines(JSON.stringify(o)), result];
+
+/** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */
+export const sidekickScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [
+    {
+      match: "^Sidekick: pre-send review",
+      steps: sidekickReply({
+        verdict: "suggest",
+        issues: [{ kind: "vague", text: "Say which part should be better." }],
+        rewrite: "Explain how the manifest declares actions",
+        confidence: 0.8,
+      }),
+    },
+  ],
+};
+
+/** Sidekick's turn never answers in time: the prompt goes as typed after the wait. */
+export const slowSidekickScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [{ match: "^Sidekick: pre-send review", steps: [{ sleep: 15_000 }] }],
+};

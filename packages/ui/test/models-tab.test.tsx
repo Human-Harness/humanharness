@@ -270,3 +270,23 @@ describe("ModelsTab › Levels", () => {
     expect(patches).toEqual([{ models: whole }]);
   });
 });
+
+describe("Sidekick row (sidekick spec §5)", () => {
+  it("comes last, only when given", () => {
+    const state = { actions: { a: { label: "A" } }, path: [] } as never;
+    const q = { key: "questions", label: "Questions" };
+    expect(taskRows(state, q).map((r) => r.key)).toEqual(["a", "questions"]);
+    expect(taskRows(state, q, undefined, { key: "sidekick", label: "Sidekick" }).map((r) => r.key)).toEqual(["a", "questions", "sidekick"]);
+  });
+
+  it("is listed in Tasks only while main sends Sidekick (D0)", async () => {
+    const c = modelsClient();
+    const first = await renderIn("en", <Tab client={c} />);
+    expect(within(tasksRegion()).queryByRole("group", { name: "Sidekick" })).toBeNull();
+    first.unmount();
+    c.state.sidekick = { id: "sidekick", name: "Sidekick" };
+    await renderIn("en", <Tab client={c} />);
+    expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["The manifest", "A turn", "Free question", "Sidekick"]);
+    expect(screen.getByText("Reviews your prompts before they go out")).toBeTruthy();
+  });
+});

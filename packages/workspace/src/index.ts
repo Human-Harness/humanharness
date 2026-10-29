@@ -12,6 +12,8 @@ export * from "./migrate";
 export * from "./data";
 export * from "./data-context";
 export * from "./data-diff";
+export * from "./sidekick-checks";
+export * from "./sidekick-brief";
 export * from "./reviews";
 export * from "./review-requests";
 export * from "./safe-read";

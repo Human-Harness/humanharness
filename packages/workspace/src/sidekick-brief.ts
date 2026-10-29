@@ -1,0 +1,70 @@
+import { createHash, randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import type { EngineDef } from "@humanharness/engines";
+
+/** The core's Sidekick rules (spec §5, §11). English: Sidekick thinks in English like every core agent. */
+export const SIDEKICK_RULES: readonly string[] = [
+  "You review the person's prompt before it goes to the main assistant of this app. You never answer the prompt itself.",
+  "Answer only with one JSON object, exactly as the turn asks. No prose before or after it, no code fences.",
+  "Suggest; never act. You have no tools and you change nothing.",
+  "Be brief: issues are one short sentence each.",
+  "Say `send` when the prompt is clear enough; a good prompt needs no rewrite.",
+  "Write the rewrite and the queued prompts in the same language as the person's prompt.",
+  "Write the issues in the app's UI language that the turn names.",
+  "Keep the person's intent. Add only what is missing; do not invent facts, files or sources.",
+];
+
+const ID = /^[a-z][a-z0-9-]{0,63}$/;
+
+/** The Sidekick session's AGENTS.md: the core rules, then the harness tips, then (part 2) what it learned. */
+export function sidekickBrief(o: { name: string; harness: string; tips?: string; learned?: readonly string[] }): string {
+  const lines = [
+    `# ${o.name}`,
+    "",
+    `You are ${o.name}, the prompt coach inside the app "${o.harness}".`,
+    "",
+    "## Rules",
+    "",
+    ...SIDEKICK_RULES.map((r) => `- ${r}`),
+  ];
+  if (o.tips?.trim()) lines.push("", "## Harness tips", "", o.tips.trim());
+  if (o.learned && o.learned.length > 0) lines.push("", "## About this person", "", ...o.learned.map((l) => `- ${l}`));
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * The session's working folder (plan Decision 1): under the app's userData, one per base (so per profile) and
+ * sidekick, never inside the base, so the task's CLAUDE.md / AGENTS.md never load into the Sidekick session.
+ */
+export function sidekickWorkDir(userData: string, base: string, id: string): string {
+  if (!ID.test(id)) throw new Error(`Invalid sidekick id: "${id}"`);
+  const key = createHash("sha256").update(path.resolve(base)).digest("hex").slice(0, 16);
+  return path.join(userData, "sidekick", key, id);
+}
+
+/** Writes the brief as AGENTS.md (+ the engine's own file) when it changed, so the cached prefix survives. True when it wrote. */
+export async function writeSidekickBrief(folder: string, text: string, engine: EngineDef): Promise<boolean> {
+  await fs.mkdir(folder, { recursive: true });
+  let wrote = false;
+  const put = async (name: string, content: string) => {
+    const file = path.join(folder, name);
+    if ((await fs.readFile(file, "utf8").catch(() => null)) === content) return;
+    const tmp = path.join(folder, `.${name}.${randomUUID()}.tmp`);
+    try {
+      await fs.writeFile(tmp, content);
+      await fs.rename(tmp, file);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
+    wrote = true;
+  };
+  await put("AGENTS.md", text);
+  const extra = engine.instructionsFile;
+  if (extra) {
+    if (path.basename(extra.path) !== extra.path) throw new Error(`Engine instructions file must be a plain file name, got "${extra.path}"`);
+    await put(extra.path, extra.content);
+  }
+  return wrote;
+}

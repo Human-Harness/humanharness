@@ -67,6 +67,42 @@ function safeTarget(cwd: string, p: string): string {
   return target;
 }
 
+/** The first line of Sidekick's pre-send turns (shell `SIDEKICK_PRE_MARK`; a copy: fake-agent never imports the shell; shell sidekick-turns.test pins it). */
+const SIDEKICK_MARK = "Sidekick: pre-send review";
+
+const HINTS: Record<string, string> = {
+  vague: "Say exactly what should change and how you'll know it's done.",
+  "missing-context": "Name the note or file you mean.",
+  "two-asks": "One ask per prompt: the second one is kept for later.",
+  "off-phase": "This looks like another phase's work.",
+};
+
+const JOINER = /^(?:and also|and then)\b/i;
+
+/** A canned Sidekick answer in mock mode, built from the flags the prompt lists: no model, no recordings. */
+export function mockSidekickReply(prompt: string): string {
+  const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";
+  // Only the "Local flags:" section: a note title may look like a flag line. The match is JSON-quoted.
+  const section = /^Local flags:[^\n]*\n([\s\S]*?)^UI language:/m.exec(prompt)?.[1] ?? "";
+  const kinds = [...section.matchAll(/^- (vague|missing-context|two-asks|off-phase): ("(?:[^"\\]|\\.)*") at \[(\d+), (\d+)\]/gm)].map((m) => ({
+    kind: m[1],
+    match: JSON.parse(m[2]) as string,
+    span: [Number(m[3]), Number(m[4])] as const,
+  }));
+  if (kinds.length === 0) return JSON.stringify({ verdict: "send", issues: [], confidence: 0.9 });
+  const two = kinds.find((k) => k.kind === "two-asks");
+  // The span is the joiner ("and also") or, for two lines, the second line's first word.
+  const keep = (two ? typed.slice(0, two.span[0]).trim() : typed.trim()) || typed.trim();
+  const queued = two ? typed.slice(two.span[0]).replace(JOINER, "").trim() : "";
+  return JSON.stringify({
+    verdict: "suggest",
+    issues: kinds.map((k) => ({ kind: k.kind, text: HINTS[k.kind] })),
+    rewrite: kinds.some((k) => k.kind !== "two-asks") ? `${keep} (mock: name the part and the result you want)` : keep,
+    ...(queued ? { queued: [queued] } : {}),
+    confidence: 0.8,
+  });
+}
+
 /** The absolute path of a recorded read; throws outside the work folder (symlinks included). The file may not exist. */
 export function readTarget(cwd: string, p: string): string {
   const target = path.resolve(cwd, p);
@@ -93,6 +129,17 @@ export async function runMockTurn(argv: string[], prompt: string, mcpServers: Mc
 }
 
 async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: MockEnv, sessionId: string, newSession: boolean): Promise<void> {
+  // Sidekick's own turns never touch the recordings or the session state (sidekick plan Decision 12).
+  if (prompt.startsWith(SIDEKICK_MARK)) {
+    const text = mockSidekickReply(prompt);
+    const event = (e: unknown) => print({ type: "stream_event", parent_tool_use_id: null, session_id: sessionId, event: e });
+    print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });
+    event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+    event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } });
+    event({ type: "content_block_stop", index: 0 });
+    print({ type: "result", subtype: "success", is_error: false, result: text, session_id: sessionId, usage: { input_tokens: 400, output_tokens: 60, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
+    return;
+  }
   const { recordings, problems } = loadRecordings(env.dir);
   for (const p of problems) process.stderr.write(`mock: skipped ${p}\n`);
   const sessions = readState(env.state);

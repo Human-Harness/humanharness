@@ -129,6 +129,7 @@ test("a harness's setup steps: Home waits for the interview, then forms, a compo
     await expect(page.getByRole("heading", { name: "Ready check" })).toBeVisible();
     await page.getByRole("button", { name: "All good" }).click();
     await expect(page.getByRole("heading", { name: "All set" })).toBeVisible();
+    // finishedAt is written with the last step but read in the same poll: the file may land before it does.
     await expect
       .poll(() => json(path.join(harnessDir, "setup.json"))?.steps)
       .toMatchObject({ conocerte: { state: "done" }, estilo: { state: "skipped" }, goal: { state: "done" }, ready: { state: "done" } });

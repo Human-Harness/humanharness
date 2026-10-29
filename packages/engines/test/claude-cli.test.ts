@@ -530,3 +530,42 @@ describe("activity extras (context-panel spec §3.2)", () => {
     expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "start" });
   });
 });
+
+describe("claudeArgs noTools (sidekick spec §5)", () => {
+  it("D0: without noTools the argv is exactly the old one", () => {
+    // Literal argv from claudeArgs before noTools existed (eb3ec21~1), with master's reference folders through
+    // --settings additionalDirectories instead of --add-dir (f2363fe).
+    const mcpConfig = JSON.stringify({ mcpServers: { ui: { type: "stdio", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } } } });
+    const head = [
+      "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+      "--setting-sources", "project", "--permission-mode", "acceptEdits",
+      "--allowedTools", "Read,Glob,Grep,TodoWrite,Edit(./**),Write(./**),MultiEdit(./**),mcp__ui",
+    ];
+    const denied = "AskUserQuestion,Bash,WebSearch,WebFetch,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)";
+    expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [uiServer], permissions })).toEqual([
+      ...head, "--disallowedTools", denied, "--strict-mcp-config", "--mcp-config", mcpConfig, "--session-id", "abc",
+    ]);
+    expect(claudeArgs({ session: { id: "abc", started: true }, mcp: [uiServer], permissions, references: ["/r"] })).toEqual([
+      ...head, "--disallowedTools", `${denied},Edit(//r/**),Write(//r/**),MultiEdit(//r/**)`,
+      "--strict-mcp-config", "--mcp-config", mcpConfig,
+      "--settings", JSON.stringify({ permissions: { additionalDirectories: ["/r"] } }), "--resume", "abc",
+    ]);
+  });
+
+  it("passes no tools, denies every built-in and loads no MCP server", () => {
+    const args = claudeArgs({ session: { id: "abc", started: true }, mcp: [], permissions: { edit: "none", exec: false, web: false }, noTools: true });
+    expect(args[args.indexOf("--tools") + 1]).toBe("");
+    expect(args).not.toContain("--allowedTools");
+    const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
+    for (const t of ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "WebSearch", "WebFetch", "Task", "TodoWrite"]) expect(denied).toContain(t);
+    expect(args).toContain("--strict-mcp-config");
+    expect(JSON.parse(args[args.indexOf("--mcp-config") + 1])).toEqual({ mcpServers: {} });
+    expect(args).toContain("--resume");
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("project");
+  });
+
+  it("refuses MCP servers or reference folders with noTools", () => {
+    expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [uiServer], permissions, noTools: true })).toThrow(/no-tools/);
+    expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/x"], noTools: true })).toThrow(/no-tools/);
+  });
+});

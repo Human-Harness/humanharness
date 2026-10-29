@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
 import { callMcpTool } from "@humanharness/fake-agent";
-import { dataCollections, dataSchema, loadHarness, settingsSchema, z } from "@humanharness/harness-sdk";
+import { SIDEKICK_COLLECTION, dataCollections, dataSchema, loadHarness, settingsSchema, sidekickCollection, z } from "@humanharness/harness-sdk";
 import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
 import { DataUnavailable, type PersonDataDeps, agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
 
@@ -17,7 +17,9 @@ const data = dataSchema.parse({
   profile: { scoped: false, single: true, schema: z.object({ name: z.string() }), agent: "read" },
 });
 
-function setup(opts: { blocked?: string; trailer?: HistoryTrailer; open?: string; saveDelay?: number; registered?: string[] } = {}) {
+function setup(
+  opts: { blocked?: string; trailer?: HistoryTrailer; open?: string; saveDelay?: number; registered?: string[]; storeFor?: PersonDataDeps["storeFor"] } = {},
+) {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const store = new DataStore(base, data);
   const files = {
@@ -41,6 +43,7 @@ function setup(opts: { blocked?: string; trailer?: HistoryTrailer; open?: string
     }),
     blocked: () => opts.blocked ?? null,
     scopeExists: async (id) => (opts.registered ?? ["fracciones", "decimales"]).includes(id),
+    ...(opts.storeFor ? { storeFor: opts.storeFor } : {}),
   };
   return { base, store, run: personDataRequests(deps), commits };
 }
@@ -245,5 +248,27 @@ describe("agentDataRequest", () => {
     } finally {
       await rpc.close();
     }
+  });
+});
+
+describe("storeFor (sidekick spec §6.4)", () => {
+  it("routes a collection to its own store and records the write as the person's", async () => {
+    let own: DataStore | null = null;
+    const t = setup({ storeFor: (c) => (c === SIDEKICK_COLLECTION ? Promise.resolve(own) : undefined) });
+    own = new DataStore(t.base, { [SIDEKICK_COLLECTION]: sidekickCollection() });
+    await t.run({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: "settings", type: "settings", on: true } }, { scope: "_app" });
+    expect(await own.get(SIDEKICK_COLLECTION, "settings", { who: "person", scope: "_app" })).toMatchObject({ on: true });
+    expect(t.commits.map((c) => c.message)).toEqual(["Data: sidekick"]);
+  });
+
+  it("D0: without storeFor a sidekick request reaches the harness store (unknown collection)", async () => {
+    const t = setup();
+    await expect(t.run({ op: "get", collection: SIDEKICK_COLLECTION, key: "settings" }, { scope: "_app" })).rejects.toThrow(/no collection/);
+  });
+
+  it("the harness UI never reaches the sidekick collection", async () => {
+    const ui = harnessUiDataRequests(async () => "reached", () => false);
+    await expect(ui({ op: "get", collection: SIDEKICK_COLLECTION, key: "settings" }, {})).rejects.toThrow(/no collection "sidekick"/);
+    await expect(ui({ op: "query", collection: "notes" }, {})).resolves.toBe("reached");
   });
 });

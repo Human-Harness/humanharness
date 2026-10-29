@@ -2,8 +2,8 @@ import { z } from "zod";
 
 /** A collection's name: it names a file (`<collection>.json`) and appears in the agent's tools. */
 export const COLLECTION_NAME = /^[a-z][a-z0-9_]{0,39}$/;
-/** Names the core keeps for itself: `settings` is the harness-settings collection (harness-settings spec). */
-export const RESERVED_COLLECTIONS: readonly string[] = ["settings"];
+/** Collections the core keeps: `settings` (harness settings) and `sidekick` (sidekick spec §6.4). Literal names: no import cycle. */
+export const RESERVED_COLLECTIONS: readonly string[] = ["settings", "sidekick"];
 /** What the agent may do with a collection (spec §4.1). */
 export const DATA_AGENT = ["write", "read", "none"] as const;
 export type DataAgent = (typeof DATA_AGENT)[number];

@@ -11,6 +11,10 @@ import {
   type LoadedHarness,
   PROFILE_COLLECTION,
   SETTINGS_COLLECTION,
+  SIDEKICK_COLLECTION,
+  SIDEKICK_PROCESS,
+  SIDEKICK_SETTINGS_ID,
+  type SidekickRecord,
   TIERS,
   type Tier,
   allBlocks,
@@ -22,17 +26,19 @@ import {
   inputBlocks,
   inputSpecs,
   interviewCollections,
+  languageName,
   loadHarness,
   materialStageKey,
   profileFormSpec,
   resolveInHarness,
   settingsView,
+  sidekickCollection,
   stageTier,
 } from "@humanharness/harness-sdk";
 import { createI18n } from "@humanharness/i18n";
 import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
-import { type Event, type HarnessRuntime, type SystemTaskResult, createRuntime, runSystemSession, runSystemTask } from "@humanharness/runtime";
+import { type Event, type HarnessRuntime, SidekickSession, type SystemTaskResult, createRuntime, runSystemSession, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
@@ -77,10 +83,12 @@ import {
   notesPrefix,
   profileDir,
   readNotes,
+  sidekickWorkDir,
   syncLocations,
   syncStatus,
   tasksFile,
   writeNote,
+  writeSidekickBrief,
 } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
@@ -132,6 +140,9 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
+import { SidekickController } from "./sidekick";
+import { registerSidekickIpc } from "./sidekick-ipc";
+import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { TranslationCache } from "./translation-cache";
@@ -201,6 +212,8 @@ let historyHeld = false;
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 /** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
 let settingsCtl: SettingsController | null = null;
+/** Sidekick, the core's prompt coach (sidekick spec D1): every harness gets it once loaded; it does nothing while off. */
+let sidekickCtl: SidekickController | null = null;
 /** The harness's setup steps (setup-steps spec); null without any (D0): no `.harness/setup.json` is ever read or written. */
 let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
@@ -289,6 +302,8 @@ async function modelsView(): Promise<ModelsView> {
       [QUESTIONS]: harness.questions?.tier ?? "standard",
       // Material spec §8: each AI stage is a process, only with material (D0); links only with items.
       ...(harness.material ? materialRecommended(harness.material) : {}),
+      // Sidekick is a process of its own (sidekick spec §5), light by default.
+      [SIDEKICK_PROCESS]: "light",
     },
     defaults: Object.fromEntries(
       engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
@@ -444,6 +459,8 @@ async function appState(): Promise<AppState> {
     ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
     // Only a harness with settings gets its tab (harness-settings D0).
     ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
+    // Sidekick is core (sidekick spec D1): every harness sends it; the window draws it only with this.
+    sidekick: { id: "sidekick", name: "Sidekick" },
     // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
     ...(hasModes(harness)
       ? {
@@ -549,10 +566,25 @@ function dataStoreFor(base: string): DataStore {
   return entry.store;
 }
 
+/**
+ * Sidekick's own store per base (plan Decision 8): never in dataCollections, so harness rules, the data diff and the
+ * harness UI never see it. Its file sits with the others (`.harness/data/_app/`), so undo restores it like any data.
+ */
+const sidekickStores = new Map<string, DataStore>();
+function sidekickStoreFor(base: string): DataStore {
+  let s = sidekickStores.get(base);
+  if (!s) {
+    s = new DataStore(base, { [SIDEKICK_COLLECTION]: sidekickCollection() });
+    sidekickStores.set(base, s);
+  }
+  return s;
+}
+
 /** The folder changed or moved: the old base's store goes, with its listener. */
 function dropDataStore(base: string): void {
   dataStores.get(base)?.off();
   dataStores.delete(base);
+  sidekickStores.delete(base);
 }
 
 /** Every store under `root` (the folder itself, or each profile's): a moved or changed folder drops them all. */
@@ -597,6 +629,8 @@ async function arrivedInProfile(): Promise<void> {
   // Without material, nothing (D0).
   void materialSvc?.settle().catch((err: unknown) => console.error("Could not resume the material", err));
   kickMaterial();
+  // The new profile's Sidekick settings; the old base's sessions close.
+  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -870,8 +904,13 @@ const tasks = new TaskManager({
   },
   // A getter, because the harness is loaded after this object is built. Undefined without settings (D0).
   get betweenTasks() {
-    const ctl = settingsCtl;
-    return ctl ? () => ctl.betweenTasks() : undefined;
+    const settings = settingsCtl;
+    const sidekick = sidekickCtl;
+    if (!settings && !sidekick) return undefined;
+    return async () => {
+      await settings?.betweenTasks();
+      await sidekick?.betweenTasks();
+    };
   },
   // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
   get modes() {
@@ -1267,6 +1306,11 @@ const hold = holds({
  */
 const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: hold.restoreHeld });
 const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
+/** A restore changes tracked files with no data event: the settings and Sidekick's settings may have changed. */
+function afterRestore(): void {
+  void settingsCtl?.changed();
+  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+}
 
 /**
  * Profile switches (profiles spec §5): one at a time, refused while a turn, a restore, a move, an engine change, an
@@ -1297,6 +1341,9 @@ const personData = personDataRequests({
   blocked: () => (quitting ? "The app is closing" : turnBlocked()),
   // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
   scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
+  // The reserved `sidekick` collection lives in its own store (sidekick spec §6.4); every other collection as before.
+  storeFor: (collection) =>
+    collection === SIDEKICK_COLLECTION ? validConfig().then((c) => (c ? sidekickStoreFor(baseOf(c)) : null)) : undefined,
 });
 /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
 const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
@@ -1337,7 +1384,7 @@ const fileTimelines = new FileTimelineService({
   approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
   busy: () => quitting || tasks.isBusy() || turnBlocked() !== null,
   restore: (run) => restoreWith(run),
-  restored: () => void settingsCtl?.changed(),
+  restored: () => afterRestore(),
   // Diffs run in a worker thread of their own: jsdiff's budget and the Markdown parse never block Electron main.
   diff: workerDiff({ entry: path.join(here, "diff-worker.js") }),
 });
@@ -1514,6 +1561,8 @@ function registerIpc() {
     settingsCtl ? settingsCtl.set(field, value) : { ok: false, message: "This harness has no settings" },
   );
   handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
+  // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
+  registerSidekickIpc(handle, () => sidekickCtl);
   // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
   // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
   // it stands, never a thrown error.
@@ -1684,13 +1733,13 @@ function registerIpc() {
     confirm: confirmGoBack,
     blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
     groups: historyGroups,
-    restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => void settingsCtl?.changed()),
+    restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(afterRestore),
     restoreTask: (taskId) =>
       restoreWith(async (history) => {
         const group = (await history.tasks()).find((g) => g.taskId === taskId);
         if (!group?.start) throw new Error("Nothing to go back to");
         await history.restore(group.start, RESTORE_TASK);
-      }).then(() => void settingsCtl?.changed()),
+      }).then(afterRestore),
     file: fileTimelines,
   });
   for (const [channel, fn] of Object.entries(goBacks)) handleFrom(channel, fn);
@@ -1983,6 +2032,58 @@ if (loaded) {
       changed: (state) => sendToWindow("hh:settings", state),
     });
   }
+  // Sidekick is core (sidekick spec D1): every harness gets the controller; it does nothing while off.
+  sidekickCtl = new SidekickController({
+    ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
+    harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}) },
+    phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
+    store: new SidekickStore({
+      read: async () => {
+        const c = await validConfig();
+        if (!c) return null;
+        const store = sidekickStoreFor(baseOf(c));
+        return (await store.get(SIDEKICK_COLLECTION, SIDEKICK_SETTINGS_ID, { who: "person", scope: APP_SCOPE })) as SidekickRecord | null;
+      },
+      // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: sidekick` commit (open task's trailer).
+      write: (request) => personData(request, { scope: APP_SCOPE }),
+      ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
+    }),
+    setup: async () => {
+      const c = await validConfig();
+      return c ? { engineId: c.engineId, base: baseOf(c) } : null;
+    },
+    hasNotice,
+    engine: getEngine,
+    command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+    // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens.
+    profile: async (engine) => {
+      const models = cleanModels((await config.load()).models);
+      const saved = await savedOffer(engine.id);
+      return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models }), models, saved.models), saved);
+    },
+    // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in the Sidekick session.
+    workDir: (base) => sidekickWorkDir(app.getPath("userData"), base, "sidekick"),
+    writeBrief: writeSidekickBrief,
+    open: (o) => new SidekickSession(o),
+    task: async () => {
+      const t = await tasks.runningTask();
+      if (!t) return null;
+      const phase = await tasks.openPhase();
+      return { ...t, ...(phase ? { phase } : {}) };
+    },
+    context: async (base, scope) => {
+      // readNotes returns newest first.
+      const notes = await readNotes(base, notesPrefix(scoped(), scope ?? MAIN_SCOPE)).catch(() => []);
+      const data = Object.entries(harness.data)
+        .filter(([, c]) => c.agent !== "none")
+        .map(([name]) => name);
+      return { notes: notes.slice(0, 20).map((n) => n.title), data };
+    },
+    uiLanguage: async () => languageName((await config.load()).language ?? DEFAULT_LANGUAGE),
+    usage: (base) => new UsageLog(base).load(2000),
+    log: (base, record) => new UsageLog(base).append(record),
+    changed: (state) => sendToWindow("hh:sidekick", state),
+  });
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {
     const settings = settingsCtl;
@@ -2104,6 +2205,7 @@ if (primary) {
     event.preventDefault();
     tasks.close();
     turns.close();
+    void sidekickCtl?.close();
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();

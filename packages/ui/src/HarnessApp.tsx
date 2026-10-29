@@ -269,6 +269,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onHome={() => setScreen("home")}
             onSettings={() => setSettings("general")}
             onFixEngine={() => setSettings("engine")}
+            onSidekickSettings={() => setSettings("sidekick")}
             onTurnOk={checkEngine}
           />
         ) : screen === "setup" ? (

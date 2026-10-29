@@ -91,6 +91,21 @@ describe("the connect step (tools spec §9)", () => {
     expect(next().disabled).toBe(true);
   });
 
+  it("the same refusal twice is a new alert each time", async () => {
+    const c = client();
+    c.connectionsSet.add("jira");
+    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await screen.findByRole("group", { name: "GitHub token" });
+    save("GitHub token", "short");
+    const first = await screen.findByRole("alert");
+    expect(first.textContent).toBe("A key is at least 8 characters");
+    save("GitHub token", "short");
+    await waitFor(() => expect(screen.getByRole("alert")).not.toBe(first));
+    expect(screen.getByRole("alert").textContent).toBe("A key is at least 8 characters");
+    expect(first.isConnected).toBe(false);
+    expect(next().disabled).toBe(true);
+  });
+
   it("keys that can't be read say so, and Next stays disabled", async () => {
     const c = client();
     c.connectionsSet.add("jira").add("gh");

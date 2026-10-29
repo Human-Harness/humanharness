@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SetupStepView } from "../client";
+import type { ConnectionResult, HarnessClient, SetupStepView } from "../client";
 import { useConnections } from "./ConnectionsTab";
 import { SecretField } from "./SecretField";
 
@@ -23,18 +23,24 @@ export function ConnectStep({ client, step, onReady }: { client: HarnessClient; 
   useEffect(() => {
     if (known) told.current(ready);
   }, [known, ready]);
+  // Each refusal is a new alert (a new node), so the same text twice is announced twice, as in Settings › Connections.
+  const [refusals, setRefusals] = useState(0);
+  const counted = (result: ConnectionResult) => {
+    if (!result.ok) setRefusals((n) => n + 1);
+    return result;
+  };
   return (
     <>
       {unavailable && <p role="alert">{t("connections.unavailable")}</p>}
       {rows.length > 0 && (
         <div className="hh-rows">
           {rows.map((c) => (
-            <SecretField key={c.id} connection={c} onSave={(value) => save(c.id, value)} onDelete={() => remove(c.id)} />
+            <SecretField key={c.id} connection={c} onSave={(value) => save(c.id, value).then(counted)} onDelete={() => remove(c.id).then(counted)} />
           ))}
         </div>
       )}
       {error && (
-        <p className="hh-field-error" role="alert">
+        <p key={refusals} className="hh-field-error" role="alert">
           {error}
         </p>
       )}

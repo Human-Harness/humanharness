@@ -178,50 +178,57 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v ===
 const hookCommands = (hooks: Hooks | undefined): string[] =>
   Object.values(hooks ?? {}).flatMap((matchers) => matchers.flatMap((m) => m.hooks.map((h) => h.command)));
 
-/**
- * Reads the engine folder `dir` of a scope. Null when it is absent or holds no file (D0 for the scope); otherwise the
- * config with every refusal. A config with refusals can be shown but never approved.
- */
-export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promise<EngineConfig | null> {
-  let st;
-  try {
-    st = await fs.lstat(dir);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
-  const config: EngineConfig = {
-    base: "isolated",
-    instructions: "",
-    servers: [],
-    settings: null,
-    ignored: [],
-    skills: [],
-    agents: {},
-    codex: null,
-    actions: {},
-    scripts: [],
-    refusals: [],
-    hash: "",
-    files: new Map(),
-    scriptFiles: new Map(),
-  };
-  if (st.isSymbolicLink() || !st.isDirectory()) {
-    config.refusals.push({ file: ".", message: st.isSymbolicLink() ? "the engine folder is a symbolic link" : "the engine folder is not a folder" });
-    config.hash = engineHash(config.files, config.scriptFiles);
-    return config;
-  }
+const emptyConfig = (): EngineConfig => ({
+  base: "isolated",
+  instructions: "",
+  servers: [],
+  settings: null,
+  ignored: [],
+  skills: [],
+  agents: {},
+  codex: null,
+  actions: {},
+  scripts: [],
+  refusals: [],
+  hash: "",
+  files: new Map(),
+  scriptFiles: new Map(),
+});
 
-  const walk = new Walk(dir);
-  await walk.dir("", 0);
-  if (walk.capped) {
-    config.refusals.push({ file: ".", message: walk.capped });
-    config.hash = engineHash(config.files, config.scriptFiles);
-    return config;
+/** Every folder that holds a file, by posix path (what a walk sees, less empty folders). */
+function dirsOf(files: ReadonlyMap<string, Buffer>): string[] {
+  const dirs = new Set<string>();
+  for (const rel of files.keys()) {
+    const parts = rel.split("/");
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
   }
-  if (walk.files.size === 0 && walk.refusals.length === 0) return null;
-  const files = walk.files;
-  const refusals = walk.refusals;
+  return [...dirs].sort();
+}
+
+/** Refusals unique and sorted by file; `scripts` and the hash from the bytes the config holds. */
+function finish(config: EngineConfig): EngineConfig {
+  const unique = new Map(config.refusals.map((r) => [`${r.file}\0${r.message}`, r]));
+  config.refusals = [...unique.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+  config.scripts = [...config.scriptFiles.keys()].sort();
+  config.hash = engineHash(config.files, config.scriptFiles);
+  return config;
+}
+
+/**
+ * What the engine folder's `files` say, cleaned with today's context `o` (pure: no disk). `scriptFiles` are the
+ * referenced scripts' bytes, kept and hashed as given; `commands` are the ones whose scripts join the hash (for
+ * `scriptRefs`). The snapshot calls it again on load with the re-hashed bytes, so a rule that the context refuses now
+ * (a folder unlinked, `edit: "none"`, a new reserved server name) is refused there too. `dirs` are the folders a walk
+ * saw (empty ones included); by default the ones holding a file. `refusals` are the walk's, added to.
+ */
+export function configFromFiles(
+  files: Map<string, Buffer>,
+  scriptFiles: Map<string, Buffer>,
+  o: ReadEngineOptions,
+  dirs: readonly string[] = dirsOf(files),
+  refusals: EngineRefusal[] = [],
+): { config: EngineConfig; commands: ScriptCommand[] } {
+  const config = emptyConfig();
   const refuse = (file: string, message: string) => refusals.push({ file, message: `${file}: ${message}` });
   const text = (rel: string) => files.get(rel)?.toString("utf8");
   /** Runs a cleaner or parser for `rel`; a throw becomes a refusal naming the file. */
@@ -286,7 +293,7 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
       else if (parts.length > 3 || !LAYER_FILES.has(parts[2]!)) refuse(rel, "is not allowed in an action layer");
     }
   }
-  for (const d of walk.dirs) {
+  for (const d of dirs) {
     const parts = d.split("/");
     if (parts.length === 1 && !TOP_DIRS.has(d) && ![...files.keys()].some((k) => k.startsWith(`${d}/`))) {
       // An empty unknown folder: nothing to read, but still not allowed.
@@ -307,7 +314,7 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
 
   Object.assign(config, layer(""));
 
-  for (const d of walk.dirs) {
+  for (const d of dirs) {
     const parts = d.split("/");
     if (parts[0] !== "skills" || parts.length !== 2) continue;
     const skill = text(`${d}/SKILL.md`);
@@ -337,7 +344,7 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
     }
   }
 
-  for (const d of walk.dirs) {
+  for (const d of dirs) {
     const parts = d.split("/");
     if (parts[0] !== "actions" || parts.length !== 2) continue;
     const id = parts[1]!;
@@ -345,10 +352,48 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
     Object.defineProperty(config.actions, id, { value: layer(`${d}/`), enumerable: true, writable: true, configurable: true });
   }
 
-  // Referenced scripts: files outside the engine folder (those inside are already in `files`).
+  config.files = files;
+  config.scriptFiles = scriptFiles;
+  config.refusals = refusals;
+  return { config: finish(config), commands };
+}
+
+/** The files `commands` name outside the engine folder `dir` (those inside are already in its files), sorted. */
+export async function externalScripts(commands: readonly ScriptCommand[], dir: string, o: ReadEngineOptions): Promise<string[]> {
   const engineRoot = path.resolve(dir);
-  for (const script of await scriptRefs(commands, o)) {
-    if (script === engineRoot || script.toLowerCase().startsWith(engineRoot.toLowerCase() + path.sep)) continue;
+  return (await scriptRefs(commands, o)).filter((s) => !(s === engineRoot || s.toLowerCase().startsWith(engineRoot.toLowerCase() + path.sep)));
+}
+
+/**
+ * Reads the engine folder `dir` of a scope. Null when it is absent or holds no file (D0 for the scope); otherwise the
+ * config with every refusal. A config with refusals can be shown but never approved.
+ */
+export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promise<EngineConfig | null> {
+  let st;
+  try {
+    st = await fs.lstat(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  const empty = emptyConfig();
+  if (st.isSymbolicLink() || !st.isDirectory()) {
+    empty.refusals.push({ file: ".", message: st.isSymbolicLink() ? "the engine folder is a symbolic link" : "the engine folder is not a folder" });
+    return finish(empty);
+  }
+
+  const walk = new Walk(dir);
+  await walk.dir("", 0);
+  if (walk.capped) {
+    empty.refusals.push({ file: ".", message: walk.capped });
+    return finish(empty);
+  }
+  if (walk.files.size === 0 && walk.refusals.length === 0) return null;
+  const { config, commands } = configFromFiles(walk.files, new Map(), o, walk.dirs, walk.refusals);
+  const refusals = config.refusals;
+
+  // Referenced scripts: files outside the engine folder (those inside are already in `files`).
+  for (const script of await externalScripts(commands, dir, o)) {
     const read = await readRegular(script, ENGINE_FILE_MAX).catch(() => ({ kind: "other" }) as Read);
     if (read.kind === "file") {
       walk.total += read.data.length;
@@ -361,11 +406,5 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
     else if (read.kind === "hardlink") refusals.push({ file: script, message: `${script}: the script has hard links, which are not allowed` });
     else refusals.push({ file: script, message: `${script}: the script could not be read as a regular file` });
   }
-  config.scripts = [...config.scriptFiles.keys()].sort();
-
-  config.files = files;
-  const unique = new Map(refusals.map((r) => [`${r.file}\0${r.message}`, r]));
-  config.refusals = [...unique.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
-  config.hash = engineHash(files, config.scriptFiles);
-  return config;
+  return finish(config);
 }

@@ -31,8 +31,9 @@ export interface ScopeEntry {
   /** Linked folders (hatches spec §3.2). Absent when there are none, so the file is today's (D0). */
   linked?: LinkedFolderEntry[];
   /**
-   * The engine config the person approved (hatches spec §5.3): its hash and when (ISO). Absent until the first
-   * approval, so the file is today's (D0). New sessions get the config only while the folder still hashes to it.
+   * The engine config the person approved (hatches spec §5.3): its hash, when (ISO) and the app's signature. Absent
+   * until the first approval, so the file is today's (D0). New sessions get the config only while the folder still
+   * hashes to it and the tag is the app's.
    */
   engineApproval?: EngineApproval;
 }
@@ -40,6 +41,11 @@ export interface ScopeEntry {
 export interface EngineApproval {
   hash: string;
   at: string;
+  /**
+   * The app's signature of the approval (an HMAC with the links' key, in its data folder): `scopes.json` sits in the
+   * folder the agent can write, so an approval without the app's tag counts as none. The shell makes and checks it.
+   */
+  tag: string;
 }
 
 export const SCOPE_TITLE_MAX = 120;
@@ -73,7 +79,7 @@ const LINK_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
 const LINK_PATH_MAX = 4096;
 const LINK_TAG_MAX = 128;
 const LINK_NONCE = /^[0-9a-f]{16,64}$/;
-/** An engine config hash: sha256, lowercase hex. */
+/** An engine config hash, and an approval's tag: sha256 / HMAC-SHA256, lowercase hex. */
 const ENGINE_HASH = /^[0-9a-f]{64}$/;
 const APPROVED_AT_MAX = 64;
 /** The most links one entry can hold (every key full): a longer list in a hand-edited file is cut there. */
@@ -99,7 +105,9 @@ function cleanLink(v: unknown): LinkedFolderEntry | null {
 function cleanApproval(v: unknown): EngineApproval | null {
   if (!isObject(v) || typeof v.hash !== "string" || !ENGINE_HASH.test(v.hash)) return null;
   if (typeof v.at !== "string" || !v.at || v.at.length > APPROVED_AT_MAX) return null;
-  return { hash: v.hash, at: v.at };
+  // Without a tag of the right shape an approval is no approval: dropped whole.
+  if (typeof v.tag !== "string" || !ENGINE_HASH.test(v.tag)) return null;
+  return { hash: v.hash, at: v.at, tag: v.tag };
 }
 
 function cleanEntry(v: unknown): ScopeEntry | null {
@@ -249,13 +257,16 @@ export class ScopeStore {
 
   /**
    * Approves the scope's engine config by its hash at `now` (the store's clock without it). The caller computed the
-   * hash right then and compared it with the one the person saw (E10); the store only checks its shape.
-   * Throws synchronously on a hash that isn't 64 lowercase hex characters.
+   * hash right then and compared it with the one the person saw (E10); the store checks its shape and has `sign`
+   * make the tag over the hash and time it writes. Throws synchronously on a hash that isn't 64 lowercase hex
+   * characters, and on a tag that isn't one.
    */
-  approveEngine(id: string, hash: string, now?: Date): Promise<ScopeEntry> {
+  approveEngine(id: string, hash: string, sign: (approval: { hash: string; at: string }) => string, now?: Date): Promise<ScopeEntry> {
     if (typeof hash !== "string" || !ENGINE_HASH.test(hash)) throw new Error("An engine config hash is 64 hex characters");
     const at = (now ?? this.now()).toISOString();
-    return this.update(id, (s) => ({ ...s, engineApproval: { hash, at } }));
+    const tag = sign({ hash, at });
+    if (typeof tag !== "string" || !ENGINE_HASH.test(tag)) throw new Error("An engine approval tag is 64 hex characters");
+    return this.update(id, (s) => ({ ...s, engineApproval: { hash, at, tag } }));
   }
 
   /** Removes the approval: the entry is written as before any approval (D0 shape). */

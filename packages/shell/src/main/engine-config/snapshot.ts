@@ -3,30 +3,41 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
+import { isScopeId } from "@humanharness/workspace";
 import type { CleanSettings } from "./clean";
-import { ENGINE_FILE_MAX, engineHash, type EngineConfig, type EngineLayer } from "./read-config";
+import {
+  ENGINE_FOLDER_MAX,
+  configFromFiles,
+  engineHash,
+  externalScripts,
+  type EngineConfig,
+  type EngineLayer,
+  type EngineRefusal,
+  type ReadEngineOptions,
+} from "./read-config";
 
 // The approved engine config's snapshot, `<userData>/engine-config/<hash>/` (hatches spec §5.2, E3). Engines get only
 // this folder, never the scope's live one: an agent that edits `.harness/engine/` mid-session can't load what the
 // person didn't approve. The snapshot is written from the bytes `readEngineConfig` hashed (never read again from the
-// person's folder), and re-hashed every time it is loaded.
+// person's folder). On load it is re-hashed and everything is derived again from its source with today's cleaning
+// context, so a rule the harness or the scope's links refuse now is refused for a pinned task too.
 //
-//   source/files/<rel>          the engine folder's files, verbatim (for the re-hash)
+//   source/files/<rel>          the engine folder's files, verbatim
 //   source/scripts/<sha16>      each referenced script, named by its path's sha256 (for the re-hash only: engines
 //   source/scripts.json         run the live path, which the hash check at session start covers); the paths, sorted
-//   plugin/skills/<name>/…      the skills, laid out as a plugin for `--plugin-dir` (nothing else in it)
+//   plugins/scope-<id>/skills/… the skills, laid out as a plugin for `--plugin-dir`, one per scope that uses this hash:
+//                               Claude names a plugin after its folder, so skills are `/scope-<id>:<name>` (spec §5.2)
 //   agents.json                 for `--agents`; absent without agents
-//   settings.json               the cleaned settings; absent without them
-//   mcp.json                    the cleaned servers (already `scope-<name>`), a list
-//   codex.json                  the cleaned codex.toml; absent without it
-//   actions.json                the action layers; absent without them
-//   instructions.md
+//
+// Nothing else is in the folder: settings, servers, Codex keys and instructions reach the engines as arguments, built
+// from what `loadSnapshot` returns. On load the folder must hold exactly what `writeSnapshot` would write, and every
+// plugin exactly the hashed skills.
 
 export interface EngineSnapshot {
   hash: string;
   dir: string;
   base: "isolated" | "global";
-  /** The plugin folder holding `skills/`; absent without skills. */
+  /** The scope's plugin folder, `plugins/scope-<id>`, holding `skills/`; absent without skills. */
   pluginDir?: string;
   /** agents.json; absent without agents. */
   agentsFile?: string;
@@ -35,6 +46,13 @@ export interface EngineSnapshot {
   codex?: Record<string, unknown>;
   instructions: string;
   actions: Record<string, EngineLayer>;
+  /** What today's context refuses in the approved files. Not empty: the caller treats the scope as not approved. */
+  refusals: EngineRefusal[];
+}
+
+export interface LoadSnapshotOptions extends ReadEngineOptions {
+  /** The scope's live engine folder: scripts inside it are its files, not referenced scripts. */
+  dir: string;
 }
 
 /** How long a snapshot nothing keeps stays in the data folder (Decision 13). */
@@ -42,10 +60,9 @@ export const SNAPSHOT_KEEP_DAYS = 30;
 const HASH = /^[0-9a-f]{64}$/;
 const TEMP = /^\.tmp-[0-9a-f]{16}$/;
 const CHANGED = "The approved engine config changed on disk";
-/** The snapshot folder's own files are capped as the engine folder's are, plus room for the derived JSON. */
-const DERIVED_MAX = 4 * ENGINE_FILE_MAX;
-
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** No file of a snapshot can be larger than the whole engine folder (agents.json included, with room for JSON). */
+const FILE_MAX = 2 * ENGINE_FOLDER_MAX;
+const SNAPSHOT_FILES_MAX = 1000;
 
 function checkHash(hash: string): void {
   if (typeof hash !== "string" || !HASH.test(hash)) throw new Error("An engine config hash is 64 hex characters");
@@ -59,165 +76,232 @@ export function snapshotDir(userData: string, hash: string): string {
 
 /** A script's file name in `source/scripts/`: its absolute path's sha256, 16 hex characters. */
 const scriptName = (abs: string) => createHash("sha256").update(abs).digest("hex").slice(0, 16);
+const json = (v: unknown) => Buffer.from(`${JSON.stringify(v, null, 2)}\n`);
 
 /** A relative posix path from the engine folder's walk, checked again before it becomes a path on disk. */
-function safeRel(rel: string): string[] {
+function safeRel(rel: string): string {
   const parts = rel.split("/");
   if (parts.some((p) => p === "" || p === "." || p === ".." || p.includes("\\") || p.includes("\0"))) throw new Error(`Invalid engine file path: ${rel}`);
-  return parts;
+  return rel;
 }
 
-async function put(file: string, data: string | Buffer): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, data, { flag: "wx" });
+/** A scope's plugin folder name: Claude names the plugin, and so its skills, after it. */
+function pluginName(scope: string): string {
+  if (!isScopeId(scope)) throw new Error(`Invalid engine config scope: "${String(scope).slice(0, 40)}"`);
+  return `scope-${scope}`;
+}
+const PLUGIN = /^scope-(.+)$/;
+
+/** The skills' files of the engine folder, by path inside a plugin (`skills/<name>/…`). */
+const skillsOf = (files: ReadonlyMap<string, Buffer>) => new Map([...files].filter(([rel]) => rel.startsWith("skills/")));
+
+/** Every file of the snapshot of these bytes but the plugins, by posix path relative to its folder. */
+function layout(files: ReadonlyMap<string, Buffer>, scriptFiles: ReadonlyMap<string, Buffer>, agents: EngineConfig["agents"]): Map<string, Buffer> {
+  const out = new Map<string, Buffer>();
+  for (const [rel, data] of files) out.set(`source/files/${safeRel(rel)}`, data);
+  const scripts = [...scriptFiles.keys()].sort();
+  for (const abs of scripts) out.set(`source/scripts/${scriptName(abs)}`, scriptFiles.get(abs)!);
+  out.set("source/scripts.json", json(scripts));
+  if (Object.keys(agents).length > 0) out.set("agents.json", json(agents));
+  return out;
 }
 
-/**
- * Writes the snapshot of `config` (one that `readEngineConfig` returned, without refusals) and returns its folder.
- * The same hash twice is a no-op. Atomic: written into a temp folder next to it, then renamed into place.
- */
-export async function writeSnapshot(userData: string, config: EngineConfig): Promise<string> {
-  if (config.refusals.length > 0) throw new Error("An engine config with refusals can't be approved");
-  checkHash(config.hash);
-  if (engineHash(config.files, config.scriptFiles) !== config.hash) throw new Error("The engine config's bytes don't match its hash");
-  const final = snapshotDir(userData, config.hash);
-  if (await fs.lstat(final).catch(() => null)) return final;
-
-  const base = path.dirname(final);
-  await fs.mkdir(base, { recursive: true });
-  const tmp = path.join(base, `.tmp-${randomBytes(8).toString("hex")}`);
-  try {
-    await fs.mkdir(tmp);
-    for (const [rel, data] of config.files) {
-      const parts = safeRel(rel);
-      await put(path.join(tmp, "source", "files", ...parts), data);
-      if (parts[0] === "skills") await put(path.join(tmp, "plugin", ...parts), data);
-    }
-    const scripts = [...config.scriptFiles.keys()].sort();
-    await fs.mkdir(path.join(tmp, "source", "scripts"), { recursive: true });
-    for (const abs of scripts) await put(path.join(tmp, "source", "scripts", scriptName(abs)), config.scriptFiles.get(abs)!);
-    await put(path.join(tmp, "source", "scripts.json"), `${JSON.stringify(scripts, null, 2)}\n`);
-
-    const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
-    if (Object.keys(config.agents).length > 0) await put(path.join(tmp, "agents.json"), json(config.agents));
-    if (config.settings) await put(path.join(tmp, "settings.json"), json(config.settings));
-    await put(path.join(tmp, "mcp.json"), json(config.servers));
-    if (config.codex) await put(path.join(tmp, "codex.json"), json(config.codex));
-    if (Object.keys(config.actions).length > 0) await put(path.join(tmp, "actions.json"), json(config.actions));
-    await put(path.join(tmp, "instructions.md"), config.instructions);
-
-    await fs.rename(tmp, final);
-  } catch (err) {
-    await fs.rm(tmp, { recursive: true, force: true });
-    // Another write of the same hash won the rename: its snapshot holds the same bytes.
-    const code = (err as NodeJS.ErrnoException).code;
-    if ((code === "EEXIST" || code === "ENOTEMPTY") && (await fs.lstat(final).catch(() => null))?.isDirectory()) return final;
-    throw err;
-  }
-  return final;
-}
-
-/** Reads a regular file without following a link; anything else is a changed snapshot. */
-async function readOwn(file: string, max: number): Promise<Buffer> {
-  let h;
-  try {
-    h = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch {
-    throw new Error(CHANGED);
-  }
+/** Reads a regular file without following a link; anything else throws. */
+async function readOwn(file: string): Promise<Buffer> {
+  const h = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const st = await h.stat();
-    if (!st.isFile() || st.size > max) throw new Error(CHANGED);
+    if (!st.isFile() || st.size > FILE_MAX) throw new Error(CHANGED);
     return await h.readFile();
   } finally {
     await h.close();
   }
 }
 
-/** Whether `p` is a real folder (not a link); missing is false, anything else a changed snapshot. */
-async function isRealDir(p: string): Promise<boolean> {
-  const st = await fs.lstat(p).catch(() => null);
-  if (!st) return false;
-  if (st.isSymbolicLink() || !st.isDirectory()) throw new Error(CHANGED);
-  return true;
-}
-
-/** Every file under `dir` by posix path relative to it; a link or anything but a file or folder throws. */
+/**
+ * Every file under `dir` by posix path relative to it. A link, anything but a file or folder, an empty folder (a
+ * snapshot has none) or too many files throws.
+ */
 async function walk(dir: string, rel = "", out = new Map<string, Buffer>()): Promise<Map<string, Buffer>> {
   const entries = await fs.readdir(path.join(dir, rel), { withFileTypes: true });
+  if (entries.length === 0) throw new Error(CHANGED);
   for (const e of entries) {
     const r = rel === "" ? e.name : `${rel}/${e.name}`;
     if (e.isDirectory()) await walk(dir, r, out);
-    else if (e.isFile()) out.set(r, await readOwn(path.join(dir, r), ENGINE_FILE_MAX));
+    else if (e.isFile() && out.size < SNAPSHOT_FILES_MAX) out.set(r, await readOwn(path.join(dir, r)));
     else throw new Error(CHANGED);
   }
   return out;
 }
 
-async function optionalJson(file: string): Promise<unknown> {
-  const st = await fs.lstat(file).catch(() => null);
-  if (!st) return undefined;
+/** The snapshot folder's files, or null when it isn't a real folder (missing, a link) or holds anything else. */
+async function readTree(dir: string): Promise<Map<string, Buffer> | null> {
+  for (const p of [path.dirname(dir), dir]) {
+    const st = await fs.lstat(p).catch(() => null);
+    if (!st || st.isSymbolicLink() || !st.isDirectory()) return null;
+  }
+  return walk(dir).catch(() => null);
+}
+
+const sameTree = (a: ReadonlyMap<string, Buffer>, b: ReadonlyMap<string, Buffer>) =>
+  a.size === b.size && [...a].every(([k, v]) => b.get(k)?.equals(v) === true);
+
+/**
+ * The scopes whose plugin `tree` holds, when it is a snapshot of these bytes: outside `plugins/` exactly `want`, and
+ * each `plugins/scope-<id>/` exactly `skills` (none without skills). Null when anything differs.
+ */
+function pluginsIn(tree: ReadonlyMap<string, Buffer>, want: ReadonlyMap<string, Buffer>, skills: ReadonlyMap<string, Buffer>): Set<string> | null {
+  const core = new Map<string, Buffer>();
+  const plugins = new Map<string, Map<string, Buffer>>();
+  for (const [rel, data] of tree) {
+    const parts = rel.split("/");
+    if (parts[0] !== "plugins") {
+      core.set(rel, data);
+      continue;
+    }
+    const scope = PLUGIN.exec(parts[1] ?? "")?.[1];
+    if (scope === undefined || !isScopeId(scope) || parts.length < 3) return null;
+    const p = plugins.get(scope) ?? new Map<string, Buffer>();
+    p.set(parts.slice(2).join("/"), data);
+    plugins.set(scope, p);
+  }
+  if (!sameTree(core, want)) return null;
+  for (const p of plugins.values()) if (skills.size === 0 || !sameTree(p, skills)) return null;
+  return new Set(plugins.keys());
+}
+
+/** Writes `files` into a new folder `dest` (which must not exist), through a temp folder beside `tempBase`. */
+async function writeFolder(tempBase: string, dest: string, files: ReadonlyMap<string, Buffer>): Promise<void> {
+  const tmp = path.join(tempBase, `.tmp-${randomBytes(8).toString("hex")}`);
   try {
-    return JSON.parse((await readOwn(file, DERIVED_MAX)).toString("utf8")) as unknown;
-  } catch {
-    throw new Error(CHANGED);
+    await fs.mkdir(tmp);
+    for (const [rel, data] of files) {
+      const file = path.join(tmp, ...rel.split("/"));
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, data, { flag: "wx" });
+    }
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.rename(tmp, dest);
+  } catch (err) {
+    await fs.rm(tmp, { recursive: true, force: true });
+    throw err;
   }
 }
 
-/**
- * Loads the snapshot of `hash`: re-hashes its source files and scripts, checks the plugin folder holds exactly the
- * skills' bytes, and returns what the engines get. Throws "The approved engine config changed on disk" when anything
- * differs, is missing, or is a link.
- */
-export async function loadSnapshot(userData: string, hash: string): Promise<EngineSnapshot> {
-  const dir = snapshotDir(userData, hash);
-  if (!(await isRealDir(path.dirname(dir))) || !(await isRealDir(dir))) throw new Error(CHANGED);
-  const sourceDir = path.join(dir, "source");
-  if (!(await isRealDir(sourceDir)) || !(await isRealDir(path.join(sourceDir, "files")))) throw new Error(CHANGED);
+const raced = (err: unknown) => ["EEXIST", "ENOTEMPTY"].includes((err as NodeJS.ErrnoException).code ?? "");
 
-  const files = await walk(path.join(sourceDir, "files"));
-  const scriptList = await optionalJson(path.join(sourceDir, "scripts.json"));
+/**
+ * Adds scope `scope`'s plugin to a verified snapshot `final` (one that shares the hash with another scope's, or whose
+ * plugin went missing): the hashed skills, written whole and renamed into place. A racing add of the same is fine.
+ */
+async function addPlugin(final: string, scope: string, skills: ReadonlyMap<string, Buffer>): Promise<void> {
+  await writeFolder(path.dirname(final), path.join(final, "plugins", pluginName(scope)), skills).catch((err: unknown) => {
+    if (!raced(err)) throw err;
+  });
+}
+
+/**
+ * Writes the snapshot of `config` (one that `readEngineConfig` returned, without refusals) for scope `scope` and
+ * returns its folder. Built only from the bytes that were hashed. Atomic: written into a temp folder next to it, then
+ * renamed into place. A snapshot already there with exactly these files is kept (a no-op, or only this scope's plugin
+ * added); a damaged one is replaced.
+ */
+export async function writeSnapshot(userData: string, config: EngineConfig, scope: string): Promise<string> {
+  if (config.refusals.length > 0) throw new Error("An engine config with refusals can't be approved");
+  checkHash(config.hash);
+  const plugin = pluginName(scope);
+  if (engineHash(config.files, config.scriptFiles) !== config.hash) throw new Error("The engine config's bytes don't match its hash");
+  const final = snapshotDir(userData, config.hash);
+  const want = layout(config.files, config.scriptFiles, config.agents);
+  const skills = skillsOf(config.files);
+  const base = path.dirname(final);
+
+  const kept = async (): Promise<boolean> => {
+    const have = await readTree(final);
+    const scopes = have && pluginsIn(have, want, skills);
+    if (!scopes) return false;
+    if (skills.size > 0 && !scopes.has(scope)) await addPlugin(final, scope, skills);
+    return true;
+  };
+
+  if (await fs.lstat(final).catch(() => null)) {
+    if (await kept()) return final;
+    // Damaged (or not a folder): moved aside whole, then removed; the fresh copy is written below. Other scopes'
+    // plugins go with it: `loadSnapshot` adds a scope's plugin back from the verified bytes.
+    const aside = path.join(base, `.tmp-${randomBytes(8).toString("hex")}`);
+    await fs.rename(final, aside).catch((err: unknown) => {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    });
+    await fs.rm(aside, { recursive: true, force: true });
+  }
+
+  await fs.mkdir(base, { recursive: true });
+  const all = new Map(want);
+  for (const [rel, data] of skills) all.set(`plugins/${plugin}/${rel}`, data);
+  try {
+    await writeFolder(base, final, all);
+  } catch (err) {
+    // Another write of the same hash won the rename: kept when it holds these files.
+    if (raced(err) && (await kept())) return final;
+    throw err;
+  }
+  return final;
+}
+
+/**
+ * Loads the snapshot of `hash` for scope `scope`: re-hashes its source, derives the config again from it with today's
+ * context `o` (`o.dir` the scope's live engine folder), and checks the folder holds exactly what `writeSnapshot` would
+ * write for those bytes. Throws "The approved engine config changed on disk" when anything differs, is missing, or is
+ * a link. The scope's plugin, when missing, is written from the verified bytes. What today's context refuses comes
+ * back in `refusals`, and so does a change in which scripts the commands name.
+ */
+export async function loadSnapshot(userData: string, hash: string, scope: string, o: LoadSnapshotOptions): Promise<EngineSnapshot> {
+  const dir = snapshotDir(userData, hash);
+  const plugin = pluginName(scope);
+  const tree = await readTree(dir);
+  if (!tree) throw new Error(CHANGED);
+
+  let scriptList: unknown;
+  try {
+    scriptList = JSON.parse(tree.get("source/scripts.json")?.toString("utf8") ?? "");
+  } catch {
+    throw new Error(CHANGED);
+  }
   if (!Array.isArray(scriptList) || !scriptList.every((s): s is string => typeof s === "string" && path.isAbsolute(s))) throw new Error(CHANGED);
+  const files = new Map<string, Buffer>();
+  for (const [rel, data] of tree) if (rel.startsWith("source/files/")) files.set(rel.slice("source/files/".length), data);
   const scripts = new Map<string, Buffer>();
-  const names = new Set(scriptList.map(scriptName));
-  if (!(await isRealDir(path.join(sourceDir, "scripts")))) throw new Error(CHANGED);
-  const onDisk = await walk(path.join(sourceDir, "scripts"));
-  if (onDisk.size !== names.size || [...onDisk.keys()].some((k) => !names.has(k))) throw new Error(CHANGED);
-  for (const abs of scriptList) scripts.set(abs, onDisk.get(scriptName(abs))!);
+  for (const abs of scriptList) {
+    const data = tree.get(`source/scripts/${scriptName(abs)}`);
+    if (!data) throw new Error(CHANGED);
+    scripts.set(abs, data);
+  }
   if (engineHash(files, scripts) !== hash) throw new Error(CHANGED);
 
-  // The plugin folder is what Claude reads: it must be exactly the hashed skills.
-  const skills = new Map([...files].filter(([rel]) => rel.startsWith("skills/")));
-  const pluginDir = path.join(dir, "plugin");
-  const plugin = (await isRealDir(pluginDir)) ? await walk(pluginDir) : new Map<string, Buffer>();
-  if (plugin.size !== skills.size || [...skills].some(([rel, data]) => !plugin.get(rel)?.equals(data))) throw new Error(CHANGED);
+  const { config, commands } = configFromFiles(files, scripts, o);
+  const skills = skillsOf(files);
+  const scopes = pluginsIn(tree, layout(files, scripts, config.agents), skills);
+  if (!scopes) throw new Error(CHANGED);
+  if (skills.size > 0 && !scopes.has(scope)) await addPlugin(dir, scope, skills);
 
-  const text = (rel: string) => files.get(rel)?.toString("utf8");
-  const servers = await optionalJson(path.join(dir, "mcp.json"));
-  if (!Array.isArray(servers)) throw new Error(CHANGED);
-  const agents = await optionalJson(path.join(dir, "agents.json"));
-  const settings = await optionalJson(path.join(dir, "settings.json"));
-  const codex = await optionalJson(path.join(dir, "codex.json"));
-  const actions = (await optionalJson(path.join(dir, "actions.json"))) ?? {};
-  for (const v of [agents, settings, codex]) if (v !== undefined && !isObject(v)) throw new Error(CHANGED);
-  if (!isObject(actions)) throw new Error(CHANGED);
-  // Instructions come from the re-hashed source, not the derived copies.
-  for (const [id, layer] of Object.entries(actions)) {
-    if (!isObject(layer)) throw new Error(CHANGED);
-    layer.instructions = text(`actions/${id}/instructions.md`) ?? "";
+  const refusals = [...config.refusals];
+  const now = await externalScripts(commands, o.dir, o);
+  if (now.length !== config.scripts.length || now.some((s, i) => s !== config.scripts[i])) {
+    refusals.push({ file: ".", message: "The scripts the approved commands run are not the ones approved" });
   }
 
   return {
     hash,
     dir,
-    base: text("base")?.trim() === "global" ? "global" : "isolated",
-    ...(plugin.size > 0 ? { pluginDir } : {}),
-    ...(agents !== undefined ? { agentsFile: path.join(dir, "agents.json") } : {}),
-    ...(settings !== undefined ? { settings: settings as CleanSettings } : {}),
-    servers: servers as McpServerSpec[],
-    ...(codex !== undefined ? { codex: codex as Record<string, unknown> } : {}),
-    instructions: text("instructions.md") ?? "",
-    actions: actions as Record<string, EngineLayer>,
+    base: config.base,
+    ...(skills.size > 0 ? { pluginDir: path.join(dir, "plugins", plugin) } : {}),
+    ...(tree.has("agents.json") ? { agentsFile: path.join(dir, "agents.json") } : {}),
+    ...(config.settings ? { settings: config.settings } : {}),
+    servers: config.servers,
+    ...(config.codex ? { codex: config.codex } : {}),
+    instructions: config.instructions,
+    actions: config.actions,
+    refusals,
   };
 }
 

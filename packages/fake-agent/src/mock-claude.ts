@@ -151,6 +151,14 @@ export async function runMockTurn(argv: string[], prompt: string, mcpServers: Mc
 }
 
 async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: MockEnv, sessionId: string, newSession: boolean): Promise<void> {
+  // A recipe's AI step (HH_STEP on its ui server): no recording answers it yet (slice 5), so it ends with no output and
+  // the run fails on its own terms. It never touches the recordings or the session state. Checked first: the env
+  // the app set decides, never the prompt's words.
+  if (mcpServers.ui?.env?.HH_STEP) {
+    print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });
+    print({ type: "result", subtype: "success", is_error: false, result: "", session_id: sessionId, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
+    return;
+  }
   // Sidekick's own turns never touch the recordings or the session state (sidekick plan Decision 12).
   if (isMockSidekickTurn(prompt)) {
     const text = mockSidekickReply(prompt);
@@ -160,13 +168,6 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
     event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } });
     event({ type: "content_block_stop", index: 0 });
     print({ type: "result", subtype: "success", is_error: false, result: text, session_id: sessionId, usage: { input_tokens: 400, output_tokens: 60, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
-    return;
-  }
-  // A recipe's AI step (HH_STEP on its ui server): no recording answers it yet (slice 5), so it ends with no output and
-  // the run fails on its own terms. It never touches the recordings or the session state.
-  if (mcpServers.ui?.env?.HH_STEP) {
-    print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });
-    print({ type: "result", subtype: "success", is_error: false, result: "", session_id: sessionId, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
     return;
   }
   const { recordings, problems } = loadRecordings(env.dir);

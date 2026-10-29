@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -5,8 +6,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import * as blocks from "@humanharness/blocks";
 import { getEngine } from "@humanharness/engines";
-import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
+import { type AcpScript, type ClaudeScript, claudeResultLine, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type LoadedHarness, loadHarness, z } from "@humanharness/harness-sdk";
+import { TurnLedger } from "../src/turn-ledger";
 import { type HarnessWorkspace, createWorkspace } from "../src/workspace";
 
 // Counts the sockets a slot opens: a step slot opens none besides its bridge.
@@ -176,5 +178,92 @@ describe("a step slot (tools spec §7.1, R1)", () => {
     await expect(ws.openSlot({ key: "step:r1:2", kind: "step", job: "constructor" })).rejects.toThrow('No AI step for job "constructor"');
     // Refused before anything opened: the key is free.
     await expect(ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" })).resolves.toBeDefined();
+  });
+});
+
+/** A step slot on `engine` with a known parent for its folder; `script` is fake-claude's or fake-acp's. */
+async function stepSetup(engine: "claude" | "codex", script: ClaudeScript | AcpScript) {
+  const base = fs.mkdtempSync(path.join(root, "s-"));
+  const parent = path.join(base, "steps");
+  const work = path.join(base, "Work");
+  const gitdir = path.join(base, "h.git");
+  const log = path.join(base, "acp.jsonl");
+  const loaded = await loadHarness(STUDY);
+  ws = await createWorkspace({
+    harness: { ...loaded, permissions: { edit: "folder", exec: true, web: true }, mcp: ["mcp/one.js"], jobs: { triage: RECIPE } as unknown as Jobs },
+    engine: getEngine(engine), folder: work, gitdir, language: "en",
+    command: engine === "claude" ? fakeClaudeCommand() : fakeAcpCommand(),
+    env: { HH_FAKE_SCRIPT: writeScript(base, script), HH_FAKE_LOG: log },
+    data: async () => ({ records: [], total: 0 }),
+    stepParent: parent,
+  });
+  const readLog = () => fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { method: string; params: any });
+  const commits = () => Number(execFileSync("git", ["--git-dir", gitdir, "rev-list", "--all", "--count"], { encoding: "utf8" }).trim());
+  return { ws, parent, work, readLog, commits };
+}
+
+describe("a step slot's own folder (tools spec §7.1, R1)", () => {
+  it("Claude: the turn runs in a new empty folder, no AGENTS.md or CLAUDE.md, no window in the work folder; removed on close", async () => {
+    const { ws, parent, work, commits } = await stepSetup("claude", { steps: [{ write: { path: "probe.txt", content: "x" } }, { sleep: 1500 }, claudeResultLine(true)] });
+    const before = commits();
+    const slot = await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" });
+    const turn = slot.send("x", () => {}, { trailer: { task: "r1" } });
+    // While it runs: the step's folder holds only what the turn wrote, and the work folder's ledger has no window.
+    const deadline = Date.now() + 10_000;
+    while (!fs.readdirSync(parent).some((d) => fs.existsSync(path.join(parent, d, "probe.txt"))) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    const dirs = fs.readdirSync(parent);
+    expect(dirs).toHaveLength(1);
+    expect(fs.readdirSync(path.join(parent, dirs[0]))).toEqual(["probe.txt"]);
+    expect(TurnLedger.forFolder(work).running()).toEqual([]);
+    expect(fs.existsSync(path.join(work, "probe.txt"))).toBe(false);
+    await turn.done;
+    // No history commit for a step's turn.
+    expect(commits()).toBe(before);
+    await slot.close();
+    expect(fs.readdirSync(parent)).toEqual([]);
+  });
+
+  it("the folder is removed when the slot closes during a turn (a stop)", async () => {
+    const { ws, parent } = await stepSetup("claude", { steps: [{ sleep: 20_000 }, claudeResultLine(true)] });
+    const slot = await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" });
+    const turn = slot.send("x", () => {});
+    expect(fs.readdirSync(parent)).toHaveLength(1);
+    await slot.close();
+    await turn.done;
+    expect(fs.readdirSync(parent)).toEqual([]);
+  });
+
+  it("the folder is removed when the workspace closes", async () => {
+    const { ws, parent } = await stepSetup("claude", { steps: [claudeResultLine(true)] });
+    await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" });
+    expect(fs.readdirSync(parent)).toHaveLength(1);
+    await ws.close();
+    expect(fs.readdirSync(parent)).toEqual([]);
+  });
+
+  it("D0: a task slot still runs in the work folder and opens its window", async () => {
+    const { ws, parent, commits } = await stepSetup("claude", { steps: [{ write: { path: "probe.txt", content: "x" } }, claudeResultLine(true)] });
+    const before = commits();
+    await (await ws.openSlot({ key: "t1" })).send("x", () => {}).done;
+    expect(fs.existsSync(parent) ? fs.readdirSync(parent) : []).toEqual([]);
+    expect(commits()).toBeGreaterThan(before);
+  });
+
+  it("ACP: session/new's cwd is the empty folder, read-only mode, ui the only server, a read is refused", async () => {
+    // A read with no location: allowed in any other session, refused in an MCP-only one.
+    const { ws, parent, readLog } = await stepSetup("codex", {
+      turns: [[{ permission: { toolCall: { toolCallId: "r1", kind: "read" } } }, { stop: "end_turn" }]],
+    });
+    const slot = await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" });
+    const [dir] = fs.readdirSync(parent);
+    await slot.send("x", () => {}).done;
+    const log = readLog();
+    const created = log.find((l) => l.method === "session/new")?.params;
+    expect(created.cwd).toBe(path.join(parent, dir));
+    expect((created.mcpServers as { name: string }[]).map((m) => m.name)).toEqual(["ui"]);
+    expect(log.find((l) => l.method === "session/set_mode")?.params.modeId).toBe("read-only");
+    expect(log.find((l) => l.method === "permission-outcome")?.params).not.toEqual({ outcome: "selected", optionId: "allow" });
+    await slot.close();
+    expect(fs.readdirSync(parent)).toEqual([]);
   });
 });

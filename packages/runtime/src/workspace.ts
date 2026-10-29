@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs, realpath as realpathCb } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, toolsServerSpec, uiServerSpec } from "@humanharness/blocks";
@@ -29,6 +30,8 @@ export interface WorkspaceOptions extends Omit<RuntimeOptions, "session" | "onSe
   material?: { request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
   /** ACP: the adapter can't take a scope's linked folders (hatches §3.3, Decision 15). */
   onLinkedUnsupported?: () => void;
+  /** Where a step slot makes its own empty folder (tools spec §7.1). Default: the OS temp folder. */
+  stepParent?: string;
 }
 
 export interface SlotOptions {
@@ -40,7 +43,8 @@ export interface SlotOptions {
   onSession?: (session: Session) => void;
   /**
    * A job's slot (Decision 11): its `ui` server gets `HH_JOB=1`. A recipe's AI step (tools spec §7.1, R1): `step`, whose
-   * `ui` server serves `job`'s `step_output` alone, with nothing else reachable. Default: a task's, exactly today's specs.
+   * `ui` server serves `job`'s `step_output` alone, MCP only, run in its own empty folder (removed on close) with no turn
+   * window and no history commits. Default: a task's, exactly today's specs.
    */
   kind?: "task" | "job" | "step";
   /** A job's own permissions: only ever narrower than the harness's (spec §8, T5). Ignored for a task's or step's slot. */
@@ -274,6 +278,25 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       await bridge.close().catch(() => {});
       throw new Error(closing ? "The workspace is closing" : `A slot is already open for ${o.key}`);
     }
+    // A step's engine never runs in the work folder (R1): ACP read tools and read-only shells don't ask, and Claude would
+    // load AGENTS.md. Its own empty folder instead, like a system session's: nothing to read, no history, removed on close.
+    let stepFolder: string | null = null;
+    if (step) {
+      try {
+        const parent = opts.stepParent ?? os.tmpdir();
+        await fs.mkdir(parent, { recursive: true });
+        stepFolder = await fs.mkdtemp(path.join(parent, "hh-step-"));
+      } catch (err) {
+        await bridge.close().catch(() => {});
+        throw err;
+      }
+      // Checked again: the workspace may have started closing during the awaits.
+      if (closing) {
+        await fs.rm(stepFolder, { recursive: true, force: true }).catch(() => {});
+        await bridge.close().catch(() => {});
+        throw new Error("The workspace is closing");
+      }
+    }
 
     const permissions: Permissions =
       step ? narrowPermissions(harness.permissions, { edit: "none", exec: false, web: false })
@@ -283,7 +306,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     const noStep: Record<string, string> = hasRecipes(harness) ? { HH_STEP: "" } : {};
     const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) });
     const transportOptions: TransportOptions = {
-      folder,
+      folder: stepFolder ?? folder,
       session,
       mcp: [
         // The engine hands its own env to MCP servers: a task slot clears HH_JOB so an outer one can't make it a job.
@@ -299,7 +322,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       ],
       permissions,
       references: step ? [] : references.map((r) => r.path),
-      // Its only tool is step_output: nothing is read, not even the folder (R1).
+      // Claude gets no Read, Glob or Grep and ACP read requests that ask are refused; what an engine reads without
+      // asking (OpenCode's read tools, Codex's read-only shell) finds only the step's own empty folder (R1).
       ...(step ? { mcpOnly: true } : {}),
       ...acpFields(engine, permissions.edit),
       // Codex reads CODEX_CONFIG by name: only it takes an engine preset's codex part. Other ACP engines (Kimi,
@@ -333,6 +357,14 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         await current.done;
       }
       slots.delete(o.key);
+      try {
+        await closeAll();
+      } finally {
+        if (stepFolder) await fs.rm(stepFolder, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
+    async function closeAll(): Promise<void> {
       try {
         await transport.close();
       } finally {
@@ -397,7 +429,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             // could never be undone. Fail closed, never a turn that silently goes untracked.
             const repos: LinkedRepo[] = [];
             for (const p of new Set(tracked.map((l) => l.path))) repos.push(await linkedRepo(p, gitdirOf!));
-            w = await beginTurn(history, ledger, o.key, options.trailer);
+            // A step's turn runs outside the work folder: no window, no ledger entry, no history commits.
+            const win = step ? undefined : await beginTurn(history, ledger, o.key, options.trailer);
+            w = win;
             // The same windows and trailer in each tracked linked folder, after the main folder's.
             for (const repo of repos) linkedWindows.push({ repo, w: await beginTurn(repo.history, repo.ledger, o.key, options.trailer) });
             let final: Event | undefined;
@@ -411,13 +445,13 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
                   // `edits` is a hint for attribution (spec §5.2); a path no turn named counts as shared.
                   // An edit that ended without an error surely wrote its paths (conflicts, spec §5.3).
                   // Each ledger keeps only the paths inside its own folder.
-                  if (e.type === "activity" && e.edits) {
+                  if (win && e.type === "activity" && e.edits) {
                     ledger.noteEdits(o.key, e.edits, e.id);
                     // A relative path is the main folder's: linked ledgers get absolute paths only.
                     const absolute = e.edits.filter((p) => path.isAbsolute(p));
                     if (absolute.length > 0) for (const { repo } of linkedWindows) repo.ledger.noteEdits(o.key, absolute, e.id);
                   }
-                  if (e.type === "activity" && e.state === "end") {
+                  if (win && e.type === "activity" && e.state === "end") {
                     ledger.noteEditEnd(o.key, e.id, e.error === true);
                     for (const { repo } of linkedWindows) repo.ledger.noteEditEnd(o.key, e.id, e.error === true);
                   }
@@ -430,9 +464,13 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             );
             emitCurrent = null;
             const f = (final ?? { type: "done", ok: false, error: { code: "agent-crashed" } }) as Extract<Event, { type: "done" }>;
+            if (!win) {
+              emitOnce(f);
+              return;
+            }
             let a: TurnAttribution | null;
             try {
-              a = await endTurn(history, ledger, w, f, message, options.trailer);
+              a = await endTurn(history, ledger, win, f, message, options.trailer);
             } finally {
               // Even when the main folder's end failed: each linked folder still commits or restores its own turn.
               // Only the main folder's attribution reaches onAttribution; a linked folder's conflicts are logged (Decision 11).
@@ -449,8 +487,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             // A card for each .md a turn that ran alone added or changed (document-reader spec §5.1), between its
             // "Before message" and "Turn: …" commits; none: no event at all. An overlapped turn's commits sit on other
             // tasks' changes, so it shows none.
-            if (f.ok && !w.overlapped && w.before && w.after) {
-              const documents = await turnDocuments(history, w.before, w.after).catch((err: unknown) => {
+            if (f.ok && !win.overlapped && win.before && win.after) {
+              const documents = await turnDocuments(history, win.before, win.after).catch((err: unknown) => {
                 console.error("Could not list the turn's documents", err);
                 return [];
               });

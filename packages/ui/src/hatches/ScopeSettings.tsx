@@ -82,6 +82,7 @@ export function ScopeSettings({
             scope={scope}
             scopeLabel={state.scopes?.label ?? ""}
             labelOf={(id) => (Object.hasOwn(state.actions, id) ? state.actions[id]!.label : id)}
+            engineName={(id) => state.engines.find((e) => e.id === id)?.name ?? id}
           />
         )}
       </div>

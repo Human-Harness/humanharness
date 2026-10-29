@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { EngineConfigView } from "../src/client";
 import { ScopePicker } from "../src/ScopePicker";
@@ -340,5 +340,133 @@ describe("Engine config (spec §5.3)", () => {
     for (const text of ["Use **tabs** always.", "# Title\n\n- one\n- two\n\n`code` and <!-- shown as text -->", "<https://example.com>", "Note[^1].\n\n[^1]: Shown at the end."]) {
       expect(hidesText(text), text).toBe(false);
     }
+  });
+
+  it("Revoke approval: only when approved, confirmed in the app, then the view is read again", async () => {
+    const client = scoped();
+    client.engineConfigs.app = view();
+    const section = await openSettings(client);
+    await within(section).findByText("Engine config not approved");
+    // Not approved: nothing to revoke.
+    expect(within(section).queryByRole("button", { name: "Revoke approval" })).toBeNull();
+    cleanup();
+
+    client.engineConfigs.app = view({ approved: true, approvedAt: "2026-10-28T10:00:00.000Z" });
+    const approved = await openSettings(client);
+    await within(approved).findByText(/^Approved /);
+    // Never the browser's own dialogs.
+    const confirmSpy = vi.fn(() => true);
+    const alertSpy = vi.fn();
+    vi.stubGlobal("confirm", confirmSpy);
+    vi.stubGlobal("alert", alertSpy);
+    onTestFinished(() => void vi.unstubAllGlobals());
+    // The first click only asks, in the section, saying what happens to running tasks.
+    fireEvent.click(within(approved).getByRole("button", { name: "Revoke approval" }));
+    const text = within(approved).getByText(/running tasks stop using it from their next turn/);
+    const yes = within(approved).getByRole("button", { name: "Revoke" });
+    expect(yes.getAttribute("aria-describedby")).toBe(text.id);
+    expect(document.activeElement).toBe(yes);
+    expect(client.engineConfig.revoke).not.toHaveBeenCalled();
+    // Cancel: nothing revoked, the button is back and has focus.
+    fireEvent.click(within(approved).getByRole("button", { name: "Cancel" }));
+    expect(client.engineConfig.revoke).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(within(approved).getByRole("button", { name: "Revoke approval" }));
+    // Confirmed: revoked, read again, not approved, and Approve is offered again.
+    const get = vi.spyOn(client.engineConfig, "get");
+    fireEvent.click(within(approved).getByRole("button", { name: "Revoke approval" }));
+    fireEvent.click(within(approved).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(client.engineConfig.revoke).toHaveBeenCalledWith("app"));
+    await within(approved).findByText("Engine config not approved");
+    expect(get).toHaveBeenCalledWith("app");
+    // Focus lands on the Approve that took Revoke's place.
+    expect(document.activeElement).toBe(within(approved).getByRole("button", { name: "Approve" }));
+    expect(within(approved).queryByRole("button", { name: "Revoke approval" })).toBeNull();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it("a failed revoke says so and keeps the view", async () => {
+    const client = scoped();
+    client.engineConfigs.app = view({ approved: true, approvedAt: "2026-10-28T10:00:00.000Z" });
+    client.engineConfig.revoke.mockRejectedValueOnce(new Error("disk full"));
+    const section = await openSettings(client);
+    fireEvent.click(await within(section).findByRole("button", { name: "Revoke approval" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Revoke" }));
+    await within(section).findByText("Couldn't revoke the approval.");
+    within(section).getByText(/^Approved /);
+  });
+
+  describe("Decision 10: what the active engine leaves out", () => {
+    const engines = (client: FakeClient) => {
+      const base = client.state.engines[0]!;
+      client.state.engines = [base, { ...base, id: "codex", name: "Codex" }, { ...base, id: "opencode", name: "OpenCode" }];
+    };
+    /** The view plus a Codex hook, so each engine has something of the other's. */
+    const both = (engine?: string) =>
+      view({
+        base: "global",
+        runsCommands: [...view().runsCommands, { kind: "hook", label: "Stop", command: "./tools/codex-stop.sh", args: [], layer: "", file: "codex.toml" }],
+        ...(engine ? { engine } : {}),
+      });
+    const wrapper = (section: HTMLElement, name: string) => within(section).getByRole("list", { name }).parentElement!.textContent!;
+    const item = (section: HTMLElement, command: string) =>
+      within(within(section).getByRole("list", { name: "Runs commands on your computer" }))
+        .getAllByRole("listitem")
+        .find((li) => li.querySelector("code")?.textContent === command)!.textContent!;
+
+    it("OpenCode: only servers (and the instructions) apply", async () => {
+      const client = scoped();
+      engines(client);
+      client.engineConfigs.app = both("opencode");
+      const section = await openSettings(client);
+      await within(section).findByRole("heading", { name: "Scope instructions" });
+      const mark = "Not used on OpenCode";
+      for (const list of ["Skills", "Agents", "Codex settings (codex.toml)"]) expect(wrapper(section, list), list).toContain(mark);
+      expect(item(section, "node ./tools/stop.js")).toContain(mark);
+      expect(item(section, "./tools/codex-stop.sh")).toContain(mark);
+      expect(item(section, "uvx mcp-lint")).not.toContain(mark);
+      expect(item(section, "cards --deck a")).not.toContain(mark);
+      expect(within(section).getByRole("heading", { name: "Permission rules" }).parentElement!.textContent).toContain(mark);
+      expect(within(section).getByText("Also uses your global Claude config").parentElement!.textContent).toContain(mark);
+      expect(within(section).getByRole("heading", { name: "Scope instructions" }).parentElement!.textContent).not.toContain(mark);
+      // Hooks ×2, base, permissions, skills, agents, codex keys.
+      expect(within(section).getAllByText(mark)).toHaveLength(7);
+    });
+
+    it("Codex: the Claude-only parts are marked, its own keys and hooks are not", async () => {
+      const client = scoped();
+      engines(client);
+      client.engineConfigs.app = both("codex");
+      const section = await openSettings(client);
+      await within(section).findByRole("heading", { name: "Scope instructions" });
+      const mark = "Not used on Codex";
+      for (const list of ["Skills", "Agents"]) expect(wrapper(section, list), list).toContain(mark);
+      expect(wrapper(section, "Codex settings (codex.toml)")).not.toContain(mark);
+      expect(item(section, "node ./tools/stop.js")).toContain(mark);
+      expect(item(section, "./tools/codex-stop.sh")).not.toContain(mark);
+      expect(item(section, "uvx mcp-lint")).not.toContain(mark);
+      expect(within(section).getByRole("heading", { name: "Permission rules" }).parentElement!.textContent).toContain(mark);
+      // Settings hook, base, permissions, skills, agents.
+      expect(within(section).getAllByText(mark)).toHaveLength(5);
+    });
+
+    it("Claude: the codex.toml keys and hooks are marked; no engine yet: nothing is", async () => {
+      const client = scoped();
+      engines(client);
+      client.engineConfigs.app = both("claude");
+      const section = await openSettings(client);
+      await within(section).findByRole("heading", { name: "Scope instructions" });
+      const mark = "Not used on Claude";
+      expect(wrapper(section, "Codex settings (codex.toml)")).toContain(mark);
+      expect(item(section, "./tools/codex-stop.sh")).toContain(mark);
+      expect(item(section, "node ./tools/stop.js")).not.toContain(mark);
+      expect(within(section).getAllByText(mark)).toHaveLength(2);
+      cleanup();
+
+      client.engineConfigs.app = both();
+      const none = await openSettings(client);
+      await within(none).findByRole("heading", { name: "Scope instructions" });
+      expect(none.textContent).not.toContain("Not used on");
+    });
   });
 });

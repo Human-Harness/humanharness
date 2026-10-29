@@ -50,15 +50,35 @@ function Instructions({ title, text, path }: { title: string; text: string; path
 }
 
 /**
+ * Decision 10: the parts of an engine folder each engine leaves out. Claude's: `settings.json` (hooks, permission
+ * rules), skills, agents and the base; Codex's: `codex.toml` (its keys and hooks). Servers and instructions reach every
+ * engine. OpenCode and any other ACP engine take neither part.
+ */
+function unusedOn(engine: string | undefined) {
+  return { claude: !!engine && engine !== "claude", codex: !!engine && engine !== "codex" };
+}
+/** The part a hook belongs to, by its file's name (an action layer's too). */
+const hookPart = (file: string) => (file === "codex.toml" || file.endsWith("/codex.toml") ? "codex" : "claude");
+
+interface EngineConfigProps {
+  client: HarnessClient;
+  scope: string;
+  scopeLabel: string;
+  labelOf: (action: string) => string;
+  /** The engine's name for "Not used on {engine}" (default: its id). */
+  engineName?: (id: string) => string;
+}
+
+/**
  * Scope settings › Engine config (hatches spec §5.3): everything the scope's engine folder holds, commands first, and
- * Approve. Only for a harness with `enginePresets` (D0). The window approves the hash it was shown; main computes it
+ * Approve (or Revoke, once approved). With the active engine known, each part it leaves out says so (Decision 10). Only for a harness with `enginePresets` (D0). The window approves the hash it was shown; main computes it
  * again and refuses a folder that changed meanwhile ("changed": the view reads it again).
  *
  * Every change notice reads the view again (one approval sends two: the scope, then any scope after scopes.json's
  * commit). The view on screen stays until the new one arrives, and a late answer to an older read is dropped.
  */
-export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClient; scope: string; scopeLabel: string; labelOf: (action: string) => string }>(
-  function EngineConfig({ client, scope, scopeLabel, labelOf }, headingRef) {
+export const EngineConfig = forwardRef<HTMLHeadingElement, EngineConfigProps>(
+  function EngineConfig({ client, scope, scopeLabel, labelOf, engineName = (id) => id }, headingRef) {
     const { t, i18n } = useTranslation();
     const baseId = useId();
     /** undefined: not read yet; null: the scope has no engine config. */
@@ -66,6 +86,14 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
     const [failed, setFailed] = useState(false);
     const [changed, setChanged] = useState(false);
     const [busy, setBusy] = useState(false);
+    /** Revoke asks first, in the section; `revokeFailed` says the last one didn't go through. */
+    const [confirming, setConfirming] = useState(false);
+    const [revokeFailed, setRevokeFailed] = useState(false);
+    const revokeRef = useRef<HTMLButtonElement>(null);
+    const yesRef = useRef<HTMLButtonElement>(null);
+    const approveRef = useRef<HTMLButtonElement>(null);
+    /** Where focus goes once the question closes: back to Revoke (cancelled), or to the Approve that replaced it. */
+    const refocus = useRef<"revoke" | "approve" | null>(null);
     const loads = useRef(0);
 
     const load = () => {
@@ -85,6 +113,8 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
       setView(undefined);
       setFailed(false);
       setChanged(false);
+      setConfirming(false);
+      setRevokeFailed(false);
       void load();
       return client.engineConfig.onChanged((s) => {
         if (s === null || s === scope) void load();
@@ -112,6 +142,46 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
       setBusy(false);
     };
 
+    /**
+     * Revoke, once confirmed: new tasks start without the config and running ones drop it from their next turn (main).
+     * The view is read again afterwards, so the screen shows what main now holds.
+     */
+    const revoke = async () => {
+      if (busy) return;
+      setConfirming(false);
+      setBusy(true);
+      setRevokeFailed(false);
+      try {
+        await client.engineConfig.revoke(scope);
+        refocus.current = "approve";
+        await load();
+      } catch {
+        setRevokeFailed(true);
+      }
+      setBusy(false);
+    };
+    useEffect(() => {
+      if (confirming) yesRef.current?.focus();
+      else if (refocus.current === "revoke") {
+        refocus.current = null;
+        revokeRef.current?.focus();
+      }
+    }, [confirming]);
+    useEffect(() => {
+      if (refocus.current === "approve" && approveRef.current) {
+        refocus.current = null;
+        approveRef.current.focus();
+      }
+    }, [view]);
+
+    const unused = unusedOn(view?.engine);
+    /** "Not used on {engine}" for a part the active engine leaves out (Decision 10); nothing when it uses it. */
+    const notUsed = (part: "claude" | "codex", as: "p" | "span" = "p") => {
+      if (!unused[part]) return null;
+      const Tag = as;
+      return <Tag className="hh-caption">{t("hatches.engineNotUsedOn", { engine: engineName(view!.engine!) })}</Tag>;
+    };
+
     const layerName = (layer: string) => (layer === "" ? null : t("hatches.engineLayer", { action: labelOf(layer) }));
     const servers = new Set((view?.runsCommands ?? []).filter((c) => c.kind === "server").map((c) => c.label));
     /** A preset allow rule for a server's tools counts only for its own servers (`mcp__scope-<name>`). */
@@ -122,6 +192,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
       <li key={i} className="hh-engine-command">
         <span>{t(c.kind === "hook" ? "hatches.engineHook" : "hatches.engineServer", { label: c.label })}</span>
         <code>{[c.command, ...c.args].join(" ")}</code>
+        {c.kind === "hook" && notUsed(hookPart(c.file), "span")}
         <span className="hh-caption">
           {[layerName(c.layer), t("hatches.engineFrom", { file: c.file })].filter((x) => x !== null).join(" · ")}
         </span>
@@ -161,9 +232,13 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
               <div>
                 <p>{t("hatches.engineBaseGlobal")}</p>
                 <p className="hh-caption">{t("hatches.engineBaseGlobalDetail")}</p>
+                {notUsed("claude")}
               </div>
             ) : (
-              <p>{t("hatches.engineBaseIsolated")}</p>
+              <div>
+                <p>{t("hatches.engineBaseIsolated")}</p>
+                {notUsed("claude")}
+              </div>
             )}
             {view.codexLimit && <p className="hh-caption">{t("hatches.engineCodexLimit")}</p>}
             {view.runsCommands.length > 0 && (
@@ -190,6 +265,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
             {view.permissions.length > 0 && (
               <div>
                 <h4>{t("hatches.enginePermissions")}</h4>
+                {notUsed("claude")}
                 {view.permissions.map((p) => (
                   <div key={p.layer}>
                     {p.layer !== "" && <p className="hh-caption">{layerName(p.layer)}</p>}
@@ -218,6 +294,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
             {view.skills.length > 0 && (
               <div>
                 <h4>{t("hatches.engineSkills")}</h4>
+                {notUsed("claude")}
                 <ul className="hh-engine-list" aria-label={t("hatches.engineSkills")}>
                   {view.skills.map((s) => (
                     <li key={s.name}>
@@ -236,6 +313,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
             {view.agents.length > 0 && (
               <div>
                 <h4>{t("hatches.engineAgents")}</h4>
+                {notUsed("claude")}
                 <ul className="hh-engine-list" aria-label={t("hatches.engineAgents")}>
                   {view.agents.map((a) => (
                     <li key={a.name}>
@@ -256,6 +334,7 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
             {view.codexKeys.length > 0 && (
               <div>
                 <h4>{t("hatches.engineCodexKeys")}</h4>
+                {notUsed("codex")}
                 <ul className="hh-engine-list" aria-label={t("hatches.engineCodexKeys")}>
                   {view.codexKeys.map((k) => (
                     <li key={k.key}>
@@ -266,9 +345,35 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, { client: HarnessClie
               </div>
             )}
             {view.ignored.length > 0 && <p className="hh-caption">{t("hatches.engineIgnored", { keys: view.ignored.join(", ") })}</p>}
+            {view.approved &&
+              (confirming ? (
+                <div className="hh-engine-actions">
+                  <p id={`${baseId}-revoke`}>{t("hatches.engineRevokeText")}</p>
+                  <button ref={yesRef} type="button" aria-describedby={`${baseId}-revoke`} onClick={() => void revoke()}>
+                    {t("hatches.engineRevokeConfirm")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      refocus.current = "revoke";
+                      setConfirming(false);
+                    }}
+                  >
+                    {t("hatches.engineRevokeCancel")}
+                  </button>
+                </div>
+              ) : (
+                <div className="hh-engine-actions">
+                  <button ref={revokeRef} type="button" disabled={busy} onClick={() => setConfirming(true)}>
+                    {t("hatches.engineRevoke")}
+                  </button>
+                </div>
+              ))}
+            {revokeFailed && <p role="alert">{t("hatches.engineRevokeFailed")}</p>}
             {!view.approved && (
               <div className="hh-engine-actions">
                 <button
+                  ref={approveRef}
                   type="button"
                   className="hh-primary"
                   disabled={busy || view.refusals.length > 0}

@@ -1393,6 +1393,12 @@
     "engineAgentDisallowed": "Not allowed: {{tools}}",
     "engineAgentSkills": "Skills: {{skills}}",
     "engineAgentMemory": "Memory: {{memory}}",
+    "engineRevoke": "Revoke approval",
+    "engineRevokeText": "Revoke the approval? New tasks start without this engine config, and running tasks stop using it from their next turn.",
+    "engineRevokeConfirm": "Revoke",
+    "engineRevokeCancel": "Cancel",
+    "engineRevokeFailed": "Couldn't revoke the approval.",
+    "engineNotUsedOn": "Not used on {{engine}}",
     "refused": {
       "engine-home": "This folder holds an app's settings or keys, so it can't be linked.",
       "home": "Your whole home folder can't be linked. Choose a folder inside it.",

@@ -58,5 +58,4 @@ An interview's first message is the action's brief, then a core section (`interv
 ## Known gaps
 
 - `humanharness run` doesn't run the setup screen. An interview's action runs like any action, with the same interview section as in the app.
-- A refused Next on a connect step (only on a race, since Next waits for every key) shows the general "incomplete" text, which speaks of the interview.
 - Labels are English only, like every manifest string; the app translates them on demand (`docs/architecture/language.md`).

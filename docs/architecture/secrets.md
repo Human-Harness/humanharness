@@ -34,7 +34,7 @@ Who builds a `Broker`:
 | The harness's key | `~/.humanharness/<harness-id>/secrets/_harness/<id>.bin` | `harnessValues(ids)`, slice 2's tool broker only |
 
 - **`_harness/`** (`HARNESS_SECRETS_OWNER`) can never be a plugin's folder: no plugin id starts with `_`. The plugin methods refuse it as a plugin; the harness methods (`storedHarness`, `setHarness`, `deleteHarness`, `harnessValues`) only ever name it.
-- **Logical names** (§9, Decision 2): `secretName("harness", "jira")` is `jira`, `secretName({ plugin: "oncall" }, "jira")` is `plugin.oncall.jira`. They name keys in log lines (and, from slice 2, in traces); the files keep the paths above.
+- **Logical names** (§9, Decision 2): `secretName("harness", "jira")` is `jira`, `secretName({ plugin: "oncall" }, "jira")` is `plugin.oncall.jira`. They are the spec's logical names, defined for slice 2's traces and messages and not used in logs yet: log lines start with `[secrets] harness` or `[plugins] <plugin>`, then the bare id. The files keep the paths above.
 - The rules are the plugins' (`plugins.md`, "Keys"): 8 to 8,192 characters, trimmed, one line; one encrypted file per key (0700/0600, temp file and rename); no storing when encryption is unavailable (Linux `basic_text` counts as unavailable); no link or hard link followed or written through. A value never reaches a renderer or a log.
 - **One store** (Decision 8): `index.ts` builds it (`secretStore()`) when the harness takes plugins, has dev plugins, or declares `secrets`, and hands the same instance to `PluginsController` and `ConnectionsController`. Otherwise none. Keys are per harness, not per profile (Decision 9).
 - `harnessValues` doesn't cap how many ids it is given: slice 2's caller caps the list first.
@@ -104,8 +104,6 @@ The harness's store holds the person's API tokens. The plugins' rows (B6, B8, `p
 - **No "Test connection"** (and no "last test" state in Settings) until slice 2: the spec's test runs a tool, and there are no tools before it.
 - **`plugin-fetch.ts` and `plugin-exec.ts` keep their plugin names** although the core broker uses them; their refusal texts name the plugin manifest (a refused host says "… is not declared in permissions.hosts", which `BrokerGrant.refusals` doesn't cover). Slice 2 wraps them with its own texts; a rename is a later cleanup.
 - **No per-profile keys**: one set of harness keys per harness, shared by every profile (Decision 9).
-- A refused Next on a connect step (only on a race, since Next waits for every key) shows the setup screen's general "incomplete" text, which speaks of the interview.
-- `setup.ts` checks a connect step's ids against `secrets`, not against the id pattern itself; an id that doesn't match the pattern can't be declared, so it is refused as undeclared.
 
 ## Where to look
 

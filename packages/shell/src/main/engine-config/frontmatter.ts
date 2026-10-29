@@ -127,7 +127,7 @@ const AGENT_KEPT = ["tools", "disallowedTools", "model", "color", "skills", "mem
 const AGENT_LIST_OK = new Set(["tools", "disallowedTools", "skills"]);
 /** Dropped and shown as "ignored" (E6): a scope can't pick the agent's permission mode. */
 const AGENT_IGNORED = new Set(["permissionMode"]);
-/** `user` memory lives under the person's ~/.claude: a scope agent may only use the folder's. */
+/** `user` memory lives in the person's own Claude config, outside the folder: a scope agent may only use the folder's. */
 const AGENT_MEMORY = new Set(["project", "local"]);
 
 function parseIn(where: string, text: string): Frontmatter {

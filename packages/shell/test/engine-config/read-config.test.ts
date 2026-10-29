@@ -181,6 +181,44 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     expect(c.scripts).toEqual([path.join(folder, "a.sh"), path.join(folder, "b.sh")]);
   });
 
+  it("hook and server commands whose paths can't be placed are refused naming the file (E2)", async () => {
+    const hook = (command: string) => ({ hooks: { Stop: [{ hooks: [{ type: "command", command }] }] } });
+    const { read } = setup({
+      "settings.json": JSON.stringify(hook("cd tools && node x.js")),
+      "codex.toml": '[[hooks.Stop]]\nhooks = [{ type = "command", command = "node $HOME/x.js" }]\n',
+      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "sh", args: ["-c", "node ./*.js"] } } }),
+    });
+    const c = (await read())!;
+    expect(c.refusals.map((r) => r.file)).toEqual(["codex.toml", "mcp.json", "settings.json"]);
+    expect(c.refusals[0]!.message).toContain('codex.toml: the hook command "node $HOME/x.js" uses $');
+    expect(c.refusals[1]!.message).toContain('mcp.json: the server lint "sh -c node ./*.js" uses a glob');
+    expect(c.refusals[2]!.message).toContain('settings.json: the hook command "cd tools && node x.js" changes folder (cd)');
+  });
+
+  it("a script inside sh -c or under $CLAUDE_PROJECT_DIR joins the hash", async () => {
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: `bash -c 'node "$CLAUDE_PROJECT_DIR"/tools/x.js'` }] }] };
+    const { folder, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/x.js": "one" });
+    const c1 = (await read())!;
+    expect(c1.refusals).toEqual([]);
+    expect(c1.scripts).toEqual([path.join(folder, "tools/x.js")]);
+    fs.writeFileSync(path.join(folder, "tools/x.js"), "two");
+    expect((await read())!.hash).not.toBe(c1.hash);
+  });
+
+  it("refuses hard links, in the engine folder and as scripts", async () => {
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: "node ./tools/x.js" }] }] };
+    const { folder, dir, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/x.js": "x", "secret.json": "s" });
+    fs.linkSync(path.join(folder, "secret.json"), path.join(dir, "instructions.md"));
+    fs.linkSync(path.join(folder, "tools/x.js"), path.join(folder, "x-again.js"));
+    const c = (await read())!;
+    expect(c.refusals).toEqual([
+      { file: path.join(folder, "tools/x.js"), message: `${path.join(folder, "tools/x.js")}: the script has hard links, which are not allowed` },
+      { file: "instructions.md", message: "instructions.md: hard links are not allowed" },
+    ]);
+    expect(c.files.has("instructions.md")).toBe(false);
+    expect(c.scripts).toEqual([]);
+  });
+
   it("refuses symlinks, files over 256 KB, more than 200 files, depth over 4 (E8)", async () => {
     const link = setup({ "instructions.md": "x" }, { "secret.txt": "s" });
     fs.symlinkSync(path.join(link.folder, "secret.txt"), path.join(link.dir, "settings.json"));
@@ -238,16 +276,17 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
 
   it("never names an engine home (E7)", () => {
     const src = path.resolve(__dirname, "../../src/main/engine-config");
-    // Code only (comments may explain what is never read); `.claude` as a path part, not `config.codex`.
-    const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // The whole text, comments included: `.claude` as a path part (`config.codex` is a property, not a path).
+    const home = /(^|[^\w$)\]])\.(claude|codex|gemini)\b/;
     const files = fs.readdirSync(src).filter((x) => x.endsWith(".ts"));
     expect(files).toContain("read-config.ts");
     for (const f of files) {
-      const text = code(fs.readFileSync(path.join(src, f), "utf8"));
-      expect(text, f).not.toMatch(/(^|[^\w$)\]])\.(claude|codex|gemini)\b/);
-      expect(text, f).not.toMatch(/homedir\s*\(|process\.env\.HOME\b|["'`]~\//);
+      const text = fs.readFileSync(path.join(src, f), "utf8");
+      expect(text, f).not.toMatch(home);
+      expect(text, f).not.toMatch(/homedir\s*\(|process\.env\.HOME\b|["']~\//);
     }
-    expect(code('const a = "~/.claude"; // ~/.codex')).toMatch(/(^|[^\w$)\]])\.(claude|codex|gemini)\b/);
-    expect(code("/** ~/.claude */ config.codex = x;")).not.toMatch(/(^|[^\w$)\]])\.(claude|codex|gemini)\b/);
+    expect('/** a */ x = "~/.claude"').toMatch(home);
+    expect("// ~/.codex").toMatch(home);
+    expect("config.codex = x;").not.toMatch(home);
   });
 });

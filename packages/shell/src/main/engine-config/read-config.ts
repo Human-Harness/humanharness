@@ -5,7 +5,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { cleanCodex, cleanMcp, cleanSettings, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
-import { scriptRefs } from "./script-refs";
+import { commandWords, scriptRefs, type ScriptCommand } from "./script-refs";
 import { parseToml } from "./toml-lite";
 
 // Reads a scope's engine folder, `.harness/engine/<scope>/` (hatches spec §5.1–5.4), into an EngineConfig: what each
@@ -62,10 +62,22 @@ const LAYER_FILES = new Set(["instructions.md", "mcp.json", "settings.json"]);
 /** Finder's metadata: never read, never hashed, never copied. */
 const SKIPPED = new Set([".DS_Store"]);
 
-type Read = { kind: "file"; data: Buffer } | { kind: "symlink" } | { kind: "large" } | { kind: "other" };
+type Read =
+  | { kind: "file"; data: Buffer }
+  | { kind: "symlink" }
+  | { kind: "large" }
+  | { kind: "hardlink" }
+  | { kind: "changed" }
+  | { kind: "other" };
 
-/** Opens without following a final symlink, checks the open file itself (no race between check and read). */
+/**
+ * Opens without following a final symlink and checks the open file itself: a regular file, with one name only (a hard
+ * link could be a second name of a file outside, like an account file), and the same file the lstat before saw (a
+ * parent folder swapped in between would show another device or inode).
+ */
 async function readRegular(abs: string, max: number): Promise<Read> {
+  const before = await fs.lstat(abs);
+  if (before.isSymbolicLink()) return { kind: "symlink" };
   let h: FileHandle;
   try {
     h = await fs.open(abs, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -76,6 +88,8 @@ async function readRegular(abs: string, max: number): Promise<Read> {
   try {
     const st = await h.stat();
     if (!st.isFile()) return { kind: "other" };
+    if (st.dev !== before.dev || st.ino !== before.ino) return { kind: "changed" };
+    if (st.nlink > 1) return { kind: "hardlink" };
     if (st.size > max) return { kind: "large" };
     const data = await h.readFile();
     return data.length > max ? { kind: "large" } : { kind: "file", data };
@@ -121,6 +135,8 @@ class Walk {
         const read = await readRegular(path.join(this.root, r), ENGINE_FILE_MAX);
         if (read.kind === "symlink") this.refuse(r, "symbolic links are not allowed");
         else if (read.kind === "large") this.refuse(r, `is over ${ENGINE_FILE_MAX / 1024} KB`);
+        else if (read.kind === "hardlink") this.refuse(r, "hard links are not allowed");
+        else if (read.kind === "changed") this.refuse(r, "changed while it was read");
         else if (read.kind === "other") this.refuse(r, "is not a regular file");
         else {
           this.total += read.data.length;
@@ -227,7 +243,17 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
       return undefined;
     }
   };
-  const commands: Array<string | readonly string[]> = [];
+  const commands: ScriptCommand[] = [];
+  /** A command joins the scripts' search only when its paths can be placed; otherwise it is refused naming it. */
+  const command = (file: string, kind: string, c: ScriptCommand) => {
+    try {
+      commandWords(c, o.folder);
+      commands.push(c);
+    } catch (err) {
+      const shown = typeof c === "string" ? c : c.join(" ");
+      refuse(file, `${kind} ${JSON.stringify(shown.length > 120 ? `${shown.slice(0, 120)}…` : shown)} ${(err as Error).message}`);
+    }
+  };
 
   const layer = (prefix: string): EngineLayer => {
     const l: EngineLayer = { instructions: text(`${prefix}instructions.md`) ?? "", servers: [], settings: null, ignored: [] };
@@ -239,10 +265,10 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
       if (cleaned) {
         l.settings = cleaned.settings;
         l.ignored.push(...cleaned.ignored.map((k) => `${prefix}settings.json: ${k}`));
-        commands.push(...hookCommands(cleaned.settings.hooks));
+        for (const c of hookCommands(cleaned.settings.hooks)) command(`${prefix}settings.json`, "the hook command", c);
       }
     }
-    for (const s of l.servers) commands.push([s.command, ...s.args]);
+    for (const s of l.servers) command(`${prefix}mcp.json`, `the server ${s.name.slice("scope-".length)}`, [s.command, ...s.args]);
     return l;
   };
 
@@ -307,7 +333,7 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
     const codex = attempt("codex.toml", () => cleanCodex(parseToml(toml), { web: o.web === true }));
     if (codex) {
       config.codex = codex;
-      if (isPlainObject(codex.hooks)) commands.push(...hookCommands(codex.hooks as Hooks));
+      if (isPlainObject(codex.hooks)) for (const c of hookCommands(codex.hooks as Hooks)) command("codex.toml", "the hook command", c);
     }
   }
 
@@ -332,6 +358,7 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
       }
       config.scriptFiles.set(script, read.data);
     } else if (read.kind === "large") refusals.push({ file: script, message: `${script}: the script is over ${ENGINE_FILE_MAX / 1024} KB` });
+    else if (read.kind === "hardlink") refusals.push({ file: script, message: `${script}: the script has hard links, which are not allowed` });
     else refusals.push({ file: script, message: `${script}: the script could not be read as a regular file` });
   }
   config.scripts = [...config.scriptFiles.keys()].sort();

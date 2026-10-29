@@ -51,10 +51,12 @@ export class BackendSupervisor {
     });
   }
 
-  /** The person's Restart: clears the crash count and starts it again, from any state. */
+  /**
+   * The person's Restart: clears the crash count and starts it again. Not after stop() (queued or done): a move or
+   * profile switch is under way, and its start() or rebase() brings it back with the new init.
+   */
   restart(): Promise<void> {
-    if (this.closed) return Promise.resolve();
-    this.wanted = true;
+    if (this.closed || !this.wanted) return Promise.resolve();
     return this.enqueue(async () => {
       if (!this.init || !this.wanted) return;
       this.crashes = [];

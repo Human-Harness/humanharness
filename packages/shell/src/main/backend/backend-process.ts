@@ -190,7 +190,8 @@ export class BackendProcess {
         return;
       }
       case "event":
-        if (!this.limiter.take()) return;
+        // Once stop is asked, the backend's last words aren't passed on (a new one may already be starting).
+        if (this.expected || !this.limiter.take()) return;
         try {
           this.o.onEvent(msg.event, msg.data);
         } catch (e) {

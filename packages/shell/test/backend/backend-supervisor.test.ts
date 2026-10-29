@@ -268,6 +268,26 @@ describe("BackendSupervisor (hatches spec §4.3, B6)", () => {
     expect(r.procs).toHaveLength(2);
   });
 
+  it("a Restart while a stop is queued (a move or switch begins) does not bring the old backend back", async () => {
+    const r = rig();
+    await r.sup.start(init);
+    for (let i = 0; i < 4; i++) {
+      r.last().crash();
+      await settle();
+    }
+    expect(r.sup.state()).toBe("failed");
+    const stopping = r.sup.stop();
+    // The window still sees failed until the stop runs, and its card's Restart arrives in that gap.
+    expect(r.sup.state()).toBe("failed");
+    await Promise.all([stopping, r.sup.restart()]);
+    expect(r.procs).toHaveLength(4);
+    expect(r.sup.state()).toBe("stopped");
+    // A later start (the move's end, with the new init) still starts it.
+    await r.sup.start({ ...init, folder: "/b" });
+    expect(r.sup.state()).toBe("running");
+    expect(r.last().init.folder).toBe("/b");
+  });
+
   it("after stop({ quit: true }) nothing brings it back", async () => {
     const r = rig();
     await r.sup.start(init);

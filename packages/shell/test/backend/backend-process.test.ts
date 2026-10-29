@@ -224,6 +224,14 @@ describe("BackendProcess (hatches spec §4.2, §4.3)", () => {
     await expect(p.exited).resolves.toMatchObject({ signal: "SIGKILL", expected: true });
   });
 
+  it("once stop is asked, its events are no longer heard", async () => {
+    const { p, events } = await start("term-events", { graceMs: 300 });
+    // Give it time to install its SIGTERM handler.
+    await new Promise((r) => setTimeout(r, 150));
+    await p.stop();
+    expect(events).toEqual([]);
+  });
+
   it("stop of a well-behaved backend is quick and expected", async () => {
     const { p } = await start("echo");
     const t0 = Date.now();

@@ -207,7 +207,7 @@ export function Inbox({
             </span>
           )}
         </div>
-        {j.last?.run ? <JobRunSteps client={client} run={j.last.run} /> : null}
+        {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
         {action && (
           <button
             className="hh-tk-cancel"

@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { AppState, JobSummary, ToolCallView } from "../src/client";
 import { SettingsSheet } from "../src/SettingsSheet";
+import { JobRunSteps } from "../src/tools/JobRunSteps";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -163,5 +165,87 @@ describe("a job run's steps (tools spec §8.2)", () => {
     expect(await screen.findByRole("button", { name: "list-prs · 4 pull requests · 0.3 s · 0 tokens" })).toBeTruthy();
     expect(screen.getByText("AI step: valid output · 12 tokens")).toBeTruthy();
     expect(trace).toHaveBeenCalledWith("run-1");
+  });
+});
+
+describe("a job run's steps when the row's run changes or the answer is odd (Task 9 review)", () => {
+  /** The component alone, with the core strings; `again(run)` rerenders it in place with another run id. */
+  async function steps(c: FakeClient, run: string, describedBy?: string) {
+    const { i18n, rerender } = await renderIn("en", <JobRunSteps client={c} run={run} {...(describedBy ? { describedBy } : {})} />);
+    return { again: (next: string) => rerender(<I18nextProvider i18n={i18n}><JobRunSteps client={c} run={next} /></I18nextProvider>) };
+  }
+
+  it("a new run id on the same mounted row folds the steps and reads the new run's", async () => {
+    const c = client(withRun());
+    c.toolTraces["run-1"] = [call({ tool: "old-tool", summary: "old" })];
+    c.toolTraces["run-2"] = [call({ tool: "new-tool", summary: "new" })];
+    const trace = vi.spyOn(c.tools, "trace");
+    const { again } = await steps(c, "run-1");
+    fireEvent.click(screen.getByRole("button", { name: "Steps" }));
+    await screen.findByRole("button", { name: "old-tool · old · 0.3 s · 0 tokens" });
+    again("run-2");
+    const button = screen.getByRole("button", { name: "Steps" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText(/old-tool/)).toBeNull();
+    fireEvent.click(button);
+    await screen.findByRole("button", { name: "new-tool · new · 0.3 s · 0 tokens" });
+    expect(trace).toHaveBeenLastCalledWith("run-2");
+    expect(screen.queryByText(/old-tool/)).toBeNull();
+  });
+
+  it("an answer for the old run that comes back late is dropped", async () => {
+    const c = client(withRun());
+    let answer: (v: ToolCallView[]) => void = () => {};
+    vi.spyOn(c.tools, "trace").mockImplementation((id) =>
+      id === "run-1" ? new Promise<ToolCallView[]>((resolve) => (answer = resolve)) : Promise.resolve([call({ tool: "new-tool", summary: "new" })]),
+    );
+    const { again } = await steps(c, "run-1");
+    fireEvent.click(screen.getByRole("button", { name: "Steps" }));
+    again("run-2");
+    fireEvent.click(screen.getByRole("button", { name: "Steps" }));
+    await screen.findByRole("button", { name: "new-tool · new · 0.3 s · 0 tokens" });
+    await act(async () => answer([call({ tool: "old-tool", summary: "old" })]));
+    expect(screen.queryByText(/old-tool/)).toBeNull();
+    expect(screen.getByRole("button", { name: "new-tool · new · 0.3 s · 0 tokens" })).toBeTruthy();
+  });
+
+  it("after an unreadable trace, closing and opening again reads it again", async () => {
+    const c = client(withRun());
+    const trace = vi.spyOn(c.tools, "trace").mockRejectedValueOnce(new Error("busy")).mockResolvedValueOnce([call()]);
+    await steps(c, "run-1");
+    const button = screen.getByRole("button", { name: "Steps" });
+    fireEvent.click(button);
+    await screen.findByText("Couldn't read this run's steps.");
+    fireEvent.click(button);
+    // A fold reads nothing.
+    expect(trace).toHaveBeenCalledTimes(1);
+    fireEvent.click(button);
+    await screen.findByRole("button", { name: "list-prs · 4 pull requests · 0.3 s · 0 tokens" });
+    expect(trace).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Couldn't read this run's steps.")).toBeNull();
+  });
+
+  it("a reply that is not a list shows the error line and keeps the inbox row", async () => {
+    const c = client(withRun());
+    vi.spyOn(c.tools, "trace").mockResolvedValue({ calls: [] } as unknown as ToolCallView[]);
+    const section = await openInbox(c);
+    fireEvent.click(within(section).getByRole("button", { name: "Steps" }));
+    expect(await within(section).findByText("Couldn't read this run's steps.")).toBeTruthy();
+    expect(within(section).getAllByRole("listitem")[0].textContent).toContain("Sync inbox");
+  });
+
+  it("each Steps button is described by its row's label, in the inbox and in Settings › Jobs", async () => {
+    const c = client([
+      { id: "sync", label: "Sync inbox", scope: null, last: { status: "ok", summary: "1 step", at, run: "run-1" }, manual: true, running: false },
+      { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "2 steps", at, run: "run-2" }, manual: false, running: false },
+    ]);
+    const section = await openInbox(c);
+    const described = (b: HTMLElement) => document.getElementById(b.getAttribute("aria-describedby") ?? "")?.textContent;
+    expect(within(section).getAllByRole("button", { name: "Steps" }).map(described)).toEqual(["Sync inbox", "Digest"]);
+    cleanup();
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByText("2 steps");
+    const inSettings = screen.getAllByRole("button", { name: "Steps" });
+    expect(inSettings.map(described)).toEqual(["Sync inbox", "Digest"]);
   });
 });

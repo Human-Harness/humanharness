@@ -492,6 +492,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       // A task an earlier run left open in this folder can't continue: its session is gone.
       await tasks.interrupt();
       const scope = scoped ? await runScope(folder, actionScope(harness, o.action) === "required", (await store.load()).open) : undefined;
+      // The terminal has no tool host yet (tools Decision 18): the first message goes without the prepared data.
+      if (action.pre?.length) out.write("Pre-steps are not run in the terminal yet.\n");
       await tasks.start(o.action, undefined, scope, o.mode, o.time !== undefined ? { timeBox: o.time } : {});
       let proposalKey: string | undefined;
       for (;;) {

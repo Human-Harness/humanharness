@@ -185,7 +185,7 @@ export function compactionRecord(engine: string, meta: UsageMeta, at: string = n
 }
 
 /** Rows that are not turns (tools spec §8.4): a pre-step group, a recipe run (slice 4), an expected tool not called. */
-export const TOOL_ROW_KINDS: readonly string[] = ["pre", "recipe", "expects-miss"];
+export const TOOL_ROW_KINDS: readonly NonNullable<UsageRecord["kind"]>[] = ["pre", "recipe", "expects-miss"];
 
 /** A task's pre-steps (tools spec §8.4): one row per start that ran them; `ok` when no step failed. */
 export function preRecord(
@@ -198,6 +198,45 @@ export function preRecord(
 /** A phase that ended without a call to a tool it expects (tools spec §6.1). The spec's `phase` is `taskPhase` here. */
 export function expectsMissRecord(o: { engine: string; action: string; task: string; scope?: string; taskPhase: string; tool: string }, at: string = new Date().toISOString()): UsageRecord {
   return { at, engine: o.engine, kind: "expects-miss", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), taskPhase: o.taskPhase, tool: o.tool, ok: true };
+}
+
+/** One action's first turns with and without pre-steps (tools spec §8.4); averages, rounded. */
+export interface PreMeasure {
+  without: { tasks: number; firstTurn: number };
+  with: { tasks: number; firstTurn: number; preparedTokens: number; ms: number };
+}
+
+/**
+ * First-turn tokens of each action's tasks with and without pre-steps (tools spec §8.4: the baseline for savings). A
+ * task's first turn is its first `run` line (a line without a turn kind counts as one; tool rows, checkpoints and
+ * compactions don't), and its tokens are what it read: input, cache reads and cache writes. A task whose first turn
+ * reported no usage is left out, and so are free questions (no action). A task "with" pre-steps has a `pre` row.
+ */
+export function measurePre(records: UsageRecord[]): Record<string, PreMeasure> {
+  const pre = new Map<string, UsageRecord>();
+  for (const r of records) if (r.kind === "pre" && r.task) pre.set(r.task, r);
+  const first = new Map<string, UsageRecord>();
+  for (const r of records) if (r.task && r.action && (r.phase ?? "run") === "run" && !r.kind && !first.has(r.task)) first.set(r.task, r);
+  const sums = new Map<string, { w: number[]; wo: number[]; prep: number[]; ms: number[] }>();
+  for (const [task, r] of first) {
+    if (!r.usage) continue;
+    const read = r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheWriteTokens;
+    const s = sums.get(r.action!) ?? { w: [], wo: [], prep: [], ms: [] };
+    sums.set(r.action!, s);
+    const p = pre.get(task);
+    if (p) {
+      s.w.push(read);
+      s.prep.push(p.preparedTokens ?? 0);
+      s.ms.push(p.ms ?? 0);
+    } else s.wo.push(read);
+  }
+  const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0);
+  return Object.fromEntries(
+    [...sums].map(([action, s]) => [
+      action,
+      { without: { tasks: s.wo.length, firstTurn: avg(s.wo) }, with: { tasks: s.w.length, firstTurn: avg(s.w), preparedTokens: avg(s.prep), ms: avg(s.ms) } },
+    ]),
+  );
 }
 
 /** One AI stage of material processing (material spec §11). */

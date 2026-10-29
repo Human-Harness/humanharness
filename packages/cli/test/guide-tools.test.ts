@@ -71,6 +71,18 @@ describe("the guide's tools phase (tools spec §11)", () => {
     for (const word of ["--record", "mock/tools/<tool>/", "dev --mock", "Not recorded: <target>", "mock/steps/<job>.json"]) expect(body).toContain(word);
   });
 
+  it("tool run: --yes covers folder and data writes only, so the developer is asked before every run", () => {
+    const body = mechanical().body;
+    expect(body).toContain("A tool that writes to the folder or its data needs `--yes`");
+    expect(body).toContain("fetches and commands always run for real, so ask the developer before every `tool run` and before adding `--yes`");
+    expect(body).not.toContain("a tool that writes runs only with `--yes`");
+  });
+
+  it("Verify: with tools that declare keys, the developer runs the task in their own terminal", () => {
+    const verify = phases(guide).find((p) => p.name === "Verify")!;
+    expect(verify.body).toMatch(/tools declare keys[^\n]*in their own terminal/);
+  });
+
   it("has a Lessons section with the spec's lessons", () => {
     const lessons = guideSection("Lessons");
     expect(lessons, "the guide has no ## Lessons section").toBeDefined();

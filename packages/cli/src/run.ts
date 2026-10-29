@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { type EngineDef, type ModelProfile, availableEngines } from "@humanharness/engines";
 import type { MockNote } from "@humanharness/fake-agent";
+import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import {
   type BlockAnswer,
   DEFAULT_LANGUAGE,
@@ -79,7 +80,8 @@ import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { promptAnswer } from "./input-prompt";
 import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";
-import { Recorder, briefMatch } from "./record";
+import { stripExchange } from "./plugin-record";
+import { Recorder, briefMatch, writeToolRecordings } from "./record";
 import { type RunReport, UsageTally, formatReport } from "./report";
 import { type RunTools, readyTools, startRunTools } from "./run-tools";
 import { TerminalView, errorMessage } from "./terminal";
@@ -520,6 +522,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           tasks,
           line: (text) => view.toolLine(text),
           log: (text) => process.stderr.write(`${text}\n`),
+          ...(recorder ? { record: { call: (tool: string, args: Record<string, unknown>) => recorder?.toolCall(tool, args) } } : {}),
         });
       }
       // A task an earlier run left open in this folder can't continue: its session is gone.
@@ -699,6 +702,16 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       }
       if (recorder.skipped.size > 0) out.write(`Left out of the recording (binary or over 64 KB, new or changed in this run): ${[...recorder.skipped].join(", ")}\n`);
       if (written > 0) out.write("The recording holds what you typed and what the AI answered: review it before committing it.\n");
+      // The tools' broker accesses (tools Decision 8, A3): every key typed for this run replaced, or the file not written.
+      if (toolsRun && ready && toolsRun.exchanges.length > 0) {
+        const replies = await writeToolRecordings(path.join(harness.root, "mock"), toolsRun.exchanges, (e) => stripExchange(e, ready.keys), (line) =>
+          out.write(`${line}\n`),
+        ).catch((err: unknown) => {
+          out.write(`Warning: could not record the tool replies: ${hideSecrets((err instanceof Error ? err.message : String(err)).replace(/[\u0000-\u001f\u007f-\u009f]/g, " "), [...ready.keys.values()])}\n`);
+          return 0;
+        });
+        if (replies > 0) out.write("Tool replies were recorded in mock/tools/: review them before committing them.\n");
+      }
     }
     const report = tally.report({ folder, action: o.action, cost: action.cost, ...(lastNote ? { notePath: lastNote } : {}) });
     out.write(formatReport(report));

@@ -1,14 +1,16 @@
+import { Buffer } from "node:buffer";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import { type LoadedHarness, PRE_TOKENS_DEFAULT } from "@humanharness/harness-sdk";
-import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
-import type { BrokerDataOp } from "@humanharness/shell/plugins";
+import { type FixtureExchange, hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
+import type { BrokerDataOp, runFile } from "@humanharness/shell/plugins";
 import { PREPARE_FAILED, type TaskDeps, type UsageLog, dataWriteQueue, preRecord, toolDataRequests } from "@humanharness/shell/tasks";
 import { ToolTrace, type TraceEntry, preparedSection, readToolsJson, runPreSteps } from "@humanharness/shell/tools";
 import { APP_SCOPE, type DataStore, MAIN_SCOPE, type ScopeStore } from "@humanharness/workspace";
 import { CliError } from "./cli";
+import type { ToolExchange } from "./record";
 import { buildTools } from "./tool-build";
 import { TOOL_P12_NOTE, cliTools } from "./tool-host-node";
 import type { ToolRunDeps } from "./tool-run";
@@ -31,6 +33,61 @@ const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " 
 
 /** A refused start's reason is cut here: it goes to stderr as one short line. */
 const FAILED_CHARS = 300;
+
+/** The broker's cap on a response body (FETCH_LIMITS.maxBytes), as `plugin record` reads it. */
+const MAX_BODY = 10 * 1024 * 1024;
+
+/** The body as text, read up to the broker's own cap (10 MB): past it the read stops and the request fails. */
+async function cappedText(res: Response): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("The response is larger than 10 MB");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * `run --record`'s transport for one tool (tools Decision 8), as `plugin record`'s recordingTransport: each completed
+ * fetch and exec is kept as the broker made it (keys already filled in) and as the service answered, for
+ * `writeToolRecordings` to strip and write. The broker's checks run before it is called.
+ */
+function recordingTransport(tool: string, t: { fetch: typeof fetch; run: typeof runFile }, kept: ToolExchange[]): { fetch: typeof fetch; run: typeof runFile } {
+  return {
+    fetch: (async (input: string | URL | Request, init: RequestInit = {}) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = (init.method ?? "GET").toUpperCase();
+      const headers = Object.fromEntries(new Headers(init.headers));
+      const body = typeof init.body === "string" ? init.body : undefined;
+      const res = await t.fetch(url, init);
+      const text = await cappedText(res);
+      // A session cookie isn't one of the tool's keys, but it is a credential: it never goes into a recording.
+      const outHeaders = Object.fromEntries([...res.headers].filter(([k, v]) => k !== "set-cookie" && k.length <= 200 && v.length <= 8192));
+      const exchange: FixtureExchange = {
+        kind: "fetch",
+        request: { method, url, ...(Object.keys(headers).length > 0 ? { headers } : {}), ...(body !== undefined ? { body } : {}) },
+        response: { status: res.status, headers: outHeaders, text },
+      };
+      kept.push({ tool, exchange });
+      const nullBody = res.status === 204 || res.status === 205 || res.status === 304;
+      return new Response(nullBody ? null : text, { status: res.status, headers: res.headers });
+    }) as typeof fetch,
+    run: (async (file, args, o) => {
+      const out = await t.run(file, args, o);
+      kept.push({ tool, exchange: { kind: "exec", request: { cmd: path.basename(file), args: [...args] }, response: { code: out.code, stdout: out.stdout, stderr: out.stderr } } });
+      return out;
+    }) as typeof runFile,
+  };
+}
 
 /** The broker's data op as the person path's request (`query` flat), as the app's tools host does. */
 function dataRequest(op: BrokerDataOp): unknown {
@@ -94,6 +151,11 @@ export interface RunToolsOptions {
   line(text: string): void;
   /** The run's own log (stderr), never stdout: what the app's main would log. Already one plain line, keys hidden. */
   log(text: string): void;
+  /**
+   * `run --record` (tools Decision 8, 9): each agent call the registry answered goes here, and every fetch and exec
+   * (pre-steps' too) is kept in `RunTools.exchanges`. Absent: nothing is kept.
+   */
+  record?: { call(tool: string, args: Record<string, unknown>): void };
 }
 
 export interface RunTools {
@@ -103,6 +165,8 @@ export interface RunTools {
   workspace?: { catalogue: string; request(request: unknown): Promise<unknown> };
   /** Why the last start's required pre-step failed (the task didn't start): one plain line, keys hidden, cut. */
   failed?: string;
+  /** With `record`: every fetch and exec of the run and its reply, in order, keys still in them. */
+  exchanges: ToolExchange[];
   /** Waits for the trace's writes, stops the host and removes the build. */
   close(): Promise<void>;
 }
@@ -143,10 +207,11 @@ export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
       }) as typeof fetch,
       run: o.deps.transport.run,
     };
+    const exchanges: ToolExchange[] = [];
     const registryTools = cliTools({
       root: built,
       harness: h,
-      transport: () => transport,
+      transport: (tool) => (o.record ? recordingTransport(tool, transport, exchanges) : transport),
       secrets: async (asked) => Object.fromEntries(asked.filter((id) => o.ready.keys.has(id)).map((id) => [id, o.ready.keys.get(id)!])),
       allowHost: o.deps.allowHost,
       resolve: o.deps.resolve,
@@ -180,6 +245,7 @@ export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
     }
 
     const run: RunTools = {
+      exchanges,
       async prepare(p) {
         const action = Object.hasOwn(h.actions, p.action) ? h.actions[p.action] : undefined;
         const steps = action?.pre ?? [];
@@ -236,6 +302,9 @@ export async function startRunTools(o: RunToolsOptions): Promise<RunTools> {
                   throw new Error(TOOL_BROKE);
                 }
                 if (!answer.ok) throw new Error(answer.error);
+                // Only a call that answered: replay makes the call again, and a refused one would fail the turn.
+                if (typeof args === "object" && args !== null && !Array.isArray(args)) o.record?.call(tool, args as Record<string, unknown>);
+                else o.record?.call(tool, {});
                 return answer.result;
               },
             },

@@ -1,12 +1,17 @@
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
-import { APP_FOLDERS, type MockNote, type MockTurn, type MockUsage, type MockWrite, type Recording } from "@humanharness/fake-agent";
+import { APP_FOLDERS, type MockNote, type MockToolCall, type MockTurn, type MockUsage, type MockWrite, type Recording } from "@humanharness/fake-agent";
+import { TOOL_ID } from "@humanharness/harness-sdk";
+import type { FixtureExchange } from "@humanharness/harness-sdk/plugin-fixtures";
+import { FIXTURE_BYTES, FIXTURE_FILES } from "@humanharness/shell/plugins";
 import type { Event } from "@humanharness/runtime";
 import type { TurnKind } from "@humanharness/shell/tasks";
 
 /** Larger files, and files that aren't text, are left out of a recording (spec 3e §3). */
 export const MAX_RECORDED_FILE = 64 * 1024;
 const SKIPPED_DIRS = new Set<string>([...APP_FOLDERS, ".git", "node_modules"]);
+/** A recorded turn holds at most this many tool calls (the recording format's cap). */
+export const MAX_TURN_TOOL_CALLS = 20;
 
 export interface FolderSnapshot {
   /** Relative path (with /) → content. */
@@ -93,6 +98,10 @@ export class Recorder {
   private text = "";
   private blocks: MockTurn["blocks"] = [];
   private usage: MockUsage | undefined;
+  /** The agent's tool calls this turn (tools spec §12), in order; none: the turn has no `tools` key (D0). */
+  private tools: MockToolCall[] = [];
+  /** This turn's calls went past the cap (warned once). */
+  private toolsOver = false;
   private replyKey: string | undefined;
   /** What the person answered the last turn's input block with (`run`'s `a`). */
   private answerKey: { block: string; value: Record<string, unknown> } | undefined;
@@ -120,6 +129,24 @@ export class Recorder {
     else if (e.type === "block" && e.name !== "save_note" && typeof e.data === "object" && e.data !== null) {
       this.blocks.push({ tool: this.o.toolFor(e.name), input: e.data as Record<string, unknown> });
     }
+  }
+
+  /**
+   * The agent called `tool` on the `tools` server this turn and it answered (tools Decision 9): replay makes the same
+   * call. Pre-steps are never recorded here: in mock mode they run for real at the start.
+   */
+  toolCall(tool: string, args: Record<string, unknown>): void {
+    // The recording format refuses these (an own `__proto__` key is dropped by zod): the file would not load.
+    if (!TOOL_ID.test(tool) || Object.hasOwn(args, "__proto__")) {
+      this.o.warn?.(`a call to a tool was left out of the recording: its name or arguments can't be recorded.`);
+      return;
+    }
+    if (this.tools.length >= MAX_TURN_TOOL_CALLS) {
+      if (!this.toolsOver) this.o.warn?.(`a turn made more than ${MAX_TURN_TOOL_CALLS} tool calls: only the first ${MAX_TURN_TOOL_CALLS} are recorded.`);
+      this.toolsOver = true;
+      return;
+    }
+    this.tools.push({ tool, args: JSON.parse(JSON.stringify(args)) as Record<string, unknown> });
   }
 
   /** What the person answered the last turn with: a choice's label, or `*` for typed text. */
@@ -155,15 +182,19 @@ export class Recorder {
       this.text = "";
       this.blocks = [];
       this.usage = undefined;
+      this.tools = [];
+      this.toolsOver = false;
       return;
     }
     const writes = diff(this.snapshot, after);
     this.snapshot = after;
     const action = meta.action;
-    const taken = { text: this.text, blocks: this.blocks, usage: this.usage };
+    const taken = { text: this.text, blocks: this.blocks, usage: this.usage, tools: this.tools };
     this.text = "";
     this.blocks = [];
     this.usage = undefined;
+    this.tools = [];
+    this.toolsOver = false;
     if (!action || meta.phase === "checkpoint") return;
     const task = meta.task ?? "";
     const first = this.taskOf.get(action);
@@ -186,6 +217,8 @@ export class Recorder {
       text: taken.text,
       blocks: taken.blocks,
       writes,
+      // Only a turn that called tools has the key: a recording without tools is written exactly as before (D0).
+      ...(taken.tools.length > 0 ? { tools: taken.tools } : {}),
       ...(taken.usage ? { usage: taken.usage } : {}),
       // The app's own prompts (task-phases spec §6): replayed by what they answer, never by a reply.
       ...(meta.phase === "phase-change" && meta.taskPhase ? { setPhase: meta.taskPhase } : {}),
@@ -208,4 +241,115 @@ export class Recorder {
   recordings(): Recording[] {
     return [...this.byAction.values()];
   }
+}
+
+/** One broker access of a run (`fetch` or `exec`) and its reply, as the service answered it: keys still in it. */
+export interface ToolExchange {
+  tool: string;
+  exchange: FixtureExchange;
+}
+
+/** The highest number a recorded exchange's file takes: three digits (tools Decision 8). */
+const MAX_TOOL_FILE = 999;
+const TOOL_FILE = /^(\d{3})\.json$/;
+
+/** `p` is a real folder, made when missing; a link (to a folder or not) or a file is not. */
+async function realFolder(p: string): Promise<boolean> {
+  await fs.mkdir(p).catch(() => undefined);
+  return (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
+}
+
+/** Writes `text` at `file` unless a file (or link) is there: a temp file, then a hard link that never replaces one. */
+async function writeNew(dir: string, name: string, text: string): Promise<boolean> {
+  const tmp = path.join(dir, `.${name}.${process.pid}.tmp`);
+  const handle = await fs.open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | (fsConstants.O_NOFOLLOW ?? 0), 0o644);
+  try {
+    await handle.writeFile(text, "utf8");
+  } finally {
+    await handle.close();
+  }
+  try {
+    await fs.link(tmp, path.join(dir, name));
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw err;
+  } finally {
+    await fs.rm(tmp, { force: true });
+  }
+}
+
+/**
+ * `run --record`'s broker accesses (tools Decision 8, A3): each exchange, with every form of `keys` replaced by
+ * `{{secret:<id>}}` (`strip`, P11), in `<mock>/tools/<tool>/<NNN>.json`, one plugin fixture exchange per file, numbered
+ * after the highest file there. A file that still holds a key, or isn't a valid exchange, is not written and named.
+ * Nothing is ever overwritten and no link is followed (`mock/tools/`, `<tool>/`, the file). Returns how many were written;
+ * `say` gets one line per file (only fixed texts, tool ids and numbers: no key, no reply text).
+ */
+export async function writeToolRecordings(
+  mockDir: string,
+  exchanges: readonly ToolExchange[],
+  strip: (exchange: FixtureExchange) => { exchange: FixtureExchange; leaked: boolean },
+  say: (line: string) => void,
+): Promise<number> {
+  if (exchanges.length === 0) return 0;
+  if (!(await realFolder(mockDir))) {
+    say("Not recorded: mock/ is not a folder");
+    return 0;
+  }
+  const toolsDir = path.join(mockDir, "tools");
+  if (!(await realFolder(toolsDir))) {
+    say("Not recorded: mock/tools/ is not a folder");
+    return 0;
+  }
+  const byTool = new Map<string, FixtureExchange[]>();
+  for (const e of exchanges) {
+    if (!TOOL_ID.test(e.tool)) continue;
+    byTool.set(e.tool, [...(byTool.get(e.tool) ?? []), e.exchange]);
+  }
+  let written = 0;
+  for (const [tool, list] of byTool) {
+    const dir = path.join(toolsDir, tool);
+    if (!(await realFolder(dir))) {
+      say(`Not recorded: mock/tools/${tool}/ is not a folder`);
+      continue;
+    }
+    const names = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
+    let count = names.length;
+    let next = Math.max(0, ...names.map((f) => Number(TOOL_FILE.exec(f)?.[1] ?? 0))) + 1;
+    for (const exchange of list) {
+      if (count >= FIXTURE_FILES || next > MAX_TOOL_FILE) {
+        say(`Not recorded: mock/tools/${tool}/ is full (mock mode reads at most ${FIXTURE_FILES} files, ${String(MAX_TOOL_FILE)} at most)`);
+        break;
+      }
+      const rel = () => `mock/tools/${tool}/${String(next).padStart(3, "0")}.json`;
+      let stripped: { exchange: FixtureExchange; leaked: boolean } | null = null;
+      try {
+        stripped = strip(exchange);
+      } catch {
+        // Stripping broke the exchange, or it was never a valid one: nothing is written.
+      }
+      if (!stripped) {
+        say(`Not recorded: ${rel()} is not an exchange mock mode can play`);
+        continue;
+      }
+      if (stripped.leaked) {
+        say(`Not recorded: ${rel()} holds a key`);
+        continue;
+      }
+      const text = `${JSON.stringify(stripped.exchange, null, 2)}\n`;
+      if (Buffer.byteLength(text) > FIXTURE_BYTES) {
+        say(`Not recorded: ${rel()} is over 10 MB`);
+        continue;
+      }
+      // A file that appeared since the folder was read takes its number: the next one is tried.
+      while (next <= MAX_TOOL_FILE && !(await writeNew(dir, `${String(next).padStart(3, "0")}.json`, text))) next++;
+      if (next > MAX_TOOL_FILE) continue;
+      say(`Recorded: ${rel()}`);
+      written++;
+      count++;
+      next++;
+    }
+  }
+  return written;
 }

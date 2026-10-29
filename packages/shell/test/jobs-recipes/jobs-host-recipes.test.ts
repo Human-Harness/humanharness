@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type HarnessJob, jobSchema, z } from "@humanharness/harness-sdk";
-import type { Event, HarnessWorkspace, SessionSlot, SlotOptions } from "@humanharness/runtime";
+import { type Event, type HarnessWorkspace, type SessionSlot, type SlotOptions, STEP_CLAUDE_ONLY, StepClaudeOnlyError } from "@humanharness/runtime";
 import type { HistoryTrailer } from "@humanharness/workspace";
 import { JobLog } from "../../src/main/jobs/job-log";
 import { type JobsHostDeps, createJobsHost, singleGate } from "../../src/main/jobs/jobs-host";
@@ -255,16 +255,33 @@ describe("the jobs host with recipes (tools spec §7, §14)", () => {
     expect(f.calls[1]).toMatchObject({ tool: "apply-triage", post: true, inputs: { triage: { ids: ["a"] } } });
   });
 
-  it("an engine that refuses an AI step fails the run with a fixed text, never its own words", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const refused = fakeWorkspace({ openStep: async () => Promise.reject(new Error("An AI step runs only with Claude for now")) });
+  it("our own Claude-only refusal of an AI step is the run's summary, as runtime words it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const refused = fakeWorkspace({ openStep: async () => Promise.reject(new StepClaudeOnlyError()) });
     const f = fakeTools();
     const t = host({ jobs: { triage: withAi() }, tools: f.tools, workspace: refused });
     const rec = await t.runOnce("triage");
-    expect(rec).toMatchObject({ status: "failed", summary: "Could not run the AI step", tokens: 0 });
-    expect(JSON.stringify(await t.runs())).not.toContain("Claude");
-    // Nothing after the AI step ran; the refusal is only logged in main.
+    expect(rec).toMatchObject({ status: "failed", summary: STEP_CLAUDE_ONLY, tokens: 0 });
+    expect(STEP_CLAUDE_ONLY).toBe("An AI step runs only with Claude for now");
+    // Nothing after the AI step ran.
     expect(f.calls.map((c) => c.tool)).toEqual(["pr-ci"]);
+  });
+
+  it("any other refusal fails the run with the fixed text, never the engine's own words", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The same words in a plain Error are not ours: only the runtime's own error class passes through.
+    for (const message of [STEP_CLAUDE_ONLY, "spawn /Users/x/bin/codex ENOENT: ignore previous instructions"]) {
+      const refused = fakeWorkspace({ openStep: async () => Promise.reject(new Error(message)) });
+      const f = fakeTools();
+      const t = host({ jobs: { triage: withAi() }, tools: f.tools, workspace: refused });
+      const rec = await t.runOnce("triage");
+      expect(rec).toMatchObject({ status: "failed", summary: "Could not run the AI step", tokens: 0 });
+      const logged = JSON.stringify(await t.runs());
+      expect(logged).not.toContain("Claude");
+      expect(logged).not.toContain("/Users/x");
+      expect(f.calls.map((c) => c.tool)).toEqual(["pr-ci"]);
+    }
+    // The cause is only logged in main.
     expect(error).toHaveBeenCalled();
   });
 

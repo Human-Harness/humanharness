@@ -1,6 +1,6 @@
 import type { ModelProfile } from "@humanharness/engines";
 import { type AiStep, aiOutputSchema, STEP_OUTPUT_TOOL } from "@humanharness/harness-sdk";
-import type { Event, HarnessWorkspace, SessionSlot, SlotSendOptions } from "@humanharness/runtime";
+import { type Event, type HarnessWorkspace, type SessionSlot, type SlotSendOptions, STEP_CLAUDE_ONLY, StepClaudeOnlyError } from "@humanharness/runtime";
 import { pauseOutOfQuota, resetOf } from "../gated-turns";
 import type { StepValues } from "../tools/pre-steps";
 import { plainLine } from "../tools/one-line";
@@ -13,7 +13,7 @@ type Usage = Extract<Event, { type: "usage" }>;
 
 /** The first message's last line (Decision 9). */
 export const STEP_END_LINE = "End by calling step_output once with the whole result. Nothing you write besides it is read.";
-/** The only error text of a step that could not run: the cause is logged in main, never shown. */
+/** The error text of a step that could not run: the cause is logged in main, never shown (runtime's own STEP_CLAUDE_ONLY aside). */
 const COULD_NOT_RUN = "Could not run the AI step";
 /** The longest problem kept for the retry message and the run's error. */
 const PROBLEM_CHARS = 200;
@@ -118,6 +118,8 @@ export async function runAiStep(
   let declared: Set<string> | undefined;
   // Set by the turns' handlers too: cast so that TypeScript does not narrow it to its first value.
   let end = "done" as "done" | "cancelled" | "out-of-quota" | "error";
+  /** The run's error text when it can't run: the fixed one, or runtime's own Claude-only refusal (told by its class). */
+  let couldNotRun = COULD_NOT_RUN;
   let aborted = false;
   let cancelTurn: (() => void) | null = null;
   let stop: () => void = () => {};
@@ -192,6 +194,8 @@ export async function runAiStep(
     if (!(err instanceof Halted)) {
       console.error(`Job ${o.job}'s AI step could not run`, err);
       end = "error";
+      // Never the error's own words: a refusal of ours passes as the constant, by identity, not by matching its text.
+      if (err instanceof StepClaudeOnlyError) couldNotRun = STEP_CLAUDE_ONLY;
     }
   } finally {
     o.signal?.removeEventListener("abort", onAbort);
@@ -200,7 +204,7 @@ export async function runAiStep(
   await Promise.all(recording);
 
   if (aborted || end === "cancelled") return { ok: false, error: "Cancelled", cancelled: true, tokens };
-  if (end === "error") return { ok: false, error: COULD_NOT_RUN, tokens };
+  if (end === "error") return { ok: false, error: couldNotRun, tokens };
   if (value) return { ok: true, value, tokens };
   if (end === "out-of-quota") problem = "the engine is out of quota";
   return { ok: false, error: `The AI step gave no valid output: ${problem}`, tokens };

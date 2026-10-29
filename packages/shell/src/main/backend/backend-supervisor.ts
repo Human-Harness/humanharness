@@ -77,9 +77,12 @@ export class BackendSupervisor {
     });
   }
 
-  /** Remembers the scopes for the next start, and tells a running backend now. */
-  scopesChanged(scopes: BackendScope[]): void {
-    if (!this.init) return;
+  /**
+   * Remembers the scopes for the next start, and tells a running backend now. Scopes read from another `folder` than
+   * its init's (a folder changed and its rebase hasn't come yet) are dropped: they aren't this backend's.
+   */
+  scopesChanged(scopes: BackendScope[], folder: string): void {
+    if (!this.init || this.init.folder !== folder) return;
     this.init = { ...this.init, scopes };
     if (this.current === "running" && this.proc && this.transitions === 0) this.proc.notify("scopesChanged", this.init);
   }

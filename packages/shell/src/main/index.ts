@@ -1886,7 +1886,8 @@ async function backendReady(): Promise<void> {
   const b = backend;
   if (!b || quitting || backendStarted) return;
   backendGen.bump();
-  const init = await backendInitNow();
+  // Null when another start, rebase or profile switch began meanwhile: that one's base wins.
+  const init = await backendGen.readFresh(backendInitNow);
   if (!init || quitting || backendStarted) return;
   backendStarted = true;
   await b.start(init);
@@ -1898,7 +1899,8 @@ async function backendRebase(): Promise<void> {
   if (!b || quitting) return;
   if (!backendStarted) return backendReady();
   backendGen.bump();
-  const init = await backendInitNow();
+  // Null when a later rebase or profile switch began meanwhile: this base is already stale.
+  const init = await backendGen.readFresh(backendInitNow);
   if (init && !quitting) await b.rebase(init);
 }
 
@@ -1907,7 +1909,8 @@ async function backendScopes(): Promise<void> {
   if (!b || !backendStarted || quitting) return;
   // Null when a rebase began meanwhile: its own init is newer than these scopes.
   const init = await backendGen.readFresh(backendInitNow);
-  if (init) b.scopesChanged(init.scopes);
+  // The supervisor drops scopes of another folder (Settings changed it; the rebase comes after).
+  if (init) b.scopesChanged(init.scopes, init.folder);
 }
 
 /** A profile switch begins: a started backend stops before anything reads the new base (backendRebase starts it). */

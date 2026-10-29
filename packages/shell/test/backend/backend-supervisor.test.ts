@@ -229,7 +229,7 @@ describe("BackendSupervisor (hatches spec §4.3, B6)", () => {
   it("scopesChanged notifies a running backend, and is remembered for the next start", async () => {
     const r = rig();
     await r.sup.start(init);
-    r.sup.scopesChanged([scope]);
+    r.sup.scopesChanged([scope], init.folder);
     expect(r.last().notified).toEqual([{ method: "scopesChanged", params: { ...init, scopes: [scope] } }]);
     r.last().crash();
     await settle();
@@ -247,11 +247,24 @@ describe("BackendSupervisor (hatches spec §4.3, B6)", () => {
     const starting = r.sup.start(init);
     await settle();
     expect(r.startedWith).toHaveLength(1);
-    r.sup.scopesChanged([scope]);
+    r.sup.scopesChanged([scope], init.folder);
     open();
     await starting;
     expect(r.last().init.scopes).toEqual([]);
     expect(r.last().notified).toEqual([{ method: "scopesChanged", params: { ...init, scopes: [scope] } }]);
+  });
+
+  it("scopes read from another folder (a folder change before its rebase) are dropped, not sent or remembered", async () => {
+    const r = rig();
+    await r.sup.start(init);
+    r.sup.scopesChanged([scope], "/new");
+    expect(r.last().notified).toEqual([]);
+    r.last().crash();
+    await settle();
+    expect(r.last().init.scopes).toEqual([]);
+    await r.sup.rebase({ ...init, folder: "/new" });
+    r.sup.scopesChanged([scope], "/new");
+    expect(r.last().notified).toEqual([{ method: "scopesChanged", params: { ...init, folder: "/new", scopes: [scope] } }]);
   });
 
   it("a running backend with unchanged scopes gets no scopesChanged at start", async () => {

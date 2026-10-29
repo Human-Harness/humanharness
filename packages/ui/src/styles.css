@@ -207,6 +207,10 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Always there for screen readers; while empty it takes no room (out of the flow, still in the tree). */
 .hh-backup-status { margin: 0; max-width: 460px; color: var(--hh-slate); font-size: 13px; overflow-wrap: anywhere; }
 .hh-backup-status:empty { position: absolute; }
+/* Hatches §4.3: the harness's backend gave up; it floats over whichever screen is open. */
+.hh-backend-card { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: grid; gap: 8px; max-width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-slate); font-size: 13px; overflow-wrap: anywhere; }
+.hh-backend-card p { margin: 0; }
+.hh-backend-card button { justify-self: start; }
 .hh-place:has(input:checked) { border-color: var(--hh-ink); font-weight: 600; }
 .hh-place:has(input:checked) .hh-caption { font-weight: 400; }
 .hh-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }

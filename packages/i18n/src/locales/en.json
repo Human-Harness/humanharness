@@ -1344,6 +1344,9 @@
       "refused": "The agent doesn't get this folder now. {{reason}}"
     },
     "contextLinked": "Folders of this scope",
+    "backendFailed": "The harness's helper stopped working.",
+    "backendRestart": "Restart",
+    "backendRestarting": "Restarting…",
     "refused": {
       "engine-home": "This folder holds an app's settings or keys, so it can't be linked.",
       "home": "Your whole home folder can't be linked. Choose a folder inside it.",

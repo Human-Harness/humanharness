@@ -18,7 +18,7 @@ export const TOOLS_CATALOGUE_LIMITS = { bytes: 512 * 1024, tools: TOOLS_MAX, des
  * How long a call may wait for the app: longer than the longest tool timeout (120 s), so the app's own timeout
  * answers first with the tool's name in it.
  */
-const CALL_TIMEOUT_MS = 180_000;
+export const TOOLS_CALL_TIMEOUT_MS = 180_000;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -102,7 +102,7 @@ export async function createToolsServer(catalogue: string, rpc: { path: string; 
     const name = request.params.name;
     if (!tools.some((t) => t.name === name)) return { isError: true, content: [{ type: "text" as const, text: `No tool "${name.slice(0, 64)}"` }] };
     try {
-      const result = await callRpc(rpc, { tool: name, args: request.params.arguments ?? {} }, CALL_TIMEOUT_MS);
+      const result = await callRpc(rpc, { tool: name, args: request.params.arguments ?? {} }, TOOLS_CALL_TIMEOUT_MS);
       return { content: [{ type: "text" as const, text: JSON.stringify(result ?? null) }] };
     } catch (e) {
       return { isError: true, content: [{ type: "text" as const, text: errorText(e) }] };

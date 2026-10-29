@@ -5,7 +5,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type Rpc, devLauncher, openRpc, toolsServerSpec } from "../src";
-import { TOOLS_CATALOGUE_LIMITS, createToolsServer, readToolsCatalogue } from "../src/tools-server";
+import { toolMetaSchema } from "@humanharness/harness-sdk";
+import { TOOLS_CALL_TIMEOUT_MS, TOOLS_CATALOGUE_LIMITS, createToolsServer, readToolsCatalogue } from "../src/tools-server";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-tools-srv-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -87,6 +88,34 @@ describe("tools MCP server (tools spec §5)", () => {
     expect(res.isError).toBe(true);
     expect(res.content).toEqual([{ type: "text", text: 'No tool "pr-ci"' }]);
     expect(seen).toEqual([]);
+  });
+
+  it("waits 180 s for the app, longer than the longest tool timeout, so the app's own timeout answers first", () => {
+    expect(TOOLS_CALL_TIMEOUT_MS).toBe(180_000);
+    expect(TOOLS_CALL_TIMEOUT_MS).toBeGreaterThan((toolMetaSchema.shape.timeout.maxValue ?? Infinity) * 1000);
+    expect(toolMetaSchema.shape.timeout.maxValue).toBe(120);
+  });
+
+  it("an app that doesn't answer in 180 s: the agent reads that the tool may still have run", async () => {
+    let reached!: () => void;
+    const atApp = new Promise<void>((r) => (reached = r));
+    const c = await connect([count], () => (reached(), new Promise(() => {})));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let done = false;
+      // The client's own request timeout stays out of the way.
+      const call = c.callTool({ name: "count-notes", arguments: { tag: "a" } }, undefined, { timeout: 600_000 }).finally(() => (done = true));
+      await atApp;
+      vi.advanceTimersByTime(TOOLS_CALL_TIMEOUT_MS - 1);
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+      expect(done).toBe(false);
+      vi.advanceTimersByTime(1);
+      const res = await call;
+      expect(res.isError).toBe(true);
+      expect(res.content).toEqual([{ type: "text", text: "The app did not answer in time; the tool may still have run." }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("an app that can't be reached is an error the agent reads", async () => {

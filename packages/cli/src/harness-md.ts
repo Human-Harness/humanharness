@@ -1,5 +1,5 @@
 /** The sections of a harness's HARNESS.md, in order (spec §6). */
-export const HARNESS_SECTIONS = ["Task", "Decisions", "Flow", "Context", "Models", "Permissions and engines", "Identity", "Open questions", "Decision log"] as const;
+export const HARNESS_SECTIONS = ["Task", "Decisions", "Flow", "Mechanical work", "Context", "Models", "Permissions and engines", "Identity", "Open questions", "Decision log"] as const;
 export type HarnessSection = (typeof HARNESS_SECTIONS)[number];
 
 /** The Flow table's row for free questions. */

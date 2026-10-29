@@ -23,6 +23,11 @@ The living decision log of this harness. The `/new-harness` guide fills each sec
 | example | standard | light | Shows how an action works |
 | (questions) | light | – | Free questions |
 
+## Mechanical work
+
+| Moment | Code or AI | Tool or step | Why |
+|---|---|---|---|
+
 ## Context
 
 Each closed task saves a note with the core `save_note` fields: a title, up to five summary points, the decisions taken, the files that back them and the questions left open.

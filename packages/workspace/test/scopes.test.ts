@@ -239,3 +239,69 @@ describe("ScopeStore links (hatches spec §3.2)", () => {
     expect(s.linked?.at(-1)?.path).toBe(`/f${max - 1}`);
   });
 });
+
+describe("engine approval on the scope (spec §5.3)", () => {
+  const file = (base: string) => path.join(base, ".harness", "scopes.json");
+  const hash = "ab".repeat(32);
+
+  it("approveEngine stores { hash, at }; D0: no key until then", async () => {
+    const base = tmp();
+    const store = new ScopeStore(base, at);
+    await store.create("App");
+    expect(fs.readFileSync(file(base), "utf8")).not.toContain("engineApproval");
+    expect("engineApproval" in (await store.list())[0]).toBe(false);
+    const e = await store.approveEngine("app", hash, new Date("2026-10-28T09:00:00.000Z"));
+    expect(e.engineApproval).toEqual({ hash, at: "2026-10-28T09:00:00.000Z" });
+    expect((await store.list())[0].engineApproval).toEqual({ hash, at: "2026-10-28T09:00:00.000Z" });
+    // Without a time, the store's clock.
+    expect((await store.approveEngine("app", "cd".repeat(32))).engineApproval).toEqual({ hash: "cd".repeat(32), at: "2026-10-25T10:00:00.000Z" });
+    // Kept through rename, archive and links.
+    await store.rename("app", "App 2");
+    await store.setArchived("app", true);
+    await store.link("app", { key: "repos", path: "/r", mode: "read", tracked: false });
+    await store.unlink("app", "repos", "/r");
+    expect((await store.list())[0].engineApproval?.hash).toBe("cd".repeat(32));
+  });
+
+  it("refuses a hash that isn't 64 hex characters", async () => {
+    const base = tmp();
+    const store = new ScopeStore(base, at);
+    await store.create("App");
+    for (const bad of ["", "ab".repeat(31), "AB".repeat(32), `${"ab".repeat(32)}0`, "../".repeat(22), 42]) {
+      await expect(async () => store.approveEngine("app", bad as string)).rejects.toThrow(/hash/);
+    }
+    await expect(async () => store.approveEngine("nope", hash)).rejects.toThrow(/Unknown scope/);
+    expect(fs.readFileSync(file(base), "utf8")).not.toContain("engineApproval");
+  });
+
+  it("clearEngineApproval removes the key", async () => {
+    const base = tmp();
+    const store = new ScopeStore(base, at);
+    await store.create("App");
+    await store.approveEngine("app", hash);
+    const e = await store.clearEngineApproval("app");
+    expect("engineApproval" in e).toBe(false);
+    expect(fs.readFileSync(file(base), "utf8")).toBe(
+      `${JSON.stringify([{ id: "app", title: "App", createdAt: "2026-10-25T10:00:00.000Z", archived: false }], null, 2)}\n`,
+    );
+  });
+
+  it("drops a hand-edited approval that isn't a hash and a time, keeping the scope", async () => {
+    const base = tmp();
+    fs.mkdirSync(path.join(base, ".harness"), { recursive: true });
+    const entry = (engineApproval: unknown) => ({ id: "app", title: "App", createdAt: "", archived: false, engineApproval });
+    fs.writeFileSync(
+      file(base),
+      JSON.stringify([
+        { ...entry({ hash: "x", at: "2026-10-28T09:00:00.000Z" }) },
+        { ...entry({ hash, at: 1 }), id: "b" },
+        { ...entry("yes"), id: "c" },
+        { ...entry({ hash, at: "2026-10-28T09:00:00.000Z", extra: true }), id: "d" },
+      ]),
+    );
+    const list = await new ScopeStore(base, at).list();
+    expect(list.map((s) => s.id)).toEqual(["app", "b", "c", "d"]);
+    expect(list.slice(0, 3).every((s) => !("engineApproval" in s))).toBe(true);
+    expect(list[3].engineApproval).toEqual({ hash, at: "2026-10-28T09:00:00.000Z" });
+  });
+});

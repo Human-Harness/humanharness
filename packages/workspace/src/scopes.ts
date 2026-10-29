@@ -30,6 +30,16 @@ export interface ScopeEntry {
   archived: boolean;
   /** Linked folders (hatches spec §3.2). Absent when there are none, so the file is today's (D0). */
   linked?: LinkedFolderEntry[];
+  /**
+   * The engine config the person approved (hatches spec §5.3): its hash and when (ISO). Absent until the first
+   * approval, so the file is today's (D0). New sessions get the config only while the folder still hashes to it.
+   */
+  engineApproval?: EngineApproval;
+}
+
+export interface EngineApproval {
+  hash: string;
+  at: string;
 }
 
 export const SCOPE_TITLE_MAX = 120;
@@ -63,6 +73,9 @@ const LINK_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
 const LINK_PATH_MAX = 4096;
 const LINK_TAG_MAX = 128;
 const LINK_NONCE = /^[0-9a-f]{16,64}$/;
+/** An engine config hash: sha256, lowercase hex. */
+const ENGINE_HASH = /^[0-9a-f]{64}$/;
+const APPROVED_AT_MAX = 64;
 /** The most links one entry can hold (every key full): a longer list in a hand-edited file is cut there. */
 const LINKS_MAX = LINKED_KEYS_MAX * LINKED_MANY_MAX;
 
@@ -83,6 +96,12 @@ function cleanLink(v: unknown): LinkedFolderEntry | null {
   };
 }
 
+function cleanApproval(v: unknown): EngineApproval | null {
+  if (!isObject(v) || typeof v.hash !== "string" || !ENGINE_HASH.test(v.hash)) return null;
+  if (typeof v.at !== "string" || !v.at || v.at.length > APPROVED_AT_MAX) return null;
+  return { hash: v.hash, at: v.at };
+}
+
 function cleanEntry(v: unknown): ScopeEntry | null {
   if (!isObject(v) || !isScopeId(v.id) || typeof v.title !== "string" || !v.title.trim()) return null;
   const links: LinkedFolderEntry[] = [];
@@ -101,8 +120,11 @@ function cleanEntry(v: unknown): ScopeEntry | null {
     createdAt: typeof v.createdAt === "string" ? v.createdAt : "",
     archived: v.archived === true,
     ...(links.length > 0 ? { linked: links } : {}),
+    ...withApproval(cleanApproval(v.engineApproval)),
   };
 }
+
+const withApproval = (a: EngineApproval | null) => (a ? { engineApproval: a } : {});
 
 /** The scope registry of a base folder. Writes are atomic and one at a time. */
 export class ScopeStore {
@@ -222,6 +244,25 @@ export class ScopeStore {
       const next = cleanLink(sign ? { ...plain, tag: sign(plain, l) } : plain);
       if (!next) throw new Error("Invalid linked folder");
       return next;
+    });
+  }
+
+  /**
+   * Approves the scope's engine config by its hash at `now` (the store's clock without it). The caller computed the
+   * hash right then and compared it with the one the person saw (E10); the store only checks its shape.
+   * Throws synchronously on a hash that isn't 64 lowercase hex characters.
+   */
+  approveEngine(id: string, hash: string, now?: Date): Promise<ScopeEntry> {
+    if (typeof hash !== "string" || !ENGINE_HASH.test(hash)) throw new Error("An engine config hash is 64 hex characters");
+    const at = (now ?? this.now()).toISOString();
+    return this.update(id, (s) => ({ ...s, engineApproval: { hash, at } }));
+  }
+
+  /** Removes the approval: the entry is written as before any approval (D0 shape). */
+  clearEngineApproval(id: string): Promise<ScopeEntry> {
+    return this.update(id, (s) => {
+      const { engineApproval: _old, ...plain } = s;
+      return plain;
     });
   }
 

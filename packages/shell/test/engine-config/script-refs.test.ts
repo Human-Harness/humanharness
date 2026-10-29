@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { commandWords, scriptProblem, scriptRefs } from "../../src/main/engine-config/script-refs";
+import { execFileSync } from "node:child_process";
+import { commandWords, scanScripts, scriptRefs } from "../../src/main/engine-config/script-refs";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-script-refs-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -47,11 +48,14 @@ describe("scriptRefs (spec §5.3, E2)", () => {
     const repo = tree("repo4", { "lib/b.js": "b" });
     fs.symlinkSync(path.join(w, "real.js"), path.join(w, "link.js"));
     const o = { folder: w, linked: [repo] };
-    const found = await scriptRefs(["node ./link.js", "ls ./dir", "ls .", `ls ${repo}`, `node ${repo}/lib`, "npm run dir"], o);
+    const found = await scriptRefs(["node ./link.js", "ls ./dir", "ls .", `ls ${repo}`, `node ${repo}/lib`], o);
     expect(found).toEqual([path.join(w, "dir"), path.join(w, "link.js"), path.join(repo, "lib")].sort());
-    expect(await scriptProblem(path.join(w, "link.js"), o)).toBe("is a symbolic link");
-    expect(await scriptProblem(path.join(w, "dir"), o)).toBe("is a folder");
-    expect(await scriptProblem(path.join(w, "real.js"), o)).toBeNull();
+    const { files, issues } = await scanScripts(["node ./link.js", "ls ./dir", "node ./real.js"], o);
+    expect(files).toEqual([path.join(w, "real.js")]);
+    expect(issues).toEqual([
+      { path: path.join(w, "dir"), why: "is a folder", command: "ls ./dir" },
+      { path: path.join(w, "link.js"), why: "is a symbolic link", command: "node ./link.js" },
+    ]);
   });
 
   it("names a file reached through a symlinked folder, inside or pointing outside", async () => {
@@ -60,15 +64,20 @@ describe("scriptRefs (spec §5.3, E2)", () => {
     fs.symlinkSync(outside, path.join(w, "tools"));
     fs.symlinkSync(path.join(w, "lib"), path.join(w, "alias"));
     const o = { folder: w, linked: [] };
-    expect(await scriptRefs(["cat ./tools/hosts", "node ./alias/x.js"], o)).toEqual([path.join(w, "alias/x.js"), path.join(w, "tools/hosts")]);
-    expect(await scriptProblem(path.join(w, "tools/hosts"), o)).toBe("is reached through a symbolic link");
-    expect(await scriptProblem(path.join(w, "alias/x.js"), o)).toBe("is reached through a symbolic link");
+    const { files, issues } = await scanScripts(["cat ./tools/hosts", "node ./alias/x.js"], o);
+    expect(files).toEqual([]);
+    expect(issues.map((i) => [i.path, i.why])).toEqual([
+      [path.join(w, "alias/x.js"), "is reached through a symbolic link"],
+      [path.join(w, "tools/hosts"), "is reached through a symbolic link"],
+    ]);
   });
 
   it("ignores ../ escapes and home paths", async () => {
     const w = tree("w6/inner", {});
     tree("w6", { "up.js": "u" });
-    expect(await scriptRefs(["node ../up.js", "node ~/x.js"], { folder: w, linked: [] })).toEqual([]);
+    expect(await scriptRefs(["node ../up.js", ["node", "~/x.js"]], { folder: w, linked: [] })).toEqual([]);
+    // In hook text `~` is the home folder: refused, never expanded.
+    await expect(scriptRefs(["node ~/x.js"], { folder: w, linked: [] })).rejects.toThrow("uses ~");
   });
 });
 
@@ -106,3 +115,92 @@ describe("commandWords: shell forms (E2)", () => {
     expect(found).toEqual([path.join(w, "b.sh"), path.join(w, "tools/x.js")]);
   });
 });
+
+describe("scanScripts fails closed (E2, E8: what a command runs must be fully accounted for)", () => {
+  const w = tree("atk", { "target.js": "evil", "tools/ok.js": "ok", "index.js": "idx", "pkg/index.js": "p" });
+  fs.symlinkSync(path.join(w, "target.js"), path.join(w, "run.js"));
+  execFileSync("mkfifo", [path.join(w, "fifo")]);
+  const outLink = path.join(root, "atk-outlink.js");
+  fs.symlinkSync(path.join(w, "target.js"), outLink);
+  const worklink = path.join(root, "atk-worklink");
+  fs.symlinkSync(w, worklink);
+  const o = { folder: w, linked: [] as string[] };
+  const why = async (c: string | string[], opt = o) => {
+    const { issues } = await scanScripts([c], opt);
+    return issues.map((i) => [path.relative(root, i.path), i.why]);
+  };
+
+  it.each([
+    ["node run.js", "atk/run.js", "is a symbolic link"],
+    ["node ./run.js", "atk/run.js", "is a symbolic link"],
+    ["node ./Run.js", "atk/Run.js", "is a symbolic link"],
+    ["node ./tools/../run.js", "atk/run.js", "is a symbolic link"],
+    ["node pkg", "atk/pkg", "is a folder: the program would run a file in it the approval doesn't cover"],
+    ["node .", "atk", "is a folder: the program would run a file in it the approval doesn't cover"],
+    ["node ./", "atk", "is a folder: the program would run a file in it the approval doesn't cover"],
+    ["node fifo", "atk/fifo", "is not a regular file"],
+    ["cat fifo", "atk/fifo", "is not a regular file"],
+    ["node ../atk-outlink.js", "atk-outlink.js", "is a link into the folder"],
+    ["bash -o pipefail -c 'node ./run.js'", "atk/run.js", "is a symbolic link"],
+    ["bash -O extglob -c 'node ./run.js'", "atk/run.js", "is a symbolic link"],
+    ["sh -c 'node run.js'", "atk/run.js", "is a symbolic link"],
+    ["node --require=./run.js ./tools/ok.js", "atk/run.js", "is a symbolic link"],
+    ["node -r./run.js ./tools/ok.js", "atk/run.js", "is a symbolic link"],
+    ["node -r dotenv/config ./tools/ok.js", "atk/dotenv/config", "is not a script file in the folder (node loads it first)"],
+    ["python -c 'x' ./run.js", "atk/run.js", "is a symbolic link"],
+    ["exec node ./run.js", "atk/run.js", "is a symbolic link"],
+    ["env -i node ./run.js", "atk/run.js", "is a symbolic link"],
+    [". ./run.js", "atk/run.js", "is a symbolic link"],
+    ["tool --x=./run.js", "atk/run.js", "is a symbolic link"],
+  ])("refuses %s", async (command, file, reason) => {
+    expect(await why(command)).toEqual([[file, reason]]);
+  });
+
+  it("refuses an absolute path that links into the folder, and paths through a linked work folder", async () => {
+    expect(await why(`node ${outLink}`)).toEqual([["atk-outlink.js", "is a link into the folder"]]);
+    expect(await why(`node ${w}/`)).toEqual([["atk", "is a folder: the program would run a file in it the approval doesn't cover"]]);
+    // The work folder given through a link: the run.js link is refused whichever way it is named.
+    for (const c of ["node ./run.js", "node run.js"]) {
+      expect((await why(c, { folder: worklink, linked: [] })).map((r) => r[1]), c).toEqual(["is a symbolic link"]);
+    }
+    expect((await why(`node ${w}/run.js`, { folder: worklink, linked: [] })).map((r) => r[1])).toEqual(["is a link into the folder"]);
+  });
+
+  it("a server's first argument is its script: a root or a folder there is refused; elsewhere a root is data", async () => {
+    expect(await why(["mcp-tool", "."])).toEqual([["atk", "is a folder: the program would run a file in it the approval doesn't cover"]]);
+    expect(await why(["npx", "-y", "@scope/server-filesystem", "."])).toEqual([]);
+    expect(await why(`ls ${w}`)).toEqual([]);
+  });
+
+  it.each([
+    ["cat fifo | sh", "reading commands from its input"],
+    ["sh", "reading commands from its input"],
+    ["sh -s", "reading commands from its input"],
+    ["node -", "reads its script from its input"],
+    ["eval 'node ./run.js'", "uses eval"],
+    ["xargs node", "xargs"],
+    ["NODE_OPTIONS=--require=./run.js node ./tools/ok.js", "sets NODE_OPTIONS"],
+    ["NODE_OPTIONS=--require=./target.js node ./tools/ok.js", "sets NODE_OPTIONS"],
+    ["env BASH_ENV=./x.sh bash ./tools/ok.js", "sets BASH_ENV"],
+    ["env -S 'node x'", "runs env with -S"],
+    ["LD_PRELOAD=./x.so node ./tools/ok.js", "sets LD_PRELOAD"],
+    ["PATH=./bin:/usr/bin tool", "sets PATH"],
+    [`node ~${w.slice(os.homedir().length)}/target.js`, "uses ~"],
+    ["bash --rcfile ./x -c 'true'", "with --rcfile"],
+    ["bash -o", "with -o"],
+    ["command -p node x", "in a form the check doesn't read"],
+    ["sh -c 'node \"unclosed'", "leaves a quote open"],
+  ])("refuses %s as a whole", async (command, message) => {
+    await expect(scanScripts([command], o)).rejects.toThrow(message);
+  });
+
+  it("plain commands still hash their scripts", async () => {
+    const { files, issues } = await scanScripts(
+      ["node ./tools/ok.js", "FOO=1 node ./target.js", "bash -o pipefail -c 'node ./index.js | cat'", ["node", "./tools/ok.js"], "python3 -u ./target.js"],
+      o,
+    );
+    expect(issues).toEqual([]);
+    expect(files).toEqual([path.join(w, "index.js"), path.join(w, "target.js"), path.join(w, "tools/ok.js")]);
+  });
+});
+

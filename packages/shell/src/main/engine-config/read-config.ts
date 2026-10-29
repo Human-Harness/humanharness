@@ -5,7 +5,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
-import { commandWords, scriptProblem, scriptRefs, type ScriptCommand } from "./script-refs";
+import { commandWords, scanScripts, scriptRefs, type ScriptCommand } from "./script-refs";
 import { parseToml } from "./toml-lite";
 
 // Reads a scope's engine folder, `.harness/engine/<scope>/` (hatches spec §5.1–5.4), into an EngineConfig: what each
@@ -401,13 +401,15 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
   const refusals = config.refusals;
 
   // Referenced scripts: files outside the engine folder (those inside are already in `files`).
+  // What a command names that the hash can't cover (a link, a folder, a FIFO…): what runs could change after approval
+  // without changing the hash, so it is refused naming the path and the command.
+  const { issues } = await scanScripts(commands, o);
+  for (const i of issues) {
+    refusals.push({ file: i.path, message: `${i.path}: ${i.why}, named by ${JSON.stringify(i.command)}; a command must name a plain script file` });
+  }
+  const refused = new Set(issues.map((i) => i.path));
   for (const script of await externalScripts(commands, dir, o)) {
-    // A link, a folder or a path through a link: what runs could change after approval without changing the hash.
-    const why = await scriptProblem(script, o);
-    if (why !== null) {
-      refusals.push({ file: script, message: `${script}: ${why}; a command must name the file itself` });
-      continue;
-    }
+    if (refused.has(script)) continue;
     const read = await readRegular(script, ENGINE_FILE_MAX).catch(() => ({ kind: "other" }) as Read);
     if (read.kind === "file") {
       walk.total += read.data.length;

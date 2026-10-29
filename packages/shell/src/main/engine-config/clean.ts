@@ -38,7 +38,7 @@ const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const SERVER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const CREDENTIAL_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|OPENAI_?KEY|CREDENTIAL|AUTH|COOKIE|SESSION|(^|_)PAT($|_))/i;
 // Variables that make a program load code the hash never saw (E2): node, the shell, the dynamic linker, python, ruby, perl.
-const LOADER_NAME = /^(NODE_OPTIONS|NODE_PATH|PATH|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|BASH_ENV|ENV|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|DYLD_.*|LD_.*)$/i;
+export const LOADER_NAME = /^(NODE_OPTIONS|NODE_PATH|PATH|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|BASH_ENV|ENV|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|DYLD_.*|LD_.*)$/i;
 /** Map keys a preset may use (hook events, feature flags). */
 const MAP_KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);

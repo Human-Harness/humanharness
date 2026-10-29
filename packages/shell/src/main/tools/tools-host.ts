@@ -221,10 +221,10 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
       allowHost: d.allowHost,
       userData: d.userData,
       exec: { resolve: d.exec.resolve, run: d.exec.run, env: async () => toolExecEnv(await d.exec.env()) },
-      // As plugins (B6): the stored keys hidden first, then cut.
+      // As plugins (B6): the stored keys hidden first, then cut. Main's log (`d.log`) adds the "[tools]" itself.
       log: async (level, message) => {
         const keys = await secretValues(tool).catch(() => []);
-        d.log(`[tools] ${tool}: ${level}: ${upTo(keys.length > 0 ? hideSecrets(message, keys) : message, BROKER_LIMITS.logChars)}`);
+        d.log(`${tool}: ${level}: ${upTo(keys.length > 0 ? hideSecrets(message, keys) : message, BROKER_LIMITS.logChars)}`);
       },
     });
     brokers.set(tool, b);

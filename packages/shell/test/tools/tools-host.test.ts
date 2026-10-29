@@ -276,6 +276,18 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     ]);
   });
 
+  it("a tool's ctx.log reaches main's log once, with its id and level, keys hidden, and no [tools] of its own (main's log adds it)", async () => {
+    await built();
+    const answer: Answer = async (c, channel) => {
+      await channel.ctx(c.tool, c.callId, "log", ["info", `token is ${SECRET}`]);
+      return { ok: true, value: 1 };
+    };
+    const { t, seen } = wire({ answer });
+    await t.uiCall("leak", {});
+    const lines = seen.logs.filter((l) => l.includes("token is"));
+    expect(lines).toEqual(["leak: info: token is [redacted]"]);
+  });
+
   it("two agent calls at once (a task's and a job run's): each data write carries its own call's trailer, in any order", async () => {
     await built();
     const held: { c: ToolHostCall; channel: ToolChannel; done: (a: ToolHostAnswer) => void }[] = [];

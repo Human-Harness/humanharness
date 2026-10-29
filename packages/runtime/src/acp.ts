@@ -865,6 +865,8 @@ export class AcpTransport implements Transport {
     // Built per turn from the task's scope (L5, L6): an unlinked folder is gone from this turn on.
     this.linked = scope?.linked ?? [];
     this.engine = engine;
+    // The approved preset's servers are trusted as the core's for this turn only (the person approved them); D0: the core's.
+    this.policy.mcpServers = [...this.o.mcp, ...(engine?.servers ?? [])].map((s) => s.name);
     try {
       if (!this.conn || !this.sessionId) {
         if (!this.conn) await this.connect(config);

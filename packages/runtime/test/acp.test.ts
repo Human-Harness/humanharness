@@ -1473,6 +1473,18 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     expect(log().some((l) => l.method === "initialize")).toBe(false);
   });
 
+  it("approves the approved preset's servers' MCP calls only on turns with that preset", async () => {
+    const approval = (id: string) => [
+      mcpCall(id, "scope-lint", "check"),
+      { permission: { toolCall: { toolCallId: id, kind: "execute", status: "pending" }, _meta: { is_mcp_tool_approval: true } } },
+    ];
+    const { transport: t, log } = setup({ turns: [approval("m1"), approval("m2")] });
+    await turnWith(t, { linked: [], engine: preset() });
+    // D0: without the preset (dropped on a later turn) its server's calls are refused again.
+    await turnWith(t, { linked: [] });
+    expect(log().filter((l) => l.method === "permission-outcome").map((l) => l.params.optionId)).toEqual(["allow", "reject"]);
+  });
+
   it("OpenCode: servers only; codex ignored", async () => {
     const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[chunk("a")]] }, undefined, byConfig);
     const events = await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) }, openProfile());

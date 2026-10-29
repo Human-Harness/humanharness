@@ -148,9 +148,17 @@ export function preparedSection(results: StepResult[], o: { descriptions: Record
   if (kept.length === 0) return { text: "", items: [], cuts: cutList, tokens: 0 };
   const blocks = kept.map(block);
   const text = [HEAD, ...blocks].join("\n\n");
+  // Item ids are unique (the panel keys and the store merge by id): a repeated key gets `#<n>`, its nth use.
+  const used = new Set<string>();
+  const idOf = (key: string) => {
+    let id = `prepared:${key}`;
+    for (let n = 2; used.has(id); n++) id = `prepared:${key}#${n}`;
+    used.add(id);
+    return id;
+  };
   return {
     text,
-    items: kept.map((s, k) => ({ id: `prepared:${s.key}`, kind: "prepared" as const, label: `Prepared · ${s.key}`, tokens: approxTokens(blocks[k].length) })),
+    items: kept.map((s, k) => ({ id: idOf(s.key), kind: "prepared" as const, label: `Prepared · ${s.key}`, tokens: approxTokens(blocks[k].length) })),
     cuts: cutList,
     tokens: tokensOf(text.length),
   };

@@ -158,6 +158,17 @@ describe("preparedSection (tools spec §6.3, §6.4)", () => {
     ]);
   });
 
+  it("item ids are unique: two steps on one tool without as, the repeat gets #2", () => {
+    const s = preparedSection([r(undefined, "due-today", []), r(undefined, "due-today", [1]), r(undefined, "due-today", [2])], { descriptions: desc, preTokens: 4000 });
+    expect(s.items.map((i) => i.id)).toEqual(["prepared:due-today", "prepared:due-today#2", "prepared:due-today#3"]);
+    expect(s.items.map((i) => i.label)).toEqual(["Prepared · due-today", "Prepared · due-today", "Prepared · due-today"]);
+  });
+
+  it("item ids are unique: an as equal to another step's tool, the repeat gets #2", () => {
+    const s = preparedSection([r(undefined, "x", []), r("x", "y", [])], { descriptions: desc, preTokens: 4000 });
+    expect(s.items.map((i) => i.id)).toEqual(["prepared:x", "prepared:x#2"]);
+  });
+
   it("tokens is the section's characters ÷ 4, rounded up", () => {
     const s = preparedSection([r("today", "due-today", items(7))], { descriptions: desc, preTokens: 4000 });
     expect(s.tokens).toBe(Math.ceil(s.text.length / 4));

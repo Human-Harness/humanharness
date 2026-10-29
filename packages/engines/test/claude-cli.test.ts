@@ -3,9 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude-cli";
-import type { Event } from "../src/events";
-import type { Session, TransportOptions } from "../src/transport";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude/transport";
+import type { CommonOptions as TransportOptions, Event, Session } from "../src/contract";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

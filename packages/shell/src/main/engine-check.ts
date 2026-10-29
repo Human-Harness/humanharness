@@ -2,16 +2,8 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { EngineDef } from "@humanharness/engines";
-import {
-  AcpTransport,
-  ClaudeCliTransport,
-  type EngineError,
-  type Event,
-  type Transport,
-  type TransportOptions,
-  acpFields,
-} from "@humanharness/runtime";
+import type { CommonOptions, EngineDef, EngineError, Event, Transport } from "@humanharness/engines";
+import { createTransport } from "@humanharness/engines/registry";
 
 export const TEST_PROMPT = "Reply with the single word OK.";
 const TIMEOUT_MS = 90_000;
@@ -30,18 +22,17 @@ export async function testPrompt(
   opts: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ ok: boolean; error?: EngineError }> {
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), "hh-check-"));
-  const options: TransportOptions = {
+  const options: CommonOptions = {
     folder,
     session: { id: randomUUID(), started: false },
     mcp: [],
     permissions: { edit: "none", exec: false, web: false },
-    ...acpFields(engine, "none"),
     persistSession: false,
     command: cmd.command,
     env: cmd.env,
     onSessionStarted: () => {},
   };
-  const transport: Transport = engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(options) : new AcpTransport(options);
+  const transport: Transport = createTransport(engine, options);
   const events: Event[] = [];
   const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;

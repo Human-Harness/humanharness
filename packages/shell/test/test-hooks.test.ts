@@ -42,6 +42,13 @@ describe("readTestHooks", () => {
     for (const v of ["0", "true", "", "yes"]) expect(readTestHooks({ HH_PLUGIN_FIXTURES: v }, false)).toEqual({});
   });
 
+  it("fake secrets only when not packaged", () => {
+    expect(readTestHooks({ HH_TEST_FAKE_SECRETS: "1" }, false).fakeSecrets).toBe(true);
+    expect(readTestHooks({ HH_TEST_FAKE_SECRETS: "1" }, true).fakeSecrets).toBeUndefined();
+    expect(readTestHooks({ HH_TEST_FAKE_SECRETS: "yes" }, false).fakeSecrets).toBeUndefined();
+    for (const v of ["0", "true", ""]) expect(readTestHooks({ HH_TEST_FAKE_SECRETS: v }, false)).toEqual({});
+  });
+
   it("is empty in a packaged app", () => {
     expect(
       readTestHooks({ HH_TEST_USER_DATA: "/u", HH_TEST_ENGINES: engines, HH_TEST_MOCK: "1", HH_TEST_SUGGESTED_FOLDER: "/f", HH_TEST_SHARED_DIR: "/s" }, true),

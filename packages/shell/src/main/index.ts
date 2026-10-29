@@ -191,6 +191,7 @@ import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { ConnectionsController } from "./secrets/connections";
 import { registerConnectionsIpc } from "./secrets/connections-ipc";
+import { testCrypto } from "./secrets/test-crypto";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
@@ -337,8 +338,8 @@ function secretStore(): SecretStore | null {
   secretStore_ ??= new SecretStore(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "secrets"), secretCrypto());
   return secretStore_;
 }
-/** How keys are encrypted: the OS's (Electron safeStorage). */
-const secretCrypto = () => safeStorageCrypto(safeStorage);
+/** How keys are encrypted: the OS's (Electron safeStorage), or a reversible fake for the e2e (HH_TEST_FAKE_SECRETS). */
+const secretCrypto = () => (hooks.fakeSecrets ? testCrypto() : safeStorageCrypto(safeStorage));
 let connections_: ConnectionsController | undefined;
 /** Settings › Connections (tools spec §9): only when the harness declares secrets, so the store exists. Built once. */
 function connections(): ConnectionsController {

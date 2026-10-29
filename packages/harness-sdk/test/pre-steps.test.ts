@@ -55,6 +55,14 @@ describe("pre and expects in the manifest (tools spec §3, §6)", () => {
     expect(() => defineHarness({ ...base, actions: { study: study({ preTokens: 1000 }) } })).toThrow(/preTokens needs pre/);
     expect(() => defineHarness({ ...base, actions: { study: study({ phases: [{ id: "main", label: "Main", expects: ["nope"] }] }) } })).toThrow(/expects \\"nope\\" is not a tool of this harness/);
   });
+  it("refuses a step key it does not know, a fractional preTokens, an empty pre and empty or long expects", () => {
+    const phases = (expects: string[]) => [{ id: "main", label: "Main", expects }];
+    expect(() => defineHarness({ ...base, actions: { study: study({ pre: [{ tool: "due-today", requird: true }] }) } })).toThrow(/requird/);
+    expect(() => defineHarness({ ...base, actions: { study: study({ pre: [{ tool: "due-today" }], preTokens: 1000.5 }) } })).toThrow(/preTokens/);
+    expect(() => defineHarness({ ...base, actions: { study: study({ pre: [] }) } })).toThrow(/"pre"/);
+    expect(() => defineHarness({ ...base, actions: { study: study({ phases: phases([]) }) } })).toThrow(/"expects"/);
+    expect(() => defineHarness({ ...base, actions: { study: study({ phases: phases(Array.from({ length: 11 }, () => "due-today")) }) } })).toThrow(/"expects"/);
+  });
   it("refuses pre or expects in a harness without tools", () => {
     const { tools: _t, ...noTools } = base;
     expect(() => defineHarness({ ...noTools, actions: { study: study({ pre: [{ tool: "due-today" }] }) } })).toThrow(/is not a tool of this harness/);

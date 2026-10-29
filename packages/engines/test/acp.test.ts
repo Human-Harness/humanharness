@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
-import { type ModelProfile, getEngine } from "@humanharness/engines";
-import { AcpTransport, type PermissionPolicy, acpEditPaths, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp";
-import type { Event } from "../src/events";
-import { type Session, type TransportOptions, acpFields } from "../src/transport";
+import { type ModelProfile, getEngine } from "../src";
+import { AcpTransport, type PermissionPolicy, acpEditPaths, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp/client";
+import type { Event, Session } from "../src/contract";
+import { type TransportOptions, acpFields } from "../src/acp/options";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

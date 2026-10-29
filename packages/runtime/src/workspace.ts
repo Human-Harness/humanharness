@@ -1,16 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
-import type { ModelProfile } from "@humanharness/engines";
+import type { CommonOptions, ModelProfile, Session, Transport } from "@humanharness/engines";
+import { registry as appRegistry } from "@humanharness/engines/registry";
 import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
-import { AcpTransport } from "./acp";
-import { ClaudeCliTransport } from "./claude-cli";
 import { turnDocuments } from "./documents";
 import { type Event, fail } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
-import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 import { type TurnAttribution, beginTurn, endTurn } from "./turn-commit";
 import { TurnLedger, type TurnWindow } from "./turn-ledger";
 
@@ -190,7 +188,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
 
     const permissions: Permissions = o.kind === "job" ? narrowPermissions(harness.permissions, o.permissions) : harness.permissions;
     const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) });
-    const transportOptions: TransportOptions = {
+    const engines = opts.registry ?? appRegistry;
+    const transportOptions: CommonOptions = {
       folder,
       session,
       mcp: [
@@ -203,8 +202,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       ],
       permissions,
       references: references.map((r) => r.path),
-      ...acpFields(engine, permissions.edit),
-      command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
+      command: opts.command ?? engines.commandLine(engine),
       env: opts.env,
       onModels: opts.onModels,
       onSessionStarted: (s) => {
@@ -215,8 +213,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         }
       },
     };
-    const transport: Transport =
-      engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(transportOptions) : new AcpTransport(transportOptions);
+    const transport: Transport = engines.createTransport(engine, transportOptions);
 
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;
@@ -344,10 +341,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         }
       },
       async sleep() {
-        if (isClosed || busy || engine.transport.kind !== "acp") return;
+        if (isClosed || busy) return;
         busy = true;
         try {
           // AcpTransport.close() keeps the session ({ id, started: true }): the next turn connects and session/loads it (spike PT-S4).
+          // ClaudeCliTransport.close() does nothing: it holds no process between turns.
           await transport.close();
         } finally {
           busy = false;

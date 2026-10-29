@@ -1,4 +1,4 @@
-import type { ErrorCode } from "./events";
+import type { ErrorCode } from "./contract";
 
 const SESSION = /not logged in|\/login|invalid api key|oauth|unauthori[sz]ed|\b401\b|authentication/i;
 const QUOTA = /usage limit|rate limit|limit reached|quota|\b429\b/i;

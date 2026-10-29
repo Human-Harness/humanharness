@@ -253,8 +253,8 @@ export interface TaskDeps {
   prepare?(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer>;
   /**
    * A task left a part (a move of any kind, or the closing turn of the part it closes in, or its close with the note
-   * already saved): its `expects` are checked (tools spec §6.1). Never awaited; a cancelled or unfinished close calls
-   * nothing. Absent without tools or without `expects` (D0).
+   * already saved): its `expects` are checked (tools spec §6.1). A move never waits for it; a close waits at most
+   * EXPECTS_CHECK_MS, with the task still current. A cancelled or unfinished close calls nothing. Absent without tools or without `expects` (D0).
    */
   phaseEnded?(o: { task: string; action: string; scope: string; phase: string }): Promise<void>;
 }
@@ -388,6 +388,8 @@ const SO_FAR_POINTS = 5;
 const SO_FAR_CHARS = 400;
 /** setTimeout's longest delay: a longer wait fires early and is armed again. */
 const MAX_TIMER_MS = 2_147_483_647;
+/** How long a close waits for its part's expects check (tools spec §6.1) before ending the task anyway. */
+export const EXPECTS_CHECK_MS = 2000;
 
 /**
  * What entering a phase does, worked out before anything changes (a brief that can't be read changes nothing): the change
@@ -2107,7 +2109,7 @@ export class TaskManager {
     });
     if (moved && c.phase && c.phase.id !== to.id) {
       this.phaseMoved(c, c.phase.id, to.id);
-      this.endedPhase(c, c.phase.id);
+      void this.endedPhase(c, c.phase.id);
     }
     if (!plan.message) return;
     const now = (await this.d.store.load()).current;
@@ -2156,15 +2158,35 @@ export class TaskManager {
     }
   }
 
-  /** Has the part the task left checked against its `expects` (never awaited; a failing check never stops anything). */
-  private endedPhase(c: CurrentTask, phase: string | undefined): void {
+  /**
+   * Has the part the task left checked against its `expects`. Never rejects: a failing check is logged and never stops
+   * anything. A move doesn't wait for it; a close waits at most EXPECTS_CHECK_MS (`closedPhase`).
+   */
+  private endedPhase(c: CurrentTask, phase: string | undefined): Promise<void> {
     const ended = this.d.phaseEnded;
-    if (!ended || !c.action || !phase) return;
+    if (!ended || !c.action || !phase) return Promise.resolve();
     const failed = (err: unknown) => console.error("The expects check failed", err);
     try {
-      ended({ task: c.id, action: c.action, scope: scopeOfTask(c), phase }).catch(failed);
+      return ended({ task: c.id, action: c.action, scope: scopeOfTask(c), phase }).catch(failed);
     } catch (err) {
       failed(err);
+      return Promise.resolve();
+    }
+  }
+
+  /**
+   * The part a closing task closes in ended: checked before the task ends, while it is still current (so a miss's line
+   * reaches the chat: the closing turn is quiet), waiting no longer than EXPECTS_CHECK_MS.
+   */
+  private async closedPhase(c: CurrentTask): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bound = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, EXPECTS_CHECK_MS);
+    });
+    try {
+      await Promise.race([this.endedPhase(c, c.phase?.id), bound]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -2369,9 +2391,10 @@ export class TaskManager {
     const c = await this.storedCurrent();
     if (!c) return !this.cancelRequested;
     if (c.noteSaved) {
-      await this.endTask(c.id, "done");
       // Done without a closing turn: the part it closes in ended all the same (tools spec §6.1).
-      if (!this.cancelRequested) this.endedPhase(c, c.phase?.id);
+      const stopped = this.cancelRequested;
+      if (!stopped) await this.closedPhase(c);
+      await this.endTask(c.id, "done");
       return !this.cancelRequested;
     }
     // A moved task's new session holds no conversation to sum up (a checkpoint's note still counts).
@@ -2401,9 +2424,10 @@ export class TaskManager {
     const after = (await this.d.store.load()).current;
     // A checkpoint's note stands when the closing turn brings none (as `interrupted` keeps it).
     const saved = after?.noteSaved === true || after?.checkpointNote === true;
-    await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
     // The part it closes in ended with the closing turn; a cancelled one counts nothing (tools spec §6.1).
-    if (!cancelled && !this.cancelRequested) this.endedPhase(c, c.phase?.id);
+    const stopped = this.cancelRequested;
+    if (!cancelled && !stopped) await this.closedPhase(c);
+    await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
     return !cancelled && !this.cancelRequested;
   }
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HarnessPhase, HarnessTimeBox, SavedNote } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import { MAIN_SCOPE } from "@humanharness/workspace";
-import type { TaskDeps } from "../src/main/task-manager";
+import { EXPECTS_CHECK_MS, type TaskDeps } from "../src/main/task-manager";
 import { CLOSE_PROMPT } from "../src/main/task-prompts";
 import { ok, setup } from "./task-manager-fixture";
 
@@ -69,8 +69,9 @@ describe("phaseEnded (tools spec §6.1)", () => {
     expect(await t.manager.finish()).toBe(true);
     expect(t.turns.at(-1)!.message).toBe(CLOSE_PROMPT);
     expect(calls).toEqual([left("main"), left("close")]);
-    // The closing turn ran and the task ended before the hook.
-    expect(seen[1]).toEqual({ turns: 3, last: "close", current: null });
+    // The closing turn ran before the hook; the task ends after it.
+    expect(seen[1]).toMatchObject({ turns: 3, last: "close", current: { id: "t1" } });
+    expect(t.state().current).toBeNull();
   });
 
   it("a Finish outside the close part checks the part the task is in", async () => {
@@ -90,6 +91,58 @@ describe("phaseEnded (tools spec §6.1)", () => {
     expect(t.turns).toHaveLength(1);
     expect(t.state().actions).toEqual({ session: "done" });
     expect(r.calls).toEqual([left("main")]);
+  });
+
+  it("on close it runs while the task is still current, so its line can reach the chat (both close paths)", async () => {
+    for (const script of [[[ok], [saveNote, ok]], [[saveNote, ok]]]) {
+      const current: unknown[] = [];
+      const t = setup({
+        phases: PHASES,
+        script,
+        extra: {
+          phaseEnded: async () => {
+            current.push(t.state().current?.id);
+          },
+        },
+      });
+      await t.manager.start("session");
+      await t.manager.finish();
+      expect(current).toEqual(["t1"]);
+      expect(t.state().current).toBeNull();
+    }
+  });
+
+  it("a phaseEnded that never answers holds the close no longer than its bound", async () => {
+    vi.useFakeTimers();
+    try {
+      let asked = 0;
+      const t = setup({
+        phases: PHASES,
+        script: [[ok], [saveNote, ok]],
+        extra: {
+          phaseEnded: () => {
+            asked++;
+            return new Promise<void>(() => {});
+          },
+        },
+      });
+      await t.manager.start("session");
+      let closed = false;
+      const finishing = t.manager.finish().then((v) => {
+        closed = true;
+        return v;
+      });
+      // Settles the close up to the check without moving the clock (vi.waitFor would advance it).
+      for (let i = 0; i < 200 && asked === 0; i++) await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toBe(1);
+      await vi.advanceTimersByTimeAsync(EXPECTS_CHECK_MS - 1);
+      expect(closed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await finishing).toBe(true);
+      expect(t.state().actions).toEqual({ session: "done" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a task closed unfinished (its session gone) counts nothing", async () => {

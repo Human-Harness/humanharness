@@ -836,8 +836,9 @@ export class AcpTransport implements Transport {
     const engine = scope?.engine;
     try {
       if (engine) checkPreset(engine, this.o);
-      // Codex only: the preset's codex.toml joins CODEX_CONFIG (OpenCode gets the servers alone). Empty: as without one.
-      const codex = engine?.codex && Object.keys(engine.codex).length > 0 ? engine.codex : undefined;
+      // Codex only (it declares `codex-config`): the preset's codex.toml joins CODEX_CONFIG. OpenCode, Kimi, Gemini
+      // and Qwen get the servers alone. Empty: as without one.
+      const codex = this.o.profileMethod === "codex-config" && engine?.codex && Object.keys(engine.codex).length > 0 ? engine.codex : undefined;
       if (!this.byConfigOption) config = profile ? codexConfig(profile, codex) : codex ? JSON.stringify(mergeCodex({}, codex)) : undefined;
     } catch (err) {
       // No ErrorCode fits a profile or a preset the core built wrong (it is not the plan's model, nor the user's

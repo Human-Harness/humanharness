@@ -27,13 +27,13 @@ afterEach(async () => {
 });
 
 /** A Codex workspace on fake-acp; returns the folder and the agent's request log. */
-async function acpWorkspace(script: AcpScript | ((folder: string) => AcpScript)) {
+async function acpWorkspace(script: AcpScript | ((folder: string) => AcpScript), engine = "codex") {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const folder = path.join(base, "Work");
   const log = path.join(base, "acp.jsonl");
   const written = writeScript(base, typeof script === "function" ? script(folder) : script);
   ws = await createWorkspace({
-    harness: await loadHarness(FIXTURE), engine: getEngine("codex"), folder, gitdir: path.join(base, "h.git"),
+    harness: await loadHarness(FIXTURE), engine: getEngine(engine), folder, gitdir: path.join(base, "h.git"),
     language: "en", command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: written, HH_FAKE_LOG: log },
   });
   return { ws, folder, log: () => readLog(log) };
@@ -166,6 +166,25 @@ describe("a turn's scope (hatches spec §3.3)", () => {
     expect(JSON.parse(first[first.indexOf("--settings") + 1])).toEqual({ permissions: { additionalDirectories: ["/Users/me/manuscript"] } });
     await slot.send("two", () => {}).done;
     expect(argv()).not.toContain("--settings");
+  });
+});
+
+describe("an engine preset's codex part (hatches spec §5.2)", () => {
+  const engine = { hash: "a".repeat(64), base: "isolated" as const, servers: [], codex: { model_verbosity: "low" } };
+  const codexConfigOf = (log: () => { method?: string; params?: Record<string, unknown> }[]) => log().find((r) => r.method === "env")?.params?.CODEX_CONFIG;
+
+  it("reaches CODEX_CONFIG on Codex", async () => {
+    const { ws, log } = await acpWorkspace({ turns: [[{ stop: "end_turn" }]] });
+    const slot = await ws.openSlot({ key: "t1" });
+    await slot.send("one", () => {}, { scope: { linked: [], engine } }).done;
+    expect(JSON.parse(codexConfigOf(log) as string)).toEqual({ model_verbosity: "low" });
+  });
+
+  it("never reaches Kimi", async () => {
+    const { ws, log } = await acpWorkspace({ turns: [[{ stop: "end_turn" }]] }, "kimi");
+    const slot = await ws.openSlot({ key: "t1" });
+    await slot.send("one", () => {}, { scope: { linked: [], engine } }).done;
+    expect(codexConfigOf(log)).toBeNull();
   });
 });
 

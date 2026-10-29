@@ -273,6 +273,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       permissions,
       references: references.map((r) => r.path),
       ...acpFields(engine, permissions.edit),
+      // Codex reads CODEX_CONFIG by name: only it takes an engine preset's codex part. Other ACP engines (Kimi,
+      // Gemini, Qwen) leave the method unset in the registry, and the registry's Codex entry is pinned as it is.
+      ...(engine.id === "codex" ? { profileMethod: "codex-config" as const } : {}),
       command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
       env: opts.env,
       onModels: opts.onModels,

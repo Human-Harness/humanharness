@@ -1364,6 +1364,8 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     return events;
   };
   const names = (params: any) => (params.mcpServers as { name: string }[]).map((s) => s.name);
+  /** Codex declares its profile method; Kimi, Gemini and Qwen leave it unset. */
+  const codexEngine = { profileMethod: "codex-config" as const };
 
   it("D0: CODEX_CONFIG and session/new unchanged without a preset", async () => {
     const { transport: t, folder, log } = setup({ turns: [[chunk("a")]] });
@@ -1392,7 +1394,7 @@ describe("ACP with an engine preset (spec §5.2)", () => {
   });
 
   it("codex.toml merged into CODEX_CONFIG with the profile's keys", async () => {
-    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] }, undefined, codexEngine);
     await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low", features: { web_search_request: false } } }) }, light);
     const raw = log().find((l) => l.method === "env")!.params.CODEX_CONFIG as string;
     expect(JSON.parse(raw)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000, model_verbosity: "low", features: { web_search_request: false } });
@@ -1401,13 +1403,13 @@ describe("ACP with an engine preset (spec §5.2)", () => {
   });
 
   it("a preset's codex.toml reaches CODEX_CONFIG on a turn without a profile", async () => {
-    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] }, undefined, codexEngine);
     await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) });
     expect(JSON.parse(log().find((l) => l.method === "env")!.params.CODEX_CONFIG)).toEqual({ model_verbosity: "low" });
   });
 
   it("an empty codex.toml leaves CODEX_CONFIG as the profile's", async () => {
-    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] }, undefined, codexEngine);
     await turnWith(t, { linked: [], engine: preset({ codex: {} }) }, deep);
     expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBe(codexConfig(deep));
   });
@@ -1448,7 +1450,7 @@ describe("ACP with an engine preset (spec §5.2)", () => {
 
   it("a preset key that collides with a profile key is refused (last guard)", async () => {
     for (const codex of [{ model: "gpt-x" }, { model_reasoning_effort: "minimal" }, { model_auto_compact_token_limit: 1 }]) {
-      const { transport: t, log } = setup({ turns: [[chunk("never")]] });
+      const { transport: t, log } = setup({ turns: [[chunk("never")]] }, undefined, codexEngine);
       const events = await turnWith(t, { linked: [], engine: preset({ codex }) }, light);
       expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
       expect(log().some((l) => l.method === "initialize")).toBe(false);
@@ -1483,6 +1485,19 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     // D0: without the preset (dropped on a later turn) its server's calls are refused again.
     await turnWith(t, { linked: [] });
     expect(log().filter((l) => l.method === "permission-outcome").map((l) => l.params.optionId)).toEqual(["allow", "reject"]);
+  });
+
+  it("Kimi, Gemini, Qwen (no profile method): servers only, no codex part", async () => {
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    const events = await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) }, deep);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBe(codexConfig(deep));
+    expect(names(log().find((l) => l.method === "session/new")!.params)).toEqual(["ui", "scope-lint"]);
+    // Without a profile either: no CODEX_CONFIG at all.
+    const bare = setup({ turns: [[chunk("a")]] });
+    await turnWith(bare.transport, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) });
+    expect(bare.log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBeNull();
+    await bare.transport.close();
   });
 
   it("OpenCode: servers only; codex ignored", async () => {

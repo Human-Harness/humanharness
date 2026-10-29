@@ -1416,5 +1416,18 @@
       "one-only": "Only one folder can be linked here. Unlink it first.",
       "too-many": "No more folders can be linked here. Unlink one first."
     }
+  },
+  "connections": {
+    "tab": "Connections",
+    "intro": "Keys this app uses to reach your services. They are stored encrypted on this computer and never shown again.",
+    "set": "Set",
+    "notSet": "Not set",
+    "paste": "Paste the key",
+    "save": "Save",
+    "replace": "Replace",
+    "delete": "Delete",
+    "failed": "That didn't save.",
+    "unavailable": "Your keys can't be read right now.",
+    "stepNext": "Paste each key to go on."
   }
 }

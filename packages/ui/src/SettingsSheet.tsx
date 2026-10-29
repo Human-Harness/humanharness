@@ -4,6 +4,7 @@ import { PARALLEL_MAX } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
+import { ConnectionsTab } from "./connections/ConnectionsTab";
 import { EngineTab } from "./EngineTab";
 import { trapTab } from "./focus";
 import { HarnessSettingsTab } from "./HarnessSettingsTab";
@@ -21,12 +22,13 @@ import { SidekickTab } from "./sidekick/SidekickTab";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "jobs" | "usage";
+export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "connections" | "jobs" | "usage";
 /**
  * `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4); Sidekick
- * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7); Jobs before Usage (parallel spec §9).
+ * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7); Connections after Plugins (tools spec §9);
+ * Jobs before Usage (parallel spec §9).
  */
-const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "plugins", "jobs", "usage"];
+const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "plugins", "connections", "jobs", "usage"];
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
@@ -71,13 +73,15 @@ export function SettingsSheet({
   const panelId = `${baseId}-panel`;
   // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
   // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0);
-  // Plugins only when the harness takes them (plugins D0); Jobs only when it declares jobs (parallel D0).
+  // Plugins only when the harness takes them (plugins D0); Connections only when it declares secrets (tools D0); Jobs
+  // only when it declares jobs (parallel D0).
   const tabs = TABS.filter(
     (id) =>
       (id !== "models" || state.models !== undefined) &&
       (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
       (id !== "sidekick" || state.sidekick !== undefined) &&
       (id !== "plugins" || state.plugins !== undefined) &&
+      (id !== "connections" || state.connections !== undefined) &&
       (id !== "jobs" || state.jobs !== undefined),
   );
   const configured = isConfigured(state.config);
@@ -178,7 +182,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : id === "plugins" ? t("plugins.tab") : id === "jobs" ? t("parallel.jobsTab") : t(`settings.tabs.${id}`)}
+                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : id === "plugins" ? t("plugins.tab") : id === "connections" ? t("connections.tab") : id === "jobs" ? t("parallel.jobsTab") : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -208,6 +212,7 @@ export function SettingsSheet({
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
           {tab === "plugins" && configured && <PluginsTab client={client} />}
+          {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
           {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
           {tab === "harness" && configured && (

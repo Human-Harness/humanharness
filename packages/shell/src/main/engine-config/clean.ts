@@ -36,11 +36,16 @@ export interface CleanSettings {
 
 const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const SERVER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
-const CREDENTIAL_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|CREDENTIAL|AUTH)/i;
+const CREDENTIAL_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|OPENAI_?KEY|CREDENTIAL|AUTH|COOKIE|SESSION|(^|_)PAT($|_))/i;
+// Variables that make a program load code the hash never saw (E2): node, the shell, the dynamic linker, python, ruby, perl.
+const LOADER_NAME = /^(NODE_OPTIONS|NODE_PATH|PATH|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|BASH_ENV|ENV|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|DYLD_.*|LD_.*)$/i;
+/** Map keys a preset may use (hook events, feature flags). */
+const MAP_KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 /** Tools whose rule specifier is a path (Claude permission rules). */
 const PATH_TOOLS = new Set([...EDIT_TOOLS, "Read", "Glob", "Grep"]);
-const RULE = /^([A-Za-z][A-Za-z0-9_]*)(?:\((.*)\))?$/s;
+// A built-in tool (capitalized) or an MCP tool (`mcp__server__tool`), with an optional specifier.
+const RULE = /^([A-Z][A-Za-z0-9_]*|mcp__[A-Za-z0-9_-]+)(?:\((.*)\))?$/s;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
@@ -67,6 +72,7 @@ function cleanHooks(file: string, hooks: unknown): Hooks {
   const out: Hooks = {};
   for (const event of keysOf(file, hooks, "hooks.")) {
     const at = `hooks.${event}`;
+    if (!MAP_KEY.test(event)) refuse(file, `${at} is not a valid hook event name`);
     const matchers = hooks[event];
     if (!Array.isArray(matchers)) return refuse(file, `${at} must be a list`);
     out[event] = matchers.map((m) => {
@@ -89,11 +95,16 @@ function cleanHooks(file: string, hooks: unknown): Hooks {
   return out;
 }
 
-/** The absolute path a path rule's specifier points at (glob tail cut), or null when it can't be placed safely. */
+/**
+ * The folder a path rule's specifier is confined to, or null when it can't be placed safely. With a glob, the folder
+ * is the part before the last `/` ahead of the first glob character, so `//w*` is confined to `/`, not to `/w`.
+ */
 function rulePath(spec: string, folder: string): string | null {
   // `~/x` is the home folder; `/x` is relative to the settings file, which the engine reads from the snapshot.
   if (spec.startsWith("~") || (spec.startsWith("/") && !spec.startsWith("//"))) return null;
-  const base = spec.slice(0, spec.search(/[*?[{]|$/));
+  if (spec.split(/[\\/]/).includes("..")) return null;
+  const glob = spec.search(/[*?[{]/);
+  const base = glob === -1 ? spec : spec.slice(0, spec.lastIndexOf("/", glob) + 1);
   return spec.startsWith("//") ? path.resolve(base.slice(1)) : path.resolve(folder, base);
 }
 
@@ -128,13 +139,18 @@ export function cleanSettings(raw: unknown, ctx: CleanContext): { settings: Clea
 function cleanAllow(rules: string[], ctx: CleanContext, ignored: string[]): string[] {
   const kept: string[] = [];
   for (const rule of rules) {
-    const m = RULE.exec(rule.trim());
-    const tool = m?.[1] ?? "";
+    const m = RULE.exec(rule);
+    if (!m) return refuse("settings.json", `permissions.allow: ${rule} is not a valid rule`);
+    const tool = m[1];
     if (ctx.edit === "none" && EDIT_TOOLS.has(tool)) {
       ignored.push(`permissions.allow: ${rule}`);
       continue;
     }
-    const spec = m?.[2];
+    const spec = m[2];
+    // Without a path an edit rule allows edits anywhere on disk; a bare Read/Glob/Grep only reads.
+    if (EDIT_TOOLS.has(tool) && (spec === undefined || spec.trim() === "")) {
+      refuse("settings.json", `permissions.allow: ${rule} needs a path inside the folder or a linked folder`);
+    }
     if (PATH_TOOLS.has(tool) && spec !== undefined && spec !== "") {
       const target = rulePath(spec, ctx.folder);
       if (target === null || ![ctx.folder, ...ctx.linked].some((root) => inside(target, root))) {
@@ -166,14 +182,19 @@ export function cleanMcp(raw: unknown, ctx: CleanContext): McpServerSpec[] {
     if (typeof s.command !== "string" || s.command.trim() === "" || s.command.startsWith("-")) {
       return refuse(file, `${at}.command must be a program name, not empty and not starting with "-"`);
     }
+    // `${VAR}` is expanded by the engines: it would pull the person's credentials into a server (E4).
+    if (s.command.includes("$")) refuse(file, `${at}.command can't use $ (variable expansion)`);
     if (s.args !== undefined && !isStringList(s.args)) return refuse(file, `${at}.args must be a list of strings`);
+    if (s.args?.some((a) => a.includes("$"))) refuse(file, `${at}.args can't use $ (variable expansion)`);
     const env: Record<string, string> = {};
     if (s.env !== undefined) {
       if (!isObject(s.env)) return refuse(file, `${at}.env must be an object`);
       for (const k of keysOf(file, s.env, `${at}.env.`)) {
         if (CREDENTIAL_NAME.test(k)) refuse(file, `${at}.env.${k} looks like a credential; credentials are not allowed`);
+        if (LOADER_NAME.test(k)) refuse(file, `${at}.env.${k} is not allowed (it makes the program load other code)`);
         const v = s.env[k];
         if (typeof v !== "string") return refuse(file, `${at}.env.${k} must be a string`);
+        if (v.includes("$")) refuse(file, `${at}.env.${k} can't use $ (variable expansion)`);
         env[k] = v;
       }
     }
@@ -181,20 +202,26 @@ export function cleanMcp(raw: unknown, ctx: CleanContext): McpServerSpec[] {
   });
 }
 
-type CodexRule = "string" | "boolean" | "booleans" | "hooks" | { [key: string]: CodexRule };
+/**
+ * A codex.toml leaf: one of a few strings, a boolean, a boolean that reaches the network (`web`: true only when the
+ * manifest allows the web, since Codex does it server side where the core's permission check never sees it), hooks,
+ * or a table of named keys.
+ */
+type CodexRule = { oneOf: readonly string[] } | "boolean" | "web" | "hooks" | { table: { [key: string]: CodexRule } };
 // Decision 9. The core owns the profile keys (model, effort, compaction), auth and providers; servers go through mcp.json.
+// `features` is a named list: a new flag joins only once its effect is known.
 const CODEX_ALLOW: { [key: string]: CodexRule } = {
-  model_reasoning_summary: "string",
-  model_verbosity: "string",
+  model_reasoning_summary: { oneOf: ["auto", "concise", "detailed", "none"] },
+  model_verbosity: { oneOf: ["low", "medium", "high"] },
   hide_agent_reasoning: "boolean",
   show_raw_agent_reasoning: "boolean",
   hooks: "hooks",
-  tools: { web_search: "boolean" },
-  sandbox_workspace_write: { network_access: "boolean" },
-  features: "booleans",
+  tools: { table: { web_search: "web" } },
+  sandbox_workspace_write: { table: { network_access: "web" } },
+  features: { table: { web_search_request: "web" } },
 };
 
-function cleanCodexTable(o: Record<string, unknown>, rules: { [key: string]: CodexRule }, prefix: string): Record<string, unknown> {
+function cleanCodexTable(o: Record<string, unknown>, rules: { [key: string]: CodexRule }, prefix: string, web: boolean): Record<string, unknown> {
   const file = "codex.toml";
   const out: Record<string, unknown> = {};
   for (const key of keysOf(file, o, prefix)) {
@@ -202,28 +229,27 @@ function cleanCodexTable(o: Record<string, unknown>, rules: { [key: string]: Cod
     if (!Object.hasOwn(rules, key)) refuse(file, `${at} is not allowed`);
     const rule = rules[key];
     const v = o[key];
-    if (rule === "string" || rule === "boolean") {
-      if (typeof v !== rule) refuse(file, `${at} must be a ${rule}`);
+    if (rule === "boolean" || rule === "web") {
+      if (typeof v !== "boolean") refuse(file, `${at} must be true or false`);
+      if (rule === "web" && v === true && !web) refuse(file, `${at} is not allowed: the harness doesn't allow the web`);
       out[key] = v;
     } else if (rule === "hooks") out[key] = cleanHooks(file, v);
-    else if (rule === "booleans") {
-      if (!isObject(v)) return refuse(file, `${at} must be a table`);
-      const flags: Record<string, boolean> = {};
-      for (const k of keysOf(file, v, `${at}.`)) {
-        if (typeof v[k] !== "boolean") refuse(file, `${at}.${k} must be true or false`);
-        flags[k] = v[k] as boolean;
-      }
-      out[key] = flags;
+    else if ("oneOf" in rule) {
+      if (typeof v !== "string" || !rule.oneOf.includes(v)) refuse(file, `${at} must be one of ${rule.oneOf.join(", ")}`);
+      out[key] = v;
     } else {
       if (!isObject(v)) return refuse(file, `${at} must be a table`);
-      out[key] = cleanCodexTable(v, rule, `${at}.`);
+      out[key] = cleanCodexTable(v, rule.table, `${at}.`, web);
     }
   }
   return out;
 }
 
-/** codex.toml (already parsed): the allowlist of Decision 9; anything else is refused naming the dotted key. */
-export function cleanCodex(raw: unknown): Record<string, unknown> {
+/**
+ * codex.toml (already parsed): the allowlist of Decision 9; anything else is refused naming the dotted key. Keys that
+ * reach the network pass only when `permissions.web` is true; without `permissions` the web is off.
+ */
+export function cleanCodex(raw: unknown, permissions?: { web: boolean }): Record<string, unknown> {
   if (!isObject(raw)) return refuse("codex.toml", "must be a table");
-  return cleanCodexTable(raw, CODEX_ALLOW, "");
+  return cleanCodexTable(raw, CODEX_ALLOW, "", permissions?.web === true);
 }

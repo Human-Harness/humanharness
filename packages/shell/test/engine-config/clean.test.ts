@@ -29,6 +29,24 @@ describe("cleanSettings (spec §5.4, E4, E5)", () => {
   it.each(["Read(//etc/passwd)", "Edit(../x)", "Edit(~/notes)", "Edit(/x)", "Edit(//repo/../etc/**)"])("refuses the allow path rule %s as outside", (rule) => {
     expect(() => cleanSettings({ permissions: { allow: [rule] } }, ctx)).toThrow("outside");
   });
+  it.each(["Edit", "Write", "MultiEdit", "NotebookEdit", "Edit()", "Write( )"])("refuses the edit allow rule %s without a path", (rule) => {
+    expect(() => cleanSettings({ permissions: { allow: [rule] } }, ctx)).toThrow(`settings.json: permissions.allow: ${rule} needs a path inside the folder`);
+  });
+  it("bare Read, Glob and Grep allow rules stay", () => {
+    expect(cleanSettings({ permissions: { allow: ["Read", "Glob", "Grep", "Read()"] } }, ctx).settings.permissions?.allow).toEqual(["Read", "Glob", "Grep", "Read()"]);
+  });
+  it.each(["Edit(//w*/**)", "Edit(//w-other/x)", "Read(//re*)", "Edit(./docs/../../etc/x)", "Edit(docs/..)"])("refuses the glob or .. escape %s", (rule) => {
+    expect(() => cleanSettings({ permissions: { allow: [rule] } }, ctx)).toThrow("outside");
+  });
+  it("a glob inside a confined folder passes", () => {
+    expect(cleanSettings({ permissions: { allow: ["Edit(//w/src*/**)", "Edit(*.md)", "Read(//repo/**)"] } }, ctx).settings.permissions?.allow).toHaveLength(3);
+  });
+  it.each(["Edit (//etc)", "edit(./x)", "bash", " Read"])("refuses the malformed allow rule %j", (rule) => {
+    expect(() => cleanSettings({ permissions: { allow: [rule] } }, ctx)).toThrow("is not a valid rule");
+  });
+  it("MCP tool allow rules pass", () => {
+    expect(cleanSettings({ permissions: { allow: ["mcp__scope-lint__run"] } }, ctx).settings.permissions?.allow).toEqual(["mcp__scope-lint__run"]);
+  });
   it("deny and ask path rules outside the folder are kept (they only narrow)", () => {
     expect(cleanSettings({ permissions: { deny: ["Read(//etc/**)"], ask: ["Edit(//etc/**)"] } }, ctx).settings.permissions).toEqual({ deny: ["Read(//etc/**)"], ask: ["Edit(//etc/**)"] });
   });
@@ -70,6 +88,24 @@ describe("cleanMcp (spec §5.2, E9, Decision 7, 8)", () => {
     [{ mcpServers: { x: { command: "" } } }, "command"],
     [{ mcpServers: { x: { command: "a", args: [1] } } }, "args"],
     [{ mcpServers: { x: { command: "a", cwd: "/" } } }, "cwd"],
+    [{ mcpServers: { x: { command: "a", env: { DEPLOY_PRIVATE_KEY: "k" } } } }, "DEPLOY_PRIVATE_KEY"],
+    [{ mcpServers: { x: { command: "a", env: { OPENAIKEY: "k" } } } }, "OPENAIKEY"],
+    [{ mcpServers: { x: { command: "a", env: { GH_PAT: "k" } } } }, "GH_PAT"],
+    [{ mcpServers: { x: { command: "a", env: { SITE_COOKIE: "k" } } } }, "SITE_COOKIE"],
+    [{ mcpServers: { x: { command: "a", env: { SESSION_ID: "k" } } } }, "SESSION_ID"],
+    [{ mcpServers: { x: { command: "a", env: { NODE_OPTIONS: "--require ./x.js" } } } }, "NODE_OPTIONS"],
+    [{ mcpServers: { x: { command: "a", env: { PATH: "/tmp" } } } }, "PATH"],
+    [{ mcpServers: { x: { command: "a", env: { DYLD_INSERT_LIBRARIES: "x" } } } }, "DYLD_INSERT_LIBRARIES"],
+    [{ mcpServers: { x: { command: "a", env: { LD_PRELOAD: "x" } } } }, "LD_PRELOAD"],
+    [{ mcpServers: { x: { command: "a", env: { PYTHONPATH: "x" } } } }, "PYTHONPATH"],
+    [{ mcpServers: { x: { command: "a", env: { PYTHONSTARTUP: "x" } } } }, "PYTHONSTARTUP"],
+    [{ mcpServers: { x: { command: "a", env: { BASH_ENV: "x" } } } }, "BASH_ENV"],
+    [{ mcpServers: { x: { command: "a", env: { ENV: "x" } } } }, ".env.ENV"],
+    [{ mcpServers: { x: { command: "a", env: { RUBYOPT: "x" } } } }, "RUBYOPT"],
+    [{ mcpServers: { x: { command: "a", env: { PERL5OPT: "x" } } } }, "PERL5OPT"],
+    [{ mcpServers: { x: { command: "a", env: { LEVEL: "${GITHUB_TOKEN}" } } } }, "env.LEVEL can't use $"],
+    [{ mcpServers: { x: { command: "a", args: ["--token", "$GITHUB_TOKEN"] } } }, "args can't use $"],
+    [{ mcpServers: { x: { command: "${HOME}/bin/a" } } }, "command can't use $"],
     [{ other: 1 }, "other"],
   ])("refuses %j", (m, message) => {
     expect(() => cleanMcp(m, ctx)).toThrow(message);
@@ -84,7 +120,7 @@ describe("cleanMcp (spec §5.2, E9, Decision 7, 8)", () => {
 
 describe("cleanCodex (spec §5.4, Decision 9)", () => {
   it("passes allowlisted keys", () => {
-    expect(cleanCodex({ model_verbosity: "low", features: { web_search_request: true }, tools: { web_search: true } })).toEqual({ model_verbosity: "low", features: { web_search_request: true }, tools: { web_search: true } });
+    expect(cleanCodex({ model_verbosity: "low", features: { web_search_request: true }, tools: { web_search: true } }, { web: true })).toEqual({ model_verbosity: "low", features: { web_search_request: true }, tools: { web_search: true } });
   });
   it("passes the reasoning display keys, sandbox network access and command hooks", () => {
     const c = {
@@ -94,7 +130,27 @@ describe("cleanCodex (spec §5.4, Decision 9)", () => {
       sandbox_workspace_write: { network_access: true },
       hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node ./tools/check.js", timeout: 30 }] }] },
     };
-    expect(cleanCodex(c)).toEqual(c);
+    expect(cleanCodex(c, { web: true })).toEqual(c);
+  });
+  it.each([
+    [{ tools: { web_search: true } }, "tools.web_search"],
+    [{ features: { web_search_request: true } }, "features.web_search_request"],
+    [{ sandbox_workspace_write: { network_access: true } }, "sandbox_workspace_write.network_access"],
+  ])("with the web off (or no permissions given), refuses %j", (c, key) => {
+    expect(() => cleanCodex(c, { web: false })).toThrow(`codex.toml: ${key} is not allowed: the harness doesn't allow the web`);
+    expect(() => cleanCodex(c)).toThrow(key);
+    expect(Object.values(cleanCodex(JSON.parse(JSON.stringify(c).replace("true", "false")), { web: false }))).toHaveLength(1);
+  });
+  it("features is a named list: unknown flags are refused", () => {
+    expect(() => cleanCodex({ features: { unified_exec: true } }, { web: true })).toThrow("codex.toml: features.unified_exec is not allowed");
+  });
+  it("enum-checks the reasoning display values", () => {
+    expect(() => cleanCodex({ model_verbosity: "loud" })).toThrow("codex.toml: model_verbosity must be one of low, medium, high");
+    expect(() => cleanCodex({ model_reasoning_summary: "all" })).toThrow("codex.toml: model_reasoning_summary must be one of");
+  });
+  it("hook event names are limited to a short identifier", () => {
+    expect(() => cleanCodex({ hooks: { "Pre Tool": [] } })).toThrow("codex.toml: hooks.Pre Tool is not a valid hook event name");
+    expect(() => cleanSettings({ hooks: { ["x".repeat(65)]: [] } }, ctx)).toThrow("is not a valid hook event name");
   });
   it.each(["model_provider", "model_providers", "openai_api_key", "azure_api_key", "cli_auth_credentials_store", "chatgpt_base_url", "mcp_servers", "profile", "profiles", "model", "model_reasoning_effort", "model_auto_compact_token_limit", "instructions", "sandbox_mode", "approval_policy"])("refuses %s naming it", (key) => {
     expect(() => cleanCodex({ [key]: "x" })).toThrow(`codex.toml: ${key} is not allowed`);

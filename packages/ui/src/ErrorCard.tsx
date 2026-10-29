@@ -40,7 +40,12 @@ export function ErrorCard({
   const reset = error.code === "out-of-quota" ? resetWindow(limits) : undefined;
   return (
     <div className="hh-error" role="alert">
-      <p>{t(`errors.${error.code}`, { engine, defaultValue: t("errors.agent-crashed", { engine }) })}</p>
+      <p>
+        {error.code === "prepare-failed"
+          ? // A refused start (tools spec §10): the pre-steps' own redacted text, never the engine's.
+            t("tools.prepareFailed", { detail: error.detail ?? "" })
+          : t(`errors.${error.code}`, { engine, defaultValue: t("errors.agent-crashed", { engine }) })}
+      </p>
       {reset && <p>{t("errors.resetsAt", { time: formatReset(reset.resetsAt, shownLanguage(i18n)) })}</p>}
       {onFix && FIXABLE.has(error.code) && (
         <button className="hh-primary" onClick={onFix}>

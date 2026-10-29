@@ -536,6 +536,11 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-tool-details dd { margin: 0; }
 .hh-tool-details pre { margin: 0; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .hh-tool-details ul { margin: 0; padding-inline-start: 18px; overflow-wrap: anywhere; }
+/* The pre-step group (tools spec §8.2): one line that unfolds to its calls' lines and notes. */
+.hh-tool-group { display: grid; gap: 4px; justify-items: start; }
+.hh-tool-group-list { display: grid; gap: 4px; padding-inline-start: 12px; width: 100%; }
+.hh-tool-group-list[hidden] { display: none; }
+.hh-tool-note { margin: 0; padding: 2px 0; color: var(--hh-muted); font-size: 13px; overflow-wrap: anywhere; }
 .hh-tools-off { text-align: center; margin: 4px 0; }
 .hh-phase-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
 .hh-phase-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }

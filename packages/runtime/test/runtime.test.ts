@@ -7,7 +7,7 @@ import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { ReviewRefused, managedSection } from "@humanharness/workspace";
-import { ClaudeCliTransport } from "../src/claude-cli";
+import { ClaudeCliTransport } from "@humanharness/engines/registry";
 import type { Event } from "../src/events";
 import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewHandler } from "../src/runtime";
 import type { Session } from "../src/transport";

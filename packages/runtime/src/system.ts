@@ -5,8 +5,7 @@ import path from "node:path";
 import { type Launcher, devLauncher, openRpc } from "@humanharness/blocks";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import { materialServerSpec } from "@humanharness/material/light";
-import { AcpTransport } from "@humanharness/engines/registry";
-import { ClaudeCliTransport } from "./claude-cli";
+import { AcpTransport, ClaudeCliTransport } from "@humanharness/engines/registry";
 import type { EngineError, Event, LimitWindow } from "./events";
 import { type Transport, type TransportOptions, acpFields } from "./transport";
 

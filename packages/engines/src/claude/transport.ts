@@ -2,10 +2,10 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
-import { type ModelProfile, classifyError, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
-import { type ActivityKind, type Event, fail } from "./events";
-import type { Transport, TransportOptions } from "./transport";
+import { classifyError } from "../classify";
+import { type ActivityKind, type CommonOptions, type Event, type Transport, fail } from "../contract";
+import { type ModelProfile, isCap, isEffort, isModelId } from "../models";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
 /** Plumbing tools the user should never see as activity. */
@@ -89,7 +89,7 @@ export function referenceSettingsArgs(references: string[]): string[] {
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "mcpOnly"> & { profile?: ModelProfile },
+  o: Pick<CommonOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "mcpOnly"> & { profile?: ModelProfile },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   const mcpServers = Object.fromEntries(
@@ -275,7 +275,7 @@ export class StreamJsonReader {
 
 /** Runs one `claude -p` process per turn, resuming the session by id. */
 export class ClaudeCliTransport implements Transport {
-  constructor(private readonly o: TransportOptions) {}
+  constructor(private readonly o: CommonOptions) {}
 
   private markStarted = (): void => {
     if (this.o.session.started) return;

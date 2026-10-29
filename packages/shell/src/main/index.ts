@@ -196,7 +196,7 @@ import { testCrypto } from "./secrets/test-crypto";
 import { isPublicHost } from "./material-fetch";
 import { ToolHost } from "./tools/tool-host";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
-import { type ToolsHost, createToolsHost } from "./tools/tools-host";
+import { type ToolsHost, createToolsHost, slotTaskOf } from "./tools/tools-host";
 import { registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
@@ -1041,7 +1041,7 @@ async function runtimeOptions(
       : {}),
     // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
     ...linkedRuntimeOptions(),
-    // createRuntime hands it on to its workspace with the rest; the asking slot names the caller (P3).
+    // The asking slot names the caller (P3); createRuntime's only slot is "main".
     ...(tools ? { tools } : {}),
     onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
@@ -3456,13 +3456,8 @@ if (loaded) {
       allowHost: isPublicHost,
       host: sandbox,
       openScope: () => tasks.currentScope(),
-      slotTask: async (key) => {
-        // Board mode: the lane whose slot asks; otherwise the open task (the `main` slot).
-        const manager = host ? host.lane(key)?.manager : tasks;
-        if (!manager) return null;
-        const [task, trailer] = await Promise.all([manager.runningTask(), manager.trailerNow()]);
-        return task ? { id: task.id, scope: task.scope, ...(trailer && trailer.task === task.id ? { trailer } : {}) } : null;
-      },
+      // Board mode: the lane whose slot asks; otherwise the open task (the `main` slot).
+      slotTask: (key) => slotTaskOf(host ? host.lane(key)?.manager : tasks),
       jobRun: (key) => jobsHost?.runOf(key) ?? null,
       emitToTask: (task, event) => {
         if (host) {

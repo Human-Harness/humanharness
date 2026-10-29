@@ -262,6 +262,12 @@ const client: HarnessClient = {
     delete: (id) => ipcRenderer.invoke("hh:connectionsDelete", id),
     onChange: (listener) => subscribe<ConnectionsView>("hh:connectionsChange", listener),
   },
+  // Main registers these only when the harness declares tools (D0). The page names a tool and its arguments, never a
+  // caller, task or scope.
+  tools: {
+    call: (id, args) => ipcRenderer.invoke("hh:toolsCall", id, args),
+    trace: (id) => ipcRenderer.invoke("hh:toolsTrace", id),
+  },
   // Main's board-mode inbox channels; plain mode refuses every call and never sends hh:tasksChange (D0).
   tasks: {
     list: () => ipcRenderer.invoke("hh:tasksList"),

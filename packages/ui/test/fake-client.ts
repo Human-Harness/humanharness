@@ -11,6 +11,8 @@ import type {
   ChatEntry,
   ChoiceOption,
   ConnectionResult,
+  ToolCallResult,
+  ToolCallView,
   ConnectionsView,
   ContextPick,
   ContextResult,
@@ -1585,6 +1587,18 @@ export class FakeClient implements HarnessClient {
         this.connectionsListeners.delete(l);
       };
     },
+  };
+
+  /** client.tools (tools spec §5): what each call answers (by tool id), the calls made, and the traces by task or run id. */
+  toolAnswers: Record<string, ToolCallResult> = {};
+  toolCalls: { id: string; args: unknown }[] = [];
+  toolTraces: Record<string, ToolCallView[]> = {};
+  tools = {
+    call: async (id: string, args?: unknown): Promise<ToolCallResult> => {
+      this.toolCalls.push({ id, args });
+      return Object.hasOwn(this.toolAnswers, id) ? this.toolAnswers[id]! : { ok: false, error: `Unknown tool "${id}"` };
+    },
+    trace: async (id: string): Promise<ToolCallView[]> => (Object.hasOwn(this.toolTraces, id) ? this.toolTraces[id]! : []),
   };
 
   /** client.language (plan 5b): what state() answers, calls made, and listeners. Every answer is data. */

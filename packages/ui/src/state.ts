@@ -149,6 +149,9 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
     case "compaction":
       // The task view carries them (the side panel's meter); the conversation doesn't change.
       return state;
+    case "tool-call":
+      // Only a harness with tools sends it; its folded line in the chat comes with tools spec §8.2.
+      return state;
     case "limits":
       return { ...state, limits: action.windows, live: live ? { ...live, limits: action.windows } : live };
     case "usage":

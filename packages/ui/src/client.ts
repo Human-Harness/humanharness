@@ -16,7 +16,7 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow, TaskNotice } from "@humanharness/runtime";
+import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow, TaskNotice, ToolCallView } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
@@ -471,6 +471,8 @@ export interface AppState {
   hatches?: HatchesState;
   /** The harness declares secrets (tools spec §9). Absent: none (D0). */
   connections?: ConnectionsInfo;
+  /** The harness declares tools (tools spec §5). Absent: none (D0). */
+  tools?: ToolsInfo;
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -1567,6 +1569,8 @@ export interface HarnessClient {
   };
   /** The harness's secrets, Settings › Connections (tools spec §9). Only with `state.connections` (D0). */
   connections: ConnectionsClient;
+  /** The harness's tools (tools spec §5). Only with `state.tools`; without, every call rejects (D0). */
+  tools: ToolsClient;
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {
     get(): Promise<SetupStepsState>;
@@ -1868,6 +1872,20 @@ export interface ConnectionsClient {
   set(id: string, value: string): Promise<ConnectionResult>;
   delete(id: string): Promise<ConnectionResult>;
   onChange(listener: (view: ConnectionsView) => void): () => void;
+}
+export type { ToolCallView } from "@humanharness/runtime";
+export type ToolCallResult = { ok: true; result: unknown } | { ok: false; error: string };
+/** The harness's tools (tools spec §5). Only with `state.tools`; without, every call rejects (D0). */
+export interface ToolsClient {
+  /** Runs tool `id` as the UI (caller "ui"), in the open scope (or none), with no task. Refusals come back as data. */
+  call(id: string, args?: unknown): Promise<ToolCallResult>;
+  /** A task's or a job run's calls, oldest first. */
+  trace(id: string): Promise<ToolCallView[]>;
+}
+/** The harness declares tools. Absent without (D0). `off`: why every call fails now (not built, a problem, or crashes). */
+export interface ToolsInfo {
+  ids: string[];
+  off?: string;
 }
 export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
 export interface PluginRow {

@@ -48,6 +48,21 @@ export interface DocumentCard {
   words: number;
 }
 
+/** One harness tool call as the chat's folded line shows it (tools spec §8.2). */
+export interface ToolCallView {
+  tool: string;
+  caller: "ui" | "agent" | "pre" | "job";
+  ok: boolean;
+  ms: number;
+  summary: string;
+  error?: string;
+  /** Cut at 2 KB each. */
+  args: string;
+  result?: string;
+  accesses: { kind: "fetch" | "exec" | "data" | "files"; target: string; allowed: boolean }[];
+  at: string;
+}
+
 /** Normalized events every transport emits. Each turn ends with exactly one `done`. */
 export type Event =
   | { type: "text"; delta: string }
@@ -95,6 +110,8 @@ export type Event =
   | { type: "task-notice"; notice: TaskNotice }
   /** The turn's added or changed `.md` files, sent right before a successful `done`. Never empty. */
   | { type: "documents"; documents: DocumentCard[] }
+  /** From the app (never a transport), only for a harness with tools: one tool call of the task (tools spec §8.2). */
+  | { type: "tool-call"; call: ToolCallView }
   | { type: "done"; ok: true }
   | { type: "done"; ok: false; error: EngineError };
 

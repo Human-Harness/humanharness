@@ -1885,7 +1885,8 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
   return createJobsHost({
     jobs: harness.jobs ?? {},
     actions: harness.actions,
-    readBrief: (job) => fs.readFile(resolveInHarness(harness, job.prompt), "utf8"),
+    // Only a prompt job's run reads a brief; a recipe has none (a job declares prompt or steps).
+    readBrief: (job) => (job.prompt !== undefined ? fs.readFile(resolveInHarness(harness, job.prompt), "utf8") : Promise.reject(new Error("A recipe has no brief"))),
     workspace: async () => {
       if (quitting) throw new Error("The app is closing");
       const blocked = turnBlocked();

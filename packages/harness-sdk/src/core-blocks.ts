@@ -3,6 +3,7 @@ import { type Block, defineBlock } from "./block";
 import { JOB_RESULT_TOOL } from "./jobs";
 import { MODE_ID, hasModes } from "./modes";
 import { PHASE_ID, hasPhases } from "./phases";
+import { STEP_OUTPUT_TOOL } from "./recipes";
 import { REVIEW_TOOLS } from "./review";
 
 /** One way to continue: `followUp` stays on the topic, `action` starts another task, `next: true` follows the guided path. */
@@ -133,13 +134,14 @@ export const PHASE_CORE_BLOCKS = {
   }),
 } satisfies Record<string, Block>;
 
-/** Every core block name, offered or not, and the job slot's `job_result` tool: no harness block may take one. */
+/** Every core block name, offered or not, the job slot's `job_result` and the step slot's `step_output` tools: no harness block may take one. */
 export const RESERVED_BLOCK_NAMES: readonly string[] = [
   ...CORE_BLOCK_NAMES,
   ...Object.keys(INPUT_CORE_BLOCKS),
   ...Object.keys(MODE_CORE_BLOCKS),
   ...Object.keys(PHASE_CORE_BLOCKS),
   JOB_RESULT_TOOL,
+  STEP_OUTPUT_TOOL,
   // The agent's review tools (review spec §4): not blocks, but no block may take their names.
   ...REVIEW_TOOLS,
 ];

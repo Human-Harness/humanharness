@@ -18,6 +18,7 @@ import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
+import { STEP_OUTPUT_TOOL, aiStepOf, recipeProblems } from "./recipes";
 import { preProblems, preSchema, preTokensSchema, expectsSchema } from "./steps";
 import { CORE_SERVER_NAMES, hasTools, toolsSchema } from "./tools";
 
@@ -38,6 +39,7 @@ export * from "./plugin-permissions";
 export * from "./plugin-actions";
 export * from "./parallel";
 export * from "./jobs";
+export * from "./recipes";
 export * from "./hatches";
 export * from "./harness-backend";
 export * from "./documents";
@@ -290,7 +292,7 @@ const manifestSchema = z.object({
   for (const name of Object.keys(m.blocks)) {
     if (RESERVED_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
   }
-  // Every block becomes an MCP tool: two blocks (core ones included, and a job slot's job_result) cannot share a tool name.
+  // Every block becomes an MCP tool: two blocks (core ones included, a job slot's job_result and a step slot's step_output) cannot share a tool name.
   const tools = new Map<string, string>(
     [
       ...Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name] as const),
@@ -299,6 +301,7 @@ const manifestSchema = z.object({
     ],
   );
   tools.set(JOB_RESULT_TOOL, JOB_RESULT_TOOL);
+  tools.set(STEP_OUTPUT_TOOL, STEP_OUTPUT_TOOL);
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
     const other = tools.get(tool);
@@ -500,6 +503,8 @@ const manifestSchema = z.object({
   }
   // Background jobs (parallel spec §3).
   for (const p of jobProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
+  // Job recipes (tools spec §3.3, §7): at most one AI step, declared tools, `as` order, `when` naming an earlier `as`.
+  for (const p of recipeProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
   // Material (material spec §8).
   if (m.material) {
     const issue = (p: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["material", ...p], message });
@@ -587,8 +592,12 @@ export async function loadHarness(configPath: string, options: { root?: string }
   for (const mode of Object.values(loaded.modes)) resolveInHarness(loaded, mode.brief);
   // And every phase's brief (task-phases spec §3).
   for (const action of Object.values(loaded.actions)) for (const p of action.phases ?? []) if (p.brief) resolveInHarness(loaded, p.brief);
-  // And every job's brief (parallel spec §3).
-  for (const job of Object.values(loaded.jobs ?? {})) resolveInHarness(loaded, job.prompt);
+  // And every job's brief (parallel spec §3), and every recipe's AI step brief (tools spec §7.1).
+  for (const job of Object.values(loaded.jobs ?? {})) {
+    if (job.prompt !== undefined) resolveInHarness(loaded, job.prompt);
+    const step = aiStepOf(job);
+    if (step) resolveInHarness(loaded, step.ai);
+  }
   // And every tool file (tools spec §3).
   for (const f of Object.values(loaded.tools ?? {})) resolveInHarness(loaded, f);
   // And the backend's entry (hatches spec §4.1).

@@ -284,10 +284,13 @@ async function phaseFindings(h: LoadedHarness): Promise<Finding[]> {
 async function jobFindings(h: LoadedHarness): Promise<Finding[]> {
   const out: Finding[] = [];
   for (const [id, job] of Object.entries(h.jobs ?? {})) {
-    const file = resolveInHarness(h, job.prompt);
-    const text = await read(file);
-    if (text === null) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} does not exist.`, MANIFEST));
-    else if (!text.trim()) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} is empty.`, path.relative(h.root, file)));
+    // A job declares prompt or steps: only a prompt job has a brief of its own.
+    if (job.prompt !== undefined) {
+      const file = resolveInHarness(h, job.prompt);
+      const text = await read(file);
+      if (text === null) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} does not exist.`, MANIFEST));
+      else if (!text.trim()) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} is empty.`, path.relative(h.root, file)));
+    }
     if (job.dailyTokens !== undefined && job.on.every === undefined) {
       out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only periodic runs and the job has no every, so it caps nothing.`, MANIFEST));
     }

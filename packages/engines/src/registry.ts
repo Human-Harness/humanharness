@@ -3,9 +3,10 @@ import { claudeAdapter } from "./claude/adapter";
 import type { CommonOptions, EngineAdapter, Transport } from "./contract";
 import type { EngineDef } from "./types";
 
-export { AcpTransport, codexConfig, decidePermission, isUiTool, offeredModels, type PermissionPolicy } from "./acp/client";
-export { type TransportOptions, acpFields } from "./acp/options";
-export { ClaudeCliTransport, allowedTools, claudeArgs, profileArgs } from "./claude/transport";
+// The transport classes, for tests that check or spy on which one an engine got.
+export { AcpTransport } from "./acp/client";
+export type { TransportOptions } from "./acp/options";
+export { ClaudeCliTransport } from "./claude/transport";
 
 /** One line per engine. Codex, OpenCode and the engines listed only for their legal status run the ACP adapter. */
 export const ADAPTERS: Readonly<Record<string, EngineAdapter>> = {

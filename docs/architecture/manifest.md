@@ -19,7 +19,7 @@ Every text in the manifest is one English string.
 | `instructions` | The base `AGENTS.md`; the core appends a managed section (`writeInstructions`) |
 | `permissions` | `edit` (`folder` or `none`), `exec`, `web`: turned into Claude's allowed and denied tools and into Codex's permission answers. `edit: "folder"` also turns on document reviews (`docs/architecture/reviews.md`) |
 | `blocks` | `defineBlock({ description, visible, schema, example })`: one MCP tool per block, served by the `ui` server |
-| `actions` | Tasks: `label`, optional `description`, `prompt` (the brief that opens the task's session), `cost` (`light`, `medium`, `heavy`), optional `modes` and `defaultMode` (`docs/architecture/modes.md`), and optional `phases` and `timeBox` (`docs/architecture/phases.md`) |
+| `actions` | Tasks: `label`, optional `description`, `prompt` (the brief that opens the task's session), `cost` (`light`, `medium`, `heavy`), optional `modes` and `defaultMode` (`docs/architecture/modes.md`), optional `phases` and `timeBox` (`docs/architecture/phases.md`), and optional `pre` and `preTokens` (tool steps run when the task starts; `docs/architecture/tools.md`) |
 | `path` | The optional guided order of action ids (the "Recorrido") |
 | `mcp` | Extra MCP servers (files in the harness folder) the agent gets next to `ui` and `data` |
 | `scopes` | Optional. The label and plural of the harness's unit of work (a topic, a project); actions may set `scope: "none"` to run app-wide (`docs/architecture/data.md`) |
@@ -65,6 +65,31 @@ session: {
 
 - `phases`: 1 to 12. Each has an `id` (the action id pattern), a `label` (≤ 80), an optional `brief` file (filled with `{{language}}`, `{{phase}}`, `{{previousPhase}}`, `{{timeLeft}}`), `auto` (the agent may move on alone), `modes` (`"any"`, `"none"` or a list of the action's modes) `close: true` (the part that ends with the core closing turn) and `approve` (a glob of `.md` paths in the folder, such as `specs/*.md`: approving a matching document moves the waiting task to the next part; `docs/architecture/reviews.md`).
 - `timeBox`: `options` (1 to 6 whole minutes, 1–240), `default` (one of them, or `null` for no limit; absent is `null`), `wrapUpAt` (optional, `0 < x ≤ 1`). It works with or without phases.
+
+### Pre-steps and expects
+
+With `tools`, an action may run tool steps when its task starts, and a phase may name the tools its agent should call (`docs/architecture/tools.md`, "Pre-steps" and "Expects"). From the `toolbox` test fixture (`packages/fake-agent/fixtures/tools-harness`):
+
+```ts
+study: {
+  label: "Study",
+  prompt: "./agent/tasks/study.md",
+  cost: "light",
+  pre: [
+    { tool: "due-today", as: "today" },
+    { tool: "pick-two", input: ["today"], as: "warmup" },
+  ],
+  phases: [
+    { id: "main", label: "Main", brief: "./agent/phases/main.md", auto: true },
+    { id: "close", label: "Close", brief: "./agent/phases/close.md", close: true, expects: ["count-notes"] },
+  ],
+},
+```
+
+- `pre`: 1 to 10 steps, strict objects: `tool`, `args?`, `input?` (1 to 10 earlier `as` names, the tool's `ctx.inputs`), `forEach?` (an earlier `as` holding an array), `as?` (unique within the action) and `required?` (`true`: the task doesn't start when the step fails). The results go into the first message under `## Prepared data`.
+- `preTokens`: an integer 500–20,000, the cap on that section; 4000 when absent. Only with `pre`.
+- A phase's `expects`: 1 to 10 tool ids; each one the agent didn't call by the time the task leaves the part is counted (`docs/architecture/phases.md`).
+- A manifest without them parses to the same object as before (D0).
 
 ### Sidekick places and presets
 
@@ -142,7 +167,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Modes: ids follow the action id pattern and aren't `recommend` or `ask`; an action's `modes` name declared modes, once each; `defaultMode` is one of them, `recommend` or `ask`, and only on an action with modes; mode settings pass the settings checks (no `section`) and need the harness's `settings` (its tab draws them). `humanharness check` also reports a mode brief that is missing, unreadable or empty (`brief-missing`).
 - Phases: ids unique within the action; `close` only on the last phase; an `approve` glob that is relative, ends in `.md`, isn't under `.harness/`, has no `..`, `[`, `]`, `{`, `}` or backslash and is at most 200 characters; a phase's list of `modes` only on an action with modes, each one of its modes. A time box's options are each offered once and its `default` is one of them or `null`. `humanharness check` also reports a phase brief that is missing or empty (`brief-missing`).
 - Secrets: 1 to 10 (`SECRETS_MAX`), strict objects; `id` matches `^[a-z][a-z0-9_-]{0,39}$` (the plugin key id pattern) and is declared once; `label` 1 to 80 and `help` 1 to 200 characters, one line each, no hidden characters (`secretsSchema`). A manifest without `secrets` parses to the same object as before (D0).
-- Tools: at most 50 (`TOOLS_MAX`); an id matches `^[a-z][a-z0-9_-]{0,63}$` (`TOOL_ID`) and can't be an action id, a job id, a block tool name (the harness's, the core's, the review tools, `job_result`) or a core MCP server name (`ui`, `data`, `translate`, `review`, `material`, `tools`); a file is a `./` path to a `.ts`, `.mts`, `.js` or `.mjs` file, which `loadHarness` resolves inside the folder. A connect step's `test` must be one of the tools. `humanharness check` builds them in memory (`tool-build`) and then checks each tool's `uses` against the harness and `dist/tools.json` (`tool-uses`, `toolProblems`): hosts need `web`, commands `exec`, collections and secret ids must be declared, `files: "write"` is refused for now, an `agent: "call"` tool needs a description of at least 20 characters, and a test tool has no required params (`docs/architecture/tools.md`). A manifest without `tools` parses to the same object as before (D0).
+- Tools: at most 50 (`TOOLS_MAX`); an id matches `^[a-z][a-z0-9_-]{0,63}$` (`TOOL_ID`) and can't be an action id, a job id, a block tool name (the harness's, the core's, the review tools, `job_result`) or a core MCP server name (`ui`, `data`, `translate`, `review`, `material`, `tools`); a file is a `./` path to a `.ts`, `.mts`, `.js` or `.mjs` file, which `loadHarness` resolves inside the folder. A connect step's `test` must be one of the tools. `humanharness check` builds them in memory (`tool-build`) and then checks each tool's `uses` against the harness and `dist/tools.json` (`tool-uses`, `toolProblems`): hosts need `web`, commands `exec`, collections and secret ids must be declared, `files: "write"` is refused for now, an `agent: "call"` tool needs a description of at least 20 characters, and a test tool has no required params; then `tool-steps` (`stepProblems`): a result read through `input` or `forEach` comes from a tool with `returns`, a `forEach` result is an array whose items carry the tool's required params that `args` doesn't give, and `expects` names `agent: "call"` tools (`docs/architecture/tools.md`). Pre-steps and expects: each step's tool and each `expects` id is a declared tool, each `as` once, `input` and `forEach` name an earlier step's `as`, `preTokens` only with `pre`. A manifest without `tools` parses to the same object as before (D0).
 - Setup steps: 1 to 8, ids unique. A connect step needs `secrets` and lists 1 to 10 of its ids, each once. A form takes a `single`, unscoped collection and fields the core form can draw, or settings of the harness, not both. An interview's action isn't in `path`, isn't `deep`, runs app-wide and backs one interview; its `writes` collection is `single`, unscoped and `agent: "write"`. `humanharness check` also warns about a component it can't find in `ui/` (`setup-component`), an interview's action without a recording once `mock/` has recordings (`setup-mock`) and an interview's collection without `context` (`setup-context`) (`docs/architecture/setup.md`).
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
 - Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
@@ -164,7 +189,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/phases.ts`: phase ids, `TIME_BOX_MAX`, `phaseModes`.
 - `packages/harness-sdk/src/setup.ts`: the `setup` schema, `interviewCollections`, `setupFormSpec`.
 - `packages/harness-sdk/src/secrets.ts`: the `secrets` schema (`secretsSchema`, `harnessSecretSchema`, `SECRETS_MAX`) and `hasSecrets`.
-- `packages/harness-sdk/src/tools.ts`: the `tools` schema (`toolsSchema`, `TOOL_ID`, `TOOLS_MAX`, `CORE_SERVER_NAMES`), `hasTools`, `toolsJsonSchema`, `toolMeta`, `toolProblems`; `tool.ts`: `defineTool` and `ToolContext`.
+- `packages/harness-sdk/src/tools.ts`: the `tools` schema (`toolsSchema`, `TOOL_ID`, `TOOLS_MAX`, `CORE_SERVER_NAMES`), `hasTools`, `toolsJsonSchema`, `toolMeta`, `toolProblems`; `tool.ts`: `defineTool` and `ToolContext`; `steps.ts`: the `pre`, `preTokens` and `expects` schemas, `hasPre`, `hasExpects`, `preProblems`, `stepProblems`.
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
 - `packages/harness-sdk/src/sidekick.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.

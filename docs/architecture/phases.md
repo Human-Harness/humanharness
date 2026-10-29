@@ -16,6 +16,7 @@ An action declares `phases` (1 to 12), in order. Each one has:
   - `*` and `?` match within one path part, and `**` across parts. Case is ignored.
   - No `[`, `]`, `{` or `}`, no backslash, not absolute, no `..`, not under `.harness/`, ends in `.md`, at most 200 characters.
   - It does nothing on the last part or a `close` part. See `reviews.md`.
+- `expects` (optional): 1 to 10 tools of the harness (`agent: "call"` ones) the agent should call in this part. When the task leaves the part, or closes in it, each one it didn't call counts as a miss: an `expects-miss` row in `usage.jsonl` and a line "Expected <tool> in <label>: not called" in the chat. Nothing else happens (see "Expects" below).
 
 The checks are in the manifest schema (`defineHarness` and `loadHarness` refuse them, `check` lists them as `schema` with their paths): unique ids, `close` only on the last part, a list of `modes` only on an action with modes and each of them one of its modes. `auto` is allowed on any part, the last one included: on the close part it means the agent's "done" closes the task at once. `check` adds `brief-missing` for a phase brief that is missing or empty.
 
@@ -52,6 +53,14 @@ Entering a part runs inside the operation that moves:
 
 The window learns of every change turn through `hh:taskTurn` → `client.onTaskTurn(listener)`: `{ task, kind: "phase" | "wrap-up", phase?, by?, back? }`, sent before the turn's events, whoever started it (the agent, the time box, the window itself or the harness's UI). It draws the system line and the live turn then; it never draws a change itself.
 
+## Expects
+
+A part's `expects` is checked by the tools host (`phaseEnded`, `docs/architecture/tools.md`, "Expects") through `TaskDeps.phaseEnded`, which exists only when some part declares `expects` and the harness has tools:
+
+- On a move of any kind (the agent, the person, an approval, the time box), for the part left; the move doesn't wait for it.
+- On a close, for the part it closes in: after the closing turn, or when the task finishes with its note already saved. It runs before the task ends, waiting at most 2 s (`EXPECTS_CHECK_MS`), so the miss line reaches the chat. A cancelled or unfinished close, or a Stop before it, checks nothing.
+- A call counts when its trace entry has the task's id and the part's id, whatever its caller, failed calls included. A part entered again is checked again.
+
 ## The close part
 
 Entering the close part is a normal change: its brief runs as a turn. Its end is the core closing turn (`closeCurrent`, `CLOSE_PROMPT` unchanged, D5): the person's Finish (`setPhase` to the current close part, or `client.finishTask()`, which calls `TaskManager.finish()` like `run`'s `q`), or the agent's "done" when the close part has `auto`. That turn asks for `save_note` and ends the task, so "close" in the harness and in the core is one moment. A stopped closing turn leaves the task open: `finishTask` resolves `false` and the window reads the tasks again.
@@ -86,7 +95,7 @@ Modes spec §7, as built (see also `modes.md`):
 ## State and records
 
 - `tasks.json` (`task-store.ts`): `current.phase` (`{ id, startedAt }`), `phases` (the log, `{ id, at, by }`, at most 200 entries), `phaseProposal`, `timeBox` (`{ minutes, usedMs, runningSince?, wrappedUp?, ended? }`), `suspendedMode`. `TaskStore` takes each action's phase ids (`new TaskStore(folder, { modes, phases })`) and drops a phase the action no longer declares.
-- `usage.jsonl`: `taskPhase` on every line of a phased task (closing, checkpoint, change and wrap-up turns, and compaction lines). The turn kind `phase` gains `phase-change` and `wrap-up`.
+- `usage.jsonl`: `taskPhase` on every line of a phased task (closing, checkpoint, change and wrap-up turns, and compaction lines). The turn kind `phase` gains `phase-change` and `wrap-up`. An `expects-miss` row names its part in `taskPhase` too.
 - The chat: a change's user entry has `phase`, the wrap-up's `timeUp`.
 - History: every commit a phased task makes carries a `Phase: <id>` trailer (see `history.md`).
 - The resumed session's first message: the action's brief, the mode's section, then the list of parts and the current part's section.
@@ -94,7 +103,7 @@ Modes spec §7, as built (see also `modes.md`):
 
 ## D0
 
-An action without phases or a time box behaves and records exactly as before: the same `tasks.json`, prompts, chat log, usage lines, notes, history messages, `TaskView`, window and `run` output. Only the harness-wide pieces follow the whole manifest: in a harness where some action has phases, every task gets the `set_phase` tool, like `recommend_mode`.
+A part without `expects` checks nothing and writes no row (`packages/shell/test/task-manager-expects.test.ts` "D0: without phaseEnded …"). An action without phases or a time box behaves and records exactly as before: the same `tasks.json`, prompts, chat log, usage lines, notes, history messages, `TaskView`, window and `run` output. Only the harness-wide pieces follow the whole manifest: in a harness where some action has phases, every task gets the `set_phase` tool, like `recommend_mode`.
 
 ## Not in v1
 

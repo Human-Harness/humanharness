@@ -40,6 +40,26 @@ describe("D0 (hatches): no linked folders, no change", () => {
     }
   });
 
+  it("D0: no engine preset → part 1's argv", () => {
+    const o = { session: { id: "abc", started: true }, mcp: [uiServer], permissions, references: ["/r"] };
+    const linked = [{ path: "/l", mode: "read" as const, tracked: false }];
+    expect(claudeArgs({ ...o, scope: { linked: [] } })).toEqual(claudeArgs(o));
+    expect(claudeArgs({ ...o, scope: { linked, engine: undefined } })).toEqual(claudeArgs({ ...o, scope: { linked } }));
+    for (const flag of ["--plugin-dir", "--agents"]) expect(claudeArgs({ ...o, scope: { linked } })).not.toContain(flag);
+  });
+
+  it("an empty preset folder changes nothing", () => {
+    // The host passes no engine for a scope with an empty (or no) engine folder: the argv is part 1's, linked or not.
+    const o = { session: { id: "abc", started: false }, mcp: [uiServer], permissions, references: [] };
+    const linked = [{ path: "/l", mode: "write" as const, tracked: false }];
+    for (const scope of [{ linked: [] }, { linked }]) {
+      const args = claudeArgs({ ...o, scope: { ...scope, engine: undefined } });
+      expect(args).toEqual(claudeArgs({ ...o, scope }));
+      expect(args[args.indexOf("--setting-sources") + 1]).toBe("project");
+      expect(args).toContain("--strict-mcp-config");
+    }
+  });
+
   it("session/new and session/load carry exactly cwd and mcpServers without linked folders", async () => {
     const folder = fs.mkdtempSync(path.join(root, "t-"));
     const logFile = path.join(root, `log-${path.basename(folder)}.jsonl`);

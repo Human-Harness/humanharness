@@ -58,9 +58,35 @@ export interface LinkedAccess {
   tracked: boolean;
 }
 
-/** What a turn gets from its task's scope (hatches spec §3, §5). Absent: nothing, as before (D0). Part 3 adds `engine`. */
+/**
+ * A scope's approved engine config, read from its snapshot in the app's data folder, never the live folder (hatches
+ * spec §5.2). Every path is absolute.
+ */
+export interface EnginePreset {
+  /** The approved hash the snapshot is keyed by. */
+  hash: string;
+  /** `global` also loads the person's own engine config (Claude: user settings and their MCP servers). */
+  base: "isolated" | "global";
+  /** Cleaned settings: hooks and permissions allow/deny/ask only. */
+  settings?: { hooks?: Record<string, unknown>; permissions?: { allow?: string[]; deny?: string[]; ask?: string[] } };
+  /** The preset's MCP servers, already named `scope-<name>`. */
+  servers: McpServerSpec[];
+  /**
+   * The snapshot folder laid out as a plugin (`skills/<name>/SKILL.md`, no manifest); absent without skills. Claude
+   * names a plugin without a manifest after its folder, so the skills are `/<basename>:<name>`.
+   */
+  pluginDir?: string;
+  /** agents.json in the snapshot; absent without agents. */
+  agentsFile?: string;
+  /** Codex: the cleaned codex.toml as JSON. */
+  codex?: Record<string, unknown>;
+}
+
+/** What a turn gets from its task's scope (hatches spec §3, §5). Absent: nothing, as before (D0). */
 export interface TurnScope {
   linked: LinkedAccess[];
+  /** The scope's approved engine preset (part 3); absent without one (D0). */
+  engine?: EnginePreset;
 }
 
 export interface Transport {

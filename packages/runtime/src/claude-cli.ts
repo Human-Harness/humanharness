@@ -6,7 +6,7 @@ import { type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/eng
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
+import type { EnginePreset, LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
 /** Plumbing tools the user should never see as activity. */
@@ -119,18 +119,59 @@ export const ALL_BUILTIN_TOOLS = [
  * directories grant file access, not configuration").
  */
 export function referenceSettingsArgs(references: string[]): string[] {
-  return scopeSettingsArgs(references);
+  return settingsArgs(references);
 }
 
 /**
- * The one `--settings` for the reference and linked folders, or nothing without any (D0). Linked folders follow the
- * references, so a turn without a scope gets exactly `referenceSettingsArgs`'s value; never `--add-dir` (hatches
- * spec §3.5). Part 3 merges the scope's approved settings into the same object.
+ * The one `--settings` for the reference and linked folders and the scope's approved preset, or nothing when it would
+ * be empty (D0). Linked folders follow the references, so a turn without a scope gets exactly
+ * `referenceSettingsArgs`'s value; never `--add-dir` (hatches spec §3.5). The preset's hooks and allow/deny/ask rules
+ * join the same object (§5.2); the harness's `--disallowedTools` stays outside it and still wins.
  */
-export function scopeSettingsArgs(references: string[], scope?: TurnScope): string[] {
+export function settingsArgs(references: string[], scope?: TurnScope): string[] {
   const dirs = [...references, ...(scope?.linked ?? []).map((l) => l.path)];
-  if (dirs.length === 0) return [];
-  return ["--settings", JSON.stringify({ permissions: { additionalDirectories: dirs } })];
+  const preset = scope?.engine;
+  const hooks = preset?.settings?.hooks;
+  const rules = presetRules(preset);
+  const permissions = { ...(dirs.length > 0 ? { additionalDirectories: dirs } : {}), ...rules };
+  const settings = { ...(hooks ? { hooks } : {}), ...(Object.keys(permissions).length > 0 ? { permissions } : {}) };
+  if (Object.keys(settings).length === 0) return [];
+  return ["--settings", JSON.stringify(settings)];
+}
+
+/**
+ * The preset's allow/deny/ask lists, non-empty ones only. An `mcp__` allow rule passes only when it names one of the
+ * preset's own servers: under the `global` base the CLI also loads the person's servers, which a preset must not
+ * approve. Deny and ask rules only narrow, so they pass as they are.
+ */
+function presetRules(preset: EnginePreset | undefined): { allow?: string[]; deny?: string[]; ask?: string[] } {
+  const p = preset?.settings?.permissions;
+  if (!p) return {};
+  const own = (preset?.servers ?? []).map((s) => `mcp__${s.name}`);
+  const allowed = (rule: string) => !rule.startsWith("mcp__") || own.some((n) => rule === n || rule.startsWith(`${n}__`));
+  const out: { allow?: string[]; deny?: string[]; ask?: string[] } = {};
+  const allow = (p.allow ?? []).filter(allowed);
+  if (allow.length > 0) out.allow = allow;
+  if (p.deny?.length) out.deny = [...p.deny];
+  if (p.ask?.length) out.ask = [...p.ask];
+  return out;
+}
+
+/**
+ * Checks a preset at the last boundary before the CLI: a known base, servers named `scope-<name>` that take no core
+ * server's name, and absolute snapshot paths (nothing that reads as a flag).
+ */
+function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
+  if (preset.base !== "isolated" && preset.base !== "global") throw new Error(`Unknown engine preset base: ${JSON.stringify(preset.base)}`);
+  const core = new Set(mcp.map((s) => s.name));
+  for (const s of preset.servers) {
+    if (!/^scope-[a-z0-9][a-z0-9-]{0,39}$/.test(s.name) || core.has(s.name)) {
+      throw new Error(`Refusing an engine preset server name: ${JSON.stringify(s.name)}`);
+    }
+  }
+  for (const p of [preset.pluginDir, preset.agentsFile]) {
+    if (p !== undefined && (!path.isAbsolute(p) || p.startsWith("-"))) throw new Error(`Refusing an engine preset path: ${JSON.stringify(p)}`);
+  }
 }
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
@@ -143,11 +184,15 @@ export function claudeArgs(
     throw new Error("A no-tools session takes no MCP servers, reference or linked folders");
   }
   if (o.mcpOnly && linked.length > 0) throw new Error("An MCP-only session takes no linked folders");
+  const engine = o.scope?.engine;
+  if (engine && (o.noTools || o.mcpOnly)) throw new Error("A no-tools or MCP-only session takes no engine preset");
+  if (engine) checkPreset(engine, o.mcp);
   // The last boundary: the picker refuses these names, but a hand-edited scopes.json could still bring one here.
   const unsafe = linked.find((l) => ruleUnsafePath(l.path));
   if (unsafe) throw new Error(`Refusing a linked folder no permission rule can spell: ${JSON.stringify(unsafe.path)}`);
+  // The preset's servers follow the core's (hatches spec §5.2); checkPreset keeps their names apart.
   const mcpServers = Object.fromEntries(
-    o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
+    [...o.mcp, ...(engine?.servers ?? [])].map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
   // The non-noTools flags keep their old order: a session without `noTools` runs exactly as before (D0).
   const tools = o.noTools
@@ -161,12 +206,16 @@ export function claudeArgs(
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--setting-sources", "project",
+    // The `global` base lets the CLI load the person's own settings and servers (hatches spec §5.2).
+    "--setting-sources", engine?.base === "global" ? "user,project" : "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
     ...tools,
-    "--strict-mcp-config",
+    ...(engine?.base === "global" ? [] : ["--strict-mcp-config"]),
     "--mcp-config", JSON.stringify({ mcpServers }),
-    ...scopeSettingsArgs(o.references ?? [], o.scope),
+    ...settingsArgs(o.references ?? [], o.scope),
+    // Skills and agents from the approved snapshot, never the live folder (hatches spec §5.2).
+    ...(engine?.pluginDir !== undefined ? ["--plugin-dir", engine.pluginDir] : []),
+    ...(engine?.agentsFile !== undefined ? ["--agents", engine.agentsFile] : []),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
     ...profileArgs(o.profile),

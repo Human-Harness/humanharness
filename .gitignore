@@ -6,6 +6,8 @@ dist/
 !harnesses/*/plugins/*/dist/
 # The tools e2e fixture's built tools (Decision 16; packages/cli/test/fixture-dist.test.ts checks it matches a fresh build).
 !packages/fake-agent/fixtures/tools-harness/dist/
+# The recipes e2e fixture's built tools (tools slice 4; packages/cli/test/recipes-fixture-dist.test.ts checks it).
+!packages/fake-agent/fixtures/recipes-harness/dist/
 # The build's swap folders (plugin-build.ts), left behind only by an interrupted build.
 **/plugins/*/dist.tmp-*/
 **/plugins/*/dist.old-*/

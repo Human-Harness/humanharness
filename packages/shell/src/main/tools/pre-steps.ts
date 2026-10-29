@@ -75,14 +75,21 @@ export async function runToolStep(r: StepRegistry, step: ToolStep, values: StepV
   const names = isObject(props) ? Object.keys(props) : [];
   const out: unknown[] = new Array(items.length);
   let failed: string | null = null;
+  let stop = false;
   let next = 0;
-  // FOR_EACH_PARALLEL workers take items in order; after a failure no new call starts.
+  // FOR_EACH_PARALLEL workers take items in order; after a failure (or a call that throws) no new call starts.
   const worker = async () => {
-    while (failed === null && next < items.length) {
+    while (!stop && failed === null && next < items.length) {
       const i = next++;
       const item = items[i];
       const fromItem = isObject(item) ? Object.fromEntries(names.filter((n) => Object.hasOwn(item, n)).map((n) => [n, item[n]])) : {};
-      const got = await one({ ...fromItem, ...(step.args ?? {}) });
+      let got: StepOutcome;
+      try {
+        got = await one({ ...fromItem, ...(step.args ?? {}) });
+      } catch (e) {
+        stop = true;
+        throw e;
+      }
       if (!got.ok) failed ??= got.error;
       else out[i] = got.value;
     }

@@ -171,6 +171,37 @@ describe("runPreSteps (tools spec §6)", () => {
     expect(out.results[1].value).toBeUndefined();
   });
 
+  const tenItems = { tool: "a", as: "ns" } as const;
+  const ten = { ok: true, result: Array.from({ length: 10 }, (_, n) => ({ n })) } as const;
+  const later = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  it("no new call starts after a failed item (at most the 4 already running)", async () => {
+    const { r, calls } = registry(
+      { a: ten, b: async (c) => ((c.args as { n: number }).n === 0 ? { ok: false, error: "zero broke" } : (await later(20), { ok: true, result: 1 })) },
+      { b: meta({ n: { type: "integer" } }) },
+    );
+    const out = await run(r, [tenItems, { tool: "b", forEach: "ns", as: "each" }]);
+    expect(out.results[1]).toMatchObject({ ok: false, error: "zero broke" });
+    expect(calls.filter((c) => c.tool === "b").length).toBeLessThanOrEqual(4);
+  });
+
+  it("no new call starts after a call throws (at most the 4 already running)", async () => {
+    const { r, calls } = registry(
+      {
+        a: ten,
+        b: async (c) => {
+          if ((c.args as { n: number }).n === 0) throw new Error("registry broke");
+          await later(20);
+          return { ok: true, result: 1 };
+        },
+      },
+      { b: meta({ n: { type: "integer" } }) },
+    );
+    await expect(run(r, [tenItems, { tool: "b", forEach: "ns", as: "each" }])).rejects.toThrow("registry broke");
+    await later(150);
+    expect(calls.filter((c) => c.tool === "b").length).toBeLessThanOrEqual(4);
+  });
+
   it("a failed step is kept with its message and the next steps still run", async () => {
     const { r } = registry({ a: { ok: false, error: "boom" }, b: { ok: true, result: 2 } });
     const out = await run(r, [

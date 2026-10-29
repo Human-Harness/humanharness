@@ -1,4 +1,4 @@
-import { type HarnessJob, parseEvery } from "@humanharness/harness-sdk";
+import { type HarnessJob, jobUsesAi, parseEvery } from "@humanharness/harness-sdk";
 import { type JobLog, type JobRunRecord, type JobTrigger, dedupeKey } from "./job-log";
 
 /** setTimeout's longest delay: a longer wait is armed in steps (a longer one would fire at once). */
@@ -135,7 +135,9 @@ export class JobScheduler {
     this.cancelRuns();
   }
 
+  /** The daily cap caps only runs that use AI (tools spec §7.4): a recipe without an AI step is never paused by it. */
   private async overCap(id: string, job: HarnessJob): Promise<boolean> {
+    if (!jobUsesAi(job)) return false;
     const cap = this.d.settings(id).dailyTokens ?? job.dailyTokens ?? 0;
     return (await this.d.log.tokensToday(id, this.now())) >= cap;
   }

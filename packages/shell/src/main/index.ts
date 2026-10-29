@@ -199,14 +199,14 @@ import { testCrypto } from "./secrets/test-crypto";
 import { isPublicHost } from "./material-fetch";
 import { ToolHost } from "./tools/tool-host";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
-import { type ToolsHost, createToolsHost, slotTaskOf } from "./tools/tools-host";
+import { type ToolsHost, createToolsHost, jobLimits, slotTaskOf } from "./tools/tools-host";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
 import { materialOwn, notePath, saveAppChange } from "./app-change";
-import { type JobsHost, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
@@ -1918,7 +1918,26 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
     // Needs-you results in the base's shared store (Task 8), and the Dock badge.
     attention: async (b) => sharedAttention?.forBase(b, true) ?? null,
     needsYouChanged: () => void refreshJobBadge(),
+    // A recipe's tools (tools spec §7): only with tools (D0). toolsHost is set before "ready", so before this runs.
+    ...(toolsHost ? { tools: recipeTools(toolsHost) } : {}),
   });
+}
+
+/**
+ * What a recipe run needs of the tools host (tools spec §7): its registry, the run's trailer on its calls, the job's
+ * limits, the run's last tool call (trace notes, such as an AI round's, skipped) and the AI step's brief.
+ */
+function recipeTools(t: ToolsHost): NonNullable<JobsHostDeps["tools"]> {
+  return {
+    registry: t.registry,
+    withRunTrailer: (trailer, fn) => t.withRunTrailer(trailer, fn),
+    limits: (job) => jobLimits(harness, job),
+    lastCall: async (run) => {
+      const last = [...(await t.trace(run))].reverse().find((e) => e.note === undefined);
+      return last ? { tool: last.tool, resultSummary: last.summary } : null;
+    },
+    readAiBrief: (p) => fs.readFile(resolveInHarness(harness, p), "utf8"),
+  };
 }
 
 /**

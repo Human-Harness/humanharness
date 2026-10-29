@@ -8,10 +8,12 @@ import { cleanJobSettings } from "../config";
 import { effectiveCaps, engineHold } from "../parallel-config";
 import type { TaskDeps } from "../task-manager";
 import { type BeforeStart, TurnGate } from "../turn-gate";
-import { UsageLog, type UsageRecord, jobRecord } from "../usage-log";
+import { UsageLog, type UsageRecord, jobRecord, recipeRecord } from "../usage-log";
+import { runAiStep } from "./ai-step";
 import { JobLog, type JobRunRecord, type JobTrigger, dedupeKey } from "./job-log";
 import { jobMessageFor, jobRunTrailer, runJob } from "./job-runner";
 import { JobScheduler, type SchedulerTimer } from "./job-scheduler";
+import { type RecipeRunDeps, runRecipe } from "./recipe-runner";
 
 type Usage = Extract<Event, { type: "usage" }>;
 
@@ -115,7 +117,27 @@ export interface JobsHostDeps {
   timer?: SchedulerTimer;
   now?: () => Date;
   maxMs?: number;
+  /**
+   * What a recipe's run needs of the tools (tools spec §7): the registry its tool steps call as caller "job", the run's
+   * history trailer on those calls, the job's limits, the trace's last call (the run's line) and the AI step's brief.
+   * Absent without tools (D0): a job with `steps` then fails its run "Tools are off".
+   */
+  tools?: {
+    registry: RecipeRunDeps["registry"];
+    withRunTrailer: RecipeRunDeps["withRunTrailer"];
+    limits: RecipeRunDeps["limits"];
+    lastCall: RecipeRunDeps["lastCall"];
+    /** The AI step's brief (its `ai` file in the harness folder). */
+    readAiBrief(path: string): Promise<string>;
+  };
 }
+
+/** A recipe's registry without tools: every call answers "Tools are off", nothing is noted. */
+const offRegistry: RecipeRunDeps["registry"] = {
+  call: async () => ({ ok: false, error: "Tools are off" }),
+  meta: async () => null,
+  note: async () => {},
+};
 
 export type JobsHost = ReturnType<typeof createJobsHost>;
 
@@ -191,6 +213,53 @@ export function createJobsHost(d: JobsHostDeps) {
     return p;
   };
 
+  /**
+   * A recipe run's deps (tools spec §7) in `base`, as a prompt run's: the same gate, log, usage lines, run id and
+   * `stillValid`. Without tools every tool step answers "Tools are off" and nothing reaches the trace.
+   */
+  const recipeDeps = (
+    base: string,
+    runId: string,
+    recordUsage: (e: Usage, meta: { job: string; task: string; scope?: string }) => Promise<void>,
+    stillValid: () => Promise<boolean>,
+  ): RecipeRunDeps => {
+    const tools = d.tools;
+    return {
+      gate: d.gate,
+      log: logFor(base),
+      registry: tools?.registry ?? offRegistry,
+      withRunTrailer: tools ? (trailer, fn) => tools.withRunTrailer(trailer, fn) : (_trailer, fn) => fn(),
+      // Fails closed: a limits read that throws reaches neither the web nor commands.
+      limits: (job) => {
+        try {
+          return tools ? tools.limits(job) : { job, web: false, exec: false };
+        } catch (err) {
+          console.error(`Job ${job}: could not read its limits`, err);
+          return { job, web: false, exec: false };
+        }
+      },
+      lastCall: (run) => (tools ? tools.lastCall(run) : Promise.resolve(null)),
+      ai: (o) =>
+        runAiStep(
+          {
+            workspace: () => d.workspace(),
+            readBrief: (p) => (tools ? tools.readAiBrief(p) : Promise.reject(new Error("Tools are off"))),
+            profileFor: async (tier) => d.taskDeps.profileFor?.(undefined, undefined, tier),
+            recordUsage,
+            gate: d.gate,
+            now,
+          },
+          o,
+        ),
+      recordRecipe: async (row) => appendUsage(base, recipeRecord({ engine: await d.engine(), ...row }, now().toISOString())),
+      actions: d.actions,
+      now,
+      newId: () => runId,
+      stillValid,
+      ...(d.maxMs !== undefined ? { maxMs: d.maxMs } : {}),
+    };
+  };
+
   const runOnce = async (id: string, job: HarnessJob, scope: string | null, trigger: JobTrigger, signal: AbortSignal): Promise<JobRunRecord | null> => {
     // The base when the run is taken: its log and usage lines stay there even if the folder or profile changes meanwhile.
     const base = await d.base();
@@ -199,35 +268,41 @@ export function createJobsHost(d: JobsHostDeps) {
       return null;
     }
     const runId = randomUUID();
+    // A job usage line in this base (part 3's): a prompt run's turns and a recipe's AI step turns alike.
+    const recordUsage = async (e: Usage, meta: { job: string; task: string; scope?: string }) => {
+      const usage = { inputTokens: e.inputTokens, outputTokens: e.outputTokens, cacheReadTokens: e.cacheReadTokens, cacheWriteTokens: e.cacheWriteTokens, ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}) };
+      await appendUsage(base, jobRecord({ engine: await d.engine(), ...meta, usage }, now().toISOString()));
+    };
+    // Queued for one folder or profile, let in after a switch: dropped, never run against the new one.
+    const stillValid = async () => (await d.base()) === base;
     const key = `job:${runId}`;
     // The run's history trailer, the same one its own commits carry: a harness tool's data write from this slot commits under it.
     runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE), job: id, trailer: jobRunTrailer(runId, id, scope) });
     try {
-      const record = await runJob(
-        {
-          workspace: () => d.workspace(),
-          gate: d.gate,
-          log: logFor(base),
-          firstMessage,
-          profileFor: async (j) => d.taskDeps.profileFor?.(undefined, undefined, j.tier),
-          recordUsage: async (e: Usage, meta) => {
-            const usage = { inputTokens: e.inputTokens, outputTokens: e.outputTokens, cacheReadTokens: e.cacheReadTokens, cacheWriteTokens: e.cacheWriteTokens, ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}) };
-            await appendUsage(base, jobRecord({ engine: await d.engine(), ...meta, usage }, now().toISOString()));
-          },
-          actions: d.actions,
-          now,
-          newId: () => runId,
-          // Queued for one folder or profile, let in after a switch: dropped, never run against the new one.
-          stillValid: async () => (await d.base()) === base,
-          ...(d.linked ? { scopeAccess: d.linked.access } : {}),
-          ...(d.maxMs !== undefined ? { maxMs: d.maxMs } : {}),
-        },
-        id,
-        job,
-        scope,
-        trigger,
-        signal,
-      );
+      // A job is a prompt or a recipe (tools spec §7): a recipe goes to its own runner, a prompt job to part 3's.
+      const record = job.steps
+        ? await runRecipe(recipeDeps(base, runId, recordUsage, stillValid), id, job, scope, trigger, signal)
+        : await runJob(
+            {
+              workspace: () => d.workspace(),
+              gate: d.gate,
+              log: logFor(base),
+              firstMessage,
+              profileFor: async (j) => d.taskDeps.profileFor?.(undefined, undefined, j.tier),
+              recordUsage,
+              actions: d.actions,
+              now,
+              newId: () => runId,
+              stillValid,
+              ...(d.linked ? { scopeAccess: d.linked.access } : {}),
+              ...(d.maxMs !== undefined ? { maxMs: d.maxMs } : {}),
+            },
+            id,
+            job,
+            scope,
+            trigger,
+            signal,
+          );
       if (record) await settle(base, record);
       return record;
     } finally {
@@ -284,7 +359,9 @@ export function createJobsHost(d: JobsHostDeps) {
             id,
             label: job.label,
             scope,
-            ...(r ? { last: { status: r.status, summary: r.summary, at: r.endedAt, ...(r.action !== undefined ? { action: r.action } : {}) } } : {}),
+            ...(r
+              ? { last: { status: r.status, summary: r.summary, at: r.endedAt, ...(r.action !== undefined ? { action: r.action } : {}), ...(d.tools ? { run: r.run } : {}) } }
+              : {}),
             ...(next ? { next: next.toISOString() } : {}),
             ...(paused ? { paused } : {}),
             manual: job.on.manual === true,

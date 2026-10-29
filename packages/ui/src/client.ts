@@ -154,7 +154,14 @@ export interface JobSummary {
   label: string;
   /** null: an app-wide job. */
   scope: string | null;
-  last?: { status: "ok" | "needs-you" | "failed"; summary: string; at: string; action?: string };
+  last?: {
+    status: "ok" | "needs-you" | "failed";
+    summary: string;
+    at: string;
+    action?: string;
+    /** The run's id, for its steps (tools spec §8.2); only when the harness has tools. */
+    run?: string;
+  };
   /** The next `every` run, when one is armed. */
   next?: string;
   paused?: "daily-cap" | "off";

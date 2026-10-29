@@ -53,7 +53,16 @@ const groups: HistoryTaskView[] = [
   },
 ];
 
-async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption>; currentTask?: string } = {}) {
+async function open(
+  opts: {
+    disabled?: boolean;
+    client?: FakeClient;
+    actions?: Record<string, ActionOption>;
+    currentTask?: string;
+    undoByFiles?: boolean;
+    jobs?: { id: string; label: string }[];
+  } = {},
+) {
   const client = opts.client ?? new FakeClient();
   if (!opts.client) client.historyGroups = groups;
   const onRestored = vi.fn();
@@ -65,6 +74,8 @@ async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: R
       actions={opts.actions ?? actions}
       disabled={opts.disabled}
       currentTask={opts.currentTask}
+      {...(opts.undoByFiles ? { undoByFiles: true } : {})}
+      {...(opts.jobs ? { jobs: opts.jobs } : {})}
       onClose={onClose}
       onRestored={onRestored}
     />,
@@ -73,6 +84,26 @@ async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: R
 }
 
 describe("HistoryPanel", () => {
+  it("labels a job run's row with its job (Job: trailer); an unknown job is just a background job", async () => {
+    const client = new FakeClient();
+    const run = (taskId: string, jobId?: string): HistoryTaskView => ({
+      taskId,
+      actionId: null,
+      ...(jobId ? { jobId } : {}),
+      start: "s0",
+      end: `e-${taskId}`,
+      date,
+      changes: [],
+      entries: [{ sha: `e-${taskId}`, message: "Turn: sync", date }],
+    });
+    client.historyGroups = [run("r1", "sync"), run("r2", "gone"), run("r3", "toString"), run("t1")];
+    await open({ client, jobs: [{ id: "sync", label: "Sync tickets" }] });
+    expect(await screen.findByRole("button", { name: /Job · Sync tickets/ })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /A background job/ })).toHaveLength(2);
+    // D0: a row without a Job: trailer is unchanged.
+    expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
+  });
+
   it("filters the tasks by scope when the history has scopes", async () => {
     const client = new FakeClient();
     client.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];
@@ -249,6 +280,38 @@ describe("HistoryPanel", () => {
     expect(client.goBackAsks).toEqual([{ kind: "task", taskId: "t2" }]);
     expect(onRestored).toHaveBeenCalledWith("task");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("undoing a task by its files (parallel spec §5.3) asks main's dialog and goes through like any undo", async () => {
+    const client = new FakeClient();
+    // t2 came later and changed q.md too: board mode never undoes it with t1 (main's dialog lists no later task).
+    client.historyGroups = [{ ...groups[0], changes: [{ path: "q.md", kind: "modified" }] }, groups[1]];
+    const { onRestored } = await open({ client, undoByFiles: true });
+    fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Undo this task" })[1]);
+    await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
+    expect(client.goBackAsks).toEqual([{ kind: "task", taskId: "t1" }]);
+    expect(onRestored).toHaveBeenCalledWith("task");
+  });
+
+  it("says why main refused an undo by files, naming the file, and stays open", async () => {
+    const client = new FakeClient();
+    client.historyGroups = groups;
+    client.restoreTaskRefusal = { reason: "later", path: "q.md", by: "task" };
+    const { onRestored, onClose } = await open({ client, undoByFiles: true });
+    fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Undo this task" })[1]);
+    expect((await screen.findByRole("alert")).textContent).toBe("A later task also changed q.md, so this task can't be undone by itself.");
+    expect(screen.queryByText("I couldn't go back to that point. Try again in a moment.")).toBeNull();
+    expect(onRestored).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(client.restoredTasks).toEqual([]);
+    // The way back is offered again; the next refusal replaces the line.
+    client.restoreTaskRefusal = { reason: "running", path: "q.md" };
+    const again = screen.getAllByRole("button", { name: "Undo this task" })[1] as HTMLButtonElement;
+    await waitFor(() => expect(again.disabled).toBe(false));
+    fireEvent.click(again);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Another task is changing q.md. Undo this one once that task waits."));
   });
 
   it("a Cancel in main's dialog is quiet: nothing changes, the panel stays, focus goes back to the button", async () => {

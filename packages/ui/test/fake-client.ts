@@ -85,12 +85,18 @@ import type {
   SidekickView,
   TaskContext,
   TaskTurnNotice,
+  TasksClient,
+  TasksState,
+  JobsClient,
+  JobSummary,
   TaskView,
   TestResult,
   TextSize,
+  UndoRefusal,
   TimelineEntry,
   UsageSummary,
 } from "../src/client";
+import { type Mock, vi } from "vitest";
 import { hearsDataChange } from "../src/client";
 import { anchorForSelection, answerQuestion, nextCommentId, summarizeReview } from "@humanharness/harness-sdk/review";
 
@@ -103,6 +109,20 @@ export function fakeBlob(text: string): string {
 
 /** The token FakeClient's sidekick.pickFiles answers. */
 export const FAKE_PICK_TOKEN = "0".repeat(32);
+
+/** `client.tasks` with spies on the person's actions, and `set` to change what `list` answers and tell `onChange`. */
+export interface FakeTasks extends TasksClient {
+  focus: Mock<TasksClient["focus"]>;
+  cancelQueued: Mock<TasksClient["cancelQueued"]>;
+  resumeQueues: Mock<TasksClient["resumeQueues"]>;
+  set(state: TasksState): void;
+}
+
+/** `client.jobs` with a spy on "Run now", and `set` to change what `list` answers and tell `onChange`. */
+export interface FakeJobs extends JobsClient {
+  run: Mock<JobsClient["run"]>;
+  set(jobs: JobSummary[]): void;
+}
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -131,6 +151,8 @@ export class FakeClient implements HarnessClient {
   restoreError: Error | null = null;
   /** What historyTasks throws, if anything. */
   historyError: Error | null = null;
+  /** Board mode: restoreTask answers with this refusal instead of going back. */
+  restoreTaskRefusal: UndoRefusal | null = null;
   /** While set, restore and restoreTask wait for it. */
   restoreGate: Promise<void> | null = null;
   pickResult: FolderPick | null = { folder: "/Users/me/Elsewhere", problem: null };
@@ -192,7 +214,69 @@ export class FakeClient implements HarnessClient {
   moved: string[] = [];
   /** What moveFolder answers; default: success with the current state. */
   moveResult: MoveResult | null = null;
-  tasks: TaskView = { current: null, actions: {}, notes: [] };
+  private taskView: TaskView = { current: null, actions: {}, notes: [] };
+  /** What `tasks.list` answers (parallel spec §9.1); `tasks.set` changes it. */
+  tasksState: TasksState = { tasks: [], caps: { tasks: 1, jobs: 1 } };
+  private tasksStateListeners = new Set<(s: TasksState) => void>();
+  /** Like main: without `state.parallel` every task call is refused (D0), so a UI that forgets its gate fails its test. */
+  private needParallel() {
+    if (!this.state.parallel) throw new Error("No parallel tasks");
+  }
+  private readonly tasksApi: FakeTasks = {
+    list: async () => {
+      this.needParallel();
+      return this.tasksState;
+    },
+    onChange: (listener) => {
+      this.tasksStateListeners.add(listener);
+      return () => void this.tasksStateListeners.delete(listener);
+    },
+    focus: vi.fn(async (_id: string | null) => this.needParallel()),
+    cancelQueued: vi.fn(async (_id: string): Promise<string | null> => {
+      this.needParallel();
+      return null;
+    }),
+    resumeQueues: vi.fn(async () => this.needParallel()),
+    set: (state) => {
+      this.tasksState = state;
+      for (const l of this.tasksStateListeners) l(state);
+    },
+  };
+  /**
+   * The task view tests set and read (`getTasks`, `emitTasks`), which is also `client.tasks` (parallel spec §9.1): its
+   * methods sit on the prototype, so spreading it copies only the view.
+   */
+  /** What `jobs.list` answers (parallel spec §9.1); `jobs.set` changes it. */
+  jobsList: JobSummary[] = [];
+  private jobsListeners = new Set<(jobs: JobSummary[]) => void>();
+  /** Like main: without `state.jobs` every jobs call is refused (D0). */
+  private needJobs() {
+    if (!this.state.jobs) throw new Error("No jobs");
+  }
+  readonly jobs: FakeJobs = {
+    list: async () => {
+      this.needJobs();
+      return this.jobsList;
+    },
+    run: vi.fn(async (_id: string, _scope?: string) => {
+      this.needJobs();
+      return true;
+    }),
+    onChange: (listener) => {
+      this.jobsListeners.add(listener);
+      return () => void this.jobsListeners.delete(listener);
+    },
+    set: (jobs) => {
+      this.jobsList = jobs;
+      for (const l of this.jobsListeners) l(jobs);
+    },
+  };
+  get tasks(): TaskView & FakeTasks {
+    return Object.assign(Object.create(this.tasksApi) as FakeTasks, this.taskView);
+  }
+  set tasks(view: TaskView) {
+    this.taskView = view;
+  }
   chosen: ChoiceOption[] = [];
   /** The task each pick was sent for. */
   chosenTasks: string[] = [];
@@ -298,6 +382,7 @@ export class FakeClient implements HarnessClient {
     if (!(await this.askGoBack({ kind: "task", taskId }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
+    if (this.restoreTaskRefusal) return { refused: this.restoreTaskRefusal };
     this.restoredTasks.push(taskId);
     return { ok: true as const };
   }
@@ -381,11 +466,11 @@ export class FakeClient implements HarnessClient {
     return this.moveResult ?? { ok: true as const, state: this.state };
   }
   emitTasks(view: TaskView) {
-    this.tasks = view;
+    this.taskView = view;
     for (const l of this.taskListeners) l(view);
   }
   async getTasks() {
-    return this.tasks;
+    return this.taskView;
   }
   onTasks(listener: (v: TaskView) => void) {
     this.taskListeners.add(listener);
@@ -412,10 +497,10 @@ export class FakeClient implements HarnessClient {
     if (this.respondError) throw this.respondError;
     const result: RespondResult = this.respondResult ?? { ok: true, display: "answered", value, answeredAt: "2026-10-25T10:00:00.000Z" };
     // Like the main process: a taken answer clears the task's pending question before `accepted` resolves.
-    const current = this.tasks.current;
+    const current = this.taskView.current;
     if (result.ok && current?.pendingInput === blockId) {
       const { pendingInput: _, ...rest } = current;
-      this.emitTasks({ ...this.tasks, current: rest });
+      this.emitTasks({ ...this.taskView, current: rest });
     }
     return result;
   }

@@ -27,16 +27,19 @@ export class RestoreGuard {
     return this.last;
   }
 
-  /** Finds the history with `history`, then runs `fn` on it; the checks are made again after that await. */
-  async run<H>(history: () => Promise<H | null>, fn: (history: H) => Promise<unknown>): Promise<void> {
-    this.check();
+  /**
+   * Finds the history with `history`, then runs `fn` on it; the checks are made again after that await. `o.busy`, when
+   * given, stands for the guard's own busy check (board mode's undo by paths waits only for its own task's lane).
+   */
+  async run<H>(history: () => Promise<H | null>, fn: (history: H) => Promise<unknown>, o: { busy?: () => boolean } = {}): Promise<void> {
+    this.check(o.busy);
     if (this.pending) throw new Error("Already going back");
     this.pending = true;
     try {
       const h = await history();
       if (!h) throw new Error("The app is not set up yet");
       // An engine or folder change may have begun while the history was found.
-      this.check();
+      this.check(o.busy);
       const done = fn(h);
       this.last = done.catch(() => undefined);
       await done;
@@ -45,9 +48,9 @@ export class RestoreGuard {
     }
   }
 
-  private check(): void {
+  private check(busy: () => boolean = this.d.busy): void {
     if (this.d.quitting()) throw new Error("The app is closing");
-    if (this.d.busy() || this.d.turnBlocked()) throw new Error("A turn is running");
+    if (busy() || this.d.turnBlocked()) throw new Error("A turn is running");
   }
 }
 

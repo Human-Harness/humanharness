@@ -1,0 +1,39 @@
+import { z } from "zod";
+import type { Permissions } from "./index";
+import { hasJobs } from "./jobs";
+
+/** The most turns of one kind the person can let run at once (Settings › General, parallel spec §7). */
+export const PARALLEL_MAX = 8;
+
+/** `parallel` (spec §3): the harness's suggested caps on running turns; each defaults to 1. Strict: a typo is refused. */
+export const parallelSchema = z.strictObject({
+  tasks: z.int().min(1).max(PARALLEL_MAX).default(1),
+  jobs: z.int().min(1).max(PARALLEL_MAX).default(1),
+});
+export type ParallelCaps = z.output<typeof parallelSchema>;
+
+/**
+ * Several turns may run at once in this harness's folder: it declares `parallel`, or at least one job (a job runs
+ * beside the person's task). False keeps today's single runtime, single task and whole-folder history (D7).
+ */
+export function isConcurrent(harness: { parallel?: ParallelCaps; jobs?: Record<string, unknown> }): boolean {
+  return harness.parallel !== undefined || hasJobs(harness);
+}
+
+/** The manifest's suggested caps; { tasks: 1, jobs: 1 } without `parallel`. */
+export function parallelCaps(harness: { parallel?: ParallelCaps }): ParallelCaps {
+  return harness.parallel ?? { tasks: 1, jobs: 1 };
+}
+
+/** Permissions a job may ask for (spec §8): only ever narrower than the harness's. */
+export type PermissionsOverride = Partial<Permissions>;
+
+/** The stricter of each field: an override can turn something off, never on. Always a new object. */
+export function narrowPermissions(base: Permissions, override: PermissionsOverride | undefined): Permissions {
+  if (!override) return { ...base };
+  return {
+    edit: base.edit === "none" || override.edit === "none" ? "none" : "folder",
+    exec: base.exec && override.exec !== false,
+    web: base.web && override.web !== false,
+  };
+}

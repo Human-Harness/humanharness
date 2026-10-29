@@ -12,6 +12,8 @@ export const TURN_PREFIX = "Turn: ";
 export const STOPPED_PREFIX = "Stopped: ";
 /** The point before a crashed turn, restored; the reason follows. */
 export const UNDO_PREFIX = "Undo: ";
+/** A turn's paths it shares with other running tasks (parallel spec §5.2): committed right after its own; the message's start follows. */
+export const SHARED_PREFIX = "Shared: ";
 /** The two restores. */
 export const RESTORE_POINT = "Went back to an earlier point";
 export const RESTORE_TASK = "Went back to before the task";

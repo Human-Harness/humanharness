@@ -6,6 +6,7 @@ import {
   type BlockAnswer,
   type ChatBlock,
   type ChatEntry,
+  type ChatNotice,
   type ChoiceOption,
   type DocumentCard,
   type InputIssue,
@@ -147,7 +148,7 @@ export function Message({
   reveal,
   documents,
 }: {
-  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode" | "phase" | "timeUp" | "documents">;
+  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode" | "phase" | "timeUp" | "notice" | "documents">;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
   /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
@@ -158,6 +159,15 @@ export function Message({
   documents?: { missing: ReadonlySet<string>; open(card: DocumentCard): void; reviews?: ReadonlyMap<string, ReviewSummary | null> };
 }) {
   const { t } = useTranslation();
+  // A line the app added (another task changed the same files, parallel spec §5.3; a new session, PT-S4): a system
+  // line, never a reply.
+  if (entry.notice) {
+    return (
+      <article className="hh-message system">
+        <p className="hh-mode-line">{noticeText(t, entry.notice)}</p>
+      </article>
+    );
+  }
   // The chat log is read from disk unchecked: only well-formed cards are drawn.
   const cards = entry.role === "assistant" && documents && entry.documents !== undefined ? cleanDocumentCards(entry.documents) : [];
   if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0 && cards.length === 0) return null;
@@ -185,4 +195,12 @@ export function Message({
       )}
     </article>
   );
+}
+
+/** A notice's line in the person's language: the paths it names, then how many more there are. */
+function noticeText(t: (key: string, values?: Record<string, unknown>) => string, n: ChatNotice): string {
+  if (n.kind === "resume-failed") return t("parallel.resumeFailed");
+  const list = n.paths.join(", ");
+  const path = n.more ? t("parallel.pathsMore", { paths: list, count: n.more }) : list;
+  return n.other !== undefined ? t("parallel.conflict", { task: n.other, path }) : t("parallel.conflictEnded", { path });
 }

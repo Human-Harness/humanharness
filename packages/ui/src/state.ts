@@ -1,4 +1,4 @@
-import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type DocumentCard, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
+import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type ChatNotice, type DocumentCard, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -20,6 +20,8 @@ export interface LiveTurn {
   limits?: LimitWindow[];
   /** State-only blocks emitted during this turn (saved on the entry). */
   state?: Record<string, unknown>;
+  /** Board mode: the app's notices for this task that came during the turn; they follow its answer. */
+  notices?: ChatNotice[];
   /** The `.md` files the turn added or changed (document-reader spec §5.1), saved on the entry. */
   documents?: DocumentCard[];
 }
@@ -47,13 +49,21 @@ export type ChatAction =
   /** A local assistant message that the UI shows but never saves. */
   | { type: "notice"; text: string; at: string }
   /** The person's line put on screen at `at` for a start main then refused (a prepared task): it goes, with its turn. */
-  | { type: "withdrawn"; at: string };
+  | { type: "withdrawn"; at: string }
+  /**
+   * Board mode: the focused task's turn already runs and its user line is in the loaded entries: a live turn starts
+   * without a new entry, and the replayed events fill it (parallel spec Decision 6).
+   */
+  | { type: "resume"; at: string };
 
 export function initialChat(entries: ChatEntry[], stateBlocks: string[] = []): ChatState {
   return { entries, live: null, blockState: {}, stateBlocks: new Set(stateBlocks), limits: null };
 }
 
 const newId = () => Math.random().toString(36).slice(2);
+
+/** An answer that starts empty, as a turn's first event finds it. */
+const newLive = (): LiveTurn => ({ id: newId(), text: "", blocks: [], parts: [], activities: [] });
 
 export function reduceChat(state: ChatState, action: ChatAction): ChatState {
   const live = state.live;
@@ -93,8 +103,15 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             ...(action.timeUp ? { timeUp: true as const } : {}),
           },
         ],
-        live: { id: newId(), text: "", blocks: [], parts: [], activities: [] },
+        live: newLive(),
       };
+    case "resume":
+      return { ...state, live: newLive() };
+    case "task-notice": {
+      // During a turn it follows the answer, as the saved chat has it; otherwise it goes on screen at once.
+      if (live) return { ...state, live: { ...live, notices: [...(live.notices ?? []), action.notice] } };
+      return { ...state, entries: [...state.entries, noticeEntry(action.notice)] };
+    }
     case "text":
       return live ? { ...state, live: { ...live, text: live.text + action.delta, parts: addText(live.parts, action.delta) } } : state;
     case "paragraph":
@@ -191,7 +208,12 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         ...(action.ok ? {} : { error: action.error }),
         ...(action.task ? { task: action.task } : {}),
       };
-      return { ...state, entries: [...state.entries, entry], live: null };
+      return { ...state, entries: [...state.entries, entry, ...(live.notices ?? []).map(noticeEntry)], live: null };
     }
   }
+}
+
+/** A notice's own entry: no text of its own (a system line, never a reply). */
+function noticeEntry(notice: ChatNotice): ChatEntry {
+  return { id: newId(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), notice };
 }

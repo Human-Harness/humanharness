@@ -51,11 +51,11 @@ import {
   NOTE_PREFIX,
   type Note,
   type NoteMeta,
-  buildNotesIndex,
   isScopeDir,
   isScopeId,
   noteSlug,
 } from "@humanharness/workspace";
+import { notesIndexParts } from "./notes-index";
 import { INDEX_NOTES_MAX, READS_MAX, START_ITEMS_MAX, type SeenRead, approxTokens, markCompacted, mergeReads, readsOf } from "./context-record";
 import { RoundNotStarted } from "./reviews";
 import {
@@ -206,6 +206,12 @@ export interface TaskDeps {
   timer?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   now?: () => Date;
   newId?: () => string;
+  /**
+   * Board mode (parallel spec §6): a task that starts after one this manager already ran (the guided path's next, a
+   * mode's new task, a question once the task stopped waiting, another scope) starts in a lane of its own; `start` runs
+   * it on that lane's manager. Absent: in this one, as today (D0).
+   */
+  successor?(start: (next: TaskManager) => Promise<void>): Promise<void>;
   /** A task's run turn is about to start (Sidekick drops its after-reply turn, sidekick spec §5 "Sending cancels"). Absent: nothing (D0). */
   turnStarting?(): void;
   /** A task turn ended (sidekick spec §4.2). Never awaited: it never delays the task. Absent: nothing (D0). */
@@ -215,6 +221,8 @@ export interface TaskDeps {
    * the phase entered, right after the state is written. Never awaited: it never delays the move. Absent: nothing (D0).
    */
   phaseMoved?(e: PhaseMoved): void;
+  /** A task ended with its note saved (parallel spec §8 `afterTask`). Never awaited. Absent: nothing (D0). */
+  taskClosed?(task: { id: string; action?: string; scope: string }): void;
 }
 
 /** What `phaseMoved` gets (sidekick spec §2a.2). */
@@ -257,9 +265,6 @@ export interface PersonContext {
   /** Note paths left out of both notes indexes. */
   excluded: ReadonlySet<string>;
 }
-
-/** How much the app-wide notes index may take in a scope's session (spec §3.3 "trimmed"). */
-export const APP_INDEX_TOKENS = 500;
 
 /** The error the caller sees: the turn's own reason when it never started. */
 const unwrap = (err: unknown) => (err instanceof TurnNotStarted ? err.reason : err);
@@ -352,6 +357,8 @@ export class TaskManager {
   private closed = false;
   /** A `done` of the running operation reached the window: the turn it showed has ended there. */
   private windowDone = false;
+  /** A task began or ended here: with `successor`, the next one starts in another lane. */
+  private begun = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
   /** The task whose next turn's `usage` is its first-turn total (a first turn, or a resumed one): context-panel spec §3.1. */
@@ -927,25 +934,15 @@ export class TaskManager {
           return null;
         })
       : null;
-    // Both indexes leave the excluded notes out (context-panel spec §4.3); nothing excluded: the options as before (D0).
-    const exclude = person && person.excluded.size > 0 ? { exclude: person.excluded } : {};
     const items: ContextItem[] = [];
-    const ownNotes = await this.d.notes(this.d.scoped ? scope : undefined).catch(() => [] as Note[]);
-    const own = buildNotesIndex(ownNotes, exclude);
-    const parts = [own];
-    if (own) items.push(indexItem("notes", "notes-index", "Notes", own, ownNotes, person?.excluded));
-    if (this.d.scoped && scope !== APP_SCOPE) {
-      const app = await this.d.notes(APP_SCOPE).catch(() => [] as Note[]);
-      // The own index ends with the "open a note" line; the app-wide one says it only when it stands alone.
-      const appIndex = buildNotesIndex(app, {
-        budgetTokens: APP_INDEX_TOKENS,
-        heading: "## App-wide notes",
-        decisionsHeading: "## App-wide decisions",
-        ...(own ? { footer: null } : {}),
-        ...exclude,
-      });
-      parts.push(appIndex);
-      if (appIndex) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", appIndex, app, person?.excluded));
+    // Both indexes leave the excluded notes out (context-panel spec §4.3); nothing excluded: the options as before (D0).
+    // Built as a job run's first message builds them (notes-index.ts).
+    const notes = await notesIndexParts((s) => this.d.notes(s), !!this.d.scoped, scope, person?.excluded);
+    const parts = [notes.own.index];
+    if (notes.own.index) items.push(indexItem("notes", "notes-index", "Notes", notes.own.index, notes.own.notes, person?.excluded));
+    if (notes.app) {
+      parts.push(notes.app.index);
+      if (notes.app.index) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", notes.app.index, notes.app.notes, person?.excluded));
     }
     if (this.d.dataContext) {
       const data = await this.d.dataContext(scope, action).catch((err: unknown) => {
@@ -1637,6 +1634,7 @@ export class TaskManager {
   ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
+    if (this.d.successor && this.begun) return this.d.successor((next) => next.op(() => next.begin(task, scope, language, message, display, floor, tier)));
     await this.endSession();
     await this.between();
     const { text: context, items } = await this.contextFor(scope, task.action);
@@ -1666,6 +1664,7 @@ export class TaskManager {
       ...(below ? { belowMinTier: true as const } : {}),
       start,
     };
+    this.begun = true;
     // The language its first message was built in, which the task keeps; one task is open at a time, so none other stays.
     this.taskLanguages.clear();
     this.taskLanguages.set(current.id, language);
@@ -2000,6 +1999,15 @@ export class TaskManager {
     return this.afterRun(c.id, done, false);
   }
 
+  /** Tells the jobs a task closed with its note saved (never awaited; a throwing listener never stops the end). */
+  private taskClosed(c: CurrentTask): void {
+    try {
+      this.d.taskClosed?.({ id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) });
+    } catch (err) {
+      console.error("A task-closed listener failed", err);
+    }
+  }
+
   /** Tells Sidekick the phase moved (never awaited; a throwing hook never stops the move). */
   private phaseMoved(c: CurrentTask, from: string, to: string): void {
     try {
@@ -2320,14 +2328,18 @@ export class TaskManager {
   }
 
   private async endTask(id: string, outcome: ActionStatus): Promise<void> {
+    this.begun = true;
     this.taskLanguages.delete(id);
+    let closed: CurrentTask | undefined;
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;
+      if (outcome === "done") closed = c;
       if (outcome !== "done") return interrupted(s, outcome);
       if (!c.action) return { ...s, current: null };
       return { ...withStatus(s, scopeOfTask(c), c.action, "done"), current: null };
     });
+    if (closed) this.taskClosed(closed);
     await this.endSession();
     await this.between();
   }

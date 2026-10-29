@@ -1,5 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { allBlocks, blockToolName, loadHarness, phaseIds, z } from "@humanharness/harness-sdk";
+import {
+  JOB_CANNOT_ASK,
+  JOB_NO_NOTE,
+  JOB_RESULT_TOOL,
+  allBlocks,
+  blockToolName,
+  jobResultSchema,
+  loadHarness,
+  phaseIds,
+  z,
+} from "@humanharness/harness-sdk";
 import { RpcRefused, RpcTimeout, callRpc, sendToBridge } from "./bridge";
 
 /** What the agent reads after showing a block the person answers (input-blocks spec §4): the answer is the next message. */
@@ -61,19 +71,34 @@ function addReviewTools(server: McpServer, rpc: { path: string; token: string })
   server.registerTool("read_review", { description: READ_REVIEW, inputSchema: { path: str } }, call("read"));
 }
 
+/** The core blocks that ask the person or wait for them: a job refuses them (parallel spec §8, J1). Input blocks too. */
+const JOB_REFUSED: readonly string[] = ["choices", "save_note", "set_phase", "recommend_mode"];
+
 /**
  * MCP server with one tool per harness block. Valid calls are forwarded to the runtime through the bridge.
- * With a `review` channel it also has the review tools (review spec §4); without one its tools are unchanged (D0).
+ * `job`: a background job's slot (`HH_JOB=1`): it adds `job_result` and refuses every block that asks the person.
+ * `review`: the review channel: it also has the review tools (review spec §4), never in a job (they ask the person).
+ * Without either, exactly today's tools (D0).
  */
 export async function createUiServer(
   harnessConfig: string,
   bridge: { path: string; token: string },
-  review?: { path: string; token: string },
+  opts: { job?: boolean; review?: { path: string; token: string } } = {},
 ): Promise<McpServer> {
   const harness = await loadHarness(harnessConfig);
   const server = new McpServer({ name: "ui", version: "0.1.0" });
   const phases = phaseIds(harness);
   for (const [name, block] of Object.entries(allBlocks(harness))) {
+    // Still a tool in a job, so the agent sees why it fails instead of guessing at a missing one. No input schema: the
+    // refusal comes before any argument check, so bad arguments don't cost a turn on a schema error first.
+    if (opts.job && (JOB_REFUSED.includes(name) || block.input)) {
+      const text = name === "save_note" ? JOB_NO_NOTE : JOB_CANNOT_ASK;
+      server.registerTool(blockToolName(name, block), { description: block.description }, async () => ({
+        isError: true,
+        content: [{ type: "text" as const, text }],
+      }));
+      continue;
+    }
     server.registerTool(
       blockToolName(name, block),
       { description: block.description, inputSchema: block.schema.shape },
@@ -102,6 +127,24 @@ export async function createUiServer(
       },
     );
   }
-  if (review) addReviewTools(server, review);
+  if (opts.job) {
+    server.registerTool(
+      JOB_RESULT_TOOL,
+      {
+        description:
+          "Ends this background job with its result: `status` ok, needs-you (name in `action` the action the person should start) or failed, and a one-line `summary`.",
+        inputSchema: jobResultSchema.shape,
+      },
+      async (args) => {
+        try {
+          await sendToBridge(bridge, { name: JOB_RESULT_TOOL, data: args });
+        } catch (e) {
+          return { isError: true, content: [{ type: "text" as const, text: `Could not reach the app (${e instanceof Error ? e.message : String(e)}).` }] };
+        }
+        return { content: [{ type: "text" as const, text: "Done: the result is recorded. End your turn now." }] };
+      },
+    );
+  }
+  if (opts.review && !opts.job) addReviewTools(server, opts.review);
   return server;
 }

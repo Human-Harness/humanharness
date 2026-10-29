@@ -56,6 +56,29 @@ describe("personDataRequests", () => {
     expect(t.commits).toEqual([{ message: "Data: concepts", trailer: { task: "t1", action: "study", scope: "fracciones" }, files: ["concepts"] }]);
   });
 
+  it("board mode: a write commits only its collection's file, never the rest of the folder (parallel spec §5.3)", async () => {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const store = new DataStore(base, data);
+    const save = vi.fn(async () => {});
+    const commitPaths = vi.fn(async () => {});
+    const run = personDataRequests({
+      store: async () => store,
+      chatScope: async () => "fracciones",
+      trailer: async () => ({ task: "t1" }),
+      history: async () => ({ save, commitPaths }),
+      board: () => true,
+      blocked: () => null,
+      scopeExists: async () => true,
+    });
+    await run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined);
+    await run({ op: "put", collection: "profile", record: { name: "Ana" } }, undefined);
+    expect(save).not.toHaveBeenCalled();
+    expect(commitPaths.mock.calls).toEqual([
+      [[".harness/data/fracciones/concepts.json"], "Data: concepts", { task: "t1" }],
+      [[".harness/data/_app/profile.json"], "Data: profile", { task: "t1" }],
+    ]);
+  });
+
   it("takes another scope when asked, reads with no commit, and writes read-only collections as the person", async () => {
     const t = setup();
     await t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, { scope: "decimales" });

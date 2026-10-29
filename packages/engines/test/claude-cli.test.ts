@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude/transport";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude/transport";
 import type { CommonOptions as TransportOptions, Event, Session } from "../src/contract";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -273,6 +273,36 @@ describe("ClaudeCliTransport", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
+  it("leaves out a limits window whose reset is missing or invalid, and keeps the turn going", async () => {
+    const { transport } = setup({
+      steps: [
+        {
+          line: {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "allowed",
+              unifiedWindows: {
+                five_hour: { utilization: 0.5 },
+                seven_day: { utilization: 0.2, resetsAt: "soon" },
+                opus: { utilization: 0.1, resetsAt: 1e20 },
+                weekly: { utilization: 0.3, resetsAt: 1792004400 },
+              },
+            },
+          },
+        },
+        ...claudeTextLines("ok"),
+        { line: { type: "result", subtype: "success", is_error: false, result: "ok" } },
+      ],
+    });
+    const events = await run(transport);
+    expect(events).toContainEqual({
+      type: "limits",
+      status: "allowed",
+      windows: [{ kind: "weekly", utilization: 0.3, resetsAt: new Date(1792004400 * 1000).toISOString() }],
+    });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
   it("separates text blocks with a paragraph event", async () => {
     const { transport } = setup({ steps: [...claudeTextLines("One"), ...claudeTextLines("Two"), claudeResultLine(true)] });
     const events = await run(transport);
@@ -518,16 +548,20 @@ describe("activity extras (context-panel spec §3.2)", () => {
     ]);
   });
 
-  it("D0: a Bash or Write activity carries nothing new", () => {
+  it("D0: a Bash or Write activity carries nothing new (a Write only the stack's parallel-spec `edits`)", () => {
+    // The context-panel extras add nothing to either.
+    expect(activityExtras("Write", { file_path: "/w/a.md" })).toEqual({});
+    expect(activityExtras("Bash", { command: "ls /w" })).toEqual({});
     const events: Event[] = [];
     const reader = new StreamJsonReader((e) => events.push(e), () => {});
     reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "/w/a.md" } }] } }));
     reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "ls /w" } }] } }));
+    // The Write's `edits` (parallel spec §5.2, "edit paths" below) is kept out of the window by the turn controller.
     expect(events.map((e) => Object.keys(e).sort())).toEqual([
-      ["detail", "id", "kind", "state", "type"],
+      ["detail", "edits", "id", "kind", "state", "type"],
       ["detail", "id", "kind", "state", "type"],
     ]);
-    expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "start" });
+    expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", edits: ["/w/a.md"], state: "start" });
   });
 });
 
@@ -567,5 +601,42 @@ describe("claudeArgs noTools (sidekick spec §5)", () => {
   it("refuses MCP servers or reference folders with noTools", () => {
     expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [uiServer], permissions, noTools: true })).toThrow(/no-tools/);
     expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/x"], noTools: true })).toThrow(/no-tools/);
+  });
+});
+
+describe("edit paths (parallel spec §5.2)", () => {
+  it("Edit, Write, MultiEdit and NotebookEdit name their file; nothing else does", () => {
+    expect(editPaths("Edit", { file_path: "/w/a.md" })).toEqual(["/w/a.md"]);
+    expect(editPaths("Write", { file_path: "/w/b.md" })).toEqual(["/w/b.md"]);
+    expect(editPaths("MultiEdit", { file_path: "/w/c.md" })).toEqual(["/w/c.md"]);
+    expect(editPaths("NotebookEdit", { notebook_path: "/w/n.ipynb" })).toEqual(["/w/n.ipynb"]);
+    expect(editPaths("Read", { file_path: "/w/a.md" })).toEqual([]);
+    expect(editPaths("Bash", { command: "rm x" })).toEqual([]);
+    expect(editPaths("Edit", { file_path: 3 })).toEqual([]);
+    expect(editPaths("Edit", { file_path: "" })).toEqual([]);
+    expect(editPaths("toString", { file_path: "/w/a.md" })).toEqual([]);
+    expect(editPaths("Edit", { file_path: `/w/${"x".repeat(5000)}` })).toEqual([]);
+  });
+  it("a tool named like an Object.prototype key is an 'other' activity, not an object", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "p1", name: "__proto__", input: {} }] } }));
+    expect(events.find((e) => e.type === "activity")).toMatchObject({ kind: "other" });
+  });
+  it("puts them on the start event only", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "/w/a.md" } }] } }));
+    reader.feed(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "w1" }] } }));
+    expect(events).toEqual([
+      { type: "activity", id: "w1", kind: "edit", detail: "a.md", edits: ["/w/a.md"], state: "start" },
+      { type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "end", error: false },
+    ]);
+  });
+  it("D0: a Read activity carries no edits (only master's context-panel `paths`)", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/w/a.md" } }] } }));
+    expect(events).toEqual([{ type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/a.md"], state: "start" }]);
   });
 });

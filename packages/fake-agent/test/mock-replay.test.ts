@@ -1,7 +1,7 @@
 import { answerMessage } from "@humanharness/harness-sdk";
 import { describe, expect, it } from "vitest";
 import { recordingSchema } from "../src/mock";
-import { DEFAULT_FALLBACK, promptKind, replay } from "../src/mock-replay";
+import { DEFAULT_FALLBACK, MOCK_JOB_MARK, MOCK_JOB_RESULT, isMockJobTurn, promptKind, replay } from "../src/mock-replay";
 
 const choices = {
   tool: "show_choices",
@@ -220,6 +220,40 @@ describe("replay: phases (task-phases spec §6)", () => {
   it("a setPhase or timeUp turn is never reached by a reply", () => {
     const r = replay([tutor], { action: "session", turn: "t2" }, "Tell me more", false);
     expect(r.play.text).toBe(DEFAULT_FALLBACK);
+  });
+});
+
+describe("replay: background jobs (parallel spec §8, part 3 Decision 10)", () => {
+  /** A job run's first message as the shell builds it: the brief, the context, then how to end. */
+  const jobPrompt = (brief: string) =>
+    [brief, "## Notes\n- intro", `${MOCK_JOB_MARK} Don't ask anything.\nDo the work, then call job_result once with status ok, needs-you or failed and a one-line summary.`].join("\n\n");
+
+  it("a job's turn calls job_result ok \"Mock run\" and ends: no text, no note, no writes, no recording", () => {
+    // The brief names a recording's match: the job mark still wins, and the recording is never played.
+    const r = replay(all, undefined, jobPrompt("# Topic: the manifest\n\nSync."), true, [], true);
+    expect(MOCK_JOB_RESULT).toEqual({ status: "ok", summary: "Mock run" });
+    expect(r.play.blocks).toEqual([{ tool: "job_result", input: { status: "ok", summary: "Mock run" } }]);
+    expect(r.play).toMatchObject({ text: "", writes: [] });
+    expect(r.play.note).toBeUndefined();
+    expect(r.session).toEqual({ action: null, turn: null });
+  });
+
+  it("D0: a task's turn is unchanged; only a line that starts with the mark is a job's", () => {
+    expect(isMockJobTurn(jobPrompt("Sync."))).toBe(true);
+    expect(isMockJobTurn("# Topic: the manifest\n\nExplain…")).toBe(false);
+    expect(isMockJobTurn(`Quote: "${MOCK_JOB_MARK}"`)).toBe(false);
+    expect(replay(all, undefined, "# Topic: the manifest\n\nExplain…", true).play.text).toBe("Primero.");
+    expect(replay(all, { action: "manifest", turn: "t1" }, "Contame más.", false).session.turn).toBe("t2");
+  });
+
+  it("only a job slot's turn is a job's: a task prompt with the mark at a line start plays its recording", () => {
+    // The person pasted a job's first message into a task: the slot's ui server has no HH_JOB=1, so it is a task turn.
+    const r = replay(all, undefined, jobPrompt("# Topic: the manifest\n\nSync."), true, [], false);
+    expect(r.play.text).toBe("Primero.");
+    expect(r.play.blocks).not.toContainEqual(expect.objectContaining({ tool: "job_result" }));
+    expect(r.session.action).toBe("manifest");
+    // A job slot whose prompt lacks the mark is not treated as a job's canned turn either.
+    expect(replay(all, undefined, "# Topic: the manifest\n\nExplain…", true, [], true).play.text).toBe("Primero.");
   });
 });
 

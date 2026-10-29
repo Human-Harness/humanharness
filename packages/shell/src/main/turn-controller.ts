@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
-import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
+import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
@@ -73,11 +73,19 @@ export interface TurnOptions extends SendOptions {
   phaseChange?: string;
   /** The time box's wrap-up: the chat's user entry is a system line saying the time is almost up (spec §5). */
   wrapUp?: boolean;
+  /**
+   * Board mode: after an overlapped turn's commits, what it owned, shared and collided with (parallel spec §5.3). Passed
+   * on to the slot; the plain runtime's single slot never overlaps, so it is never called there.
+   */
+  onAttribution?: (a: TurnAttribution) => void;
 }
 
+/** What a turn needs from the engine side: today's runtime, or one session slot (parallel spec §4). */
+export type TurnRunner = Pick<SessionSlot, "send">;
+
 export interface TurnDeps {
-  /** Starts (or returns) the runtime. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
-  ensureRuntime: () => Promise<HarnessRuntime | null>;
+  /** Starts (or returns) the runtime, or the task's slot. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
+  ensureRuntime: () => Promise<TurnRunner | null>;
   /** The chat log of the configured folder (`chat`: the scope whose chat it is; absent: `main`), or null when the app isn't configured yet. */
   chatLog: (chat?: string) => Promise<ChatLogLike | null>;
   stateBlocks: () => Set<string>;
@@ -107,12 +115,13 @@ export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" |
 }
 
 /**
- * An event as the window gets it: an activity's `paths` and `tool` stay in main (context-panel spec §3.2), so engine
- * paths never reach the renderer and the window's events are what they were (D0). Any other event is returned as is.
+ * An event as the window gets it: an activity's `paths` and `tool` (context-panel spec §3.2) and its `edits` (parallel
+ * spec §5.2) stay in main, so engine paths never reach the renderer and the window's events are what they were (D0).
+ * Any other event is returned as is.
  */
 export function forWindow(e: Event): Event {
-  if (e.type !== "activity" || (e.paths === undefined && e.tool === undefined)) return e;
-  const { paths: _paths, tool: _tool, ...rest } = e;
+  if (e.type !== "activity" || (e.paths === undefined && e.tool === undefined && e.edits === undefined)) return e;
+  const { paths: _paths, tool: _tool, edits: _edits, ...rest } = e;
   return rest;
 }
 
@@ -161,7 +170,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution } = options;
     const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = current;
     try {
@@ -240,7 +249,7 @@ export class TurnController {
       };
 
       if (current.cancelled) return await finish(fail("cancelled") as Done);
-      let rt: HarnessRuntime | null;
+      let rt: TurnRunner | null;
       try {
         rt = await this.deps.ensureRuntime();
       } catch (e) {
@@ -270,7 +279,7 @@ export class TurnController {
             this.emit(forWindow(e));
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}), ...(onAttribution ? { onAttribution } : {}) });
       await current.running.done;
       await finished;
     } finally {

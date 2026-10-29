@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type Block, defineBlock } from "./block";
+import { JOB_RESULT_TOOL } from "./jobs";
 import { MODE_ID, hasModes } from "./modes";
 import { PHASE_ID, hasPhases } from "./phases";
 import { REVIEW_TOOLS } from "./review";
@@ -132,12 +133,13 @@ export const PHASE_CORE_BLOCKS = {
   }),
 } satisfies Record<string, Block>;
 
-/** Every core block name, offered or not: no harness block may take one. */
+/** Every core block name, offered or not, and the job slot's `job_result` tool: no harness block may take one. */
 export const RESERVED_BLOCK_NAMES: readonly string[] = [
   ...CORE_BLOCK_NAMES,
   ...Object.keys(INPUT_CORE_BLOCKS),
   ...Object.keys(MODE_CORE_BLOCKS),
   ...Object.keys(PHASE_CORE_BLOCKS),
+  JOB_RESULT_TOOL,
   // The agent's review tools (review spec §4): not blocks, but no block may take their names.
   ...REVIEW_TOOLS,
 ];

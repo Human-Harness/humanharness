@@ -1,5 +1,6 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PARALLEL_MAX } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
@@ -10,7 +11,9 @@ import { type Language, languageName } from "@humanharness/harness-sdk/language"
 import { ownName, systemLanguage } from "./language";
 import type { LanguageControl } from "./language-control";
 import { LanguageChooser } from "./LanguageChooser";
+import { useLatestConfig } from "./latest-config";
 import { ModelsTab } from "./ModelsTab";
+import { JobsTab } from "./parallel/JobsTab";
 import { PluginsTab } from "./plugins/PluginsTab";
 import { ProfilesSection } from "./ProfilesSection";
 import { SetupStepsList } from "./SetupStepsList";
@@ -18,12 +21,12 @@ import { SidekickTab } from "./sidekick/SidekickTab";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "usage";
+export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "jobs" | "usage";
 /**
  * `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4); Sidekick
- * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7).
+ * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7); Jobs before Usage (parallel spec §9).
  */
-const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "plugins", "usage"];
+const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "plugins", "jobs", "usage"];
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
@@ -38,6 +41,7 @@ export function SettingsSheet({
   onClose,
   onSetup,
   move: shared,
+  onStartAction,
   language,
 }: {
   client: HarnessClient;
@@ -53,6 +57,8 @@ export function SettingsSheet({
   onSetup: (step?: string) => void;
   /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
   move?: FolderMove;
+  /** Settings › Jobs' Start on a needs-you run: the action starts in the chat on screen; false when it couldn't. */
+  onStartAction?: (action: string, scope: string | null) => boolean;
   /** Language on demand (plan 5b); absent (no `client.language`): the read-only Language row (D0). */
   language?: LanguageControl;
 }) {
@@ -65,13 +71,14 @@ export function SettingsSheet({
   const panelId = `${baseId}-panel`;
   // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
   // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0);
-  // Plugins only when the harness takes them (plugins D0).
+  // Plugins only when the harness takes them (plugins D0); Jobs only when it declares jobs (parallel D0).
   const tabs = TABS.filter(
     (id) =>
       (id !== "models" || state.models !== undefined) &&
       (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
       (id !== "sidekick" || state.sidekick !== undefined) &&
-      (id !== "plugins" || state.plugins !== undefined),
+      (id !== "plugins" || state.plugins !== undefined) &&
+      (id !== "jobs" || state.jobs !== undefined),
   );
   const configured = isConfigured(state.config);
   // The tab reads "Sidekicks" once there are two or more (spec §8); its id stays "sidekick".
@@ -171,7 +178,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : id === "plugins" ? t("plugins.tab") : t(`settings.tabs.${id}`)}
+                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : id === "plugins" ? t("plugins.tab") : id === "jobs" ? t("parallel.jobsTab") : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -201,6 +208,7 @@ export function SettingsSheet({
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
           {tab === "plugins" && configured && <PluginsTab client={client} />}
+          {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
           {tab === "harness" && configured && (
             <>
@@ -324,7 +332,9 @@ function GeneralTab({
     const lost = active === null || active === document.body || document.getElementById(placesId)?.contains(active) === true;
     if (lost && toggleRef.current?.isConnected) toggleRef.current.focus();
   }, [move.moved]);
-  const save = (patch: AppConfig) => client.saveConfig(patch).then(onChange, () => {});
+  /** Rejects when the save fails (ParallelSection says so); `save` swallows it. */
+  const saveOrFail = (patch: AppConfig) => client.saveConfig(patch).then(onChange);
+  const save = (patch: AppConfig) => saveOrFail(patch).catch(() => {});
   const appearances: { value: Appearance; label: string }[] = [
     { value: "system", label: t("settings.appearanceSystem") },
     { value: "light", label: t("settings.appearanceLight") },
@@ -392,6 +402,7 @@ function GeneralTab({
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
+      {state.parallel && <ParallelSection state={state} save={saveOrFail} />}
       {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
@@ -411,6 +422,71 @@ function GeneralTab({
         </div>
       </div>
     </div>
+  );
+}
+
+const CAP_CHOICES = Array.from({ length: PARALLEL_MAX }, (_, i) => i + 1);
+
+/**
+ * Settings › General for a harness that declares `parallel` (spec §7, §9.2): how many tasks and jobs run at once, and
+ * the notification when a task waits. A cap saves the person's whole `parallel` (the store merges the top level only),
+ * so the other cap they set stays; one they never set keeps following the manifest. An engine not yet checked with
+ * two sessions holds both at 1.
+ */
+function ParallelSection({ state, save }: { state: AppState; save: (patch: AppConfig) => Promise<unknown> }) {
+  const { t } = useTranslation();
+  const id = useId();
+  // A failed save says so (as Settings › Jobs does) and rejects inside `latest.save`, so its value is dropped.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const said = (saving: Promise<unknown>) =>
+    void saving.then(
+      () => setSaveFailed(false),
+      () => setSaveFailed(true),
+    );
+  const info = state.parallel!;
+  const held = info.heldReason === "engine";
+  const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
+  // The other cap may still be on its way to main: each save builds on the last one asked for, not on `state`.
+  const latest = useLatestConfig(state.config.parallel);
+  const cap = (key: "tasks" | "jobs", label: string) => (
+    <div className="hh-row">
+      <label className="hh-row-label" htmlFor={`${id}-${key}`}>
+        {label}
+      </label>
+      <select
+        id={`${id}-${key}`}
+        value={info.caps[key]}
+        disabled={held}
+        aria-describedby={held ? `${id}-held` : undefined}
+        onChange={(e) => said(latest.save({ ...latest.get(), [key]: Number(e.target.value) }, (parallel) => save({ parallel })))}
+      >
+        {CAP_CHOICES.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+  return (
+    <>
+      <h3>{t("parallel.parallelSection")}</h3>
+      <div className="hh-rows">
+        {cap("tasks", t("parallel.tasksAtOnce"))}
+        {cap("jobs", t("parallel.jobsAtOnce"))}
+        {held && (
+          <p className="hh-caption hh-row-note" id={`${id}-held`}>
+            {t("parallel.engineHeld", { engine })}
+          </p>
+        )}
+        <div className="hh-row">
+          <label>
+            <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => said(save({ notifyWaiting: e.target.checked }))} /> {t("parallel.notifyWaiting")}
+          </label>
+        </div>
+      </div>
+      {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
+    </>
   );
 }
 

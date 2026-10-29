@@ -22,9 +22,10 @@ interface ProfileFields {
  * last turn before the close phase). Not the task's phase: that is `taskPhase`. `material`: an AI stage of material
  * processing, not a task's turn (material spec §11). `context-add`: the "Add now" turn of the context panel
  * (context-panel spec §4.1). `translate`: one batch of a translation run (language spec §5), not a task's turn.
- * `sidekick`: a Sidekick turn (sidekick spec §8), not a task's turn.
+ * `sidekick`: a Sidekick turn (sidekick spec §8), not a task's turn. `job`: a background job run's turn (parallel spec
+ * §10, part 3 Decision 2).
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate" | "sidekick";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate" | "sidekick" | "job";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -38,6 +39,8 @@ export interface UsageMeta extends ProfileFields {
   taskPhase?: string;
   /** The turn's kind (TurnKind). */
   phase?: TurnKind;
+  /** A job run's job id (parallel spec §10, Decision 2). */
+  job?: string;
 }
 
 /** A Sidekick usage line's moment (sidekick spec §8); `place:<id>` is a harness place's turn (§2a.5). */
@@ -65,6 +68,8 @@ export interface UsageRecord extends ProfileFields {
   process?: "sidekick";
   moment?: SidekickUsageMoment;
   sidekick?: string;
+  /** Job lines only (parallel spec §10, part 3 Decision 2): the job's id; `task` is the run's id. */
+  job?: string;
   /** Translate lines only: the target language and the batch's number in its run, 1-based (the first batch is 1). */
   language?: string;
   batch?: number;
@@ -110,6 +115,21 @@ export class UsageLog {
   }
 }
 
+/**
+ * The latest `n` lines that aren't a job's, with the job lines among and after them (parallel spec §10): a job on a
+ * timer can write hundreds of lines a day, and they mustn't push the tasks' turns, material stages or the latest
+ * window out of what the app reads. Without job lines, the last `n` lines (D0: what `load(n)` gives).
+ */
+export function recentUsage(records: UsageRecord[], n: number): UsageRecord[] {
+  let kept = 0;
+  let from = records.length;
+  while (from > 0 && kept < n) {
+    from--;
+    if (records[from].phase !== "job") kept++;
+  }
+  return records.slice(from);
+}
+
 /** A profile as usage.jsonl records it. */
 export function profileMeta(p: ModelProfile): Pick<UsageMeta, "tier" | "model" | "effort" | "cap"> {
   return { tier: p.tier, ...(p.model !== undefined ? { model: p.model } : {}), effort: p.effort, cap: p.cap };
@@ -124,6 +144,7 @@ function metaFields(meta: UsageMeta): Partial<UsageRecord> {
     ...(meta.taskPhase ? { taskPhase: meta.taskPhase } : {}),
     ...(meta.phase ? { phase: meta.phase } : {}),
     ...(meta.phase === "checkpoint" ? { kind: "checkpoint" as const } : {}),
+    ...(meta.job ? { job: meta.job } : {}),
     ...(meta.tier ? { tier: meta.tier } : {}),
     ...(meta.model ? { model: meta.model } : {}),
     ...(meta.effort ? { effort: meta.effort } : {}),
@@ -193,6 +214,11 @@ export function sidekickRecord(
   };
 }
 
+/** One job run's usage event (part 3 Decision 2): `phase: "job"`, the job's id, and the run's id as `task`. */
+export function jobRecord(o: { engine: string; job: string; task: string; scope?: string; usage: TurnUsage }, at: string = new Date().toISOString()): UsageRecord {
+  return { at, engine: o.engine, task: o.task, ...(o.scope ? { scope: o.scope } : {}), phase: "job", job: o.job, ok: true, usage: o.usage };
+}
+
 /** One batch of a translation run (language spec §5). */
 export function translateRecord(
   o: { engine: string; language: string; batch: number; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
@@ -211,8 +237,11 @@ export function translateRecord(
   };
 }
 
-/** Lines that are no task's turn: material stages, translation batches and Sidekick turns. */
-const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate" || r?.phase === "sidekick";
+/**
+ * Lines that are no task's turn: material stages, translation batches, Sidekick turns and job runs. Job lines are told
+ * apart by `phase: "job"`, never by their id (a job may be called "questions").
+ */
+const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate" || r?.phase === "sidekick" || r?.phase === "job";
 
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */
 const QUESTIONS = "questions";
@@ -233,6 +262,21 @@ export function sidekickSpent(records: UsageRecord[], task: string): number {
 export function sidekickWeek(records: UsageRecord[], now: Date = new Date()): number {
   const since = now.getTime() - 7 * 86_400_000;
   return records.filter((r) => r.phase === "sidekick" && r.usage && Date.parse(r.at) >= since).reduce((n, r) => n + turnTokens(r.usage!), 0);
+}
+
+/**
+ * A local day's tokens toward the cap, for Sidekick's daily card (sidekick plan Decision 12): the tasks' turns, Sidekick's,
+ * and background jobs' apart (parallel spec §10; by `phase: "job"`). `jobs` only when a job ran that day (D0).
+ */
+export function dayTokens(records: UsageRecord[], day: string, localDay: (d: Date) => string): { tasks: number; sidekick: number; jobs?: number } {
+  const ofDay = records.filter((u) => u.usage && localDay(new Date(u.at)) === day);
+  const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
+  const jobLines = ofDay.filter((u) => u.phase === "job");
+  return {
+    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job")),
+    sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")),
+    ...(jobLines.length ? { jobs: sum(jobLines) } : {}),
+  };
 }
 
 /** The spending window of Settings › Usage (spec §4). */
@@ -280,8 +324,9 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out, and so are material stages, translation batches and Sidekick
- * turns (not tasks; their windows still count as the latest limits).
+ * Checkpoint turns and compaction lines are left out, and so are material stages, translation batches, Sidekick turns
+ * and job runs (not tasks; their windows still count as the latest limits). Job lines are told apart by `phase: "job"`,
+ * never by their id (a job may be called "questions").
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
   const all = records.filter((r) => r.kind !== "compaction");
@@ -298,7 +343,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     const before = window(r);
     const next = all[i + 1];
     const after = window(next);
-    // A material stage, translation batch or Sidekick turn right after the turn would be charged to it: the turn can't be measured.
+    // A material stage, translation batch, Sidekick turn or job's right after the turn would be charged to it: the turn can't be measured.
     if (!before || !after || before.resetsAt !== after.resetsAt || notTask(next)) task.measured = false;
     else task.total += Math.max(0, after.utilization - before.utilization);
     if (r.usage) task.tokens += turnTokens(r.usage);
@@ -317,6 +362,8 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   const material = all.filter((r) => r.phase === "material" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   // Sidekick's own total (sidekick spec §8); absent when it never ran (D0).
   const sidekick = all.filter((r) => r.phase === "sidekick" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
+  // Background jobs' own total (parallel spec §10); absent when none ran (D0).
+  const jobs = all.filter((r) => r.phase === "job" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   const spent = spentUsd(all, now);
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
@@ -325,6 +372,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     ...(perScope.size ? { scopes: Object.fromEntries(perScope) } : {}),
     ...(material > 0 ? { material } : {}),
     ...(sidekick > 0 ? { sidekick } : {}),
+    ...(jobs > 0 ? { jobs } : {}),
     ...(spent !== undefined ? { spentUsd: spent } : {}),
     ...(primary ? { primary } : {}),
   };
@@ -361,7 +409,7 @@ export function mergeUsage(byProfile: Record<string, UsageRecord[]>): PersonUsag
 /**
  * Settings › Usage in a harness with profiles (spec §4 "Usage"): one AI plan for the whole app, so every profile's
  * turns, in time order, measure its window and estimates. `scopes` are the active profile's only (scope ids repeat
- * across people), and so are `material` (each profile processes its own) and `sidekick`; `profiles` counts every turn's tokens per
+ * across people), and so are `material` (each profile processes its own), `sidekick` and `jobs`; `profiles` counts every turn's tokens per
  * profile, material stages included. `spentUsd` is everyone's: one provider account pays.
  */
 export function profilesUsage(
@@ -371,10 +419,10 @@ export function profilesUsage(
   now: Date = new Date(),
 ): UsageSummary {
   const merged = mergeUsage(byProfile);
-  const { scopes: _everyone, material: _all, sidekick: _allSidekick, ...summary } = summarizeUsage(merged, primary, now);
+  const { scopes: _everyone, material: _all, sidekick: _allSidekick, jobs: _allJobs, ...summary } = summarizeUsage(merged, primary, now);
   const own = summarizeUsage(Object.hasOwn(byProfile, activeProfile) ? byProfile[activeProfile] : [], primary, now);
   // Material stages count as their person's use: each profile processes its own material (material spec §4).
   const perPerson: Record<string, number> = {};
   for (const r of merged) if (r.usage) perPerson[r.person] = (perPerson[r.person] ?? 0) + turnTokens(r.usage);
-  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), ...(own.sidekick !== undefined ? { sidekick: own.sidekick } : {}), profiles: perPerson };
+  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), ...(own.sidekick !== undefined ? { sidekick: own.sidekick } : {}), ...(own.jobs !== undefined ? { jobs: own.jobs } : {}), profiles: perPerson };
 }

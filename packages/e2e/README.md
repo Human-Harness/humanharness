@@ -10,6 +10,8 @@ Each test works in `packages/e2e/.tmp/` (git-ignored), inside the repository: th
 
 `template.spec.ts` covers plan 4a's authoring path: it creates a harness with `humanharness init --skip-install` inside its sandbox, builds the app with `humanharness dev --build packages/shell/out/template` (git-ignored, removed at the end), launches that build and runs the template's example task with the fake Claude.
 
+`phases.spec.ts` and `parallel.spec.ts` run harnesses other than the demo: each builds its fixture from `packages/fake-agent/fixtures/` (`phases-harness`, `parallel-harness`) into `packages/shell/out/<name>` with `electron-vite build` directly (`humanharness dev --build` would first run `check`, and a fixture has no HARNESS.md), then launches that build. `parallel.spec.ts` builds once for its serial tests and removes the build at the end; its fake Claude scenarios (`parallel`, `slow`) are in the fixture's `fake-script.json`.
+
 ## Manual run against the real engines
 
 `real/` holds one test that drives the built app against a real engine: the demo's first topic, its blocks, the next step and the saved note. It is a manual check, never part of CI, and `corepack pnpm e2e` doesn't pick it up (`playwright.config.ts` only reads `tests/`).

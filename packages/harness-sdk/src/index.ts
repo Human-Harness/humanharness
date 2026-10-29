@@ -6,7 +6,9 @@ import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RE
 import { dataSchema } from "./data";
 import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
+import { JOB_RESULT_TOOL, jobProblems, jobsSchema } from "./jobs";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
+import { parallelSchema } from "./parallel";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { harnessPluginsSchema, harnessSlotsSchema } from "./plugin";
 import { REVIEW_TOOLS, validApproveGlob } from "./review";
@@ -30,6 +32,8 @@ export * from "./sidekick";
 export * from "./plugin";
 export * from "./plugin-permissions";
 export * from "./plugin-actions";
+export * from "./parallel";
+export * from "./jobs";
 export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
@@ -222,6 +226,12 @@ const manifestSchema = z.object({
   plugins: harnessPluginsSchema.optional(),
   /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */
   slots: harnessSlotsSchema.optional(),
+  /** Suggested caps on turns running at once (parallel spec §3). Absent: one task at a time, as before (D7). */
+  parallel: parallelSchema.optional(),
+  /** Background jobs, by id (parallel spec §3): no chat, no person in the loop. Absent: none, and nothing changes (D0). */
+  jobs: jobsSchema.optional(),
+  /** False hides the core inbox and its button (parallel spec §9.2); `client.tasks` stays. `ui` is taken (a custom UI path). */
+  inbox: z.boolean().optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
   /**
@@ -246,7 +256,7 @@ const manifestSchema = z.object({
   for (const name of Object.keys(m.blocks)) {
     if (RESERVED_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
   }
-  // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
+  // Every block becomes an MCP tool: two blocks (core ones included, and a job slot's job_result) cannot share a tool name.
   const tools = new Map<string, string>(
     [
       ...Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name] as const),
@@ -254,6 +264,7 @@ const manifestSchema = z.object({
       ...REVIEW_TOOLS.map((t) => [t, t] as const),
     ],
   );
+  tools.set(JOB_RESULT_TOOL, JOB_RESULT_TOOL);
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
     const other = tools.get(tool);
@@ -432,6 +443,8 @@ const manifestSchema = z.object({
       for (const f of profileFormSpec(m).fields) if (f.kind === null) issue(["profiles", "fields"], `The profile form can't draw "${f.name}"`);
     }
   }
+  // Background jobs (parallel spec §3).
+  for (const p of jobProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
   // Material (material spec §8).
   if (m.material) {
     const issue = (p: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["material", ...p], message });
@@ -517,6 +530,8 @@ export async function loadHarness(configPath: string, options: { root?: string }
   for (const mode of Object.values(loaded.modes)) resolveInHarness(loaded, mode.brief);
   // And every phase's brief (task-phases spec §3).
   for (const action of Object.values(loaded.actions)) for (const p of action.phases ?? []) if (p.brief) resolveInHarness(loaded, p.brief);
+  // And every job's brief (parallel spec §3).
+  for (const job of Object.values(loaded.jobs ?? {})) resolveInHarness(loaded, job.prompt);
   return loaded;
 }
 

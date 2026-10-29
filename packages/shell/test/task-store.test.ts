@@ -2,7 +2,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { QUESTION_MAX, type TasksFile, TaskStore, emptyTasks, interrupted, scopeOfTask, statusesIn, withStatus } from "../src/main/task-store";
+import {
+  type CurrentTask,
+  LANES_MAX,
+  QUESTION_MAX,
+  type TasksFile,
+  TaskStore,
+  cleanLanes,
+  emptyTasks,
+  interrupted,
+  interruptedLanes,
+  scopeOfTask,
+  statusesIn,
+  withStatus,
+} from "../src/main/task-store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -300,6 +313,151 @@ describe("TaskStore: task phases and the time box (task-phases spec §6)", () =>
     const folder = tmp();
     write(folder, {});
     expect((await new TaskStore(folder, { phases: {} }).load()).current).toEqual({ id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1 });
+  });
+});
+
+describe("lanes (parallel spec §6)", () => {
+  // Loose on purpose: some tests hand cleanLanes what a hand-edited file could hold.
+  const lane = (id: string, extra: Record<string, unknown> = {}) => ({ id, status: "waiting", startedAt: "2026-10-28T10:00:00Z", turns: 1, ...extra }) as CurrentTask;
+
+  it("D0: a file without lanes loads with no new keys and saves back to the same bytes", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    await store.save({ version: 1, current: null, actions: {} });
+    expect(Object.keys(JSON.parse(fs.readFileSync(store.file, "utf8"))).sort()).toEqual(["actions", "current", "version"]);
+    // A file as today's app writes it: what it loaded, saved back (key order as `clean` builds it).
+    await store.save(waiting);
+    await store.save(await store.load());
+    const before = fs.readFileSync(store.file, "utf8");
+    const loaded = await store.load();
+    expect(loaded).not.toHaveProperty("lanes");
+    expect(loaded).not.toHaveProperty("focus");
+    // Loading never writes.
+    expect(fs.readFileSync(store.file, "utf8")).toBe(before);
+    await store.save(loaded);
+    expect(fs.readFileSync(store.file, "utf8")).toBe(before);
+  });
+
+  it("D0: a task read as current never gains the lane-only fields", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    fs.mkdirSync(path.dirname(store.file), { recursive: true });
+    fs.writeFileSync(store.file, JSON.stringify({ ...waiting, current: { ...waiting.current, tokens: 5, conflict: ["a.md"] } }));
+    const c = (await store.load()).current;
+    expect(c).not.toHaveProperty("tokens");
+    expect(c).not.toHaveProperty("conflict");
+  });
+
+  it("round-trips lanes and focus", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    const state: TasksFile = {
+      version: 1,
+      current: null,
+      actions: {},
+      lanes: [lane("a", { tokens: 120, conflict: ["spec.md"] })],
+      focus: "a",
+    };
+    await store.save(state);
+    expect(await store.load()).toEqual(state);
+    await store.save({ ...state, focus: null });
+    expect((await store.load()).focus).toBeNull();
+  });
+
+  it("cleanLanes keeps valid tasks and drops duplicates and bad entries, field by field as current", () => {
+    const lanes = cleanLanes([lane("a"), lane("a", { turns: 9 }), { id: 3 }, lane("b", { status: "running", weird: 1, resume: "yes" }), "x", lane(""), lane("z".repeat(201))]);
+    expect(lanes.map((l) => l.id)).toEqual(["a", "b"]);
+    expect(lanes[0].turns).toBe(1);
+    expect(lanes[1]).toEqual({ id: "b", status: "running", startedAt: "2026-10-28T10:00:00Z", turns: 1 });
+    expect(cleanLanes("nope")).toEqual([]);
+    expect(cleanLanes({ a: lane("a") })).toEqual([]);
+  });
+
+  it("cleanLanes keeps only ids that are safe file names (a lane id names its chat file)", () => {
+    const ids = ["__proto__", "../../x", "a/b", "a.b", "-a", "_a", "a b", "e7a1c9de-0b5f-4c43-9a7e-2f1d3c4b5a69", "t1"];
+    expect(cleanLanes(ids.map((id) => lane(id))).map((l) => l.id)).toEqual(["e7a1c9de-0b5f-4c43-9a7e-2f1d3c4b5a69", "t1"]);
+  });
+
+  it("cleanLanes keeps only canonical folder-relative conflict paths", () => {
+    const [a] = cleanLanes([lane("a", { conflict: ["../../etc/passwd", "/abs", "a//b", "./a.md", "dir/", "", "a\\b", "docs/spec.md", "a.md"] })]);
+    expect(a.conflict).toEqual(["docs/spec.md", "a.md"]);
+  });
+
+  it("cleanLanes keeps tokens as a non-negative whole number and conflict as at most 20 paths, newest last", () => {
+    const paths = Array.from({ length: 25 }, (_, i) => `f${i}.md`);
+    const [a, b, c] = cleanLanes([
+      lane("a", { tokens: 42, conflict: [...paths, 7, "f24.md"] }),
+      lane("b", { tokens: -1, conflict: "x.md" }),
+      lane("c", { tokens: 1.5, conflict: [] }),
+    ]);
+    expect(a.tokens).toBe(42);
+    expect(a.conflict).toEqual(paths.slice(-20));
+    expect(b).not.toHaveProperty("tokens");
+    expect(b).not.toHaveProperty("conflict");
+    expect(c).not.toHaveProperty("tokens");
+    expect(c).not.toHaveProperty("conflict");
+  });
+
+  it("cleanLanes keeps at most LANES_MAX lanes and applies the manifest's modes", () => {
+    const many = Array.from({ length: LANES_MAX + 5 }, (_, i) => lane(`t${i}`));
+    expect(cleanLanes(many)).toHaveLength(LANES_MAX);
+    expect(cleanLanes([lane("a", { mode: "gone" })], { modes: new Set(["kept"]) })[0]).not.toHaveProperty("mode");
+  });
+
+  it("load keeps lanes and focus only when the file has them, and treats bad values as nothing", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    fs.mkdirSync(path.dirname(store.file), { recursive: true });
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, lanes: "x", focus: 4 }));
+    expect(await store.load()).toEqual({ version: 1, current: null, actions: {}, lanes: [] });
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, focus: "z".repeat(201) }));
+    expect(await store.load()).toEqual({ version: 1, current: null, actions: {} });
+    for (const focus of ["../x", "__proto__"]) {
+      fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, focus }));
+      expect(await store.load()).toEqual({ version: 1, current: null, actions: {} });
+    }
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: null, actions: {}, lanes: [lane("a")], focus: null }));
+    expect(await store.load()).toEqual({ version: 1, current: null, actions: {}, lanes: [lane("a")], focus: null });
+  });
+
+  it("interruptedLanes ends every open lane the way interrupted ends current (Decision 16)", () => {
+    const state: TasksFile = {
+      version: 1,
+      current: null,
+      actions: { manifest: "done" },
+      scopes: { s1: {} },
+      lanes: [
+        lane("a", { action: "turn", status: "running" }),
+        lane("b", { action: "manifest" }),
+        lane("c", { action: "quiz", scope: "s1", checkpointNote: true }),
+        lane("d", { question: "why?" }),
+      ],
+      focus: "a",
+    };
+    expect(interruptedLanes(state)).toEqual({
+      version: 1,
+      current: null,
+      actions: { manifest: "done", turn: "unfinished" },
+      scopes: { s1: { quiz: "done" } },
+      lanes: [],
+      focus: null,
+    });
+    // The same outcome as each lane ending as current today.
+    const one = interrupted({ ...state, lanes: undefined, focus: undefined, current: state.lanes![0] });
+    expect(one.actions).toEqual({ manifest: "done", turn: "unfinished" });
+    // D0: a file without lanes is returned as is.
+    expect(interruptedLanes(waiting)).toBe(waiting);
+  });
+});
+
+describe("forgetEngine in board mode (parallel spec §10)", () => {
+  it("ends every lane left open too, in the lanes' write chain", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    const lane = { id: "a", action: "turn", status: "waiting" as const, startedAt: "", turns: 1 };
+    await store.save({ version: 1, current: null, actions: {}, engine: "codex", lanes: [lane], focus: "a" });
+    await store.forgetEngine();
+    expect(await store.load()).toEqual({ version: 1, current: null, actions: { turn: "unfinished" }, lanes: [], focus: null });
   });
 });
 

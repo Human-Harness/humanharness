@@ -26,6 +26,7 @@ import {
   type SidekickReview,
   type TaskTurnNotice,
   type TaskView,
+  isTurnEntry,
   nextInPath,
   partsOf,
 } from "./client";
@@ -99,6 +100,10 @@ export function ChatView({
   engineProblem,
   scopeBar,
   profileBar,
+  inboxBar,
+  startRef,
+  taskStrip,
+  draftKeep,
   openScope = null,
   onHome,
   onSettings,
@@ -121,6 +126,21 @@ export function ChatView({
   scopeBar?: (disabled: boolean) => ReactNode;
   /** Harnesses with profiles: the switcher in the top bar, disabled while a turn runs. */
   profileBar?: (disabled: boolean) => ReactNode;
+  /**
+   * A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box; `start`
+   * starts a declared action as the start view does (a needs-you job's "Start", part 3).
+   */
+  inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => boolean) => ReactNode;
+  /** A harness with jobs: gets the same `start`, for Settings › Jobs' Start (part 3); null once this view is gone. */
+  startRef?: { current: ((action: string, scope: string | null) => boolean) | null };
+  /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
+  taskStrip?: ReactNode;
+  /**
+   * Board mode: this view remounts on every change of task shown, and the box starts empty as always, except for a
+   * message the inbox put back (Decision 7): that text, and what is typed after it, goes to the next view once. Absent:
+   * nothing is carried.
+   */
+  draftKeep?: { current: string | null };
   /** Harnesses with scopes: the open scope (its chat is the one on screen). */
   openScope?: string | null;
   onHome?: () => void;
@@ -142,7 +162,21 @@ export function ChatView({
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
   // shows its proposal, through the tasks.
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => draftKeep?.current ?? "");
+  /** The inbox put a message back in this box: from then on its text is kept for the next view. */
+  const keepDraft = useRef(false);
+  // Taken once: a later remount (another task) starts empty unless a refill armed the keep again.
+  useEffect(() => {
+    if (draftKeep) draftKeep.current = null;
+  }, [draftKeep]);
+  useEffect(() => {
+    if (draftKeep && keepDraft.current) draftKeep.current = draft || null;
+  }, [draftKeep, draft]);
+  /** A cancelled queued message (parallel Decision 7): back in the box, after whatever is typed there. */
+  const refillDraft = useCallback((text: string) => {
+    keepDraft.current = true;
+    setDraft((d) => (d.trim() ? `${d}\n${text}` : text));
+  }, []);
   const [showHistory, setShowHistory] = useState(false);
   /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
@@ -387,8 +421,13 @@ export function ChatView({
 
   useEffect(() => {
     client.loadChat().then(
-      ({ entries, switchedFrom }) => {
+      ({ entries, switchedFrom, live }) => {
         dispatch({ type: "loaded", entries });
+        // Board mode: the task's turn already runs; its user line is in `entries`, its events so far come again.
+        if (live) {
+          dispatch({ type: "resume", at: live.user.at });
+          for (const e of live.events) dispatch(e.type === "done" ? { ...e, task: openTask.current } : e);
+        }
         setLoaded(true);
         if (switchedFrom) {
           const text = t("chat.switched", { engine });
@@ -560,11 +599,11 @@ export function ChatView({
         // The task's "waiting" comes after `done` (the note is saved first): it is counted below, on its own.
         paused.current = countPaused(paused.current, { quota: chat.entries.at(-1)?.error?.code === "out-of-quota" });
       } else {
-        setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
+        setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant" && isTurnEntry(e))?.text ?? "", (id) => citationsRef.current?.known?.(id)));
         inputRef.current?.focus();
       }
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
-      if (!chat.entries.at(-1)?.error) onTurnOk?.();
+      if (!chat.entries.findLast(isTurnEntry)?.error) onTurnOk?.();
     }
     wasLive.current = Boolean(chat.live);
   }, [chat.live, chat.entries, t, client, onTurnOk]);
@@ -606,8 +645,9 @@ export function ChatView({
     if (!message || !canSend(options, confirmed)) return false;
     // Slim: only the interview runs here, never a free question or another action's task.
     if (slim && (options.action ? options.action !== slim.action : tasks.current?.action !== slim.action)) return false;
-    // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
-    if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
+    // A `required` action needs an open scope (spec §3.3); the main process would refuse it. One that names its scope (a
+    // job's needs-you Start) has one.
+    if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope && options.scope === undefined) {
       const text = t("scopes.pickFirst", { label: state.scopes.label });
       dispatch({ type: "notice", text, at: new Date().toISOString() });
       setNotice(text);
@@ -912,6 +952,17 @@ export function ChatView({
   };
 
   const startTopic = (id: string) => void send(labelOf(id), { action: id });
+  /** A needs-you job's action (part 3): only a declared one, in the job's scope when it has one. */
+  const startFromInbox = (id: string, scope: string | null): boolean =>
+    Object.hasOwn(state.actions, id) ? send(labelOf(id), { action: id, ...(scope !== null ? { scope } : {}) }) : false;
+  // Every commit: the latest start, set after an old view's cleanup (a key change) so it is never left null.
+  useLayoutEffect(() => {
+    if (!startRef) return;
+    startRef.current = startFromInbox;
+    return () => {
+      startRef.current = null;
+    };
+  });
   const resume = (note: NoteView) => {
     setNotesPanel(null);
     if (note.action && state.actions[note.action]) startTopic(note.action);
@@ -929,7 +980,8 @@ export function ChatView({
   };
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
-  const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
+  // A notice the app added after a reply (a conflict) never takes the reply's place: its blocks stay answerable.
+  const lastAssistant = chat.entries.findLast((e) => e.role === "assistant" && isTurnEntry(e));
   /**
    * A block answer's free text before it goes (spec §4.1): `card` holds the form, anything else sends it. The same
    * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
@@ -1107,7 +1159,7 @@ export function ChatView({
     const el = chatRef.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
   };
-  const last = chat.entries.at(-1);
+  const last = chat.entries.findLast(isTurnEntry);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);
@@ -1337,6 +1389,7 @@ export function ChatView({
                 }}
               />
             )}
+            {inboxBar?.(refillDraft, startFromInbox)}
             {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={openPanel} />}
             <button
               onClick={() => {
@@ -1384,6 +1437,7 @@ export function ChatView({
             </nav>
           )}
           <Main className="hh-main">
+            {taskStrip}
             {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
             {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
               <PhaseStepper
@@ -1841,6 +1895,8 @@ export function ChatView({
             client={client}
             actions={state.actions}
             currentTask={tasks.current?.id}
+            {...(state.parallel || state.jobs ? { undoByFiles: true } : {})}
+            {...(state.jobs ? { jobs: state.jobs.jobs } : {})}
             disabled={Boolean(chat.live) || closing || checkpoint}
             onClose={() => setShowHistory(false)}
             onRestored={(kind) => {

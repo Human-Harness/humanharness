@@ -1746,6 +1746,13 @@ describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
     expect(h.record()).toMatchObject({ lastDaily: "2026-10-27" });
   });
 
+  it("a day with only job runs still gets its turn", async () => {
+    const h = harness({ record: on, extra: [DAILY], dailyInput: { ...input, notes: [], tokens: { tasks: 0, sidekick: 0, jobs: 500 } }, answers: ["A job ran."] });
+    await h.ctl.daily(new Date("2026-10-27T08:00:00"));
+    expect(h.asked).toHaveLength(1);
+    expect(h.asked[0]).toContain("Tokens: tasks 0, Sidekick 0, background jobs 500");
+  });
+
   it("muted for its sidekick, or an empty answer → no card", async () => {
     const muted = harness({ record: { ...on, muted: { day: ["daily"] } }, extra: [DAILY], dailyInput: input });
     await muted.ctl.daily(new Date("2026-10-27T08:00:00"));

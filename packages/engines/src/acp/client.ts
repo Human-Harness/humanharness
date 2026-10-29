@@ -5,7 +5,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
-import { type ActivityKind, type Event, type Transport, fail } from "../contract";
+import { type ActivityKind, EDIT_PATH_MAX, type Event, type Transport, fail } from "../contract";
 import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "../models";
 import type { TransportOptions } from "./options";
 
@@ -148,6 +148,29 @@ export function activityDetail(call: { kind?: unknown; title?: unknown; location
   if (!fileKind) return title;
   const rest = title.replace(LEADING_VERB, "").replace(/^['"`](.*)['"`]$/, "$1");
   return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
+}
+
+const EDIT_KINDS = new Set(["edit", "delete", "move"]);
+/** The most paths kept from one tool call. */
+const EDITS_MAX = 50;
+
+/**
+ * The files an ACP edit, delete or move call names: its `locations` and its `diff` contents' paths (parallel spec §5.2).
+ * Codex gives no `locations` for an edit: the path is only in `content[].diff.path`, absolute and in the form of the
+ * `cwd` it was given, not its real path; and Codex often writes through the shell (`execute`), naming no path at all
+ * (spike PT-S3, docs/spikes/2026-10-28-parallel-tasks.md). So this is a hint, never the full list of changed files.
+ */
+export function acpEditPaths(call: { kind?: unknown; locations?: unknown; content?: unknown }): string[] {
+  if (typeof call.kind !== "string" || !EDIT_KINDS.has(call.kind)) return [];
+  const out = new Set<string>();
+  const add = (p: unknown) => {
+    if (typeof p === "string" && p && p.length <= EDIT_PATH_MAX && out.size < EDITS_MAX) out.add(p);
+  };
+  if (Array.isArray(call.locations)) for (const l of call.locations) add((l as { path?: unknown } | null)?.path);
+  if (Array.isArray(call.content)) {
+    for (const c of call.content) if ((c as { type?: unknown } | null)?.type === "diff") add((c as { path?: unknown }).path);
+  }
+  return [...out];
 }
 
 /** Longest server or tool name kept. */
@@ -602,10 +625,11 @@ export class AcpTransport implements Transport {
           this.hidden.add(u.toolCallId);
           return;
         }
-        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
+        const activity = { kind: typeof u.kind === "string" && Object.hasOwn(KINDS, u.kind) ? KINDS[u.kind] : ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
-        emit({ type: "activity", id: u.toolCallId, ...activity, ...acpExtras(u, server), state: "start" });
+        const edits = acpEditPaths(u);
+        emit({ type: "activity", id: u.toolCallId, ...activity, ...acpExtras(u, server), ...(edits.length > 0 ? { edits } : {}), state: "start" });
         return;
       }
       case "tool_call_update": {

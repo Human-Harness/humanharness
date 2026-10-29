@@ -28,9 +28,12 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
   // or an engine that never started a session) means it belongs to that conversation.
   const session = await sessionEngine(folder);
   const chats = await ChatLog.scopesIn(folder);
+  // Board mode's per-task chats (parallel spec §6); none in a harness without `parallel`.
+  const taskChats = await ChatLog.taskChatsIn(folder);
+  const logs = [...chats.map((scope) => new ChatLog(folder, undefined, scope)), ...taskChats.map((c) => new ChatLog(folder, undefined, c.scope, c.task))];
   const engineInChats = async (): Promise<string | null> => {
-    for (const scope of chats) {
-      const other = (await new ChatLog(folder, undefined, scope).load()).find((e) => e.engine && e.engine !== engineId)?.engine;
+    for (const log of logs) {
+      const other = (await log.load()).find((e) => e.engine && e.engine !== engineId)?.engine;
       if (other) return other;
     }
     return null;
@@ -40,6 +43,13 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
   // Every scope's chat belongs to the old engine's conversations (spec §3.2: one chat per scope).
   let archived = false;
   for (const scope of chats) if (await new ChatLog(folder, undefined, scope).archive(previous)) archived = true;
+  for (const c of taskChats) {
+    const done = await new ChatLog(folder, undefined, c.scope, c.task).archive(previous).catch((err: unknown) => {
+      console.error(`Could not archive the chat of task ${c.task}`, err);
+      return null;
+    });
+    if (done) archived = true;
+  }
   await fs.rm(sessionFile(folder), { force: true });
   // The open task can't continue on another engine; the notes stay.
   await new TaskStore(folder).forgetEngine();

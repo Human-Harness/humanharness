@@ -16,7 +16,7 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow, TaskNotice } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
@@ -89,6 +89,90 @@ export interface AppConfig {
   languageOffered?: boolean;
   /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
   profile?: string;
+  /** Settings › General: the person's caps (parallel spec §7). Absent: the manifest's. Cleaned when read. */
+  parallel?: { tasks?: number; jobs?: number };
+  /** Settings › General: an OS notification when a task waits for the person. Absent: off. */
+  notifyWaiting?: boolean;
+  /** Settings › Jobs, by job id: turned off, and the person's daily token cap (over the manifest's). Cleaned when read. */
+  jobs?: Record<string, JobSettings>;
+}
+
+/** One job's Settings › Jobs entry (parallel spec §8). Absent fields: on, the manifest's cap. */
+export interface JobSettings {
+  off?: boolean;
+  dailyTokens?: number;
+}
+
+/** Caps on turns running at once (parallel spec §7). */
+export interface ParallelCaps {
+  tasks: number;
+  jobs: number;
+}
+
+/** The harness declares `parallel` (spec §3): several open tasks, the inbox. Absent: one task at a time (D7). */
+export interface ParallelInfo {
+  /** In force now: the person's (Settings › General) or the manifest's. */
+  caps: ParallelCaps;
+  /** The manifest's suggestion. */
+  suggested: ParallelCaps;
+  /** The core inbox and its button show (manifest `inbox`, default true). */
+  inbox: boolean;
+  /** An OS notification when a task starts waiting (Settings › General; off by default). */
+  notifyWaiting: boolean;
+  /** Why the caps are held at 1, when they are: the engine isn't shown to run two sessions at once (OpenCode, PT-S5 unverified). */
+  heldReason?: "engine";
+}
+
+/** One open task as the inbox and a harness's own panel see it (parallel spec §9.1). No paths, no chat content. */
+export interface TaskSummary {
+  id: string;
+  scope: string;
+  action: string | null;
+  label: string;
+  state: "running" | "waiting" | "queued" | "closing" | "checkpoint";
+  /** message: the agent finished its turn · answer: an open choices/input block · phase: a phase proposal. */
+  waitingFor?: "message" | "answer" | "phase";
+  phase?: string;
+  startedAt: string;
+  tokens: number;
+  /** Paths (relative to the folder, as the chat's notice names them) another task also changed (spec §5.3). */
+  conflict?: string[];
+  /** The focused task (the one the window shows). */
+  focused?: true;
+}
+
+/** What `tasks.list` answers: the open tasks, the queue pause, and the caps. */
+export interface TasksState {
+  tasks: TaskSummary[];
+  paused?: { reason: "out-of-quota" | "folder-move"; resetsAt?: string };
+  caps: ParallelCaps;
+}
+
+/** One job × scope (parallel spec §9.1 `JobSummary`). No chat content: its last result's one-line summary only. */
+export interface JobSummary {
+  id: string;
+  label: string;
+  /** null: an app-wide job. */
+  scope: string | null;
+  last?: { status: "ok" | "needs-you" | "failed"; summary: string; at: string; action?: string };
+  /** The next `every` run, when one is armed. */
+  next?: string;
+  paused?: "daily-cap" | "off";
+  manual: boolean;
+  running: boolean;
+}
+
+/** The harness declares jobs (spec §3). Absent: no Jobs tab, an empty Jobs section (D0). */
+export interface JobsInfo {
+  jobs: { id: string; label: string; every?: string; dailyTokens?: number; manual: boolean }[];
+}
+
+/** `client.jobs`: a harness's background jobs (spec §9.1). Only with `state.jobs`: otherwise main refuses every call (D0). */
+export interface JobsClient {
+  list(): Promise<JobSummary[]>;
+  /** "Run now": a declared manual job, in an existing scope (J4). False when it can't start (already queued, off). */
+  run(id: string, scope?: string): Promise<boolean>;
+  onChange(listener: (jobs: JobSummary[]) => void): () => void;
 }
 
 export interface EngineOption {
@@ -367,6 +451,10 @@ export interface AppState {
   material?: MaterialInfo;
   /** The harness takes plugins (manifest `plugins`). Absent: no Plugins tab, no inbox (plugins D0). */
   plugins?: PluginsInfo;
+  /** Parallel tasks (parallel spec). Absent: one task at a time, no task inbox (D7). */
+  parallel?: ParallelInfo;
+  /** Background jobs (parallel spec §3, part 3). Absent: none (D0). */
+  jobs?: JobsInfo;
   /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
   documents?: { kinds: Record<string, DocumentKind> };
   /** The harness's agent may edit the folder: documents can be reviewed (review spec). Absent: no review UI (D0). */
@@ -436,9 +524,31 @@ export interface ChatEntry {
   timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
+  /**
+   * A line the app added to a task's chat, never the agent's reply (board mode only, parallel spec §5.3): drawn as a
+   * system line, and skipped wherever the chat looks for the latest reply. Saved with empty `text`, so an app that
+   * doesn't know it shows nothing.
+   */
+  notice?: ChatNotice;
   /** The `.md` files this turn added or changed (document-reader spec §5.1). Absent: none. */
   documents?: DocumentCard[];
 }
+
+/** A line the app added to a task's chat (board mode): see the runtime's `TaskNotice`. */
+export type ChatNotice = TaskNotice;
+
+/**
+ * Why board mode refused "Undo this task" (parallel spec §5.3): a running task is changing `path`, `path` has changes
+ * the history hasn't saved, a later task (`by: "task"`) or a change outside any task (`by: "outside"`) also changed
+ * `path`, the task is too far back, or there is nothing to take back.
+ */
+export type UndoRefusal =
+  | { reason: "running" | "uncommitted"; path: string }
+  | { reason: "later"; path: string; by: "task" | "outside" }
+  | { reason: "too-far" | "nothing" };
+
+/** The entry is the person's line or the agent's reply, not a notice the app added. */
+export const isTurnEntry = (e: Pick<ChatEntry, "notice">): boolean => e.notice === undefined;
 
 /** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
 export type AnswerPart = { text: string } | { block: number };
@@ -474,6 +584,8 @@ export interface ChatLoad {
   entries: ChatEntry[];
   /** Set when the folder's last session ran on another engine: that chat was archived. */
   switchedFrom?: string;
+  /** Board mode: the focused task's turn still running, to replay (parallel spec Decision 6). Its user line is in `entries`. */
+  live?: { user: { text: string; at: string }; events: Event[] };
 }
 
 export interface HistoryItem {
@@ -499,6 +611,8 @@ export interface HistoryTaskView {
   actionId: string | null;
   /** The scope the task ran in (harnesses with scopes). */
   scopeId?: string;
+  /** The job this row is a run of (its commits' `Job:` trailer), only for job runs. */
+  jobId?: string;
   /** What "Undo this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;
@@ -600,6 +714,8 @@ export interface UsageSummary {
   material?: number;
   /** Tokens of Sidekick's turns (sidekick spec §8; with profiles, the active profile's); absent when it never ran. */
   sidekick?: number;
+  /** Tokens of background job runs (parallel spec §10; with profiles, the active profile's); absent when none ran. */
+  jobs?: number;
   /** USD the engine reported over the last 30 days (OpenCode; every profile's turns). Absent when no turn reported a cost. */
   spentUsd?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
@@ -992,9 +1108,10 @@ export interface HarnessClient {
   historyTasks(): Promise<HistoryTaskView[]>;
   /**
    * Makes the folder look as it did before the task started (later tasks are undone too), after main's native
-   * confirmation; recorded outside any task. `cancelled`: the person said no, nothing changed.
+   * confirmation; recorded outside any task. `cancelled`: the person said no, nothing changed. Board mode (parallel
+   * spec §5.3) takes back only the task's own files, and says why when it can't (`refused`).
    */
-  restoreTask(taskId: string): Promise<GoBackResult>;
+  restoreTask(taskId: string): Promise<GoBackResult | { refused: UndoRefusal }>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */
@@ -1324,6 +1441,22 @@ export interface HarnessClient {
   language?: LanguageClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
+  /** Open tasks (parallel spec §9.1). Only with `state.parallel`: in plain mode main refuses every call and sends no change (D0). */
+  tasks: TasksClient;
+  /** Background jobs (parallel spec §9.1). Only with `state.jobs` (D0). */
+  jobs: JobsClient;
+}
+
+/** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */
+export interface TasksClient {
+  list(): Promise<TasksState>;
+  onChange(listener: (state: TasksState) => void): () => void;
+  /** null: the start view. */
+  focus(id: string | null): Promise<void>;
+  /** Takes a queued message out; its text, for the box (Decision 7). Null when it already started. */
+  cancelQueued(id: string): Promise<string | null>;
+  /** Resumes the queues paused by an out-of-quota end (spec §7). */
+  resumeQueues(): Promise<void>;
 }
 
 /** A config with everything a turn needs (appearance and text size stay optional). */

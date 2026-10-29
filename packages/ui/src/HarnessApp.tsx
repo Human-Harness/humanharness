@@ -9,6 +9,9 @@ import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
+import { Inbox } from "./parallel/Inbox";
+import { TaskStrip } from "./parallel/TaskStrip";
+import { useFocusEpoch, useTasks } from "./parallel/useTasks";
 import { shownLanguage, systemLanguage } from "./language";
 import { type LanguageControl, useLanguage } from "./language-control";
 import type { MaterialPanelProps } from "./MaterialPanel";
@@ -53,6 +56,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     setSetupAt(at);
     setScreen("setup");
   };
+  /** Harnesses with jobs: the chat's start of a declared action, for Settings › Jobs' Start (null off the work screen). */
+  const chatStart = useRef<((action: string, scope: string | null) => boolean) | null>(null);
   /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
   const [openScope, setOpenScope] = useState<string | null>(null);
   const hasScopes = Boolean(state?.scopes);
@@ -106,6 +111,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       off();
     };
   }, [client, hasSetupSteps, folder, profile, screen]);
+  /** A harness that declares `parallel`: its open tasks (spec §9.1). Plain mode asks nothing (D0). */
+  const tasksState = useTasks(client, Boolean(state?.parallel));
+  /** Board mode: the chat remounts on each change of the task shown (`epoch`); only a message put back outlives it. */
+  const { epoch, toStart } = useFocusEpoch(tasksState);
+  const draftKeep = useRef<string | null>(null);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.
@@ -245,6 +255,12 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     setState(next);
     setScreen("home");
   };
+  /** "New task" in the strip: main shows the start view, then the chat does. */
+  const newTask = () => {
+    client.tasks.focus(null).then(toStart, () => undefined);
+  };
+  // D0: without `parallel` the key is today's, and nothing else is kept.
+  const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
 
   return (
     <I18nextProvider i18n={i18n}>
@@ -252,7 +268,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       <div className="hh-screen" inert={settings !== null}>
         {screen === "work" && configured ? (
           <ChatView
-            key={`${engineId}:${profile ?? ""}:${openScope ?? ""}`}
+            key={state.parallel ? `${chatKey}:${epoch}` : chatKey}
             client={client}
             state={state}
             components={blocks}
@@ -264,6 +280,13 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             profileBar={
               state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
             }
+            inboxBar={
+              state.parallel?.inbox
+                ? (refill, start) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} onStartAction={start} />
+                : undefined
+            }
+            {...(state.jobs ? { startRef: chatStart } : {})}
+            {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
             onHome={() => setScreen("home")}
@@ -324,6 +347,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             openSetup(step ? { step, only: true, back } : {});
           }}
           move={move}
+          {...(state.jobs && screen === "work"
+            ? {
+                onStartAction: (action: string, scope: string | null) => {
+                  const started = chatStart.current?.(action, scope) ?? false;
+                  if (started) closeSettings();
+                  return started;
+                },
+              }
+            : {})}
           language={client.language ? language : undefined}
         />
       )}

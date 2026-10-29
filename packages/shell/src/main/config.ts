@@ -1,13 +1,47 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { canonicalLanguage } from "@humanharness/harness-sdk";
+import { JOB_ID, canonicalLanguage } from "@humanharness/harness-sdk";
 import { type AppConfig, cleanReaderPrefs, isTextSize } from "@humanharness/ui/client";
 import { isProfileId } from "@humanharness/workspace";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
 export function historyDir(userData: string, folder: string): string {
   return path.join(userData, "history", createHash("sha256").update(folder).digest("hex").slice(0, 16));
+}
+
+/** A hand-edited `parallel` keeps only integer caps (parallel spec §7; parallelInfo clamps them to 1..8). */
+function cleanParallel(v: unknown): AppConfig["parallel"] | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  const out: { tasks?: number; jobs?: number } = {};
+  if (Number.isInteger(o.tasks)) out.tasks = o.tasks as number;
+  if (Number.isInteger(o.jobs)) out.jobs = o.jobs as number;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Settings › Jobs for one job, as the scheduler takes them: `off` only when true, a cap only as a whole number ≥ 1. */
+export function cleanJobSettings(v: unknown): { off?: boolean; dailyTokens?: number } {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const o = v as Record<string, unknown>;
+  const cap = o.dailyTokens;
+  // 0 or a fraction would pause an `every` job for good, or count against a cap no run can meet.
+  return { ...(o.off === true ? { off: true } : {}), ...(typeof cap === "number" && Number.isSafeInteger(cap) && cap >= 1 ? { dailyTokens: cap } : {}) };
+}
+
+/**
+ * Settings › Jobs (parallel part 3): each job id's entry cleaned, an empty one left out; undefined when `v` is no
+ * object. `declared` (the save's check) keeps only the harness's own jobs.
+ */
+export function cleanJobs(v: unknown, declared?: (id: string) => boolean): AppConfig["jobs"] | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const out: NonNullable<AppConfig["jobs"]> = {};
+  for (const [id, entry] of Object.entries(v)) {
+    if (!JOB_ID.test(id) || (declared && !declared(id))) continue;
+    const kept = cleanJobSettings(entry);
+    if (Object.keys(kept).length > 0) out[id] = kept;
+  }
+  return out;
 }
 
 /** Per-app settings in Electron's userData folder. The folder is fixed once chosen (spec §7). */
@@ -25,8 +59,10 @@ export class ConfigStore {
       if (!saved || typeof saved !== "object") return saved;
       // Like a bad entry under models: a hand-edited backupDismissed, languageOffered, textSize, language or reader of the
       // wrong kind is dropped (the reader only its bad fields), never a reason to treat the whole config as invalid.
-      const { backupDismissed, languageOffered, textSize, language, profile, reader, ...rest } = saved;
+      const { backupDismissed, languageOffered, textSize, language, profile, reader, parallel, notifyWaiting, jobs, ...rest } = saved;
       const readerPrefs = cleanReaderPrefs(reader);
+      const caps = cleanParallel(parallel);
+      const jobSettings = cleanJobs(jobs);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
@@ -34,6 +70,9 @@ export class ConfigStore {
         ...(isTextSize(textSize) ? { textSize } : {}),
         ...(typeof language === "string" && canonicalLanguage(language) === language ? { language } : {}),
         ...(isProfileId(profile) ? { profile } : {}),
+        ...(caps ? { parallel: caps } : {}),
+        ...(typeof notifyWaiting === "boolean" ? { notifyWaiting } : {}),
+        ...(jobSettings && Object.keys(jobSettings).length > 0 ? { jobs: jobSettings } : {}),
         ...(readerPrefs ? { reader: readerPrefs } : {}),
       };
     } catch {

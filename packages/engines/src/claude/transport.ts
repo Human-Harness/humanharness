@@ -4,7 +4,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
-import { type ActivityKind, type CommonOptions, type Event, type Transport, fail } from "../contract";
+import { type ActivityKind, type CommonOptions, EDIT_PATH_MAX, type Event, type Transport, fail } from "../contract";
 import { type ModelProfile, isCap, isEffort, isModelId } from "../models";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
@@ -146,6 +146,19 @@ function detailOf(tool: string, input: Record<string, unknown>): string {
   }
 }
 
+/** Claude's tools that change a file, and the input field that names it. */
+const EDIT_FIELDS: Record<string, string> = { Edit: "file_path", Write: "file_path", MultiEdit: "file_path", NotebookEdit: "notebook_path" };
+
+/**
+ * The file an edit tool call names (parallel spec §5.2); empty for any other tool or a malformed input.
+ * Claude names the real path (spike PT-S1: /tmp → /private/tmp), so the ledger accepts the folder and its real path.
+ */
+export function editPaths(tool: string, input: Record<string, unknown>): string[] {
+  const field = Object.hasOwn(EDIT_FIELDS, tool) ? EDIT_FIELDS[tool] : undefined;
+  const value = field ? input[field] : undefined;
+  return typeof value === "string" && value && value.length <= EDIT_PATH_MAX ? [value] : [];
+}
+
 /** Longest server or tool name kept. */
 const NAME_MAX = 100;
 /** Longest engine path kept; a longer one is dropped. */
@@ -213,11 +226,11 @@ export class StreamJsonReader {
 
     if (o.type === "rate_limit_event") {
       const info = o.rate_limit_info ?? {};
-      const windows = Object.entries((info.unifiedWindows ?? {}) as Record<string, any>).map(([kind, w]) => ({
-        kind,
-        utilization: Number(w.utilization),
-        resetsAt: new Date(Number(w.resetsAt) * 1000).toISOString(),
-      }));
+      // A window without a valid reset is left out: `toISOString` would throw, and no reader can place it in time.
+      const windows = Object.entries((info.unifiedWindows ?? {}) as Record<string, any>).flatMap(([kind, w]) => {
+        const at = new Date(w?.resetsAt == null || w.resetsAt === "" ? Number.NaN : Number(w.resetsAt) * 1000);
+        return Number.isFinite(at.getTime()) ? [{ kind, utilization: Number(w.utilization), resetsAt: at.toISOString() }] : [];
+      });
       this.emit({ type: "limits", status: String(info.status ?? "allowed"), windows });
       return;
     }
@@ -244,9 +257,10 @@ export class StreamJsonReader {
       for (const b of o.message?.content ?? []) {
         if (b.type !== "tool_use" || String(b.name).startsWith(UI_TOOL_PREFIX) || HIDDEN_TOOLS.has(b.name)) continue;
         if (this.tools.has(b.id)) continue;
-        const activity = { kind: KINDS[b.name] ?? ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
+        const activity = { kind: Object.hasOwn(KINDS, b.name) ? KINDS[b.name] : ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
         this.tools.set(b.id, activity);
-        this.emit({ type: "activity", id: b.id, ...activity, ...activityExtras(String(b.name), b.input ?? {}), state: "start" });
+        const edits = editPaths(String(b.name), b.input ?? {});
+        this.emit({ type: "activity", id: b.id, ...activity, ...activityExtras(String(b.name), b.input ?? {}), ...(edits.length > 0 ? { edits } : {}), state: "start" });
       }
       return;
     }

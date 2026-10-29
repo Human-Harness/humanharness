@@ -32,6 +32,8 @@ export function notesPrefix(scoped: boolean, scope: string = MAIN_SCOPE): string
 export const harnessDir = (base: string): string => path.join(base, ".harness");
 export const tasksFile = (base: string): string => path.join(base, ".harness", "tasks.json");
 export const usageFile = (base: string): string => path.join(base, ".harness", "usage.jsonl");
+/** The log of background job runs (parallel spec §8). Never tracked; created by a harness with jobs only (D0). */
+export const jobsFile = (base: string): string => path.join(base, ".harness", "jobs.jsonl");
 /** The state of the harness's setup steps (setup-steps spec §4). */
 export const setupFile = (base: string): string => path.join(base, ".harness", "setup.json");
 /**
@@ -43,6 +45,21 @@ export const scopesFile = (base: string): string => path.join(base, ".harness", 
 export const chatsDir = (base: string): string => path.join(base, ".harness", "chats");
 /** One chat per scope; `main.jsonl` for `main`, which is also the chat of a harness without scopes. */
 export const chatFile = (base: string, scope: string = MAIN_SCOPE): string => path.join(chatsDir(base), `${scopeDir(scope)}.jsonl`);
+/**
+ * A task id that may name a chat file: a UUID or a test's `t1`, at most 200 characters, lowercase (`T1` and `t1` are
+ * one file on macOS), never a dot, a separator, a leading `_` or `-`. The same shape as the shell's lane ids
+ * (`isLaneId`), which are task ids.
+ */
+const TASK_ID = /^[a-z0-9][a-z0-9_-]{0,199}$/;
+export const isTaskId = (v: unknown): v is string => typeof v === "string" && TASK_ID.test(v);
+/** The folder of archived chats, `chats/archive/`: never a scope's folder of task chats. */
+const ARCHIVE_DIR = "archive";
+/** A task's chat in a harness with parallel tasks (parallel spec §6): `chats/<scope>/<task id>.jsonl`. */
+export function taskChatFile(base: string, scope: string, task: string): string {
+  if (!isTaskId(task)) throw new Error(`Invalid task id: "${String(task).slice(0, 40)}"`);
+  if (scope === ARCHIVE_DIR) throw new Error(`Invalid scope for task chats: "${scope}" holds the archived chats`);
+  return path.join(chatsDir(base), scopeDir(scope), `${task}.jsonl`);
+}
 
 /** Where harness data lives, relative to the base: `<scope>/<collection>.json`. Tracked by the history (spec D4). */
 export const DATA_PREFIX = ".harness/data/";

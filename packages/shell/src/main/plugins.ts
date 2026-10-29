@@ -90,6 +90,13 @@ export interface PluginsDeps {
   userData: string;
   /** The Attention tag key (HMAC), kept outside the base; created only when `create`. */
   tagKey(create: boolean): Promise<Buffer | null>;
+  /**
+   * Board mode (parallel spec §9.2, Decision 10): base `base`'s Attention store, shared with the waiting tasks. Absent,
+   * the controller builds its own as before (D0).
+   */
+  attentionStoreFor?(base: string, create: boolean): Promise<AttentionStore | null>;
+  /** With `attentionStoreFor`: takes the rule for which plugin origins the shared store shows (on or crashed plugins). */
+  registerKnown?(kind: "plugin", fn: (id: string) => boolean): void;
   pickFolder(): Promise<string | null>;
   notify(title: string, body: string): void;
   whenNoTask(fn: () => Promise<void>): Promise<boolean>;
@@ -260,6 +267,7 @@ export class PluginsController {
   constructor(private readonly d: PluginsDeps) {
     this.now = d.now ?? (() => new Date());
     this.clock = d.clock ?? (() => performance.now());
+    d.registerKnown?.("plugin", (id) => this.running.has(id) || this.crashedIds.has(id));
   }
 
   private get active(): boolean {
@@ -764,6 +772,14 @@ export class PluginsController {
 
   private async attentionStore(c: BaseCtx, create: boolean): Promise<AttentionStore | null> {
     if (c.attention) return c.attention;
+    if (this.d.attentionStoreFor) {
+      const shared = await this.d.attentionStoreFor(c.base, create).catch((err: unknown) => {
+        this.log("Could not open the Attention inbox", err);
+        return null;
+      });
+      if (shared) c.attention = shared;
+      return shared;
+    }
     const key = await this.d.tagKey(create).catch((err: unknown) => {
       this.log("Could not read the Attention key", err);
       return null;
@@ -1387,7 +1403,14 @@ export class PluginsController {
       if ((plugin !== undefined && typeof plugin !== "string") || (key !== undefined && typeof key !== "string")) return;
       const c = await this.base();
       const store = c ? await this.attentionStore(c, false) : null;
-      await store?.markRead(plugin === undefined ? undefined : { kind: "plugin", id: plugin }, key).catch((err: unknown) => this.log("Could not mark attention items read", err));
+      const mark = async (s: AttentionStore): Promise<unknown> => {
+        if (plugin !== undefined) return s.markRead({ kind: "plugin", id: plugin }, key);
+        // Board mode shares the store with the waiting tasks' items: "all" is every plugin's, never a task's.
+        if (!this.d.attentionStoreFor) return s.markRead();
+        const ids = new Set((await s.list()).filter((i) => i.origin.kind === "plugin" && !i.read).map((i) => i.origin.id));
+        for (const id of ids) await s.markRead({ kind: "plugin", id });
+      };
+      if (store) await mark(store).catch((err: unknown) => this.log("Could not mark attention items read", err));
       await this.pushAttention();
     },
     /**

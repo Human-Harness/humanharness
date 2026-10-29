@@ -1,1 +1,1 @@
-export { type ActivityKind, type DocumentCard, type EngineError, type ErrorCode, type Event, type LimitWindow, fail } from "@humanharness/engines";
+export { type ActivityKind, type DocumentCard, EDIT_PATH_MAX, type EngineError, type ErrorCode, type Event, type LimitWindow, type TaskNotice, fail } from "@humanharness/engines";

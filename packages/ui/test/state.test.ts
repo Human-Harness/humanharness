@@ -27,6 +27,26 @@ describe("reduceChat", () => {
     ]);
   });
 
+  it("a task notice (board mode) during a turn follows its answer; with no turn it shows at once", () => {
+    const conflict = { kind: "conflict" as const, paths: ["spec.md"], other: "Write" };
+    const s = run([
+      { type: "user", text: "hi", at: "t" },
+      { type: "text", delta: "Done." },
+      { type: "task-notice", notice: conflict },
+    ]);
+    expect(s.entries.map((e) => e.role)).toEqual(["user"]);
+    expect(s.live?.activities).toEqual([]);
+    const ended = run([{ type: "done", ok: true, task: "t1" }], s);
+    expect(ended.entries.map((e) => [e.role, e.text, e.notice])).toEqual([
+      ["user", "hi", undefined],
+      ["assistant", "Done.", undefined],
+      ["assistant", "", conflict],
+    ]);
+    const idle = run([{ type: "task-notice", notice: { kind: "resume-failed" } }], ended);
+    expect(idle.entries.at(-1)?.notice).toEqual({ kind: "resume-failed" });
+    expect(idle.live).toBeNull();
+  });
+
   it("adds the user's message and starts a live turn", () => {
     const s = run([{ type: "user", text: "hi", at: "2026-10-10T00:00:00Z" }]);
     expect(s.entries.map((e) => [e.role, e.text])).toEqual([["user", "hi"]]);
@@ -186,5 +206,20 @@ describe("reduceChat: a mode switch's line (task-modes spec §5.4)", () => {
     const s = reduceChat(initialChat([]), { type: "user", text: "Switched to Socratic", at: "t", mode: "socratic" });
     expect(s.entries[0]).toMatchObject({ role: "user", text: "Switched to Socratic", mode: "socratic" });
     expect(reduceChat(initialChat([]), { type: "user", text: "Hi", at: "t" }).entries[0]).not.toHaveProperty("mode");
+  });
+
+  it("resume: a live turn without a new user entry (parallel spec Decision 6)", () => {
+    const loaded = run([{ type: "loaded", entries: [{ id: "u", role: "user", text: "hi", blocks: [], activities: [], at: "2026-10-28T10:00:00Z" }] }]);
+    const s = reduceChat(loaded, { type: "resume", at: "2026-10-28T10:00:00Z" });
+    expect(s.live).not.toBeNull();
+    expect(s.entries).toEqual(loaded.entries);
+    const t = run([{ type: "text", delta: "hi" }, { type: "paragraph" }, { type: "text", delta: "there" }], s);
+    expect(t.live?.text).toBe("hi\n\nthere");
+    const done = reduceChat(t, { type: "done", ok: true });
+    expect(done.live).toBeNull();
+    expect(done.entries.map((e) => [e.role, e.text])).toEqual([
+      ["user", "hi"],
+      ["assistant", "hi\n\nthere"],
+    ]);
   });
 });

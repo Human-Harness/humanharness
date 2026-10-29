@@ -31,6 +31,16 @@ export interface LimitWindow {
   resetsAt: string;
 }
 
+/** The longest edit path kept from an engine: longer names no real file, only a big string held in main. */
+export const EDIT_PATH_MAX = 4096;
+
+/**
+ * A line the app adds to a task's chat in board mode, never an engine's: another task also changed these paths
+ * (parallel spec §5.3; `other` names it, absent when it has ended; `paths` the first few, `more` the rest), or the
+ * earlier engine session couldn't be loaded and a new one started (PT-S4).
+ */
+export type TaskNotice = { kind: "conflict"; paths: string[]; more?: number; other?: string; ended?: true } | { kind: "resume-failed" };
+
 /** A Markdown file a turn added or changed (document-reader spec §5.1): what its card shows. */
 export interface DocumentCard {
   /** Relative to the folder, forward slashes. */
@@ -51,8 +61,21 @@ export type Event =
    * `paths`: what a read or search tool named (as the engine reported them, usually absolute), on the start event only.
    * `tool`: an MCP tool's server and name (never the core's `ui`), on the start event only. Both are for the task
    * manager's context record (context-panel spec §3.2); the window never gets them.
+   * `edits`: the files an edit tool named (absolute or as the engine wrote them), on the start event only. For the
+   * history's attribution (parallel spec §5.2); the window and the chat log never get them (shell `forWindow`).
+   * Only a hint: an engine that writes through the shell names no file.
    */
-  | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean; paths?: string[]; tool?: { server: string; name: string } }
+  | {
+      type: "activity";
+      id: string;
+      kind: ActivityKind;
+      detail: string;
+      state: "start" | "end";
+      error?: boolean;
+      paths?: string[];
+      tool?: { server: string; name: string };
+      edits?: string[];
+    }
   /** `id`: set by the app on a block the person answers (input-blocks spec §4), never by an engine. */
   | { type: "block"; name: string; data: unknown; id?: string }
   | { type: "limits"; status: string; windows: LimitWindow[] }
@@ -73,6 +96,8 @@ export type Event =
   | { type: "context"; used: number; size?: number }
   /** The engine compacted the conversation during the turn. */
   | { type: "compaction" }
+  /** Board mode only, from the app (never a transport): a notice for the task's chat, shown as a system line (D0: none). */
+  | { type: "task-notice"; notice: TaskNotice }
   /** The turn's added or changed `.md` files, sent right before a successful `done`. Never empty. */
   | { type: "documents"; documents: DocumentCard[] }
   | { type: "done"; ok: true }

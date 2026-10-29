@@ -331,8 +331,8 @@ export interface DailyInput {
   day: string;
   /** The titles of the notes written that day. */
   notes: string[];
-  /** That day's tokens: the tasks' turns and Sidekick's. */
-  tokens: { tasks: number; sidekick: number };
+  /** That day's tokens: the tasks' turns and Sidekick's, and background jobs' only when one ran (parallel spec §10). */
+  tokens: { tasks: number; sidekick: number; jobs?: number };
   /** What is still open (titles); [] when the app can't list it. */
   open: string[];
 }
@@ -351,7 +351,7 @@ export function dailyPrompt(i: DailyInput & { harness: { name: string }; uiLangu
     ...titles(i.notes),
     "Still open:",
     ...titles(i.open),
-    `Tokens: tasks ${i.tokens.tasks}, Sidekick ${i.tokens.sidekick}`,
+    `Tokens: tasks ${i.tokens.tasks}, Sidekick ${i.tokens.sidekick}${i.tokens.jobs !== undefined ? `, background jobs ${i.tokens.jobs}` : ""}`,
     `UI language: ${i.uiLanguage}`,
     "",
     "Answer in at most 4 short sentences, plain text: what got done, what's open, one suggestion for today.",

@@ -1185,3 +1185,46 @@ describe("Sidekick hooks (sidekick spec §4.2)", () => {
     expect(t.state().current).toMatchObject({ status: "waiting", turns: 1 });
   });
 });
+
+describe("TaskManager: the taskClosed hook (parallel spec §8 afterTask, Decision 6)", () => {
+  it("is called once when a task's note is saved, never for a cancelled or unsaved one", async () => {
+    const taskClosed = vi.fn();
+    const t = setup({ script: [[ok], [saveNote(), ok], [ok], [cancelled]], deps: { taskClosed } });
+    await t.manager.start("manifest");
+    await pick(t, { label: "Next topic →", next: true });
+    expect(taskClosed).toHaveBeenCalledTimes(1);
+    expect(taskClosed).toHaveBeenCalledWith({ id: "t1", action: "manifest", scope: "main" });
+    // The next task's closing turn is cancelled: it ends unfinished, and nothing is called.
+    expect(await t.manager.finish()).toBe(true);
+    expect(t.state().actions.engines).toBe("unfinished");
+    expect(taskClosed).toHaveBeenCalledTimes(1);
+  });
+
+  it("a free question closed with its note is reported without an action; an unsaved one is not", async () => {
+    const taskClosed = vi.fn();
+    const t = setup({ script: [[saveNote(), ok], [ok], [saveNote({ title: "" }), ok]], deps: { taskClosed } });
+    await t.manager.ask("What is a turn?");
+    await t.manager.finish();
+    expect(taskClosed).toHaveBeenCalledExactlyOnceWith({ id: "t1", scope: "main" });
+    await t.manager.ask("And a slot?");
+    await t.manager.finish();
+    expect(taskClosed).toHaveBeenCalledTimes(1);
+  });
+
+  it("a throwing listener is logged and never breaks the task's end", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const t = setup({ script: [[ok], [saveNote(), ok]], deps: { taskClosed: () => { throw new Error("boom"); } } });
+    await t.manager.start("manifest");
+    expect(await t.manager.finish()).toBe(true);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
+    expect(err).toHaveBeenCalledWith("A task-closed listener failed", expect.any(Error));
+  });
+
+  it("D0: without taskClosed the flow is today's", async () => {
+    const t = setup({ script: [[ok], [saveNote(), ok]] });
+    await t.manager.start("manifest");
+    expect(await t.manager.finish()).toBe(true);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
+    expect(t.log).toEqual(["endSession", "turn:run", "turn:close", "note:manifest", "history:Note: The manifest", "endSession"]);
+  });
+});

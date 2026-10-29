@@ -10,6 +10,7 @@ import type {
   FileTimelineResult,
   FocusState,
   HarnessClient,
+  JobSummary,
   MaterialView,
   ModeResult,
   ModeSwitch,
@@ -24,6 +25,7 @@ import type {
   SetupStepsState,
   SidekickState,
   TaskTurnNotice,
+  TasksState,
   TaskView,
   TextSize,
 } from "@humanharness/ui/client";
@@ -244,6 +246,20 @@ const client: HarnessClient = {
     read: (plugin, key) => ipcRenderer.invoke("hh:attentionRead", plugin, key),
     open: (plugin, key) => ipcRenderer.invoke("hh:attentionOpen", plugin, key),
     onChange: (listener) => subscribe<AttentionView>("hh:attention", listener),
+  },
+  // Main's board-mode inbox channels; plain mode refuses every call and never sends hh:tasksChange (D0).
+  tasks: {
+    list: () => ipcRenderer.invoke("hh:tasksList"),
+    onChange: (listener) => subscribe<TasksState>("hh:tasksChange", listener),
+    focus: (id) => ipcRenderer.invoke("hh:tasksFocus", id),
+    cancelQueued: (id) => ipcRenderer.invoke("hh:tasksCancelQueued", id),
+    resumeQueues: () => ipcRenderer.invoke("hh:tasksResume"),
+  },
+  // Main's jobs channels (part 3); without jobs main refuses every call and never sends hh:jobsChange (D0).
+  jobs: {
+    list: () => ipcRenderer.invoke("hh:jobsList"),
+    run: (id, scope) => ipcRenderer.invoke("hh:jobsRun", id, scope),
+    onChange: (listener) => subscribe<JobSummary[]>("hh:jobsChange", listener),
   },
   setupSteps: {
     get: () => ipcRenderer.invoke("hh:setupStepsGet"),

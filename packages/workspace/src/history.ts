@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
@@ -76,6 +77,10 @@ export interface HistoryEntry {
   phase?: string;
   /** The plugin whose prepared task this is (its `Plugin:` trailer), only for such tasks. */
   plugin?: string;
+  /** The job this run is (its `Job:` trailer), only for job runs. */
+  job?: string;
+  /** The other running tasks this commit's paths are shared with (its `Shared:` trailers), only on a shared commit. */
+  shared?: string[];
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
@@ -88,6 +93,20 @@ export interface HistoryTrailer {
   phase?: string;
   /** The plugin whose prepared task this is, plugins spec §5.3; only for such tasks. */
   plugin?: string;
+  /** The job this run is (parallel spec §8); only for job runs. */
+  job?: string;
+  /** Other running tasks that may also have changed this commit's paths (spec §5.2); only on a shared commit. */
+  shared?: string[];
+}
+
+/** The tracked paths that differ from HEAD, each with its working blob id (null: deleted). */
+export type DirtyState = ReadonlyMap<string, string | null>;
+
+/** A commit after a given point, with the paths it changed (`History.commitsSince`). */
+export interface CommitSince {
+  sha: string;
+  task: string | null;
+  paths: string[];
 }
 
 /** A file a task added, changed or deleted (tracked files only). */
@@ -113,7 +132,10 @@ export interface HistoryTask {
   end: string;
   /** The date of `end`. */
   date: Date;
-  /** Tasks: the tree diff from `start` to `end`. Outside a task: the union of its commits' own changes. */
+  /**
+   * Tasks: the tree diff from `start` to `end`; with `ownCommits`, the union of its own commits' changes (parallel spec
+   * §5.3), the commit at `start` left out. Outside a task: the union of its commits' own changes.
+   */
   changes: FileChange[];
   /** Newest first. */
   entries: HistoryEntry[];
@@ -162,11 +184,31 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
   }
 }
 
+/**
+ * A path written exactly as git names it: relative, `/`-separated, no `.` or `..` segment, no trailing `/`, no `\\`.
+ * Anything else could name a tracked file by another spelling (`./a.md`, `sub/../a.md`) and slip past `tracked`.
+ */
+export const isCanonicalPath = (p: string): boolean =>
+  p !== "" && !p.startsWith("/") && !p.includes("\\") && path.posix.normalize(p) === p && !p.endsWith("/") && !p.split("/").some((s) => s === "." || s === "..");
+
+/** A file that vanished (or became a folder) between listing and reading it reads as null; any other error is thrown. */
+const goneAsNull = (err: unknown): null => {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") return null;
+  throw err;
+};
+
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;
 
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+/** An id `withTrailer` writes as a `Task:` or `Shared:` line; any other is left out. */
+export const isTrailerId = (id: string): boolean => TRAILER_ID.test(id);
+
+/** At most this many `Shared:` lines on one commit, written or read. */
+const SHARED_MAX = 8;
 
 /** `message` folded to one line, plus `Task:` and `Action:` trailers when `trailer` holds valid ids. */
 export function withTrailer(message: string, trailer?: HistoryTrailer): string {
@@ -178,15 +220,18 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (trailer.scope !== undefined && isScopeDir(trailer.scope)) lines.push(`Scope: ${trailer.scope}`);
   if (trailer.phase !== undefined && TRAILER_ID.test(trailer.phase)) lines.push(`Phase: ${trailer.phase}`);
   if (trailer.plugin !== undefined && PLUGIN_ID.test(trailer.plugin)) lines.push(`Plugin: ${trailer.plugin}`);
+  if (trailer.job !== undefined && TRAILER_ID.test(trailer.job)) lines.push(`Job: ${trailer.job}`);
+  const shared = new Set((trailer.shared ?? []).filter((t) => t !== trailer.task && TRAILER_ID.test(t)));
+  for (const other of [...shared].slice(0, SHARED_MAX)) lines.push(`Shared: ${other}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin|Job|Shared): \S+$/;
 
 /**
- * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase` and `plugin` only
- * when present). Only a last paragraph made entirely of trailer lines counts.
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase`, `plugin`, `job` and
+ * `shared` only when present). Only a last paragraph made entirely of trailer lines counts.
  */
 export function parseCommitMessage(raw: string): {
   subject: string;
@@ -195,6 +240,8 @@ export function parseCommitMessage(raw: string): {
   scope?: string;
   phase?: string;
   plugin?: string;
+  job?: string;
+  shared?: string[];
 } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
@@ -207,6 +254,8 @@ export function parseCommitMessage(raw: string): {
   const scope = /^Scope: (.+)$/m.exec(trailers)?.[1];
   const phase = value("Phase");
   const plugin = /^Plugin: (.+)$/m.exec(trailers)?.[1];
+  const job = value("Job");
+  const shared = [...trailers.matchAll(/^Shared: (.+)$/gm)].map((m) => m[1]).filter((t) => TRAILER_ID.test(t)).slice(0, SHARED_MAX);
   return {
     subject: text.split("\n")[0],
     task: value("Task"),
@@ -214,6 +263,8 @@ export function parseCommitMessage(raw: string): {
     ...(isScopeDir(scope) ? { scope } : {}),
     ...(phase ? { phase } : {}),
     ...(plugin !== undefined && PLUGIN_ID.test(plugin) ? { plugin } : {}),
+    ...(job ? { job } : {}),
+    ...(shared.length > 0 ? { shared } : {}),
   };
 }
 
@@ -314,15 +365,39 @@ export class History {
     const head = await this.last();
     if (head === null) return true;
     const absolute = path.join(this.folder, file);
-    const stats = await fs.promises.lstat(absolute);
+    // A file gone since statusMatrix (another turn's temp file) differs: it is deleted now.
+    const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
+    if (stats === null) return true;
     // Only files modified around the HEAD commit time can be "racily clean".
     if (Math.floor(stats.mtimeMs / 1000) < this.headTime - 1) return false;
     const { blob } = await git.readBlob({ ...this.repo(), oid: head, filepath: file });
     // A link is stored as its target path: compare that, never what it points to.
-    const current = stats.isSymbolicLink()
-      ? await fs.promises.readlink(absolute, { encoding: "buffer" })
-      : await fs.promises.readFile(absolute);
-    return !Buffer.from(blob).equals(current);
+    const current = await (stats.isSymbolicLink()
+      ? fs.promises.readlink(absolute, { encoding: "buffer" })
+      : fs.promises.readFile(absolute)
+    ).catch(goneAsNull);
+    return current === null || !Buffer.from(blob).equals(current);
+  }
+
+  /**
+   * Stages `file` as it is in the folder; false when it is gone (or a folder sits in its place: `git.add` would stage
+   * what is under it). `git.add` reads through isomorphic-git's FileSystem, which reports any read error as not found:
+   * only a file truly gone afterwards counts as gone; anything else is thrown.
+   */
+  private async addUnlessGone(file: string): Promise<boolean> {
+    const absolute = path.join(this.folder, file);
+    const gone = async () => {
+      const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
+      return stats === null || stats.isDirectory();
+    };
+    if (await gone()) return false;
+    try {
+      await git.add({ ...this.repo(), filepath: file });
+      return true;
+    } catch (err) {
+      if (await gone()) return false;
+      throw err;
+    }
   }
 
   /** Commits the current state; `trailer` names the task it belongs to. Returns the new sha, or null when nothing changed. */
@@ -337,9 +412,12 @@ export class History {
     const paths: string[] = [];
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
+      // A file gone since statusMatrix (another turn's temp file), or a folder in its place, is deleted now.
+      if (workdir === 0 || !(await this.addUnlessGone(file))) {
+        await git.remove({ ...this.repo(), filepath: file });
+        if (head === 0) continue;
+      }
       paths.push(file);
-      if (workdir === 0) await git.remove({ ...this.repo(), filepath: file });
-      else await git.add({ ...this.repo(), filepath: file });
     }
     if (paths.length === 0 && parent !== null) return null;
     const sha = await git.commit({ ...this.repo(), message, author: AUTHOR });
@@ -577,6 +655,139 @@ export class History {
   }
 
   /**
+   * Commits only `paths` (tracked ones) as they are in the folder now; every other path keeps HEAD's content (parallel
+   * spec §5.2 step 4: a turn's partial commit). Null when none of them changed.
+   */
+  commitPaths(paths: readonly string[], message: string, trailer?: HistoryTrailer): Promise<string | null> {
+    return this.serialize(() => this.saveNow(withTrailer(message, trailer), new Set(paths)));
+  }
+
+  /**
+   * Brings only `paths` back to how they were at `sha` (a path absent there is removed) and commits just them (spec
+   * §5.3: a crashed turn's own paths, a task's undo). The same link checks as `restore`: never through a link, never
+   * outside the folder. Only exact tracked names count (a path absent at `sha` is removed only when the folder has it
+   * by that very name); others are ignored. The paths it couldn't write safely are skipped, reported and not committed.
+   */
+  restorePaths(paths: readonly string[], sha: string, message: string, trailer?: HistoryTrailer): Promise<RestoreResult> {
+    return this.serialize(async () => {
+      const wanted = new Set(paths.filter((p) => isCanonicalPath(p) && this.tracked(p)));
+      const target = await this.entriesAt(sha);
+      // The folder's own names: `A.md` never stands for `a.md` on a case-insensitive disk.
+      const present = new Set(
+        (await git.statusMatrix({ ...this.repo(), filter: (f) => wanted.has(f) && this.tracked(f) })).map(([f]) => f),
+      );
+      const root = await fs.promises.realpath(this.folder);
+      const skipped: string[] = [];
+      const skip = (file: string, why: unknown) => {
+        console.error(`Restore skipped ${file}`, why);
+        skipped.push(file);
+      };
+      for (const file of wanted) {
+        const entry = target.get(file);
+        if (entry) {
+          if (!(await this.writeEntry(root, file, entry, (dir) => resolvesInside(root, dir), () => undefined, skip))) wanted.delete(file);
+          continue;
+        }
+        const absolute = path.join(this.folder, file);
+        if (!(await resolvesInside(root, path.dirname(absolute)))) {
+          skip(file, "its folder leads outside the folder");
+          wanted.delete(file);
+          continue;
+        }
+        if (!present.has(file)) {
+          wanted.delete(file);
+          continue;
+        }
+        try {
+          // rm never follows a link: it removes the link itself.
+          await fs.promises.rm(absolute, { force: true });
+        } catch (err) {
+          skip(file, err);
+          wanted.delete(file);
+          continue;
+        }
+        await this.pruneEmptyParents(path.dirname(file));
+      }
+      return { sha: await this.saveNow(withTrailer(message, trailer), wanted), skipped };
+    });
+  }
+
+  /** The folder's dirty tracked paths now (parallel spec Decision 2: a turn that starts while another runs). */
+  dirtyState(): Promise<DirtyState> {
+    return this.serialize(() => this.dirtyNow());
+  }
+
+  /**
+   * The tracked paths whose content moved since `start` (null: every dirty path), sorted. A path committed by another
+   * turn meanwhile is clean against HEAD and drops out, unless it changed again (spec §5.2 step 1).
+   */
+  changedSince(start: DirtyState | null): Promise<string[]> {
+    return this.serialize(async () => {
+      const now = await this.dirtyNow();
+      return [...now]
+        .filter(([file, oid]) => !start || !start.has(file) || start.get(file) !== oid)
+        .map(([file]) => file)
+        .sort();
+    });
+  }
+
+  /** The dirty tracked paths against HEAD, by the same test `saveNow` stages with. */
+  private async dirtyNow(): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+    for (const [file, head, workdir, stage] of matrix) {
+      if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
+      if (head === 0 && workdir === 0) continue;
+      out.set(file, workdir === 0 ? null : await this.workOid(file));
+    }
+    return out;
+  }
+
+  /**
+   * The blob id of a file as it is in the folder (a link: of its target path, as git stores it); null when it vanished
+   * since statusMatrix (another turn's temp file): it counts as deleted.
+   *
+   * A second read of each dirty file: statusMatrix hashes them too but returns only indices, and a walk of our own
+   * would read through isomorphic-git's FileSystem, which turns every read error into empty content (a vanished file
+   * would hash as empty, EACCES would pass silently). So the bytes are streamed into the hash: never the whole file in
+   * memory, and a file over readFile's 2 GB limit still hashes.
+   */
+  private async workOid(file: string): Promise<string | null> {
+    const absolute = path.join(this.folder, file);
+    const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
+    if (stats === null) return null;
+    const linkOid = async () => {
+      const object = await fs.promises.readlink(absolute, { encoding: "buffer" }).catch(goneAsNull);
+      return object === null ? null : (await git.hashBlob({ object })).oid;
+    };
+    if (stats.isSymbolicLink()) return linkOid();
+    // O_NOFOLLOW: a link swapped in since the lstat is never followed; it hashes as a link.
+    const handle = await fs.promises
+      .open(absolute, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+      .catch((err: unknown) => ((err as { code?: unknown } | null)?.code === "ELOOP" ? ("link" as const) : goneAsNull(err)));
+    if (handle === "link") return linkOid();
+    if (handle === null) return null;
+    try {
+      // git's blob id: sha1 of `blob <size>\0` and the bytes. The size is the open file's; at most that many are read.
+      const { size } = await handle.stat();
+      const hash = createHash("sha1").update(`blob ${size}\0`);
+      const chunk = Buffer.alloc(Math.min(Math.max(size, 1), 1 << 20));
+      let read = 0;
+      while (read < size) {
+        const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - read), read);
+        if (bytesRead === 0) break;
+        hash.update(chunk.subarray(0, bytesRead));
+        read += bytesRead;
+      }
+      return hash.digest("hex");
+    } catch (err) {
+      return goneAsNull(err);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
    * Brings `file` back to how it was at `sha`, and nothing else (file-timeline spec §5): the commit stages only that
    * path, so the person's other edits wait for the next commit. Untagged, like every restore.
    */
@@ -641,7 +852,7 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action, scope, phase, plugin } = parseCommitMessage(e.commit.message);
+      const { subject, task, action, scope, phase, plugin, job, shared } = parseCommitMessage(e.commit.message);
       return {
         sha: e.oid,
         message: subject,
@@ -651,7 +862,26 @@ export class History {
         ...(scope ? { scope } : {}),
         ...(phase ? { phase } : {}),
         ...(plugin ? { plugin } : {}),
+        ...(job ? { job } : {}),
+        ...(shared ? { shared } : {}),
       };
+    });
+  }
+
+  /**
+   * The commits after `sha` (exclusive; null: every commit) within the last `depth`, newest first, each with its task
+   * and the paths it changed (parallel spec §5.3 conflicts).
+   */
+  commitsSince(sha: string | null, depth = 200): Promise<CommitSince[]> {
+    return this.serialize(async () => {
+      const cache = {};
+      const out: CommitSince[] = [];
+      for (const e of await this.listWith(depth, cache)) {
+        if (e.sha === sha) break;
+        const changes = await this.diff(await this.parentOf(e.sha, cache), e.sha, cache);
+        out.push({ sha: e.sha, task: e.task, paths: changes.map((c) => c.path) });
+      }
+      return out;
     });
   }
 
@@ -659,9 +889,10 @@ export class History {
    * The commits of the last `depth`, grouped by task id, newest task first; the "Outside a task" group always last.
    * A task's commits need not be contiguous: its changes run from its `start` to its last commit, so they
    * include whatever happened in between (untagged commits too). A task cut by `depth` is followed back
-   * past it to find its true first commit.
+   * past it to find its true first commit. With `ownCommits`, a task's changes come from its own commits only, so
+   * another task's commits in between don't show up under it (parallel spec §5.3).
    */
-  async tasks(depth = 200): Promise<HistoryTask[]> {
+  async tasks(depth = 200, opts: { ownCommits?: boolean } = {}): Promise<HistoryTask[]> {
     const cache = {};
     const groups = new Map<string | null, HistoryEntry[]>();
     for (const e of await this.listWith(depth, cache)) {
@@ -683,11 +914,22 @@ export class History {
         start,
         end: end.sha,
         date: end.date,
-        changes: taskId === null ? await this.unionOfChanges(entries, cache) : await this.diff(start, end.sha, cache),
+        changes:
+          taskId === null
+            ? await this.unionOfChanges(entries, cache)
+            : opts.ownCommits
+              ? await this.ownChanges(entries, start, cache)
+              : await this.diff(start, end.sha, cache),
         entries,
       });
     }
     return [...out.filter((g) => g.taskId !== null), ...out.filter((g) => g.taskId === null)];
+  }
+
+  /** The tracked files commit `sha` changed against its parent. */
+  async commitChanges(sha: string): Promise<FileChange[]> {
+    const cache = {};
+    return this.diff(await this.parentOf(sha, cache), sha, cache);
   }
 
   /** The files the history tracks in the folder now (relative, forward slashes). */
@@ -868,4 +1110,32 @@ export class History {
     }
     return [...seen.values()].sort(byPath);
   }
+
+  /**
+   * A task's changes from its own commits (newest first), the commit at `start` (its opening "Before message") left
+   * out. Each file's kinds fold oldest first, so with no other task in between this equals the `start` → end diff,
+   * except edits later reverted (a file changed then restored still shows as modified): added then modified is added,
+   * added then deleted is nothing, deleted then added is modified.
+   */
+  private async ownChanges(entries: HistoryEntry[], start: string | null, cache: object): Promise<FileChange[]> {
+    const kinds = new Map<string, FileChange["kind"] | null>();
+    for (const e of [...entries].reverse()) {
+      if (e.sha === start) continue;
+      for (const c of await this.diff(await this.parentOf(e.sha, cache), e.sha, cache)) {
+        const prev = kinds.get(c.path);
+        kinds.set(c.path, prev === undefined ? c.kind : foldKind(prev, c.kind));
+      }
+    }
+    const out: FileChange[] = [];
+    for (const [p, kind] of kinds) if (kind !== null) out.push({ path: p, kind });
+    return out.sort(byPath);
+  }
+}
+
+/** One file's net change after `prev` then `next` (null: no net change, the file was added then deleted). */
+function foldKind(prev: FileChange["kind"] | null, next: FileChange["kind"]): FileChange["kind"] | null {
+  if (prev === null) return next === "deleted" ? null : "added";
+  if (prev === "added") return next === "deleted" ? null : "added";
+  if (prev === "deleted") return next === "deleted" ? "deleted" : "modified";
+  return next === "deleted" ? "deleted" : "modified";
 }

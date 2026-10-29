@@ -66,6 +66,8 @@ export interface AcpScript {
   agentVersion?: string;
   /** Make `session/load` fail with a generic (non-login) error. */
   failLoad?: boolean;
+  /** session/update payloads sent before `session/load` answers, as an agent replays a loaded session's history. */
+  loadReplay?: Record<string, unknown>[];
   /** Advertise `sessionCapabilities.close` and answer `session/close`. */
   closeSession?: boolean;
   /** Never answer `session/close` (an agent stuck on it). */
@@ -113,4 +115,9 @@ export function claudeResultLine(ok: boolean, result = "", sessionId = "fake-ses
       ? { type: "result", subtype: "success", is_error: false, result, session_id: sessionId }
       : { type: "result", subtype: "error_during_execution", is_error: true, result, session_id: sessionId },
   };
+}
+
+/** A stream-json line where Claude calls an edit tool on `filePath` (parallel spec §5.2 tests). */
+export function claudeEditLine(id: string, filePath: string, tool: "Edit" | "Write" = "Write"): { line: unknown } {
+  return { line: { type: "assistant", message: { content: [{ type: "tool_use", id, name: tool, input: { file_path: filePath } }] } } };
 }

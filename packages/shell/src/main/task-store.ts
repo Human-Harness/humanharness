@@ -5,8 +5,9 @@ import type { ModelProfile } from "@humanharness/engines";
 import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID, refusedShape } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, TaskStatus } from "@humanharness/ui/client";
-import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
+import { MAIN_SCOPE, isCanonicalPath, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
 import { INDEX_NOTES_MAX, LABEL_MAX, READS_MAX, START_ITEMS_MAX } from "./context-record";
+import { withTasksFile } from "./lane-store";
 import { cleanProfile } from "./models";
 
 /** The input block the task waits an answer for (input-blocks spec §4): its id, its block's name, when it was shown. */
@@ -86,6 +87,10 @@ export interface CurrentTask {
   suspendedMode?: string;
   /** The plugin whose prepared task this is (plugins spec §5.3): its commits carry `Plugin: <id>`. */
   plugin?: string;
+  /** Tokens the task's turns used so far (parallel spec §9.1 `TaskSummary.tokens`). Board mode only: kept in `lanes`. */
+  tokens?: number;
+  /** Paths another task also changed (spec §5.3), newest notice last, at most CONFLICT_MAX. Board mode only. */
+  conflict?: string[];
   /** A core "Review <title>" task: the document it reviews (review spec §5.3). */
   review?: string;
   /** Lines the app puts before the task's next message (review spec §5.4 "the document's task is told"). */
@@ -110,6 +115,10 @@ export interface TasksFile {
   open?: string;
   /** Harnesses with scopes: how each action ended in every scope other than `main` (`_app` included). */
   scopes?: Record<string, Record<string, ActionStatus>>;
+  /** Board mode (parallel spec §6): every open task. Absent in a harness without `parallel` (D0); `current` stays null then. */
+  lanes?: CurrentTask[];
+  /** Board mode: the task the window shows; null or absent: the start view. */
+  focus?: string | null;
 }
 
 export const emptyTasks = (): TasksFile => ({ version: 1, current: null, actions: {} });
@@ -135,8 +144,22 @@ export const NOTICES_MAX = 10;
 export const NOTICE_MAX = 600;
 const PHASE_BY: readonly string[] = ["agent", "person", "app"];
 
+/** How many open tasks tasks.json keeps (board mode): a bound on a hand-edited file. */
+export const LANES_MAX = 32;
+/** How many conflicting paths a lane keeps, newest last. */
+export const CONFLICT_MAX = 20;
+/** A lane's id is its task id, its slot key and an IPC argument (parallel threat model P1): at most this long. */
+export const LANE_ID_MAX = 200;
+const CONFLICT_PATH_MAX = 1024;
+/**
+ * A lane id also names its chat file (`chats/<scope>/<id>.jsonl`): a UUID, or a test's `t1`. Lowercase (macOS folds
+ * case: `T1` and `t1` would share a chat), never a dot, a slash, a leading `_` (`__proto__`) or `-`. The same shape
+ * as the workspace's `isTaskId`.
+ */
+const LANE_ID = new RegExp(`^[a-z0-9][a-z0-9_-]{0,${LANE_ID_MAX - 1}}$`);
+
 /** What the manifest declares, when known: mode ids, and each action's phase ids. */
-interface Known {
+export interface Known {
   modes?: ReadonlySet<string>;
   phases?: ReadonlyMap<string, readonly string[]>;
 }
@@ -307,6 +330,36 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
   };
 }
 
+export const isLaneId = (v: unknown): v is string => typeof v === "string" && LANE_ID.test(v);
+
+/**
+ * Board mode's open tasks (parallel spec §6): each entry cleaned as `current` is, plus `tokens` and `conflict` (only
+ * canonical folder-relative paths). Entries that don't read as a task, an id that isn't a safe file name, a repeated
+ * id (the first wins) and any past LANES_MAX are dropped.
+ */
+export function cleanLanes(raw: unknown, known: Known = {}): CurrentTask[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CurrentTask[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (out.length >= LANES_MAX) break;
+    if (!isObject(entry) || !isLaneId(entry.id) || seen.has(entry.id)) continue;
+    const task = cleanCurrent(entry, known);
+    if (!task) continue;
+    seen.add(task.id);
+    const { tokens, conflict } = entry;
+    const paths = Array.isArray(conflict)
+      ? [...new Set(conflict.filter((p): p is string => typeof p === "string" && p.length <= CONFLICT_PATH_MAX && isCanonicalPath(p)))].slice(-CONFLICT_MAX)
+      : [];
+    out.push({
+      ...task,
+      ...(typeof tokens === "number" && Number.isSafeInteger(tokens) && tokens >= 0 ? { tokens } : {}),
+      ...(paths.length > 0 ? { conflict: paths } : {}),
+    });
+  }
+  return out;
+}
+
 function statuses(raw: unknown): Record<string, ActionStatus> {
   const out: Record<string, ActionStatus> = {};
   if (isObject(raw)) {
@@ -332,6 +385,9 @@ function clean(raw: unknown, known: Known = {}): TasksFile {
     actions: statuses(raw.actions),
     ...(isScopeId(raw.open) ? { open: raw.open } : {}),
     ...(scopes ? { scopes } : {}),
+    // Board mode only: a file without the key reads without it (D0), so it saves back unchanged.
+    ...("lanes" in raw ? { lanes: cleanLanes(raw.lanes, known) } : {}),
+    ...(raw.focus === null || isLaneId(raw.focus) ? { focus: raw.focus } : {}),
   };
 }
 
@@ -360,6 +416,17 @@ export function interrupted(state: TasksFile, outcome: ActionStatus = "unfinishe
   const scope = scopeOfTask(c);
   const status: ActionStatus = c.noteSaved || c.checkpointNote || statusesIn(state, scope)[c.action] === "done" ? "done" : outcome;
   return { ...withStatus(state, scope, c.action, status), current: null };
+}
+
+/**
+ * Board mode's start after a quit (parallel Decision 16): every open lane ends without a note, each as `interrupted`
+ * ends `current`, oldest first. A file without lanes (D0) is returned as is.
+ */
+export function interruptedLanes(state: TasksFile, outcome: ActionStatus = "unfinished"): TasksFile {
+  if (!state.lanes) return state;
+  let s: TasksFile = state;
+  for (const lane of state.lanes) s = interrupted({ ...s, current: lane }, outcome);
+  return { ...s, current: state.current, lanes: [], ...("focus" in state ? { focus: null } : {}) };
 }
 
 export class TaskStore {
@@ -407,9 +474,14 @@ export class TaskStore {
     }
   }
 
-  /** After an engine change: the open task ends (its session belongs to the old engine) and the file no longer names that engine. */
-  async forgetEngine(): Promise<void> {
-    const { engine: _old, ...rest } = interrupted(await this.load());
-    await this.save(rest);
+  /**
+   * After an engine change: the open task ends (its session belongs to the old engine) and the file no longer names that
+   * engine. In board mode every lane left open ends too, in the lanes' write chain (a file without lanes: as before).
+   */
+  forgetEngine(): Promise<void> {
+    return withTasksFile(this, async () => {
+      const { engine: _old, ...rest } = interruptedLanes(interrupted(await this.load()));
+      await this.save(rest);
+    });
   }
 }

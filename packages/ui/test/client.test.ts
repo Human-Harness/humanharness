@@ -169,6 +169,93 @@ describe("client.profiles (profiles spec §5)", () => {
   });
 });
 
+describe("client.tasks (parallel spec §9.1)", () => {
+  const parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+  /** A fake of a harness that declares `parallel`: without it every call is refused, as main does. */
+  function parallelClient() {
+    const client = new FakeClient();
+    client.state.parallel = parallel;
+    return client;
+  }
+
+  it("D0: without state.parallel every call is refused, as main does", async () => {
+    const client = new FakeClient();
+    await expect(client.tasks.list()).rejects.toThrow("No parallel tasks");
+    await expect(client.tasks.focus("a")).rejects.toThrow("No parallel tasks");
+    await expect(client.tasks.cancelQueued("c")).rejects.toThrow("No parallel tasks");
+    await expect(client.tasks.resumeQueues()).rejects.toThrow("No parallel tasks");
+  });
+
+  it("answers no tasks at cap 1 by default, and its methods sit beside the task view without spreading", async () => {
+    const client = parallelClient();
+    expect(await client.tasks.list()).toEqual({ tasks: [], caps: { tasks: 1, jobs: 1 } });
+    expect(Object.keys({ ...client.tasks }).sort()).toEqual(["actions", "current", "notes"]);
+  });
+
+  it("set() answers list and reaches every onChange listener until it unsubscribes", async () => {
+    const client = parallelClient();
+    const heard: string[][] = [];
+    const off = client.tasks.onChange((s) => heard.push(s.tasks.map((t) => t.id)));
+    const summary = { id: "a", scope: "main", action: null, label: "A question", state: "waiting" as const, startedAt: "2026-10-28T10:00:00Z", tokens: 0 };
+    client.tasks.set({ tasks: [summary], caps: { tasks: 2, jobs: 1 } });
+    expect(await client.tasks.list()).toEqual({ tasks: [summary], caps: { tasks: 2, jobs: 1 } });
+    off();
+    client.tasks.set({ tasks: [], caps: { tasks: 2, jobs: 1 } });
+    expect(heard).toEqual([["a"]]);
+  });
+
+  it("records focus, cancelQueued and resumeQueues as spies; cancelQueued answers null unless a test says otherwise", async () => {
+    const client = parallelClient();
+    await client.tasks.focus("a");
+    await client.tasks.focus(null);
+    expect(await client.tasks.cancelQueued("c")).toBeNull();
+    await client.tasks.resumeQueues();
+    expect(client.tasks.focus).toHaveBeenCalledTimes(2);
+    expect(client.tasks.focus).toHaveBeenNthCalledWith(1, "a");
+    expect(client.tasks.focus).toHaveBeenNthCalledWith(2, null);
+    expect(client.tasks.cancelQueued).toHaveBeenCalledWith("c");
+    expect(client.tasks.resumeQueues).toHaveBeenCalledTimes(1);
+    client.tasks.cancelQueued.mockResolvedValueOnce("the queued text");
+    expect(await client.tasks.cancelQueued("c")).toBe("the queued text");
+  });
+
+  it("each FakeClient has its own spies", async () => {
+    const a = parallelClient();
+    const b = parallelClient();
+    await a.tasks.focus("x");
+    expect(b.tasks.focus).not.toHaveBeenCalled();
+  });
+});
+
+describe("client.jobs (parallel spec §9.1, part 3)", () => {
+  const info = { jobs: [{ id: "sync", label: "Sync", manual: true }] };
+  const row = { id: "sync", label: "Sync", scope: null, manual: true, running: false };
+
+  it("D0: the namespace is there, and without state.jobs every call is refused, as main does", async () => {
+    const client = new FakeClient();
+    expect(typeof client.jobs.list).toBe("function");
+    expect(typeof client.jobs.run).toBe("function");
+    expect(typeof client.jobs.onChange).toBe("function");
+    await expect(client.jobs.list()).rejects.toThrow("No jobs");
+    await expect(client.jobs.run("sync")).rejects.toThrow("No jobs");
+  });
+
+  it("with state.jobs: list answers what set() gave, onChange hears it until it unsubscribes, run is a spy", async () => {
+    const client = new FakeClient();
+    client.state.jobs = info;
+    expect(await client.jobs.list()).toEqual([]);
+    const heard: string[][] = [];
+    const off = client.jobs.onChange((rows) => heard.push(rows.map((r) => r.id)));
+    client.jobs.set([row]);
+    expect(await client.jobs.list()).toEqual([row]);
+    off();
+    client.jobs.set([]);
+    expect(heard).toEqual([["sync"]]);
+    expect(await client.jobs.run("sync", "physics")).toBe(true);
+    expect(client.jobs.run).toHaveBeenCalledWith("sync", "physics");
+  });
+});
+
 describe("FakeClient documents (document-reader spec §5)", () => {
   it("reads, refuses, watches and opens like main and the preload", async () => {
     const c = new FakeClient();

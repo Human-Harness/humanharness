@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -541,6 +541,97 @@ describe("sidekick lines (sidekick spec §8)", () => {
     const u = profilesUsage({ sofi: [sk("t1", "2026-10-27T10:00:00Z")], tomas: [sk("t2", "2026-10-27T10:00:00Z"), sk("t3", "2026-10-27T10:00:00Z")] }, "sofi", undefined);
     expect(u.sidekick).toBe(2440);
     expect(profilesUsage({ sofi: [], tomas: [sk("t2", "2026-10-27T10:00:00Z")] }, "sofi", undefined)).not.toHaveProperty("sidekick");
+  });
+});
+
+describe("job lines (parallel spec §10, part 3 Decision 2)", () => {
+  const usage = { inputTokens: 300, outputTokens: 40, cacheReadTokens: 2000, cacheWriteTokens: 100 };
+  const turn = (task: string, at: string, action?: string): UsageRecord => ({ at, engine: "claude", task, ...(action ? { action } : {}), ok: true, usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+  // Job ids can be "questions" or "sidekick" today: the split is by phase, never by the job's id.
+  const job = (id: string, run: string, at: string, scope?: string) => jobRecord({ engine: "claude", job: id, task: run, ...(scope ? { scope } : {}), usage }, at);
+
+  it("D0: a task's usage record serialises exactly as before", () => {
+    const entry: ChatEntry = { id: "a", role: "assistant", text: "", blocks: [], activities: [], at: "2026-10-11T14:00:00.000Z", usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 } };
+    const meta: UsageMeta = { action: "tidy", task: "t1", scope: "s1", mode: "plan", taskPhase: "draft", phase: "run", tier: "standard", model: "sonnet", effort: "medium", cap: 1000 };
+    expect(JSON.stringify(usageRecord(entry, "claude", meta))).toBe(
+      '{"at":"2026-10-11T14:00:00.000Z","engine":"claude","action":"tidy","task":"t1","scope":"s1","mode":"plan","taskPhase":"draft","phase":"run","tier":"standard","model":"sonnet","effort":"medium","cap":1000,"ok":true,"usage":{"inputTokens":10,"outputTokens":2,"cacheReadTokens":3,"cacheWriteTokens":4}}',
+    );
+  });
+
+  it("a job record has phase job, the job's id and the run's id as task", () => {
+    expect(job("sync", "r1", "2026-10-27T10:00:00Z", "s1")).toEqual({ at: "2026-10-27T10:00:00Z", engine: "claude", task: "r1", scope: "s1", phase: "job", job: "sync", ok: true, usage });
+  });
+
+  it("usageRecord copies the job's id when the meta has one", () => {
+    const entry: ChatEntry = { id: "a", role: "assistant", text: "", blocks: [], activities: [], at: "t", usage };
+    expect(usageRecord(entry, "claude", { task: "r1", phase: "job", job: "sync" })).toMatchObject({ phase: "job", job: "sync", task: "r1" });
+    expect(usageRecord(entry, "claude", { task: "t1" })).not.toHaveProperty("job");
+  });
+
+  it("D0: a log without job lines has no jobs total", () => {
+    const s = summarizeUsage([turn("t1", "2026-10-27T10:00:00Z", "draft")], undefined);
+    expect(s).toEqual({ limits: null, estimates: {}, tokens: { draft: 1100 } });
+  });
+
+  it("job lines stay out of the topics (a job called questions too) and add a jobs total", () => {
+    const s = summarizeUsage([turn("q1", "2026-10-27T10:00:00Z"), job("questions", "r1", "2026-10-27T10:00:30Z"), job("sidekick", "r2", "2026-10-27T10:01:00Z")], undefined);
+    expect(s.tokens).toEqual({ questions: 1100 });
+    expect(s.jobs).toBe(4880);
+    expect(s).not.toHaveProperty("sidekick");
+  });
+
+  it("stay out of the per-scope totals", () => {
+    expect(summarizeUsage([job("sync", "r1", "2026-10-27T10:00:00Z", "s1")], undefined)).not.toHaveProperty("scopes");
+  });
+
+  it("a job line right after a task's turn leaves that turn unmeasured", () => {
+    const between: UsageRecord = { ...job("sync", "r1", "t"), limits: rec(0.25, R1).limits };
+    expect(summarizeUsage([rec(0.1, R1, "tidy"), between, rec(0.2, R1)], "five_hour").estimates).toEqual({});
+  });
+
+  it("with profiles, the jobs total is the active profile's", () => {
+    const u = profilesUsage({ sofi: [job("sync", "r1", "2026-10-27T10:00:00Z")], tomas: [job("sync", "r2", "2026-10-27T10:00:00Z"), job("sync", "r3", "2026-10-27T10:00:00Z")] }, "sofi", undefined);
+    expect(u.jobs).toBe(2440);
+    expect(profilesUsage({ sofi: [], tomas: [job("sync", "r2", "2026-10-27T10:00:00Z")] }, "sofi", undefined)).not.toHaveProperty("jobs");
+  });
+
+  it("a day's tokens: job lines under jobs, apart from tasks and Sidekick; no jobs key without any (D0)", () => {
+    const sk = sidekickRecord({ engine: "claude", task: "t1", sidekick: "sidekick", moment: "pre", profile: { engine: "claude", tier: "light", effort: "low", cap: 1 }, ok: true, usage }, "2026-10-27T10:00:00Z");
+    const day = (at: string) => at.slice(0, 10);
+    const lines = [turn("t1", "2026-10-27T10:00:00Z"), sk, job("sync", "r1", "2026-10-27T11:00:00Z"), job("sync", "r0", "2026-10-26T11:00:00Z")];
+    expect(dayTokens(lines, "2026-10-27", (d) => day(d.toISOString()))).toEqual({ tasks: 1100, sidekick: 440, jobs: 440 });
+    expect(dayTokens([turn("t1", "2026-10-27T10:00:00Z"), sk], "2026-10-27", (d) => day(d.toISOString()))).toEqual({ tasks: 1100, sidekick: 440 });
+  });
+});
+
+describe("recentUsage: job lines don't push tasks out of the latest lines", () => {
+  const usage = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  const task = (at: string): UsageRecord => ({ at, engine: "claude", action: "tidy", task: "t1", ok: true, usage });
+  const job = (i: number) => jobRecord({ engine: "claude", job: "sync", task: `r${i}`, usage }, "2026-10-27T11:00:00Z");
+
+  it("keeps the last n non-job lines and every job line among or after them", () => {
+    const lines = [task("a"), job(0), task("b"), job(1), task("c"), job(2)];
+    expect(recentUsage(lines, 2).map((r) => r.task)).toEqual(["t1", "r1", "t1", "r2"]);
+    expect(recentUsage(lines, 2)[0].at).toBe("b");
+    expect(recentUsage(lines, 10)).toEqual(lines);
+  });
+
+  it("D0: without job lines it is the last n lines, as load(n) gave", () => {
+    const lines = [task("a"), task("b"), task("c")];
+    expect(recentUsage(lines, 2)).toEqual(lines.slice(-2));
+  });
+
+  it("a task line followed by 500 job lines still summarises", () => {
+    const lines = [task("2026-10-27T10:00:00Z"), ...Array.from({ length: 500 }, (_, i) => job(i))];
+    expect(summarizeUsage(recentUsage(lines, 500), undefined).tokens).toEqual({ tidy: 1100 });
+    // What load(500) gave before: the task line pushed out.
+    expect(summarizeUsage(lines.slice(-500), undefined).tokens).toEqual({});
+  });
+
+  it("the latest window is found past job lines (they carry no limits)", () => {
+    const withWindow: UsageRecord = { ...task("x"), limits: rec(0.3, R1).limits };
+    const lines = [withWindow, ...Array.from({ length: 60 }, (_, i) => job(i))];
+    expect(recentUsage(lines, 50).filter((r) => r.limits?.length).at(-1)).toBe(withWindow);
   });
 });
 

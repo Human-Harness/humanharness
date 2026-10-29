@@ -4,7 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import { callMcpTool } from "./mcp-call";
 import { APP_FOLDERS, loadRecordings } from "./mock";
-import { type ActionMatch, type SessionPosition, replay } from "./mock-replay";
+import { type ActionMatch, type SessionPosition, isMockJobTurn, replay } from "./mock-replay";
 
 type McpServers = Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
 
@@ -165,7 +165,9 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
   const { recordings, problems } = loadRecordings(env.dir);
   for (const p of problems) process.stderr.write(`mock: skipped ${p}\n`);
   const sessions = readState(env.state);
-  const { play, session } = replay(recordings, sessions[sessionId], prompt, newSession, readActions(env.actions));
+  // A job slot's ui server alone carries HH_JOB=1 (runtime workspace.ts): the prompt's mark by itself is no job.
+  const job = mcpServers.ui?.env?.HH_JOB === "1" && isMockJobTurn(prompt);
+  const { play, session } = replay(recordings, sessions[sessionId], prompt, newSession, readActions(env.actions), job);
 
   const model = flag(argv, "--model");
   print({ type: "system", subtype: "init", session_id: sessionId, ...(model ? { model } : {}) });
@@ -219,6 +221,8 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
     session_id: sessionId,
     usage: { input_tokens: u.input, output_tokens: u.output, cache_read_input_tokens: u.cacheRead, cache_creation_input_tokens: u.cacheWrite },
   });
+  // A job's run is one turn with no session to follow: it leaves the state alone.
+  if (job) return;
   // Saved last: a turn that failed or was cancelled does not advance the session.
   sessions[sessionId] = session;
   writeState(env.state, sessions);

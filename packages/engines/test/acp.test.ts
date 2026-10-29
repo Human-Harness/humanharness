@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
 import { type ModelProfile, getEngine } from "../src";
-import { AcpTransport, type PermissionPolicy, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp/client";
+import { AcpTransport, type PermissionPolicy, acpEditPaths, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp/client";
 import type { Event, Session } from "../src/contract";
 import { type TransportOptions, acpFields } from "../src/acp/options";
 
@@ -1047,6 +1047,68 @@ describe("AcpTransport: OpenCode offer and cost", () => {
     );
     expect(usageOf(await run(t, "one"))?.costUsd).toBeCloseTo(0.02);
     expect(usageOf(await run(t, "two"))).not.toHaveProperty("costUsd");
+  });
+});
+
+describe("acpEditPaths (parallel spec §5.2)", () => {
+  it("edit, delete and move calls: locations and diff paths, deduplicated", () => {
+    expect(acpEditPaths({ kind: "edit", locations: [{ path: "/w/a.md" }], content: [{ type: "diff", path: "/w/a.md" }, { type: "diff", path: "/w/b.md" }] })).toEqual(["/w/a.md", "/w/b.md"]);
+    expect(acpEditPaths({ kind: "delete", locations: [{ path: "/w/x" }] })).toEqual(["/w/x"]);
+    expect(acpEditPaths({ kind: "move", locations: [{ path: "/w/y" }] })).toEqual(["/w/y"]);
+    expect(acpEditPaths({ kind: "edit", locations: [{ path: `/w/${"x".repeat(5000)}` }, { path: "/w/z" }] })).toEqual(["/w/z"]);
+    expect(acpEditPaths({ kind: "read", locations: [{ path: "/w/a.md" }] })).toEqual([]);
+    expect(acpEditPaths({ kind: "edit", locations: [{ path: "" }, {}, null] })).toEqual([]);
+    expect(acpEditPaths({ kind: "edit", content: [{ type: "content", path: "/w/a.md" }, null, { type: "diff", path: 3 }] })).toEqual([]);
+  });
+  it("Codex's shape: no locations, the path only in the diff (spike PT-S3)", () => {
+    const call = { kind: "edit", title: "Editing files", content: [{ type: "diff", path: "/tmp/w/c.txt", oldText: null, newText: "c" }] };
+    expect(acpEditPaths(call)).toEqual(["/tmp/w/c.txt"]);
+  });
+  it("a shell write names no path: edits is only a hint (spike PT-S3)", () => {
+    const call = { kind: "execute", title: "cat > c.txt <<'EOF'", rawInput: { command: ["bash", "-lc", "cat > c.txt"] } };
+    expect(acpEditPaths(call)).toEqual([]);
+  });
+  it("keeps at most 50 paths from one call", () => {
+    const content = Array.from({ length: 60 }, (_, i) => ({ type: "diff", path: `/w/f${i}` }));
+    expect(acpEditPaths({ kind: "edit", content })).toHaveLength(50);
+  });
+  it("emits them on the tool call's start event", async () => {
+    const { transport } = setup({
+      turns: [[
+        { update: { sessionUpdate: "tool_call", toolCallId: "e1", title: "Edit a.md", kind: "edit", status: "pending", locations: [{ path: "/w/a.md" }] } },
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "e1", status: "completed" } },
+      ]],
+    });
+    const events = await run(transport);
+    expect(events.filter((e) => e.type === "activity")).toEqual([
+      { type: "activity", id: "e1", kind: "edit", detail: "a.md", edits: ["/w/a.md"], state: "start" },
+      { type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "end", error: false },
+    ]);
+  });
+  it("Codex's stream (spike PT-S3): the diff path on the start event, nothing from the update, none from a shell write", async () => {
+    const { transport } = setup({
+      turns: [[
+        { update: { sessionUpdate: "tool_call", toolCallId: "e1", title: "Editing files", kind: "edit", status: "in_progress", content: [{ type: "diff", path: "/tmp/w/c.txt", oldText: null, newText: "c" }] } },
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "e1", status: "completed", content: [{ type: "diff", path: "/tmp/w/other.txt", oldText: null, newText: "x" }] } },
+        { update: { sessionUpdate: "tool_call", toolCallId: "x1", title: "cat > d.txt <<'EOF'", kind: "execute", status: "in_progress", rawInput: { command: ["bash", "-lc", "cat > d.txt"], cwd: "/tmp/w" } } },
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "x1", status: "completed" } },
+      ]],
+    });
+    const activities = (await run(transport)).filter((e): e is Extract<Event, { type: "activity" }> => e.type === "activity");
+    expect(activities.map((e) => [e.id, e.state, e.edits])).toEqual([
+      ["e1", "start", ["/tmp/w/c.txt"]],
+      ["e1", "end", undefined],
+      ["x1", "start", undefined],
+      ["x1", "end", undefined],
+    ]);
+    expect(activities.filter((e) => "edits" in e)).toHaveLength(1);
+  });
+  it("D0: a read call's start event carries no edits (only master's context-panel `paths`)", async () => {
+    const { transport } = setup({
+      turns: [[{ update: { sessionUpdate: "tool_call", toolCallId: "r1", title: "Read a.md", kind: "read", status: "pending", locations: [{ path: "/w/a.md" }] } }]],
+    });
+    const events = await run(transport);
+    expect(events.filter((e) => e.type === "activity")).toEqual([{ type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/a.md"], state: "start" }]);
   });
 });
 

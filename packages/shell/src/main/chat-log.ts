@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
-import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir } from "@humanharness/workspace";
+import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, isTaskId, taskChatFile } from "@humanharness/workspace";
 import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow } from "@humanharness/runtime";
 import { type AnswerPart, type ChatEntry, type DocumentCard, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
@@ -14,11 +14,24 @@ export class ChatLog {
    * scope's chat (`chats/<scope>.jsonl`); `main`, the default, is also the chat of a harness without scopes.
    */
   constructor(
-    folder: string,
+    private readonly folder: string,
     private readonly engine?: string,
     private readonly scope: string = MAIN_SCOPE,
+    /** Board mode (parallel spec §6): the task's own chat, `chats/<scope>/<task>.jsonl`. Absent: the scope's chat, as before. */
+    private readonly task?: string,
   ) {
-    this.file = chatFile(folder, scope);
+    this.file = task === undefined ? chatFile(folder, scope) : taskChatFile(folder, scope, task);
+  }
+
+  /**
+   * A task chat sits in a folder of its own, which a symlink could point elsewhere: its folder must resolve to
+   * `chats/<scope>/`, and the file must be a plain file with no other name (no symlink, no hard link). Throws
+   * otherwise. Only called for a task chat: a scope's chat is not checked (as before).
+   */
+  private async checkInside(): Promise<void> {
+    await assertInChats(this.folder, path.dirname(this.file));
+    const file = await fs.lstat(this.file).catch(() => null);
+    if (file && (!file.isFile() || file.nlink > 1)) throw new Error(`The chat of task "${this.task}" is outside the chats folder`);
   }
 
   /** The scopes that have a chat file in `folder` (`_app` included), sorted. */
@@ -31,14 +44,36 @@ export class ChatLog {
       .sort();
   }
 
+  /**
+   * The task chats in `folder` (board mode, `chats/<scope>/<task>.jsonl`), sorted. Only real folders directly under
+   * `chats/` with a scope's name count (never `archive`, never a symlink); a folder that can't be read is skipped.
+   */
+  static async taskChatsIn(folder: string): Promise<{ scope: string; task: string }[]> {
+    const dirs = await fs.readdir(chatsDir(folder), { withFileTypes: true }).catch(() => []);
+    const out: { scope: string; task: string }[] = [];
+    for (const d of dirs) {
+      if (!d.isDirectory() || d.name === "archive" || !isScopeDir(d.name)) continue;
+      const names = await fs.readdir(path.join(chatsDir(folder), d.name)).catch(() => [] as string[]);
+      for (const n of names) {
+        const task = n.endsWith(".jsonl") ? n.slice(0, -".jsonl".length) : "";
+        if (isTaskId(task)) out.push({ scope: d.name, task });
+      }
+    }
+    return out.sort((a, b) => (a.scope === b.scope ? (a.task < b.task ? -1 : 1) : a.scope < b.scope ? -1 : 1));
+  }
+
   async append(entry: ChatEntry): Promise<void> {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.appendFile(this.file, JSON.stringify(this.engine ? { ...entry, engine: this.engine } : entry) + "\n");
+    const line = JSON.stringify(this.engine ? { ...entry, engine: this.engine } : entry) + "\n";
+    if (this.task === undefined) return fs.appendFile(this.file, line);
+    await this.checkInside();
+    await fs.appendFile(this.file, line, { flag: constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW });
   }
 
   async load(limit = 200): Promise<ChatEntry[]> {
     let raw: string;
     try {
+      if (this.task !== undefined) await this.checkInside();
       raw = await fs.readFile(this.file, "utf8");
     } catch {
       return [];
@@ -66,6 +101,7 @@ export class ChatLog {
   async markAnswered(answer: BlockAnswer): Promise<boolean> {
     let raw: string;
     try {
+      if (this.task !== undefined) await this.checkInside();
       raw = await fs.readFile(this.file, "utf8");
     } catch {
       return false;
@@ -97,21 +133,45 @@ export class ChatLog {
     return true;
   }
 
-  /** Moves the conversation to `chats/archive/<time>-<label>.jsonl`. Null when there was none. */
+  /**
+   * Moves the conversation to `chats/archive/<time>-<label>.jsonl` (`<time>-<scope>-<label>` outside `main`). A
+   * task's chat goes to `<time>-<scope>.<task>.<label>.jsonl`, dots that no scope chat's name has; a task id longer
+   * than 64 is shortened with a hash, so the name stays well under a file system's limit. An archive is never
+   * overwritten: a name already taken gets `-2`, `-3`… Null when there was no conversation.
+   */
   async archive(label: string): Promise<string | null> {
     try {
       await fs.access(this.file);
     } catch {
       return null;
     }
-    const dir = path.join(path.dirname(this.file), "archive");
+    const dir = path.join(chatsDir(this.folder), "archive");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const scope = this.scope === MAIN_SCOPE ? "" : `${this.scope}-`;
-    const target = path.join(dir, `${stamp}-${scope}${label.replace(/[^a-z0-9-]/gi, "")}.jsonl`);
+    const clean = label.replace(/[^a-z0-9-]/gi, "");
+    let name: string;
+    if (this.task !== undefined) {
+      await this.checkInside();
+      name = `${stamp}-${this.scope}.${shortTask(this.task)}.${clean.slice(0, 40)}`;
+    } else name = `${stamp}-${this.scope === MAIN_SCOPE ? "" : `${this.scope}-`}${clean}`;
     await fs.mkdir(dir, { recursive: true });
+    if (this.task !== undefined) await assertInChats(this.folder, dir);
+    let target = path.join(dir, `${name}.jsonl`);
+    for (let n = 2; await fs.lstat(target).then(() => true, () => false); n++) target = path.join(dir, `${name}-${n}.jsonl`);
     await fs.rename(this.file, target);
     return target;
   }
+}
+
+/** A task id for an archive name: as it is up to 64 characters, else its start and a hash of the whole. */
+const shortTask = (task: string): string => (task.length <= 64 ? task : `${task.slice(0, 40)}-${createHash("sha256").update(task).digest("hex").slice(0, 16)}`);
+
+/**
+ * Throws unless `dir` (an existing folder directly under `<base>/.harness/chats/`) resolves to that place: a symlink
+ * there must not lead a chat out of the chats folder.
+ */
+export async function assertInChats(base: string, dir: string): Promise<void> {
+  const [real, chats] = await Promise.all([fs.realpath(dir), fs.realpath(chatsDir(base))]);
+  if (real !== path.join(chats, path.basename(dir))) throw new Error(`"${path.basename(dir)}" is outside the chats folder`);
 }
 
 /** Accumulates one turn's events into the assistant entry that gets saved. */

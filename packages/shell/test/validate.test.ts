@@ -177,6 +177,14 @@ describe("configProblem", () => {
     expect(await configProblem({ models: null } as never, ctx)).toBe("invalid");
   });
 
+  it("never refuses a config for its parallel caps (a hand-edited one is cleaned, not fatal); notifyWaiting only as a boolean", async () => {
+    for (const caps of [{ tasks: 3, jobs: 1 }, { tasks: 12 }, { tasks: "2" }, [], null]) {
+      expect(await configProblem({ parallel: caps } as never, ctx)).toBeNull();
+    }
+    expect(await configProblem({ notifyWaiting: true }, ctx)).toBeNull();
+    expect(await configProblem({ notifyWaiting: "yes" } as never, ctx)).toBe("invalid");
+  });
+
   it("accepts backupDismissed only as a boolean", async () => {
     expect(await configProblem({ backupDismissed: true }, ctx)).toBeNull();
     expect(await configProblem({ backupDismissed: false }, ctx)).toBeNull();

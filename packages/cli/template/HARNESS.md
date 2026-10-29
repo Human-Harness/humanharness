@@ -14,6 +14,10 @@ The living decision log of this harness. The `/new-harness` guide fills each sec
 
 <!-- One row per action, plus (questions) for free questions. `check` compares this table with harness.config.ts. -->
 
+<!-- Parallel tasks: declare `parallel` only when the person runs independent tasks side by side, not for one guided flow. Note the suggested cap and why (the person can change it), and whether the core inbox shows or the harness draws its own from `client.tasks` (`inbox: false`). -->
+
+<!-- Background jobs: list each job (a sync, a check after a task, a periodic digest) with its trigger, its scope, its tier (`light` unless there is a reason), its `dailyTokens` when it runs on `every`, and its permissions if narrower than the harness's (`{ edit: "none" }` for a data-only sync). Each job ends with `job_result`; name the action a `needs-you` result points to. -->
+
 | Action | Tier | Cost | Purpose |
 |---|---|---|---|
 | example | standard | light | Shows how an action works |

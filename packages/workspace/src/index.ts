@@ -17,6 +17,8 @@ export * from "./data-diff";
 export * from "./sidekick-checks";
 export * from "./sidekick-brief";
 export * from "./sidekick-events";
+export * from "./attribution";
+export * from "./undo-paths";
 export * from "./reviews";
 export * from "./review-requests";
 export * from "./safe-read";

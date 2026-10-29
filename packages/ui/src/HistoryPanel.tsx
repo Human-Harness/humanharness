@@ -17,6 +17,7 @@ import {
   STOPPED_PREFIX,
   TURN_PREFIX,
   UNDO_PREFIX,
+  type UndoRefusal,
 } from "./client";
 import { ChevronIcon, ClockIcon, CloseIcon, UndoIcon } from "./chrome";
 import { shownLanguage } from "./language";
@@ -72,6 +73,7 @@ export function HistoryPanel({
   onRestored,
   disabled = false,
   currentTask,
+  jobs = [],
   onOpenFile,
 }: {
   client: HarnessClient;
@@ -84,6 +86,14 @@ export function HistoryPanel({
   onRestored?: (kind: Restore["kind"]) => void;
   /** Going back is not allowed while a turn is live. */
   disabled?: boolean;
+  /**
+   * Board mode (parallel spec §5.3): "Undo this task" takes back only the task's own files and never another task's.
+   * Main refuses when a later change touched them, and the panel then says why; main's dialog lists no later tasks.
+   * Only main acts on it now (the dialog is main's); the panel takes it so callers can say which mode they are in.
+   */
+  undoByFiles?: boolean;
+  /** The harness's jobs (part 3): a job run's row shows its job's label. */
+  jobs?: { id: string; label: string }[];
   /** A changed file was picked: its timeline opens (file-timeline spec §6.2). Absent: the paths stay plain text. */
   onOpenFile?: (path: string, kind: HistoryFileChange["kind"]) => void;
 }) {
@@ -91,6 +101,8 @@ export function HistoryPanel({
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [failed, setFailed] = useState(false);
+  /** Board mode: why main refused the last "Undo this task". */
+  const [refused, setRefused] = useState<UndoRefusal | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
   const [restoring, setRestoring] = useState(false);
@@ -168,9 +180,17 @@ export function HistoryPanel({
   const restore = (r: Restore) => {
     if (restoring) return;
     setFailed(false);
+    setRefused(null);
     setRestoring(true);
     (r.kind === "task" ? client.restoreTask(r.id) : client.restore(r.id)).then(
       (answer) => {
+        // Board mode: main refused, naming why (spec §5.3); nothing changed.
+        if (answer && "refused" in answer) {
+          refocus.current = triggerId(r);
+          setRestoring(false);
+          setRefused(answer.refused);
+          return;
+        }
         if (answer && answer.ok === false) {
           refocus.current = triggerId(r);
           setRestoring(false);
@@ -202,6 +222,11 @@ export function HistoryPanel({
 
   const rowLabel = (g: HistoryTaskView) => {
     if (g.taskId === null) return t("history.other");
+    if (g.jobId !== undefined) {
+      // A job the harness no longer has is just "a background job".
+      const job = jobs.find((j) => j.id === g.jobId);
+      return job ? t("parallel.historyJob", { label: job.label }) : t("parallel.historyJobUnknown");
+    }
     if (g.actionId === null) return t("history.question");
     // An action the harness no longer has (or a trailer such as "toString") is just "a task".
     return Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label : t("history.task");
@@ -209,6 +234,12 @@ export function HistoryPanel({
   const entryText = (e: HistoryItem) => {
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
+  };
+  const refusalText = (r: UndoRefusal): string => {
+    if (r.reason === "running") return t("parallel.undoRunning", { path: r.path });
+    if (r.reason === "uncommitted") return t("parallel.undoUnsaved", { path: r.path });
+    if (r.reason === "later") return t(r.by === "task" ? "parallel.undoLaterTask" : "parallel.undoLaterOutside", { path: r.path });
+    return t(r.reason === "too-far" ? "parallel.undoTooFar" : "parallel.undoNothing");
   };
   const language = shownLanguage(i18n);
   /** The time alone; the day is its section's heading, and the full date shows on hover. */
@@ -249,6 +280,7 @@ export function HistoryPanel({
         </p>
       )}
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
+      {refused && <p role="alert">{refusalText(refused)}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
       {groups?.length === 0 && (
         <div className="hh-history-empty">

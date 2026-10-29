@@ -37,6 +37,17 @@ export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "
   return "reply";
 }
 
+/**
+ * The sentence that opens the "how to end" part of a background job's first message (shell `jobFirstMessage` in
+ * jobs/job-prompt.ts; a copy: fake-agent never imports the shell; shell job-prompt.test pins it).
+ */
+export const MOCK_JOB_MARK = "This is a background job: nobody reads this conversation and nobody can answer.";
+/** What a job's turn reports in mock mode (parallel part 3 Decision 10): tests that need another result use scripts. */
+export const MOCK_JOB_RESULT = { status: "ok", summary: "Mock run" } as const;
+
+/** A background job's turn: a line of the prompt starts with the mark (the brief comes first, so not the prompt's start). */
+export const isMockJobTurn = (prompt: string): boolean => prompt.split("\n").some((line) => line.startsWith(MOCK_JOB_MARK));
+
 const PHASE_START = "Next part of this task:";
 const CONTEXT_ADD_START = "The person wants you to take `";
 /** The only line the app keeps for a task today (task-manager.ts `documentApproved`). */
@@ -151,7 +162,8 @@ const longestMatch = <T extends { match: string }>(items: readonly T[], prompt: 
  * One engine turn of mock mode. `newSession`: the run opened a session (`--session-id`), so the prompt is a
  * task's first message and picks the recording; otherwise `position` says where the session is. `actions`: the
  * harness's actions by their brief's match, so a task of an action with no recording still knows its action
- * (its closing note is titled after it); a free question matches none.
+ * (its closing note is titled after it); a free question matches none. `jobSlot`: the slot's ui server runs in job
+ * mode (`HH_JOB=1`); only then can the prompt's mark make the turn a job's.
  */
 export function replay(
   recordings: Recording[],
@@ -159,7 +171,12 @@ export function replay(
   prompt: string,
   newSession: boolean,
   actions: readonly ActionMatch[] = [],
+  jobSlot = false,
 ): { play: Play; session: SessionPosition } {
+  // A job's turn never plays a recording, whatever its brief names: it reports the canned result and ends.
+  if (jobSlot && isMockJobTurn(prompt)) {
+    return { play: { ...quiet(""), blocks: [{ tool: "job_result", input: { ...MOCK_JOB_RESULT } }] }, session: position ?? { action: null, turn: null } };
+  }
   if (newSession || !position) {
     // `!newSession && !position` (a lost state file) is treated as a first message too.
     const rec = longestMatch(recordings, prompt);

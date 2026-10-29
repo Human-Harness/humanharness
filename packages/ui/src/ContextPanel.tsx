@@ -20,6 +20,14 @@ export interface ContextPanelProps {
 
 const fileName = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
 
+/** A prepared item's id: `prepared:<as>` (`as` a tool id, the SDK's TOOL_ID), `#<n>` on a repeat. */
+const PREPARED_ID = /^prepared:([a-z][a-z0-9_-]{0,63})(?:#([1-9][0-9]{0,3}))?$/;
+/** The name a prepared item's id gives ("today", "today #2"), or null when the id isn't that shape (a hand-edited file). */
+const preparedName = (id: string): string | null => {
+  const m = PREPARED_ID.exec(id);
+  return m ? (m[2] !== undefined ? `${m[1]} #${m[2]}` : m[1]!) : null;
+};
+
 /**
  * What the agent takes into account in a task (context-panel spec §5.1): what the app loaded at the start, what the
  * agent used since, the pinned files and the excluded notes, with "Add…", "Pin", "Exclude", "Remove", "Include again".
@@ -174,8 +182,8 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
     if (i.kind === "brief" && i.at) return t("context.item.briefLater", { time: new Date(i.at).toLocaleTimeString(shownLanguage(i18n), { hour: "2-digit", minute: "2-digit" }) });
     if (i.kind === "data" && i.id.startsWith("data:")) return t("context.item.dataNamed", { name: i.id.slice("data:".length), count: i.count ?? 0 });
     if (i.kind === "linked-folders") return t("hatches.contextLinked");
-    // Pre-step results: named by the `as` in the id (`prepared:<as>`).
-    if (i.kind === "prepared") return t("tools.contextPrepared", { name: i.id.startsWith("prepared:") ? i.id.slice("prepared:".length) : i.label });
+    // Pre-step results: named by the `as` in the id (`prepared:<as>`, a repeat `prepared:<as>#<n>`), else the label.
+    if (i.kind === "prepared") return t("tools.contextPrepared", { name: preparedName(i.id) ?? i.label });
     return t(`context.item.${i.kind}`, { count: i.count ?? 0, path: i.path ?? "" });
   };
   const total = ctx.start.reduce((n, i) => n + i.tokens, 0);
@@ -287,11 +295,11 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
           {ctx.start.map((i) => (
             <li key={i.id} className={i.compacted ? "hh-ctxp-faint" : undefined}>
               <div className="hh-ctxp-row">
-                {i.path && i.kind !== "instructions" ? open(i.path, itemText(i)) : <span>{itemText(i)}</span>}
+                {i.path && i.kind !== "instructions" && i.kind !== "prepared" ? open(i.path, itemText(i)) : <span>{itemText(i)}</span>}
                 <span className="hh-ctxp-size">{t("context.approx", { tokens: fmt(i.tokens) })}</span>
                 {i.compacted && <span className="hh-caption">{t("context.faint")}</span>}
               </div>
-              {i.notes && i.notes.length > 0 && (
+              {i.notes && i.notes.length > 0 && i.kind !== "prepared" && (
                 <ul className="hh-ctxp-notes">
                   {i.notes.map((n) => (
                     <li key={n.path} className="hh-ctxp-row">

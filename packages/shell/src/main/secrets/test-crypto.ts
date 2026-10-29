@@ -12,8 +12,10 @@ export function testCrypto(): SecretCrypto {
     encrypt: (text) => Buffer.from(PREFIX + Buffer.from(text, "utf8").toString("hex")),
     decrypt: (data) => {
       const s = data.toString();
-      if (!s.startsWith(PREFIX)) throw new Error("not a test key");
-      return Buffer.from(s.slice(PREFIX.length), "hex").toString("utf8");
+      const hex = s.slice(PREFIX.length);
+      // Buffer.from(…, "hex") stops quietly at the first non-hex character; a foreign payload must throw instead.
+      if (!s.startsWith(PREFIX) || !/^(?:[0-9a-f]{2})*$/.test(hex)) throw new Error("not a test key");
+      return Buffer.from(hex, "hex").toString("utf8");
     },
   };
 }

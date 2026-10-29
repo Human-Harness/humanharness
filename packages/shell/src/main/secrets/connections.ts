@@ -44,8 +44,9 @@ export class ConnectionsController {
     return { ok: true };
   }
 
-  /** Every id in `ids` is stored (a connect step's Next). */
+  /** Every id in `ids` is stored (a connect step's Next). An empty list is never all set (fail closed). */
   async allSet(ids: readonly string[]): Promise<boolean> {
+    if (ids.length === 0) return false;
     const stored = new Set(await this.d.store.storedHarness().catch(() => [] as string[]));
     return ids.every((id) => stored.has(id));
   }

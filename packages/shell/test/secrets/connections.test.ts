@@ -113,7 +113,12 @@ describe("ConnectionsController (tools spec §9: Settings › Connections)", () 
     await c.set("jira", "tok-123456789");
     expect(await c.allSet(["jira"])).toBe(true);
     expect(await c.allSet(["jira", "gh"])).toBe(false);
-    expect(await c.allSet([])).toBe(true);
+  });
+
+  it("allSet of an empty list is false (a step that names no key is never complete)", async () => {
+    const { c } = await ctl();
+    await c.set("jira", "tok-123456789");
+    expect(await c.allSet([])).toBe(false);
   });
 
   it("missingSecretMessage names the label and where to set it", () => {

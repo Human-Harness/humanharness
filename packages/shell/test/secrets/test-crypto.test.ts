@@ -13,4 +13,12 @@ describe("testCrypto (HH_TEST_FAKE_SECRETS: e2e keys without the Keychain)", () 
   it("refuses to decrypt what it did not encrypt", () => {
     expect(() => testCrypto().decrypt(Buffer.from("tok-123456789"))).toThrow();
   });
+
+  it("refuses a payload that is not whole hex bytes", () => {
+    const c = testCrypto();
+    for (const p of ["hh-test:zz", "hh-test:6", "hh-test:61zz", "hh-test:6162 ", "hh-test:4A"]) {
+      expect(() => c.decrypt(Buffer.from(p))).toThrow();
+    }
+    expect(c.decrypt(Buffer.from("hh-test:"))).toBe("");
+  });
 });

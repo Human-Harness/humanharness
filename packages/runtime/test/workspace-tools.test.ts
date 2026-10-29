@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
+import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
 import { type HarnessWorkspace, type SlotRef, type WorkspaceOptions, createWorkspace } from "../src/workspace";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-wst-"));
@@ -64,6 +65,7 @@ function catalogue(base: string): string {
 }
 
 const COUNT = { "count-notes": "./tools/count-notes.ts" };
+type RuntimeTools = NonNullable<WorkspaceOptions["tools"]>;
 
 describe("the tools server in a slot (tools spec §5, Decision 9)", () => {
   it("D0: no tools, the slot's MCP list is unchanged", async () => {
@@ -118,6 +120,36 @@ describe("the tools server in a slot (tools spec §5, Decision 9)", () => {
       { request: { tool: "count-notes", args: { tag: "x" } }, slot: { key: "t1" } },
       { request: { tool: "count-notes", args: { tag: "x" } }, slot: { key: "job:r1" } },
     ]);
+  });
+
+  it("createRuntime (the app's plain mode): its main slot gets the tools server only when given (D0 without)", async () => {
+    const seen: SlotRef[] = [];
+    const file = catalogue(base0());
+    const open = async (tools?: RuntimeTools) => {
+      const base = fs.mkdtempSync(path.join(root, "r-"));
+      const args = path.join(base, "args.json");
+      const loaded = await loadHarness(STUDY);
+      // RuntimeOptions types the option (plain mode passes it through createRuntime).
+      const withTools: Pick<RuntimeOptions, "tools"> = tools ? { tools } : {};
+      const rt: HarnessRuntime = await createRuntime({
+        harness: { ...loaded, mcp: ["mcp/one.js", "mcp/two.js"], tools: COUNT },
+        engine: getEngine("claude"), folder: path.join(base, "Work"), gitdir: path.join(base, "h.git"),
+        language: "en", command: fakeClaudeCommand(),
+        env: { HH_FAKE_SCRIPT: writeScript(base, { steps: [{ mcp: { server: "tools", tool: "count-notes", args: {} } }, claudeResultLine(true)] }), HH_FAKE_ARGS: args },
+        data: async () => ({ records: [], total: 0 }),
+        ...withTools,
+      });
+      try {
+        await rt.send("x", () => {}).done;
+      } finally {
+        await rt.close();
+      }
+      const argv = JSON.parse(fs.readFileSync(args, "utf8")) as string[];
+      return Object.keys((JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: Servers }).mcpServers);
+    };
+    expect(await open({ catalogue: file, request: async (_r, slot) => (seen.push(slot), 1) })).toEqual(["ui", "data", "tools", "study", "study-2"]);
+    expect(seen).toEqual([{ key: "main" }]);
+    expect(await open()).toEqual(["ui", "data", "study", "study-2"]);
   });
 
   it("closing the slot closes its tools socket", async () => {

@@ -7,7 +7,7 @@ import type { Event } from "@humanharness/runtime";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDataCall } from "../../src/main/data-requests";
 import type { ToolChannel, ToolHostAnswer, ToolHostCall } from "../../src/main/tools/tool-host";
-import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, createToolsHost, toolExecEnv } from "../../src/main/tools/tools-host";
+import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, createToolsHost, slotTaskOf, toolExecEnv } from "../../src/main/tools/tools-host";
 
 const TASK = randomUUID();
 const RUN = randomUUID();
@@ -264,6 +264,63 @@ describe("createToolsHost (tools spec §4, §5)", () => {
       { request: { op: "put", collection: "notes", record: { key: "a", text: "x" } }, call: { scope: "intro", tool: "write" } },
       { request: { op: "put", collection: "notes", record: { key: "a", text: "x" } }, call: { scope: "_app", tool: "write", trailer: { task: RUN, job: "digest" } } },
     ]);
+  });
+
+  it("two agent calls at once (a task's and a job run's): each data write carries its own call's trailer, in any order", async () => {
+    await built();
+    const held: { c: ToolHostCall; channel: ToolChannel; done: (a: ToolHostAnswer) => void }[] = [];
+    let both!: () => void;
+    const ready = new Promise<void>((r) => (both = r));
+    const answer: Answer = (c, channel) =>
+      new Promise<ToolHostAnswer>((done) => {
+        held.push({ c, channel, done });
+        if (held.length === 2) both();
+      });
+    const { t, seen } = wire({ answer });
+    const ws = (await t.workspaceOptions())!;
+    const a = ws.request({ tool: "write" }, { key: "main" });
+    const b = ws.request({ tool: "write" }, { key: `job:${RUN}` });
+    await ready;
+    // The second call's write first, then the first's: the trailer follows the call id, never the latest call.
+    for (const h of [...held].reverse()) {
+      const r = await h.channel.ctx(h.c.tool, h.c.callId, "data.put", ["notes", { key: h.c.scope }]);
+      h.done(r.ok ? { ok: true, value: "done" } : { ok: false, error: r.refused });
+    }
+    expect(await Promise.all([a, b])).toEqual(["done", "done"]);
+    // Released last-started first; each write is matched to its call by the scope that call ran in.
+    expect(seen.data.map((x) => (x.request as { record: { key: string } }).record.key)).toEqual(held.map((h) => h.c.scope).reverse());
+    expect([...seen.data].sort((x, y) => x.call.scope!.localeCompare(y.call.scope!)).map((x) => x.call)).toEqual([
+      { scope: "_app", tool: "write", trailer: { task: RUN, job: "digest" } },
+      { scope: "intro", tool: "write", trailer: { task: TASK, action: "draft", scope: "intro", phase: "outline" } },
+    ]);
+    // Each run's trailer is dropped when the call ends.
+    expect(t.openRuns()).toBe(0);
+  });
+
+  it("a slot's task carries its trailer only when the trailer is that task's", async () => {
+    const task = { id: TASK, scope: "intro" };
+    const of = (trailer: { task: string } | undefined) => slotTaskOf({ runningTask: async () => task, trailerNow: async () => trailer });
+    expect(await of({ task: TASK })).toEqual({ id: TASK, scope: "intro", trailer: { task: TASK } });
+    // Read a moment apart, the open task may have changed between the two reads: no trailer then, never another task's.
+    expect(await of({ task: "other-task" })).toEqual({ id: TASK, scope: "intro" });
+    expect(await of(undefined)).toEqual({ id: TASK, scope: "intro" });
+    expect(await slotTaskOf({ runningTask: async () => null, trailerNow: async () => ({ task: TASK }) })).toBeNull();
+    expect(await slotTaskOf(undefined)).toBeNull();
+  });
+
+  it("a catalogue left by an earlier start is removed when tools are off or none is agent: call", async () => {
+    await built();
+    const first = wire();
+    const file = (await first.t.workspaceOptions())!.catalogue;
+    await built({ hidden: meta("hidden", { agent: "none" }) });
+    const none = wire({ tools: { hidden: meta("hidden", { agent: "none" }) } });
+    expect(await none.t.workspaceOptions()).toBeUndefined();
+    await expect(fs.access(file)).rejects.toThrow();
+    await built();
+    expect((await wire().t.workspaceOptions())!.catalogue).toBe(file);
+    await fs.rm(path.join(root, "dist", "tools.json"));
+    expect(await wire().t.workspaceOptions()).toBeUndefined();
+    await expect(fs.access(file)).rejects.toThrow();
   });
 
   it("the agent reads only the registry's answers: a tool's error with its keys hidden, else a fixed text", async () => {

@@ -76,7 +76,7 @@ export interface ToolsHostDeps {
   openScope(): Promise<string | null>;
   /** The task the slot `key` runs now (null: none). */
   slotTask(key: string): Promise<SlotTask | null>;
-  /** The job run whose slot is `key` (null: none), with its turn trailer. */
+  /** The job run whose slot is `key` (null: none), with its history trailer. */
   jobRun(key: string): { id: string; job?: string; scope: string; trailer?: HistoryTrailer } | null;
   /** A runtime event for task `task`'s chat (the folded line, Task 11). */
   emitToTask(task: string, event: Event): void;
@@ -104,6 +104,8 @@ export interface ToolsHost {
   /** A task's or job run's calls, oldest first. */
   trace(id: string): Promise<ToolCallView[]>;
   info(): ToolsInfo;
+  /** Runs whose call trailer is kept (tests: each is dropped when its call ends). */
+  openRuns(): number;
 }
 
 /** B7 for tools (Decision 6): a command sees PATH, HOME and LANG of `env` and TERM=dumb, nothing else. */
@@ -111,6 +113,18 @@ export function toolExecEnv(env: Record<string, string>): Record<string, string>
   const out: Record<string, string> = { TERM: "dumb" };
   for (const k of ["PATH", "HOME", "LANG"]) if (Object.hasOwn(env, k) && typeof env[k] === "string") out[k] = env[k];
   return out;
+}
+
+/**
+ * The task `manager` runs now with its trailer (index.ts's `slotTask`). The two are read a moment apart: a trailer of
+ * another task (the open task changed in between) is never taken as this one's.
+ */
+export async function slotTaskOf(
+  manager: { runningTask(): Promise<{ id: string; scope: string } | null>; trailerNow(): Promise<HistoryTrailer | undefined> } | undefined,
+): Promise<SlotTask | null> {
+  if (!manager) return null;
+  const [task, trailer] = await Promise.all([manager.runningTask(), manager.trailerNow()]);
+  return task ? { id: task.id, scope: task.scope, ...(trailer && trailer.task === task.id ? { trailer } : {}) } : null;
 }
 
 /** The first `n` code points of `s`. */
@@ -245,14 +259,16 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   });
 
   async function writeCatalogue(): Promise<void> {
-    if (!state.on) return;
-    const list = Object.entries(state.tools)
-      .filter(([, m]) => m.agent === "call")
-      .map(([name, m]) => ({ name, description: m.description, inputSchema: m.params }));
-    if (list.length === 0) return;
     const dir = path.join(d.userData, "tools-catalogue");
-    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, `${h.id}.json`);
+    const list = state.on
+      ? Object.entries(state.tools)
+          .filter(([, m]) => m.agent === "call")
+          .map(([name, m]) => ({ name, description: m.description, inputSchema: m.params }))
+      : [];
+    // Off, or no tool for the agent: no server, and no list an earlier start left behind.
+    if (list.length === 0) return fs.rm(file, { force: true });
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
     const tmp = path.join(dir, `.${h.id}.${randomUUID()}.tmp`);
     await fs.writeFile(tmp, `${JSON.stringify(list)}\n`, { mode: 0o600 });
     await fs.rename(tmp, file);
@@ -352,6 +368,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
         return [];
       }
     },
+    openRuns: () => trailers.size,
     info() {
       const off = state.on ? d.host.off() : state.reason;
       return { ids: Object.keys(tools).sort(), ...(started && off !== null ? { off } : {}) };

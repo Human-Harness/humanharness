@@ -27,12 +27,6 @@ export interface WorkspaceOptions extends Omit<RuntimeOptions, "session" | "onSe
   data?: (request: unknown, slot: SlotRef) => Promise<unknown>;
   /** Answers the `material` server's tools for the asking slot; `entry` as in `RuntimeOptions`. */
   material?: { request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
-  /**
-   * The core `tools` MCP server (tools spec §5) for task and job slots: `catalogue` lists the agent's tools, `request`
-   * runs a call for the asking slot. The app passes it only when the harness has an `agent: "call"` tool; absent, or a
-   * harness without tools: no server (D0).
-   */
-  tools?: { catalogue: string; request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
   /** ACP: the adapter can't take a scope's linked folders (hatches §3.3, Decision 15). */
   onLinkedUnsupported?: () => void;
 }

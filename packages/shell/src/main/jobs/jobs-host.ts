@@ -10,7 +10,7 @@ import type { TaskDeps } from "../task-manager";
 import { type BeforeStart, TurnGate } from "../turn-gate";
 import { UsageLog, type UsageRecord, jobRecord } from "../usage-log";
 import { JobLog, type JobRunRecord, type JobTrigger, dedupeKey } from "./job-log";
-import { jobMessageFor, runJob } from "./job-runner";
+import { jobMessageFor, jobRunTrailer, runJob } from "./job-runner";
 import { JobScheduler, type SchedulerTimer } from "./job-scheduler";
 
 type Usage = Extract<Event, { type: "usage" }>;
@@ -200,8 +200,8 @@ export function createJobsHost(d: JobsHostDeps) {
     }
     const runId = randomUUID();
     const key = `job:${runId}`;
-    // The trailer is the run's turn trailer (job-runner): a harness tool's data write from this slot commits under it.
-    runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE), job: id, trailer: { task: runId, job: id, ...(scope ? { scope } : {}) } });
+    // The run's history trailer, the same one its own commits carry: a harness tool's data write from this slot commits under it.
+    runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE), job: id, trailer: jobRunTrailer(runId, id, scope) });
     try {
       const record = await runJob(
         {

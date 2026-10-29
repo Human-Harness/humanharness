@@ -148,8 +148,10 @@ describe("createJobsHost (part 3 Task 7)", () => {
     // A data request from that slot is the run's, app-wide without scopes (`main`).
     expect(t.h.runningOf(turn.slot)).toEqual({ id: run, scope: "main" });
     expect(t.h.runningOf("main")).toBeNull();
-    // A harness tool called from that slot: the job, and the run's own turn trailer for its data writes.
+    // A harness tool called from that slot: the job, and the run's own history trailer for its data writes (the one
+    // the run's commits carry).
     expect(t.h.runOf(turn.slot)).toEqual({ id: run, scope: "main", job: "sync", trailer: { task: run, job: "sync" } });
+    expect(t.h.runOf(turn.slot)!.trailer).toEqual(turn.options?.trailer);
     expect(t.h.runOf("main")).toBeNull();
     expect(t.h.running()).toBe(true);
     turn.end([usage, result({ status: "ok", summary: "Synced 3" }), { type: "done", ok: true }]);

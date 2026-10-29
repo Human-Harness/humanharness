@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { HIDDEN_CHARS, type HarnessJob, type JobResult, jobResultSchema, JOB_RESULT_TOOL } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, TurnScope } from "@humanharness/runtime";
-import { APP_SCOPE, MAIN_SCOPE, type Note } from "@humanharness/workspace";
+import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, type Note } from "@humanharness/workspace";
 import { pauseOutOfQuota, resetOf } from "../gated-turns";
 import { notesIndexFor } from "../notes-index";
 import { Dropped, type TurnGate } from "../turn-gate";
@@ -82,6 +82,15 @@ export async function jobScope(d: Pick<JobRunDeps, "scopeAccess">, scope: string
  * always closed and the gate's slot always freed, however the run ends. The engine's permission requests never reach
  * the person: the slot's narrowed policy answers them (Decision 5), and the time limit ends a run that hangs anyway.
  */
+/**
+ * A job run's history trailer (parallel spec §8): the run as its task, the job, and the run's scope when it has one.
+ * Every commit made on the run's behalf carries it, whatever the run does: here, and a harness tool's data write from
+ * the run's slot (jobs-host `runOf`).
+ */
+export function jobRunTrailer(run: string, job: string, scope: string | null): HistoryTrailer {
+  return { task: run, job, ...(scope ? { scope } : {}) };
+}
+
 export async function runJob(
   d: JobRunDeps,
   id: string,
@@ -187,7 +196,7 @@ export async function runJob(
           if (e.type === "done" && !e.ok && e.error.code === "out-of-quota") pauseOutOfQuota(d.gate, resetsAt, now().getTime());
           if (e.type === "done" && !e.ok && e.error.code === "cancelled" && end === "done") end = "cancelled";
         },
-        { ...(profile ? { profile } : {}), trailer: { task: run, job: id, ...(scope ? { scope } : {}) }, ...(access ? { scope: access } : {}) },
+        { ...(profile ? { profile } : {}), trailer: jobRunTrailer(run, id, scope), ...(access ? { scope: access } : {}) },
       );
       cancelTurn = running.cancel;
       await running.done;

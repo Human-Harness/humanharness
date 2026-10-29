@@ -44,11 +44,23 @@ describe("parseToml (Decision 4)", () => {
     ["a = 0x1F", "line 1"],
     ["a = 1 b = 2", "line 1: unexpected text"],
     ["a = [1,\n2 3]", "line 2"],
+    ["a = 01", "line 1"],
+    ["a = -007.5", "line 1"],
+    ['"\\u005f_proto__" = 1', "line 1: __proto__ is not allowed as a key"],
+    [`a = ${"[".repeat(5000)}`, "line 1: nested too deep"],
+    [`a = ${"{ b = ".repeat(5000)}1`, "line 1: nested too deep"],
   ])("refuses %j (redefinitions and bad syntax)", (src, message) => {
     expect(() => parseToml(src)).toThrow(message);
   });
   it("reads CRLF line ends and a table under an array of tables", () => {
     expect(parseToml("[[s]]\r\nn = 1\r\n[s.t]\r\nm = 2\r\n")).toEqual({ s: [{ n: 1, t: { m: 2 } }] });
+  });
+  it("reads 32 levels of nesting, a zero, and a leading BOM", () => {
+    expect(parseToml(`﻿a = ${"[".repeat(32)}0${"]".repeat(32)}\nb = 0.5`).b).toBe(0.5);
+  });
+  it("cuts a long key in a message to 40 characters", () => {
+    const key = "k".repeat(100);
+    expect(() => parseToml(`${key} = 1\n${key} = 2`)).toThrow(`line 2: ${"k".repeat(40)}… is defined twice`);
   });
   it("builds plain objects with no prototype pollution", () => {
     const out = parseToml("[a]\nb = 1") as Record<string, unknown>;

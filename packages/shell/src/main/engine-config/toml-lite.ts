@@ -12,7 +12,10 @@ export const TOML_MAX_BYTES = 256 * 1024;
 
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const BARE_KEY = /^[A-Za-z0-9_-]$/;
-const NUMBER = /^[+-]?\d+(_\d+)*(\.\d+(_\d+)*)?$/;
+/** Integers and floats; a leading zero only alone (`0`, `0.5`), as TOML has it. */
+const NUMBER = /^[+-]?(0|[1-9]\d*(_\d+)*)(\.\d+(_\d+)*)?$/;
+/** How deep arrays and inline tables may nest: past it, an error instead of a blown stack. */
+const MAX_DEPTH = 32;
 const DATE_OR_TIME = /^\d{4}-\d{2}-\d{2}|^\d{2}:\d{2}/;
 const ESCAPES: Record<string, string> = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
 
@@ -21,11 +24,14 @@ type Table = Record<string, unknown>;
 /** Parses `src`; throws `Error("line N: …")` on anything outside the subset, or "too large" over 256 KB. */
 export function parseToml(src: string): Table {
   if (Buffer.byteLength(src, "utf8") > TOML_MAX_BYTES) throw new Error("codex.toml is too large (over 256 KB)");
-  return new Parser(src.startsWith("﻿") ? src.slice(1) : src).parse();
+  return new Parser(src.startsWith("\uFEFF") ? src.slice(1) : src).parse();
 }
 
 /** A key as a message names it: bare when it could be written bare, quoted otherwise. */
-const shown = (path: string[]): string => path.map((k) => (/^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k))).join(".");
+const shown = (path: string[]): string => {
+  const s = path.map((k) => (/^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k))).join(".");
+  return s.length > 40 ? `${s.slice(0, 40)}…` : s;
+};
 
 function define(table: Table, key: string, value: unknown): void {
   Object.defineProperty(table, key, { value, enumerable: true, writable: true, configurable: true });
@@ -36,6 +42,8 @@ const isTable = (v: unknown): v is Table => typeof v === "object" && v !== null 
 class Parser {
   private pos = 0;
   private line = 1;
+  /** Arrays and inline tables open around the value being read. */
+  private depth = 0;
   private readonly root: Table = {};
   /** Tables a `[header]` or a dotted key defined: a second header for one is a redefinition. */
   private readonly defined = new Set<Table>();
@@ -218,8 +226,13 @@ class Parser {
     if (this.src.startsWith('"""', this.pos) || this.src.startsWith("'''", this.pos)) this.fail("multi-line strings are not supported");
     if (c === '"') return this.basicString();
     if (c === "'") return this.literalString();
-    if (c === "[") return this.array();
-    if (c === "{") return this.inlineTable();
+    if (c === "[" || c === "{") {
+      if (this.depth >= MAX_DEPTH) this.fail("nested too deep");
+      this.depth += 1;
+      const out = c === "[" ? this.array() : this.inlineTable();
+      this.depth -= 1;
+      return out;
+    }
     const start = this.pos;
     while (this.pos < this.src.length && !/[\s,\]}#]/.test(this.src[this.pos])) this.pos += 1;
     const word = this.src.slice(start, this.pos);

@@ -14,6 +14,7 @@ import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { harnessPluginsSchema, harnessSlotsSchema } from "./plugin";
 import { REVIEW_TOOLS, validApproveGlob } from "./review";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
+import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
@@ -40,6 +41,7 @@ export * from "./harness-backend";
 export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
+export * from "./secrets";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -229,6 +231,8 @@ const manifestSchema = z.object({
   plugins: harnessPluginsSchema.optional(),
   /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */
   slots: harnessSlotsSchema.optional(),
+  /** Keys the person pastes for the harness's tools (tools spec §9). Absent: none (D0). */
+  secrets: secretsSchema.optional(),
   /** Suggested caps on turns running at once (parallel spec §3). Absent: one task at a time, as before (D7). */
   parallel: parallelSchema.optional(),
   /** Background jobs, by id (parallel spec §3): no chat, no person in the loop. Absent: none, and nothing changes (D0). */
@@ -425,6 +429,16 @@ const manifestSchema = z.object({
       }
       const c = oneRecord(s.writes, "writes");
       if (c && c.agent !== "write") issue(["writes"], `The agent writes "${s.writes}" during the interview: give it agent: "write"`);
+      return;
+    }
+    if (s.kind === "connect") {
+      if (!m.secrets) return issue(["secrets"], "A connect step asks for the harness's secrets: declare secrets");
+      const seen = new Set<string>();
+      for (const id of s.secrets) {
+        if (seen.has(id)) issue(["secrets"], `"${id}" is listed twice`);
+        seen.add(id);
+        if (!m.secrets.some((x) => x.id === id)) issue(["secrets"], `"${id}" is not declared in secrets`);
+      }
       return;
     }
     if (s.writes !== undefined && !Object.hasOwn(m.data, s.writes)) issue(["writes"], `Collection "${s.writes}" is not declared in data`);

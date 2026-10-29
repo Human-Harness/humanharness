@@ -297,6 +297,7 @@ export function setupStepViews(h: {
     if (s.kind === "form") return { ...base, form: setupFormSpec(s, h) };
     // The manifest guarantees an interview's action exists.
     if (s.kind === "interview") return { ...base, action: s.action, cost: h.actions[s.action].cost };
+    if (s.kind === "connect") return base;
     return { ...base, component: s.component };
   });
 }

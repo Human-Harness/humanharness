@@ -1059,7 +1059,7 @@ export type SetupStepResult =
 /** A harness setup step as the window draws it (setup-steps spec §3): never an action's brief. */
 export interface SetupStepView {
   id: string;
-  kind: "form" | "interview" | "component";
+  kind: "form" | "interview" | "component" | "connect";
   label: string;
   /** One line under the step's heading. */
   description?: string;

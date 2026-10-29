@@ -46,6 +46,12 @@ export const setupStepSchema = z.discriminatedUnion("kind", [
     /** What the component writes, for the reader and `check`. */
     writes: z.string().min(1).optional(),
   }),
+  z.object({
+    ...common,
+    kind: z.literal("connect"),
+    /** The declared secrets this step asks for (tools spec §9). A test tool comes with slice 2. */
+    secrets: z.array(z.string().min(1)).min(1).max(10),
+  }),
 ]);
 export type HarnessSetupStep = z.output<typeof setupStepSchema>;
 export type SetupFormStep = Extract<HarnessSetupStep, { kind: "form" }>;

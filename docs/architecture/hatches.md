@@ -372,6 +372,8 @@ enginePresets: true,
 
 **Limits** (E8): every entry is `lstat`ed and opened with `O_NOFOLLOW`, then checked to be the same file (device and inode) with one name only. Symlinks (the engine folder itself too), hard links and anything but a regular file are refused. 256 KB per file, 2 MB for the folder and its scripts together, 200 files, a path of at most 4 parts. A file over its cap is a refusal; the folder over its cap is one refusal for the whole folder (`file: "."`).
 
+**Repeated keys.** `JSON.parse` keeps a repeated key's last value, so the screen could show less than the file says: a JSON file (`mcp.json`, `settings.json`) that repeats a key at any depth is refused naming its dotted path (`mcp.json: mcpServers.tools is repeated`, `duplicateJsonKey` in `clean.ts`). TOML and front matter refuse a repeat already. So one preset server name can't appear twice; both transports' last checks refuse it too (E9).
+
 **Refusals** are collected, never thrown: each is `{ file, message }`, the message leading with the file and the key (`settings.json: env is not allowed`). A config with any refusal can be shown, never approved.
 
 ### Referenced scripts and the hash
@@ -385,17 +387,24 @@ A hook command, or an MCP server's command or argument, may name a file in the p
 
 ### Approval
 
-**Where it is stored.** `.harness/scopes.json` → the scope's entry gains `engineApproval: { hash, at, tag }` (`ScopeStore.approveEngine`, `packages/workspace/src/scopes.ts`). The file sits in the folder the agent can write and the hash has no secret, so the approval counts only when the app signed it: `tag` is an HMAC-SHA256 with the links' key (`<userData>/linked-key`, `linkedSecret`), over `["hh-engine-v1", profile, scope, hash, at]` (`engineApprovalTag`, `engine-config/approval.ts`). The profile is its id (`""` without profiles). An approval without a valid tag counts as none everywhere: no preset, and Scope settings says "not approved". A signed approval pasted back later is accepted (no nonce): it only restores a config the person approved once. An entry the store can't read as an approval is dropped; an entry without one is written exactly as before (D0).
+**Where it is stored.** `.harness/scopes.json` → the scope's entry gains `engineApproval: { hash, at, tag }` (`ScopeStore.approveEngine`, `packages/workspace/src/scopes.ts`). The file sits in the folder the agent can write and the hash has no secret, so the approval counts only when the app signed it: `tag` is an HMAC-SHA256 with the links' key (`<userData>/linked-key`, `linkedSecret`), over `["hh-engine-v1", profile, scope, hash, at]` while the scope's revoke epoch is 0, and over `["hh-engine-v2", profile, scope, epoch, hash, at]` after a revoke (`engineApprovalTag`, `engine-config/approval.ts`; Revoking, below). The profile is its id (`""` without profiles). An approval without a valid tag counts as none everywhere: no preset, and Scope settings says "not approved". A signed approval pasted back after a revoke no longer verifies, since its tag carries the old epoch. An entry the store can't read as an approval is dropped; an entry without one is written exactly as before (D0).
 
-**Approving.** Only from the window: `hh:engineApprove(scope, hash)` (`engine-ipc.ts`; the backend has no approval path). The scope must pass `isScopeId` and be registered and unarchived; the hash must be 64 lowercase hex characters. Main reads the folder again right then: a hash that differs answers `{ ok: false, reason: "changed" }`, a config with refusals `"refused"`. Otherwise it signs (making the key if there is none yet) and stores, one approval at a time, and answers `{ ok: true, view }` (E10). Approval is per scope, action layers included (one hash); there is no bulk approval (Decision 11).
+**Approving.** Only from the window: `hh:engineApprove(scope, hash)` (`engine-ipc.ts`; the backend has no approval path). The scope must pass `isScopeId` and be registered and unarchived; the hash must be 64 lowercase hex characters. Main reads the folder again right then: a hash that differs answers `{ ok: false, reason: "changed" }`, a config with refusals `"refused"`. Otherwise it signs at the scope's current epoch (making the key if there is none yet) and stores, one approval at a time, and answers `{ ok: true, view }` (E10). Approval is per scope, action layers included (one hash); there is no bulk approval (Decision 11).
+
+**Revoking.** Scope settings › Engine config shows "Revoke approval" while the scope is approved. It asks first, in the section ("Revoke the approval? New tasks start without this engine config, and running tasks stop using it from their next turn."), never with a browser dialog; confirmed, `hh:engineRevoke(scope)` runs and the section reads the view again ("Engine config not approved", Approve offered again). Main checks the scope id (`isScopeId`, registered), then, one change at a time:
+1. bumps the scope's **revoke epoch** (`EngineEpochs.bump`, `engine-config/epochs.ts`), written first, so a clear that fails still leaves the old approval void;
+2. clears `engineApproval` from `scopes.json` (`ScopeStore.clearEngineApproval`), when there is one;
+3. sends `hh:engineConfigChanged` for the scope and answers the view (`null` without engine config).
+
+The epochs live in `<userData>/engine-epochs.json` (`{ version: 1, floor, epochs: [[profile, scope, epoch]…] }`, mode 0600, written to a temp file and renamed), outside the folder the agent writes. They are kept **per profile and scope id**, not per folder: two folders with a scope of the same id under the same profile share one epoch, so a revoke in one also voids the other's approval (stricter, on purpose). No file or no entry is epoch 0, the tags made before epochs existed, so those approvals keep working. The epoch is folded into both the approval's and the pins' tags, so a revoke ends every approval and every pin made before it, and an old approval pasted back stays void. A damaged or unreadable record verifies nothing (no scope has a preset); the next approve or revoke rewrites it with `floor` set to the current time in milliseconds, above any epoch it could have held, so every scope needs approving again. The file is made only by the first revoke or by repairing a damaged one: never without `enginePresets` (D0).
 
 **Before a new task** (`EngineHost.presetFor`, `engine-host.ts`). The live folder is read with today's cleaning context (the scope's usable linked folders, the manifest's `edit` and `web`, the reserved names, the harness's actions). The task gets the preset only when the scope's approval is the app's and its hash equals the hash computed now, with no refusal. Then the snapshot is written (or kept, when it is already there) and loaded back, and the task stores the hash (`engineHash`) and the app's pin tag (`engineTag`, below). Otherwise the task runs without it and carries `engineNotice`: `"unapproved"` (never approved, changed since, or the snapshot could not be written or loaded) or `"refused"`.
 
 **Before every later turn** (`EngineHost.presetForTask`). Hook and server scripts run in place, so the scope's folder is checked again before each turn (a decision taken during review, stricter than the spec's "running sessions keep the config they started with"):
-- A task that started without a preset stays without one, even if the scope is approved meanwhile (but see the forged `engineHash` in Known gaps).
-- The scope must still have an approval the app signed. **Clearing an approval stops the preset from the next turn, even in running tasks** (decision). There is no button for that yet: `ScopeStore.clearEngineApproval` has no caller, so today it means the entry was removed or its tag no longer checks. Pasting the old signed approval back undoes the clearing (Known gaps).
+- A task that started without a preset stays without one, even if the scope is approved meanwhile. A pin the agent writes into `tasks.json` (`engineHash`) doesn't help: **every pin needs a valid `engineTag`**, an HMAC over `["hh-engine-pin-v1", profile, scope, taskId, hash]`, or `["hh-engine-pin-v2", profile, scope, epoch, taskId, hash]` after a revoke (`enginePinTag`), including a pin equal to the approved hash. Pins made before this rule without a tag lose their preset (the turn runs without it, with the notice); a new task gets a tagged pin.
+- The scope must still have an approval the app signed at its current epoch. **Revoking (or clearing) an approval stops the preset from the next turn, even in running tasks** (decision): the bumped epoch voids the task's pin tag as well as the approval.
 - Pinned to the approved hash: the live folder must hash to it.
-- Pinned to an older hash A while the scope now approves B (Decision 2, per task): the pin must carry a valid `engineTag`, an HMAC over `["hh-engine-pin-v1", profile, scope, taskId, hash]` (`enginePinTag`; `tasks.json` is agent-writable too); the live folder must hash to A or B; and every file A's commands run, scripts and engine-folder files alike, must still hold A's bytes, read as the reader reads (no link, one name, the same file) (`pinnedScriptsUnchanged`, `snapshot.ts`). So a task on A keeps running under B's approval, but a script only A runs can't be edited and still run.
+- Pinned to an older hash A while the scope now approves B (Decision 2, per task): the pin's tag must check (above); the live folder must hash to A or B; and every file A's commands run, scripts and engine-folder files alike, must still hold A's bytes, read as the reader reads (no link, one name, the same file) (`pinnedScriptsUnchanged`, `snapshot.ts`). So a task on A keeps running under B's approval, but a script only A runs can't be edited and still run.
 - On a mismatch the turn runs with no preset and the task shows the "unapproved" notice; a turn that passes again clears it.
 
 **The snapshot** (`snapshot.ts`, E3): `<userData>/engine-config/<hash>/`, written from the bytes that were hashed, into a temp folder and renamed into place:
@@ -409,6 +418,8 @@ agents.json                   for --agents; absent without agents
 ```
 
 `loadSnapshot` hashes `source/` again, checks the folder holds exactly what `writeSnapshot` would write (a link, a missing or extra file: "The approved engine config changed on disk"), and derives everything again from the source with today's context (`configFromFiles`): a rule that today's context refuses (a folder unlinked since, `edit: "none"`, a new reserved name) comes back as a refusal, and the task gets the "refused" notice. Settings, servers, Codex keys and instructions reach the engines as arguments built from that, never as files. A damaged snapshot already there is replaced. Engines run a referenced script at its live path; the per-turn check above is what keeps that path's bytes the approved ones.
+
+**Pruning** (Decision 13, `pruneEngineSnapshots` in `engine-config/prune.ts`, then `pruneSnapshots` in `snapshot.ts`). Once at each start, only under `enginePresets` (`pruneEngineConfig` in `index.ts`), in the background. It gathers every base the app knows (the open folder's, and each profile's), and keeps every hash an approval names there (archived scopes too, signed or not) and every live task's `engineHash` (the current task and every board lane, read raw from `tasks.json`). Every other `<userData>/engine-config/<hash>/` folder, and any leftover temp folder, goes to the system Trash once it is more than 30 days old; a younger one waits. **If any scope list or `tasks.json` can't be read, nothing is pruned** (a pin it might hold would be lost); a failure to trash is logged and the folder kept. Without the `engine-config` folder, or with something other than a plain folder there, it does nothing.
 
 ### What reaches each engine
 
@@ -425,8 +436,9 @@ agents.json                   for --agents; absent without agents
 | `base: global` | `--setting-sources user,project`, no `--strict-mcp-config` | today's behaviour either way | not used |
 
 - **Claude.** `settingsArgs` builds the one `--settings`: part 1's `additionalDirectories` (references, then linked folders), plus the preset's `hooks` and `permissions.allow/deny/ask`; none when it would be empty. An `mcp__` allow rule passes only when it names one of the preset's own servers (`mcp__scope-<name>` or `mcp__scope-<name>__<tool>`): under `global` the CLI also loads the person's own servers, which a preset must not approve. The harness's `--disallowedTools` stays outside and always wins (E5). `--plugin-dir` and `--agents` follow `--settings`. Under `global` the `--settings` also carries `enableAllProjectMcpServers: false` and `enabledMcpjsonServers: []`, and `--disallowedTools` adds `Edit`, `Write`, `MultiEdit` and `NotebookEdit` of `.mcp.json`: without `--strict-mcp-config` the CLI would start the folder's `.mcp.json` servers, which nobody approved (with `exec` the shell can still write the file, but its servers stay off). A last check refuses an unknown base, a server not named `scope-<name>` or named like a core server, and a snapshot path that is relative or reads as a flag.
-- **Codex.** The cleaned `codex.toml` is merged deep into the `CODEX_CONFIG` the core builds from the profile (`mergeCodex`): the core's keys win at every depth, and `model`, `model_reasoning_effort`, `model_auto_compact_token_limit` from a preset are refused (last guard). Its hooks go through `CODEX_CONFIG.hooks`. A turn whose preset hash differs from the process's (another hash, or a preset dropped or added) restarts the process with a new session, as a new profile does: on Codex a preset dropped mid-task starts a fresh session.
-- **OpenCode** gets the servers only (and the instructions, which are in the first message): no `CODEX_CONFIG`.
+- **Codex.** The cleaned `codex.toml` is merged deep into the `CODEX_CONFIG` the core builds from the profile (`mergeCodex`): the core's keys win at every depth, and `model`, `model_reasoning_effort`, `model_auto_compact_token_limit` from a preset are refused (last guard). **Only Codex** takes this part: the task workspace marks the engine id `codex` with `profileMethod: "codex-config"`, and the ACP transport merges the codex part only then; Kimi, Gemini, Qwen and OpenCode never get it. As defence in depth behind the shell's allowlist, `mergeCodex` also drops, at any depth, the keys that would widen the sandbox, skip approvals, add servers or pick a provider, a profile or a key, among them `sandbox_mode`, `approval_policy`, `sandbox_workspace_write.writable_roots`, `mcp_servers`, `model_provider`, `model_providers`, `profile`, `profiles` and any key ending in `_api_key` (a table only the preset has goes through the same filter). Its hooks go through `CODEX_CONFIG.hooks`. A turn whose preset hash differs from the process's (another hash, or a preset dropped or added) restarts the process with a new session, as a new profile does: on Codex a preset dropped mid-task starts a fresh session.
+- **OpenCode** (and any other ACP engine) gets the servers only (and the instructions, which are in the first message): no `CODEX_CONFIG`.
+- **Server names.** Both transports' last check refuses a preset server not named `scope-<name>`, named like a core server, or named twice in one preset.
 - **Permissions on ACP.** The approved preset's `scope-*` servers join the permission policy's server list for the turns that carry the preset, so **every call to an approved preset server is approved without asking**, as for core servers (decision). On Claude the preset's allow/deny/ask rules apply instead. On Codex a preset deny on its own server's tool has no effect.
 - **The Codex limit** (Decision 14). `isolated` can't hold on Codex: the app sets no `CODEX_HOME` and never reads `~/.codex`, so the person's own Codex config and the project's `.codex/` always apply. Scope settings says "On Codex, your own Codex config always applies." whenever the harness's `engines` list `codex`, whatever the active engine.
 
@@ -447,11 +459,18 @@ agents.json                   for --agents; absent without agents
 - agents: name, description, `tools`, `disallowedTools`, `model`, `skills`, `memory`, and the dropped keys;
 - the `codex.toml` keys, each with its value (`tools.web_search = true`);
 - the ignored keys;
-- Approve, while not approved. A folder that changed while it showed answers "It changed while you looked. Review it again." and the view is read again.
+- Approve, while not approved. A folder that changed while it showed answers "It changed while you looked. Review it again." and the view is read again;
+- "Revoke approval", while approved (Revoking, above). Confirmed, focus goes to the Approve that replaces it; cancelled, back to Revoke. A failure says "Couldn't revoke the approval." and keeps the view.
+
+**What the active engine leaves out** (Decision 10). The view carries the active engine's id (`engine`, from the app's config). Each part that engine doesn't use says "Not used on {engine}" (the engine's name from the harness's engine list), next to the part:
+- on **Claude**: the `codex.toml` keys, and each hook from a `codex.toml`;
+- on **Codex**: the hooks from `settings.json`, the permission rules, skills, agents and the base line (Codex's own config always applies: the Codex limit);
+- on **OpenCode** (and any other ACP engine): all of the above, Claude's and Codex's parts alike.
+Servers and instructions reach every engine and are never marked. Before an engine is chosen (`engine` absent) nothing is marked. The marks are only shown: the approval still covers the whole folder, one hash, whatever the engine.
 
 **The task notice** (`EngineNotice.tsx`): under the task header, "Engine config not approved · Review" (`unapproved`) or "Engine config not used: it has something the app refuses · Review" (`refused`); Review opens that scope's settings at the section.
 
-**IPC.** Registered only under `hasEnginePresets` (`registerEngineIpc`): `hh:engineConfig(scope)` → the view or `null` (no engine config), `hh:engineApprove(scope, hash)`, and the push `hh:engineConfigChanged` (a scope id, or `null` for any scope). It is sent after an approval, and after a history commit that touches `.harness/engine/<scope>/` (or `scopes.json`, or too many paths to list: `null`). `client.engineConfig.get/approve/onChanged`; `AppState.hatches.enginePresets`. **The scope list sent to the window (`hh:scopes`, `scopesView`) and to the backend (`init`, `scopesChanged`) never carries `engineApproval`**: only the Engine config view says whether a scope is approved.
+**IPC.** Registered only under `hasEnginePresets` (`registerEngineIpc`): `hh:engineConfig(scope)` → the view or `null` (no engine config), `hh:engineApprove(scope, hash)`, `hh:engineRevoke(scope)` → the view afterwards or `null`, and the push `hh:engineConfigChanged` (a scope id, or `null` for any scope). It is sent after an approval or a revoke, and after a history commit that touches `.harness/engine/<scope>/` (or `scopes.json`, or too many paths to list: `null`). `client.engineConfig.get/approve/revoke/onChanged`; `AppState.hatches.enginePresets`. **The scope list sent to the window (`hh:scopes`, `scopesView`) and to the backend (`init`, `scopesChanged`) never carries `engineApproval`**: only the Engine config view says whether a scope is approved.
 
 ### History
 
@@ -459,7 +478,7 @@ With `enginePresets`, `.harness/engine/` is kept by the history like notes, data
 
 ### D0
 
-A harness without `enginePresets: true` runs no part-3 code: `.harness/engine/` is never read, watched, tracked or created; `claudeArgs`, `CODEX_CONFIG`, `session/new`, the ACP process lifecycle, the first message, `AGENTS.md`, the context items and the history's tracked paths are unchanged; no `engineApproval` in `scopes.json`, no `<userData>/engine-config/`, no `hh:engine*` channel, no section and no notice. A scope of an opted-in harness with no engine folder, or an empty one, is D0 for that scope.
+A harness without `enginePresets: true` runs no part-3 code: `.harness/engine/` is never read, watched, tracked or created; `claudeArgs`, `CODEX_CONFIG`, `session/new`, the ACP process lifecycle, the first message, `AGENTS.md`, the context items and the history's tracked paths are unchanged; no `engineApproval` in `scopes.json`, no `<userData>/engine-config/`, no `<userData>/engine-epochs.json`, no prune at start, no `hh:engine*` channel, no section and no notice. A scope of an opted-in harness with no engine folder, or an empty one, is D0 for that scope.
 
 | What stays as before | Pinned by |
 |---|---|
@@ -472,7 +491,7 @@ A harness without `enginePresets: true` runs no part-3 code: `.harness/engine/` 
 | `scopes.json` | `packages/workspace/test/scopes.test.ts` ("approveEngine stores { hash, at, tag } signed inside the write; D0: no key until then") |
 | IPC and state | `packages/shell/test/hatches-surface.test.ts` ("engine channels are registered only under enginePresets", "hatchesState carries enginePresets: true only with enginePresets (D0)") |
 | UI | `packages/ui/test/engine-config-ui.test.tsx` ("D0: no Engine config section, no notice") |
-| End to end | `packages/e2e/tests/history.spec.ts` and `mock.spec.ts` unchanged |
+| End to end | `packages/e2e/tests/history.spec.ts` and `mock.spec.ts` unchanged; `hatches-engine.spec.ts` ("D0 for the scope: an opted-in harness, no engine folder, no notice and no preset") |
 
 ### Threat model (part 3)
 
@@ -480,7 +499,7 @@ Anyone who can write the person's folder can write the engine folder, the agent 
 
 | # | Boundary | What enforces it | Test |
 |---|---|---|---|
-| E1 | Nothing unapproved reaches an engine | A preset only with the app's signed approval of the hash computed now, checked before every turn; a pin to an older hash needs the app's pin tag and the pinned scripts' bytes | `engine-host.test.ts` ("a changed file drops the preset from new sessions and gives the notice", "pinned to A after B was approved: a script only A runs, edited since, drops the preset (E1)", "a pin tasks.json names without the app's tag is none…"); `approval.test.ts` ("a forged approval without a tag or with a wrong one is invalid") |
+| E1 | Nothing unapproved reaches an engine | A preset only with the app's signed approval of the hash computed now, checked before every turn; every pin needs the app's pin tag, and a pin to an older hash the pinned scripts' bytes; a revoke bumps the epoch both tags carry | `engine-host.test.ts` ("a changed file drops the preset from new sessions and gives the notice", "pinned to A after B was approved: a script only A runs, edited since, drops the preset (E1)", "a pin tasks.json names without the app's tag is none…"); `approval.test.ts` ("a forged approval without a tag or with a wrong one is invalid") |
 | E2 | The hash covers referenced scripts | `scriptRefs` adds every file a hook or server command names inside the folder or a linked folder; unplaceable shell forms are refused | `read-config.test.ts` ("a change to a referenced script changes the hash (E2)", "hook and server commands whose paths can't be placed are refused naming the file (E2)") |
 | E3 | Snapshot, not the live folder | Written from the hashed bytes; re-hashed and re-derived with today's context on load | `snapshot.test.ts` ("an edit to the live folder after approval is not loaded", "loadSnapshot re-hashes and refuses a snapshot whose files changed") |
 | E4 | Refused config keys | The allowlists above, at hash time, naming the key | `clean.test.ts` |
@@ -496,7 +515,7 @@ End to end: `packages/e2e/tests/hatches-engine.spec.ts` (mock mode).
 ### Decisions
 
 1. `enginePresets: true` opt-in, requiring `scopes`.
-2. Pinned per task: a task keeps the hash it started with; a task that started without a preset stays without one (but see the forged `engineHash` in Known gaps). A pin to a hash the scope no longer approves holds only with the app's pin tag and unchanged pinned scripts.
+2. Pinned per task: a task keeps the hash it started with; a task that started without a preset stays without one. Every pin holds only with the app's pin tag; a pin to a hash the scope no longer approves also needs unchanged pinned scripts.
 3. Scope instructions in the first message after the brief, as the "Scope instructions" item.
 4. No TOML or YAML dependency: `toml-lite.ts` and `frontmatter.ts`.
 5. `settings.json` allowlist: `hooks`, `permissions.allow/deny/ask`; `defaultMode` dropped.
@@ -504,16 +523,18 @@ End to end: `packages/e2e/tests/hatches-engine.spec.ts` (mock mode).
 7. `url` MCP servers refused in v1.
 8. Preset servers are `scope-<name>` on every engine.
 9. The `codex.toml` allowlist above; `features` a named list.
-10. OpenCode: instructions and servers only.
+10. OpenCode: instructions and servers only. The screen marks what the active engine leaves out ("Not used on {engine}").
 11. Approval per scope, action layers included; no bulk approval.
 12. `.harness/engine/` tracked by the history only with `enginePresets`.
-13. Snapshots nothing keeps are trashed after 30 days (`pruneSnapshots`; not wired yet, Known gaps).
+13. Snapshots nothing keeps are trashed after 30 days, at start (`pruneEngineSnapshots`).
 14. The Codex limit shows whenever the harness supports Codex.
 
 Taken during review (listed for Marco):
-- The approval and the pin are HMAC-signed with the links' key; an old signed approval pasted back is accepted.
+- The approval and the pin are HMAC-signed with the links' key, with the scope's revoke epoch folded in; every pin needs its tag.
+- Revoke epochs are per profile and scope id, shared across folders; a damaged epochs file voids every approval.
 - The scope's folder is checked again before every turn; a mismatch means no preset and the "unapproved" notice.
-- Clearing an approval stops the preset from the next turn, even in running tasks (a replayed old approval undoes it: Known gaps).
+- Revoking an approval stops the preset from the next turn, even in running tasks; an old approval pasted back stays void.
+- The prune keeps every approval hash and live pin, waits 30 days, and skips entirely when any base can't be read.
 - A task pinned to A keeps running after B is approved, under the pin tag and byte check.
 - On ACP every call to an approved preset server is approved without asking.
 - Approved hooks and servers run commands even with `permissions.exec: false` (the spec accepts it: the person approved them).
@@ -522,20 +543,17 @@ Taken during review (listed for Marco):
 
 - **Hooks run the live scripts.** The per-turn check runs before a turn: an edit to an approved script during a turn runs in that same turn, and is caught on the next.
 - **No change notice for an outside script.** Editing a referenced script outside the engine folder fires no `hh:engineConfigChanged` until a commit touches the engine folder, so an open Engine config section shows the old status meanwhile. The next turn still drops the preset.
-- **A forged `engineHash`** on a task that started without a preset (an edit to `tasks.json`) can get today's approved config: the pin tag is only asked for a pin that differs from the approved hash. Low risk (the person approved that config); the fix (always require the tag) is an end follow-up.
-- **A cleared approval can be replayed.** The agent can write `scopes.json` and an old signed approval is accepted (no nonce), so pasting it back undoes the clearing for that hash.
 - **The approval doesn't cover** code a script imports, or packages `npx`/`uvx` fetch (above). The outside-code mark is only a hint.
 - **Live checks still to do.** S1: whether a trusted linked folder's `.codex/config.toml` loads; the TOML → JSON conversion against Codex. S2: `--plugin-dir` under `--setting-sources project` and `--strict-mcp-config`, and again on `--resume`; an agent's `tools` against `--disallowedTools`; under the `global` base, which server wins when the person's own config has one named `ui`, `data` or `scope-*`; `--agents` with a file needs Claude Code 2.1.281 or later, and there is no version check; that `enableAllProjectMcpServers: false` and `enabledMcpjsonServers: []` in `--settings` keep the folder's `.mcp.json` servers off under `global` (the CLI may merge arrays across setting sources). No real `claude` run checked the preset argv.
 - **v1 refusals**: `url` servers, agent `hooks` and `mcpServers`, no bulk approval.
-- **No way to revoke an approval in the window** (`clearEngineApproval` has no caller), and **old snapshots are never pruned** (`pruneSnapshots` exists and is tested but nothing calls it).
-- **The screen doesn't say what the active engine leaves out** (Decision 10's "not used on OpenCode"): it shows everything the folder holds.
 - **On Codex**, dropping or changing a preset mid-task starts a fresh session (the conversation is lost), and a preset deny on its own server's tool has no effect.
-- **End follow-ups**: the `CODEX_CONFIG` merge applies to any ACP engine that doesn't take its profile by config option, not only Codex; a denylist inside `mergeCodex` as defence in depth; duplicate preset server names are not refused at the transports' last check.
+- **A revoke reaches other folders.** The epoch is per profile and scope id, so revoking scope `app` in one folder also voids an approval of a scope `app` in another folder under the same profile (stricter than needed; approve it again there).
+- **The marks follow the active engine only.** A scope approved on Claude and run later on Codex shows Codex's marks then; nothing records which engine a task used when it was pinned.
 
 ### Where to look
 
 - `packages/harness-sdk/src/hatches.ts` (`hasEnginePresets`, `hatchProblems`); `packages/workspace/src/layout.ts` (`ENGINE_PREFIX`, `engineConfigDir`), `history.ts` (`appHistoryKeep`), `scopes.ts` (`EngineApproval`, `approveEngine`).
-- `packages/shell/src/main/engine-config/`: `toml-lite.ts`, `frontmatter.ts`, `clean.ts`, `script-refs.ts`, `read-config.ts`, `snapshot.ts`, `approval.ts`, `engine-host.ts`, `engine-ipc.ts`, `outside-code.ts`; wiring in `index.ts` (`engineHost_`, `engineIpcDeps`, `scopesView`), `task-manager.ts` (`withScopeInstructions`, `turnPreset`), `task-store.ts` (`engineHash`, `engineTag`, `engineNotice`), `scope-access.ts` (`withEngine`).
+- `packages/shell/src/main/engine-config/`: `toml-lite.ts`, `frontmatter.ts`, `clean.ts`, `script-refs.ts`, `read-config.ts`, `snapshot.ts`, `approval.ts`, `epochs.ts`, `prune.ts`, `engine-host.ts`, `engine-ipc.ts`, `outside-code.ts`; wiring in `index.ts` (`engineHost_`, `engineIpcDeps`, `pruneEngineConfig`, `scopesView`), `task-manager.ts` (`withScopeInstructions`, `turnPreset`), `task-store.ts` (`engineHash`, `engineTag`, `engineNotice`), `scope-access.ts` (`withEngine`).
 - `packages/runtime/src/transport.ts` (`EnginePreset`), `claude-cli.ts` (`settingsArgs`, `presetRules`, `checkPreset`), `acp.ts` (`mergeCodex`, `codexConfig`, the policy's `mcpServers`).
 - `packages/ui/src/hatches/EngineConfig.tsx`, `EngineNotice.tsx`, `ScopeSettings.tsx`; `en.json` `hatches.engine*`.
 - Tests: the tables above; `packages/fake-agent/fixtures/hatches-harness`.

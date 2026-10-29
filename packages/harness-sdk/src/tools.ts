@@ -122,11 +122,25 @@ export interface ToolProblem {
 /** The shortest description an `agent: "call"` tool has: the agent picks tools by it. */
 export const TOOL_DESCRIPTION_MIN = 20;
 
+/**
+ * A `uses.hosts` pattern (already HOST_PATTERN) names a public host: not localhost or a name under it, and not an IP
+ * literal, which a URL reads as an address when its last label is a number (decimal or 0x hex: "127.1", "2130706433",
+ * "0x7f.1"). The broker refuses these at every call too; here the author hears it at check time.
+ */
+function publicHostName(pattern: string): boolean {
+  const name = pattern.replace(/^\*\./, "").replace(/:[0-9]+$/, "");
+  const last = name.slice(name.lastIndexOf(".") + 1);
+  return name !== "localhost" && !name.endsWith(".localhost") && !/^(0x[0-9a-f]*|[0-9]+)$/.test(last);
+}
+
 /** One tool's `uses` against the harness (tools spec §3.3): inside its permissions, patterns, collections and secrets it declares. */
 function usesProblems(m: ToolsManifest, uses: ToolMeta["uses"]): string[] {
   const out: string[] = [];
   if (uses.hosts?.length && !m.permissions.web) out.push("uses.hosts needs permissions.web");
-  for (const h of uses.hosts ?? []) if (!HOST_PATTERN.test(h)) out.push(`uses.hosts: "${h}" is not a host pattern`);
+  for (const h of uses.hosts ?? []) {
+    if (!HOST_PATTERN.test(h)) out.push(`uses.hosts: "${h}" is not a host pattern`);
+    else if (!publicHostName(h)) out.push(`uses.hosts: "${h}" is not a public host name`);
+  }
   if (uses.exec?.length && !m.permissions.exec) out.push("uses.exec needs permissions.exec");
   for (const e of uses.exec ?? []) {
     const r = execPattern.safeParse(e);

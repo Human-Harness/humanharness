@@ -69,7 +69,7 @@ export default defineTool({
 
 `toolProblems(manifest, toolsJson)` (`tools.ts`, §3.3) gives `{ tool, message }` lines that start with the id. `check` reports them; the app turns tools off on the first one.
 
-- "uses.hosts needs permissions.web"; `uses.hosts: "<h>" is not a host pattern`; "uses.exec needs permissions.exec"; `uses.exec: "<cmd>" is not a bare command name` (and the plugins' other pattern issues); "uses.files: write comes in a later slice; use read"; `uses.data.read|write: "<c>" is not a collection`; `uses.secrets: "<s>" is not declared in secrets`.
+- "uses.hosts needs permissions.web"; `uses.hosts: "<h>" is not a host pattern`; `uses.hosts: "<h>" is not a public host name` (localhost, a name under it, or an IP literal: a last label that is a number, as "127.1" or "0x7f.1"); "uses.exec needs permissions.exec"; `uses.exec: "<cmd>" is not a bare command name` (and the plugins' other pattern issues); "uses.files: write comes in a later slice; use read"; `uses.data.read|write: "<c>" is not a collection`; `uses.secrets: "<s>" is not declared in secrets`.
 - An `agent: "call"` tool's description, trimmed, must be at least 20 characters (`TOOL_DESCRIPTION_MIN`) and not just its id: the agent picks tools by it.
 - The manifest and `tools.json` list the same ids: "not built (run humanharness build)", "not a tool of this harness (run humanharness build)". An entry's `file` must be `tools/<id>.js`, so one id never runs another tool's bundle under its grant.
 - A connect step's `test` must name a tool of the harness (`defineHarness`: "\"<id>\" is not a tool of this harness") with no required params ("a connect step's test tool can't have required params").
@@ -253,7 +253,6 @@ The plan's Decisions 1–18 hold as written, with these notes:
 - **Job inbox lines** (D4): slice 4.
 - **`files: "write"`**: refused until a harness needs it (§17).
 - **Isolation between tools** is per harness, not per tool (above).
-- `localhost` and IP literals pass `HOST_PATTERN` in `uses.hosts` (as plugins'); the broker refuses them at call time.
 
 ## Where to look
 

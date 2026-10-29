@@ -73,6 +73,12 @@ describe("toolProblems (tools spec §3.3)", () => {
     expect(msgs({}, { exec: [{ cmd: "gh", args: ["*", "x"] }] })).toContain('due-today: uses.exec: "gh": * can only be the last token');
     expect(msgs({}, { exec: [{ cmd: "curl", args: ["{{secret:github}}"] }] })).toContain('due-today: uses.exec: "curl": Secrets never go into a command');
   });
+  it("hosts are public host names: localhost and IP literals are refused (the broker refuses them at call time too)", () => {
+    for (const h of ["localhost", "localhost:8080", "a.localhost", "*.a.localhost", "127.0.0.1", "10.0.0.1:443", "*.0.0.1", "2130706433", "127.1", "0x7f.1"]) {
+      expect(msgs({}, { hosts: [h] })).toEqual([`due-today: uses.hosts: "${h}" is not a public host name`]);
+    }
+    expect(msgs({}, { hosts: ["api.github.com", "localhost.example.com", "1password.com", "x.1a", "intranet"] })).toEqual([]);
+  });
   it("an agent: call tool has a description of at least 20 characters that is not its id", () => {
     const text = "due-today: an agent: call tool needs a description of at least 20 characters that says what it does";
     expect(msgs({}, {}, { description: "due-today" })).toContain(text);

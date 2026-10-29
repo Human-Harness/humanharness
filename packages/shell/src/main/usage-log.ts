@@ -73,8 +73,20 @@ export interface UsageRecord extends ProfileFields {
   /** Translate lines only: the target language and the batch's number in its run, 1-based (the first batch is 1). */
   language?: string;
   batch?: number;
-  /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
-  kind?: "checkpoint" | "compaction";
+  /**
+   * `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage).
+   * `pre`, `recipe` and `expects-miss`: tool rows (TOOL_ROW_KINDS), not turns.
+   */
+  kind?: "checkpoint" | "compaction" | "pre" | "recipe" | "expects-miss";
+  /** Tool rows only (tools spec §8.4): a pre row's step count, time and prepared section's tokens; a miss's tool. */
+  steps?: number;
+  ms?: number;
+  preparedTokens?: number;
+  tool?: string;
+  /** Recipe rows only (slice 4): the run's id and its step counts. */
+  run?: string;
+  toolSteps?: number;
+  aiSteps?: number;
   ok: boolean;
   usage?: TurnUsage;
   /** Latest windows the turn reported. */
@@ -170,6 +182,22 @@ export function usageRecord(entry: ChatEntry, engine: string, meta: UsageMeta = 
 /** A line for a compaction the task manager detected (spec §8). */
 export function compactionRecord(engine: string, meta: UsageMeta, at: string = new Date().toISOString()): UsageRecord {
   return { at, engine, ...metaFields(meta), kind: "compaction", ok: true };
+}
+
+/** Rows that are not turns (tools spec §8.4): a pre-step group, a recipe run (slice 4), an expected tool not called. */
+export const TOOL_ROW_KINDS: readonly string[] = ["pre", "recipe", "expects-miss"];
+
+/** A task's pre-steps (tools spec §8.4): one row per start that ran them; `ok` when no step failed. */
+export function preRecord(
+  o: { engine: string; action: string; task: string; scope?: string; steps: number; ms: number; preparedTokens: number; ok: boolean },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return { at, engine: o.engine, kind: "pre", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), steps: o.steps, ms: o.ms, preparedTokens: o.preparedTokens, ok: o.ok };
+}
+
+/** A phase that ended without a call to a tool it expects (tools spec §6.1). The spec's `phase` is `taskPhase` here. */
+export function expectsMissRecord(o: { engine: string; action: string; task: string; scope?: string; taskPhase: string; tool: string }, at: string = new Date().toISOString()): UsageRecord {
+  return { at, engine: o.engine, kind: "expects-miss", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), taskPhase: o.taskPhase, tool: o.tool, ok: true };
 }
 
 /** One AI stage of material processing (material spec §11). */
@@ -324,12 +352,12 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out, and so are material stages, translation batches, Sidekick turns
+ * Checkpoint turns, compaction lines and tool rows (TOOL_ROW_KINDS) are left out, and so are material stages, translation batches, Sidekick turns
  * and job runs (not tasks; their windows still count as the latest limits). Job lines are told apart by `phase: "job"`,
  * never by their id (a job may be called "questions").
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
-  const all = records.filter((r) => r.kind !== "compaction");
+  const all = records.filter((r) => r.kind !== "compaction" && !(r.kind !== undefined && TOOL_ROW_KINDS.includes(r.kind)));
   const last = all.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();

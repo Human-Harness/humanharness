@@ -302,6 +302,19 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
     expect((await w.host.presetForTask(await w.pinned(a))).preset?.hash).toBe(a);
   });
 
+  it("a task that started without a preset can't get one by writing the approved hash into tasks.json", async () => {
+    const w = await setup(BASIC, TOOLS);
+    const a = await w.approve();
+    expect((await w.host.presetFor("intro", undefined)).hash).toBe(a);
+    // The pin equals the approval and the folder: still none without the app's tag, or with another task's.
+    expect(await w.host.presetForTask({ id: "t1", scope: "intro", engineHash: a })).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+    const other = (await w.pinned(a, "t2")).engineTag;
+    expect(await w.host.presetForTask({ id: "t1", scope: "intro", engineHash: a, engineTag: other })).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+    expect(await w.host.presetForTask({ scope: "intro", engineHash: a, engineTag: other })).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+    // The app's own pin: used.
+    expect((await w.host.presetForTask(await w.pinned(a))).preset?.hash).toBe(a);
+  });
+
   it("_app and unknown ids have no engine config", async () => {
     const w = await setup(BASIC, TOOLS);
     await w.approve();

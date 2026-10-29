@@ -175,9 +175,9 @@ export class EngineHost {
 
   /**
    * For a later turn (or a resumed session) of a task that started with `engineHash`: its pinned snapshot (Decision 2).
-   * Only while the scope has an approval the app signed (clearing it stops running tasks too), and the live folder
-   * holds approved bytes. Pinned to the approved hash: the folder must hash to it. Pinned to an older one: the pin must
-   * carry the app's tag (tasks.json is agent-writable), the folder must hold either hash, and every file the pinned
+   * Only while the scope has an approval the app signed (clearing it stops running tasks too), the pin carries the
+   * app's tag (tasks.json is agent-writable), and the live folder holds approved bytes. Pinned to the approved hash:
+   * the folder must hash to it. Pinned to an older one: the folder must hold either hash, and every file the pinned
    * commands run must still be the pinned bytes (scripts run in place; one only the pin runs is in no live approval).
    * Otherwise none and a notice. A task that started without a preset stays without one.
    */
@@ -189,12 +189,14 @@ export class EngineHost {
     const { config, o, approvedHash } = now;
     if (config.refusals.length > 0) return { ...NONE, notice: "refused" };
     if (approvedHash === null) return unapproved;
+    // The pin always needs the app's tag: a task that started without a preset can't gain one by writing the
+    // approved hash into tasks.json.
+    const ctx = await this.d.context();
+    const secret = await this.d.secret();
+    if (!ctx || task.id === undefined || !enginePinValid(task.engineTag, ctx.profile, task.scope, task.id, task.engineHash, secret)) return unapproved;
     if (approvedHash === task.engineHash) {
       if (config.hash !== task.engineHash) return unapproved;
     } else {
-      const ctx = await this.d.context();
-      const secret = await this.d.secret();
-      if (!ctx || task.id === undefined || !enginePinValid(task.engineTag, ctx.profile, task.scope, task.id, task.engineHash, secret)) return unapproved;
       if (config.hash !== task.engineHash && config.hash !== approvedHash) return unapproved;
       if (!(await pinnedScriptsUnchanged(this.d.userData, task.engineHash, o))) return unapproved;
     }

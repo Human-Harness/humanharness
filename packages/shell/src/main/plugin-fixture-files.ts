@@ -15,15 +15,26 @@ export const FIXTURE_BYTES = 10 * 1024 * 1024;
  * The app's fixture mode and the CLI's `plugin test` read fixtures with this one function.
  */
 export async function readPluginFixtures(dir: string, source: string, log: (message: string, err?: unknown) => void): Promise<FixtureExchange[]> {
-  const folder = path.join(dir, source);
-  const isDir = async (p: string) => (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
-  if (!(await isDir(dir)) || !(await isDir(folder))) return [];
+  if (!(await isDir(dir))) return [];
+  const files = await readFixtureFiles(path.join(dir, source), parseFixture, (name, err) => log(`fixtures/${source}/${name} skipped`, err));
+  return files.map((f) => f.value);
+}
+
+const isDir = async (p: string) => (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
+
+/**
+ * `<folder>/*.json` in file-name order, with the rules above: the folder itself is not a link (else none), at most
+ * FIXTURE_FILES files of at most FIXTURE_BYTES, no file link or hard link, and a file `parse` refuses is passed to
+ * `skipped` with its name and the reason, and left out. Plugin fixtures and tool fixtures (`tools/<id>/fixtures/`).
+ */
+export async function readFixtureFiles<T>(folder: string, parse: (raw: unknown) => T, skipped: (name: string, err: unknown) => void): Promise<{ file: string; value: T }[]> {
+  if (!(await isDir(folder))) return [];
   const names = (await fs.readdir(folder, { withFileTypes: true }).catch(() => []))
     .filter((d) => d.isFile() && d.name.endsWith(".json"))
     .map((d) => d.name)
     .sort()
     .slice(0, FIXTURE_FILES);
-  const out: FixtureExchange[] = [];
+  const out: { file: string; value: T }[] = [];
   for (const name of names) {
     let file: Awaited<ReturnType<typeof fs.open>> | null = null;
     try {
@@ -32,9 +43,9 @@ export async function readPluginFixtures(dir: string, source: string, log: (mess
       if (!st.isFile()) throw new Error("not a file");
       if (st.nlink > 1) throw new Error("a hard link");
       if (st.size > FIXTURE_BYTES) throw new Error("larger than 10 MB");
-      out.push(parseFixture(JSON.parse(await file.readFile("utf8"))));
+      out.push({ file: name, value: parse(JSON.parse(await file.readFile("utf8"))) });
     } catch (err) {
-      log(`fixtures/${source}/${name} skipped`, err);
+      skipped(name, err);
     } finally {
       await file?.close().catch(() => undefined);
     }

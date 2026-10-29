@@ -10,3 +10,4 @@ export { toolFiles, type ToolFiles } from "./tool-files";
 export { runPreSteps, runToolStep, type StepRegistry, type StepResult } from "./pre-steps";
 export { preparedSection, type PreparedPart } from "./prepared-section";
 export { readToolsJson, type ToolsState } from "./tools-json";
+export { readToolFixtures } from "./tool-fixture-files";

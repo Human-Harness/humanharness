@@ -889,4 +889,12 @@ describe("TurnController: the turn's scope's linked folders (hatches L5)", () =>
   it("D0: without the dep the options are exactly today's", async () => {
     expect(await run(withAccess(undefined), { task: "t1", scope: "app", action: "a" })).toEqual({ trailer: { task: "t1", action: "a", scope: "app" } });
   });
+
+  it("a task's engine preset joins the turn's scope, with or without folders (hatches spec §5.2)", async () => {
+    const engine = { hash: "ab".repeat(32), base: "isolated" as const, servers: [] };
+    const scopeAccess = vi.fn(async (scope: string) => (scope === "app" ? { linked } : undefined));
+    expect(await run(withAccess(scopeAccess), { task: "t1", scope: "app", engine })).toEqual({ trailer: { task: "t1", scope: "app" }, scope: { linked, engine } });
+    expect(await run(withAccess(scopeAccess), { task: "t1", scope: "other", engine })).toEqual({ trailer: { task: "t1", scope: "other" }, scope: { linked: [], engine } });
+    expect(await run(withAccess(undefined), { task: "t1", scope: "other", engine })).toEqual({ trailer: { task: "t1", scope: "other" }, scope: { linked: [], engine } });
+  });
 });

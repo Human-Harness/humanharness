@@ -101,6 +101,10 @@ export interface CurrentTask {
   startTokens?: number;
   /** Files, notes and tools the agent used (spec §3.2). */
   reads?: ContextRead[];
+  /** The approved engine config hash the task started with (hatches Decision 2): its turns use that snapshot. Absent: none (D0). */
+  engineHash?: string;
+  /** The task runs without its scope's engine config: never approved, changed since, or refused (hatches spec §5.3). */
+  engineNotice?: "unapproved" | "refused";
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -136,6 +140,8 @@ export const MODES_MAX = 50;
 
 /** How many phase changes tasks.json keeps for a task: a bound on a hand-edited file. */
 export const PHASE_LOG_MAX = 200;
+/** An engine config hash (hatches spec §5.3): sha256, lowercase hex. */
+const ENGINE_HASH = /^[0-9a-f]{64}$/;
 /** The longest time box a task can reach with "+5 min": a bound on a hand-edited file. */
 export const TIME_BOX_MINUTES_MAX = 24 * 60;
 /** How many lines for the next message a task keeps (review spec §5.4): a bound on a hand-edited file. */
@@ -327,6 +333,8 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     ...(start ? { start } : {}),
     ...(isCount(c.startTokens) ? { startTokens: c.startTokens } : {}),
     ...(reads ? { reads } : {}),
+    ...(typeof c.engineHash === "string" && ENGINE_HASH.test(c.engineHash) ? { engineHash: c.engineHash } : {}),
+    ...(c.engineNotice === "unapproved" || c.engineNotice === "refused" ? { engineNotice: c.engineNotice } : {}),
   };
 }
 

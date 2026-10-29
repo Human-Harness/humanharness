@@ -794,6 +794,8 @@ export interface CurrentTaskView {
   phases?: { id: string; at: string; by: "agent" | "person" | "app" }[];
   phaseProposal?: { to: string; reason: string };
   timeBox?: TimeBoxView;
+  /** The task runs without its scope's engine config (hatches spec §5.3): not approved (or changed since), or refused. */
+  engineNotice?: "unapproved" | "refused";
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */

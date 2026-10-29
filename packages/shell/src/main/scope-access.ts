@@ -2,7 +2,7 @@ import { realpath } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
-import type { TurnScope } from "@humanharness/runtime";
+import type { EnginePreset, TurnScope } from "@humanharness/runtime";
 import { type LinkedFolderEntry, type LinkedFolderLine, type ScopeEntry, type ScopeStore, isScopeId, linkedFolderLines } from "@humanharness/workspace";
 import { type LinkRefusal, checkLink, isGitRepo } from "./linked-folders";
 import { type LinkSigning, dropKey, linkChecker } from "./linked-ipc";
@@ -27,6 +27,14 @@ function current(entries: ScopeEntry[], scope: string | null, decl: Record<strin
 export function scopeAccessFor(entries: ScopeEntry[], scope: string, decl: Record<string, LinkedFolderDecl>): TurnScope | undefined {
   const linked = current(entries, scope, decl).map((l) => ({ path: l.path, mode: l.mode, tracked: l.mode === "write" && l.tracked && !l.gitChanged }));
   return linked.length > 0 ? { linked } : undefined;
+}
+
+/**
+ * A turn's scope with its task's approved engine preset (hatches spec §5.2): the folders as `scopeAccessFor` gave them
+ * (none: an empty list), plus `engine`. Without a preset, `access` unchanged (D0).
+ */
+export function withEngine(access: TurnScope | undefined, engine: EnginePreset | undefined): TurnScope | undefined {
+  return engine ? { linked: access?.linked ?? [], engine } : access;
 }
 
 /** The managed section's "Folders of this scope" lines for `scope` (none for no scope). */

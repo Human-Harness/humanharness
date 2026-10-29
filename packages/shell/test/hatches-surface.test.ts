@@ -47,8 +47,12 @@ describe("hatches IPC surface (hatches D0)", () => {
   it("D0: the links' key, live set and the histories' prune are reached only from the hasLinkedFolders deps", async () => {
     const index = await read("index.ts");
     const deps = group(index, index.indexOf("function linkedIpcDeps(): LinkedIpcDeps"), /\{/);
+    // Engine approvals (hatches part 3) check their tag with the same key, only from the enginePresets-gated host.
+    const engine = group(index, index.indexOf("function engineHost_(): EngineHost | undefined"), /\{/);
+    expect(engine).toMatch(/^function engineHost_\(\): EngineHost \| undefined \{\s*if \(!hasEnginePresets\(harness\)\) return undefined;/);
+    expect(count(engine, /\blinkedSecret\(userData\)\(false\)/)).toBe(1);
     for (const name of [/\blinkedSigning\(/, /\blinkedSecret\(/, /\bpruneUnlinked\(/, /"linked-key"/, /"linked-live\.json"/]) {
-      expect(count(index, name), String(name)).toBe(count(deps, name));
+      expect(count(index, name), String(name)).toBe(count(deps, name) + count(engine, name));
     }
     expect(count(deps, /\blinkedSigning\(/)).toBe(1);
     expect(count(deps, /\bpruneUnlinked\(/)).toBe(1);

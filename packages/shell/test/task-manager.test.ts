@@ -1228,3 +1228,81 @@ describe("TaskManager: the taskClosed hook (parallel spec §8 afterTask, Decisio
     expect(t.log).toEqual(["endSession", "turn:run", "turn:close", "note:manifest", "history:Note: The manifest", "endSession"]);
   });
 });
+
+describe("TaskManager: the scope's engine preset (hatches spec §5.2, Decision 2)", () => {
+  const HASH = "ab".repeat(32);
+  const preset = { hash: HASH, base: "isolated" as const, servers: [{ name: "scope-lint", command: "node", args: ["lint.js"], env: {} }] };
+  const instructions = "## Scope instructions\n\nUse tabs.";
+  const earlier: Note = {
+    slug: "earlier",
+    path: ".harness/notes/intro/earlier.md",
+    title: "Earlier",
+    date: "2026-10-11T10:00:00.000Z",
+    engine: "claude",
+    summary: ["a point"],
+    decisions: [],
+    files: [],
+    open: [],
+  };
+  /** A scoped manager in scope `intro` whose host answers `start` for a new task and `turn` for a later one. */
+  const withPreset = (start: Awaited<ReturnType<NonNullable<TaskDeps["enginePreset"]>["presetFor"]>>, turn = start, script?: Event[][]) => {
+    const presetForTask = vi.fn(async (t: { engineHash?: string }) => (t.engineHash ? turn : { preset: null, instructions: "", notice: null }));
+    const presetFor = vi.fn(async () => start);
+    const t = setup({
+      state: { ...emptyTasks(), open: "intro" },
+      notes: [earlier],
+      ...(script ? { script } : {}),
+      deps: { scoped: true, instructionsSize: async () => 400, enginePreset: { presetFor, presetForTask } },
+    });
+    return { ...t, presetFor, presetForTask };
+  };
+
+  it("instructions in the first message: after the brief, under Scope instructions", async () => {
+    const t = withPreset({ preset, instructions, notice: null, hash: HASH });
+    await t.manager.start("manifest");
+    expect(t.presetFor).toHaveBeenCalledWith("intro", "manifest");
+    const first = t.turns[0]!.message;
+    expect(first.startsWith("# Topic: manifest\nAnswer in English.\n\n## Scope instructions\n\nUse tabs.\n\n")).toBe(true);
+    // Before the notes index.
+    expect(first.indexOf("Use tabs.")).toBeLessThan(first.indexOf("Earlier"));
+    expect(first.indexOf("Earlier")).toBeGreaterThan(0);
+    // The turn carries the preset.
+    expect(t.turns[0]!.options.engine).toEqual(preset);
+  });
+
+  it("lists Scope instructions in the context items with kind scope-instructions", async () => {
+    const t = withPreset({ preset, instructions, notice: null, hash: HASH });
+    await t.manager.start("manifest");
+    const start = t.state().current!.start!;
+    expect(start.map((i) => i.kind)).toEqual(["instructions", "brief", "scope-instructions", "notes-index", "app-notes-index"]);
+    expect(start.find((i) => i.kind === "scope-instructions")).toEqual({ id: "scope-instructions", kind: "scope-instructions", label: "Scope instructions", tokens: 100 });
+  });
+
+  it("records engineHash on the task when a preset was used; none without", async () => {
+    const t = withPreset({ preset, instructions, notice: null, hash: HASH });
+    await t.manager.start("manifest");
+    expect(t.state().current).toMatchObject({ engineHash: HASH });
+    expect(t.state().current).not.toHaveProperty("engineNotice");
+    // A later turn asks again for the task's pinned hash.
+    await t.manager.ask("And then?");
+    expect(t.presetForTask).toHaveBeenLastCalledWith(expect.objectContaining({ engineHash: HASH, scope: "intro", action: "manifest" }));
+    expect(t.turns[1]!.options.engine).toEqual(preset);
+
+    const none = withPreset({ preset: null, instructions: "", notice: "unapproved" });
+    await none.manager.start("manifest");
+    expect(none.state().current).not.toHaveProperty("engineHash");
+    expect(none.state().current).toMatchObject({ engineNotice: "unapproved" });
+    expect(none.views.at(-1)?.current).toMatchObject({ engineNotice: "unapproved" });
+    expect(none.turns[0]!.options).not.toHaveProperty("engine");
+    expect(none.turns[0]!.message).not.toContain("Scope instructions");
+    expect(none.state().current!.start!.map((i) => i.kind)).not.toContain("scope-instructions");
+  });
+
+  it("a config changed mid-task: the next turn runs without the preset, and the task shows the notice", async () => {
+    const t = withPreset({ preset, instructions, notice: null, hash: HASH }, { preset: null, instructions: "", notice: "unapproved" });
+    await t.manager.start("manifest");
+    expect(t.turns[0]!.options).not.toHaveProperty("engine");
+    expect(t.state().current).toMatchObject({ engineHash: HASH, engineNotice: "unapproved" });
+    expect(t.views.at(-1)?.current).toMatchObject({ engineNotice: "unapproved" });
+  });
+});

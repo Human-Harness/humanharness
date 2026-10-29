@@ -38,6 +38,7 @@ import {
   choiceOptionSchema,
   dataCollections,
   hasBackend,
+  hasEnginePresets,
   hasJobs,
   hasLinkedFolders,
   hasModes,
@@ -197,7 +198,8 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { EngineHost } from "./engine-config/engine-host";
 import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import { BackendLog } from "./backend/backend-log";
 import { BackendProcess } from "./backend/backend-process";
@@ -276,6 +278,8 @@ let quitting = false;
 let linkedUnsupported = false;
 /** Linked folders (hatches): the IPC's deps, the turns' access and AGENTS.md's rewrite. Null without them (D0). */
 let linkedParts: { access: ScopeAccess; instructions: LinkedInstructions } | null = null;
+/** The scopes' engine presets (hatches spec §5), made on first use: only a harness with `enginePresets` (D0: null). */
+let engineHost: EngineHost | null = null;
 /** The linked-folder channels' deps, made once when they are registered (hasLinkedFolders only). */
 let linkedDeps: LinkedIpcDeps | null = null;
 /** The harness's backend (hatches spec §4); null without `backend` (D0: no process, no file, no channel). */
@@ -1287,6 +1291,10 @@ const taskDeps: TaskDeps = {
       return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
     };
   },
+  // The scope's approved engine preset for each task (hatches spec §5.2). A getter: undefined without enginePresets (D0).
+  get enginePreset() {
+    return engineHost_();
+  },
   // Board mode only (hatches Decision 6): AGENTS.md is shared by lanes in different scopes, so each task's first message
   // names its own scope's folders. A getter: undefined without linked folders (D0) or outside board mode.
   get linkedContext() {
@@ -2043,6 +2051,33 @@ async function linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHis
   await linked.access.checkGit(scope).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
   // Fails closed on its own: a folder whose git can't be told now is left out (L7).
   return linkedHistoriesFor(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
+}
+
+/**
+ * Which engine preset a task gets (hatches spec §5.2, §5.3): only a harness that declares `enginePresets` makes it
+ * (D0: undefined, and `.harness/engine/` is never read). Approvals are checked with the links' key, never created here.
+ */
+function engineHost_(): EngineHost | undefined {
+  if (!hasEnginePresets(harness)) return undefined;
+  if (engineHost) return engineHost;
+  const userData = app.getPath("userData");
+  engineHost = new EngineHost({
+    userData,
+    context: async () => {
+      const c = await validConfig();
+      if (!c) return null;
+      const base = baseOf(c);
+      return { base, profile: profilesOn() ? (c.profile ?? "") : "", scopes: scopeStoreFor(base) };
+    },
+    // The folders a turn of the scope reaches now: preset path rules outside them are refused (E5).
+    linked: async (scope) => ((await linked_()?.access.access(scope))?.linked ?? []).map((l) => l.path),
+    secret: () => linkedSecret(userData)(false),
+    // Read on each use: a harness update changes them.
+    get harness() {
+      return { permissions: harness.permissions, actions: harness.actions, mcp: harness.mcp };
+    },
+  });
+  return engineHost;
 }
 
 /**

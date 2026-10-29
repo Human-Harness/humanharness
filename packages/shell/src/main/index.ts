@@ -202,6 +202,7 @@ import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, register
 import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
+import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
 import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import { BackendLog } from "./backend/backend-log";
 import { BackendProcess } from "./backend/backend-process";
@@ -2092,6 +2093,28 @@ function engineHost_(): EngineHost | undefined {
 }
 
 /**
+ * Decision 13: at start, the engine config snapshots no scope approves and no live task is pinned to, in this base or
+ * any other profile's, go to the Trash once older than 30 days. Called only under `enginePresets` (D0).
+ */
+async function pruneEngineConfig(): Promise<void> {
+  try {
+    const c = await validConfig();
+    if (!c) return;
+    const bases = [baseOf(c)];
+    if (profilesCtl) {
+      for (const p of (await profilesCtl.state()).list) {
+        const b = baseFor({ folder: c.folder, profile: p.id }, true);
+        if (b !== null && !bases.includes(b)) bases.push(b);
+      }
+    }
+    const known: PruneBase[] = bases.map((base) => ({ base, scopes: scopeStoreFor(base) }));
+    await pruneEngineSnapshots(app.getPath("userData"), known, new Date(), (d) => shell.trashItem(d));
+  } catch (err) {
+    console.error("Could not prune the engine config snapshots", err);
+  }
+}
+
+/**
  * The Engine config channels' deps (hatches spec §5.3), made only when they are registered (enginePresets). Approving
  * signs with the links' key, made then if there is none yet, for the same profile id the host checks it with.
  */
@@ -2490,6 +2513,7 @@ function registerIpc() {
   if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
   // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
   if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());
+  if (hasEnginePresets(harness)) void pruneEngineConfig();
   // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
   if (hasBackend(harness)) {
     const backendLog = new BackendLog(app.getPath("userData"));

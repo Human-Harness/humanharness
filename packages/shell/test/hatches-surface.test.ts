@@ -101,6 +101,15 @@ describe("hatches IPC surface (hatches D0)", () => {
     expect(count(ipc, /handle\("hh:engine(Config|Approve|Revoke)/)).toBe(3);
   });
 
+  it("engine snapshots are pruned at start only under enginePresets (Decision 13, D0)", async () => {
+    const index = await read("index.ts");
+    expect(index).toContain("  if (hasEnginePresets(harness)) void pruneEngineConfig();\n");
+    expect(count(index, /\bpruneEngineConfig\(\)/)).toBe(2); // the definition and that one call
+    expect(count(index, /\bpruneEngineSnapshots\(/)).toBe(1);
+    const prune = group(index, index.indexOf("async function pruneEngineConfig(): Promise<void>"), /\{/);
+    expect(prune).toContain("pruneEngineSnapshots(");
+  });
+
   it("hatchesState carries enginePresets: true only with enginePresets (D0)", () => {
     expect(hatchesState(defineHarness(base))).toBeUndefined();
     expect(hatchesState(defineHarness({ ...base, enginePresets: true }))).toEqual({ enginePresets: true });

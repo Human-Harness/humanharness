@@ -1437,6 +1437,7 @@
     "testCouldNotRun": "The test couldn't run."
   },
   "tools": {
+    "contextPrepared": "Prepared · {{name}}",
     "line": "{{tool}} · {{summary}} · {{seconds}} s · 0 tokens",
     "failed": "{{tool}} failed · {{message}}",
     "accessDenied": "access denied",

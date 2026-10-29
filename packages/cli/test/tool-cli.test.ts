@@ -21,12 +21,12 @@ describe("the tool command", () => {
     ]);
   });
 
-  // `run` joins the list in Task 6 (tool-run.ts).
-  it("tool --help lists test", async () => {
+  it("tool --help lists test and run", async () => {
     const m = memoryIo(root);
     expect(await main(["tool", "--help"], m.io)).toBe(0);
     expect(m.out()).toBe(TOOL_USAGE);
     expect(TOOL_USAGE).toMatch(/^ {2}test \[<id>\]/m);
+    expect(TOOL_USAGE).toMatch(/^ {2}run <id> /m);
     const none = memoryIo(root);
     expect(await main(["tool"], none.io)).toBe(2);
     expect(none.err()).toBe(TOOL_USAGE);

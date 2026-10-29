@@ -1,5 +1,6 @@
 import path from "node:path";
 import { type Io, UsageError, parseCommand } from "./cli";
+import { liveToolRunDeps, toolRunCommand } from "./tool-run";
 import { formatToolReports, testTools } from "./tool-test";
 
 // Not tool.ts: that file is the tool authors' `@humanharness/cli/tool`, bundled into the sandbox.
@@ -11,6 +12,8 @@ export const TOOL_USAGE = [
   "",
   "Commands:",
   "  test [<id>] [--harness <dir>]            Run each tool (or <id>) on its fixtures, tools/<id>/fixtures/*.json",
+  "  run <id> [--args '<json>'] [--folder <dir>] [--scope <id>] [--yes] [--harness <dir>]",
+  "                                           Run <id> once, for real, and print its result and trace",
   "",
   "Each command works on the harness in the current folder unless --harness <dir> names another.",
   "",
@@ -43,9 +46,10 @@ async function testCommand(args: string[], io: Io): Promise<number> {
   return reports.every((r) => r.cases.every((c) => c.ok)) ? 0 : 1;
 }
 
-/** The tool commands, by name (Task 6 adds `run`). */
+/** The tool commands, by name. */
 const TOOL_COMMANDS: Record<string, Command> = {
   test: testCommand,
+  run: (args, io) => toolRunCommand(args, io, liveToolRunDeps(io.stdin, io.stdout)),
 };
 
 /** `humanharness tool <command>` (tools spec §11): try a harness's tools in the terminal. */

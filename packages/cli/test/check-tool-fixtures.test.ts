@@ -34,11 +34,22 @@ export default defineTool({
 });
 `;
 
+const THROWER = `import { defineTool, z } from "@humanharness/cli/tool";
+export default defineTool({
+  description: "Throws a message that holds terminal control characters.",
+  params: z.object({}),
+  agent: "none",
+  async run() {
+    throw new Error("\\u001b[2J\\rX");
+  },
+});
+`;
+
 /**
  * A harness in a temp folder with the tool `echo` (and `big` when asked) and fixture files at `tools/<rel>` (an object is written as JSON, a
  * string as is). The harness has no HARNESS.md on purpose: its findings are the same before and after this task.
  */
-function harness(fixtures: Record<string, unknown> = {}, o: { big?: boolean } = {}): string {
+function harness(fixtures: Record<string, unknown> = {}, o: { big?: boolean; thrower?: boolean } = {}): string {
   const dir = path.join(root, `h${++n}`);
   fs.mkdirSync(path.join(dir, "agent", "tasks"), { recursive: true });
   // As `init` links it: node_modules/@humanharness/cli → this package.
@@ -60,7 +71,7 @@ export default defineHarness({
   blocks: {},
   actions: { look: { label: "Look", prompt: "./agent/tasks/look.md", cost: "light" } },
   path: ["look"],
-  tools: { echo: "./tools/echo.ts"${o.big ? ', big: "./tools/big.ts"' : ""} },
+  tools: { echo: "./tools/echo.ts"${o.big ? ', big: "./tools/big.ts"' : ""}${o.thrower ? ', thrower: "./tools/thrower.ts"' : ""} },
   author: "Human Harness tests",
 });
 `,
@@ -68,6 +79,7 @@ export default defineHarness({
   fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
   fs.writeFileSync(path.join(dir, "tools", "echo.ts"), ECHO);
   if (o.big) fs.writeFileSync(path.join(dir, "tools", "big.ts"), BIG);
+  if (o.thrower) fs.writeFileSync(path.join(dir, "tools", "thrower.ts"), THROWER);
   for (const [rel, value] of Object.entries(fixtures)) {
     const file = path.join(dir, "tools", ...rel.split("/"));
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -164,6 +176,15 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     expect(findings[0]!.message).toMatch(/^Tool "echo": fixtures\/broken\.json: \S/);
     // A schema refusal names what is wrong, not the first line of zod's JSON ("[").
     expect(findings[1]!.message).toMatch(/^Tool "echo": fixtures\/shape\.json: expect: /);
+  });
+
+  it("no control characters reach a tool-fixture finding: a tool's error or an unparsable file", { timeout: 60_000 }, async () => {
+    const dir = harness({ "echo/fixtures/broken.json": "\u001b[2J\rnot json", "thrower/fixtures/t.json": { expect: { result: {} } } }, { thrower: true });
+    const { findings } = await fixtureFindings(dir);
+    expect(findings.map((f) => f.file)).toEqual(["tools/echo/fixtures/broken.json", "tools/thrower/fixtures/t.json"]);
+    for (const f of findings) expect(f.message).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    const { out } = await check(dir);
+    expect(out.replace(/\n/g, "")).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
   });
 
   it("a harness whose tools don't build reports only the build problem", { timeout: 60_000 }, async () => {

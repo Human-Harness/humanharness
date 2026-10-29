@@ -11,7 +11,7 @@ import { CliError, UsageError } from "./cli";
 import { MANIFEST } from "./paths";
 import { fixtureSecrets } from "./plugin-test";
 import { buildTools } from "./tool-build";
-import { TOOL_P12_NOTE, cliTools } from "./tool-host-node";
+import { TOOL_P12_NOTE, cliTools, plain } from "./tool-host-node";
 
 /** "This harness declares no tools." (D0): every `tool` command refuses with it. */
 export const NO_TOOLS = "This harness declares no tools.";
@@ -279,7 +279,8 @@ export function formatToolReports(reports: ToolTestReport[]): string {
   const total = reports.reduce((n, r) => n + r.cases.length, 0);
   const failed = reports.reduce((n, r) => n + r.cases.filter((c) => !c.ok).length, 0);
   out.push("", failed === 0 ? `${plural(total, "fixture")} passed.` : `${failed} of ${total} fixtures failed.`);
-  return `${out.join("\n")}\n`;
+  // Each line plain: a tool's error, an access target or a skipped file's parse error can carry control characters.
+  return `${out.map(plain).join("\n")}\n`;
 }
 
 /** One `tool-fixture` problem for `check`: the message and the fixture file, relative to the harness folder. */
@@ -316,7 +317,7 @@ export async function toolFixtureFindings(
   for (const tool of Object.keys(harness.tools ?? {}).sort()) {
     const fixtures = await readToolFixtures(root, tool, (message, err) => {
       const file = message.replace(/ skipped$/, "");
-      problems.push({ message: `Tool "${tool}": ${file.slice(`tools/${tool}/`.length)}: ${skippedWhy(err)}`, file });
+      problems.push({ message: plain(`Tool "${tool}": ${file.slice(`tools/${tool}/`.length)}: ${skippedWhy(err)}`), file });
     });
     for (const f of fixtures) runs.push({ tool, ...f });
   }
@@ -337,7 +338,7 @@ export async function toolFixtureFindings(
         // is the verdict's own reason.
         why = errText(err);
       }
-      if (why !== null) problems.push({ message: `Tool "${tool}": fixtures/${file}: ${why}`, file: `tools/${tool}/fixtures/${file}` });
+      if (why !== null) problems.push({ message: plain(`Tool "${tool}": fixtures/${file}: ${why}`), file: `tools/${tool}/fixtures/${file}` });
     }
   } finally {
     await fs.rm(built, { recursive: true, force: true });

@@ -12,7 +12,7 @@ import { APP_SCOPE, type DataStore, MAIN_SCOPE, type ScopeStore } from "@humanha
 import { CliError } from "./cli";
 import type { ToolExchange } from "./record";
 import { buildTools } from "./tool-build";
-import { TOOL_P12_NOTE, cliTools } from "./tool-host-node";
+import { TOOL_P12_NOTE, cliTools, plain } from "./tool-host-node";
 import type { ToolRunDeps } from "./tool-run";
 
 /**
@@ -27,9 +27,6 @@ import type { ToolRunDeps } from "./tool-run";
 const TOOL_BROKE = "Something went wrong running the tool";
 const INVALID = "Invalid request";
 const NO_TASK = "No task is running in this session";
-
-/** One line for the terminal: no control characters, no line break (as tool-run.ts). */
-const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 
 /** A refused start's reason is cut here: it goes to stderr as one short line. */
 const FAILED_CHARS = 300;

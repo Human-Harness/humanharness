@@ -12,7 +12,7 @@ import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { hiddenReader, resolveOnPath } from "./plugin-record";
 import { buildTools } from "./tool-build";
-import { TOOL_P12_NOTE, cliTools } from "./tool-host-node";
+import { TOOL_P12_NOTE, cliTools, plain } from "./tool-host-node";
 import { NO_TOOLS } from "./tool-test";
 
 export const TOOL_RUN_USAGE = [
@@ -62,12 +62,6 @@ export function liveToolRunDeps(stdin: Readable, stdout: Writable): ToolRunDeps 
     isTTY: (stdin as { isTTY?: boolean }).isTTY === true,
   };
 }
-
-/**
- * One line for the terminal: no control characters a tool or a server reply could use to redraw it, and no line
- * break or tab either, so a reply put into a log line or an error can't pass for a line of its own.
- */
-const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 
 /** The broker's data op as the person path's request (`query` flat), as the app's tools host does. */
 function dataRequest(op: BrokerDataOp): unknown {

@@ -18,6 +18,12 @@ import { MANIFEST } from "./paths";
  * tools you trust.
  */
 
+/**
+ * One line for the terminal: no control characters a tool, a server reply or a file could use to redraw it, and no
+ * line break or tab either, so a reply put into a log line or an error can't pass for a line of its own.
+ */
+export const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+
 /** A1: printed once per command, before any tool code runs. */
 export const TOOL_P12_NOTE = "Note: tool code runs in this Node process, not in the app's sandbox. Run only tools you trust.";
 

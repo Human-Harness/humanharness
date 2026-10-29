@@ -90,6 +90,16 @@ export default defineTool({
   },
 });
 `,
+  thrower: `import { defineTool, z } from "@humanharness/cli/tool";
+export default defineTool({
+  description: "Throws a message that holds terminal control characters.",
+  params: z.object({}),
+  agent: "none",
+  async run() {
+    throw new Error("\\u001b[2J\\rX");
+  },
+});
+`,
   bare: `import { defineTool, z } from "@humanharness/cli/tool";
 export default defineTool({
   description: "Has no fixtures at all.",
@@ -312,6 +322,22 @@ describe("humanharness tool test (tools spec §11)", () => {
     expect(formatToolReports(reports)).toContain("  warn: tools/echo/fixtures/junk.json skipped");
     fs.writeFileSync(path.join(dir, "tools", "echo.ts"), 'import fs from "node:fs";\nexport default fs;\n');
     await expect(run(dir)).rejects.toBeInstanceOf(CliError);
+  });
+
+  it("no control characters reach the report: a tool's error, its trace line and a skipped file's warning", { timeout: 60_000 }, async () => {
+    const dir = harness(["thrower"], { "thrower/fixtures/t.json": { expect: { result: {} } } });
+    fs.writeFileSync(path.join(dir, "tools", "thrower", "fixtures", "junk.json"), "\u001b[2J\rnot json");
+    const { reports } = await run(dir);
+    expect(reports[0]!.cases.map((c) => c.ok)).toEqual([false]);
+    expect(reports[0]!.skipped).toHaveLength(1);
+    const text = formatToolReports(reports);
+    expect(text).toContain("  call: thrower");
+    expect(text).toContain("  warn: tools/thrower/fixtures/junk.json skipped");
+    // Line breaks between lines are the report's own; nothing else under U+0020 or in U+007F–U+009F.
+    expect(text.replace(/\n/g, "")).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    const m = memoryIo(dir);
+    expect(await toolCommand(["test"], m.io)).toBe(1);
+    expect(m.out().replace(/\n/g, "")).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
   });
 
   it("says 'no valid fixtures' when every fixture file was skipped", { timeout: 60_000 }, async () => {

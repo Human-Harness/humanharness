@@ -5,6 +5,7 @@ import {
   JOB_RESULT_TOOL,
   type LoadedHarness,
   STEP_OUTPUT_TOOL,
+  aiOutputSchema,
   aiStepOf,
   allBlocks,
   blockToolName,
@@ -166,11 +167,7 @@ export function stepServer(harness: LoadedHarness, job: string, bridge: { path: 
   if (!step) throw new Error(`No AI step for job "${job}"`);
   // The manifest refuses such an output at load; the server checks again rather than trust that it ran (a date, a
   // transform: the MCP SDK would fail on it only when the engine lists the tools).
-  try {
-    z.toJSONSchema(step.output);
-  } catch {
-    throw new Error(`The AI step's output of job "${job}" can't be a tool's input: it must convert to JSON Schema`);
-  }
+  if (aiOutputSchema(step) === null) throw new Error(`The AI step's output of job "${job}" can't be a tool's input: it must convert to JSON Schema`);
   const server = new McpServer({ name: "ui", version: "0.1.0" });
   server.registerTool(
     STEP_OUTPUT_TOOL,

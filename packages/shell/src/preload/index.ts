@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AttentionView,
+  ConnectionsView,
   ContextGetResult,
   ContextPick,
   ContextResult,
@@ -253,6 +254,13 @@ const client: HarnessClient = {
     read: (plugin, key) => ipcRenderer.invoke("hh:attentionRead", plugin, key),
     open: (plugin, key) => ipcRenderer.invoke("hh:attentionOpen", plugin, key),
     onChange: (listener) => subscribe<AttentionView>("hh:attention", listener),
+  },
+  // Main registers these only when the harness declares secrets (D0). Only `set` sends a value; none comes back.
+  connections: {
+    get: () => ipcRenderer.invoke("hh:connectionsGet"),
+    set: (id, value) => ipcRenderer.invoke("hh:connectionsSet", id, value),
+    delete: (id) => ipcRenderer.invoke("hh:connectionsDelete", id),
+    onChange: (listener) => subscribe<ConnectionsView>("hh:connectionsChange", listener),
   },
   // Main's board-mode inbox channels; plain mode refuses every call and never sends hh:tasksChange (D0).
   tasks: {

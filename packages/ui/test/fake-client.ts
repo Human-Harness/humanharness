@@ -10,6 +10,8 @@ import type {
   AttentionView,
   ChatEntry,
   ChoiceOption,
+  ConnectionResult,
+  ConnectionsView,
   ContextPick,
   ContextResult,
   DataChangeView,
@@ -1543,6 +1545,36 @@ export class FakeClient implements HarnessClient {
       this.attentionListeners.add(l);
       return () => {
         this.attentionListeners.delete(l);
+      };
+    },
+  };
+
+  /** client.connections (tools spec §9): the declared secrets and which are set; values are never kept. */
+  connectionsDeclared: { id: string; label: string; help?: string }[] = [];
+  connectionsSet = new Set<string>();
+  /** What connections was asked to change, in order, without values: ["set", id], ["delete", id]. */
+  connectionsCalls: [string, string][] = [];
+  private connectionsListeners = new Set<(v: ConnectionsView) => void>();
+  private connectionsView(): ConnectionsView {
+    return { connections: this.connectionsDeclared.map((s) => ({ ...s, set: this.connectionsSet.has(s.id) })) };
+  }
+  private connectionsChange(op: "set" | "delete", id: string): ConnectionResult {
+    this.connectionsCalls.push([op, id]);
+    if (!this.connectionsDeclared.some((s) => s.id === id)) return { ok: false, message: "This harness declares no such key" };
+    if (op === "set") this.connectionsSet.add(id);
+    else this.connectionsSet.delete(id);
+    const view = this.connectionsView();
+    for (const l of this.connectionsListeners) l(view);
+    return { ok: true };
+  }
+  connections = {
+    get: async (): Promise<ConnectionsView | null> => this.connectionsView(),
+    set: async (id: string, _value: string) => this.connectionsChange("set", id),
+    delete: async (id: string) => this.connectionsChange("delete", id),
+    onChange: (l: (v: ConnectionsView) => void) => {
+      this.connectionsListeners.add(l);
+      return () => {
+        this.connectionsListeners.delete(l);
       };
     },
   };

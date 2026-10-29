@@ -1565,6 +1565,8 @@ export interface HarnessClient {
     open(plugin: string, key: string): Promise<AttentionTarget>;
     onChange(listener: (view: AttentionView) => void): () => void;
   };
+  /** The harness's secrets, Settings › Connections (tools spec §9). Only with `state.connections` (D0). */
+  connections: ConnectionsClient;
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {
     get(): Promise<SetupStepsState>;
@@ -1858,6 +1860,14 @@ export type ConnectionResult = { ok: true } | { ok: false; message: string };
 /** The harness declares secrets (tools spec §9). Absent from AppState without (D0). */
 export interface ConnectionsInfo {
   count: number;
+}
+/** Settings › Connections (tools spec §9). Only with `state.connections`: a main without secrets registers none (D0). */
+export interface ConnectionsClient {
+  get(): Promise<ConnectionsView | null>;
+  /** Stores a key (at most 8,192 characters once trimmed); its value never comes back. */
+  set(id: string, value: string): Promise<ConnectionResult>;
+  delete(id: string): Promise<ConnectionResult>;
+  onChange(listener: (view: ConnectionsView) => void): () => void;
 }
 export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
 export interface PluginRow {

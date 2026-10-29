@@ -40,7 +40,7 @@ A plugin is a `dist/` folder: `plugin.json` (plain data) and `backend.js` (an ES
 | Plugin data | `<base>/.harness/plugin-data/<id>/_app/<collection>.json` | Never |
 | Attention inbox | `<base>/.harness/attention.json` | Never |
 | Attention HMAC key | `~/.humanharness/<harness-id>/attention-key` | — |
-| Keys (secrets) | `~/.humanharness/<harness-id>/secrets/<plugin>/<secret>.bin` (0700/0600) | — |
+| Keys (secrets) | `~/.humanharness/<harness-id>/secrets/<plugin>/<secret>.bin` (0700/0600), in the core store shared with the harness's own keys (`secrets/_harness/`, `docs/architecture/secrets.md`) | — |
 | Exec working folder | `<userData>/plugin-exec/<id>/` (0700, empty) | — |
 | Agent data catalogue | `<userData>/plugin-catalogue/<sha256(base)[0..32]>.json` (0600) | — |
 
@@ -89,6 +89,8 @@ Every existing `hh:*` channel goes through `handle()` in `index.ts`, which answe
 
 ## The broker
 
+Since tools slice 1, `PluginBroker` is the plugin adapter over the core `Broker` (`packages/shell/src/main/broker/broker.ts`, checks in `broker/broker-checks.ts`; `docs/architecture/secrets.md`), which the harness's tools share from slice 2. The adapter grants the core exactly the manifest's `permissions` (`hosts`, `secrets`, `exec`) and the plugin's own collections, keeps the plugin refusal texts, and adds `settings.get`, `attention.*` and `chip.*` as its own calls. Its API and behaviour did not change: every plugin test is byte-identical.
+
 `PluginBroker` (`packages/shell/src/main/plugin-broker.ts`): one per running plugin (and base), so its identity is never taken from a call. Each call needs a live run id (UUID; dead once the run ended, timed out or the plugin stopped). The call name must be one of `BROKER_CALLS`; nothing reaches the engine or the task manager (B9). A whole call is first checked against one budget (200,000 values reached, a shared reference counting each time it is reached; 10 M text characters), then each argument's shape (plain JSON, ≤ 32 deep, no `__proto__` key). A malformed call is refused and logged with its name and the reason, never its arguments. At most 16 calls in flight per plugin, and 4 concurrent `fetch`/`exec`.
 
 | Call | Rule |
@@ -101,7 +103,7 @@ Every existing `hh:*` channel goes through `handle()` in `index.ts`, which answe
 | `chip.set(id, { text, severity })` / `clear(id)` | A declared chip; text ≤ 40. Kept in memory in part 1; shown on screen in part 2. |
 | `log(level, message)` | One line (controls become spaces) in the plugin's error log; the app hides the plugin's keys in it (`hideSecrets`, below), then cuts it to 2,000 chars, before it is written. |
 
-**Keys** (`plugin-secrets.ts`, Decision 17) are the person's own, pasted in Settings: 8 to 8,192 characters, trimmed; each encrypted with Electron `safeStorage` in its own file (temp `O_EXCL | O_NOFOLLOW` + rename; no links, no hard links, ≤ 64 KB). Encryption counts as unavailable when the OS has none, or on Linux with the `basic_text` backend (a hard-coded key): storing is then refused, never done in the clear. A key's value never crosses IPC to any renderer (Settings sees only "stored") and is never logged. The broker gets only the ids of the approved snapshot that the current manifest still declares. A run's error text, a load error and every log line pass `hideSecrets` (`@humanharness/harness-sdk/plugin-fixtures`) with the plugin's key values, and only then are cut, before `errors.jsonl`, the scheduler, the inbox or the renderer (the detail, `lastError`) see them: the broker's `redact` forms and hex (either case) become `[redacted]`, and a line that still holds a key in a form it can decode (base64 at any offset, a Basic credential, mixed escapes) is shown as "(a line held a key; not shown)". Before part 2 log lines weren't redacted at all. A key split across lines, cut off or with its case changed isn't seen.
+**Keys** (Decision 17; the store is the core's `SecretStore`, `packages/shell/src/main/secrets/secret-store.ts`, which `plugin-secrets.ts` re-exports; plugin keys are unchanged on disk, and the harness's own keys sit apart in `secrets/_harness/`, `docs/architecture/secrets.md`) are the person's own, pasted in Settings: 8 to 8,192 characters, trimmed; each encrypted with Electron `safeStorage` in its own file (temp `O_EXCL | O_NOFOLLOW` + rename; no links, no hard links, ≤ 64 KB). Encryption counts as unavailable when the OS has none, or on Linux with the `basic_text` backend (a hard-coded key): storing is then refused, never done in the clear. A key's value never crosses IPC to any renderer (Settings sees only "stored") and is never logged. The broker gets only the ids of the approved snapshot that the current manifest still declares. A run's error text, a load error and every log line pass `hideSecrets` (`@humanharness/harness-sdk/plugin-fixtures`) with the plugin's key values, and only then are cut, before `errors.jsonl`, the scheduler, the inbox or the renderer (the detail, `lastError`) see them: the broker's `redact` forms and hex (either case) become `[redacted]`, and a line that still holds a key in a form it can decode (base64 at any offset, a Basic credential, mixed escapes) is shown as "(a line held a key; not shown)". Before part 2 log lines weren't redacted at all. A key split across lines, cut off or with its case changed isn't seen.
 
 ## The scheduler and crashes
 
@@ -359,11 +361,11 @@ Packaging: packaged apps don't ship bundled plugins yet (plan 4b); `HH_PLUGIN_DI
 - `packages/harness-sdk/src/plugin-permissions.ts`: `hostAllowed`, `execAllowed`, `secretRefs`, `fillSecrets`, `redact`, `permissionsAdded`, `permissionLines`.
 - `packages/harness-sdk/src/plugin-backend.ts`: `definePluginBackend` and the `ctx` types (the `./plugin-backend` sub-path).
 - `packages/shell/src/main/plugins.ts`: `PluginsController` (start, rebase, review, approve, add, remove, crashes, agent surface).
-- `packages/shell/src/main/plugin-load.ts`, `plugin-state.ts`, `plugin-data.ts`, `plugin-secrets.ts`: loading and hashing, per-base state and approvals, plugin data, keys.
+- `packages/shell/src/main/plugin-load.ts`, `plugin-state.ts`, `plugin-data.ts`: loading and hashing, per-base state and approvals, plugin data. Keys: `secrets/secret-store.ts` (the core store; `plugin-secrets.ts` re-exports it) and `secrets/safe-storage.ts` (`safeStorageCrypto`).
 - `packages/shell/src/main/plugin-protocol.ts`, `plugin-host.ts`, `plugin-channel.ts`, `packages/shell/resources/plugin-*`: the backend window, the scheme, the plugin channel.
-- `packages/shell/src/main/plugin-broker.ts`, `plugin-fetch.ts`, `plugin-exec.ts`: the broker.
+- `packages/shell/src/main/plugin-broker.ts` (the plugin adapter), `broker/broker.ts` and `broker/broker-checks.ts` (the core broker and its checks, `docs/architecture/secrets.md`), `plugin-fetch.ts`, `plugin-exec.ts`: the broker.
 - `packages/shell/src/main/plugin-scheduler.ts`: the scheduler and `CrashPolicy`.
-- `packages/shell/src/main/plugin-ipc.ts`: the `hh:plugins*`/`hh:attention*` channels and `safeStorageCrypto`.
+- `packages/shell/src/main/plugin-ipc.ts`: the `hh:plugins*`/`hh:attention*` channels; it re-exports `safeStorageCrypto`.
 - `packages/workspace/src/attention.ts`, `no-links.ts`: the inbox and link-safe file access.
 - `packages/blocks/src/data-server.ts`: the plugin catalogue in the `data` server.
 - `packages/ui/src/plugins/`: the inbox, the tab, the review and the detail.

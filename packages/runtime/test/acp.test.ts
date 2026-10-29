@@ -4,9 +4,9 @@ import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
 import { type ModelProfile, getEngine } from "@humanharness/engines";
-import { AcpTransport, type PermissionPolicy, acpEditPaths, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp";
+import { AcpTransport, type PermissionPolicy, acpEditPaths, acpExtras, activityDetail, codexConfig, decidePermission, isUiTool, mergeCodex, offeredModels, usdCost } from "../src/acp";
 import type { Event } from "../src/events";
-import { type Session, type TransportOptions, type TurnScope, acpFields } from "../src/transport";
+import { type EnginePreset, type Session, type TransportOptions, type TurnScope, acpFields } from "../src/transport";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -22,7 +22,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: Partial<Pick<TransportOptions, "minAdapterVersion" | "references" | "onModels" | "profileMethod" | "engineEnv" | "sessionMode" | "onLinkedUnsupported">> = {},
+  extra: Partial<Pick<TransportOptions, "minAdapterVersion" | "references" | "onModels" | "profileMethod" | "engineEnv" | "sessionMode" | "onLinkedUnsupported" | "mcpOnly">> = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -1325,5 +1325,168 @@ describe("decidePermission with linked folders", () => {
   it("D0: without roots, today's answers", () => {
     expect(pick(decidePermission(req("edit", "/w/a.md") as never, policy()))).toBe("y");
     expect(pick(decidePermission(req("edit", "/elsewhere/a.md") as never, policy()))).toBe("n");
+  });
+});
+
+describe("mergeCodex (hatches spec §5.2)", () => {
+  it("adds the preset's keys after the core's; the core wins at every depth", () => {
+    const merged = mergeCodex({ a: 1, t: { x: "core" } }, { b: 2, t: { x: "preset", y: true }, a: { nested: 1 } } as never);
+    expect(merged).toEqual({ a: 1, t: { x: "core", y: true }, b: 2 });
+    expect(Object.keys(merged)).toEqual(["a", "t", "b"]);
+  });
+
+  it("refuses the profile's keys and prototype keys (last guard)", () => {
+    expect(() => mergeCodex({}, { model: "gpt-x" })).toThrow(/model/);
+    expect(() => mergeCodex({}, { model_reasoning_effort: "high" })).toThrow(/model_reasoning_effort/);
+    expect(() => mergeCodex({}, { model_auto_compact_token_limit: 1 })).toThrow(/model_auto_compact_token_limit/);
+    expect(() => mergeCodex({}, JSON.parse('{"features":{"__proto__":{"x":true}}}'))).toThrow(/__proto__/);
+    expect(() => mergeCodex({}, { tools: { constructor: true } })).toThrow(/constructor/);
+  });
+
+  it("copies: neither input is changed and arrays are new", () => {
+    const preset = { hooks: { Stop: [{ hooks: [{ type: "command", command: "x" }] }] } };
+    const merged = mergeCodex({}, preset) as typeof preset;
+    expect(merged).toEqual(preset);
+    expect(merged.hooks.Stop).not.toBe(preset.hooks.Stop);
+  });
+});
+
+describe("ACP with an engine preset (spec §5.2)", () => {
+  const preset = (o: Partial<EnginePreset> = {}): EnginePreset => ({
+    hash: "a".repeat(64),
+    base: "isolated",
+    servers: [{ name: "scope-lint", command: "node", args: ["./lint.js"], env: {} }],
+    ...o,
+  });
+  const turnWith = async (t: AcpTransport, s?: TurnScope, profile?: ModelProfile) => {
+    const events: Event[] = [];
+    await t.turn("hi", (e) => events.push(e), new AbortController().signal, profile, s);
+    return events;
+  };
+  const names = (params: any) => (params.mcpServers as { name: string }[]).map((s) => s.name);
+
+  it("D0: CODEX_CONFIG and session/new unchanged without a preset", async () => {
+    const { transport: t, folder, log } = setup({ turns: [[chunk("a")]] });
+    const events = await turnWith(t, { linked: [] }, deep);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBe(codexConfig(deep));
+    expect(log().find((l) => l.method === "session/new")!.params).toEqual({
+      cwd: folder,
+      mcpServers: [{ name: "ui", command: "node", args: ["ui.js"], env: [{ name: "HH_BRIDGE", value: "/tmp/x.sock" }] }],
+    });
+  });
+
+  it("preset servers join mcpServers on session/new and session/load", async () => {
+    const fresh = setup({ turns: [[chunk("a")]] });
+    await turnWith(fresh.transport, { linked: [], engine: preset() }, deep);
+    const created = fresh.log().find((l) => l.method === "session/new")!.params;
+    expect(names(created)).toEqual(["ui", "scope-lint"]);
+    expect(created.mcpServers[1]).toEqual({ name: "scope-lint", command: "node", args: ["./lint.js"], env: [] });
+    await fresh.transport.close();
+
+    const loaded = setup({ loadSession: true, turns: [[chunk("a")]] }, { id: "old-1", started: true });
+    await turnWith(loaded.transport, { linked: [], engine: preset() }, deep);
+    const load = loaded.log().find((l) => l.method === "session/load")!.params;
+    expect(load.sessionId).toBe("old-1");
+    expect(names(load)).toEqual(["ui", "scope-lint"]);
+  });
+
+  it("codex.toml merged into CODEX_CONFIG with the profile's keys", async () => {
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low", features: { web_search_request: false } } }) }, light);
+    const raw = log().find((l) => l.method === "env")!.params.CODEX_CONFIG as string;
+    expect(JSON.parse(raw)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000, model_verbosity: "low", features: { web_search_request: false } });
+    // The profile's keys come first, as today's CODEX_CONFIG.
+    expect(Object.keys(JSON.parse(raw))).toEqual(["model_reasoning_effort", "model_auto_compact_token_limit", "model_verbosity", "features"]);
+  });
+
+  it("a preset's codex.toml reaches CODEX_CONFIG on a turn without a profile", async () => {
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) });
+    expect(JSON.parse(log().find((l) => l.method === "env")!.params.CODEX_CONFIG)).toEqual({ model_verbosity: "low" });
+  });
+
+  it("an empty codex.toml leaves CODEX_CONFIG as the profile's", async () => {
+    const { transport: t, log } = setup({ turns: [[chunk("a")]] });
+    await turnWith(t, { linked: [], engine: preset({ codex: {} }) }, deep);
+    expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBe(codexConfig(deep));
+  });
+
+  it("keeps the process and the session while the hash stays", async () => {
+    const { transport: t, log, started } = setup({ turns: [[chunk("a")], [chunk("b")]] });
+    await turnWith(t, { linked: [], engine: preset() }, deep);
+    await turnWith(t, { linked: [], engine: preset() }, deep);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(1);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(1);
+    expect(started).toHaveLength(1);
+  });
+
+  it("a new hash restarts the process with a fresh session", async () => {
+    const { transport: t, log, started } = setup({ loadSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await turnWith(t, { linked: [], engine: preset() }, deep);
+    const events = await turnWith(t, { linked: [], engine: preset({ hash: "b".repeat(64), servers: [{ name: "scope-fmt", command: "node", args: [], env: {} }] }) }, deep);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+    expect(log().some((l) => l.method === "session/load")).toBe(false);
+    const created = log().filter((l) => l.method === "session/new");
+    expect(created.map((l) => names(l.params))).toEqual([
+      ["ui", "scope-lint"],
+      ["ui", "scope-fmt"],
+    ]);
+    // A fresh session, never the old one loaded (the fake agent numbers sessions per process, so ids repeat).
+    expect(started).toHaveLength(2);
+  });
+
+  it("a preset dropped mid-task (changed on disk) restarts without its servers", async () => {
+    const { transport: t, log, started } = setup({ loadSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await turnWith(t, { linked: [], engine: preset() }, deep);
+    await turnWith(t, { linked: [] }, deep);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+    expect(log().filter((l) => l.method === "session/new").map((l) => names(l.params))).toEqual([["ui", "scope-lint"], ["ui"]]);
+    expect(started).toHaveLength(2);
+  });
+
+  it("a preset key that collides with a profile key is refused (last guard)", async () => {
+    for (const codex of [{ model: "gpt-x" }, { model_reasoning_effort: "minimal" }, { model_auto_compact_token_limit: 1 }]) {
+      const { transport: t, log } = setup({ turns: [[chunk("never")]] });
+      const events = await turnWith(t, { linked: [], engine: preset({ codex }) }, light);
+      expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+      expect(log().some((l) => l.method === "initialize")).toBe(false);
+      await t.close();
+    }
+  });
+
+  it("refuses a preset server that is not scope-<name> or takes a core server's name", async () => {
+    for (const name of ["ui", "lint", "scope-", "scope-UI"]) {
+      const { transport: t, log } = setup({ turns: [[chunk("never")]] });
+      const events = await turnWith(t, { linked: [], engine: preset({ servers: [{ name, command: "node", args: [], env: {} }] }) });
+      expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+      expect(log().some((l) => l.method === "initialize")).toBe(false);
+      await t.close();
+    }
+  });
+
+  it("refuses a preset on an mcpOnly session", async () => {
+    const { transport: t, log } = setup({ turns: [[chunk("never")]] }, undefined, { mcpOnly: true });
+    const events = await turnWith(t, { linked: [], engine: preset() });
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+    expect(log().some((l) => l.method === "initialize")).toBe(false);
+  });
+
+  it("OpenCode: servers only; codex ignored", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[chunk("a")]] }, undefined, byConfig);
+    const events = await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) }, openProfile());
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBeNull();
+    expect(names(log().find((l) => l.method === "session/new")!.params)).toEqual(["ui", "scope-lint"]);
+  });
+
+  it("OpenCode: a new hash starts a fresh session", async () => {
+    const { transport: t, log, started } = setup({ configOptions: OPENCODE_CONFIG, turns: [[chunk("a")], [chunk("b")]] }, undefined, byConfig);
+    await turnWith(t, { linked: [], engine: preset() }, openProfile());
+    await turnWith(t, { linked: [], engine: preset({ hash: "c".repeat(64) }) }, openProfile());
+    expect(log().filter((l) => l.method === "env").map((l) => l.params.CODEX_CONFIG)).toEqual([null, null]);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+    expect(started).toHaveLength(2);
   });
 });

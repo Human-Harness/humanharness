@@ -8,7 +8,7 @@ import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isMo
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
+import type { EnginePreset, LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {
@@ -257,17 +257,77 @@ export function acpExtras(call: { kind?: unknown; locations?: unknown; rawInput?
  * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
  * written; `model` is left out for the engine's default model. Checked again here before it is used.
  */
-export function codexConfig(profile: ModelProfile): string {
+export function codexConfig(profile: ModelProfile, preset?: Record<string, unknown>): string {
   if (profile.model !== undefined && !isModelId(profile.model)) {
     throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(profile.model)}`);
   }
   if (!isEffort(profile.effort)) throw new Error(`Unknown effort: ${JSON.stringify(profile.effort)}`);
   if (!isCap(profile.cap)) throw new Error(`Context cap out of range: ${JSON.stringify(profile.cap)}`);
-  return JSON.stringify({
+  const core = {
     ...(profile.model !== undefined ? { model: profile.model } : {}),
     model_reasoning_effort: profile.effort,
     model_auto_compact_token_limit: profile.cap,
-  });
+  };
+  return JSON.stringify(preset === undefined ? core : mergeCodex(core, preset));
+}
+
+/** The keys the core owns in `CODEX_CONFIG` (the profile's): a preset never sets them, even when the profile leaves one out. */
+const PROFILE_KEYS = new Set(["model", "model_reasoning_effort", "model_auto_compact_token_limit"]);
+const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function plainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** A fresh copy of a JSON value from a preset, refusing prototype keys at any depth. */
+function copyJson(v: unknown, at: string): unknown {
+  if (Array.isArray(v)) return v.map((x, i) => copyJson(x, `${at}[${i}]`));
+  if (!plainObject(v)) return v;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(v)) {
+    if (PROTO_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${at}.${k}`);
+    Object.defineProperty(out, k, { value: copyJson(v[k], `${at}.${k}`), enumerable: true, writable: true, configurable: true });
+  }
+  return out;
+}
+
+function mergeInto(core: Record<string, unknown>, preset: Record<string, unknown>, at: string): Record<string, unknown> {
+  const out = copyJson(core, at) as Record<string, unknown>;
+  for (const k of Object.keys(preset)) {
+    if (PROTO_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${at ? `${at}.` : ""}${k}`);
+    const key = at ? `${at}.${k}` : k;
+    if (!Object.hasOwn(out, k)) {
+      Object.defineProperty(out, k, { value: copyJson(preset[k], key), enumerable: true, writable: true, configurable: true });
+    } else if (plainObject(out[k]) && plainObject(preset[k])) {
+      out[k] = mergeInto(out[k] as Record<string, unknown>, preset[k] as Record<string, unknown>, key);
+    }
+    // Otherwise the core's value stays.
+  }
+  return out;
+}
+
+/**
+ * A scope's cleaned `codex.toml` (hatches spec §5.2) merged under the core's `CODEX_CONFIG`: deep, the core's keys
+ * first and winning at every depth. The profile's keys are refused outright (the shell's cleaner already refuses
+ * them: a last guard).
+ */
+export function mergeCodex(core: Record<string, unknown>, preset: Record<string, unknown>): Record<string, unknown> {
+  for (const k of Object.keys(preset)) {
+    if (PROFILE_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${k}: the task's profile sets it`);
+  }
+  return mergeInto(core, preset, "");
+}
+
+/** A preset server's name: `scope-<name>` (hatches spec §5.2, E9). */
+const PRESET_SERVER = /^scope-[a-z0-9][a-z0-9-]{0,39}$/;
+
+/** Last guards on a turn's preset (the shell builds it from an approved snapshot): never more than a task session takes. */
+function checkPreset(preset: EnginePreset, o: TransportOptions): void {
+  if (o.noTools || o.mcpOnly) throw new Error("Refusing an engine preset on a session without tools");
+  const core = new Set(o.mcp.map((s) => s.name));
+  for (const s of preset.servers) {
+    if (!PRESET_SERVER.test(s.name) || core.has(s.name)) throw new Error(`Refusing the engine preset's server name ${JSON.stringify(s.name)}`);
+  }
 }
 
 type SelectOption = { value?: unknown; name?: unknown; description?: unknown };
@@ -369,6 +429,10 @@ export class AcpTransport implements Transport {
   private spawned = false;
   /** CODEX_CONFIG the last process was started with (undefined: none set by the app). */
   private spawnedConfig: string | undefined;
+  /** The engine preset hash the last process was started with (undefined: none, D0). */
+  private spawnedHash: string | undefined;
+  /** The turn's engine preset (hatches part 3); undefined without one (D0). */
+  private engine: EnginePreset | undefined;
   /** The profile of the turn being run. */
   private profile: ModelProfile | undefined;
   /** The model the session runs, as the agent reported it at session/new or session/load (without its effort). */
@@ -472,6 +536,7 @@ export class AcpTransport implements Transport {
     this.child = child;
     this.spawned = true;
     this.spawnedConfig = config;
+    this.spawnedHash = this.engine?.hash;
     this.stderrTail = "";
     child.on("exit", () => {
       if (this.child === child) this.reset();
@@ -509,8 +574,9 @@ export class AcpTransport implements Transport {
     this.dirsCap = Boolean(init.agentCapabilities?.sessionCapabilities?.additionalDirectories);
   }
 
+  /** The core's servers, then the turn's preset servers (hatches spec §5.2); the core's alone without a preset (D0). */
   private mcpServers() {
-    return this.o.mcp.map((s) => ({
+    return [...this.o.mcp, ...(this.engine?.servers ?? [])].map((s) => ({
       name: s.name,
       command: s.command,
       args: s.args,
@@ -767,18 +833,23 @@ export class AcpTransport implements Transport {
 
   async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, scope?: TurnScope): Promise<void> {
     let config: string | undefined;
+    const engine = scope?.engine;
     try {
-      config = profile && !this.byConfigOption ? codexConfig(profile) : undefined;
+      if (engine) checkPreset(engine, this.o);
+      // Codex only: the preset's codex.toml joins CODEX_CONFIG (OpenCode gets the servers alone). Empty: as without one.
+      const codex = engine?.codex && Object.keys(engine.codex).length > 0 ? engine.codex : undefined;
+      if (!this.byConfigOption) config = profile ? codexConfig(profile, codex) : codex ? JSON.stringify(mergeCodex({}, codex)) : undefined;
     } catch (err) {
-      // No ErrorCode fits a profile the core built wrong (it is not the plan's model, nor the user's
-      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile
-      // first, so this is a last guard that should never show.
+      // No ErrorCode fits a profile or a preset the core built wrong (it is not the plan's model, nor the user's
+      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile and
+      // preset first, so this is a last guard that should never show.
       emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
       return;
     }
     // CODEX_CONFIG is read when the agent starts: a task on another profile needs a new process,
     // and a fresh session, so a saved one never resumes under another model (spec D2).
-    if (this.spawned && config !== this.spawnedConfig) {
+    // An engine preset's servers are set at session/new: another hash (or none) needs a new process and session too.
+    if (this.spawned && (config !== this.spawnedConfig || engine?.hash !== this.spawnedHash)) {
       await this.close();
       this.o.session = { id: randomUUID(), started: false };
     }
@@ -793,6 +864,7 @@ export class AcpTransport implements Transport {
     this.activities.clear();
     // Built per turn from the task's scope (L5, L6): an unlinked folder is gone from this turn on.
     this.linked = scope?.linked ?? [];
+    this.engine = engine;
     try {
       if (!this.conn || !this.sessionId) {
         if (!this.conn) await this.connect(config);

@@ -4,6 +4,8 @@ dist/
 !packages/e2e/fixtures/plugins/*/dist/
 # A harness's bundled plugins ship their built dist/ (a test checks it matches a fresh build).
 !harnesses/*/plugins/*/dist/
+# The tools e2e fixture's built tools (Decision 16; packages/cli/test/fixture-dist.test.ts checks it matches a fresh build).
+!packages/fake-agent/fixtures/tools-harness/dist/
 # The build's swap folders (plugin-build.ts), left behind only by an interrupted build.
 **/plugins/*/dist.tmp-*/
 **/plugins/*/dist.old-*/

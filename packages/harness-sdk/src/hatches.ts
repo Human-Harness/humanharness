@@ -42,14 +42,19 @@ export const backendSchema = z
 /** The harness declares a backend. False: no part-2 code runs (D0). */
 export const hasBackend = (h: { backend?: string }): boolean => typeof h.backend === "string";
 
+/** The harness lets each scope carry its own engine config (hatches spec §5). False: no part-3 code runs (D0). */
+export const hasEnginePresets = (h: { enginePresets?: boolean }): boolean => h.enginePresets === true;
+
 /** Each problem of the hatches a manifest declares (spec §3.1 checks), for `superRefine`. */
 export function hatchProblems(h: {
   scopes?: unknown;
   permissions: { edit: "folder" | "none" };
   linkedFolders?: Record<string, LinkedFolderDecl>;
+  enginePresets?: boolean;
 }): { path: (string | number)[]; message: string }[] {
   const out: { path: (string | number)[]; message: string }[] = [];
   if (hasLinkedFolders(h) && !h.scopes) out.push({ path: ["linkedFolders"], message: "Linked folders belong to a scope: declare scopes" });
+  if (hasEnginePresets(h) && !h.scopes) out.push({ path: ["enginePresets"], message: "enginePresets needs scopes" });
   for (const [key, f] of Object.entries(h.linkedFolders ?? {})) {
     if (f.mode === "write" && h.permissions.edit !== "folder") {
       out.push({ path: ["linkedFolders", key, "mode"], message: 'mode "write" needs permissions.edit: "folder"' });

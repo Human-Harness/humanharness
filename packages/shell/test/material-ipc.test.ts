@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { dataSchema, z } from "@humanharness/harness-sdk";
 import { LINK_MAX_ITEMS } from "@humanharness/material/light";
-import { CONTEXT_PREFIX, DATA_PREFIX, DataStore, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX } from "@humanharness/workspace";
+import { CONTEXT_PREFIX, DATA_PREFIX, DataStore, ENGINE_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "../src/main/material-ipc";
 
@@ -13,6 +13,10 @@ describe("D0: a harness without material", () => {
   it("keeps the notes, the data, the review records and the context pins (none without reviews or pins, D0); with material the registry too", () => {
     expect(historyKeep({})).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, CONTEXT_PREFIX]);
     expect(historyKeep({ material })).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, CONTEXT_PREFIX, MATERIAL_KEEP]);
+  });
+  it("keeps the scopes' engine config only with enginePresets (hatches spec §5.1)", () => {
+    expect(historyKeep({ enginePresets: true })).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, CONTEXT_PREFIX, ENGINE_PREFIX]);
+    expect(historyKeep({ material, enginePresets: true })).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, CONTEXT_PREFIX, MATERIAL_KEEP, ENGINE_PREFIX]);
   });
   it("adds no `material` key to AppState", () => {
     const state = { name: "x", ...materialAppState({}) };

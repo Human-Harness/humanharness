@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   BACKEND_CALL_TIMEOUT_MS, BACKEND_EVENTS_PER_SECOND, BACKEND_LOG_MAX_BYTES, BACKEND_RESTARTS, BACKEND_STOP_GRACE_MS,
-  defineHarness, hasBackend, hasJobs, hasLinkedFolders, hatchProblems, isConcurrent, loadHarness, resolveInHarness,
+  defineHarness, hasBackend, hasEnginePresets, hasJobs, hasLinkedFolders, hatchProblems, isConcurrent, loadHarness, resolveInHarness,
 } from "../src";
 
 const base = {
@@ -130,5 +130,28 @@ describe("backend (hatches spec §4.1)", () => {
     expect(BACKEND_RESTARTS).toEqual({ max: 3, windowMs: 5 * 60_000 });
     expect(BACKEND_STOP_GRACE_MS).toBe(3_000);
     expect(BACKEND_LOG_MAX_BYTES).toBe(5 * 1024 * 1024);
+  });
+});
+
+describe("enginePresets (hatches spec §5)", () => {
+  it("D0: no enginePresets key without it", () => {
+    const h = defineHarness(scoped);
+    expect("enginePresets" in h).toBe(false);
+    expect(hasEnginePresets(h)).toBe(false);
+    expect(hatchProblems(h)).toEqual([]);
+  });
+
+  it("takes true only", () => {
+    const h = defineHarness({ ...scoped, enginePresets: true });
+    expect(h.enginePresets).toBe(true);
+    expect(hasEnginePresets(h)).toBe(true);
+    expect(() => defineHarness({ ...scoped, enginePresets: false as unknown as true })).toThrow();
+    expect(() => defineHarness({ ...scoped, enginePresets: "yes" as unknown as true })).toThrow();
+  });
+
+  it("needs scopes", () => {
+    expect(hatchProblems({ ...base, enginePresets: true }).map((p) => p.message)).toContain("enginePresets needs scopes");
+    expect(hatchProblems({ ...base, enginePresets: true })[0]?.path).toEqual(["enginePresets"]);
+    expect(() => defineHarness({ ...base, enginePresets: true })).toThrow(/enginePresets needs scopes/);
   });
 });

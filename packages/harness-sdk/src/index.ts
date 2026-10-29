@@ -239,6 +239,8 @@ const manifestSchema = z.object({
   linkedFolders: linkedFoldersSchema.optional(),
   /** The harness's own process for its UI (hatches spec §4). Absent: none (D0). */
   backend: backendSchema.optional(),
+  /** Each scope may carry its own engine config in `.harness/engine/<scope>/` (hatches spec §5). Absent: none (D0). */
+  enginePresets: z.literal(true).optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
   /**

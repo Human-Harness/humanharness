@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
 import type { ModelProfile } from "@humanharness/engines";
-import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasEnginePresets, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -173,7 +173,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated], appHistoryKeep(material !== undefined));
+  const history = new History(folder, opts.gitdir, [".harness/", ...generated], appHistoryKeep(material !== undefined, hasEnginePresets(harness)));
   await history.init();
   await history.save(START);
 

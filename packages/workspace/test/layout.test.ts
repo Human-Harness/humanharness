@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_SCOPE, MAIN_SCOPE, MATERIAL_KEEP, NOTES_PREFIX, attentionFile, chatFile, chatsDir, isScopeDir, isScopeId, isTaskId, taskChatFile, materialDir, materialReadsFile, materialStoreDir, notesPrefix, pluginDataDir, pluginStateDir, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
+import { APP_SCOPE, ENGINE_PREFIX, MAIN_SCOPE, MATERIAL_KEEP, appHistoryKeep, engineConfigDir, NOTES_PREFIX, attentionFile, chatFile, chatsDir, isScopeDir, isScopeId, isTaskId, taskChatFile, materialDir, materialReadsFile, materialStoreDir, notesPrefix, pluginDataDir, pluginStateDir, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
 
 describe("layout", () => {
   it("keeps today's places for a harness without scopes", () => {
@@ -104,5 +104,28 @@ describe("per-task chats (parallel spec §6)", () => {
     expect(isTaskId("x".repeat(200))).toBe(true);
     expect(() => taskChatFile("/b", "../x", "t1")).toThrow(/scope/);
     expect(() => taskChatFile("/b", "archive", "t1")).toThrow(/archive/);
+  });
+});
+
+describe("engine config folder (hatches spec §5.1)", () => {
+  it("engineConfigDir is .harness/engine/<scope>", () => {
+    expect(ENGINE_PREFIX).toBe(".harness/engine/");
+    expect(engineConfigDir("/w", "intro")).toBe(path.join("/w", ".harness", "engine", "intro"));
+  });
+
+  it("refuses a scope id that escapes, and _app", () => {
+    expect(() => engineConfigDir("/w", "../x")).toThrow(/scope/);
+    expect(() => engineConfigDir("/w", "a/b")).toThrow(/scope/);
+    expect(() => engineConfigDir("/w", "")).toThrow(/scope/);
+    expect(() => engineConfigDir("/w", "_app")).toThrow(/scope/);
+  });
+
+  it("D0: .harness/engine is not kept without enginePresets", () => {
+    expect(appHistoryKeep(false)).not.toContain(ENGINE_PREFIX);
+    expect(appHistoryKeep(true)).not.toContain(ENGINE_PREFIX);
+    expect(appHistoryKeep(false, false)).toEqual(appHistoryKeep(false));
+    expect(appHistoryKeep(false, true)).toContain(ENGINE_PREFIX);
+    expect(appHistoryKeep(false, true)).toEqual([...appHistoryKeep(false), ENGINE_PREFIX]);
+    expect(appHistoryKeep(true, true)).toEqual([...appHistoryKeep(true), ENGINE_PREFIX]);
   });
 });

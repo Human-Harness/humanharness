@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
 import { PLUGIN_ID } from "@humanharness/harness-sdk";
-import { CONTEXT_PREFIX, DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
+import { CONTEXT_PREFIX, DATA_PREFIX, ENGINE_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
 import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
 import { type TimelineCommit, type TimelineEntry, groupTimeline, namedPath } from "./file-timeline";
 import { BEFORE_MESSAGE } from "./subjects";
@@ -18,14 +18,16 @@ export type HistoryKeep = string | { readonly prefix: string; readonly match: Re
  * What the app's history keeps under `.harness/`: the notes, the data, the review records and the context pins; with
  * material, its registry and decisions (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so
  * both agree (D0 without material). A harness that never reviews has no file under `REVIEWS_PREFIX`, and one whose
- * person never pins has no file under `CONTEXT_PREFIX`, so its commits don't change.
+ * person never pins has no file under `CONTEXT_PREFIX`, so its commits don't change. With `enginePresets`, the scopes'
+ * engine config too (hatches spec §5.1); without it, never (D0).
  */
-export const appHistoryKeep = (material: boolean): HistoryKeep[] => [
+export const appHistoryKeep = (material: boolean, enginePresets = false): HistoryKeep[] => [
   NOTES_PREFIX,
   DATA_PREFIX,
   REVIEWS_PREFIX,
   CONTEXT_PREFIX,
   ...(material ? [MATERIAL_KEEP] : []),
+  ...(enginePresets ? [ENGINE_PREFIX] : []),
 ];
 
 const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));

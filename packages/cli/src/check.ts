@@ -17,6 +17,7 @@ import {
   resolveInHarness,
   settingsSentences,
   settingsValues,
+  stepProblems,
   toolProblems,
   type z,
 } from "@humanharness/harness-sdk";
@@ -61,7 +62,8 @@ export type RuleId =
   | "sidekick-tips"
   | "job-daily-tokens"
   | "tool-build"
-  | "tool-uses";
+  | "tool-uses"
+  | "tool-steps";
 
 export interface Finding {
   rule: RuleId;
@@ -589,16 +591,18 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
 
 /**
  * Tools (tools spec §3.3): the build runs in memory, nothing written; each tool that fails is one `tool-build` error. A
- * build that passes is checked against the manifest: each problem is one `tool-uses` error. None without tools (D0).
+ * build that passes is checked against the manifest: each problem is one `tool-uses` error, then each pre-step and
+ * expects problem one `tool-steps` error (`stepProblems`). None without tools (D0).
  */
 async function toolBuildFindings(root: string, h: LoadedHarness): Promise<Finding[]> {
   if (!hasTools(h)) return [];
   try {
     const { json } = await buildTools(root, { write: false, harness: h });
     const tools = h.tools ?? {};
-    return toolProblems(h, json).map((p) =>
-      error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST),
-    );
+    return [
+      ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),
+      ...stepProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
+    ];
   } catch (err) {
     if (err instanceof ToolBuildError) return err.problems.map((p) => error("tool-build", p.message, p.file));
     return [error("tool-build", err instanceof Error ? err.message : String(err), MANIFEST)];

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HOST_PATTERN, checkSchemaSubset, execPattern, tidyJsonSchema } from "./plugin";
+import type { ActionLike } from "./steps";
 import type { ToolDefinition } from "./tool";
 
 /** A tool id: the action-id pattern (tools spec §3, Decision 1). It names the agent's MCP tool and `dist/tools/<id>.js`. */
@@ -113,6 +114,8 @@ export interface ToolsManifest {
   tools?: Record<string, string>;
   /** Setup steps: a connect step's `test` names a tool run with {} (tools spec §9). */
   setup?: readonly { kind: string; test?: string }[];
+  /** The actions' pre-steps and phases' expects: main checks them against tools.json with `stepProblems` (tools spec §3.3). */
+  actions?: Record<string, ActionLike>;
 }
 /** A problem of one tool: its id and an English line that starts with it. */
 export interface ToolProblem {

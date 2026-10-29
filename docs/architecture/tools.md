@@ -195,7 +195,7 @@ A call with a `task` emits a runtime event `{ type: "tool-call", call: ToolCallV
 
 ## Job steps
 
-Slice 4 (spec §7; the walk, the AI step, rounds and results are in `docs/architecture/jobs.md`, "Recipes"). A recipe's tool steps run through slice 3's `runToolStep` as `{ caller: "job", job, run, scope, limits }`, inside the run's history trailer (`ToolsHost.withRunTrailer`, the run's `jobRunTrailer`), so a data write commits under the run plus `Tool: <id>`. The job's `JobLimits` hold for them as for an agent's call from the job's slot.
+Slice 4 (spec §7; the walk, the AI step, rounds and results are in `docs/architecture/jobs.md`, "Recipes"). A recipe's tool steps run through slice 3's `runToolStep` as `{ caller: "job", job, run, scope, limits }` (`scope` as the run's agent calls get it: `_app` or `main` for an app-wide run), inside the run's history trailer (`ToolsHost.withRunTrailer`, the run's `jobRunTrailer`), so a data write commits under the run plus `Tool: <id>`. The job's `JobLimits` hold for them as for an agent's call from the job's slot.
 
 - **`ToolCall.post`**: the runner marks the post-step's call `post: true`. It reaches the broker (`startCall(scope, limits, { post })`) only when `caller === "job"`; any other call starts as before. Only a `post` call may use `ctx.requestAi`.
 - **`ToolAnswer`** gains `summary?` and `requestAi?: { input }`, **only for caller `job`**: a UI, agent or pre call answers exactly as in slice 2. `summary` is carried on a failure too; `requestAi` only on success. `runToolStep`'s outcome (`StepOutcome`, exported) carries both: for a `forEach` step, the summary is the last by item index and the request the first by item index (success only).

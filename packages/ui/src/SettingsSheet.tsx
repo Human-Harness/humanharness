@@ -217,7 +217,14 @@ export function SettingsSheet({
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
           {tab === "harness" && configured && (
             <>
-              {state.setup && <SetupStepsList client={client} steps={state.setup} onRun={(id) => onSetup(id)} />}
+              {state.setup && (
+                <SetupStepsList
+                  client={client}
+                  steps={state.setup}
+                  onRun={(id) => onSetup(id)}
+                  onConnections={state.connections ? () => onTab("connections") : undefined}
+                />
+              )}
               {state.settings && <HarnessSettingsTab client={client} view={state.settings} />}
             </>
           )}

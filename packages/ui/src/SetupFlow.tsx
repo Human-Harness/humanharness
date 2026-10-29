@@ -2,6 +2,7 @@ import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, TopBar } from "./chrome";
 import { type AppState, type HarnessClient, type ProfileView, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
+import { ConnectStep } from "./connections/ConnectStep";
 import { EngineTab } from "./EngineTab";
 import { FolderStep } from "./FolderStep";
 import { systemLanguage } from "./language";
@@ -71,6 +72,20 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   /** A harness step's skip or completion is on its way. */
   const [busy, setBusy] = useState(false);
   const [stepError, setStepError] = useState<"failed" | "incomplete" | null>(null);
+  /** The connect step whose listed keys are all set (null: none), for its Next. */
+  const [connectReady, setConnectReady] = useState<string | null>(null);
+  /** A connect step seen with a key missing: once its last key is saved, focus goes to its Next. */
+  const unready = useRef<string | null>(null);
+  const connectNext = useRef<HTMLButtonElement>(null);
+  const onConnectReady = (id: string, ready: boolean) => {
+    setConnectReady(ready ? id : null);
+    if (!ready) unready.current = id;
+  };
+  useEffect(() => {
+    if (connectReady === null || unready.current !== connectReady) return;
+    unready.current = null;
+    connectNext.current?.focus();
+  }, [connectReady]);
   const hasInterview = harnessSteps.some((s) => s.kind === "interview");
   /** The open task, for an interview's Next (it closes the interview's task first). */
   const [tasks, setTasks] = useState<TaskView | null>(null);
@@ -296,6 +311,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
                 skip={() => skip(current.id)}
               />
             )}
+            {current.kind === "connect" && <ConnectStep client={client} step={current} onReady={(ready) => onConnectReady(current.id, ready)} />}
             {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
             {stepError && (
               <p className="hh-save-error" role="alert">
@@ -384,6 +400,12 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
                 disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
                 onClick={() => finishInterview(current)}
               >
+                {t("setupFlow.next")}
+              </button>
+            )}
+            {/* A connect step's Next waits for every key it lists (tools spec §9). */}
+            {current.kind === "connect" && (
+              <button ref={connectNext} className="hh-primary" disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
                 {t("setupFlow.next")}
               </button>
             )}

@@ -221,11 +221,14 @@ export function registerEngineIpc(handle: (channel: string, fn: (...args: never[
     chain = run.catch(() => undefined);
     return run;
   };
-  /** The registry and the scope `id`: registered and not archived (an id compared, never used as a key). */
-  const scopeOf = async (id: unknown): Promise<{ store: ScopeStore; profile: string; id: string }> => {
+  /**
+   * The registry and the scope `id`: registered and, unless `archived` is allowed, not archived (an id compared, never
+   * used as a key).
+   */
+  const scopeOf = async (id: unknown, archived = false): Promise<{ store: ScopeStore; profile: string; id: string }> => {
     if (!isScopeId(id)) throw new Error("Unknown scope");
     const { store, profile } = await d.store();
-    if (!(await store.list()).some((s) => s.id === id && !s.archived)) throw new Error("Unknown scope");
+    if (!(await store.list()).some((s) => s.id === id && (archived || !s.archived))) throw new Error("Unknown scope");
     return { store, profile, id };
   };
   const viewOf = async (id: string): Promise<EngineConfigView | null> => {
@@ -256,10 +259,11 @@ export function registerEngineIpc(handle: (channel: string, fn: (...args: never[
   });
 
   // Revokes the scope's approval (spec §5.3): new tasks start without its config, and running ones drop it from their
-  // next turn. The epoch goes first, so even a failed clear leaves the old approval void.
+  // next turn. The epoch goes first, so even a failed clear leaves the old approval void. An archived scope may be
+  // revoked too (never approved): its approval must not come back to life when it is unarchived.
   handle("hh:engineRevoke", async (scope: unknown): Promise<EngineConfigView | null> =>
     serial(async () => {
-      const { store, profile, id } = await scopeOf(scope);
+      const { store, profile, id } = await scopeOf(scope, true);
       await d.epochs.bump(profile, id);
       if ((await store.list()).some((s) => s.id === id && s.engineApproval !== undefined)) await store.clearEngineApproval(id);
       d.send(CHANGED, id);

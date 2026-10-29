@@ -224,6 +224,9 @@ export async function writeSnapshot(userData: string, config: EngineConfig, scop
     const scopes = have && pluginsIn(have, want, skills);
     if (!scopes) return false;
     if (skills.size > 0 && !scopes.has(scope)) await addPlugin(final, scope, skills);
+    // Used again (an old hash approved anew): its age starts over, so the start prune (Decision 13) leaves it.
+    const now = new Date();
+    await fs.utimes(final, now, now).catch(() => {});
     return true;
   };
 
@@ -345,9 +348,16 @@ export async function loadSnapshot(userData: string, hash: string, scope: string
 /**
  * Moves to the system Trash (`trash`) the snapshots not in `keep` (the scopes' approvals and the hashes of tasks
  * younger than 30 days) whose folder is older than 30 days, and temp folders a crash left behind. Never follows a
- * link; a failure is logged and the rest go on.
+ * link; a failure is logged and the rest go on. `inUse`, when given, is asked again right before each snapshot goes
+ * (an approval made since `keep` was read); the folder's age is read again then too.
  */
-export async function pruneSnapshots(userData: string, keep: ReadonlySet<string>, now: Date, trash: (dir: string) => Promise<void>): Promise<void> {
+export async function pruneSnapshots(
+  userData: string,
+  keep: ReadonlySet<string>,
+  now: Date,
+  trash: (dir: string) => Promise<void>,
+  inUse?: () => Promise<ReadonlySet<string>>,
+): Promise<void> {
   const base = path.join(userData, "engine-config");
   const baseStat = await fs.lstat(base).catch(() => null);
   if (baseStat === null) return;
@@ -361,6 +371,11 @@ export async function pruneSnapshots(userData: string, keep: ReadonlySet<string>
     const st = await fs.lstat(dir).catch(() => null);
     if (!st?.isDirectory()) continue;
     if (now.getTime() - st.mtimeMs <= SNAPSHOT_KEEP_DAYS * 86_400_000) continue;
+    if (HASH.test(name) && inUse) {
+      const again = await inUse().catch(() => null);
+      const fresh = await fs.lstat(dir).catch(() => null);
+      if (!again || again.has(name) || !fresh?.isDirectory() || now.getTime() - fresh.mtimeMs <= SNAPSHOT_KEEP_DAYS * 86_400_000) continue;
+    }
     await trash(dir).catch((err: unknown) => console.error(`Could not move an old engine config snapshot to the Trash: ${dir}`, err));
   }
 }

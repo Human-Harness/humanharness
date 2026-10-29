@@ -74,6 +74,15 @@ describe("pruneEngineSnapshots (Decision 13)", () => {
     expect(trash).toHaveBeenCalledTimes(1);
   });
 
+  it("a scope that approves a snapshot after the first read keeps it", async () => {
+    const w = setup([H("a")]);
+    const list = vi.fn(async (): Promise<ScopeEntry[]> => []);
+    list.mockResolvedValueOnce([]).mockResolvedValue([scope("intro", H("a"))]);
+    await pruneEngineSnapshots(w.userData, [{ base: w.base, scopes: { list } }], NOW, trashing());
+    expect(w.left()).toEqual([H("a")]);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
   it("a base without tasks.json pins nothing; young snapshots stay", async () => {
     const w = setup([H("a")]);
     fs.mkdirSync(path.join(w.userData, "engine-config", H("b")));

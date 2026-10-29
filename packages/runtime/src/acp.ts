@@ -276,7 +276,8 @@ const PROFILE_KEYS = new Set(["model", "model_reasoning_effort", "model_auto_com
 const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 /**
  * Preset keys dropped whatever the shell's cleaner let through (defense in depth): they widen the sandbox, skip
- * approvals, add servers outside the preset's list, or pick a provider, a profile or a key.
+ * approvals, trust projects, add servers or commands (notifier, telemetry) outside the preset's list, pick a provider,
+ * a profile, a key, an auth store or a base URL, replace the instructions, or pass the shell's environment on.
  */
 const DENIED_CODEX = new Set([
   "sandbox_mode",
@@ -287,6 +288,15 @@ const DENIED_CODEX = new Set([
   "model_providers",
   "profile",
   "profiles",
+  "projects",
+  "notify",
+  "otel",
+  "chatgpt_base_url",
+  "cli_auth_credentials_store",
+  "experimental_instructions_file",
+  "model_instructions_file",
+  "instructions",
+  "shell_environment_policy",
 ]);
 const deniedCodex = (key: string, k: string): boolean => DENIED_CODEX.has(key) || k.endsWith("_api_key");
 

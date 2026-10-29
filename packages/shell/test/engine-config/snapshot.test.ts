@@ -284,6 +284,35 @@ describe("engine snapshot (spec §5.2, E3)", () => {
     expect((await load(c.hash)).refusals.map((r) => r.message)).toEqual(["The scripts the approved commands run are not the ones approved"]);
   });
 
+  it("writing a snapshot that is already there makes it young again: an old hash approved anew is not pruned", async () => {
+    const { userData, read } = setup(FULL, TOOLS);
+    const c = await read();
+    const dir = await writeSnapshot(userData, c, "s");
+    const now = new Date();
+    const old = new Date(now.getTime() - 40 * DAY);
+    fs.utimesSync(dir, old, old);
+    expect(await writeSnapshot(userData, c, "s")).toBe(dir);
+    expect(now.getTime() - fs.statSync(dir).mtimeMs).toBeLessThan(DAY);
+    const trashed: string[] = [];
+    await pruneSnapshots(userData, new Set(), now, async (d) => void trashed.push(d));
+    expect(trashed).toEqual([]);
+  });
+
+  it("pruneSnapshots asks again right before each one goes", async () => {
+    const { userData } = setup({});
+    const now = new Date("2026-10-28T12:00:00.000Z");
+    const d = path.join(userData, "engine-config", "a".repeat(64));
+    fs.mkdirSync(d, { recursive: true });
+    fs.utimesSync(d, new Date(now.getTime() - 40 * DAY), new Date(now.getTime() - 40 * DAY));
+    const trashed: string[] = [];
+    // Unused when read first, approved since: kept. A failed second read keeps it too.
+    await pruneSnapshots(userData, new Set(), now, async (x) => void trashed.push(x), async () => new Set(["a".repeat(64)]));
+    await pruneSnapshots(userData, new Set(), now, async (x) => void trashed.push(x), () => Promise.reject(new Error("x")));
+    expect(trashed).toEqual([]);
+    await pruneSnapshots(userData, new Set(), now, async (x) => void trashed.push(x), async () => new Set());
+    expect(trashed).toEqual([d]);
+  });
+
   it("pruneSnapshots trashes snapshots not in keep and older than 30 days", async () => {
     const { userData } = setup({});
     const now = new Date("2026-10-28T12:00:00.000Z");

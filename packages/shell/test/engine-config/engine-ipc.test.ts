@@ -384,7 +384,8 @@ describe("engine IPC (E10)", () => {
 
   it("hh:engineRevoke checks the scope, and runs after an approval in flight", async () => {
     const w = await setup({ "instructions.md": "a" });
-    for (const scope of ["nope", "old", "__proto__", "a".repeat(65), 7, null]) {
+    // "old" is archived: revoking it is allowed (below).
+    for (const scope of ["nope", "__proto__", "a".repeat(65), 7, null]) {
       await expect(w.revoke(scope), String(scope)).rejects.toThrow("Unknown scope");
     }
     const { hash } = (await w.view())!;
@@ -392,6 +393,13 @@ describe("engine IPC (E10)", () => {
     expect(approved).toMatchObject({ ok: true });
     expect(revoked!.approved).toBe(false);
     expect((await w.entry()).engineApproval).toBeUndefined();
+    // An archived scope can't be approved but can be revoked: its approval must not come back on unarchive.
+    await w.scopes.add({ id: "shelf", title: "Shelf", createdAt: "2026-10-28T09:00:00.000Z", archived: false });
+    await w.scopes.approveEngine("shelf", hash, () => "0".repeat(64));
+    await w.scopes.setArchived("shelf", true);
+    await expect(w.approve("shelf", hash)).rejects.toThrow("Unknown scope");
+    expect(await w.revoke("shelf")).toBeNull();
+    expect((await w.scopes.list()).find((s) => s.id === "shelf")!.engineApproval).toBeUndefined();
     // No engine folder: nothing to show, the record still bumped.
     const none = await setup(null);
     expect(await none.revoke("intro")).toBeNull();

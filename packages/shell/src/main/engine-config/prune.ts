@@ -46,12 +46,14 @@ async function readTasks(base: string): Promise<unknown> {
 
 /** Trashes the snapshots `bases` no longer use and older than 30 days (see above); logs and stops on a read failure. */
 export async function pruneEngineSnapshots(userData: string, bases: PruneBase[], now: Date, trash: (dir: string) => Promise<void>): Promise<void> {
+  const read = async () => snapshotsInUse(await Promise.all(bases.map(async (b) => ({ scopes: await b.scopes.list(), tasks: await readTasks(b.base) }))));
   let inUse: Set<string>;
   try {
-    inUse = snapshotsInUse(await Promise.all(bases.map(async (b) => ({ scopes: await b.scopes.list(), tasks: await readTasks(b.base) }))));
+    inUse = await read();
   } catch (err) {
     console.error("Could not read which engine config snapshots are in use; none is pruned", err);
     return;
   }
-  await pruneSnapshots(userData, inUse, now, trash);
+  // Read again right before each one goes: an approval or a task may name it since (a failed read keeps it).
+  await pruneSnapshots(userData, inUse, now, trash, read);
 }

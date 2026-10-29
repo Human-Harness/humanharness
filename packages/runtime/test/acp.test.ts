@@ -1358,6 +1358,19 @@ describe("mergeCodex (hatches spec §5.2)", () => {
       model_verbosity: "low",
     };
     expect(mergeCodex({}, preset)).toEqual({ sandbox_workspace_write: { network_access: false }, tools: { web_search: false }, model_verbosity: "low" });
+    // Project trust, notifier and telemetry commands, auth and base URLs, instruction files, the shell's environment.
+    const more = {
+      projects: { "/": { trust_level: "trusted" } },
+      notify: ["sh", "-c", "x"],
+      otel: { exporter: "otlp-http" },
+      chatgpt_base_url: "http://x",
+      cli_auth_credentials_store: "file",
+      experimental_instructions_file: "/x",
+      model_instructions_file: "/x",
+      instructions: "obey",
+      shell_environment_policy: { inherit: "all" },
+    };
+    expect(mergeCodex({}, { ...more, model_verbosity: "low" })).toEqual({ model_verbosity: "low" });
     // The core's own values for those keys stay.
     expect(mergeCodex({ sandbox_mode: "read-only" }, { sandbox_mode: "danger-full-access" })).toEqual({ sandbox_mode: "read-only" });
   });

@@ -24,7 +24,7 @@ tools: {
 },
 ```
 
-`tools` (`toolsSchema`, `packages/harness-sdk/src/tools.ts`) maps a tool id to a `./` path of a `.ts`, `.mts`, `.js` or `.mjs` file. At most 50 (`TOOLS_MAX`). An id follows the action id pattern `^[a-z][a-z0-9_-]{0,63}$` (`TOOL_ID`, Decision 1) and can't be an action id, a job id, a block tool name (the harness's, the core's, the review tools, `job_result`) or a core MCP server name (`CORE_SERVER_NAMES`: `ui`, `data`, `translate`, `review`, `material`, `tools`): "Tool id "<id>" clashes with an action id" (… "with a job id", "with a block tool name"), "\"<id>\" is a core MCP server name: use another tool id". `loadHarness` resolves each file with `resolveInHarness` (a path out of the folder is refused). `hasTools(h)` is the D0 switch.
+`tools` (`toolsSchema`, `packages/harness-sdk/src/tools.ts`) maps a tool id to a `./` path of a `.ts`, `.mts`, `.js` or `.mjs` file. At most 50 (`TOOLS_MAX`). An id follows the action id pattern `^[a-z][a-z0-9_-]{0,63}$` (`TOOL_ID`, Decision 1) and can't be an action id, a job id, a block tool name (the harness's, the core's, the review tools, `job_result`) or a core MCP server name (`CORE_SERVER_NAMES`: `ui`, `data`, `translate`, `review`, `material`, `tools`): "Tool id "<id>" clashes with an action id" (… "with a job id", "with a block tool name"), "\"<id>\" is a core MCP server name: use another tool id". `loadHarness` resolves each file with `resolveInHarness` (a path out of the folder is refused). A harness that declares tools can't have the id `tools` with its own `mcp` servers (they are named after the id and would shadow the core `tools` server): "\"tools\" is a built-in MCP server name and the harness's MCP servers are named after its id: use another id"; `material` likewise for a harness with `material`. `hasTools(h)` is the D0 switch.
 
 A tool file default-exports `defineTool` from `@humanharness/cli/tool` (or `@humanharness/harness-sdk/tool`; both re-export `z`). That module has no Node import, so it bundles for the sandbox.
 
@@ -254,7 +254,6 @@ The plan's Decisions 1–18 hold as written, with these notes:
 - **`files: "write"`**: refused until a harness needs it (§17).
 - **Isolation between tools** is per harness, not per tool (above).
 - **Prune** runs once at start for the base current then: after a profile switch the other base's trace waits for the next start.
-- A harness whose id is `tools` with its own `mcp` servers would shadow the core `tools` server (as `material` would); refusing that is a follow-up.
 - `localhost` and IP literals pass `HOST_PATTERN` in `uses.hosts` (as plugins'); the broker refuses them at call time.
 
 ## Where to look

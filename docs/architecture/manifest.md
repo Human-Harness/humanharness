@@ -152,7 +152,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Linked folders: at most 8 keys, each `^[a-z][a-z0-9_-]{0,63}$`; a label of 1 to 40 characters with no hidden characters; unknown keys are refused. `linkedFolders` needs `scopes`, and a `write` key needs `permissions.edit: "folder"` (`hatchProblems`, `docs/architecture/hatches.md`).
 - Engine presets: `enginePresets` is `true` or absent, and needs `scopes` (`hatchProblems`). What a scope's engine folder may hold is checked by the app when it reads the folder, not by `defineHarness` (`docs/architecture/hatches.md`, H3).
 - Backend: a relative path ending in `.ts`, `.mts`, `.js` or `.mjs`; `loadHarness` resolves it with `resolveInHarness`, and the app refuses at each start an entry whose real path leads out of the harness folder.
-- A harness whose id is `ui` or `data` can't have `mcp` entries (those are the built-in server names).
+- A harness whose id is `ui` or `data` can't have `mcp` entries (those are the built-in server names); nor can one whose id is `tools` and that declares `tools`, or `material` and that declares `material` (its own servers would shadow that core server). Without the feature the id stays free (D0).
 - `resolveInHarness` refuses any path that leaves the harness folder: every action's prompt, every mode's brief and every phase's brief (checked by `loadHarness`), and the instructions, seed, logo and MCP servers when they are used.
 
 ## Where to look

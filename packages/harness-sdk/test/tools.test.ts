@@ -70,6 +70,13 @@ describe("tools in the manifest (tools spec §3)", () => {
       expect(() => defineHarness({ ...base, tools: { [id]: "./tools/a.ts" } })).toThrow(/core MCP server/);
     }
   });
+  it("refuses the harness id tools with its own MCP servers when it declares tools: they would shadow the core tools server", () => {
+    expect(() => defineHarness({ ...base, id: "tools", mcp: ["./mcp.ts"], tools: { a: "./tools/a.ts" } })).toThrow(/"tools\\?" is a built-in MCP server name/);
+    // Without servers of its own nothing is named after the id; without tools there is no core tools server (D0).
+    expect(defineHarness({ ...base, id: "tools", tools: { a: "./tools/a.ts" } }).id).toBe("tools");
+    expect(defineHarness({ ...base, id: "tools", mcp: ["./mcp.ts"] }).id).toBe("tools");
+    expect(defineHarness({ ...base, id: "tools", mcp: ["./mcp.ts"], tools: {} }).id).toBe("tools");
+  });
 });
 
 describe("defineTool (tools spec §3.1)", () => {

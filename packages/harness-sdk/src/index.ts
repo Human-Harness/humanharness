@@ -5,7 +5,7 @@ import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 import { DOCUMENT_KIND_ID } from "./documents";
-import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
+import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, hasMaterial, materialSchema } from "./material";
 import { backendSchema, hatchProblems, linkedFoldersSchema } from "./hatches";
 import { JOB_RESULT_TOOL, jobProblems, jobsSchema } from "./jobs";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
@@ -18,7 +18,7 @@ import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
-import { CORE_SERVER_NAMES, toolsSchema } from "./tools";
+import { CORE_SERVER_NAMES, hasTools, toolsSchema } from "./tools";
 
 export * from "./block";
 export * from "./core-blocks";
@@ -169,6 +169,15 @@ const blockSchema = z.custom<Block>(
 
 /** The core's MCP servers (packages/blocks): a harness's own servers can't take these names. */
 const RESERVED_MCP_NAMES = ["ui", "data"];
+/**
+ * The core servers a slot has only with a feature declared: `tools` (tools spec §5) and `material` (material spec). A
+ * harness's own servers, listed after the core's, would shadow them; a harness without the feature keeps the name (D0).
+ */
+const reservedMcpNames = (m: { tools?: Record<string, string>; material?: unknown }): string[] => [
+  ...RESERVED_MCP_NAMES,
+  ...(hasTools(m) ? ["tools"] : []),
+  ...(hasMaterial(m) ? ["material"] : []),
+];
 
 /** One line of kind text: a line break would turn the rest into live Markdown in `AGENTS.md`. */
 const oneLine = (max: number) =>
@@ -296,8 +305,8 @@ const manifestSchema = z.object({
     if (tools.has(id)) issue(`Tool id "${id}" clashes with a block tool name`);
     if ((CORE_SERVER_NAMES as readonly string[]).includes(id)) issue(`"${id}" is a core MCP server name: use another tool id`);
   }
-  // The harness's own MCP servers are named after its id, next to the core's `ui` and `data` servers.
-  if (m.mcp.length > 0 && RESERVED_MCP_NAMES.includes(m.id)) {
+  // The harness's own MCP servers are named after its id, next to the core's `ui`, `data` (and `tools`, `material`) servers.
+  if (m.mcp.length > 0 && reservedMcpNames(m).includes(m.id)) {
     ctx.addIssue({ code: "custom", path: ["id"], message: `"${m.id}" is a built-in MCP server name and the harness's MCP servers are named after its id: use another id` });
   }
   // Free questions' model setting lives under the "questions" key, next to the action ids.

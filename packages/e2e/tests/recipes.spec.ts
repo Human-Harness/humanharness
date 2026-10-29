@@ -138,6 +138,7 @@ test("Steps after a second run shows that run's calls, not the first run's", asy
     await expect(toolLine(row, "apply-triage")).toHaveCount(2);
 
     // The next AI turns answer with no extra round: the second run has one AI step and one post-step call.
+    // Rewriting the script mid-test works because fake-claude rereads HH_FAKE_SCRIPT on each start (fake-claude.ts:30).
     const scriptFile = fs.readdirSync(s.root).map((f) => path.join(s.root, f)).find((f) => /script-.*\.json$/.test(f) && fs.readFileSync(f, "utf8").includes("Classify step:"))!;
     const once: ClaudeScript = {
       ...script,

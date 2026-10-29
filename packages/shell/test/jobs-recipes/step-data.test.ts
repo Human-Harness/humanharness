@@ -15,6 +15,17 @@ function balanced(text: string): boolean {
   return open === null;
 }
 
+/** No lone surrogate (String.prototype.isWellFormed, Node 20+; the lib in tsconfig predates it). */
+const wellFormed = (text: string) => (text as unknown as { isWellFormed(): boolean }).isWellFormed();
+
+/** The exact cut note's suffix. */
+const CUT = `\n\n(cut: the data is longer than ${DATA_MAX_CHARS} characters)`;
+/** The section without its cut note: it must hold the note, and the rest stays within DATA_MAX_CHARS. */
+function beforeCut(text: string): string {
+  expect(text.endsWith(CUT)).toBe(true);
+  return text.slice(0, -CUT.length);
+}
+
 describe("the AI step's ## Data (tools spec §7.1)", () => {
   it("one ### part per input, compact JSON in a fence", () => {
     expect(dataSection([{ name: "ci", value: [{ a: 1 }] }])).toBe('## Data\n\n### ci\n\n```json\n[{"a":1}]\n```');
@@ -60,14 +71,13 @@ describe("the AI step's ## Data (tools spec §7.1)", () => {
 
   it("cuts the section at DATA_MAX_CHARS and says so", () => {
     const text = dataSection([{ name: "x", value: "y".repeat(DATA_MAX_CHARS + 10) }]);
-    expect(text.length).toBeLessThanOrEqual(DATA_MAX_CHARS + 200);
-    expect(text).toMatch(/\(cut: the data is longer than \d+ characters\)$/);
+    expect(beforeCut(text).length).toBeLessThanOrEqual(DATA_MAX_CHARS);
   });
 
   it("a cut part keeps its fence closed, and later parts go", () => {
     const tick = "a`b``c```d".repeat(30_000);
     const text = dataSection([{ name: "a", value: 1 }, { name: "x", value: tick }, { name: "z", value: 2 }]);
-    expect(text.length).toBeLessThanOrEqual(DATA_MAX_CHARS + 200);
+    expect(beforeCut(text).length).toBeLessThanOrEqual(DATA_MAX_CHARS);
     expect(balanced(text)).toBe(true);
     expect(text).toContain("### a\n\n```json\n1\n```");
     expect(text).toContain("### x\n\n````json\n");
@@ -79,15 +89,34 @@ describe("the AI step's ## Data (tools spec §7.1)", () => {
   it("the cap holds with many parts", () => {
     const parts = Array.from({ length: 10 }, (_, i) => ({ name: `p${i}`, value: "`".repeat(30_000) }));
     const text = dataSection(parts);
-    expect(text.length).toBeLessThanOrEqual(DATA_MAX_CHARS + 200);
+    expect(beforeCut(text).length).toBeLessThanOrEqual(DATA_MAX_CHARS);
     expect(balanced(text)).toBe(true);
-    expect(text).toMatch(/\(cut: the data is longer than 200000 characters\)$/);
   });
 
   it("a cut never splits a surrogate pair", () => {
     const text = dataSection([{ name: "x", value: "\u{1F600}".repeat(DATA_MAX_CHARS) }]);
     // A lone surrogate would not survive a UTF-8 round trip.
     expect(new TextDecoder().decode(new TextEncoder().encode(text))).toBe(text);
+  });
+
+  it("a lone surrogate in a value is written as an escape: the section stays well formed", () => {
+    const text = dataSection([{ name: "x", value: { s: "a\ud800b", t: "\udfff" } }]);
+    expect(wellFormed(text)).toBe(true);
+    expect(JSON.parse(text.split("\n")[5])).toEqual({ s: "a\ud800b", t: "\udfff" });
+  });
+
+  it("a cut inside a trailing backtick run keeps the fences balanced and the text well formed", () => {
+    // The whole part has two 501-backtick fences (about 1,020 characters of room), so the cut falls inside the 500-backtick run.
+    const value = `${"y".repeat(DATA_MAX_CHARS - 1300)}${"`".repeat(500)}\u{1F600}`;
+    const text = dataSection([{ name: "x", value }, { name: "z", value: 2 }]);
+    const kept = beforeCut(text);
+    expect(kept.length).toBeLessThanOrEqual(DATA_MAX_CHARS);
+    // The cut lands inside the run: the part is shorter than the value, and ends in backticks before its closing fence.
+    expect(kept).toMatch(/y`+\n`{3,}$/);
+    expect(kept).not.toContain("\u{1F600}");
+    expect(balanced(text)).toBe(true);
+    expect(wellFormed(text)).toBe(true);
+    expect(text).not.toContain("### z");
   });
 
   it("a name that isn't a TOOL_ID is refused (throws)", () => {

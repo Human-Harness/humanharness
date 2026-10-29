@@ -1,5 +1,6 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { JOB_ID, TOOL_ID } from "@humanharness/harness-sdk";
 import { z } from "zod";
 
 /** Folders the app owns in a work folder: a recording never writes there. */
@@ -51,6 +52,15 @@ const respondSchema = z.strictObject({
   next: z.string().min(1),
 });
 
+/** A JSON object; checked on the raw input first: zod's record silently drops a `__proto__` key. */
+const jsonObject = z
+  .unknown()
+  .refine((o) => typeof o !== "object" || o === null || !Object.hasOwn(o, "__proto__"), "\"__proto__\" is not a valid key")
+  .pipe(z.record(z.string(), z.unknown()));
+
+/** One call the agent made on the `tools` MCP server (tools spec §12). */
+const toolCallSchema = z.strictObject({ tool: z.string().regex(TOOL_ID), args: jsonObject });
+
 export const mockTurnSchema = z.strictObject({
   id: z.string().min(1),
   text: z.string().default(""),
@@ -62,6 +72,12 @@ export const mockTurnSchema = z.strictObject({
    * defaulted: a recording without reads parses (and is written by `--record`) exactly as before.
    */
   reads: z.array(folderRelative).max(20).optional(),
+  /**
+   * The agent's tool calls this turn (tools spec §12, Decision 9), made on the `tools` MCP server before the turn's
+   * blocks, in order. Optional, not defaulted: a recording without them parses (and is written by `--record`) exactly as
+   * before.
+   */
+  tools: z.array(toolCallSchema).max(20).optional(),
   usage: usageSchema.optional(),
   delayMs: z.number().int().min(0).max(60_000).optional(),
   /**
@@ -92,7 +108,19 @@ export const recordingSchema = z.strictObject({
   turns: z.array(mockTurnSchema).min(1),
 });
 
+/** A recipe's AI step in mock mode (tools Decision 11): `mock/steps/<job>.json`. */
+export const stepRecordingSchema = z.strictObject({
+  version: z.literal(1),
+  job: z.string().regex(JOB_ID),
+  /** step_output's input for a first round. */
+  output: jsonObject,
+  /** step_output's input for a round a post-step asked for; `output` when absent. */
+  request: jsonObject.optional(),
+});
+
 export type Recording = z.infer<typeof recordingSchema>;
+export type StepRecording = z.infer<typeof stepRecordingSchema>;
+export type MockToolCall = z.infer<typeof toolCallSchema>;
 export type MockTurn = z.infer<typeof mockTurnSchema>;
 export type MockBlock = z.infer<typeof blockSchema>;
 export type MockWrite = z.infer<typeof writeSchema>;
@@ -120,4 +148,37 @@ export function loadRecordings(dir: string): { recordings: Recording[]; problems
     }
   }
   return { recordings, problems };
+}
+
+/** The folder of step recordings inside a mock folder, and a step recording's size cap (the plugin fixture files' 10 MB). */
+export const STEP_RECORDINGS_DIR = "steps";
+export const STEP_RECORDING_BYTES = 10 * 1024 * 1024;
+
+/**
+ * `<dir>/steps/<job>.json` (tools Decision 11), or null when there is none. `job` is checked against the job id pattern
+ * before it joins a path; a linked folder or file, a folder, a file over the cap, one that doesn't parse or one whose
+ * `job` isn't `job` throws with its problem.
+ */
+export function loadStepRecording(dir: string, job: string): StepRecording | null {
+  if (!JOB_ID.test(job)) throw new Error(`"${job}" is not a job id.`);
+  const folder = path.join(dir, STEP_RECORDINGS_DIR);
+  const name = `${STEP_RECORDINGS_DIR}/${job}.json`;
+  const folderStat = lstatSync(folder, { throwIfNoEntry: false });
+  if (!folderStat) return null;
+  if (!folderStat.isDirectory()) throw new Error(`${STEP_RECORDINGS_DIR} is not a folder.`);
+  const file = path.join(folder, `${job}.json`);
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) return null;
+  if (!stat.isFile()) throw new Error(`${name} is not a file.`);
+  if (stat.size > STEP_RECORDING_BYTES) throw new Error(`${name} is too big (over ${STEP_RECORDING_BYTES / 1024 / 1024} MB).`);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch (err) {
+    throw new Error(`${name}: ${(err as Error).message}`);
+  }
+  const parsed = stepRecordingSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(`${name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"} ${i.message}`).join("; ")}`);
+  if (parsed.data.job !== job) throw new Error(`${name}: its job is "${parsed.data.job}", not "${job}" (it must be named after its job).`);
+  return parsed.data;
 }

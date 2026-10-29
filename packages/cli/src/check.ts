@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type Recording, choiceLabels, recordingSchema } from "@humanharness/fake-agent";
+import { type Recording, STEP_RECORDINGS_DIR, choiceLabels, recordingSchema, stepRecordingSchema } from "@humanharness/fake-agent";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import {
   type InputFieldUi,
@@ -9,6 +9,7 @@ import {
   SIDEKICK_TIPS_TOKENS_WARN,
   aiStepOf,
   blockToolName,
+  hasRecipes,
   hasTools,
   inputBlocks,
   inputFields,
@@ -68,7 +69,8 @@ export type RuleId =
   | "tool-build"
   | "tool-uses"
   | "tool-steps"
-  | "tool-fixture";
+  | "tool-fixture"
+  | "mock-step";
 
 export interface Finding {
   rule: RuleId;
@@ -114,8 +116,10 @@ export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: 
   findings.push(...(await modeFindings(harness)));
   findings.push(...(await phaseFindings(harness)));
   findings.push(...(await jobFindings(harness)));
-  findings.push(...(await toolBuildFindings(root, harness, opts.fixtures)));
-  findings.push(...(await mockFindings(harness, briefs)));
+  const built: BuiltTools = {};
+  findings.push(...(await toolBuildFindings(root, harness, opts.fixtures, built)));
+  findings.push(...(await mockFindings(harness, briefs, agentOf(harness, built))));
+  findings.push(...(await mockStepFindings(harness)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
   findings.push(...settingsFindings(harness));
@@ -180,8 +184,22 @@ async function readBriefs(h: LoadedHarness): Promise<Map<string, string | null>>
 
 const MOCK_DIR = "mock";
 
-/** `mock/*.json` (spec 3e §3): each file a valid recording of an action, whose branches lead somewhere real. */
-async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>): Promise<Finding[]> {
+/** The in-memory build's tools.json, when the harness has tools and they built. */
+type BuiltTools = { json?: Awaited<ReturnType<typeof buildTools>>["json"] };
+/** A tool's `agent`, undefined for no such tool; null when it can't be known (the tools didn't build). */
+type AgentOf = ((tool: string) => "call" | "none" | undefined) | null;
+
+function agentOf(h: LoadedHarness, built: BuiltTools): AgentOf {
+  if (!hasTools(h)) return () => undefined;
+  const tools = built.json?.tools;
+  return tools ? (id) => (Object.hasOwn(tools, id) ? tools[id].agent : undefined) : null;
+}
+
+/**
+ * `mock/*.json` (spec 3e §3): each file a valid recording of an action, whose branches lead somewhere real; a turn's
+ * recorded tool calls name tools the agent can call (tools Decision 9; not checked when the tools didn't build).
+ */
+async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>, agent: AgentOf): Promise<Finding[]> {
   const dir = path.join(h.root, MOCK_DIR);
   const entries = (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter((e) => e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name));
   const findings: Finding[] = [];
@@ -218,6 +236,12 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
     const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
     if (dupes.length > 0) findings.push(error("mock-next", `Turn ids appear more than once: ${[...new Set(dupes)].join(", ")}.`, file));
     for (const turn of rec.turns) {
+      for (const [i, call] of (agent ? (turn.tools ?? []) : []).entries()) {
+        const kind = agent?.(call.tool);
+        const where = `Turn "${turn.id}": tools[${i}] calls "${call.tool}"`;
+        if (kind === undefined) findings.push(error("mock-schema", `${where}, which is not a tool of this harness.`, file));
+        else if (kind !== "call") findings.push(error("mock-schema", `${where}, which the agent can't call (agent: "${kind}").`, file));
+      }
       const labels = new Set(choiceLabels(turn.blocks));
       for (const [key, target] of Object.entries(turn.next ?? {})) {
         if (!ids.includes(target)) findings.push(error("mock-next", `Turn "${turn.id}": "${key}" leads to "${target}", which is not a turn.`, file));
@@ -247,6 +271,57 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
   for (const { rec, file } of valid) {
     for (const other of matchClashes(rec.action, rec.match, briefs, (id) => valid.find((v) => v.rec.action === id)?.rec.match)) {
       findings.push(error("mock-match", clashMessage(rec.match, other), file));
+    }
+  }
+  return findings;
+}
+
+/**
+ * `mock/steps/*.json` (tools Decision 11): each a step recording of a recipe with an AI step, named after its job, whose
+ * `output` and `request` the AI step's `output` takes. Nothing without tools or recipes (D0).
+ */
+async function mockStepFindings(h: LoadedHarness): Promise<Finding[]> {
+  if (!hasTools(h) && !hasRecipes(h)) return [];
+  const dir = path.join(h.root, MOCK_DIR, STEP_RECORDINGS_DIR);
+  const entries = (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter((e) => e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name));
+  const findings: Finding[] = [];
+  for (const entry of entries) {
+    const name = entry.name;
+    const file = `${MOCK_DIR}/${STEP_RECORDINGS_DIR}/${name}`;
+    if (!entry.isFile()) {
+      findings.push(error("mock-step", `${name} is not a file.`, file));
+      continue;
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse((await read(path.join(dir, name))) ?? "");
+    } catch (err) {
+      findings.push(error("mock-step", `Not valid JSON: ${(err as Error).message}`, file));
+      continue;
+    }
+    const parsed = stepRecordingSchema.safeParse(raw);
+    if (!parsed.success) {
+      for (const i of parsed.error.issues) findings.push(error("mock-step", `${i.path.join(".") || "(root)"}: ${i.message}`, file));
+      continue;
+    }
+    const rec = parsed.data;
+    const jobs = h.jobs ?? {};
+    if (!Object.hasOwn(jobs, rec.job)) {
+      findings.push(error("mock-step", `Job "${rec.job}" is not in the manifest.`, file));
+      continue;
+    }
+    if (name !== `${rec.job}.json`) findings.push(error("mock-step", `The step recording of "${rec.job}" must be named ${rec.job}.json.`, file));
+    const step = aiStepOf(jobs[rec.job]);
+    if (!step) {
+      findings.push(error("mock-step", `Job "${rec.job}" has no AI step, so nothing plays this recording.`, file));
+      continue;
+    }
+    for (const key of ["output", "request"] as const) {
+      const value = rec[key];
+      if (value === undefined) continue;
+      const result = step.output.safeParse(value);
+      const first = result.success ? undefined : result.error.issues[0];
+      if (first) findings.push(error("mock-step", `${key} is not a valid output of the AI step: ${first.path.join(".") || "(output)"}: ${first.message}`, file));
     }
   }
   return findings;
@@ -619,16 +694,17 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
  * `fixtures`) each failing or unreadable fixture one `tool-fixture` error. None without tools (D0); no fixture runs
  * when the build fails.
  */
-async function toolBuildFindings(root: string, h: LoadedHarness, fixtures?: { note(line: string): void }): Promise<Finding[]> {
+async function toolBuildFindings(root: string, h: LoadedHarness, fixtures?: { note(line: string): void }, built?: BuiltTools): Promise<Finding[]> {
   if (!hasTools(h)) return [];
-  let built: Awaited<ReturnType<typeof buildTools>>;
+  let build: Awaited<ReturnType<typeof buildTools>>;
   try {
-    built = await buildTools(root, { write: false, harness: h });
+    build = await buildTools(root, { write: false, harness: h });
   } catch (err) {
     if (err instanceof ToolBuildError) return err.problems.map((p) => error("tool-build", p.message, p.file));
     return [error("tool-build", err instanceof Error ? err.message : String(err), MANIFEST)];
   }
-  const { json, files } = built;
+  const { json, files } = build;
+  if (built) built.json = json;
   const tools = h.tools ?? {};
   return [
     ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),

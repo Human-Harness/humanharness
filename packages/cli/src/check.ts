@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type Recording, STEP_RECORDINGS_DIR, choiceLabels, recordingSchema, stepRecordingSchema } from "@humanharness/fake-agent";
+import { type Recording, STEP_RECORDINGS_DIR, choiceLabels, readStepRecordingFile, recordingSchema, stepRecordingSchema } from "@humanharness/fake-agent";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import {
   type InputFieldUi,
@@ -283,6 +283,10 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
 async function mockStepFindings(h: LoadedHarness): Promise<Finding[]> {
   if (!hasTools(h) && !hasRecipes(h)) return [];
   const dir = path.join(h.root, MOCK_DIR, STEP_RECORDINGS_DIR);
+  // As mock mode's loadStepRecording: a linked steps folder is never followed.
+  const st = await fs.lstat(dir).catch(() => null);
+  if (!st) return [];
+  if (!st.isDirectory()) return [error("mock-step", `${STEP_RECORDINGS_DIR} is not a folder.`, `${MOCK_DIR}/${STEP_RECORDINGS_DIR}`)];
   const entries = (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter((e) => e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name));
   const findings: Finding[] = [];
   for (const entry of entries) {
@@ -292,9 +296,17 @@ async function mockStepFindings(h: LoadedHarness): Promise<Finding[]> {
       findings.push(error("mock-step", `${name} is not a file.`, file));
       continue;
     }
+    // The same read as mock mode's (no link, no hard link, the size cap), so check passes only what mock mode takes.
+    let text: string | null;
+    try {
+      text = readStepRecordingFile(path.join(dir, name), name);
+    } catch (err) {
+      findings.push(error("mock-step", (err as Error).message, file));
+      continue;
+    }
     let raw: unknown;
     try {
-      raw = JSON.parse((await read(path.join(dir, name))) ?? "");
+      raw = JSON.parse(text ?? "");
     } catch (err) {
       findings.push(error("mock-step", `Not valid JSON: ${(err as Error).message}`, file));
       continue;

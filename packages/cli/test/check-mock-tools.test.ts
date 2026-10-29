@@ -130,6 +130,26 @@ describe("check: tool calls in recordings and AI step recordings (tools spec §1
     ]);
   });
 
+  it("mock-step: a linked steps folder is an error and is never read", { timeout: 60_000 }, async () => {
+    const outside = path.join(root, `o${++n}`);
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, "gone.json"), JSON.stringify({ version: 1, job: "gone", output: {} }));
+    const dir = await fixture({ mock: { "example.json": recording([{ id: "t1", text: "Hola." }]) } });
+    fs.symlinkSync(outside, path.join(dir, "mock", "steps"), "dir");
+    expect(of(await checkHarness(dir), "mock-step")).toEqual(["mock/steps steps is not a folder."]);
+  });
+
+  it("mock-step: a hard link or a file over 10 MB is an error, as mock mode refuses it", { timeout: 60_000 }, async () => {
+    const big = JSON.stringify({ version: 1, job: "sync", output: { ids: ["x".repeat(10 * 1024 * 1024)] } });
+    const dir = await fixture({ mock: { "steps/sync.json": big, "steps/real.json": { version: 1, job: "sync", output: { ids: [] } } } });
+    fs.linkSync(path.join(dir, "mock", "steps", "real.json"), path.join(dir, "mock", "steps", "linked.json"));
+    expect(of(await checkHarness(dir), "mock-step")).toEqual([
+      "mock/steps/linked.json linked.json is a hard link.",
+      "mock/steps/real.json real.json is a hard link.",
+      "mock/steps/sync.json sync.json is too big (over 10 MB).",
+    ]);
+  });
+
   it("D0: a harness without tools or recipes gets no new mock finding", { timeout: 60_000 }, async () => {
     // The template with a recording without tools and a stray steps file: check's output as before this task.
     const dir = await fixture({ tools: false, mock: { "example.json": recording([{ id: "t1", text: "Hola." }]), "steps/sync.json": { version: 1, job: "sync", output: [] } } });

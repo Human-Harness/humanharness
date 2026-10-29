@@ -126,6 +126,13 @@ describe("tools in recordings (tools spec §12, Decisions 9, 11)", () => {
     expect(() => loadStepRecording(linked, "sync")).toThrow(/steps is not a folder/);
   });
 
+  it("loadStepRecording refuses a hard link", () => {
+    const dir = folder();
+    write(path.join(dir, "steps", "sync.json"), { version: 1, job: "sync", output: {} });
+    fs.linkSync(path.join(dir, "steps", "sync.json"), path.join(dir, "steps", "other.json"));
+    expect(() => loadStepRecording(dir, "sync")).toThrow(/steps\/sync\.json is a hard link/);
+  });
+
   it("loadStepRecording refuses a file over the size cap", () => {
     const dir = folder();
     write(path.join(dir, "steps", "big.json"), JSON.stringify({ version: 1, job: "big", output: { s: "x".repeat(10 * 1024 * 1024) } }));

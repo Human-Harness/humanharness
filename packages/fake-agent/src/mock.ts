@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { JOB_ID, TOOL_ID } from "@humanharness/harness-sdk";
 import { z } from "zod";
@@ -155,8 +155,33 @@ export const STEP_RECORDINGS_DIR = "steps";
 export const STEP_RECORDING_BYTES = 10 * 1024 * 1024;
 
 /**
+ * The text of a step recording file, or null when there is none. Opened without following a link and checked on the
+ * open file (as the plugin fixture files): a link, a folder, a hard link or a file over the cap throws "<name> is …".
+ */
+export function readStepRecordingFile(file: string, name: string): string | null {
+  let fd: number;
+  try {
+    fd = openSync(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    if (code === "ELOOP" || code === "EISDIR") throw new Error(`${name} is not a file.`);
+    throw new Error(`${name}: ${(err as Error).message}`);
+  }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error(`${name} is not a file.`);
+    if (st.nlink > 1) throw new Error(`${name} is a hard link.`);
+    if (st.size > STEP_RECORDING_BYTES) throw new Error(`${name} is too big (over ${STEP_RECORDING_BYTES / 1024 / 1024} MB).`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
  * `<dir>/steps/<job>.json` (tools Decision 11), or null when there is none. `job` is checked against the job id pattern
- * before it joins a path; a linked folder or file, a folder, a file over the cap, one that doesn't parse or one whose
+ * before it joins a path; a linked folder or file, a folder, a hard link, a file over the cap, one that doesn't parse or one whose
  * `job` isn't `job` throws with its problem.
  */
 export function loadStepRecording(dir: string, job: string): StepRecording | null {
@@ -166,14 +191,11 @@ export function loadStepRecording(dir: string, job: string): StepRecording | nul
   const folderStat = lstatSync(folder, { throwIfNoEntry: false });
   if (!folderStat) return null;
   if (!folderStat.isDirectory()) throw new Error(`${STEP_RECORDINGS_DIR} is not a folder.`);
-  const file = path.join(folder, `${job}.json`);
-  const stat = lstatSync(file, { throwIfNoEntry: false });
-  if (!stat) return null;
-  if (!stat.isFile()) throw new Error(`${name} is not a file.`);
-  if (stat.size > STEP_RECORDING_BYTES) throw new Error(`${name} is too big (over ${STEP_RECORDING_BYTES / 1024 / 1024} MB).`);
+  const text = readStepRecordingFile(path.join(folder, `${job}.json`), name);
+  if (text === null) return null;
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(file, "utf8"));
+    raw = JSON.parse(text);
   } catch (err) {
     throw new Error(`${name}: ${(err as Error).message}`);
   }

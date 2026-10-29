@@ -78,6 +78,21 @@ describe("readToolFixtures (A4)", () => {
     expect(await readToolFixtures(root, "real", log)).toHaveLength(1);
   });
 
+  it("a linked tools/ folder is not followed", async () => {
+    const other = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "hh-tool-fx-other-")));
+    try {
+      await fs.mkdir(path.join(other, "tools", "lookup", "fixtures"), { recursive: true });
+      await fs.writeFile(path.join(other, "tools", "lookup", "fixtures", "a.json"), JSON.stringify(CASE));
+      await fs.symlink(path.join(other, "tools"), path.join(root, "tools"));
+      const log = vi.fn();
+      expect(await readToolFixtures(root, "lookup", log)).toEqual([]);
+      expect(await readToolFixtures(other, "lookup", log)).toHaveLength(1);
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(other, { recursive: true, force: true });
+    }
+  });
+
   it("a missing fixtures folder is no fixtures", async () => {
     const log = vi.fn();
     expect(await readToolFixtures(root, "lookup", log)).toEqual([]);

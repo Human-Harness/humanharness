@@ -62,6 +62,10 @@ describe("toolFixtureSchema (tools spec §11, Decision 1)", () => {
     expect(file("a/b.md")).toBe(true);
     expect(file("docs/.harness-notes.md")).toBe(true);
     for (const bad of ["/etc/passwd", "\\x", "C:/x", "c:x", "../x", "a/../../x", "a\\..\\x", ".harness/notes/a.md", ".harness", ".git/config", ".git", ".harness\\x", ""]) expect(file(bad), bad).toBe(false);
+    // Every depth, any case, `.` parts dropped, NUL and backslash refused; a path must name a file.
+    for (const bad of ["./.harness/x", ".HARNESS/x", ".Git/config", "a/.git/x", "a/.Harness", "a/./../x", "a\0b", ".", "./", "a/", "//", "a\\b"]) expect(file(bad), bad).toBe(false);
+    expect(file("./a/b.md")).toBe(true);
+    expect(file("a//b.md")).toBe(true);
     // `__proto__` as a JSON key: an own key after JSON.parse, refused rather than turned into a prototype.
     expect(ok(JSON.parse('{"files":{"__proto__":"x"},"expect":{"result":1}}'))).toBe(false);
     expect(ok({ files: { "a.md": "x".repeat(1024 * 1024 + 1) }, expect: { result: 1 } })).toBe(false);

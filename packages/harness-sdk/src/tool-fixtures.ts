@@ -15,15 +15,18 @@ const noProto = <T extends z.ZodType>(record: T) =>
     .unknown()
     .refine((raw) => !(typeof raw === "object" && raw !== null && Object.hasOwn(raw, "__proto__")), "__proto__ is not a name")
     .pipe(record);
-/** A path inside the fixture's temp folder: relative, no `..`, not in `.harness/` or `.git/`. */
-const filePath = z
-  .string()
-  .min(1)
-  .max(512)
-  .refine((p) => {
-    const parts = p.split(/[\\/]/);
-    return !p.startsWith("/") && !p.startsWith("\\") && !/^[A-Za-z]:/.test(p) && !parts.includes("..") && ![".harness", ".git"].includes(parts[0]);
-  }, "must be a relative path inside the folder, outside .harness/ and .git/");
+const HIDDEN = new Set([".harness", ".git"]);
+/**
+ * A file inside the fixture's temp folder, by the shell's tool-files rules: no NUL or `\`, not absolute, `""` and `.`
+ * parts dropped (something must be left), no `..`, and no `.harness` or `.git` at any depth in any case (macOS's disk
+ * ignores case). It names a file, so it doesn't end in `/`.
+ */
+function insideFolder(p: string): boolean {
+  if (p.includes("\0") || p.includes("\\") || p.startsWith("/") || /^[A-Za-z]:/.test(p) || p.endsWith("/")) return false;
+  const parts = p.split("/").filter((x) => x !== "" && x !== ".");
+  return parts.length > 0 && !parts.includes("..") && !parts.some((x) => HIDDEN.has(x.toLowerCase()));
+}
+const filePath = z.string().min(1).max(512).refine(insideFolder, "must be a relative path to a file inside the folder, outside .harness/ and .git/");
 
 /** One case of `humanharness tool test` (tools spec §11, Decision 1): `tools/<id>/fixtures/<name>.json`. */
 export const toolFixtureSchema = z.strictObject({

@@ -247,6 +247,25 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
     expect(await w.host.presetForTask(task)).toEqual({ preset: null, instructions: "", notice: "unapproved" });
   });
 
+  it.each(["symlink", "hard link"])("pinned to A after B was approved: a script only A runs, replaced by a %s to the same bytes, drops the preset", async (kind) => {
+    const hooked = (file: string) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node ./tools/${file}` }] }] } });
+    const w = await setup({ "instructions.md": "Hi.\n", "settings.json": hooked("x.js") }, { "tools/x.js": "console.log('x')", "tools/y.js": "console.log('y')" });
+    const a = await w.approve();
+    expect((await w.host.presetFor("intro", undefined)).hash).toBe(a);
+    const task = await w.pinned(a);
+    w.write("settings.json", hooked("y.js"));
+    await w.approve();
+    expect((await w.host.presetForTask(task)).preset?.hash).toBe(a);
+    // The same bytes elsewhere (one the agent may change later), linked in place of the script.
+    const x = path.join(w.base, "tools", "x.js");
+    const elsewhere = path.join(w.base, "elsewhere.js");
+    fs.writeFileSync(elsewhere, "console.log('x')");
+    fs.rmSync(x);
+    if (kind === "symlink") fs.symlinkSync(elsewhere, x);
+    else fs.linkSync(elsewhere, x);
+    expect(await w.host.presetForTask(task)).toEqual({ preset: null, instructions: "", notice: "unapproved" });
+  });
+
   it("pinned to A after B was approved: an engine-folder file A runs, changed in B, drops the preset", async () => {
     // A script inside the engine folder (a skill's file): hashed with the folder, so B's hash covers B's bytes only.
     const hook = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./.harness/engine/intro/skills/s/stop.js" }] }] } });

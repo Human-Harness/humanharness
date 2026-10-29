@@ -285,7 +285,9 @@ export async function pinnedScriptsUnchanged(userData: string, hash: string, o: 
     const { files, scripts } = sourceOf(tree, hash);
     const { commands } = configFromFiles(files, scripts, o);
     const root = path.resolve(o.dir);
-    for (const abs of await scriptRefs(commands, o)) {
+    // The scripts the pin recorded count too: one replaced by a link is no longer found by scriptRefs (it takes
+    // regular files only), and must not slip past this check.
+    for (const abs of new Set([...(await scriptRefs(commands, o)), ...scripts.keys()])) {
       const rel = path.relative(root, abs);
       const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
       const want = inside ? files.get(rel.split(path.sep).join("/")) : scripts.get(abs);

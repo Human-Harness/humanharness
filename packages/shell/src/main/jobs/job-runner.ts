@@ -74,15 +74,6 @@ export async function jobScope(d: Pick<JobRunDeps, "scopeAccess">, scope: string
 }
 
 /**
- * Runs one job run (spec §8) on its own `job:<run>` slot, through the gate's `jobs` cap, and logs it in jobs.jsonl.
- * Returns its record; null when it was dropped (or its signal aborted) before it started, which logs nothing.
- *
- * The run ends with the first `job_result` of its own slot (a later one is ignored and logged); without one it is
- * failed, "No result". It is cancelled past `maxMs` ("Timed out") or when `signal` aborts ("Cancelled"). The slot is
- * always closed and the gate's slot always freed, however the run ends. The engine's permission requests never reach
- * the person: the slot's narrowed policy answers them (Decision 5), and the time limit ends a run that hangs anyway.
- */
-/**
  * A job run's history trailer (parallel spec §8): the run as its task, the job, and the run's scope when it has one.
  * Every commit made on the run's behalf carries it, whatever the run does: here, and a harness tool's data write from
  * the run's slot (jobs-host `runOf`).
@@ -91,6 +82,15 @@ export function jobRunTrailer(run: string, job: string, scope: string | null): H
   return { task: run, job, ...(scope ? { scope } : {}) };
 }
 
+/**
+ * Runs one job run (spec §8) on its own `job:<run>` slot, through the gate's `jobs` cap, and logs it in jobs.jsonl.
+ * Returns its record; null when it was dropped (or its signal aborted) before it started, which logs nothing.
+ *
+ * The run ends with the first `job_result` of its own slot (a later one is ignored and logged); without one it is
+ * failed, "No result". It is cancelled past `maxMs` ("Timed out") or when `signal` aborts ("Cancelled"). The slot is
+ * always closed and the gate's slot always freed, however the run ends. The engine's permission requests never reach
+ * the person: the slot's narrowed policy answers them (Decision 5), and the time limit ends a run that hangs anyway.
+ */
 export async function runJob(
   d: JobRunDeps,
   id: string,

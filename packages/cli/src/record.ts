@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { APP_FOLDERS, type MockNote, type MockToolCall, type MockTurn, type MockUsage, type MockWrite, type Recording } from "@humanharness/fake-agent";
@@ -259,14 +260,23 @@ async function realFolder(p: string): Promise<boolean> {
   return (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
 }
 
-/** Writes `text` at `file` unless a file (or link) is there: a temp file, then a hard link that never replaces one. */
+/**
+ * Writes `text` at `file` unless a file (or link) is there: a temp file, then a hard link that never replaces one. The
+ * temp file's name is random, so one left behind by an earlier run never stops this one, and it is removed whatever
+ * fails.
+ */
 async function writeNew(dir: string, name: string, text: string): Promise<boolean> {
-  const tmp = path.join(dir, `.${name}.${process.pid}.tmp`);
+  const tmp = path.join(dir, `.${name}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
   const handle = await fs.open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | (fsConstants.O_NOFOLLOW ?? 0), 0o644);
   try {
-    await handle.writeFile(text, "utf8");
-  } finally {
-    await handle.close();
+    try {
+      await handle.writeFile(text, "utf8");
+    } finally {
+      await handle.close();
+    }
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
   }
   try {
     await fs.link(tmp, path.join(dir, name));
@@ -317,12 +327,14 @@ export async function writeToolRecordings(
     const names = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
     let count = names.length;
     let next = Math.max(0, ...names.map((f) => Number(TOOL_FILE.exec(f)?.[1] ?? 0))) + 1;
-    for (const exchange of list) {
+    for (const [i, exchange] of list.entries()) {
       if (count >= FIXTURE_FILES || next > MAX_TOOL_FILE) {
-        say(`Not recorded: mock/tools/${tool}/ is full (mock mode reads at most ${FIXTURE_FILES} files, ${String(MAX_TOOL_FILE)} at most)`);
+        say(`Not recorded: mock/tools/${tool}/ is full (mock mode reads at most ${FIXTURE_FILES} files a tool, numbered up to ${String(MAX_TOOL_FILE)})`);
         break;
       }
       const rel = () => `mock/tools/${tool}/${String(next).padStart(3, "0")}.json`;
+      // A skipped exchange takes no number (the next one does): it is named by its place in this run.
+      const skipped = `exchange ${i + 1} of ${tool}`;
       let stripped: { exchange: FixtureExchange; leaked: boolean } | null = null;
       try {
         stripped = strip(exchange);
@@ -330,16 +342,16 @@ export async function writeToolRecordings(
         // Stripping broke the exchange, or it was never a valid one: nothing is written.
       }
       if (!stripped) {
-        say(`Not recorded: ${rel()} is not an exchange mock mode can play`);
+        say(`Not recorded: ${skipped} is not an exchange mock mode can play`);
         continue;
       }
       if (stripped.leaked) {
-        say(`Not recorded: ${rel()} holds a key`);
+        say(`Not recorded: ${skipped} holds a key`);
         continue;
       }
       const text = `${JSON.stringify(stripped.exchange, null, 2)}\n`;
       if (Buffer.byteLength(text) > FIXTURE_BYTES) {
-        say(`Not recorded: ${rel()} is over 10 MB`);
+        say(`Not recorded: ${skipped} is over 10 MB`);
         continue;
       }
       // A file that appeared since the folder was read takes its number: the next one is tried.

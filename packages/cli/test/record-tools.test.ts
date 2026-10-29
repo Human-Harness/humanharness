@@ -6,7 +6,7 @@ import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema,
 import { parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { runFile } from "@humanharness/shell/plugins";
 import { readToolRecordings, recordedToolTransport } from "@humanharness/shell/tools";
-import { Recorder } from "../src/record";
+import { Recorder, writeToolRecordings } from "../src/record";
 import { runTask } from "../src/run";
 import type { ToolRunDeps } from "../src/tool-run";
 import { CORE, memoryStream, tempRoot } from "./helpers";
@@ -305,12 +305,13 @@ describe("run --record with tools (tools spec §12, A3)", () => {
     expect(text).not.toContain(KEY);
   });
 
-  it("a key that still shows aborts the write and names the file", { timeout: 60_000 }, async () => {
+  it("a key that still shows aborts the write and names the exchange", { timeout: 60_000 }, async () => {
     const dir = harness(["fetcher"]);
     // base64 at an offset the substring pass can't see: the key still shows when decoded.
     const { deps } = tableDeps({ [URL_X]: { text: Buffer.from(`x${KEY}`).toString("base64") } });
     const text = await record(dir, "look", callFetcher, deps);
-    expect(text).toContain("Not recorded: mock/tools/fetcher/001.json holds a key\n");
+    // Named by its place in the run, not by a number the next exchange takes.
+    expect(text).toContain("Not recorded: exchange 1 of fetcher holds a key\n");
     expect(filesOf(dir, "fetcher")).toEqual([]);
     expect(text).not.toContain("Tool replies were recorded");
     // The call itself is still recorded on its turn.
@@ -396,5 +397,60 @@ describe("Recorder.toolCall (tools Decision 9)", () => {
     expect(rec!.turns[0]).not.toHaveProperty("tools");
     expect(recordingSchema.parse(rec)).toEqual(rec);
     expect(warnings).toHaveLength(2);
+  });
+});
+
+describe("writeToolRecordings (tools Decision 8)", () => {
+  const exchange = (text: string) => ({ kind: "fetch" as const, request: { method: "GET", url: URL_X }, response: { status: 200, headers: {}, text } });
+  const keep = (e: ReturnType<typeof exchange>) => ({ exchange: e, leaked: false });
+  const mock = () => {
+    const dir = path.join(root, `w${++n}`, "mock");
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  };
+
+  it("a skipped exchange is named by its place; the next one takes the number", async () => {
+    const dir = mock();
+    const lines: string[] = [];
+    const strip = (e: ReturnType<typeof exchange>) => ({ exchange: e, leaked: e.response.text === "leak" });
+    const written = await writeToolRecordings(dir, [{ tool: "fetcher", exchange: exchange("leak") }, { tool: "fetcher", exchange: exchange("ok") }], strip as never, (l) => lines.push(l));
+    expect(written).toBe(1);
+    expect(lines).toEqual(["Not recorded: exchange 1 of fetcher holds a key", "Recorded: mock/tools/fetcher/001.json"]);
+  });
+
+  it("stops at 200 files a tool and says so", async () => {
+    const dir = mock();
+    const toolDir = path.join(dir, "tools", "fetcher");
+    fs.mkdirSync(toolDir, { recursive: true });
+    for (let i = 1; i <= 200; i++) fs.writeFileSync(path.join(toolDir, `${String(i).padStart(3, "0")}.json`), "{}");
+    const lines: string[] = [];
+    expect(await writeToolRecordings(dir, [{ tool: "fetcher", exchange: exchange("x") }], keep as never, (l) => lines.push(l))).toBe(0);
+    expect(lines).toEqual(["Not recorded: mock/tools/fetcher/ is full (mock mode reads at most 200 files a tool, numbered up to 999)"]);
+    expect(fs.readdirSync(toolDir)).toHaveLength(200);
+  });
+
+  it("a linked mock/ is never written through", async () => {
+    const parent = path.join(root, `w${++n}`);
+    const elsewhere = path.join(root, `elsewhere-${++n}`);
+    fs.mkdirSync(parent, { recursive: true });
+    fs.mkdirSync(elsewhere, { recursive: true });
+    fs.symlinkSync(elsewhere, path.join(parent, "mock"), "dir");
+    const lines: string[] = [];
+    expect(await writeToolRecordings(path.join(parent, "mock"), [{ tool: "fetcher", exchange: exchange("x") }], keep as never, (l) => lines.push(l))).toBe(0);
+    expect(lines).toEqual(["Not recorded: mock/ is not a folder"]);
+    expect(fs.readdirSync(elsewhere)).toEqual([]);
+  });
+
+  it("a temp file left behind by an earlier run doesn't stop recording, and none is left after", async () => {
+    const dir = mock();
+    const toolDir = path.join(dir, "tools", "fetcher");
+    fs.mkdirSync(toolDir, { recursive: true });
+    // Today's pid and the name an earlier version used: a fixed temp name would fail O_EXCL here.
+    const stale = `.001.json.${process.pid}.tmp`;
+    fs.writeFileSync(path.join(toolDir, stale), "half");
+    const lines: string[] = [];
+    expect(await writeToolRecordings(dir, [{ tool: "fetcher", exchange: exchange("x") }], keep as never, (l) => lines.push(l))).toBe(1);
+    expect(lines).toEqual(["Recorded: mock/tools/fetcher/001.json"]);
+    expect(fs.readdirSync(toolDir).sort()).toEqual([stale, "001.json"].sort());
   });
 });

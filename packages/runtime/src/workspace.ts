@@ -4,16 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, toolsServerSpec, uiServerSpec } from "@humanharness/blocks";
-import type { ModelProfile } from "@humanharness/engines";
+import type { CommonOptions, ModelProfile, Session, Transport, TurnScope } from "@humanharness/engines";
+import { registry as appRegistry } from "@humanharness/engines/registry";
 import { type LoadedHarness, type Permissions, type PermissionsOverride, aiStepOf, allBlocks, hasEnginePresets, hasJobs, hasMaterial, hasRecipes, hasTools, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
-import { AcpTransport } from "./acp";
-import { ClaudeCliTransport } from "./claude-cli";
 import { turnDocuments } from "./documents";
 import { type Event, fail } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
-import { type Session, type Transport, type TransportOptions, type TurnScope, acpFields } from "./transport";
 import { type TurnAttribution, beginTurn, endTurn } from "./turn-commit";
 import { TurnLedger, type TurnWindow } from "./turn-ledger";
 
@@ -251,12 +249,13 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     if (slots.has(o.key)) throw new Error(`A slot is already open for ${o.key}`);
     // A recipe's AI step reaches its step_output and nothing else (tools spec §7.1, R1): none of the sockets below.
     const step = o.kind === "step";
+    const engines = opts.registry ?? appRegistry;
     if (step) {
       // Claude only for now (fail closed): an ACP engine's own sandbox can't keep a step from reading (Codex's read-only
       // mode still reads the whole disk and runs read-only shell commands without asking; OpenCode's read, glob, grep
       // and list tools never ask), so injected `## Data` could copy any file into step_output. Lifted only with
       // engine-level hardening.
-      if (engine.transport.kind !== "claude-cli") throw new StepClaudeOnlyError();
+      if (!engines.adapter(engine).capabilities.noBuiltins) throw new StepClaudeOnlyError();
       if (!o.job) throw new Error("A step slot needs its job");
       const job = harness.jobs && Object.hasOwn(harness.jobs, o.job) ? harness.jobs[o.job] : undefined;
       if (!job || !aiStepOf(job)) throw new Error(`No AI step for job "${o.job}"`);
@@ -322,7 +321,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     // A task or job slot clears HH_STEP so an outer one can't make it a step slot; only with a recipe declared (D0).
     const noStep: Record<string, string> = hasRecipes(harness) ? { HH_STEP: "" } : {};
     const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) });
-    const transportOptions: TransportOptions = {
+    const transportOptions: CommonOptions = {
       folder: stepFolder ?? folder,
       session,
       mcp: [
@@ -339,14 +338,10 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       ],
       permissions,
       references: step ? [] : references.map((r) => r.path),
-      // Claude gets no Read, Glob or Grep, and `--tools ""` turns off every other built-in too (R1). A step slot is
-      // Claude only (see openSlotNow): on ACP, mcpOnly refuses only the reads that ask, which isn't enough.
+      // Claude gets no Read, Glob or Grep, and `--tools ""` turns off every other built-in too (R1). A step slot only
+      // opens on an engine that can do this (see openSlotNow): on ACP, mcpOnly refuses only the reads that ask.
       ...(step ? { mcpOnly: true, noBuiltins: true } : {}),
-      ...acpFields(engine, permissions.edit),
-      // Codex reads CODEX_CONFIG by name: only it takes an engine preset's codex part. Other ACP engines (Kimi,
-      // Gemini, Qwen) leave the method unset in the registry, and the registry's Codex entry is pinned as it is.
-      ...(engine.id === "codex" ? { profileMethod: "codex-config" as const } : {}),
-      command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
+      command: opts.command ?? engines.commandLine(engine),
       env: opts.env,
       onModels: opts.onModels,
       onLinkedUnsupported: opts.onLinkedUnsupported,
@@ -358,8 +353,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         }
       },
     };
-    const transport: Transport =
-      engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(transportOptions) : new AcpTransport(transportOptions);
+    const transport: Transport = engines.createTransport(engine, transportOptions);
 
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;
@@ -544,10 +538,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         }
       },
       async sleep() {
-        if (isClosed || busy || engine.transport.kind !== "acp") return;
+        if (isClosed || busy) return;
         busy = true;
         try {
           // AcpTransport.close() keeps the session ({ id, started: true }): the next turn connects and session/loads it (spike PT-S4).
+          // ClaudeCliTransport.close() does nothing: it holds no process between turns.
           await transport.close();
         } finally {
           busy = false;

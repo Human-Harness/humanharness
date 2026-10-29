@@ -1,6 +1,6 @@
 # Harness tools
 
-Spec: `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` ("§" below), §1–§5, §8.1–§8.3, §9, §10, §17. Plan: `docs/superpowers/plans/2026-10-29-tools-slice2-tools.md` (slice 2; "Decision N" and the threat rows "T1"–"T9" below) and `docs/superpowers/plans/2026-10-29-tools-slice3-pre.md` (slice 3: "Pre-steps", "Expects" and "Measuring" below, with their own "slice 3 Decision N" and threat rows "P1"–"P6"). Slice 4 (job recipes, `docs/superpowers/plans/2026-10-29-tools-slice4-recipes.md`, threat rows "R1"–"R7") is in `docs/architecture/jobs.md`, "Recipes"; what it adds to tools is in "Job steps" below. The broker and the key store under it are slice 1's (`docs/architecture/secrets.md`).
+Spec: `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` ("§" below), §1–§5, §8.1–§8.3, §9, §10, §17. Plan: `docs/superpowers/plans/2026-10-29-tools-slice2-tools.md` (slice 2; "Decision N" and the threat rows "T1"–"T9" below) and `docs/superpowers/plans/2026-10-29-tools-slice3-pre.md` (slice 3: "Pre-steps", "Expects" and "Measuring" below, with their own "slice 3 Decision N" and threat rows "P1"–"P6"). Slice 4 (job recipes, `docs/superpowers/plans/2026-10-29-tools-slice4-recipes.md`, threat rows "R1"–"R7") is in `docs/architecture/jobs.md`, "Recipes"; what it adds to tools is in "Job steps" below. Slice 5 (authoring and mock mode, `docs/superpowers/plans/2026-10-29-tools-slice5-authoring.md`, "slice 5 Decision N" and threat rows "A1"–"A7") is "Authoring" and "Mock mode" below. The broker and the key store under it are slice 1's (`docs/architecture/secrets.md`).
 
 ## What it is
 
@@ -12,7 +12,7 @@ Spec: `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` ("§" belo
 - **Three callers** (§5): the harness UI (`client.tools.call`), the agent (the core MCP server `tools`), and the runner (pre-steps from slice 3, caller `pre`; job recipes from slice 4, caller `job`).
 - A harness without `tools` is today's app, byte for byte (D0, below).
 
-Slice 3 adds pre-steps, `"prepared"` context items, `ctx.inputs`, phase `expects`, the `pre` and `expects-miss` usage rows and `humanharness measure` (below). Slice 4 adds job recipes, `when`, `ctx.requestAi`, `ctx.summary`, the `recipe` row and a run's Steps ("Job steps"). Not yet: `tool test` / `tool run`, the guide, a template tool and mock-mode transports (slice 5).
+Slice 3 adds pre-steps, `"prepared"` context items, `ctx.inputs`, phase `expects`, the `pre` and `expects-miss` usage rows and `humanharness measure` (below). Slice 4 adds job recipes, `when`, `ctx.requestAi`, `ctx.summary`, the `recipe` row and a run's Steps ("Job steps"). Slice 5 adds `humanharness tool test` and fixtures (also run by `check`), `humanharness tool run`, tools in `humanharness run` and `run --record`, recorded tool replies in `dev --mock`, the guide's "Mechanical work" phase and a template tool ("Authoring", "Mock mode").
 
 ## The manifest and a tool file
 
@@ -248,7 +248,7 @@ study: {
 
 ### Where it runs
 
-`TaskManager.begin` (`task-manager.ts`) calls `TaskDeps.prepare` right after taking the new task's id, before anything is written, only for an action that declares `pre`, and never for a resumed task, a free question, a review or a plugin's task. `prepare` is the tools host's (`tools-host.ts`):
+`TaskManager.begin` (`task-manager.ts`) calls `TaskDeps.prepare` right after taking the new task's id, before anything is written, only for an action that declares `pre`, and never for a resumed task, a free question, a review or a plugin's task. `prepare` is the tools host's (`tools-host.ts`), over `prepareTask` (`tools/prepare-task.ts`, Electron-free and shared with `humanharness run` since slice 5; each side keeps its own catch, usage row and log):
 
 - The whole run goes inside the tools host's per-call trailer, with the task's own trailer (task, action, scope with scopes, first phase), so a pre-step's data write commits as the task's, plus `Tool: <id>`. The calls get the task's scope as is (`_app` and `main` included), as its agent calls do. A task with phases passes its first part's id as `phase`.
 - Then `preparedSection` builds the section (below), each cut becomes a `note` trace entry (caller `pre`), and one `pre` row goes to `usage.jsonl` ("Measuring").
@@ -256,7 +256,7 @@ study: {
 - **Stop while preparing** (slice 3 Decision 7): the running step ends (each call has its timeout; nothing is aborted inside the sandbox), then nothing starts.
 - **A refused start** (a `required` failure, or the throw above): no task is written and no engine runs. The chat shows the error card `prepare-failed` (`ErrorCode` in `runtime/src/events.ts`): "Couldn't prepare this task: <tool> failed: <message>" (`tools.prepareFailed`) with "Try again", which sends the start again (a new task id, the steps run again). The trace keeps the refused start's calls under an id that never reaches `tasks.json`; pruning by age removes them.
 - **A resumed task** (after "Move folder") runs no pre-step and gets no prepared data (slice 3 Decision 6).
-- **`humanharness run`** has no tool host yet: it prints "Pre-steps are not run in the terminal yet." once before the task starts, and the first message goes without the section (slice 3 Decision 18).
+- **`humanharness run`** runs them too since slice 5, through the same `prepareTask` (below, "Tools in `run`"); slice 3's notice "Pre-steps are not run in the terminal yet." (its Decision 18) is gone.
 
 ### `## Prepared data`
 
@@ -315,7 +315,7 @@ study
 
 - A task's **first turn** is its first line with the task's id and an action, turn kind `run` (or none) and no `kind`. Its tokens are input + cache read + cache write (output left out). A task "with" pre-steps has a `pre` row.
 - A first turn whose engine reported neither usage nor limits writes no line, so the task's next `run` line is taken as its first turn. A first turn with no `usage` leaves the task out. Free questions are left out; refused starts are too (no run line).
-- Tasks from `humanharness run` always count as "without": `run` runs no pre-steps and writes no `pre` row.
+- Tasks from `humanharness run` count like the app's: since slice 5 `run` runs the pre-steps and writes the `pre` row in its folder's `usage.jsonl`.
 - Without `--folder` it needs the current folder to hold `.harness/`. A missing log, or nothing measurable: "No usage recorded in <folder> yet." (exit 0). A side with no tasks reads "no tasks yet".
 
 ### The first measurement (method)
@@ -329,6 +329,85 @@ Marco runs it by hand, with a real engine; no test does. It needs a harness whos
 | Action | First turn without | First turn with | Prepared tokens | Pre time |
 |---|---|---|---|---|
 | Pending: Marco's run | | | | |
+
+## Authoring
+
+Slice 5 (spec §11, §12, §15.5). The terminal runs a harness's tools through the app's own `ToolRegistry`, `ToolBroker`, `toolFiles` and `ToolTrace`, which `@humanharness/shell/tools` (`packages/shell/src/main/tools/tool-cli.ts`) exports with no Electron and no `node:vm` in its import graph (`packages/shell/test/tool-cli-entry.test.ts` scans the graph and loads it in a fresh Node that refuses both). So a tool is checked in the terminal exactly as the app checks it. Every command below builds the tools in memory (`buildTools(root, { write: false })`, as `check`), writes the bundles to a temp root of its own and removes it after: the harness's own `dist/` is never read or touched.
+
+### The terminal host (not a sandbox)
+
+`nodeToolHost` and `cliTools` (`packages/cli/src/tool-host-node.ts`) are the registry's `host` in the terminal. Each tool's bundle (`dist/tools/<id>.js`, found by `TOOL_ID` only, a real file) is turned into an IIFE with esbuild and evaluated once in a `vm` context of its own that holds only `plugin-run.ts`'s globals (`console`, tracked `setTimeout`/`clearTimeout`, `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `structuredClone`): no `fetch`, `process`, `require` or `Buffer`. `ctx` is a copy of the sandbox host's (`resources/tool-host.mjs`, `contextOf`; a parity test pins the two), forwarding every call to that tool's broker; `summary` and `requestAi` behave as in the app for the caller used.
+
+- **Time limits.** The bundle's top-level code runs under the first call's limit ("<tool> took longer than N s to load", kept as that tool's load error). A call's synchronous part and `summary` run under the tool's timeout through `vm`'s own limit, and the host races the whole call against a timer ("<tool> took longer than N s"). A loop that starts after an `await` can't be stopped in this process: it blocks the command, as for plugins. `close()` answers every call in flight "Tools stopped".
+- **Not a sandbox** (P12, threat row A1): `ctx`, the timers, `console` and any error are this realm's objects, and any of them leads back to `process`. A tool run in the terminal can do anything the developer's user can, and under `tool run` and `run` it can read the keys typed there. It is the same trade-off as `plugin test` and `plugin record` (`docs/architecture/authoring.md`, "Plugin code on the author's machine (P12)"); in the app, tool code only ever runs in the sandboxed window above.
+- **The note** (`TOOL_P12_NOTE`, slice 5 Decision 7): "Note: tool code runs in this Node process, not in the app's sandbox. Run only tools you trust." `tool test`, `tool run` and `run` print it once, before the build; `check` prints it once before the first fixture runs (on stderr with `--json`), and not at all when no tool has a valid fixture. `build`, `dev` and `check`'s in-memory build import each tool's Node bundle to read its meta (slice 2) without a note, as `plugin build` does.
+
+### `tool test` and fixtures
+
+`humanharness tool test [<id>] [--harness <dir>]` (`tool-command.ts`, `tool-test.ts`; `exitsWhenDone`) runs every fixture of each tool, or of `<id>`, and exits 1 when one fails. A harness without tools: "This harness declares no tools." (exit 1, D0); an unknown id: `"x" is not a tool of <harness>: a, b.` (exit 2). The command dispatcher is `tool-command.ts`, not `tool.ts`: that file is the authors' `@humanharness/cli/tool`.
+
+**A fixture** (slice 5 Decision 1) is `tools/<id>/fixtures/<name>.json`, one case per file, `toolFixtureSchema` (`@humanharness/harness-sdk/tool-fixtures`, Node-free, strict):
+
+```json
+{ "args": { "path": "notes/a.md" }, "files": { "notes/a.md": "one two  three\nfour" }, "expect": { "result": { "path": "notes/a.md", "words": 4 } } }
+```
+
+- `args` (default `{}`), `inputs?` (by `as` name, for a step that reads them), `scope` (a scope name or `_app`, default `null`), `exchanges?` (at most 200, the plugin fixture exchange format, `plugins.md` "Fixture mode"), `data?` (`{ <collection>: record[] }`, at most 1000 records a collection), `files?` (`{ <path>: text }`, ≤ 1 MB each), and `expect`: `{ result }` or `{ error }` (1–500 characters).
+- `files` paths follow `toolFiles`' rules: relative, no NUL or `\`, no `..`, no `.harness` or `.git` at any depth in any case, naming a file (no trailing `/`); the writer checks again that each lands inside the temp folder. `__proto__` as a key of `args`, `inputs`, `data`, a record or `files` is refused ("__proto__ is not a name"): zod's record would drop it silently.
+- The files are read with the plugin fixture files' rules (`readToolFixtures`, `tools/tool-fixture-files.ts`, over `readFixtureFiles` in `plugin-fixture-files.ts`): at most 200 files, 10 MB each, no link or hard link, `tools/` and `tools/<id>/` real folders. A file that doesn't parse is a `warn:` line under its tool, not a failure, in `tool test`.
+
+**What a case reaches** (Decision 3, A2): a fresh `cliTools` per case (a fresh `vm` context), caller `ui`. Keys are `fixture-<id>`; `ctx.fetch` and `ctx.exec` answer only from `exchanges` (`fixtureTransport`; a miss fails the call "No fixture for GET <url>" or "No fixture for <cmd> <args>", the plugins' text; commands resolve to `/fixture/<name>` and nothing runs); every host passes the public-host check, since nothing leaves. `ctx.data` is an in-memory store of the harness's collections seeded from `data` (each record checked against its collection's schema: `Not a record of "<c>": …`; an unknown collection fails the case), writes reported ("1 write: put notes a"), nothing saved. `ctx.files` is a temp folder written from `files`, no reference folders, removed after.
+
+**Pass or fail** (Decision 2): `expect.result` deep-equals the result after `returns` (both compared as JSON); `expect.error` is contained in the call's error. The reasons: `expected <json> got <json>`, `expected <json> got the error "<e>"`, `expected an error with "<t>" got "<e>"`, `expected an error with "<t>" got the result <json>`, and `expected <json> got a result that isn't JSON: <why>` (a BigInt or a cycle). The report gives per tool `<id>: N fixtures, M failed` (`<id>: no fixtures`, or `no valid fixtures` when every file was skipped), per failing case its reason, writes and trace, then `N fixtures passed.` or `M of N fixtures failed.`
+
+**`check`** (rule `tool-fixture`, Decision 4) runs the same cases from its in-memory build (no second build), after `tool-build`, `tool-uses` and `tool-steps`, and only when the build passed. Each failing case, and each fixture file that isn't a valid case (a gate, unlike `tool test`), is an error `Tool "<id>": fixtures/<file>: <why>` on `tools/<id>/fixtures/<file>`. **`dev` runs no fixtures** (product default, Task 5): `dev`'s check stays offline and fast and prints no note.
+
+### `tool run`
+
+`humanharness tool run <id> [--args '<json>'] [--folder <dir>] [--scope <id>] [--yes] [--harness <dir>]` (`tool-run.ts`, Decisions 5–6) runs one tool once, for real, through the registry as caller `ui`, and prints its result (`JSON.stringify(…, null, 2)`) or `Error: <message>`, then the trace: `<tool> · <ms> ms · ok|failed: <error>` and one `  <kind> <target> allowed|denied` line per access. Exit 0 on success, 1 on a failure. `--args` must be a JSON object (default `{}`).
+
+- **Order**: harness and D0 refusal, unknown id and a bad `--scope` (exit 2), `--folder` must be an existing folder ("No folder at <path>"), the note, the build, then the write check and the keys, before any folder is made.
+- **Writes** (A6): a tool whose `uses` writes (`data.write` non-empty, or `files: "write"`) runs only with `--yes` ("This tool writes to <folder|a new folder>. Add --yes to run it for real."). `--yes` covers the folder and its data only: **fetches and commands always run for real**, with or without it.
+- **Keys** (A5; Decision 5 departs from the spec's "with the secrets already set": the CLI can't read the app's encrypted store): each id in the tool's `uses.secrets` is asked once with the input hidden (`hiddenReader`, as `plugin record`), after "While it runs, the tool can read the keys you type here."; an empty answer stops it ("No key was given for <label>."), and without a terminal it refuses ("tool run asks for keys in a terminal"). Keys come only from that prompt, never from the app's store or a file.
+- **Network and commands** (Decision 6): the real `fetch`, public hosts only: the broker checks every hop's name (`isPublicHost`), and `tool run` asks again right before each request leaves ("Not a public host: <host>"). Commands run through `runFile`, found on this process's `PATH` (`resolveOnPath`, as `plugin record`), only as the tool's `uses.exec` allows.
+- **The folder**: `--folder <dir>`, else a new `hh-run-<harness id>-*` folder under the system's temp folder, printed ("Folder: …") and kept, as `run`'s. `ctx.data` is that folder's `DataStore` as the tool (`who: "tool"`), in `--scope` or none; nothing is committed to the folder's history.
+- **What it prints**: every line (log lines, the error, the trace) has each C0 and C1 control character, line breaks and tabs included, turned into a space, and every typed key hidden, so a server reply can't redraw the terminal or pass for a line of its own. The trace is printed, not saved.
+
+### Tools in `run`
+
+A harness with tools runs them in `humanharness run` (`run-tools.ts`, Decision 12). Before the engine and the folder: the note, the in-memory build (a build problem stops the run), then the keys: the union of `uses.secrets` of the tools this run can reach (every `agent: "call"` tool and this action's pre-step tools), sorted by tool id, each asked once, hidden, after "While it runs, the tools can read the keys you type here."; without a terminal: "run asks for the tools' keys in a terminal".
+
+- **Pre-steps** run before the first message through `prepareTask` (the app's own, `tools/prepare-task.ts`): the prepared section, the cut notes and the `pre` row in the folder's `usage.jsonl`. A required step that fails refuses the start: `Couldn't prepare this task: <tool> failed: <error>`, exit 1, as one line (controls turned into spaces, keys hidden, cut at 300 code points). An unexpected throw refuses it with the app's fixed text, `Couldn't prepare this task: the pre-steps could not run`; its own message goes to stderr only.
+- **The agent's calls** go through the core `tools` MCP server, from a catalogue the run writes in its temp root (only with tools on and an `agent: "call"` tool), as caller `agent` in the running task's scope and part.
+- **One line per call**: `tool <id> · <ms> ms · ok` or `… · failed: <error>` (a note: `tool <id> · <text>`), plus the tools' `ctx.log` and `console` lines; each line plain and keys hidden. Each entry is appended to the folder's `.harness/trace/<task>.jsonl` as the app writes it.
+- Fetches reach public hosts only, checked twice as in `tool run`; data goes to the folder's store as the tool, not committed to history.
+- **Not wired**: phases' `expects` (no `expects-miss` row or line in the terminal; "Known gaps").
+
+### `run --record`
+
+With `--record` (`record.ts`, `run-tools.ts`; Decisions 8–9) the recording gets the agent's tool calls and every tool reply:
+
+- **Calls**: a turn's optional `tools: [{ tool, args }]` holds the agent's calls of that turn that the registry answered **ok**, in completion order (a refused call would fail the replayed turn, Task 9 default), at most 20 a turn (`MAX_TURN_TOOL_CALLS`; past it one `Note:` per turn). A call whose args aren't an object, whose name isn't a tool id, or whose args hold an own `__proto__` key is left out with a note. Pre-step calls are not recorded (`dev --mock` runs them for real). A turn without calls has no `tools` key.
+- **Replies** (Decision 8 departs from the spec's "in the recording format"): every fetch and exec of the run, pre-steps' included, is written to `mock/tools/<tool>/<NNN>.json`, one plugin fixture exchange per file, so `plugin test`, `tool test` and mock mode share one reader. Numbering continues after the highest `NNN` (three digits, at most 999 and 200 files a tool, else "… is full"); each file is created exclusively through a temp name and a hard link, so an existing file is never overwritten. `mock/`, `mock/tools/` and `mock/tools/<tool>/` must be real folders.
+- **Keys** (A3): each exchange goes through `plugin record`'s `stripExchange` (`stripSecrets`: raw, URL-encoded, form, base64 and JSON-escaped forms become `{{secret:<id>}}`, a Basic credential whole; `set-cookie` and oversized headers dropped; responses read up to 10 MB). One that still holds a key is not written ("Not recorded: exchange N of <tool> holds a key"). This is `plugin record`'s level: hex, case-changed, split or compressed keys aren't caught. A key in a URL never happens: the broker refuses `{{secret:…}}` in a URL.
+- It prints `Recorded: mock/tools/<tool>/<NNN>.json` per file, then "Tool replies were recorded in mock/tools/: review them before committing them." It writes only when the run ended normally, after the action recordings; a failed write is a `Warning:` line.
+
+### The template's tool
+
+`humanharness init` gives every new harness one example tool (Decision 15), `tools/word-count.ts`: `params { path }`, `returns { path, words }` (the plan said `{ words }`), `agent: "call"`, `uses: { files: "read" }`, with two fixtures, `basic.json` (a result) and `outside.json` (`"../x"` fails "a path stays inside the folder"). The manifest lists it, `HARNESS.md`'s "Mechanical work" table has its row, and the template's `tsconfig.json` includes `tools`. No action uses it. What that means for a fresh harness:
+
+- `check` and `run` print the P12 note (its fixtures run; `run` builds it), and `run` starts the `tools` server.
+- The agent sees `word-count` in every session (its catalogue entry costs tokens) and may call it unprompted.
+- To remove it: delete `tools/`, the manifest's `tools` line, the `HARNESS.md` row and `"tools"` in `tsconfig.json`'s `include`.
+
+## Mock mode
+
+Slice 5 (Decisions 10–11; the format and the walk are in `docs/architecture/mock-mode.md`, "Tools"). In `dev --mock` the tools run for real in the mock session's folder and data, pre-steps included, but each tool's `ctx.fetch` and `ctx.exec` answer only from `mock/tools/<tool>/*.json` (`recordedToolTransport`, `readToolRecordings` in `tools/recorded-transport.ts`): a miss fails the call "Not recorded: GET https://…" or "Not recorded: gh pr checks 12" (a fetch's error reads "The request failed: Not recorded: …"). Keys are `fixture-<id>` and the key store is never read (A7); hosts pass with no lookup and commands resolve to `/fixture/<name>`, as plugins' fixture mode.
+
+- **When it is on**: `ToolsHostDeps.mock` is set only with the mock hook **and** an absolute `HH_FAKE_MOCK_DIR` in the fake Claude engine's env (`mockToolsDir` in `test-hooks.ts`), which `dev --mock` and `launchMock` always set. The mock hook alone keeps the real transport: e2e `tools.spec.ts` runs `HH_TEST_MOCK=1` with a scripted engine and pins the key store's "not set" answer.
+- **Read once**: each tool's recordings are read on its first fetch or exec and kept for the host's life, a failed read too; a change to `mock/tools/` counts from the next start.
+- A recorded agent call that fails (a tool error, "Not recorded") **does not end the mock turn**: the turn goes on as a real agent's would (`mock-mode.md`).
+- A recipe's AI step answers from `mock/steps/<job>.json` (`docs/architecture/jobs.md`, "Recipes").
 
 ## Memory
 
@@ -376,6 +455,17 @@ A harness without `tools` runs no slice-2 code: `defineHarness` gives no `tools`
 **Slice 4.** A harness whose jobs all declare `prompt` runs no slice-4 code; for tools that means a call that uses neither `ctx.summary` nor `ctx.requestAi` answers exactly as in slice 2 (`packages/shell/test/tools/tool-run-summary.test.ts` "D0: a call without summary or requestAi answers as before"), and no `last.run` or Steps without tools. The full table is in `docs/architecture/jobs.md` ("D0").
 | Slice 2's pins | `runtime-d0`, `hatches-d0`, `claude-cli` goldens, `hatches-surface`, `history.spec`, `task-manager.test.ts`, `tools.test.ts`, `tool-registry.test.ts`, `tool-call-ui.test.tsx`: unchanged |
 
+**Slice 5.** A harness that declares no `tools` sees no change: `humanharness tool …` refuses with "This harness declares no tools." (exit 1) and every other command's output, files and exit codes are as before; `check` runs no fixture and no `mock-step` rule; `run` and `run --record` start no tool host, write no `mock/tools/` and add no `tools` key to a recording; a recording without `tools` parses, replays and is written exactly as before, and `mock/steps/` is read only for a step turn; `dev --mock` starts no tool transport, and plugins' fixture mode is unchanged. A harness made by `init` has the template's tool, so the pins below take it out first (`dropExampleTool` in `packages/cli/test/helpers.ts`).
+
+| D0 item (slice 5) | Pinned by |
+|---|---|
+| CLI | `packages/cli/test/tool-cli.test.ts` "D0: tool refuses without tools; USAGE lists tool once" |
+| `check` | `packages/cli/test/check-tool-fixtures.test.ts` "D0: no tools, no fixture findings", "D0: tools without fixtures give the same output as before, and no note"; `check-mock-tools.test.ts` "D0: a harness without tools or recipes gets no new mock finding" |
+| Recording format | `packages/fake-agent/test/mock-tools.test.ts` "D0: a recording without tools parses as before"; `mock.test.ts` unchanged |
+| `run` / `--record` | `packages/cli/test/run-tools.test.ts` "D0: a harness without tools starts no tool host"; `record-tools.test.ts` "D0: a recording of a harness without tools has no tools key and no mock/tools"; `run.test.ts`, `record.test.ts` unchanged |
+| Mock mode | `packages/shell/test/tools/tools-mock.test.ts` "D0: without mock the transport is the real one, whatever mock/tools/ holds"; `packages/fake-agent/test/mock-claude-tools.test.ts` "D0: a turn without tools calls nothing on the tools server"; `mock.spec.ts` unchanged |
+| Shell entry | `packages/shell/test/tool-cli-entry.test.ts` (no Electron, no `node:vm`) |
+
 ## Threat model
 
 Tool code is the harness author's, but it handles outside data and runs beside the person's folder.
@@ -405,6 +495,18 @@ Tool code is the harness author's, but it handles outside data and runs beside t
 
 **Slice 4** (R1–R7: the AI step reaches only `step_output`; its output is parsed in main before a tool sees it; `requestAi` only in a post call, once, ≤ 1 MB, never past `maxAi`; `## Data` fenced and cut at 200,000 characters; `ctx.summary` one line ≤ 300; the whole recipe under the job limit and cancel; `onLimit` a real action) is in `docs/architecture/jobs.md`, "Recipes", and the plan's threat model.
 
+**Slice 5** (the CLI runs tool code in its own Node process, and recordings carry service replies into the repository):
+
+| # | Boundary | What enforces it | Test |
+|---|---|---|---|
+| A1 | The person knows tool code isn't sandboxed in the terminal | `TOOL_P12_NOTE` once per command before tool code (`check`: before the first fixture); each tool gets only `ctx` and `plugin-run.ts`'s globals (no `fetch`, `process`, `require`, `Buffer`). Not a sandbox: `process` is reachable through any host-realm object ("The terminal host") | `packages/cli/test/tool-host-node.test.ts` "the tool sees no process, require, fetch or Buffer global" |
+| A2 | Fixtures and recordings never reach the network or a process | `tool test` and `check` answer only from `exchanges` ("No fixture for <target>"), `dev --mock` only from `mock/tools/` ("Not recorded: <target>"); commands resolve to `/fixture/<name>` and never run | `tool-test.test.ts`, `packages/shell/test/tools/tools-mock.test.ts` |
+| A3 | No key is written into a recording | `run --record` strips every exchange (`stripExchange`, P11); one that still holds a key is not written and is named | `packages/cli/test/record-tools.test.ts` |
+| A4 | Fixture and recording files are hostile input | the plugin fixture files' caps (200 files, 10 MB), no links or hard links, strict schemas, `__proto__` refused, `files` paths inside the temp folder, `data` looked up with `Object.hasOwn`; step recordings opened `O_NOFOLLOW`, no hard link, ≤ 10 MB | `packages/shell/test/tools/tool-fixture-files.test.ts`, `packages/harness-sdk/test/tool-fixtures.test.ts`, `packages/fake-agent/test/mock-tools.test.ts` |
+| A5 | `tool run` reaches only public hosts and declared commands | the tool's `uses` (the broker), `isPublicHost` on every hop and again before each request; keys only from the hidden prompt | `packages/cli/test/tool-run.test.ts` |
+| A6 | `tool run` doesn't write by surprise | a tool whose `uses` writes runs only with `--yes` (fetches and commands are not covered by it) | `tool-run.test.ts` |
+| A7 | Mock mode never reads the key store | every tool key is `fixture-<id>` | `tools-mock.test.ts` |
+
 Also: **no private network** (every fetch hop, `isPublicHost` plus the localhost/IP guard: `tool-broker.test.ts` "fetch: localhost, IP literals and hosts that resolve to a private address are refused, on every hop").
 
 ## Decisions
@@ -422,6 +524,17 @@ Slice 3's Decisions 1–18 hold as written, with these notes:
 - **Decision 11**: a close also checks when the task finishes with its note already saved, and after a closing turn that failed without being cancelled; a part entered again is checked again (one miss row per exit).
 - **Decision 15–16** (the demo's `list-sources`): parked; the demo has no tools ("Known gaps").
 
+Slice 5's Decisions 1–15 hold as written, with these notes:
+
+- **Decision 5** (departs from spec §11's "with the secrets already set"): `tool run` and `run` ask each key in the terminal, hidden; the CLI can't read the app's encrypted store.
+- **Decision 8** (departs from spec §12's "in the recording format"): tool replies go to `mock/tools/<tool>/<NNN>.json`, one plugin fixture exchange per file. Only calls the registry answered ok go into a turn's `tools` (Task 9 default).
+- **Decision 10**: mock mode's tool transport needs `HH_FAKE_MOCK_DIR` as well as the mock hook (`mockToolsDir`, "Mock mode" above). A recorded call that fails doesn't end the mock turn (coordinator default after Task 13).
+- **Decision 11** (not in the spec): `mock/steps/<job>.json` answers a recipe's AI step (`docs/architecture/jobs.md`).
+- **Decision 4**: `dev` runs no fixtures, only `check` (Task 5 default).
+- **Decision 12**: each call's line shows milliseconds ("tool echo · 3 ms · ok"), not the plan's "0.3 s"; `run`'s data writes are not committed to the folder's history.
+- **Decision 15**: the template's tool returns `{ path, words }` and has a second fixture (`outside.json`).
+- `tool test`'s miss text is the plugins' "No fixture for <target>"; "Not recorded: <target>" is mock mode's (threat row A2 in the plan names only the second).
+
 ## Known gaps
 
 - **No staleness check**: the app runs whatever `dist/` holds; `dev` rebuilds, but a tool file edited after a build isn't noticed until the next one.
@@ -431,7 +544,14 @@ Slice 3's Decisions 1–18 hold as written, with these notes:
 - **`files: "write"`**: refused until a harness needs it (§17).
 - **Isolation between tools** is per harness, not per tool (above).
 - **The demo has no pre-steps**: slice 3 Task 13 (`list-sources` on its topics) is parked. With tools, the demo's hidden tool window and its `pre` rows break e2e specs that use it as the tools-free harness (some of them frozen); Marco decides how. Until then the first measurement has no harness to run on.
-- **`run` runs no pre-steps** until slice 5 brings a tool host to the CLI.
+- **`run` doesn't wire `expects`**: no `expects-miss` row or line in the terminal; try `expects` in the app.
+- **Terminal tool runs are not sandboxed** (`tool test`, `tool run`, `check`'s fixtures, `run`): `vm` is not a boundary and `process` is reachable, the same trade-off as `plugin test`/`plugin record`. The person is told before tool code runs, except by `build`, `dev` and `check`'s in-memory build, which import each tool's Node bundle to read its meta. A loop after an `await` can't be stopped in the terminal.
+- **DNS rebinding**: the public-host check is on the name, before the request; the address the request then uses is not pinned. A shared gap with plugins (`plugin-fetch`, `plugin record`), `material-fetch` and the app's tools broker; not a regression.
+- **Recording key-stripping** is `plugin record`'s: hex, case-changed, split or compressed keys aren't caught. Review `mock/tools/` before committing it.
+- **`uses.files: "write"`** or an `agent: "call"` tool's description under 20 characters turns every tool off (`toolProblems`), in the app, `tool run` and `run` alike; the build passes and only a run says "Tools are off".
+- **Mock recordings are read once per host**: a change to `mock/tools/` counts from the next start.
+- **The `### request` heuristic** of mock mode's AI step (`docs/architecture/mock-mode.md`).
+- **Out of scope** (spec §16): tools made just in time, driving modes, and post-steps in actions.
 - **The panel's "First turn"** counts every API call of the first turn, tool calls included, as before (`docs/architecture/context.md`).
 - **`linked-folders` items** are missing from `task-store`'s kinds (so dropped on read): a slice-2-era bug, noted, not fixed here.
 - **A forEach step's lines** come in finish order, not item order (its result is in item order).
@@ -440,11 +560,12 @@ Slice 3's Decisions 1–18 hold as written, with these notes:
 
 - `packages/harness-sdk/src/tool.ts` (`defineTool`, `ToolContext`, `ToolUses`, `ToolDefinition`), `tools.ts` (`TOOL_ID`, `TOOLS_MAX`, `CORE_SERVER_NAMES`, `toolsSchema`, `hasTools`, `toolsJsonSchema`, `toolMeta`, `toolProblems`), `index.ts` (the clash checks, `setup[].test`). `packages/cli/src/tool.ts`: the author's import.
 - `packages/harness-sdk/src/steps.ts` (slice 3: `toolStepSchema`, `preStepSchema`, `PRE_TOKENS_*`, `PRE_STEPS_MAX`, `hasPre`, `hasExpects`, `preProblems`, `stepProblems`).
-- `packages/cli/src/tool-build.ts`, `build.ts`, `dev.ts`, `check.ts` (`tool-build`, `tool-uses`, `tool-steps`), `measure.ts`, `run.ts` (the notice).
+- `packages/cli/src/tool-build.ts`, `build.ts`, `dev.ts`, `check.ts` (`tool-build`, `tool-uses`, `tool-steps`), `measure.ts`, `run.ts` (tools since slice 5: `run-tools.ts`).
 - Slice 3 in main: `tools/pre-steps.ts`, `prepared-section.ts`, `expects.ts`, `tools-host.ts` (`prepare`, `phaseEnded`), `task-manager.ts` (`TaskDeps.prepare`, `phaseEnded`, `PrepareAnswer`, `EXPECTS_CHECK_MS`), `turn-controller.ts` (`TurnOptions.prepared`), `usage-log.ts` (`preRecord`, `expectsMissRecord`, `TOOL_ROW_KINDS`, `measurePre`); in the window `tools/PreparedGroup.tsx`, `ErrorCard.tsx`, `ContextPanel.tsx`.
 - `packages/shell/src/main/tools/`: `tool-protocol.ts`, `tool-host.ts`, `tool-broker.ts`, `tool-files.ts`, `tool-registry.ts`, `tool-trace.ts`, `tools-json.ts`, `tools-host.ts`, `tools-ipc.ts`. `packages/shell/resources/tool-host.html`, `tool-host.mjs`, `tool-preload.cjs`. `shell-resources.ts` (`shellResourcesDir`). `data-requests.ts` (`toolDataRequests`, `dataWriteQueue`), `secrets/connections.ts` (`connectTests`, Test), `index.ts` (the wiring under `hasTools`).
 - `packages/blocks/src/tools-server.ts`, `tools-server-bin.ts`, `launch.ts` (`toolsServerSpec`); `packages/runtime/src/workspace.ts` (`RuntimeOptions.tools`), `events.ts` (`tool-call`, `ToolCallView`).
 - `packages/workspace/src/data.ts` (`who: "tool"`), `history.ts` (`Tool:`, `CommitTrailer`).
 - Slice 4: `tools/tool-broker.ts` (`summary`, `requestAi`, `SUMMARY_LOOK`, `REQUEST_MAX_BYTES`, `POST_ONLY`), `tool-registry.ts` (`ToolCall.post`, `ToolAnswer.summary`/`requestAi`), `pre-steps.ts` (`StepOutcome`), `one-line.ts` (`plainLine`), `tools-host.ts` (`withRunTrailer`), `resources/tool-host.mjs` (`ctx.summary`, `ctx.requestAi`); `packages/harness-sdk/src/tool.ts` (`ToolContext.summary`/`requestAi`); `packages/ui/src/tools/JobRunSteps.tsx`. The recipe runner: `docs/architecture/jobs.md`, "Where to look".
 - `packages/ui/src/tools/ToolCallLine.tsx`, `state.ts` (`tool-call`, `isToolLine`), `ChatView.tsx`, `client.ts` (`ToolsClient`, `ToolsInfo`, `TOOLS_OFF_CRASHES`), `connections/` (Test connection).
+- Slice 5: `packages/shell/src/main/tools/tool-cli.ts` (`@humanharness/shell/tools`), `tool-fixture-files.ts` (`readToolFixtures`), `recorded-transport.ts` (`recordedToolTransport`, `readToolRecordings`), `prepare-task.ts` (`prepareTask`), `tools-host.ts` (`ToolsHostDeps.mock`), `test-hooks.ts` (`mockToolsDir`); `packages/harness-sdk/src/tool-fixtures.ts` (`toolFixtureSchema`); `packages/cli/src/tool-host-node.ts` (`TOOL_P12_NOTE`, `nodeToolHost`, `cliTools`), `tool-command.ts`, `tool-test.ts` (`testTools`, `toolFixtureFindings`), `tool-run.ts`, `run-tools.ts`, `record.ts` (`Recorder.toolCall`, `writeToolRecordings`), `check.ts` (`tool-fixture`, `mock-step`); `packages/fake-agent/src/mock.ts` (`tools`, `stepRecordingSchema`, `loadStepRecording`), `mock-claude.ts`; `packages/cli/template/tools/word-count.ts`. Tests: `packages/cli/test/tool-*.test.ts`, `run-tools`, `record-tools`, `check-tool-fixtures`, `check-mock-tools`, `template-tool`, `guide-tools`; `packages/shell/test/tools/tools-mock.test.ts`, `tool-fixture-files.test.ts`, `prepare-task.test.ts`; `packages/fake-agent/test/mock-tools.test.ts`, `mock-claude-tools.test.ts`; e2e `packages/e2e/tests/tools-mock.spec.ts` (fixture `packages/fake-agent/fixtures/mock-tools-harness`, id `mock-tools`).
 - Tests: `packages/harness-sdk/test/tools.test.ts`, `tool-problems.test.ts`; `packages/cli/test/tool-build.test.ts`, `fixture-dist.test.ts`; `packages/shell/test/tools/`, `tools-surface.test.ts`; `packages/blocks/test/tools-server.test.ts`; `packages/runtime/test/workspace-tools.test.ts`; `packages/workspace/test/data-tool.test.ts`; `packages/ui/test/tool-call-ui.test.tsx`. E2E: `packages/e2e/tests/tool-host.spec.ts` (a bare Electron main with a hostile tool), `tools.spec.ts` (the fixture `packages/fake-agent/fixtures/tools-harness`, id `toolbox`), `tools-pre.spec.ts` (slice 3: first message, folded group, panel items, refused start and Try again, an expects miss).

@@ -134,7 +134,13 @@ export function settingsArgs(references: string[], scope?: TurnScope): string[] 
   const hooks = preset?.settings?.hooks;
   const rules = presetRules(preset);
   const permissions = { ...(dirs.length > 0 ? { additionalDirectories: dirs } : {}), ...rules };
-  const settings = { ...(hooks ? { hooks } : {}), ...(Object.keys(permissions).length > 0 ? { permissions } : {}) };
+  const settings = {
+    ...(hooks ? { hooks } : {}),
+    ...(Object.keys(permissions).length > 0 ? { permissions } : {}),
+    // `global` drops --strict-mcp-config, so the CLI would also start the folder's `.mcp.json` servers, which nobody
+    // approved: these settings outrank the user and project sources and turn them off.
+    ...(preset?.base === "global" ? { enableAllProjectMcpServers: false, enabledMcpjsonServers: [] } : {}),
+  };
   if (Object.keys(settings).length === 0) return [];
   return ["--settings", JSON.stringify(settings)];
 }
@@ -156,6 +162,9 @@ function presetRules(preset: EnginePreset | undefined): { allow?: string[]; deny
   if (p.ask?.length) out.ask = [...p.ask];
   return out;
 }
+
+/** Under the `global` base the CLI reads the folder's `.mcp.json`: the agent may not write one. */
+const GLOBAL_DENIED = ["Edit(.mcp.json)", "Write(.mcp.json)", "MultiEdit(.mcp.json)", "NotebookEdit(.mcp.json)"];
 
 /**
  * Checks a preset at the last boundary before the CLI: a known base, servers named `scope-<name>` that take no core
@@ -199,7 +208,7 @@ export function claudeArgs(
     ? ["--tools", "", "--disallowedTools", ALL_BUILTIN_TOOLS.join(",")]
     : [
         "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly, linked).join(","),
-        "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked).join(","),
+        "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
       ];
   return [
     "-p",

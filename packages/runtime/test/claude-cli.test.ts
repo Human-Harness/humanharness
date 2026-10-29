@@ -800,6 +800,25 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
     expect(args).toContain("--mcp-config");
   });
 
+  it("global keeps the folder's .mcp.json servers off: settings outrank user and project, and the agent can't write it", () => {
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: { ...preset, base: "global" } } });
+    const settings = JSON.parse(argAfter(args, "--settings"));
+    expect(settings.enableAllProjectMcpServers).toBe(false);
+    expect(settings.enabledMcpjsonServers).toEqual([]);
+    const denied = argAfter(args, "--disallowedTools").split(",");
+    for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) expect(denied).toContain(`${tool}(.mcp.json)`);
+    // Even a preset with no settings at all gets them.
+    const { settings: _, ...bare } = preset;
+    const plain = JSON.parse(argAfter(claudeArgs({ ...o, scope: { linked: [], engine: { ...bare, base: "global" } } }), "--settings"));
+    expect(plain).toEqual({ enableAllProjectMcpServers: false, enabledMcpjsonServers: [] });
+  });
+
+  it("isolated adds neither the .mcp.json settings nor its deny rules", () => {
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: preset } });
+    expect(JSON.parse(argAfter(args, "--settings"))).not.toHaveProperty("enableAllProjectMcpServers");
+    expect(argAfter(args, "--disallowedTools")).toBe(argAfter(claudeArgs(o), "--disallowedTools"));
+  });
+
   it("refuses an unknown base", () => {
     const engine = { ...preset, base: "user" as unknown as "global" };
     expect(() => claudeArgs({ ...o, scope: { linked: [], engine } })).toThrow(/base/);

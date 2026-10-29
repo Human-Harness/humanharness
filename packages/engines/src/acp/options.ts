@@ -1,6 +1,6 @@
 import type { Permissions } from "@humanharness/harness-sdk";
 import type { CommonOptions } from "../contract";
-import type { EngineDef } from "..";
+import type { EngineDef } from "../types";
 
 /** The ACP transport's options: the common ones plus the fields only ACP engines have. */
 export interface TransportOptions extends CommonOptions {

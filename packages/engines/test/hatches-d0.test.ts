@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
-import { AcpTransport } from "../src/acp";
-import { claudeArgs } from "../src/claude-cli";
+import { AcpTransport } from "../src/acp/client";
+import { claudeArgs } from "../src/claude/transport";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-d0-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

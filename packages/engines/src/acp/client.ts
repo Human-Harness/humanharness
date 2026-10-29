@@ -4,11 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
-import { classifyError } from "./classify";
-import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import { absoluteSearchPath, type EnginePreset, type LinkedAccess, type Transport, type TransportOptions, type TurnScope } from "./transport";
+import { classifyError } from "../classify";
+import { type ActivityKind, EDIT_PATH_MAX, type EnginePreset, type Event, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
+import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "../models";
+import { absoluteSearchPath } from "../search-path";
+import type { TransportOptions } from "./options";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {

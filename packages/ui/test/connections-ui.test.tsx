@@ -101,10 +101,56 @@ describe("Settings › Connections (tools spec §9)", () => {
     const set = vi.spyOn(c.connections, "set");
     await renderIn("en", <Sheet c={c} />);
     await screen.findByRole("group", { name: "GitHub token" });
+    const save = within(row("GitHub token")).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
     fireEvent.change(field("GitHub token"), { target: { value: "   " } });
-    fireEvent.click(within(row("GitHub token")).getByRole("button", { name: "Save" }));
+    expect(save.disabled).toBe(true);
+    // Enter in the field submits the form even with Save disabled: still nothing is sent.
+    fireEvent.submit(field("GitHub token").form!);
     expect(set).not.toHaveBeenCalled();
     expect(field("GitHub token").value).toBe("");
+    fireEvent.change(field("GitHub token"), { target: { value: "tok-123456789" } });
+    expect(save.disabled).toBe(false);
+  });
+
+  it("after Delete, focus stays in the row (on its field), not on the page", async () => {
+    const c = client();
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    const del = within(row("Jira API token")).getByRole("button", { name: "Delete" });
+    del.focus();
+    fireEvent.click(del);
+    await waitFor(() => expect(within(row("Jira API token")).getByText("Not set")).toBeTruthy());
+    await waitFor(() => expect(document.activeElement).toBe(field("Jira API token")));
+    expect(row("Jira API token").contains(document.activeElement)).toBe(true);
+  });
+
+  it("the field is described by the key's state and its help", async () => {
+    const c = client();
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    const describedBy = (label: string) =>
+      field(label)
+        .getAttribute("aria-describedby")!
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent);
+    expect(describedBy("Jira API token")).toEqual(["Set", "From id.atlassian.com › Security"]);
+    expect(describedBy("GitHub token")).toEqual(["Not set"]);
+  });
+
+  it("the same refusal twice is a new alert each time", async () => {
+    const c = client();
+    await renderIn("en", <Sheet c={c} />);
+    await screen.findByRole("group", { name: "GitHub token" });
+    fireEvent.change(field("GitHub token"), { target: { value: "short" } });
+    fireEvent.click(within(row("GitHub token")).getByRole("button", { name: "Save" }));
+    const first = await screen.findByRole("alert");
+    expect(first.textContent).toBe("A key is at least 8 characters");
+    fireEvent.change(field("GitHub token"), { target: { value: "short" } });
+    fireEvent.click(within(row("GitHub token")).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByRole("alert")).not.toBe(first));
+    expect(screen.getByRole("alert").textContent).toBe("A key is at least 8 characters");
+    expect(first.isConnected).toBe(false);
   });
 
   it("a refusal shows its message; Delete makes the row Not set", async () => {

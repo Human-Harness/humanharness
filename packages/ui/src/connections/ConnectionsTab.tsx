@@ -80,6 +80,12 @@ export function useConnections(client: HarnessClient): Connections {
 export function ConnectionsTab({ client }: { client: HarnessClient }) {
   const { t } = useTranslation();
   const { view, unavailable, error, save, remove } = useConnections(client);
+  // Each refusal is a new alert (a new node), so the same text twice is announced twice.
+  const [refusals, setRefusals] = useState(0);
+  const counted = (result: ConnectionResult) => {
+    if (!result.ok) setRefusals((n) => n + 1);
+    return result;
+  };
   return (
     <div className="hh-tab">
       <p className="hh-caption">{t("connections.intro")}</p>
@@ -87,12 +93,12 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
       {view && !unavailable && (
         <div className="hh-rows">
           {view.connections.map((c) => (
-            <SecretField key={c.id} connection={c} onSave={(value) => save(c.id, value)} onDelete={() => remove(c.id)} />
+            <SecretField key={c.id} connection={c} onSave={(value) => save(c.id, value).then(counted)} onDelete={() => remove(c.id).then(counted)} />
           ))}
         </div>
       )}
       {error && (
-        <p className="hh-field-error" role="alert">
+        <p key={refusals} className="hh-field-error" role="alert">
           {error}
         </p>
       )}

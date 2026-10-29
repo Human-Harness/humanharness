@@ -789,6 +789,14 @@ export default defineTool({
     expect(fs.existsSync(path.join(r.harness?.root ?? "", "dist"))).toBe(false);
   });
 
+  it("a failing build with bad uses gives only tool-build, no tool-uses", async () => {
+    const code = `import { readFileSync } from "node:fs";\n${tool("due-today", '{ hosts: ["api.x.com"], secrets: ["jira"], files: "write" }').replace('"due-today"', "String(readFileSync)")}`;
+    const r = await checkHarness(await fixture(withTool(code)));
+    const tools = r.findings.filter((f) => f.rule === "tool-uses" || f.rule === "tool-build");
+    expect(tools.map((f) => f.rule)).toEqual(["tool-build"]);
+    expect(tools[0].message).toBe("tools/due-today.ts:1: imports node:fs, which a tool can't use: tools reach the world only through ctx");
+  });
+
   it("a tool inside the permissions has no tool-uses finding", async () => {
     const r = await checkHarness(await fixture(withTool(tool("Lists the notes due today, oldest first.", '{ files: "read" }'))));
     expect(r.findings.filter((f) => f.rule === "tool-uses" || f.rule === "tool-build")).toEqual([]);

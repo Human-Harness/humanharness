@@ -173,13 +173,18 @@ export async function buildTools(dir: string, o: { write: boolean; harness?: Loa
   return { json, files };
 }
 
-/** Swaps in `dist/tools/` (writeDist: a failed write leaves the previous folder), then `dist/tools.json` by rename. */
+/**
+ * Writes `dist/tools.json` to a temp file first, then swaps in `dist/tools/` (writeDist: a failed write leaves the
+ * previous folder), then renames the temp over `dist/tools.json`: a failed tools.json write never leaves new bundles
+ * beside an old tools.json.
+ */
 async function writeTools(dist: string, files: Map<string, Uint8Array | string>): Promise<void> {
   const bundles = new Map([...files].filter(([name]) => name.startsWith("tools/")).map(([name, c]) => [name.slice("tools/".length), c]));
-  await writeDist(path.join(dist, "tools"), bundles);
+  await fs.mkdir(dist, { recursive: true });
   const temp = path.join(dist, `.tools-${randomBytes(6).toString("hex")}.json`);
   try {
     await fs.writeFile(temp, files.get("tools.json") ?? "");
+    await writeDist(path.join(dist, "tools"), bundles);
     await fs.rename(temp, path.join(dist, "tools.json"));
   } finally {
     await fs.rm(temp, { force: true });

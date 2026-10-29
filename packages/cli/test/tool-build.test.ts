@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { toolsJsonSchema } from "@humanharness/harness-sdk";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { checkHarness } from "../src/check";
 import { type DevSpawn, devCommand } from "../src/dev";
 import { initHarness } from "../src/init";
@@ -123,6 +124,48 @@ describe("humanharness build (tools spec §3.2)", () => {
     expect(read(dir, "dist/tools/count-notes.js")).toBe(bundle);
     expect(read(dir, "dist/keep.txt")).toBe("mine");
     expect(fs.readdirSync(path.join(dir, "dist")).sort()).toEqual(["keep.txt", "tools", "tools.json"]);
+  });
+
+  it("a failed tools.json write leaves the old bundles: new bundles never pair with an old tools.json", async () => {
+    const dir = await harness({ "count-notes": COUNT_NOTES });
+    await buildTools(dir, { write: true });
+    const before = read(dir, "dist/tools.json");
+    const bundle = read(dir, "dist/tools/count-notes.js");
+    fs.writeFileSync(path.join(dir, "tools", "count-notes.ts"), COUNT_NOTES.replace("return files.map", "if (files.length > 99) return [];\n    return files.map"));
+    const write = fs.promises.writeFile;
+    const spy = vi.spyOn(fs.promises, "writeFile").mockImplementation((file, ...rest) => {
+      if (/[\\/]\.tools-[0-9a-f]+\.json$/.test(String(file))) return Promise.reject(new Error("disk full"));
+      return write(file, ...rest);
+    });
+    try {
+      expect(await failure(buildTools(dir, { write: true }))).toBe("disk full");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(read(dir, "dist/tools/count-notes.js") === bundle, "the old bundle stays").toBe(true);
+    expect(read(dir, "dist/tools.json")).toBe(before);
+    expect(fs.readdirSync(path.join(dir, "dist")).sort()).toEqual(["tools", "tools.json"]);
+    // The next build goes through: the new bundle and its tools.json land together.
+    await buildTools(dir, { write: true });
+    expect(read(dir, "dist/tools/count-notes.js") === bundle, "the new bundle is in").toBe(false);
+  });
+
+  it("a tool throwing at top level leaves no hh-tool-meta-* temp module behind", async () => {
+    const leftovers = () => fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("hh-tool-meta-"));
+    const dir = await harness({ boom: `throw new Error("boom at load");\n${COUNT_NOTES}` });
+    const spy = vi.spyOn(fs.promises, "writeFile");
+    let temp: string | undefined;
+    try {
+      const message = await failure(buildTools(dir, { write: false }));
+      expect(message).toBe("tools/boom.ts: boom at load");
+      temp = spy.mock.calls.map(([f]) => String(f)).find((f) => path.basename(f).startsWith("hh-tool-meta-"));
+    } finally {
+      spy.mockRestore();
+    }
+    // The temp module was written (the throw happened on import), and it is gone.
+    expect(temp).toBeDefined();
+    expect(fs.existsSync(temp as string)).toBe(false);
+    expect(leftovers()).not.toContain(path.basename(temp as string));
   });
 
   it("a tool file outside the harness folder is refused", async () => {

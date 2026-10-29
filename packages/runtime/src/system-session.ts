@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { type McpServerSpec, openRpc } from "@humanharness/blocks";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { AcpTransport } from "./acp";
+import { AcpTransport } from "@humanharness/engines/registry";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { EngineError, Event } from "./events";
 import type { SystemTaskResult } from "./system";

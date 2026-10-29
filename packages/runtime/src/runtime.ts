@@ -19,7 +19,7 @@ import {
   refreshInstructions,
   writeInstructions,
 } from "@humanharness/workspace";
-import { AcpTransport } from "./acp";
+import { AcpTransport } from "@humanharness/engines/registry";
 import { ClaudeCliTransport } from "./claude-cli";
 import { turnDocuments } from "./documents";
 import type { Event } from "./events";

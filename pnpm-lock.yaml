@@ -282,12 +282,19 @@ importers:
 
   packages/engines:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^1.8.0
+        version: 1.8.0(zod@4.6.5)
       '@humanharness/blocks':
         specifier: workspace:*
         version: link:../blocks
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk
+    devDependencies:
+      '@humanharness/fake-agent':
+        specifier: workspace:*
+        version: link:../fake-agent
 
   packages/fake-agent:
     dependencies:
@@ -373,9 +380,6 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@agentclientprotocol/sdk':
-        specifier: ^1.8.0
-        version: 1.8.0(zod@4.6.5)
       '@humanharness/blocks':
         specifier: workspace:*
         version: link:../blocks

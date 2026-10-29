@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import { type Effort, type ModelChoice, type ModelProfile, classifyError, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
-import { type ActivityKind, type Event, fail } from "./events";
-import type { Transport, TransportOptions } from "./transport";
+import { classifyError } from "../classify";
+import { type ActivityKind, type Event, type Transport, fail } from "../contract";
+import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "../models";
+import type { TransportOptions } from "./options";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {

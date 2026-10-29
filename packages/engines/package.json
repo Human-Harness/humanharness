@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/index.ts", "./assets/*": "./assets/*" },
+  "exports": { ".": "./src/index.ts", "./registry": "./src/registry.ts", "./assets/*": "./assets/*" },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.8.0",
     "@humanharness/blocks": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@humanharness/fake-agent": "workspace:*"
   }
 }

@@ -14,7 +14,7 @@ import { type HarnessWorkspace, createWorkspace } from "../src/workspace";
 // Counts the sockets a slot opens: a step slot opens none besides its bridge.
 vi.mock("@humanharness/blocks", async (importOriginal) => {
   const real = await importOriginal<typeof import("@humanharness/blocks")>();
-  return { ...real, openRpc: vi.fn(real.openRpc) };
+  return { ...real, openRpc: vi.fn(real.openRpc), openBridge: vi.fn(real.openBridge) };
 });
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-wsstep-"));
@@ -249,21 +249,18 @@ describe("a step slot's own folder (tools spec §7.1, R1)", () => {
     expect(commits()).toBeGreaterThan(before);
   });
 
-  it("ACP: session/new's cwd is the empty folder, read-only mode, ui the only server, a read is refused", async () => {
-    // A read with no location: allowed in any other session, refused in an MCP-only one.
-    const { ws, parent, readLog } = await stepSetup("codex", {
-      turns: [[{ permission: { toolCall: { toolCallId: "r1", kind: "read" } } }, { stop: "end_turn" }]],
-    });
-    const slot = await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" });
-    const [dir] = fs.readdirSync(parent);
-    await slot.send("x", () => {}).done;
-    const log = readLog();
-    const created = log.find((l) => l.method === "session/new")?.params;
-    expect(created.cwd).toBe(path.join(parent, dir));
-    expect((created.mcpServers as { name: string }[]).map((m) => m.name)).toEqual(["ui"]);
-    expect(log.find((l) => l.method === "session/set_mode")?.params.modeId).toBe("read-only");
-    expect(log.find((l) => l.method === "permission-outcome")?.params).not.toEqual({ outcome: "selected", optionId: "allow" });
-    await slot.close();
-    expect(fs.readdirSync(parent)).toEqual([]);
+  it("ACP: an AI step runs only with Claude for now; refused before any folder or socket", async () => {
+    // Codex's read-only sandbox still reads the whole disk and its shell doesn't ask: no step on an ACP engine.
+    const { ws, parent } = await stepSetup("codex", { turns: [] });
+    const openBridge = vi.mocked(blocks.openBridge);
+    const openRpc = vi.mocked(blocks.openRpc);
+    openBridge.mockClear();
+    openRpc.mockClear();
+    await expect(ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" })).rejects.toThrow("An AI step runs only with Claude for now");
+    expect(openBridge).not.toHaveBeenCalled();
+    expect(openRpc).not.toHaveBeenCalled();
+    expect(fs.existsSync(parent)).toBe(false);
+    // Task and job slots on the same engine open as before.
+    await expect(ws.openSlot({ key: "t1" })).resolves.toBeDefined();
   });
 });

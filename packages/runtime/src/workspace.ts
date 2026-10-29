@@ -44,7 +44,7 @@ export interface SlotOptions {
   /**
    * A job's slot (Decision 11): its `ui` server gets `HH_JOB=1`. A recipe's AI step (tools spec §7.1, R1): `step`, whose
    * `ui` server serves `job`'s `step_output` alone, MCP only, run in its own empty folder (removed on close) with no turn
-   * window and no history commits. Default: a task's, exactly today's specs.
+   * window and no history commits; Claude engines only for now (refused on ACP). Default: a task's, exactly today's specs.
    */
   kind?: "task" | "job" | "step";
   /** A job's own permissions: only ever narrower than the harness's (spec §8, T5). Ignored for a task's or step's slot. */
@@ -241,6 +241,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     // A recipe's AI step reaches its step_output and nothing else (tools spec §7.1, R1): none of the sockets below.
     const step = o.kind === "step";
     if (step) {
+      // Claude only for now (fail closed): an ACP engine's own sandbox can't keep a step from reading (Codex's read-only
+      // mode still reads the whole disk and runs read-only shell commands without asking; OpenCode's read, glob, grep
+      // and list tools never ask), so injected `## Data` could copy any file into step_output. Lifted only with
+      // engine-level hardening.
+      if (engine.transport.kind !== "claude-cli") throw new Error("An AI step runs only with Claude for now");
       if (!o.job) throw new Error("A step slot needs its job");
       const job = harness.jobs && Object.hasOwn(harness.jobs, o.job) ? harness.jobs[o.job] : undefined;
       if (!job || !aiStepOf(job)) throw new Error(`No AI step for job "${o.job}"`);
@@ -278,8 +283,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       await bridge.close().catch(() => {});
       throw new Error(closing ? "The workspace is closing" : `A slot is already open for ${o.key}`);
     }
-    // A step's engine never runs in the work folder (R1): ACP read tools and read-only shells don't ask, and Claude would
-    // load AGENTS.md. Its own empty folder instead, like a system session's: nothing to read, no history, removed on close.
+    // A step's engine never runs in the work folder (R1): Claude would load AGENTS.md (through CLAUDE.md) and a turn there
+    // would open a window in the work folder's ledger. Its own empty folder instead, like a system session's: nothing to
+    // read, no history, removed on close.
     let stepFolder: string | null = null;
     if (step) {
       try {
@@ -322,8 +328,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       ],
       permissions,
       references: step ? [] : references.map((r) => r.path),
-      // Claude gets no Read, Glob or Grep and ACP read requests that ask are refused; what an engine reads without
-      // asking (OpenCode's read tools, Codex's read-only shell) finds only the step's own empty folder (R1).
+      // Claude gets no Read, Glob or Grep (R1). A step slot is Claude only (see openSlotNow): on ACP, mcpOnly refuses
+      // only the reads that ask, which isn't enough.
       ...(step ? { mcpOnly: true } : {}),
       ...acpFields(engine, permissions.edit),
       // Codex reads CODEX_CONFIG by name: only it takes an engine preset's codex part. Other ACP engines (Kimi,

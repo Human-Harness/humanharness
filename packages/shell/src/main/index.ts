@@ -814,8 +814,11 @@ async function scopesView(): Promise<ScopesView> {
   await scopesSettled();
   const c = await validConfig();
   if (!c || !scoped()) return { open: null, list: [] };
-  // Linked folders reach the window only through their own channel, signed ones only (hatches L1). D0: no key to drop.
-  const list = (await scopeStoreFor(baseOf(c)).list()).map(({ linked: _linked, ...s }) => s);
+  // Linked folders reach the window only through their own channel, signed ones only (hatches L1); an engine approval
+  // only through the Engine config view (its tag is the app's). D0: no key to drop.
+  const list = (await scopeStoreFor(baseOf(c)).list())
+    .map(({ linked: _linked, ...s }) => s)
+    .map(({ engineApproval: _approval, ...s }) => s);
   return { open: await tasks.currentScope(), list };
 }
 

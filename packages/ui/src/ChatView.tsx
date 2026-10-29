@@ -60,6 +60,7 @@ import { FirstOpenOffer } from "./sidekick/PresetOffer";
 import { ReviewHint } from "./sidekick/ReviewHint";
 import { SidekickPanel, SidekickRail, waitingCards } from "./sidekick/SidekickPanel";
 import { useNarrow } from "./sidekick/useNarrow";
+import { EngineNotice } from "./hatches/EngineNotice";
 import { useSidekick } from "./sidekick/useSidekick";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
@@ -1438,6 +1439,10 @@ export function ChatView({
           )}
           <Main className="hh-main">
             {taskStrip}
+            {/* The task runs without its scope's engine config (hatches spec §5.3): only with enginePresets (D0). */}
+            {state.hatches?.enginePresets && !slim && tasks.current?.engineNotice && tasks.current.scope && (
+              <EngineNotice client={client} state={state} scope={tasks.current.scope} notice={tasks.current.engineNotice} />
+            )}
             {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
             {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
               <PhaseStepper

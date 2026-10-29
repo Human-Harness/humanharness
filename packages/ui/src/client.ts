@@ -868,7 +868,7 @@ export function canOpenFile(file: string): boolean {
 }
 
 /** A scope as the window sees it (spec §3.4). Its linked folders come only through `scopes.linked` (signed ones). */
-export type ScopeView = Omit<ScopeEntry, "linked">;
+export type ScopeView = Omit<ScopeEntry, "linked" | "engineApproval">;
 
 /** A scope's linked folder as the window sees it (hatches spec §3.2). */
 export interface LinkedView {
@@ -917,6 +917,18 @@ export interface EngineRunsCommandView {
   layer: string;
   /** The file it comes from, relative to the scope's engine folder (`codex.toml` hooks run on Codex only). */
   file: string;
+  /** It runs a package runner (`npx`, `uvx`) or the like: it may load code the approval doesn't cover. */
+  loadsOtherCode?: true;
+}
+/** A skill of a scope's engine config, with what its frontmatter asks for while it runs. */
+export interface EngineSkillView {
+  name: string;
+  description: string;
+  /** `allowed-tools`: tools it may use without asking while it runs. */
+  allowedTools: string[];
+  model?: string;
+  /** `context: fork`: it runs in a context of its own. */
+  fork?: true;
 }
 /** What the scope settings' "Engine config" shows of a scope's engine folder (hatches spec §5.3). */
 export interface EngineConfigView {
@@ -927,15 +939,19 @@ export interface EngineConfigView {
   /** Shown first: hooks, then servers; the scope's own, then each action layer's. */
   runsCommands: EngineRunsCommandView[];
   instructions: { layer: string; text: string }[];
-  skills: string[];
+  skills: EngineSkillView[];
   /** `ignored`: the keys the app drops from the agent's file (`permissionMode`). */
   agents: { name: string; description: string; ignored: string[] }[];
   /** codex.toml's keys, dotted (its hooks are in `runsCommands`). */
   codexKeys: string[];
   /** Keys dropped rather than refused, each led by its file (`settings.json: defaultMode`). */
   ignored: string[];
+  /** settings.json's permission rules per layer ("" the scope's own); only layers with any. */
+  permissions: { layer: string; allow: string[]; deny: string[]; ask: string[] }[];
   /** Files outside the engine folder its commands name: they join the hash (absolute). */
   scripts: string[];
+  /** The scripts among `scripts` that load other code (imports, a package runner): not covered by the approval. */
+  loadsOtherCode: string[];
   /** A config with any can't be approved. */
   refusals: { file: string; message: string }[];
   /** What `approve` takes back: main computes it again and approves only when equal. */
@@ -943,6 +959,8 @@ export interface EngineConfigView {
   /** The person approved exactly this (the app's signature holds). */
   approved: boolean;
   approvedAt?: string;
+  /** Approved before, but the folder no longer hashes to what was approved. */
+  changed?: true;
 }
 /** `changed`: the folder no longer hashes to what was shown; `refused`: it holds refusals. */
 export type EngineApproveResult = { ok: true; view: EngineConfigView } | { ok: false; reason: "changed" | "refused" };

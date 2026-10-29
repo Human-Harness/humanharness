@@ -147,6 +147,12 @@ describe("hatches IPC surface (hatches D0)", () => {
     expect(view).toContain(".map(({ linked: _linked, ...s }) => s)");
   });
 
+  it("the window's scope list never carries an engine approval (only the Engine config view says approved)", async () => {
+    const index = await read("index.ts");
+    const view = group(index, index.indexOf("async function scopesView(): Promise<ScopesView>"), /\{/);
+    expect(view).toContain(".map(({ engineApproval: _approval, ...s }) => s)");
+  });
+
   it("D0: turns, AGENTS.md, histories and jobs reach linked folders only through the registered deps", async () => {
     const index = await read("index.ts");
     // The deps are made only by linkedIpcDeps (called only under hasLinkedFolders); linked_ answers null without them.

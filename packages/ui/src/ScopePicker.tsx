@@ -58,9 +58,9 @@ export function ScopePicker({
   const name = state.scopes?.label ?? "";
   // An archived scope still shows while it is the open one, so the select never lies.
   const shown = list.filter((s) => !s.archived || s.id === open);
-  // Linked folders only (D0: no button without them; a backend alone has no scope settings): the open scope's settings.
+  // Linked folders or engine presets only (D0: no button without them; a backend alone has no scope settings).
   const openTitle = open === null ? null : (list.find((s) => s.id === open)?.title ?? open);
-  const withSettings = state.hatches?.linkedFolders !== undefined && open !== null && openTitle !== null;
+  const withSettings = (state.hatches?.linkedFolders !== undefined || state.hatches?.enginePresets === true) && open !== null && openTitle !== null;
   const closeSettings = () => {
     setSettings(false);
     settingsButton.current?.focus();

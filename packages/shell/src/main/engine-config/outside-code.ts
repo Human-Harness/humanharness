@@ -1,0 +1,55 @@
+import path from "node:path";
+import { commandWords, type ScriptCommand } from "./script-refs";
+
+// Code the approval doesn't cover (hatches spec §5.3, E2's limit). The hash holds the engine folder and the scripts its
+// commands name, never what those load in turn: a script's imports, a package a runner fetches (`npx`, `uvx`), a
+// module `python -m` finds. The approval screen says so next to each such command and script. A hint for the person,
+// not a boundary: false positives are fine, and a script can always load code in ways no pattern sees.
+
+/** Programs that fetch or find a package to run (`npx x`, `uvx x`), alone or with their first argument. */
+const RUNNERS = new Set(["npx", "pnpx", "bunx", "uvx", "pipx"]);
+const RUNNER_VERBS: Record<string, ReadonlySet<string>> = {
+  npm: new Set(["exec", "x"]),
+  pnpm: new Set(["dlx", "exec"]),
+  yarn: new Set(["dlx", "exec"]),
+  bun: new Set(["x"]),
+  uv: new Set(["run", "tool"]),
+  deno: new Set(["run"]),
+};
+
+/** True when the words run a package runner, `python -m`, something in `node_modules/.bin`, or a URL. */
+function runsPackages(words: readonly string[]): boolean {
+  return words.some((w, i) => {
+    const name = path.basename(w);
+    if (RUNNERS.has(name)) return true;
+    if (Object.hasOwn(RUNNER_VERBS, name) && RUNNER_VERBS[name]!.has(words[i + 1] ?? "")) return true;
+    if (/^python[0-9.]*$/.test(name) && words[i + 1] === "-m") return true;
+    return w.includes("node_modules/.bin/") || /^https?:\/\//i.test(w);
+  });
+}
+
+/** A command (a hook's shell text, or a server's program and arguments) that may run code outside its approval. */
+export function commandLoadsOtherCode(command: ScriptCommand): boolean {
+  try {
+    return runsPackages(commandWords(command, ""));
+  } catch {
+    // Its words can't be read for sure (the config is refused for it anyway): say so rather than nothing.
+    return true;
+  }
+}
+
+// JavaScript/TypeScript (`import x from`, `import(`, `require(`), Python (`import x`, `from x import`), shell
+// (`source x`, `. x`), Ruby and Perl (`require`, `load`, `use`), and any package runner named in the text.
+const IMPORTS = [
+  /(^|[\s;])import\s*[\s{*"'(]/m,
+  /\brequire(_relative)?\s*[("']/,
+  /^\s*from\s+\S+\s+import\s/m,
+  /^\s*(source|\.)\s+\S/m,
+  /^\s*(use|load)\s+\S/m,
+  /\b(npx|pnpx|bunx|uvx|pipx)\s/,
+];
+
+/** A script's text loads other code (an import, a `source`, a package runner). */
+export function importsOtherCode(text: string): boolean {
+  return IMPORTS.some((re) => re.test(text));
+}

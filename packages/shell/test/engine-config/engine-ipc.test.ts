@@ -102,12 +102,18 @@ describe("engine IPC (E10)", () => {
       { layer: "", text: "Use tabs.\n" },
       { layer: "study", text: "Quiz me." },
     ]);
-    expect(v.skills).toEqual(["fmt"]);
+    expect(v.skills).toEqual([{ name: "fmt", description: "Formats files", allowedTools: [] }]);
     expect(v.agents).toEqual([{ name: "reviewer", description: "Reviews changes", ignored: ["permissionMode"] }]);
     expect(v.codexKeys).toEqual(["model_verbosity", "hide_agent_reasoning"]);
     // The agent's ignored key is shown with the agent; the settings' (the scope's and the layer's) here.
     expect(v.ignored).toEqual(["settings.json: defaultMode", "actions/study/settings.json: permissions.defaultMode"]);
+    expect(v.permissions).toEqual([
+      { layer: "", allow: ["Bash(npm test)"], deny: [], ask: [] },
+      { layer: "study", allow: [], deny: ["Bash(git push:*)"], ask: [] },
+    ]);
     expect(v.scripts).toEqual([path.join(w.base, "tools/lint.js"), path.join(w.base, "tools/stop.js")]);
+    expect(v.loadsOtherCode).toEqual([]);
+    expect(v).not.toHaveProperty("changed");
     expect(v.refusals).toEqual([]);
     expect(v.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(v.approved).toBe(false);
@@ -235,5 +241,39 @@ describe("engine IPC (E10)", () => {
       ["hh:engineConfigChanged", null],
       ["hh:engineConfigChanged", null],
     ]);
+  });
+
+  it("shows what each skill asks for, and the code its commands and scripts may load outside the approval", async () => {
+    const w = await setup(
+      {
+        "skills/fmt/SKILL.md": "---\nname: fmt\ndescription: Formats files\nallowed-tools: Bash(npm run fmt), Read\nmodel: haiku\ncontext: fork\n---\nGo.\n",
+        "skills/peek/SKILL.md": "---\ndescription: Peeks\nallowed-tools: [Read, Grep]\n---\nGo.\n",
+        "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] }, fetch: { command: "uvx", args: ["mcp-fetch"] } } }),
+        "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "npx -y some-tool" }, { type: "command", command: "node ./tools/stop.js" }] }] } }),
+      },
+      { "tools/lint.js": "const x = require('./helpers');", "tools/stop.js": "console.log('stop')" },
+    );
+    const v = (await w.view())!;
+    expect(v.skills).toEqual([
+      { name: "fmt", description: "Formats files", allowedTools: ["Bash(npm run fmt)", "Read"], model: "haiku", fork: true },
+      { name: "peek", description: "Peeks", allowedTools: ["Read", "Grep"] },
+    ]);
+    expect(v.runsCommands.map((r) => [r.command, r.loadsOtherCode ?? false])).toEqual([
+      ["npx -y some-tool", true],
+      ["node ./tools/stop.js", false],
+      ["node", false],
+      ["uvx", true],
+    ]);
+    expect(v.loadsOtherCode).toEqual([path.join(w.base, "tools/lint.js")]);
+  });
+
+  it("an approval the folder no longer matches shows as changed", async () => {
+    const w = await setup({ "instructions.md": "a" });
+    const first = (await w.view())!;
+    expect(await w.approve("intro", first.hash)).toMatchObject({ ok: true });
+    w.write("instructions.md", "b");
+    const v = (await w.view())!;
+    expect(v.approved).toBe(false);
+    expect(v.changed).toBe(true);
   });
 });

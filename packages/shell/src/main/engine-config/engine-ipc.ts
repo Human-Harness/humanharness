@@ -1,9 +1,10 @@
 import type { EngineApproval, ScopeStore } from "@humanharness/workspace";
 import { ENGINE_PREFIX, isScopeId } from "@humanharness/workspace";
-import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView } from "@humanharness/ui/client";
+import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView, EngineSkillView } from "@humanharness/ui/client";
 import { engineApprovalTag } from "./approval";
 import type { Hooks } from "./clean";
-import { agentFromMarkdown } from "./frontmatter";
+import { agentFromMarkdown, parseFrontmatter } from "./frontmatter";
+import { commandLoadsOtherCode, importsOtherCode } from "./outside-code";
 import type { EngineConfig, EngineLayer } from "./read-config";
 
 export type { EngineConfigView };
@@ -40,9 +41,16 @@ export interface EngineIpc {
 function hookItems(hooks: Hooks | undefined, layer: string, file: string): EngineRunsCommandView[] {
   return Object.entries(hooks ?? {}).flatMap(([event, matchers]) =>
     matchers.flatMap((m) =>
-      m.hooks.map((h) => ({ kind: "hook" as const, label: m.matcher ? `${event} · ${m.matcher}` : event, command: h.command, args: [], layer, file })),
+      m.hooks.map((h) =>
+        withOutside({ kind: "hook" as const, label: m.matcher ? `${event} · ${m.matcher}` : event, command: h.command, args: [], layer, file }, h.command),
+      ),
     ),
   );
+}
+
+/** `item` marked when its command may load code the approval doesn't cover (a package runner, `python -m`). */
+function withOutside(item: EngineRunsCommandView, command: string | readonly string[]): EngineRunsCommandView {
+  return commandLoadsOtherCode(command) ? { ...item, loadsOtherCode: true } : item;
 }
 
 /** A layer's hooks then its servers (`layer` "" for the scope's own; `prefix` the layer's folder). */
@@ -50,7 +58,9 @@ function layerItems(l: EngineLayer, layer: string, prefix: string, codexHooks?: 
   return [
     ...hookItems(l.settings?.hooks, layer, `${prefix}settings.json`),
     ...hookItems(codexHooks, layer, "codex.toml"),
-    ...l.servers.map((s) => ({ kind: "server" as const, label: s.name, command: s.command, args: [...s.args], layer, file: `${prefix}mcp.json` })),
+    ...l.servers.map((s) =>
+      withOutside({ kind: "server" as const, label: s.name, command: s.command, args: [...s.args], layer, file: `${prefix}mcp.json` }, [s.command, ...s.args]),
+    ),
   ];
 }
 
@@ -69,6 +79,46 @@ function codexKeys(codex: Record<string, unknown> | null): string[] {
   };
   if (codex) walk(codex, "");
   return out;
+}
+
+/** Tool rules split on commas and spaces outside parentheses (`Read, Bash(npm run x)`). */
+function splitRules(text: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth = Math.max(0, depth - 1);
+    if (depth === 0 && (ch === "," || /\s/.test(ch))) {
+      out.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** A frontmatter value as a list (`allowed-tools: Read, Grep` or `[Read, Grep]`). */
+const listOf = (v: string | string[] | undefined): string[] =>
+  (v === undefined ? [] : Array.isArray(v) ? v : splitRules(v)).map((x) => x.trim()).filter((x) => x !== "");
+
+/** A skill as the screen shows it: what its frontmatter asks for while it runs, read again from its file. */
+function skillView(s: { name: string; description: string }, data: Buffer | undefined): EngineSkillView {
+  let fields: Record<string, string | string[]> = {};
+  try {
+    if (data) fields = parseFrontmatter(data.toString("utf8")).fields;
+  } catch {
+    // Refused: listed with the refusals.
+  }
+  const own = (k: string) => (Object.hasOwn(fields, k) ? fields[k] : undefined);
+  const model = own("model");
+  return {
+    name: s.name,
+    description: s.description,
+    allowedTools: listOf(own("allowed-tools")),
+    ...(typeof model === "string" && model !== "" ? { model } : {}),
+    ...(own("context") === "fork" ? { fork: true as const } : {}),
+  };
 }
 
 /** The view of `config` (plain data: it crosses the bridge by copy). Commands come first: the screen leads with them. */
@@ -101,15 +151,25 @@ export function engineConfigView(scope: string, config: EngineConfig, approval: 
     codexLimit,
     runsCommands,
     instructions,
-    skills: config.skills.map((s) => s.name),
+    skills: config.skills.map((s) => skillView(s, config.files.get(`skills/${s.name}/SKILL.md`))),
     agents: Object.entries(config.agents).map(([name, a]) => ({ name, description: a.description, ignored: agentIgnored.get(name) ?? [] })),
     codexKeys: codexKeys(config.codex),
     ignored: [...config.ignored.filter((i) => !i.startsWith("agents/")), ...actions.flatMap((id) => config.actions[id]!.ignored)],
+    permissions: [{ layer: "", l: config as EngineLayer }, ...actions.map((id) => ({ layer: id, l: config.actions[id]! }))].flatMap(({ layer, l }) => {
+      const p = l.settings?.permissions;
+      const rules = { allow: [...(p?.allow ?? [])], deny: [...(p?.deny ?? [])], ask: [...(p?.ask ?? [])] };
+      return rules.allow.length + rules.deny.length + rules.ask.length > 0 ? [{ layer, ...rules }] : [];
+    }),
     scripts: [...config.scripts],
+    loadsOtherCode: config.scripts.filter((p) => {
+      const data = config.scriptFiles.get(p);
+      return data !== undefined && importsOtherCode(data.toString("utf8"));
+    }),
     refusals: config.refusals.map((r) => ({ file: r.file, message: r.message })),
     hash: config.hash,
     approved,
     ...(approved ? { approvedAt: approval.at } : {}),
+    ...(approval !== null && !approved ? { changed: true as const } : {}),
   };
 }
 

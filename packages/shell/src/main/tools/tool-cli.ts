@@ -11,3 +11,4 @@ export { runPreSteps, runToolStep, type StepRegistry, type StepResult } from "./
 export { preparedSection, type PreparedPart } from "./prepared-section";
 export { readToolsJson, type ToolsState } from "./tools-json";
 export { readToolFixtures } from "./tool-fixture-files";
+export { recordedToolTransport, readToolRecordings } from "./recorded-transport";

@@ -1,5 +1,5 @@
 import { readAnswer } from "@humanharness/harness-sdk";
-import { type MockBlock, type MockNote, type MockTurn, type MockUsage, type MockWrite, type Recording, folderRelative } from "./mock";
+import { type MockBlock, type MockNote, type MockToolCall, type MockTurn, type MockUsage, type MockWrite, type Recording, folderRelative } from "./mock";
 
 /** Played when a reply isn't recorded and the recording has no `fallback` (spec 3e §2). */
 export const DEFAULT_FALLBACK = "Not recorded in this test.";
@@ -16,6 +16,8 @@ export interface SessionPosition {
 export interface Play {
   text: string;
   blocks: MockBlock[];
+  /** The agent's calls on the `tools` MCP server, made before the blocks (tools spec §12); none for most turns. */
+  tools: MockToolCall[];
   note?: MockNote;
   writes: MockWrite[];
   /** Folder-relative paths the turn reads (context-panel spec §7). */
@@ -104,6 +106,7 @@ function playTurn(turn: MockTurn): Play {
   return {
     text: turn.text,
     blocks: turn.blocks,
+    tools: turn.tools ?? [],
     ...(turn.note ? { note: turn.note } : {}),
     writes: turn.writes,
     reads: turn.reads ?? [],
@@ -119,6 +122,7 @@ function playTurn(turn: MockTurn): Play {
 const quiet = (text: string, blocks: MockBlock[] = [], note?: MockNote, usage?: MockUsage): Play => ({
   text,
   blocks,
+  tools: [],
   ...(note ? { note } : {}),
   writes: [],
   reads: [],

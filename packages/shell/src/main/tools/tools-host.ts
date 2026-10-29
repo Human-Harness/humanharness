@@ -19,6 +19,7 @@ import { preparedSection } from "./prepared-section";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
 import { type JobLimits, TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
+import { recordedToolTransport, readToolRecordings } from "./recorded-transport";
 import { toolFiles } from "./tool-files";
 import type { ToolHost } from "./tool-host";
 import { LOG_CHARS, TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
@@ -116,6 +117,13 @@ export interface ToolsHostDeps {
   engine?(): Promise<string>;
   /** The harness has scopes: the rows and a pre-step's history trailer name the task's scope only then (D2). */
   scoped?(): boolean;
+  /**
+   * Mock mode (`dev --mock`, tools spec §12, Decision 10; absent: the real transport, D0): the tools run for real, but
+   * each one's `ctx.fetch` and `ctx.exec` answer only from `<dir>/<tool>/*.json` ("Not recorded: <target>" otherwise),
+   * read once per tool per start; no command is looked up and no host name resolved; every key is `fixture-<id>` and
+   * the key store is never read (A2, A7).
+   */
+  mock?: { dir: string };
   log(message: string, err?: unknown): void;
 }
 
@@ -262,6 +270,19 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   const trailers = new Map<string, HistoryTrailer | undefined>();
   /** The pre calls (and their cut notes) of each start being prepared, by task: shown with its first turn, not live. */
   const prepared = new Map<string, ToolCallView[]>();
+  const mock = d.mock;
+  /** The keys: the store's, or in mock mode `fixture-<id>` without touching it (A7). */
+  const store: Pick<SecretStore, "harnessValues"> = mock ? { harnessValues: async (ids) => Object.fromEntries(ids.map((id) => [id, `fixture-${id}`])) } : d.store;
+  /** Mock mode: each tool's recorded transport, made on its first access. */
+  const recorded = new Map<string, Promise<ReturnType<typeof recordedToolTransport>>>();
+  const recordedOf = (dir: string, tool: string) => {
+    let t = recorded.get(tool);
+    if (!t) {
+      t = readToolRecordings(dir, tool, d.log).then(recordedToolTransport);
+      recorded.set(tool, t);
+    }
+    return t;
+  };
 
   /**
    * The trace of the current base. Each base is pruned once, before its trace is first used: the base at start, and
@@ -282,7 +303,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   const secretValues = async (tool: string): Promise<string[]> => {
     if (!state.on || !Object.hasOwn(state.tools, tool)) return [];
     const ids = state.tools[tool]!.uses.secrets ?? [];
-    return ids.length > 0 ? Object.values(await d.store.harnessValues(ids)) : [];
+    return ids.length > 0 ? Object.values(await store.harnessValues(ids)) : [];
   };
 
   const brokerOf = (tool: string): ToolBroker => {
@@ -294,7 +315,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
       tool,
       meta: state.tools[tool]!,
       secrets: h.secrets ?? [],
-      store: d.store,
+      store,
       data: (op, ctx) => d.data(dataRequest(op), { scope: ctx.scope, tool: ctx.tool, ...withTrailer(callTrailer.getStore()?.trailer) }),
       files: async () => {
         const base = await d.base();
@@ -302,9 +323,18 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
         return toolFiles({ base, references: await d.references() });
       },
       fetch: d.fetch,
-      allowHost: d.allowHost,
       userData: d.userData,
-      exec: { resolve: d.exec.resolve, run: d.exec.run, env: async () => toolExecEnv(await d.exec.env()) },
+      ...(mock
+        ? {
+            // As plugins' fixture mode: nothing is resolved or looked up, and only the recorded exchanges answer.
+            allowHost: async () => true,
+            exec: { resolve: async (cmd: string) => path.resolve(path.sep, "fixture", path.basename(cmd)), run: d.exec.run, env: async () => toolExecEnv({}) },
+            transport: (id: string) => ({
+              fetch: (async (input: string | URL | Request, init?: RequestInit) => (await recordedOf(mock.dir, id)).fetch(input, init)) as typeof fetch,
+              run: (async (file, args, o) => (await recordedOf(mock.dir, id)).run(file, args, o)) as typeof runFile,
+            }),
+          }
+        : { allowHost: d.allowHost, exec: { resolve: d.exec.resolve, run: d.exec.run, env: async () => toolExecEnv(await d.exec.env()) } }),
       // As plugins (B6): the stored keys hidden first, then cut. Main's log (`d.log`) adds the "[tools]" itself.
       log: async (level, message) => {
         const keys = await secretValues(tool).catch(() => []);

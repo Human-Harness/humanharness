@@ -86,12 +86,17 @@ export async function resolveBinary(name: string, searchPath: string, d: Command
   return null;
 }
 
-/** How the app starts an engine. Null when the CLI isn't installed. Never adds credentials. */
+/**
+ * How the app starts an engine. Null when the CLI isn't installed. Never adds credentials. `sharedPath` (a harness
+ * with `enginePresets`): the PATH is the one the engine-config check uses (`engineSearchPath`, read once); without it
+ * the login PATH is read fresh each time, as before (D0).
+ */
 export async function engineCommand(
   engine: EngineDef,
   d: CommandDeps,
+  o: { sharedPath?: boolean } = {},
 ): Promise<{ command: string[]; env: Record<string, string> } | null> {
-  const PATH = await engineSearchPath(d);
+  const PATH = o.sharedPath ? await engineSearchPath(d) : await loginShellPath(d);
   if (engine.transport.kind === "claude-cli") {
     const binary = await resolveBinary(engine.transport.binary, PATH, d);
     return binary ? { command: [binary], env: { PATH } } : null;

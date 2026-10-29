@@ -932,7 +932,7 @@ async function prepareEngine() {
     if (!status.installed) return null;
     if (status.outdated) throw new EngineUnavailable("outdated-version");
     if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
-    cmd = await engineCommand(engine, commandDeps);
+    cmd = await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
   }
   if (!cmd) return null;
   const plugins = pluginsCtl;
@@ -1498,7 +1498,7 @@ const materialStageDeps: MaterialStageDeps = {
   },
   hasNotice,
   engine: getEngine,
-  command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+  command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),
   profile: async (engine, job) => {
     const models = cleanModels((await config.load()).models);
     const saved = await savedOffer(engine.id);
@@ -1588,7 +1588,7 @@ function buildTranslation(): TranslationService {
       if (hooks.mock) return null;
       const engine = await translateEngine(true);
       if (!engine) return null;
-      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps).catch(() => null));
+      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
       if (!cmd) return null;
       const models = cleanModels((await config.load()).models);
       const saved = await savedOffer(engine.id);
@@ -2905,7 +2905,7 @@ function registerIpc() {
     return guards.runTest(engineId, async (signal): Promise<TestResult> => {
       if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
       // A fake engine is never tested against a real CLI.
-      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps);
+      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
       // The app may have started quitting while the CLI was being found.
       if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
@@ -3184,7 +3184,7 @@ if (loaded) {
     },
     hasNotice,
     engine: getEngine,
-    command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+    command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),
     // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens; a
     // sidekick's own tier (or the routing turn's light one) uses that tier's model instead.
     profile: async (engine, tier) => {

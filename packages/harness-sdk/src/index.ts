@@ -18,6 +18,7 @@ import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
+import { CORE_SERVER_NAMES, toolsSchema } from "./tools";
 
 export * from "./block";
 export * from "./core-blocks";
@@ -42,6 +43,7 @@ export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
 export * from "./secrets";
+export * from "./tools";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -233,6 +235,8 @@ const manifestSchema = z.object({
   slots: harnessSlotsSchema.optional(),
   /** Keys the person pastes for the harness's tools (tools spec §9). Absent: none (D0). */
   secrets: secretsSchema.optional(),
+  /** Typed code the AI, the UI and the runner call (tools spec §3). Absent: none (D0). */
+  tools: toolsSchema.optional(),
   /** Suggested caps on turns running at once (parallel spec §3). Absent: one task at a time, as before (D7). */
   parallel: parallelSchema.optional(),
   /** Background jobs, by id (parallel spec §3): no chat, no person in the loop. Absent: none, and nothing changes (D0). */
@@ -283,6 +287,14 @@ const manifestSchema = z.object({
     const other = tools.get(tool);
     if (other !== undefined) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `Tool "${tool}" is already used by block "${other}"` });
     else tools.set(tool, name);
+  }
+  // Tool ids (tools spec §3, Decision 1): never an action, a job, a block tool or a core MCP server name.
+  for (const id of Object.keys(m.tools ?? {})) {
+    const issue = (message: string) => ctx.addIssue({ code: "custom", path: ["tools", id], message });
+    if (Object.hasOwn(m.actions, id)) issue(`Tool id "${id}" clashes with an action id`);
+    if (m.jobs && Object.hasOwn(m.jobs, id)) issue(`Tool id "${id}" clashes with a job id`);
+    if (tools.has(id)) issue(`Tool id "${id}" clashes with a block tool name`);
+    if ((CORE_SERVER_NAMES as readonly string[]).includes(id)) issue(`"${id}" is a core MCP server name: use another tool id`);
   }
   // The harness's own MCP servers are named after its id, next to the core's `ui` and `data` servers.
   if (m.mcp.length > 0 && RESERVED_MCP_NAMES.includes(m.id)) {
@@ -557,6 +569,8 @@ export async function loadHarness(configPath: string, options: { root?: string }
   for (const action of Object.values(loaded.actions)) for (const p of action.phases ?? []) if (p.brief) resolveInHarness(loaded, p.brief);
   // And every job's brief (parallel spec §3).
   for (const job of Object.values(loaded.jobs ?? {})) resolveInHarness(loaded, job.prompt);
+  // And every tool file (tools spec §3).
+  for (const f of Object.values(loaded.tools ?? {})) resolveInHarness(loaded, f);
   // And the backend's entry (hatches spec §4.1).
   if (loaded.backend) resolveInHarness(loaded, loaded.backend);
   return loaded;

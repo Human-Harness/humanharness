@@ -4,7 +4,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "bin": { "humanharness": "./bin/humanharness.js" },
-  "exports": { ".": "./src/index.ts", "./sdk": "./src/sdk.ts", "./ui": "./src/ui.ts" },
+  "exports": { ".": "./src/index.ts", "./sdk": "./src/sdk.ts", "./ui": "./src/ui.ts", "./tool": "./src/tool.ts" },
   "dependencies": {
     "@humanharness/engines": "workspace:*",
     "@humanharness/fake-agent": "workspace:*",

@@ -1,5 +1,5 @@
 import type { ModelProfile } from "@humanharness/engines";
-import { type AiStep, STEP_OUTPUT_TOOL } from "@humanharness/harness-sdk";
+import { type AiStep, aiOutputSchema, STEP_OUTPUT_TOOL } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotSendOptions } from "@humanharness/runtime";
 import { pauseOutOfQuota, resetOf } from "../gated-turns";
 import type { StepValues } from "../tools/pre-steps";
@@ -38,18 +38,36 @@ class Halted extends Error {}
 
 /** A path segment shown as it is only when it is a plain name or an index: a record key the model wrote is not echoed. */
 const PLAIN_KEY = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
-const segment = (p: PropertyKey) => (typeof p === "number" ? String(p) : typeof p === "string" && PLAIN_KEY.test(p) ? p : "?");
+
+/** Every property name the output's JSON Schema declares, at any depth: the only names a problem's path may show. */
+export function declaredKeys(step: AiStep): Set<string> {
+  const keys = new Set<string>();
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    for (const [k, child] of Object.entries(v)) {
+      if (k === "properties" && child && typeof child === "object" && !Array.isArray(child)) for (const name of Object.keys(child)) keys.add(name);
+      walk(child);
+    }
+  };
+  walk(aiOutputSchema(step));
+  return keys;
+}
+
+/** An index as it is; a name only when the schema declares it (a z.record key is the model's own text), else "?". */
+const segment = (declared: ReadonlySet<string>) => (p: PropertyKey) =>
+  typeof p === "number" ? String(p) : typeof p === "string" && PLAIN_KEY.test(p) && declared.has(p) ? p : "?";
 
 type Issue = { code?: string; path: PropertyKey[]; message: string };
 /**
  * The first problem of a zod result, as "path: message" on one plain line. The messages are zod's or the harness's own
  * (they describe the schema); an unrecognized key's message names the model's keys, so it is a fixed text instead.
  */
-function firstProblem(issues: readonly Issue[]): string {
+function firstProblem(issues: readonly Issue[], declared: ReadonlySet<string>): string {
   const i = issues[0];
   if (!i) return "invalid";
   const message = i.code === "unrecognized_keys" ? "unrecognized key" : i.message;
-  const at = i.path.length ? `${i.path.map(segment).join(".")}: ` : "";
+  const at = i.path.length ? `${i.path.map(segment(declared)).join(".")}: ` : "";
   return plainLine(`${at}${message}`, PROBLEM_CHARS) || "invalid";
 }
 
@@ -96,6 +114,8 @@ export async function runAiStep(
   const recording: Promise<void>[] = [];
   let value: Record<string, unknown> | undefined;
   let problem = "it was not called";
+  /** The output's declared names, read on the first invalid output. */
+  let declared: Set<string> | undefined;
   // Set by the turns' handlers too: cast so that TypeScript does not narrow it to its first value.
   let end = "done" as "done" | "cancelled" | "out-of-quota" | "error";
   let aborted = false;
@@ -130,7 +150,7 @@ export async function runAiStep(
           else {
             const parsed = o.step.output.safeParse(e.data);
             if (parsed.success) value = parsed.data as Record<string, unknown>;
-            else first ??= firstProblem(parsed.error.issues as Issue[]);
+            else first ??= firstProblem(parsed.error.issues as Issue[], (declared ??= declaredKeys(o.step)));
           }
         }
         if (e.type === "usage") {
@@ -163,7 +183,8 @@ export async function runAiStep(
       throw err;
     });
     const brief = await step(d.readBrief(o.step.ai));
-    // No scope access: the step slot reaches no folder (R1); the run's scope is only its history trailer's.
+    // No scope access: the step slot reaches no folder (R1). The trailer is the run's, as a job turn's, but a step turn
+    // opens no turn window and makes no history commits, so nothing is written under it.
     const options: SlotSendOptions = { ...(profile ? { profile } : {}), trailer: jobRunTrailer(o.run, o.job, o.scope) };
     await turn(slot, aiStepMessage(brief, o.data), options);
     if (!value && end === "done" && !aborted) await turn(slot, retryMessage(problem), options);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SECRETS_MAX, defineHarness, hasSecrets } from "../src";
+import { SECRETS_MAX, defineHarness, hasSecrets, setupStepSchema } from "../src";
 
 const base = {
   id: "t", name: "T", core: "^0.1.0", engines: ["claude"], folder: { suggested: "Documents/T" }, instructions: "./AGENTS.md",
@@ -66,6 +66,19 @@ describe("the connect setup step (tools spec §9)", () => {
     expect(() => defineHarness({ ...base, secrets: [jira], setup: [{ ...connect, secrets: ["github"] }] })).toThrow(/\\"github\\" is not declared in secrets/);
     expect(() => defineHarness({ ...base, secrets: [jira], setup: [{ ...connect, secrets: [] }] })).toThrow();
     expect(() => defineHarness({ ...base, secrets: [jira], setup: [{ ...connect, secrets: ["jira", "jira"] }] })).toThrow(/listed twice/);
+  });
+
+  it("a connect step lists at most SECRETS_MAX ids", () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `k${i}`);
+    expect(setupStepSchema.safeParse({ ...connect, secrets: ids(SECRETS_MAX) }).success).toBe(true);
+    expect(setupStepSchema.safeParse({ ...connect, secrets: ids(SECRETS_MAX + 1) }).success).toBe(false);
+  });
+
+  it("a connect step's ids follow the secret id rule", () => {
+    for (const id of ["Jira", "1jira", "j".repeat(41), "ji ra", ""]) {
+      expect(setupStepSchema.safeParse({ ...connect, secrets: [id] }).success).toBe(false);
+    }
+    expect(setupStepSchema.safeParse({ ...connect, secrets: ["github_pat"] }).success).toBe(true);
   });
 
   it("a connect step needs secrets in the manifest", () => {

@@ -184,6 +184,41 @@ describe("Test connection (tools spec §9, slice 2)", () => {
     expect(all).not.toContain("tok-SECRET-123456");
   });
 
+  it("a stored key that crosses the 300th character is hidden before the cut: no start of it survives", async () => {
+    const key = "tok-SECRET-123456";
+    const t = await testing(async () => ({ ok: false, error: `${"x".repeat(295)}${key} and more` }));
+    await t.c.set("jira", key);
+    const answer = await t.c.test("jira");
+    expect(answer.ok).toBe(false);
+    const file = await fs.readFile(t.file, "utf8");
+    for (const seen of [JSON.stringify(answer), file, JSON.stringify(t.changes)]) {
+      expect(seen).not.toContain(key.slice(0, 5));
+      expect(seen).not.toContain("tok-");
+    }
+    expect([...JSON.parse(file).tests.jira.message].length).toBe(300);
+  });
+
+  it("a test overlapping a set or delete of its key keeps nothing and says to test again", async () => {
+    for (const change of ["set", "delete"] as const) {
+      let release!: (a: Answer) => void;
+      const t = await testing(() => new Promise<Answer>((resolve) => (release = resolve)));
+      await t.c.set("jira", "tok-OLD-123456789");
+      const running = t.c.test("jira");
+      await new Promise((r) => setTimeout(r, 10));
+      if (change === "set") await t.c.set("jira", "tok-NEW-123456789");
+      else await t.c.delete("jira");
+      release({ ok: true, result: null });
+      expect(await running).toEqual({ ok: false, message: "The key changed during the test: test again" });
+      expect((await t.c.view()).connections[0]).not.toHaveProperty("lastTest");
+      // The next test, with no change in between, is kept.
+      const again = t.c.test("jira");
+      await new Promise((r) => setTimeout(r, 10));
+      release({ ok: true, result: null });
+      expect(await again).toEqual({ ok: true });
+      expect((await t.c.view()).connections[0]).toHaveProperty("lastTest");
+    }
+  });
+
   it("a run that throws keeps a fixed text, logged, never its error", async () => {
     const t = await testing(async () => {
       throw new Error("at /Users/me/secret/path.ts:1");

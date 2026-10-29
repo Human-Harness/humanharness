@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ConnectionsView, SetupStepView } from "../src/client";
 import { ConnectStep } from "../src/connections/ConnectStep";
@@ -326,6 +326,22 @@ describe("Test connection (tools spec §9, slice 2)", () => {
     await act(async () => fail(new Error("ipc gone /Users/me")));
     await waitFor(() => expect(within(row("Jira API token")).getByRole("status").textContent).toBe("Didn't work: The test couldn't run."));
     expect(test("Jira API token")!.disabled).toBe(false);
+  });
+
+  it("under StrictMode (mount, unmount, mount) the answer still shows", async () => {
+    const c = client();
+    c.connectionsTests = { jira: { ok: false, message: "Jira answered 401" } };
+    await renderIn(
+      "en",
+      <StrictMode>
+        <Sheet c={c} />
+      </StrictMode>,
+    );
+    await screen.findByRole("group", { name: "Jira API token" });
+    // A test that changes nothing main keeps, so only this click's answer can show it.
+    vi.spyOn(c.connections, "test").mockResolvedValue({ ok: false, message: "This key has no test" });
+    fireEvent.click(test("Jira API token")!);
+    expect((await within(row("Jira API token")).findByRole("status")).textContent).toBe("Didn't work: This key has no test");
   });
 
   it("the connect step offers Test for its keys that have one", async () => {

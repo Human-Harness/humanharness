@@ -29,12 +29,13 @@ export function SecretField({
   const lastAt = connection.lastTest?.at;
   useEffect(() => setTested(null), [lastAt, connection.set]);
   const live = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set again on each mount: StrictMode unmounts and mounts once more.
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   const runTest = () => {
     if (!onTest || testing) return;
     setTesting(true);

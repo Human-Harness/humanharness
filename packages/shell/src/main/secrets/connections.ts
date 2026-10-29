@@ -49,6 +49,7 @@ const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const NONBLOCK = constants.O_NONBLOCK ?? 0;
 /** What a test that couldn't run keeps: never its error (a disk path, a stack). */
 const COULD_NOT_RUN = "The test couldn't run";
+const KEY_CHANGED = "The key changed during the test: test again";
 
 /**
  * Settings › Connections and the connect step in main (tools spec §9). Values go in through `set` and never come
@@ -57,6 +58,8 @@ const COULD_NOT_RUN = "The test couldn't run";
 export class ConnectionsController {
   /** connections.json writes, one at a time (a test and a set may overlap). */
   private writing: Promise<unknown> = Promise.resolve();
+  /** Bumped by each set and delete of a key: a test that saw another count tested the old key. */
+  private readonly changes = new Map<string, number>();
 
   constructor(private readonly d: ConnectionsDeps) {}
 
@@ -85,6 +88,7 @@ export class ConnectionsController {
     if (!this.declared(id)) return { ok: false, message: "This harness declares no such key" };
     const tool = this.toolOf(id);
     if (tool === undefined) return { ok: false, message: "This key has no test" };
+    const before = this.changes.get(id) ?? 0;
     let last: ConnectionLastTest;
     try {
       const answer = await this.d.test!.run(tool);
@@ -93,6 +97,8 @@ export class ConnectionsController {
       this.log("A connection test failed", err);
       last = { at: this.now(), ok: false, message: COULD_NOT_RUN };
     }
+    // The key was replaced or deleted while the tool ran: its outcome is the old key's, never kept or shown as this one's.
+    if ((this.changes.get(id) ?? 0) !== before) return { ok: false, message: KEY_CHANGED };
     await this.keep(id, last);
     await this.push();
     return last.ok ? { ok: true } : { ok: false, message: last.message ?? COULD_NOT_RUN };
@@ -107,6 +113,7 @@ export class ConnectionsController {
     });
     if (out.ok) {
       // A new key: the last test was of the old one.
+      this.changed(id);
       await this.keep(id, null);
       await this.push();
     }
@@ -116,6 +123,7 @@ export class ConnectionsController {
   async delete(id: string): Promise<ConnectionResult> {
     if (!this.declared(id)) return { ok: false, message: "This harness declares no such key" };
     await this.d.store.deleteHarness(id);
+    this.changed(id);
     await this.keep(id, null);
     await this.push();
     return { ok: true };
@@ -128,6 +136,9 @@ export class ConnectionsController {
     return ids.every((id) => stored.has(id));
   }
 
+  private changed(id: string): void {
+    this.changes.set(id, (this.changes.get(id) ?? 0) + 1);
+  }
   /** The tool of the first connect step listing `id` with a test. */
   private toolOf(id: string): string | undefined {
     return this.d.test?.steps.find((s) => s.secrets.includes(id))?.tool;

@@ -171,6 +171,31 @@ describe("runRecipe (tools spec §7)", () => {
     expect(w.calls.map((c) => c.tool)).toEqual(["pr-ci"]);
   });
 
+  it("a first AI round the engine cancelled on its own (no abort) fails the run Cancelled; nothing after it runs", async () => {
+    const w = wire({ ai: [{ ok: false, error: "Cancelled", cancelled: true, tokens: 4 }] });
+    const r = await w.run(job(full));
+    expect(r).toMatchObject({ status: "failed", summary: "Cancelled", tokens: 4 });
+    expect(w.calls.map((c) => c.tool)).toEqual(["pr-ci"]);
+    // An AI step with no `as` too: the steps after it never run.
+    const noAs = wire({ ai: [{ ok: false, error: "Cancelled", cancelled: true, tokens: 0 }] });
+    const bare = await noAs.run(job([{ tool: "pr-ci", as: "ci" }, { ai: "./b.md", input: ["ci"], output }, { tool: "notify" }]));
+    expect(bare).toMatchObject({ status: "failed", summary: "Cancelled" });
+    expect(noAs.calls.map((c) => c.tool)).toEqual(["pr-ci"]);
+  });
+
+  it("an extra AI round the engine cancelled on its own (no abort) fails the run Cancelled; nothing after it runs", async () => {
+    const w = wire({
+      answers: { "apply-triage": okAnswer({}, { requestAi: { input: {} } }) },
+      ai: [
+        { ok: true, value: TRIAGE, tokens: 10 },
+        { ok: false, error: "Cancelled", cancelled: true, tokens: 2 },
+      ],
+    });
+    const r = await w.run(job(full, { maxAi: 2 }));
+    expect(r).toMatchObject({ status: "failed", summary: "Cancelled", tokens: 12 });
+    expect(w.calls.map((c) => c.tool)).toEqual(["pr-ci", "apply-triage"]);
+  });
+
   it("an AI step input that is not available fails the run without an AI call", async () => {
     // The AI step reads "ci", which no step gave: the runner decides before any AI call (dataSection never sees it).
     const w = wire();
@@ -206,6 +231,12 @@ describe("runRecipe (tools spec §7)", () => {
     expect(r).toMatchObject({ status: "needs-you", summary: "Stopped after 1 AI step · 2 still red", action: "triage-ci" });
     expect(w.calls.map((c) => c.tool)).toEqual(["pr-ci", "apply-triage"]);
     expect(w.aiCalls).toHaveLength(1);
+  });
+
+  it("the stop shows the post-step's own summary, never an earlier step's", async () => {
+    const w = wire({ answers: { "pr-ci": okAnswer(RED, { summary: "CI read" }), "apply-triage": okAnswer({}, { requestAi: { input: {} } }) } });
+    const r = await w.run(job(full));
+    expect(r).toMatchObject({ status: "needs-you", summary: "Stopped after 1 AI step" });
   });
 
   it("Stopped after N AI steps is plural above one; without a summary it is the bare line", async () => {
@@ -245,9 +276,9 @@ describe("runRecipe (tools spec §7)", () => {
 
   it("ok without a summary builds one from the counts and the last call", async () => {
     const w = wire({ last: { tool: "notify", resultSummary: "\"sent\"" } });
-    expect((await w.run(job(full)))!.summary).toBe('4 steps · 1 AI step · notify: "sent"');
+    expect((await w.run(job(full)))!.summary).toBe('3 steps · 1 AI step · notify: "sent"');
     const two = wire({ answers: { "apply-triage": [okAnswer({}, { requestAi: { input: {} } }), okAnswer({})] }, last: { tool: "notify", resultSummary: "ok" } });
-    expect((await two.run(job(full, { maxAi: 2 })))!.summary).toBe("6 steps · 2 AI steps · notify: ok");
+    expect((await two.run(job(full, { maxAi: 2 })))!.summary).toBe("4 steps · 2 AI steps · notify: ok");
     const none = wire({ last: null });
     expect((await none.run(job([{ tool: "notify" }])))!.summary).toBe("1 step");
   });
@@ -335,6 +366,32 @@ describe("runRecipe (tools spec §7)", () => {
     const throws = wire({ gate, answers: { "pr-ci": () => Promise.reject(new Error("/Users/x/secret: host died")) } });
     const r = await throws.run(job(full));
     expect(r).toMatchObject({ status: "failed", summary: "Could not run" });
+    expect(gate.running("jobs")).toBe(0);
+  });
+
+  it("a limits read that throws frees the gate's slot and fails the run Could not run", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const w = wire();
+    w.deps.limits = () => {
+      throw new Error("/Users/x: no harness");
+    };
+    const r = await w.run(job(full));
+    expect(r).toMatchObject({ status: "failed", summary: "Could not run" });
+    expect(w.calls).toEqual([]);
+    expect(w.gate.running("jobs")).toBe(0);
+  });
+
+  it("a gate that can't get ready (its beforeStart fails) gives Could not run, and no call", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gate = new TurnGate({ tasks: 1, jobs: 1 }, { hold: { singleSession: true } });
+    gate.setBeforeStart(async () => {
+      throw new Error("could not sleep the other lane");
+    });
+    const w = wire({ gate });
+    const r = await w.run(job(full));
+    expect(r).toMatchObject({ status: "failed", summary: "Could not run", tokens: 0 });
+    expect(w.calls).toEqual([]);
+    expect(w.logged).toEqual([r]);
     expect(gate.running("jobs")).toBe(0);
   });
 

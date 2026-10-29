@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type AiStep, type HarnessJob, type ToolStep, isAiStep, postStepIndex } from "@humanharness/harness-sdk";
 import type { HistoryTrailer } from "@humanharness/workspace";
 import type { JobLimits } from "../tools/tool-broker";
-import { type StepOutcome, type StepRegistry, type StepValues, runToolStep } from "../tools/pre-steps";
+import { type StepCallBase, type StepOutcome, type StepRegistry, type StepValues, runToolStep } from "../tools/pre-steps";
 import { plainLine } from "../tools/one-line";
 import { Dropped, type TurnGate } from "../turn-gate";
 import { type AiStepResult, type runAiStep, aiStepParts } from "./ai-step";
@@ -96,12 +96,15 @@ export async function runRecipe(
   const postAt = postStepIndex(job);
   const maxAi = job.maxAi ?? 1;
   const values: StepValues = new Map();
-  const base = { caller: "job" as const, job: id, run, scope, limits: d.limits(id) };
+  // Set at the walk's start, inside the try that frees the gate's slot (the limits read may throw).
+  let base: StepCallBase = { caller: "job", job: id, run, scope };
   const trailer = jobRunTrailer(run, id, scope);
   let toolSteps = 0;
   let aiSteps = 0;
   let tokens = 0;
   let summary: string | undefined;
+  /** The post-step's own last summary: the only one a stop at maxAi shows (tools spec §7.3). */
+  let postSummary: string | undefined;
   let end: End | null = null;
   let halted: "timeout" | "cancelled" | null = null;
 
@@ -119,7 +122,10 @@ export async function runRecipe(
   const tool = async (s: ToolStep, post: boolean): Promise<StepOutcome> => {
     toolSteps++;
     const got = await d.withRunTrailer(trailer, () => runToolStep(d.registry, s, values, post ? { ...base, caller: "job", post: true } : base));
-    if (got.summary !== undefined) summary = got.summary;
+    if (got.summary !== undefined) {
+      summary = got.summary;
+      if (post) postSummary = got.summary;
+    }
     if (s.as !== undefined) values.set(s.as, got.ok ? { ok: true, value: got.value } : { ok: false, tool: s.tool });
     return got;
   };
@@ -133,10 +139,15 @@ export async function runRecipe(
     if (r.ok && step.as !== undefined) values.set(step.as, { ok: true, value: r.value });
     return r;
   };
-  /** A failed AI round: a cancelled one is the halt (the run's time limit or cancel), never a failure of its own. */
-  const aiFailed = (r: Extract<AiStepResult, { ok: false }>): End | null => (r.cancelled ? null : { status: "failed", summary: r.error });
+  /**
+   * A failed AI round ends the run. A round cancelled by the run's halt (time limit or cancel) is the halt's; one the
+   * engine cancelled on its own (its slot or workspace closed) fails the run "Cancelled", as runJob logs it.
+   */
+  const aiFailed = (r: Extract<AiStepResult, { ok: false }>): End | null =>
+    r.cancelled ? (halted ? null : { status: "failed", summary: "Cancelled" }) : { status: "failed", summary: r.error };
 
   async function walk(): Promise<void> {
+    base = { ...base, limits: d.limits(id) };
     for (let i = 0; i < steps.length && !end && !halted; i++) {
       const s = steps[i]!;
       if (isAiStep(s)) {
@@ -158,7 +169,7 @@ export async function runRecipe(
           const named = job.onLimit;
           const action = named !== undefined && Object.hasOwn(d.actions, named) ? named : undefined;
           if (named !== undefined && action === undefined) console.error(`Job ${id} names no action ${JSON.stringify(named)} as onLimit: dropped`);
-          end = { status: "needs-you", summary: `Stopped after ${plural(aiSteps, "AI step")}${summary ? ` · ${summary}` : ""}`, ...(action ? { action } : {}) };
+          end = { status: "needs-you", summary: `Stopped after ${plural(aiSteps, "AI step")}${postSummary ? ` · ${postSummary}` : ""}`, ...(action ? { action } : {}) };
           return;
         }
         const r = await aiRound(steps[aiAt] as AiStep, [{ name: "request", value: got.requestAi.input }]);
@@ -193,7 +204,7 @@ export async function runRecipe(
   else if (end) result = end;
   else {
     const last = await d.lastCall(run).catch(() => null);
-    const built = plural(toolSteps + aiSteps, "step") + (aiSteps ? ` · ${plural(aiSteps, "AI step")}` : "") + (last ? ` · ${last.tool}: ${last.resultSummary}` : "");
+    const built = plural(toolSteps, "step") + (aiSteps ? ` · ${plural(aiSteps, "AI step")}` : "") + (last ? ` · ${last.tool}: ${last.resultSummary}` : "");
     result = { status: "ok", summary: summary ?? built };
   }
   const endedAt = now();

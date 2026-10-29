@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { commandWords, scriptRefs } from "../../src/main/engine-config/script-refs";
+import { commandWords, scriptProblem, scriptRefs } from "../../src/main/engine-config/script-refs";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-script-refs-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -42,17 +42,27 @@ describe("scriptRefs (spec §5.3, E2)", () => {
     expect(found).toEqual([path.join(w, "it's/y.js"), path.join(w, "my tools/x.js")]);
   });
 
-  it("ignores a referenced symlink and a directory", async () => {
+  it("names a referenced symlink and a folder, so the reader refuses them; never the folder itself", async () => {
     const w = tree("w4", { "real.js": "r", "dir/a.js": "a" });
+    const repo = tree("repo4", { "lib/b.js": "b" });
     fs.symlinkSync(path.join(w, "real.js"), path.join(w, "link.js"));
-    expect(await scriptRefs(["node ./link.js", "ls ./dir", "ls ."], { folder: w, linked: [] })).toEqual([]);
+    const o = { folder: w, linked: [repo] };
+    const found = await scriptRefs(["node ./link.js", "ls ./dir", "ls .", `ls ${repo}`, `node ${repo}/lib`, "npm run dir"], o);
+    expect(found).toEqual([path.join(w, "dir"), path.join(w, "link.js"), path.join(repo, "lib")].sort());
+    expect(await scriptProblem(path.join(w, "link.js"), o)).toBe("is a symbolic link");
+    expect(await scriptProblem(path.join(w, "dir"), o)).toBe("is a folder");
+    expect(await scriptProblem(path.join(w, "real.js"), o)).toBeNull();
   });
 
-  it("ignores a file reached through a symlinked folder that points outside", async () => {
-    const w = tree("w5", {});
+  it("names a file reached through a symlinked folder, inside or pointing outside", async () => {
+    const w = tree("w5", { "lib/x.js": "x" });
     const outside = tree("outside5", { "hosts": "h" });
     fs.symlinkSync(outside, path.join(w, "tools"));
-    expect(await scriptRefs(["cat ./tools/hosts"], { folder: w, linked: [] })).toEqual([]);
+    fs.symlinkSync(path.join(w, "lib"), path.join(w, "alias"));
+    const o = { folder: w, linked: [] };
+    expect(await scriptRefs(["cat ./tools/hosts", "node ./alias/x.js"], o)).toEqual([path.join(w, "alias/x.js"), path.join(w, "tools/hosts")]);
+    expect(await scriptProblem(path.join(w, "tools/hosts"), o)).toBe("is reached through a symbolic link");
+    expect(await scriptProblem(path.join(w, "alias/x.js"), o)).toBe("is reached through a symbolic link");
   });
 
   it("ignores ../ escapes and home paths", async () => {

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
-import { commandWords, scriptRefs, type ScriptCommand } from "./script-refs";
+import { commandWords, scriptProblem, scriptRefs, type ScriptCommand } from "./script-refs";
 import { parseToml } from "./toml-lite";
 
 // Reads a scope's engine folder, `.harness/engine/<scope>/` (hatches spec §5.1–5.4), into an EngineConfig: what each
@@ -402,6 +402,12 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
 
   // Referenced scripts: files outside the engine folder (those inside are already in `files`).
   for (const script of await externalScripts(commands, dir, o)) {
+    // A link, a folder or a path through a link: what runs could change after approval without changing the hash.
+    const why = await scriptProblem(script, o);
+    if (why !== null) {
+      refusals.push({ file: script, message: `${script}: ${why}; a command must name the file itself` });
+      continue;
+    }
     const read = await readRegular(script, ENGINE_FILE_MAX).catch(() => ({ kind: "other" }) as Read);
     if (read.kind === "file") {
       walk.total += read.data.length;

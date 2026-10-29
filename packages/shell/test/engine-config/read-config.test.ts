@@ -180,6 +180,20 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     expect((await read())!.hash).not.toBe(c2.hash);
   });
 
+  it.each([
+    ["a symbolic link", "is a symbolic link"],
+    ["a folder", "is a folder"],
+  ])("a command naming %s in the folder is refused naming it (E2, E8)", async (kind, why) => {
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: "node ./tools/run.js" }] }] };
+    const { folder, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/real.js": "one" });
+    const run = path.join(folder, "tools/run.js");
+    if (kind === "a folder") fs.mkdirSync(run);
+    else fs.symlinkSync(path.join(folder, "tools/real.js"), run);
+    const c = (await read())!;
+    expect(c.refusals).toEqual([{ file: run, message: `${run}: ${why}; a command must name the file itself` }]);
+    expect(c.scriptFiles.size).toBe(0);
+  });
+
   it("codex.toml hooks and action-layer servers join the scripts too", async () => {
     const { folder, read } = setup(
       {

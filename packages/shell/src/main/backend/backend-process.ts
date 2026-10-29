@@ -176,6 +176,8 @@ export class BackendProcess {
   }
 
   private onLine(line: string): void {
+    // Once gone (the fallback after exit), a grandchild still holding stdout is not heard.
+    if (this.gone) return;
     const msg = classifyIncoming(line, new Set(this.pending.keys()));
     switch (msg.kind) {
       case "response": {
@@ -188,7 +190,13 @@ export class BackendProcess {
         return;
       }
       case "event":
-        if (this.limiter.take()) this.o.onEvent(msg.event, msg.data);
+        if (!this.limiter.take()) return;
+        try {
+          this.o.onEvent(msg.event, msg.data);
+        } catch (e) {
+          // A failing listener must not escape the stdout handler into main.
+          this.note(`The app couldn't handle the backend event ${msg.event}: ${e instanceof Error ? e.message : String(e)}`);
+        }
         return;
       case "request":
         this.write(refusalFor(msg.id));

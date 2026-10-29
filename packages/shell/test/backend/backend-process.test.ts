@@ -24,6 +24,15 @@ function memoryLog() {
   };
 }
 
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function until(check: () => boolean, ms = 3000): Promise<void> {
   const end = Date.now() + ms;
   while (!check()) {
@@ -126,8 +135,11 @@ describe("BackendProcess (hatches spec §4.2, §4.3)", () => {
     const { events, log } = await start("chatty");
     await new Promise((r) => setTimeout(r, 300));
     expect(events).toHaveLength(200);
-    await until(() => log.has("Dropped 800 backend events"));
-    expect(log.lines).toContain("app Dropped 800 backend events");
+    // The drops may be reported in more than one line; they add up to 800.
+    const droppedSum = () =>
+      log.lines.reduce((sum, l) => sum + Number(/^app Dropped (\d+) backend events$/.exec(l)?.[1] ?? 0), 0);
+    await until(() => droppedSum() >= 800);
+    expect(droppedSum()).toBe(800);
     expect(events).toHaveLength(200);
   });
 
@@ -154,6 +166,51 @@ describe("BackendProcess (hatches spec §4.2, §4.3)", () => {
     void p.call("bye", {}).catch(() => {});
     await p.exited;
     expect(events).toEqual([{ event: "tick", data: { last: true } }]);
+  });
+
+  it("a listener that throws is logged and the stream goes on", async () => {
+    const log = memoryLog();
+    const p = await BackendProcess.start({
+      launcher,
+      entry: fixture("echo"),
+      cwd: fixtures,
+      init,
+      log,
+      onEvent: () => {
+        throw new Error("listener broke");
+      },
+    });
+    started.push(p);
+    await expect(p.call("stream", { n: 2 })).resolves.toEqual({ sent: 2 });
+    expect(log.lines.filter((l) => l === "app The app couldn't handle the backend event tick: listener broke")).toHaveLength(2);
+    await expect(p.call("echo", 1)).resolves.toBe(1);
+  });
+
+  it("stop kills its whole process group, grandchildren included (B1)", async () => {
+    const { p } = await start("grandchild");
+    const gpid = (await p.call("pid", {})) as number;
+    expect(alive(gpid)).toBe(true);
+    await p.stop();
+    try {
+      await until(() => !alive(gpid), 2000);
+    } finally {
+      if (alive(gpid)) process.kill(gpid, "SIGKILL");
+    }
+  });
+
+  it("once gone, a grandchild still holding stdout is not heard", async () => {
+    const { p, events } = await start("grandchild");
+    const gpid = (await p.call("pid", {})) as number;
+    try {
+      await until(() => events.length > 0);
+      void p.call("leave", {}).catch(() => {});
+      await p.exited;
+      const atExit = events.length;
+      await new Promise((r) => setTimeout(r, 400));
+      expect(events.length).toBe(atExit);
+    } finally {
+      if (alive(gpid)) process.kill(gpid, "SIGKILL");
+    }
   });
 
   it("stop sends SIGTERM; a backend that ignores SIGTERM is killed after 3 s (B8)", async () => {

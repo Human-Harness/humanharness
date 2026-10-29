@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type PluginPermissions, execAllowed, secretRefs } from "@humanharness/harness-sdk";
+import { type PluginPermissions, execAllowed, hostAllowed, secretRefs } from "@humanharness/harness-sdk";
 import { pluginExec, type runFile } from "../plugin-exec";
 import { pluginFetch } from "../plugin-fetch";
 import { BROKER_LIMITS, Malformed, Slots, checkBudget, dataKey, fail, fetchRequest, oneLine, query, record, records, str, withKey } from "./broker-checks";
@@ -35,7 +35,16 @@ export interface BrokerGrant {
   exec: readonly ExecPattern[];
   /** May the caller name `collection` (for a write when `write`)? Must be own-property safe (`Object.hasOwn`). */
   collection(name: string, write: boolean): boolean;
-  refusals: { collection: string; secret(id: string): string; exec(line: string): string };
+  refusals: {
+    collection: string;
+    secret(id: string): string;
+    exec(line: string): string;
+    /**
+     * An https URL whose host is outside `hosts`, refused in the owner's words before anything else is read (a tool's
+     * names `uses.hosts`). Absent: the fetch's own refusal, which names `permissions.hosts` (plugins).
+     */
+    host?(host: string): string;
+  };
 }
 
 /** One live run of a caller: what its calls carry. `key` is the owner's (a plugin's source; a tool call's id). */
@@ -52,8 +61,8 @@ export interface CoreBrokerDeps {
   /** The calls this caller gets: core ones from CORE_CALLS and the owner's `extra` names. */
   calls: readonly string[];
   extra?: ReadonlyMap<string, { max: number; fn: BrokerHandler }>;
-  /** The caller's own data (for a plugin: one PluginData per plugin and base). */
-  data: { run(op: BrokerDataOp): Promise<unknown> };
+  /** The caller's own data (for a plugin: one PluginData per plugin and base). `run` is the call's run (its key). */
+  data: { run(op: BrokerDataOp, run: BrokerRun): Promise<unknown> };
   /** The stored values of `ids`, which are always granted ones. */
   secrets(ids: string[]): Promise<Record<string, string>>;
   /**
@@ -166,7 +175,7 @@ export class Broker {
   }
 
   private async data(op: BrokerDataOp, run: BrokerRun, write: boolean): Promise<BrokerAnswer> {
-    const value = await this.d.data.run(op);
+    const value = await this.d.data.run(op, run);
     if (write) run.writes += 1;
     return { ok: true, value: value ?? null };
   }
@@ -184,6 +193,8 @@ export class Broker {
 
   private async fetch(run: BrokerRun, url: unknown, init: unknown): Promise<BrokerAnswer> {
     const req = fetchRequest(url, init);
+    const host = this.d.grant.refusals.host ? undeclaredHost(req.url, this.d.grant.hosts) : null;
+    if (host !== null) return { ok: false, refused: this.d.grant.refusals.host!(host) };
     // Only granted keys are ever asked for; a reference to any other is refused before the store is read (B6).
     const texts = [...Object.values(req.init?.headers ?? {}), req.init?.body ?? ""];
     const ids = [...new Set(texts.flatMap(secretRefs))];
@@ -232,6 +243,17 @@ export class Broker {
 }
 
 const ok = (_: unknown): BrokerAnswer => ({ ok: true, value: null });
+
+/** The host of an https URL outside `hosts`, or null (anything else is the fetch's own check). */
+function undeclaredHost(url: string, hosts: readonly string[]): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  return u.protocol === "https:" && !hostAllowed(u.href, hosts) ? u.host : null;
+}
 
 function logLevel(v: unknown): (typeof LEVELS)[number] {
   if (typeof v !== "string" || !(LEVELS as readonly string[]).includes(v)) fail("A log level is info, warn or error");

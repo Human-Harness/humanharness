@@ -104,6 +104,19 @@ describe("Broker (tools spec §4.2: the core service)", () => {
       expect(() => core({ calls: [name], extra: new Map([[name, { max: 2, fn: async () => ({ ok: true as const, value: null }) }]]) })).toThrow(name);
     }
   });
+  it("refusals.host names the owner's declaration for an undeclared https host; without it the fetch's own text stays", async () => {
+    const own = core({ grant: { ...grant, refusals: { ...grant.refusals, host: (h) => `${h} is not declared in uses.hosts` } } });
+    expect(await own.b.call(own.b.startRun("t").id, "fetch", ["https://evil.example.org/x"])).toEqual({ ok: false, refused: "evil.example.org is not declared in uses.hosts" });
+    const plain = core();
+    expect(await plain.b.call(plain.b.startRun("t").id, "fetch", ["https://evil.example.org/x"])).toEqual({ ok: false, refused: "evil.example.org is not declared in permissions.hosts" });
+    expect([...own.seen.fetches, ...plain.seen.fetches]).toEqual([]);
+  });
+  it("data.run gets the call's run, so an owner can bind the data to it", async () => {
+    const keys: string[] = [];
+    const { b } = core({ data: { run: async (_op, run) => (keys.push(run.key), null) } });
+    await b.call(b.startRun("call-1").id, "data.get", ["tickets"]);
+    expect(keys).toEqual(["call-1"]);
+  });
   it("transport(key) replaces fetch and the runner after every check (fixture mode)", async () => {
     let fixtureCalls = 0;
     const fx = (async () => ((fixtureCalls += 1), new Response("fixture"))) as unknown as typeof fetch;

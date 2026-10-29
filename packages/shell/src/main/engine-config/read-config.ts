@@ -5,7 +5,18 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
-import { commandText, commandWords, directScripts, scanScripts, scriptRefs, shebangProblem, type ScriptCommand } from "./script-refs";
+import {
+  commandText,
+  commandWords,
+  directScripts,
+  interpreterProblem,
+  readShebang,
+  SHEBANG_READ,
+  scanScripts,
+  scriptRefs,
+  type ScanOptions,
+  type ScriptCommand,
+} from "./script-refs";
 import { parseToml } from "./toml-lite";
 
 // Reads a scope's engine folder, `.harness/engine/<scope>/` (hatches spec §5.1–5.4), into an EngineConfig: what each
@@ -48,6 +59,8 @@ export interface ReadEngineOptions extends CleanContext {
   actions?: Readonly<Record<string, unknown>>;
   /** The manifest's `permissions.web`: codex.toml keys that reach the network pass only when true. */
   web?: boolean;
+  /** The PATH the engines and their hooks and servers get (cleaned): where a bare interpreter, npx or uvx is found. */
+  searchPath?: string;
 }
 
 export const ENGINE_FILE_MAX = 256 * 1024;
@@ -367,34 +380,66 @@ export function configFromFiles(
 }
 
 /**
- * A script run directly whose `#!` line is not allowed (`shebangProblem`), judged on the bytes that are hashed or were
- * approved: `files` (the engine folder `dir`'s, by relative path) or `scripts` (outside it, by absolute path). Never a
- * read of its own, so the line checked is the line that runs. A script missing from both is refused elsewhere.
+ * `abs` as a key of the engine folder's files, or null when it lies outside the folder ("" is the folder itself). Both
+ * are real paths, so the spelling is the one on disk (case, Unicode form, links): the same comparison decides "inside"
+ * and finds the bytes, and a path spelled another way can't fall between them. `engineReal` is `dir`'s real path.
  */
-export function shebangRefusals(
+export async function engineKey(abs: string, engineReal: string): Promise<string | null> {
+  const real = await fs.realpath(abs).catch(() => path.resolve(abs));
+  if (real === engineReal) return "";
+  if (!real.startsWith(engineReal + path.sep)) return null;
+  return path.relative(engineReal, real).split(path.sep).join("/");
+}
+
+/** The engine folder `dir`'s real path (`engineKey`'s root). */
+export const engineRealOf = (dir: string): Promise<string> => fs.realpath(dir).catch(() => path.resolve(dir));
+
+/**
+ * What the commands run that the hash doesn't hold, judged on the bytes hashed or approved: `files` (the engine folder
+ * `dir`'s, by key) and `scripts` (outside it, by absolute path). Never a read of its own, so what is judged is what
+ * runs. Refused: a file the commands name inside the engine folder that is not one of its files (the walk skips
+ * `.DS_Store`); a script run directly whose bytes are not there, whose `#!` line is not allowed (`readShebang`), or
+ * whose `#!/usr/bin/env` interpreter is found first on PATH inside a root.
+ */
+export async function coverageRefusals(
   commands: readonly ScriptCommand[],
   dir: string,
   files: ReadonlyMap<string, Buffer>,
   scripts: ReadonlyMap<string, Buffer>,
-  folder: string,
-): EngineRefusal[] {
-  const root = path.resolve(dir);
+  o: ScanOptions,
+): Promise<EngineRefusal[]> {
+  const engineReal = await engineRealOf(dir);
   const out: EngineRefusal[] = [];
-  for (const d of directScripts(commands, folder)) {
-    const rel = path.relative(root, d.path);
-    const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
-    const data = inside ? files.get(rel.split(path.sep).join("/")) : scripts.get(d.path);
-    if (!data) continue;
-    const why = shebangProblem(data.subarray(0, 256).toString("utf8"));
-    if (why) out.push({ file: d.path, message: `${d.path}: ${why}, named by ${JSON.stringify(d.command)}; a command must name a plain script file` });
+  const refuse = (p: string, why: string, command: string) =>
+    out.push({ file: p, message: `${p}: ${why}, named by ${JSON.stringify(command)}; a command must name a plain script file` });
+  const { files: named } = await scanScripts(commands, o);
+  for (const p of named) {
+    const key = await engineKey(p, engineReal);
+    if (key !== null && !files.has(key)) refuse(p, "is in the engine folder but is none of the files its hash covers", "a hook or server");
+  }
+  for (const d of directScripts(commands, o.folder)) {
+    const key = await engineKey(d.path, engineReal);
+    const data = key !== null ? files.get(key) : scripts.get(d.path);
+    if (!data) {
+      refuse(d.path, "is not among the bytes the hash covers", d.command);
+      continue;
+    }
+    const r = readShebang(data.subarray(0, SHEBANG_READ));
+    if ("problem" in r) refuse(d.path, r.problem, d.command);
+    else if (r.viaEnv) {
+      const bad = await interpreterProblem(r.interpreter, o);
+      if (bad) refuse(bad.path, `${bad.why} (its #! line runs it)`, d.command);
+    }
   }
   return out;
 }
 
 /** The files `commands` name outside the engine folder `dir` (those inside are already in its files), sorted. */
 export async function externalScripts(commands: readonly ScriptCommand[], dir: string, o: ReadEngineOptions): Promise<string[]> {
-  const engineRoot = path.resolve(dir);
-  return (await scriptRefs(commands, o)).filter((s) => !(s === engineRoot || s.toLowerCase().startsWith(engineRoot.toLowerCase() + path.sep)));
+  const engineReal = await engineRealOf(dir);
+  const out: string[] = [];
+  for (const s of await scriptRefs(commands, o)) if ((await engineKey(s, engineReal)) === null) out.push(s);
+  return out;
 }
 
 /**
@@ -447,6 +492,6 @@ export async function readEngineConfig(dir: string, o: ReadEngineOptions): Promi
     else if (read.kind === "hardlink") refusals.push({ file: script, message: `${script}: the script has hard links, which are not allowed` });
     else refusals.push({ file: script, message: `${script}: the script could not be read as a regular file` });
   }
-  refusals.push(...shebangRefusals(commands, dir, config.files, config.scriptFiles, o.folder));
+  refusals.push(...(await coverageRefusals(commands, dir, config.files, config.scriptFiles, o)));
   return finish(config);
 }

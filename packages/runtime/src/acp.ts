@@ -8,7 +8,7 @@ import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isMo
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { EnginePreset, LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
+import { absoluteSearchPath, type EnginePreset, type LinkedAccess, type Transport, type TransportOptions, type TurnScope } from "./transport";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {
@@ -557,6 +557,8 @@ export class AcpTransport implements Transport {
     const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env, ...this.o.engineEnv };
     if (config !== undefined) env.CODEX_CONFIG = config;
     else delete env.CODEX_CONFIG;
+    // With a preset, its hooks and servers find programs on an absolute-only PATH (E2); without one, D0.
+    if (this.engine && env.PATH !== undefined) env.PATH = absoluteSearchPath(env.PATH);
     const child = spawn(binary, args, {
       cwd: this.o.folder,
       env,

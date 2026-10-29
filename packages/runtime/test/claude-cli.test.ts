@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs, ruleUnsafePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
-import type { EnginePreset, Session, TransportOptions } from "../src/transport";
+import { absoluteSearchPath, type EnginePreset, type Session, type TransportOptions } from "../src/transport";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -35,6 +35,28 @@ async function run(t: ClaudeCliTransport, message = "hi", signal = new AbortCont
   await t.turn(message, (e) => events.push(e), signal);
   return events;
 }
+
+describe("PATH on a preset turn (hatches spec §5.3, E2)", () => {
+  it("keeps absolute entries only with a preset; D0 keeps the PATH as given", async () => {
+    expect(absoluteSearchPath(":.:rel/bin:/usr/bin::/bin:./x")).toBe("/usr/bin:/bin");
+    const dirty = ":.:rel/bin:/usr/bin::/bin";
+    for (const engine of [{ hash: "a".repeat(64), base: "isolated" as const, servers: [] }, undefined]) {
+      const folder = fs.mkdtempSync(path.join(root, "t-"));
+      const pathFile = path.join(folder, "..", `path-${path.basename(folder)}.txt`);
+      const transport = new ClaudeCliTransport({
+        folder,
+        session: { id: "11111111-1111-1111-1111-111111111111", started: false },
+        mcp: [uiServer],
+        permissions,
+        command: fakeClaudeCommand(),
+        env: { HH_FAKE_SCRIPT: writeScript(root, { steps: [...claudeTextLines("ok"), claudeResultLine(true)] }), HH_FAKE_PATH: pathFile, PATH: dirty },
+        onSessionStarted: () => {},
+      });
+      await transport.turn("hi", () => {}, new AbortController().signal, undefined, { linked: [], ...(engine ? { engine } : {}) });
+      expect(fs.readFileSync(pathFile, "utf8"), engine ? "preset" : "D0").toBe(engine ? "/usr/bin:/bin" : dirty);
+    }
+  });
+});
 
 describe("allowedTools", () => {
   it("derives the whitelist from permissions and MCP servers", () => {

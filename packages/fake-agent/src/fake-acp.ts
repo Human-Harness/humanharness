@@ -60,6 +60,7 @@ acp
       OPENCODE_CONFIG_CONTENT: process.env.OPENCODE_CONFIG_CONTENT ?? null,
       OPENCODE_PERMISSION: process.env.OPENCODE_PERMISSION ?? null,
       OPENCODE_DISABLE_CLAUDE_CODE: process.env.OPENCODE_DISABLE_CLAUDE_CODE ?? null,
+      PATH: process.env.PATH ?? null,
     });
     log("initialize", ctx.params);
     return {

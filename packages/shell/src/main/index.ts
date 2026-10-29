@@ -73,6 +73,7 @@ import {
   createWorkspace,
   runSystemSession,
   runSystemTask,
+  absoluteSearchPath,
 } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -2067,6 +2068,9 @@ async function linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHis
  * Which engine preset a task gets (hatches spec §5.2, §5.3): only a harness that declares `enginePresets` makes it
  * (D0: undefined, and `.harness/engine/` is never read). Approvals are checked with the links' key, never created here.
  */
+/** The engines' PATH for the engine-config checks (`EngineHostDeps.searchPath`), read once. */
+let engineSearchPath: Promise<string> | undefined;
+
 function engineHost_(): EngineHost | undefined {
   if (!hasEnginePresets(harness)) return undefined;
   if (engineHost) return engineHost;
@@ -2084,6 +2088,10 @@ function engineHost_(): EngineHost | undefined {
     linked: async (scope) => ((await linked_()?.access.access(scope))?.linked ?? []).map((l) => l.path),
     secret: () => linkedSecret(userData)(false),
     epoch: (profile, scope) => epochs.get(profile, scope),
+    // The engines' PATH as their preset turns get it (absolute entries only): a bare interpreter found first inside
+    // the folder is refused (E2).
+    // Read once: a login shell per turn would be slow.
+    searchPath: () => (engineSearchPath ??= loginShellPath(commandDeps).then(absoluteSearchPath)),
     // Read on each use: a harness update changes them.
     get harness() {
       return { permissions: harness.permissions, actions: harness.actions, mcp: harness.mcp };

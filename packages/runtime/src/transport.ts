@@ -118,3 +118,15 @@ export function acpFields(
     ...(t.env ? { engineEnv: { ...t.env } } : {}),
   };
 }
+
+/**
+ * `PATH` with its absolute entries only. An empty, `.` or relative entry makes a bare command (an interpreter, `npx`,
+ * `#!/usr/bin/env node`) resolve against the current folder, which the agent writes (hatches spec §5.3, E2). Applied
+ * on turns with an engine preset only: without one the environment stays as it was (D0).
+ */
+export function absoluteSearchPath(value: string): string {
+  return value
+    .split(":")
+    .filter((d) => d.startsWith("/"))
+    .join(":");
+}

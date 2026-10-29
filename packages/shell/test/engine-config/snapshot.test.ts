@@ -297,6 +297,31 @@ describe("engine snapshot (spec §5.2, E3)", () => {
     expect(await pinnedScriptsUnchanged(userData, c.hash, o)).toBe(false);
   });
 
+  it("a load and a pin refuse a command that runs a file of the engine folder the snapshot doesn't hold (probe 5)", async () => {
+    const hook = (p: string) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node "$CLAUDE_PROJECT_DIR"/${p}` }] }] } });
+    const { userData, read, load, o, dir } = setup({ "settings.json": hook(".harness/engine/s/skills/k/x.js"), "skills/k/SKILL.md": "---\ndescription: k\n---\nbody\n", "skills/k/x.js": "x" });
+    const c = await read();
+    expect(c.refusals).toEqual([]);
+    await writeSnapshot(userData, c, "s");
+    expect((await load(c.hash)).refusals).toEqual([]);
+    expect(await pinnedScriptsUnchanged(userData, c.hash, o)).toBe(true);
+    // Another spelling of the same file is still the snapshot's file.
+    fs.writeFileSync(path.join(dir, "settings.json"), hook(".harness/ENGINE/s/skills/k/x.js"));
+    const c2 = await read();
+    expect(c2.refusals).toEqual([]);
+    await writeSnapshot(userData, c2, "s");
+    expect((await load(c2.hash)).refusals).toEqual([]);
+    // .DS_Store is never one of its files.
+    fs.writeFileSync(path.join(dir, ".DS_Store"), "evil()");
+    fs.writeFileSync(path.join(dir, "settings.json"), hook(".harness/engine/s/.DS_Store"));
+    const c3 = await read();
+    expect(c3.refusals.map((r) => r.message)).toEqual([expect.stringContaining("none of the files its hash covers")]);
+    c3.refusals = [];
+    await writeSnapshot(userData, c3, "s");
+    expect((await load(c3.hash)).refusals.map((r) => r.message)).toEqual([expect.stringContaining("none of the files its hash covers")]);
+    expect(await pinnedScriptsUnchanged(userData, c3.hash, o)).toBe(false);
+  });
+
   it("writing a snapshot that is already there makes it young again: an old hash approved anew is not pruned", async () => {
     const { userData, read } = setup(FULL, TOOLS);
     const c = await read();

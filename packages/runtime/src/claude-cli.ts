@@ -6,7 +6,7 @@ import { type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/eng
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, EDIT_PATH_MAX, type Event, fail } from "./events";
-import type { EnginePreset, LinkedAccess, Transport, TransportOptions, TurnScope } from "./transport";
+import { absoluteSearchPath, type EnginePreset, type LinkedAccess, type Transport, type TransportOptions, type TurnScope } from "./transport";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
 /** Plumbing tools the user should never see as activity. */
@@ -165,6 +165,11 @@ function presetRules(preset: EnginePreset | undefined): { allow?: string[]; deny
 
 /** Under the `global` base the CLI reads the folder's `.mcp.json`: the agent may not write one. */
 const GLOBAL_DENIED = ["Edit(.mcp.json)", "Write(.mcp.json)", "MultiEdit(.mcp.json)", "NotebookEdit(.mcp.json)"];
+
+/** The CLI's environment: with a preset, its `PATH` keeps absolute entries only (`absoluteSearchPath`); without one, as given (D0). */
+function presetEnv(env: NodeJS.ProcessEnv, preset: boolean): NodeJS.ProcessEnv {
+  return preset && env.PATH !== undefined ? { ...env, PATH: absoluteSearchPath(env.PATH) } : env;
+}
 
 /**
  * Checks a preset at the last boundary before the CLI: a known base, servers named `scope-<name>` that take no core
@@ -464,7 +469,7 @@ export class ClaudeCliTransport implements Transport {
       const [binary, ...leading] = this.o.command;
       const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile, scope })], {
         cwd: this.o.folder,
-        env: { ...process.env, ...this.o.env },
+        env: presetEnv({ ...process.env, ...this.o.env }, scope?.engine !== undefined),
         stdio: ["pipe", "pipe", "pipe"],
         detached: useGroup,
       });

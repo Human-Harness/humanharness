@@ -191,7 +191,7 @@ function parse(command: ScriptCommand, folder: string): Parsed {
     if (script === undefined) refuse(`runs ${interpreter} without a script`);
     if (script!.startsWith("-")) refuse(`gives ${interpreter} an option (${script!.slice(0, 40)})`);
     if (hook) anchorHook(words, 1, codex);
-    if (path.isAbsolute(first)) out.checks.push({ word: first, role: "interp" });
+    out.checks.push({ word: first, role: "interp" });
     out.checks.push({ word: script!, role: "script" });
     rest(2);
     return out;
@@ -201,7 +201,7 @@ function parse(command: ScriptCommand, folder: string): Parsed {
     const pkg = words[at];
     if (pkg === undefined || !NPM_NAME.test(pkg)) refuse(`runs npx with ${pkg === undefined ? "no package" : JSON.stringify(pkg.slice(0, 60))}, not a remote npm package`);
     out.remote = true;
-    out.checks.push({ word: pkg!, role: "npm" });
+    out.checks.push({ word: "npx", role: "interp" }, { word: pkg!, role: "npm" });
     rest(at + 1);
     return out;
   }
@@ -209,7 +209,7 @@ function parse(command: ScriptCommand, folder: string): Parsed {
     const pkg = words[1];
     if (pkg === undefined || !PYPI_NAME.test(pkg)) refuse(`runs uvx with ${pkg === undefined ? "no package" : JSON.stringify(pkg.slice(0, 60))}, not a remote PyPI package`);
     out.remote = true;
-    out.checks.push({ word: pkg!, role: "pypi" });
+    out.checks.push({ word: "uvx", role: "interp" }, { word: pkg!, role: "pypi" });
     rest(2);
     return out;
   }
@@ -229,15 +229,35 @@ export function commandWords(command: ScriptCommand, folder: string): string[] {
   return parse(command, folder).words;
 }
 
+/** How many bytes of a script the `#!` check reads: more than any kernel takes for the line (macOS reads 512). */
+export const SHEBANG_READ = 1024;
+/** The longest `#!` line accepted, in bytes. */
+const SHEBANG_MAX = 127;
+const SHEBANG_RULE = "#!/usr/bin/env node, python3, python, bash or sh, or such an interpreter's system path, no options";
+
 /**
- * Why the first line of a script run directly is not allowed, or null: only `#!/usr/bin/env <interpreter>` or
- * `#!<interpreter's absolute path>` (in a system folder), with no options.
+ * A script's `#!` line, judged on its first bytes (`SHEBANG_READ` of them or more): the interpreter it names and
+ * whether `/usr/bin/env` finds it on PATH, or why it is not allowed. Only `#!/usr/bin/env <interpreter>` or
+ * `#!<interpreter's absolute path>` (in a system folder), with no options, the line ended by `\n` within 127 bytes and
+ * holding no tab or `\r` (a kernel may split on them, or keep them in the name).
  */
-export function shebangProblem(head: string): string | null {
-  const line = head.split(/\r?\n/)[0]!.replace(/\r$/, "");
-  const m = /^#![ \t]*(\S+)(?:[ \t]+(\S+))?[ \t]*$/.exec(line);
-  const ok = m !== null && (m[1] === "/usr/bin/env" ? m[2] !== undefined && INTERPRETERS.has(m[2]) : m[2] === undefined && INTERPRETER_DIRS.has(path.dirname(m[1]!)) && INTERPRETERS.has(path.basename(m[1]!)));
-  return ok ? null : "starts with no allowed #! line (#!/usr/bin/env node, python3, python, bash or sh, no options)";
+export function readShebang(head: Buffer | string): { interpreter: string; viaEnv: boolean } | { problem: string } {
+  const data = typeof head === "string" ? Buffer.from(head, "utf8") : head;
+  const end = data.subarray(0, SHEBANG_MAX + 1).indexOf(0x0a);
+  if (end < 0) return { problem: data.length > SHEBANG_MAX ? `has a #! line over ${SHEBANG_MAX} bytes (${SHEBANG_RULE})` : `starts with no #! line ended by a new line (${SHEBANG_RULE})` };
+  const line = data.subarray(0, end).toString("latin1");
+  const bad = { problem: `starts with no allowed #! line (${SHEBANG_RULE})` };
+  if (/[\t\r]/.test(line)) return bad;
+  const m = /^#! *(\S+)(?: (\S+))? *$/.exec(line);
+  if (!m) return bad;
+  if (m[1] === "/usr/bin/env") return m[2] !== undefined && INTERPRETERS.has(m[2]) ? { interpreter: m[2], viaEnv: true } : bad;
+  return m[2] === undefined && INTERPRETER_DIRS.has(path.dirname(m[1]!)) && INTERPRETERS.has(path.basename(m[1]!)) ? { interpreter: m[1]!, viaEnv: false } : bad;
+}
+
+/** Why a script's `#!` line is not allowed (`readShebang`), or null. */
+export function shebangProblem(head: Buffer | string): string | null {
+  const r = readShebang(head);
+  return "problem" in r ? r.problem : null;
 }
 
 // macOS file systems are usually case- and normalization-insensitive: compare without either (as clean.ts).
@@ -326,6 +346,46 @@ async function localModule(spec: string, folder: string, roots: Root[]): Promise
   return null;
 }
 
+/**
+ * Where scripts are looked for: the folder (relative paths, `$CLAUDE_PROJECT_DIR`), its linked folders, and the PATH
+ * the engines and their hooks and servers get (`searchPath`, already cleaned of relative entries). Without
+ * `searchPath`, a bare program is not looked up.
+ */
+export interface ScanOptions {
+  folder: string;
+  linked: readonly string[];
+  searchPath?: string;
+}
+
+/** The first executable regular file `name` names on `searchPath` (absolute entries only), or null. */
+async function firstOnPath(name: string, searchPath: string): Promise<string | null> {
+  for (const d of searchPath.split(":")) {
+    if (!path.isAbsolute(d)) continue;
+    const p = path.join(d, name);
+    try {
+      await fs.access(p, fs.constants.X_OK);
+      if ((await fs.stat(p)).isFile()) return p;
+    } catch {
+      // not here
+    }
+  }
+  return null;
+}
+
+/**
+ * Why the program `word` (an interpreter, `npx`, `uvx`; bare or absolute) is not allowed, or null: the file that would
+ * run (its path, or the first match on `o.searchPath`) lies inside the folder or a linked folder, where an agent can
+ * write it.
+ */
+export async function interpreterProblem(word: string, o: ScanOptions, roots?: Root[]): Promise<{ path: string; why: string } | null> {
+  const found = path.isAbsolute(word) ? word : o.searchPath !== undefined ? await firstOnPath(word, o.searchPath) : null;
+  if (!found) return null;
+  const rs = roots ?? (await rootsOf(o));
+  const real = (await realOrNull(found)) ?? found;
+  if (!rs.some((r) => inside(found, r.lex) || inside(found, r.real) || inside(real, r.real))) return null;
+  return { path: found, why: path.isAbsolute(word) ? "is an interpreter inside the folder or a linked folder" : `is the ${word} found first on PATH, and it is inside the folder or a linked folder` };
+}
+
 /** A word that names something the hash can't cover: the path, why, and the command that names it. */
 export interface ScriptIssue {
   path: string;
@@ -343,7 +403,7 @@ export interface ScriptIssue {
  */
 export async function scanScripts(
   commands: ReadonlyArray<ScriptCommand>,
-  o: { folder: string; linked: readonly string[] },
+  o: ScanOptions,
 ): Promise<{ files: string[]; issues: ScriptIssue[] }> {
   const roots = await rootsOf(o);
   const files = new Set<string>();
@@ -366,8 +426,8 @@ export async function scanScripts(
         continue;
       }
       if (role === "interp") {
-        const real = (await realOrNull(word)) ?? word;
-        if (roots.some((r) => inside(word, r.lex) || inside(word, r.real) || inside(real, r.real))) issue(word, "is an interpreter inside the folder or a linked folder");
+        const why = await interpreterProblem(word, o, roots);
+        if (why) issue(why.path, why.why);
         continue;
       }
       if (role === "script" || role === "direct") {
@@ -423,7 +483,7 @@ export function directScripts(commands: ReadonlyArray<ScriptCommand>, folder: st
  * The paths `commands` name that join the hash or are refused (`scanScripts`'s files and issues), sorted and unique:
  * what a pin's check and a snapshot's load compare with the approved list, so a path refused now never matches.
  */
-export async function scriptRefs(commands: ReadonlyArray<ScriptCommand>, o: { folder: string; linked: readonly string[] }): Promise<string[]> {
+export async function scriptRefs(commands: ReadonlyArray<ScriptCommand>, o: ScanOptions): Promise<string[]> {
   const { files, issues } = await scanScripts(commands, o);
   return [...new Set([...files, ...issues.map((i) => i.path)])].sort();
 }

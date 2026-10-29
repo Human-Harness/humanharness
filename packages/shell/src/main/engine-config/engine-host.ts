@@ -39,6 +39,8 @@ interface EngineHostDeps {
   epoch(profile: string, scope: string): Promise<number | null>;
   /** The manifest's permissions, actions and MCP servers (cleaning context, reserved names). */
   harness: { permissions: { edit: "folder" | "none"; web: boolean }; actions: Readonly<Record<string, unknown>>; mcp: readonly string[] };
+  /** The PATH the engines get, absolute entries only: where a bare interpreter, npx or uvx is looked up (E2). */
+  searchPath?(): Promise<string>;
   log?(message: string, err?: unknown): void;
 }
 
@@ -107,6 +109,7 @@ export class EngineHost {
       reserved: new Set([...CORE_SERVERS, ...h.mcp]),
       actions: h.actions,
       web: h.permissions.web,
+      ...(this.d.searchPath ? { searchPath: await this.d.searchPath() } : {}),
       dir: engineConfigDir(base, scope),
     };
   }

@@ -256,6 +256,60 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     }
   });
 
+  it("a file in the engine folder the hash skips (.DS_Store) is refused when a command runs it (probe 5)", async () => {
+    const { dir, read } = setup({
+      ".DS_Store": "console.log('approved')\n",
+      "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/.harness/engine/s/.DS_Store' }] }] } }),
+      "mcp.json": JSON.stringify({ mcpServers: { x: { command: "python3", args: [".harness/engine/s/.DS_Store"] } } }),
+    });
+    const c = (await read())!;
+    expect(c.files.has(".DS_Store")).toBe(false);
+    expect(c.refusals.map((r) => [r.file, r.message.includes("none of the files its hash covers")])).toEqual([[path.join(dir, ".DS_Store"), true]]);
+  });
+
+  it.each([".harness/engine/s/skills/k/run", ".harness/Engine/s/skills/k/run", ".HARNESS/engine/S/skills/k/run"])(
+    "a script in the engine folder named with another case is judged on the engine folder's bytes: %s (probe 5)",
+    async (p) => {
+      const { folder, dir, read } = setup({ "skills/k/SKILL.md": "---\ndescription: k\n---\nbody\n" });
+      fs.writeFileSync(path.join(dir, "skills/k/run"), `#!${folder}/tools/interp\necho hashed body\n`);
+      const hook = { hooks: { Stop: [{ hooks: [{ type: "command", command: `"$CLAUDE_PROJECT_DIR"/${p}` }] }] } };
+      fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify(hook));
+      const c = (await read())!;
+      expect(c.refusals.map((r) => r.message)).toEqual([expect.stringContaining("starts with no allowed #! line")]);
+      expect(c.scripts).toEqual([]);
+      // A server, by a relative path.
+      fs.rmSync(path.join(dir, "settings.json"));
+      fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ mcpServers: { x: { command: p } } }));
+      expect((await read())!.refusals.map((r) => r.message)).toEqual([expect.stringContaining("starts with no allowed #! line")]);
+    },
+  );
+
+  it("a #! line padded past what was once read is judged whole (probe 5)", async () => {
+    const { folder, dir, read } = setup({}, { "tools/evil.sh": "echo evil\n" });
+    fs.writeFileSync(path.join(folder, "tools/run"), "#!/bin/sh" + " ".repeat(260) + `${folder}/tools/evil.sh\necho hashed\n`);
+    fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/tools/run' }] }] } }));
+    expect((await read())!.refusals.map((r) => r.message)).toEqual([expect.stringContaining("over 127 bytes")]);
+  });
+
+  it("a bare interpreter, npx, uvx or #!/usr/bin/env interpreter found first on PATH inside a root is refused (probe 5)", async () => {
+    const { folder, dir, o, read } = setup({}, { "bin/node": "evil", "bin/npx": "evil", "bin/sh": "evil", "tools/x.js": "x", "tools/run": "#!/usr/bin/env sh\necho\n" });
+    for (const b of ["node", "npx", "sh"]) fs.chmodSync(path.join(folder, "bin", b), 0o755);
+    const run = async (mcp: unknown, searchPath?: string) => {
+      fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify(mcp));
+      return (await readEngineConfig(dir, { ...o, ...(searchPath ? { searchPath } : {}) }))!.refusals.map((r) => r.message);
+    };
+    const onPath = `${folder}/bin:/usr/bin:/bin`;
+    for (const mcp of [
+      { mcpServers: { x: { command: "node", args: ["./tools/x.js"] } } },
+      { mcpServers: { x: { command: "npx", args: ["-y", "srv"] } } },
+      { mcpServers: { x: { command: "./tools/run" } } },
+    ]) {
+      expect(await run(mcp, onPath), JSON.stringify(mcp)).toEqual([expect.stringContaining("found first on PATH")]);
+      expect(await run(mcp, "/usr/bin:/bin"), JSON.stringify(mcp)).toEqual([]);
+    }
+    expect((await read())!.refusals).toEqual([]);
+  });
+
   it("refuses hard links, in the engine folder and as scripts", async () => {
     const hooks = { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/x.js' }] }] };
     const { folder, dir, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/x.js": "x", "secret.json": "s" });

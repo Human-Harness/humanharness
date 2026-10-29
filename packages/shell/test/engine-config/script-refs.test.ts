@@ -96,12 +96,34 @@ describe("the command grammar (E2: <interpreter> <script> [args], <script> [args
   });
 
   it("a script run directly starts with #!/usr/bin/env <interpreter> or #!<system interpreter>, no options", async () => {
-    for (const ok of ["#!/usr/bin/env node\n", "#!/usr/bin/env python3\r\nx", "#!/bin/sh\n", "#!/bin/bash", "#! /usr/local/bin/python3\n", "#!/opt/homebrew/bin/node\n"]) {
+    for (const ok of ["#!/usr/bin/env node\n", "#!/usr/bin/env python3\nx", "#!/bin/sh\n", "#!/bin/bash\n", "#! /usr/local/bin/python3\n", "#!/opt/homebrew/bin/node\n"]) {
       expect(shebangProblem(ok), ok).toBeNull();
     }
-    for (const bad of ["", "echo hi\n", "#!/usr/bin/env -S node --x\n", "#!/usr/bin/env node --require ./x\n", "#!/usr/bin/env deno\n", "#!/bin/sh -x\n", "#!./node\n", "#!/tmp/node\n", "#!/usr/bin/perl\n", "#!/usr/bin/env\n"]) {
+    for (const bad of ["", "echo hi\n", "#!/bin/bash", "#!/usr/bin/env python3\r\nx", "#!/usr/bin/env -S node --x\n", "#!/usr/bin/env node --require ./x\n", "#!/usr/bin/env deno\n", "#!/bin/sh -x\n", "#!./node\n", "#!/tmp/node\n", "#!/usr/bin/perl\n", "#!/usr/bin/env\n"]) {
       expect(shebangProblem(bad), bad).not.toBeNull();
     }
+    // Probe 5: the whole line, up to its new line, within 127 bytes; no tab or CR; the macOS kernel reads 512 bytes.
+    for (const bad of [
+      "#!/bin/sh\r\n",
+      "\ufeff#!/bin/sh\n",
+      "#!/bin/sh#x\n",
+      "#!\t/bin/sh\t\n",
+      "#!/usr/bin/env\tsh\n",
+      "#! /usr/bin/env sh #c\n",
+      "#!/bin//sh\n",
+      "#!/bin/./sh\n",
+      "#!/usr/bin/../bin/sh\n",
+      "#!/usr/bin/env SH\n",
+      "#!/BIN/SH\n",
+      "#!/bin/sh" + " ".repeat(260) + "/tmp/evil.sh\necho\n",
+      "#!/usr/bin/env sh" + " ".repeat(250) + "/tmp/evil.sh\necho\n",
+      "#!/bin/sh" + " ".repeat(120) + "\n",
+      "#!/bin/sh /tmp/evil.sh\n",
+    ]) {
+      expect(shebangProblem(bad), JSON.stringify(bad)).not.toBeNull();
+    }
+    expect(shebangProblem("#!/bin/sh" + " ".repeat(117) + "\n")).toBeNull();
+    expect(shebangProblem(Buffer.from("#!/bin/sh\n" + "x".repeat(2000)))).toBeNull();
     const s = tree("g-shebang", { "plain.sh": "echo x\n", "opt.sh": "#!/bin/bash -p\n", "ok.sh": "#!/usr/bin/env bash\n" });
     const so = { folder: s, linked: [] };
     // The scan never reads the line: it is judged on the bytes hashed (read-config). It lists the scripts run directly.

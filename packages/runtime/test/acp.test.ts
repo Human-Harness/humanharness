@@ -1410,6 +1410,17 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     });
   });
 
+  it("a preset turn's agent (and so its hooks and servers) gets a PATH of absolute entries only; D0 keeps it", async () => {
+    const dirty = ":.:rel/bin:/usr/bin::/bin";
+    const withPreset = setup({ turns: [[chunk("a")]] }, undefined, { engineEnv: { PATH: dirty } });
+    await turnWith(withPreset.transport, { linked: [], engine: preset() }, deep);
+    expect(withPreset.log().find((l) => l.method === "env")!.params.PATH).toBe("/usr/bin:/bin");
+    await withPreset.transport.close();
+    const d0 = setup({ turns: [[chunk("a")]] }, undefined, { engineEnv: { PATH: dirty } });
+    await turnWith(d0.transport, { linked: [] }, deep);
+    expect(d0.log().find((l) => l.method === "env")!.params.PATH).toBe(dirty);
+  });
+
   it("preset servers join mcpServers on session/new and session/load", async () => {
     const fresh = setup({ turns: [[chunk("a")]] });
     await turnWith(fresh.transport, { linked: [], engine: preset() }, deep);

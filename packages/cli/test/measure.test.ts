@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { UsageError } from "../src/cli";
 import { USAGE, main } from "../src/main";
 import { measureCommand } from "../src/measure";
@@ -8,6 +9,7 @@ import { memoryIo, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-measure-");
 afterAll(cleanup);
+afterEach(() => vi.restoreAllMocks());
 let n = 0;
 
 const at = "2026-10-29T10:00:00.000Z";
@@ -64,6 +66,16 @@ describe("humanharness measure (tools spec §8.4)", () => {
     const m = memoryIo(root);
     expect(await measureCommand(["--folder", path.relative(root, dir)], m.io)).toBe(0);
     expect(m.out()).toContain("  without pre-steps: 1 task, first turn ≈ 500 tokens");
+  });
+
+  it("--folder ~/<dir> is read from the home folder", async () => {
+    const dir = folderWith([turn("A", "study", 700)]);
+    // A stubbed home (the test's temp root): the real one is never read.
+    const home = vi.spyOn(os, "homedir").mockReturnValue(root);
+    const m = memoryIo(path.join(root, "elsewhere"));
+    expect(await measureCommand(["--folder", `~/${path.basename(dir)}`], m.io)).toBe(0);
+    expect(home).toHaveBeenCalled();
+    expect(m.out()).toContain("  without pre-steps: 1 task, first turn ≈ 700 tokens");
   });
 
   it("a folder without usage.jsonl says 'No usage recorded in <folder> yet.' and exits 0", async () => {

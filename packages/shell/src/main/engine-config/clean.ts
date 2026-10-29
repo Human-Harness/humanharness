@@ -37,8 +37,12 @@ export interface CleanSettings {
 const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const SERVER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const CREDENTIAL_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|OPENAI_?KEY|CREDENTIAL|AUTH|COOKIE|SESSION|(^|_)PAT($|_))/i;
-// Variables that make a program load code the hash never saw (E2): node, the shell, the dynamic linker, python, ruby, perl.
-export const LOADER_NAME = /^(NODE_OPTIONS|NODE_PATH|PATH|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|BASH_ENV|ENV|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|DYLD_.*|LD_.*)$/i;
+/** A server's env name: upper-case letters, digits and `_`. */
+const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
+// Variables that make a program load code, config or a home the hash never saw (E2): search paths, homes and config
+// folders, option variables, preloads, and the families of node, python, perl, ruby, java, bash, git, npm, the linker.
+const LOADER_NAME =
+  /(PATH|HOME|DIR|OPTIONS|OPTS|CONFIG|PREFIX|RC|STARTUP|USERBASE|PROFILE|PRELOAD|LIBRARY|LIB|INCLUDE)$|^(GIT_|NPM_CONFIG_|NODE_|PYTHON|PERL|RUBY|JAVA_|BASH_|ZDOTDIR|LD_|DYLD_|PROMPT_COMMAND)|^ENV$/;
 /** Map keys a preset may use (hook events, feature flags). */
 const MAP_KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -222,6 +226,7 @@ export function cleanMcp(raw: unknown, ctx: CleanContext): McpServerSpec[] {
     if (s.env !== undefined) {
       if (!isObject(s.env)) return refuse(file, `${at}.env must be an object`);
       for (const k of keysOf(file, s.env, `${at}.env.`)) {
+        if (!ENV_NAME.test(k)) refuse(file, `${at}.env.${k}: a name is upper-case letters, digits and _`);
         if (CREDENTIAL_NAME.test(k)) refuse(file, `${at}.env.${k} looks like a credential; credentials are not allowed`);
         if (LOADER_NAME.test(k)) refuse(file, `${at}.env.${k} is not allowed (it makes the program load other code)`);
         const v = s.env[k];

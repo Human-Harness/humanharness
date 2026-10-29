@@ -254,7 +254,7 @@ describe("engine snapshot (spec §5.2, E3)", () => {
     const linked = fs.mkdtempSync(path.join(root, "linked-"));
     const { userData, read, o, load } = setup({
       "settings.json": JSON.stringify({ permissions: { allow: [`Edit(/${linked}/**)`, "Edit(./docs/**)", "Bash(npm test)"] } }),
-      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["--version"] } } }),
+      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "npx", args: ["-y", "lint-mcp"] } } }),
     });
     o.linked = [linked];
     const c = await read();
@@ -273,14 +273,16 @@ describe("engine snapshot (spec §5.2, E3)", () => {
     expect(reserved.refusals.map((r) => r.message)).toEqual([expect.stringMatching(/scope-lint is a reserved server name/)]);
   });
 
-  it("a script the commands name now but didn't at approval is refused at load", async () => {
-    const { userData, read, load, folder } = setup({ "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } }) });
+  it("a file the commands name now but didn't at approval is refused at load", async () => {
+    const { userData, read, load, folder } = setup(
+      { "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js", "./tools/rules.js"] } } }) },
+      { "tools/lint.js": "lint" },
+    );
     const c = await read();
-    expect(c.scripts).toEqual([]);
+    expect(c.scripts).toEqual([path.join(folder, "tools", "lint.js")]);
     await writeSnapshot(userData, c, "s");
     expect((await load(c.hash)).refusals).toEqual([]);
-    fs.mkdirSync(path.join(folder, "tools"));
-    fs.writeFileSync(path.join(folder, "tools", "lint.js"), "unapproved()");
+    fs.writeFileSync(path.join(folder, "tools", "rules.js"), "unapproved()");
     expect((await load(c.hash)).refusals.map((r) => r.message)).toEqual(["The scripts the approved commands run are not the ones approved"]);
   });
 

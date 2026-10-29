@@ -39,21 +39,21 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     const { read } = setup({
       base: "global\n",
       "instructions.md": "Use tabs.\n",
-      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["--max-old-space-size=64"] } } }),
+      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "npx", args: ["-y", "lint-mcp@1.0"] } } }),
       "settings.json": JSON.stringify({ defaultMode: "bypassPermissions", permissions: { allow: ["Bash(npm test)"] } }),
       "skills/fmt/SKILL.md": SKILL,
       "skills/fmt/helper.txt": "notes",
       "agents/reviewer.md": AGENT,
       "codex.toml": 'model_verbosity = "low"\nhide_agent_reasoning = true\n',
       "actions/review/instructions.md": "Be strict.",
-      "actions/review/mcp.json": JSON.stringify({ mcpServers: { diff: { command: "difftool" } } }),
+      "actions/review/mcp.json": JSON.stringify({ mcpServers: { diff: { command: "uvx", args: ["mcp-diff"] } } }),
       "actions/review/settings.json": JSON.stringify({ permissions: { deny: ["Bash(git push:*)"] } }),
     });
     const c = (await read())!;
     expect(c.refusals).toEqual([]);
     expect(c.base).toBe("global");
     expect(c.instructions).toBe("Use tabs.\n");
-    expect(c.servers).toEqual([{ name: "scope-lint", command: "node", args: ["--max-old-space-size=64"], env: {} }]);
+    expect(c.servers).toEqual([{ name: "scope-lint", command: "npx", args: ["-y", "lint-mcp@1.0"], env: {} }]);
     expect(c.settings).toEqual({ permissions: { allow: ["Bash(npm test)"] } });
     expect(c.skills).toEqual([{ name: "fmt", description: "Formats files" }]);
     expect(c.agents).toEqual({ reviewer: { description: "Reviews changes", prompt: "You review.", tools: ["Read", "Grep"] } });
@@ -62,7 +62,7 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     expect(c.actions).toEqual({
       review: {
         instructions: "Be strict.",
-        servers: [{ name: "scope-diff", command: "difftool", args: [], env: {} }],
+        servers: [{ name: "scope-diff", command: "uvx", args: ["mcp-diff"], env: {} }],
         settings: { permissions: { deny: ["Bash(git push:*)"] } },
         ignored: [],
       },
@@ -182,7 +182,7 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
 
   it.each([
     ["a symbolic link", "is a symbolic link"],
-    ["a folder", "is a folder: the program would run a file in it the approval doesn't cover"],
+    ["a folder", "is a folder"],
   ])("a command naming %s in the folder is refused naming it (E2, E8)", async (kind, why) => {
     const hooks = { Stop: [{ hooks: [{ type: "command", command: "node ./tools/run.js" }] }] };
     const { folder, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/real.js": "one" });
@@ -207,22 +207,24 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     expect(c.scripts).toEqual([path.join(folder, "a.sh"), path.join(folder, "b.sh")]);
   });
 
-  it("hook and server commands whose paths can't be placed are refused naming the file (E2)", async () => {
+  it("hook and server commands outside the grammar are refused naming the config file (E2)", async () => {
     const hook = (command: string) => ({ hooks: { Stop: [{ hooks: [{ type: "command", command }] }] } });
     const { read } = setup({
       "settings.json": JSON.stringify(hook("cd tools && node x.js")),
       "codex.toml": '[[hooks.Stop]]\nhooks = [{ type = "command", command = "node $HOME/x.js" }]\n',
-      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "sh", args: ["-c", "node ./*.js"] } } }),
+      "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "sh", args: ["-c", "node ./x.js"] } } }),
     });
     const c = (await read())!;
-    expect(c.refusals.map((r) => r.file)).toEqual(["codex.toml", "mcp.json", "settings.json"]);
-    expect(c.refusals[0]!.message).toContain('codex.toml: the hook command "node $HOME/x.js" uses $');
-    expect(c.refusals[1]!.message).toContain('mcp.json: the server lint "sh -c node ./*.js" uses a glob');
-    expect(c.refusals[2]!.message).toContain('settings.json: the hook command "cd tools && node x.js" changes folder (cd)');
+    const form = ": a hook or server must run a plain script file: <interpreter> <script> [args]";
+    expect(c.refusals).toEqual([
+      { file: "codex.toml", message: `codex.toml: the hook command "node $HOME/x.js" uses "$"${form}` },
+      { file: "mcp.json", message: `mcp.json: the server lint "sh -c node ./x.js" gives sh an option (-c)${form}` },
+      { file: "settings.json", message: `settings.json: the hook command "cd tools && node x.js" uses "&"${form}` },
+    ]);
   });
 
-  it("a script inside sh -c or under $CLAUDE_PROJECT_DIR joins the hash", async () => {
-    const hooks = { Stop: [{ hooks: [{ type: "command", command: `bash -c 'node "$CLAUDE_PROJECT_DIR"/tools/x.js'` }] }] };
+  it("a script under $CLAUDE_PROJECT_DIR joins the hash", async () => {
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: `node "$CLAUDE_PROJECT_DIR"/tools/x.js` }] }] };
     const { folder, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/x.js": "one" });
     const c1 = (await read())!;
     expect(c1.refusals).toEqual([]);

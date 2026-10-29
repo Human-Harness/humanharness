@@ -77,7 +77,7 @@ async function setup(
 const SERVER = JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } });
 const SETTINGS = JSON.stringify({
   defaultMode: "bypassPermissions",
-  hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/stop.js" }] }], PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "true" }] }] },
+  hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/stop.js" }] }], PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node ./tools/stop.js --pre" }] }] },
   permissions: { allow: ["Bash(npm test)"] },
 });
 const TOOLS = { "tools/lint.js": "console.log('lint')", "tools/stop.js": "console.log('stop')" };
@@ -88,9 +88,9 @@ const FULL = {
   "settings.json": SETTINGS,
   "skills/fmt/SKILL.md": "---\nname: fmt\ndescription: Formats files\n---\nRun the formatter.\n",
   "agents/reviewer.md": "---\ndescription: Reviews changes\ntools: [Read, Grep]\npermissionMode: plan\n---\nYou review.\n",
-  "codex.toml": 'model_verbosity = "low"\nhide_agent_reasoning = true\nhooks = { Stop = [ { hooks = [ { type = "command", command = "echo done" } ] } ] }\n',
+  "codex.toml": 'model_verbosity = "low"\nhide_agent_reasoning = true\nhooks = { Stop = [ { hooks = [ { type = "command", command = "sh ./tools/stop.js" } ] } ] }\n',
   "actions/study/instructions.md": "Quiz me.",
-  "actions/study/mcp.json": JSON.stringify({ mcpServers: { cards: { command: "cards", args: ["--deck", "a"] } } }),
+  "actions/study/mcp.json": JSON.stringify({ mcpServers: { cards: { command: "node", args: ["./tools/lint.js", "--deck", "a"] } } }),
   "actions/study/settings.json": JSON.stringify({ permissions: { defaultMode: "plan", deny: ["Bash(git push:*)"] } }),
 };
 
@@ -103,10 +103,10 @@ describe("engine IPC (E10)", () => {
     expect(v.codexLimit).toBe(true);
     expect(v.runsCommands).toEqual([
       { kind: "hook", label: "Stop", command: "node ./tools/stop.js", args: [], layer: "", file: "settings.json" },
-      { kind: "hook", label: "PreToolUse · Bash", command: "true", args: [], layer: "", file: "settings.json" },
-      { kind: "hook", label: "Stop", command: "echo done", args: [], layer: "", file: "codex.toml" },
+      { kind: "hook", label: "PreToolUse · Bash", command: "node ./tools/stop.js --pre", args: [], layer: "", file: "settings.json" },
+      { kind: "hook", label: "Stop", command: "sh ./tools/stop.js", args: [], layer: "", file: "codex.toml" },
       { kind: "server", label: "scope-lint", command: "node", args: ["./tools/lint.js"], layer: "", file: "mcp.json" },
-      { kind: "server", label: "scope-cards", command: "cards", args: ["--deck", "a"], layer: "study", file: "actions/study/mcp.json" },
+      { kind: "server", label: "scope-cards", command: "node", args: ["./tools/lint.js", "--deck", "a"], layer: "study", file: "actions/study/mcp.json" },
     ]);
     expect(v.instructions).toEqual([
       { layer: "", text: "Use tabs.\n" },

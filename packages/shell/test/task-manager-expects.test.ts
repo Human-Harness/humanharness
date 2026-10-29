@@ -189,6 +189,58 @@ describe("phaseEnded (tools spec §6.1)", () => {
     expect(r.calls).toEqual([]);
   });
 
+  it("on a move the next part's turn waits for the check, so a miss line comes before the phase brief", async () => {
+    let answer!: () => void;
+    const asked: number[] = [];
+    const t = setup({
+      phases: PHASES,
+      extra: {
+        phaseEnded: () => {
+          asked.push(t.turns.length);
+          return new Promise<void>((res) => (answer = res));
+        },
+      },
+    });
+    await t.manager.start("session");
+    const moving = t.manager.setPhase("close", "t1").done;
+    await vi.waitFor(() => expect(asked).toEqual([1]));
+    await new Promise((res) => setTimeout(res, 30));
+    // The check hasn't answered: no phase brief turn yet.
+    expect(t.turns).toHaveLength(1);
+    answer();
+    await moving;
+    expect(t.turns).toHaveLength(2);
+    expect(t.turns[1]!.options).toMatchObject({ phase: "phase-change", phaseChange: "close" });
+  });
+
+  it("a phaseEnded that never answers holds a move no longer than its bound", async () => {
+    vi.useFakeTimers();
+    try {
+      let asked = 0;
+      const t = setup({
+        phases: PHASES,
+        extra: {
+          phaseEnded: () => {
+            asked++;
+            return new Promise<void>(() => {});
+          },
+        },
+      });
+      await t.manager.start("session");
+      const moving = t.manager.setPhase("close", "t1").done;
+      for (let i = 0; i < 200 && asked === 0; i++) await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toBe(1);
+      await vi.advanceTimersByTimeAsync(EXPECTS_CHECK_MS - 1);
+      expect(t.turns).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await moving;
+      expect(t.turns).toHaveLength(2);
+      expect(t.state().current).toMatchObject({ phase: { id: "close" } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("an agent's auto move calls it too", async () => {
     const r = recorder();
     const t = setup({ phases: PHASES, script: [[ask("close"), ok], [ok]], extra: { phaseEnded: r.phaseEnded } });

@@ -253,8 +253,9 @@ export interface TaskDeps {
   prepare?(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer>;
   /**
    * A task left a part (a move of any kind, or the closing turn of the part it closes in, or its close with the note
-   * already saved): its `expects` are checked (tools spec §6.1). A move never waits for it; a close waits at most
-   * EXPECTS_CHECK_MS, with the task still current. A cancelled or unfinished close calls nothing. Absent without tools or without `expects` (D0).
+   * already saved): its `expects` are checked (tools spec §6.1). A move with a phase brief waits at most EXPECTS_CHECK_MS
+   * before the brief (one without doesn't wait); a close waits as long, with the task still current. A cancelled or
+   * unfinished close calls nothing. Absent without tools or without `expects` (D0).
    */
   phaseEnded?(o: { task: string; action: string; scope: string; phase: string }): Promise<void>;
 }
@@ -2109,7 +2110,9 @@ export class TaskManager {
     });
     if (moved && c.phase && c.phase.id !== to.id) {
       this.phaseMoved(c, c.phase.id, to.id);
-      void this.endedPhase(c, c.phase.id);
+      // With a phase brief to send, the check goes first (bounded), so a miss line is its own line before the brief.
+      if (plan.message && this.d.phaseEnded) await this.boundedEnded(c, c.phase.id);
+      else void this.endedPhase(c, c.phase.id);
     }
     if (!plan.message) return;
     const now = (await this.d.store.load()).current;
@@ -2160,7 +2163,8 @@ export class TaskManager {
 
   /**
    * Has the part the task left checked against its `expects`. Never rejects: a failing check is logged and never stops
-   * anything. A move doesn't wait for it; a close waits at most EXPECTS_CHECK_MS (`closedPhase`).
+   * anything. A move with a phase brief and a close wait at most EXPECTS_CHECK_MS (`boundedEnded`); a move without one
+   * doesn't wait.
    */
   private endedPhase(c: CurrentTask, phase: string | undefined): Promise<void> {
     const ended = this.d.phaseEnded;
@@ -2178,13 +2182,18 @@ export class TaskManager {
    * The part a closing task closes in ended: checked before the task ends, while it is still current (so a miss's line
    * reaches the chat: the closing turn is quiet), waiting no longer than EXPECTS_CHECK_MS.
    */
-  private async closedPhase(c: CurrentTask): Promise<void> {
+  private closedPhase(c: CurrentTask): Promise<void> {
+    return this.boundedEnded(c, c.phase?.id);
+  }
+
+  /** `endedPhase`, waited for no longer than EXPECTS_CHECK_MS. */
+  private async boundedEnded(c: CurrentTask, phase: string | undefined): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const bound = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, EXPECTS_CHECK_MS);
     });
     try {
-      await Promise.race([this.endedPhase(c, c.phase?.id), bound]);
+      await Promise.race([this.endedPhase(c, phase), bound]);
     } finally {
       clearTimeout(timer);
     }

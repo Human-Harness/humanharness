@@ -121,6 +121,19 @@ describe("a step slot (tools spec §7.1, R1)", () => {
     expect(disallowed).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task", "WebFetch"]));
   });
 
+  it("no built-in tool at all: --tools \"\" on the step slot only, a task slot's argv has no --tools", async () => {
+    const { ws, run } = await setup({ triage: RECIPE });
+    await (await ws.openSlot({ key: "t1" })).send("x", () => {}).done;
+    expect(run().argv).not.toContain("--tools");
+    await (await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" })).send("x", () => {}).done;
+    const { argv } = run();
+    expect(argv.indexOf("--tools")).toBeGreaterThan(-1);
+    expect(argv[argv.indexOf("--tools") + 1]).toBe("");
+    // Its MCP server is still allowed: --tools turns off the built-ins only.
+    expect(argv.indexOf("--tools")).toBeLessThan(argv.indexOf("--allowedTools"));
+    expect(argv[argv.indexOf("--allowedTools") + 1]).toBe("mcp__ui");
+  });
+
   it("a step slot ignores permissions it is given: never wider than none", async () => {
     const { ws, run } = await setup({ triage: RECIPE });
     await (await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage", permissions: { edit: "folder", exec: true, web: true } })).send("x", () => {}).done;

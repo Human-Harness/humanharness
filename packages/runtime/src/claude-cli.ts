@@ -192,7 +192,10 @@ function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly"> & { profile?: ModelProfile; scope?: TurnScope },
+  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly" | "noBuiltins"> & {
+    profile?: ModelProfile;
+    scope?: TurnScope;
+  },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   const linked = o.scope?.linked ?? [];
@@ -214,6 +217,8 @@ export function claudeArgs(
   const tools = o.noTools
     ? ["--tools", "", "--disallowedTools", ALL_BUILTIN_TOOLS.join(",")]
     : [
+        // An AI step's slot only (noBuiltins): no built-in at all; without it the flags are exactly as before (D0).
+        ...(o.noBuiltins ? ["--tools", ""] : []),
         "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly, linked).join(","),
         "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
       ];

@@ -328,9 +328,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       ],
       permissions,
       references: step ? [] : references.map((r) => r.path),
-      // Claude gets no Read, Glob or Grep (R1). A step slot is Claude only (see openSlotNow): on ACP, mcpOnly refuses
-      // only the reads that ask, which isn't enough.
-      ...(step ? { mcpOnly: true } : {}),
+      // Claude gets no Read, Glob or Grep, and `--tools ""` turns off every other built-in too (R1). A step slot is
+      // Claude only (see openSlotNow): on ACP, mcpOnly refuses only the reads that ask, which isn't enough.
+      ...(step ? { mcpOnly: true, noBuiltins: true } : {}),
       ...acpFields(engine, permissions.edit),
       // Codex reads CODEX_CONFIG by name: only it takes an engine preset's codex part. Other ACP engines (Kimi,
       // Gemini, Qwen) leave the method unset in the registry, and the registry's Codex entry is pinned as it is.

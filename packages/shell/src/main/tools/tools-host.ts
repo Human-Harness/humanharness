@@ -6,7 +6,7 @@ import { type HarnessSecret, type PermissionsOverride, type ToolsManifest, narro
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { Event, ToolCallView } from "@humanharness/runtime";
 import type { ToolsInfo } from "@humanharness/ui/client";
-import type { HistoryTrailer } from "@humanharness/workspace";
+import type { AttentionStore, HistoryTrailer } from "@humanharness/workspace";
 import type { BrokerDataOp } from "../broker/broker";
 import { BROKER_LIMITS } from "../broker/broker-checks";
 import type { ToolDataCall } from "../data-requests";
@@ -38,6 +38,12 @@ const INVALID = "Invalid request";
 const NO_TASK = "No task is running in this session";
 /** `ToolCallView.args` and `.result` are cut here (the trace keeps 2 KB already). */
 const VIEW_CUT = TRACE_CUT;
+
+/**
+ * The Attention item of tools off after repeated crashes (Decision 7), origin `{ kind: "tool", id: <harness id> }`. The
+ * title is the window's `tools.off` line (main has no i18n).
+ */
+export const TOOLS_OFF_ITEM = { key: "off", severity: "action", title: "Tools are off after repeated crashes. Restart the app to turn them on." } as const;
 
 /** The harness as the tools need it. */
 export interface ToolsHarness extends ToolsManifest {
@@ -84,6 +90,12 @@ export interface ToolsHostDeps {
   emitToTask(task: string, event: Event): void;
   /** The built `tools-server.js` (app); absent: the TS source (dev). */
   serverEntry?: string;
+  /**
+   * The current base's Attention store, only in an app that has one (plugins, board or single mode; absent: none, D0):
+   * tools off after repeated crashes raise TOOLS_OFF_ITEM there, and a start with tools on resolves one left behind.
+   * `create`: the inbox's key may be made.
+   */
+  attention?(create: boolean): Promise<Pick<AttentionStore, "raise" | "resolve"> | null>;
   /** `info()` changed: once started, and when the host goes off after repeated crashes (the window's top line, Task 11). */
   changed?(): void;
   log(message: string, err?: unknown): void;
@@ -204,6 +216,8 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   let state: ToolsState = { on: false, reason: "Tools are starting" };
   let started: Promise<void> | null = null;
   let catalogue: string | null = null;
+  let offRaised = false;
+  const toolsOrigin = { kind: "tool" as const, id: h.id };
   const brokers = new Map<string, ToolBroker>();
   const traces = new Map<string, Promise<ToolTrace>>();
   /**
@@ -327,6 +341,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
             onOff: (reason) => {
               d.log(`Tools are off: ${reason}`);
               changed();
+              raiseOff();
             },
           });
         } catch (err) {
@@ -337,12 +352,29 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
           state = { on: false, reason };
         }
       }
+      // Tools are on again after a restart: the item an earlier run raised is over. Never makes the inbox's key.
+      if (state.on && d.attention) {
+        await d
+          .attention(false)
+          .then((store) => store?.resolve(toolsOrigin, TOOLS_OFF_ITEM.key))
+          .catch((err: unknown) => d.log("Could not resolve the tools' Attention item", err));
+      }
       await writeCatalogue().catch((err: unknown) => d.log("Could not write the tools catalogue", err));
       // Prunes the current base's trace (traceFor prunes each base once).
       await traceFor().catch(() => null);
       changed();
     })();
     return started;
+  }
+
+  /** Tools off after repeated crashes: the Attention item, once, when the app has a store. Never throws. */
+  function raiseOff(): void {
+    if (offRaised || !d.attention) return;
+    offRaised = true;
+    void Promise.resolve()
+      .then(() => d.attention!(true))
+      .then((store) => store?.raise(toolsOrigin, { ...TOOLS_OFF_ITEM }))
+      .catch((err: unknown) => d.log("Could not raise the tools' Attention item", err));
   }
 
   /** Tells main the info changed; a throwing listener never breaks the start or the host. */

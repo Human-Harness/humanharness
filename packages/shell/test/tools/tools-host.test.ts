@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDataCall } from "../../src/main/data-requests";
 import { TOOLS_OFF_CRASHES } from "@humanharness/ui/client";
 import { TOOLS_OFF, type ToolChannel, type ToolHostAnswer, type ToolHostCall } from "../../src/main/tools/tool-host";
-import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, createToolsHost, slotTaskOf, toolCallView, toolExecEnv } from "../../src/main/tools/tools-host";
+import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, TOOLS_OFF_ITEM, createToolsHost, slotTaskOf, toolCallView, toolExecEnv } from "../../src/main/tools/tools-host";
 
 const TASK = randomUUID();
 const RUN = randomUUID();
@@ -498,4 +498,67 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     // The window's top line keys on this text (ui TOOLS_OFF_CRASHES): the two must stay the same.
     expect(TOOLS_OFF_CRASHES).toBe(TOOLS_OFF);
   });
+
+  describe("off after repeated crashes: the Attention item (Decision 7)", () => {
+    function inbox(fail = false) {
+      const seen = { raised: [] as unknown[], resolved: [] as unknown[], creates: [] as boolean[] };
+      const store = {
+        raise: async (origin: unknown, input: unknown) => {
+          if (fail) throw new Error("disk full");
+          seen.raised.push({ origin, input });
+          return { shown: true, notify: true };
+        },
+        resolve: async (origin: unknown, key: string) => void seen.resolved.push({ origin, key }),
+      };
+      return { seen, attention: async (create: boolean) => (seen.creates.push(create), store) };
+    }
+    function crashing(over: Partial<ToolsHostDeps>) {
+      let onOff: ((reason: string) => void) | undefined;
+      let off: string | null = null;
+      const w = wire({ over: { host: { start: (p) => void (onOff = p.onOff), stop: () => {}, call: async () => ({ ok: true, value: 1 }), off: () => off }, ...over } });
+      return { ...w, goOff: () => ((off = TOOLS_OFF), onOff?.(TOOLS_OFF)) };
+    }
+    const settle = () => new Promise((r) => setTimeout(r, 10));
+
+    it("with an Attention store: one action item, raised once; the chat's top line still shows", async () => {
+      await built();
+      const { seen, attention } = inbox();
+      const { t, goOff } = crashing({ attention });
+      await t.start();
+      goOff();
+      goOff();
+      await settle();
+      expect(seen.raised).toEqual([
+        { origin: { kind: "tool", id: "notes" }, input: { key: "off", severity: "action", title: "Tools are off after repeated crashes. Restart the app to turn them on." } },
+      ]);
+      expect(TOOLS_OFF_ITEM.title).toBe("Tools are off after repeated crashes. Restart the app to turn them on.");
+      expect(t.info().off).toBe(TOOLS_OFF);
+    });
+
+    it("a start with tools on resolves the item an earlier run left, without making the inbox's key", async () => {
+      await built();
+      const { seen, attention } = inbox();
+      const { t } = crashing({ attention });
+      await t.start();
+      await settle();
+      expect(seen.resolved).toEqual([{ origin: { kind: "tool", id: "notes" }, key: "off" }]);
+      expect(seen.creates).toEqual([false]);
+      expect(seen.raised).toEqual([]);
+    });
+
+    it("without an Attention store nothing is raised (D0), and a raise that fails is logged, never thrown", async () => {
+      await built();
+      const none = crashing({ attention: async () => null });
+      await none.t.start();
+      expect(() => none.goOff()).not.toThrow();
+      const { attention } = inbox(true);
+      const failing = crashing({ attention });
+      await failing.t.start();
+      failing.goOff();
+      await settle();
+      expect(failing.seen.logs).toContain("Could not raise the tools' Attention item");
+      expect(failing.t.info().off).toBe(TOOLS_OFF);
+    });
+  });
 });
+

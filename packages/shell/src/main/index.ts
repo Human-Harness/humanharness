@@ -3337,11 +3337,13 @@ if (loaded) {
   });
   // Board and single mode (parallel spec §9.2): one Attention store per base for the plugins, the waiting tasks and
   // the jobs, with the plugins' tag key (outside every base, P5). A task's items show while it is an open lane; a job's
-  // while the harness declares it. Plain mode: none (D0).
-  if (hostMode(harness) !== "plain") {
+  // while the harness declares it. Plain mode: none (D0), unless the harness has tools and plugins: then the plugins'
+  // inbox is this shared store, so the tools' item (tools Decision 7) has one store to go to.
+  if (hostMode(harness) !== "plain" || (hasTools(harness) && (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0))) {
     const stores = attentionStores({ tagKey: (create) => sourceTagKey(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "attention-key"), create), log: pluginLog });
     stores.registerKnown("task", (id) => host?.board.laneIds().includes(id) ?? false);
     if (harness.jobs) stores.registerKnown("job", jobOriginKnown(harness.jobs));
+    if (hasTools(harness)) stores.registerKnown("tool", (id) => id === harness.id);
     sharedAttention = stores;
   }
   // Plugins (plugins spec): only a harness that takes them, or dev folders (HH_PLUGIN_DIRS, development builds). D0:
@@ -3478,6 +3480,16 @@ if (loaded) {
       changed: () => {
         if (toolsHost) sendToWindow(TOOLS_CHANGE_CHANNEL, toolsHost.info());
       },
+      // Off after repeated crashes (Decision 7): an action item in the base's shared Attention store, when the app has
+      // one. Without one, only the chat's top line says so.
+      ...(sharedAttention
+        ? {
+            attention: async (create: boolean) => {
+              const base = await currentBase().catch(() => null);
+              return base && sharedAttention ? sharedAttention.forBase(base, create) : null;
+            },
+          }
+        : {}),
       serverEntry: path.join(here, "tools-server.js"),
       log: toolsLog,
     });

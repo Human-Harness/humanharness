@@ -66,4 +66,17 @@ describe("tools surface (tools spec §4, §5; D0)", () => {
     expect(options).toContain("...(tools ? { tools } : {}),");
     expect(count(index, /workspaceOptions\(\)/)).toBe(1);
   });
+
+  it("Decision 7: the tools' Attention item goes only to a shared store, which plain mode has only with tools and plugins (D0)", async () => {
+    const index = await read("index.ts");
+    expect(index).toContain(
+      'if (hostMode(harness) !== "plain" || (hasTools(harness) && (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0))) {',
+    );
+    expect(index).toContain('if (hasTools(harness)) stores.registerKnown("tool", (id) => id === harness.id);');
+    const deps = group(index, index.indexOf("toolsHost = createToolsHost("));
+    // The dep exists only when the shared store does; it asks that store for the current base.
+    expect(deps).toContain("...(sharedAttention\n        ? {\n            attention: async (create: boolean) => {");
+    expect(deps).toContain("sharedAttention.forBase(base, create)");
+  });
 });
+

@@ -59,7 +59,7 @@ export default defineTool({
 - **For the sandbox**: `platform: "browser"`, ESM, `chrome130`, one file `dist/tools/<id>.js` with zod bundled in (about 530 KB a tool). Any Node built-in (`node:*` or a `module.builtinModules` name) fails the build: "tools/x.ts:1: imports node:fs, which a tool can't use: tools reach the world only through ctx" (T1).
 - **For Node**, into a temp `.mjs` that is removed after: its default export goes through `toolMeta(id, def)`, which writes the entry with the bundle's own zod. `params` is `z.toJSONSchema` with `io: "input"`, `returns` the output form, both tidied and checked against the plugins' JSON Schema allowlist (Decision 4); a refusal names the tool and the deepest path: "count-notes: params.properties.x: \"pattern\" is not supported in plugin schemas".
 
-`dist/tools.json` (`toolsJsonSchema`): `{ version: 1, tools: { <id>: { description, agent, uses, params, returns?, timeout, file: "tools/<id>.js" } } }`, ids sorted, two-space indented. Every tool is tried; any failure (`ToolBuildError`, one problem per tool) writes nothing. On success `dist/tools/` is swapped in (temp folder and rename) and then `dist/tools.json` by temp file and rename; the rest of `dist/` stays. A harness without tools: "This harness declares no tools.", nothing written.
+`dist/tools.json` (`toolsJsonSchema`): `{ version: 1, tools: { <id>: { description, agent, uses, params, returns?, timeout, file: "tools/<id>.js" } } }`, ids sorted, two-space indented. The schema caps the record at 50 tools and every `uses` value at the manifest's limits (hosts 20 × 260 characters, secret ids 10 × 40, commands 10 × 64 with 20 tokens × 200, collections 50 × 40 per list), so a huge value never reaches a message. Every tool is tried; any failure (`ToolBuildError`, one problem per tool) writes nothing. On success `dist/tools/` is swapped in (temp folder and rename) and then `dist/tools.json` by temp file and rename; the rest of `dist/` stays. A harness without tools: "This harness declares no tools.", nothing written.
 
 - **`dev`** builds (writes) before opening the app when the harness declares tools; a build error prints it and exits 1.
 - **`check`** builds in memory and never writes: each failing tool is a `tool-build` error; when the build passes, each `toolProblems` line is a `tool-uses` error (file: the tool's path).
@@ -254,7 +254,6 @@ The plan's Decisions 1–18 hold as written, with these notes:
 - **`files: "write"`**: refused until a harness needs it (§17).
 - **Isolation between tools** is per harness, not per tool (above).
 - **Prune** runs once at start for the base current then: after a profile switch the other base's trace waits for the next start.
-- **`toolsJsonSchema`'s `uses` strings** (hosts, secret ids, collection names) have no length cap; they come from the author's own build.
 - A harness whose id is `tools` with its own `mcp` servers would shadow the core `tools` server (as `material` would); refusing that is a follow-up.
 - `localhost` and IP literals pass `HOST_PATTERN` in `uses.hosts` (as plugins'); the broker refuses them at call time.
 

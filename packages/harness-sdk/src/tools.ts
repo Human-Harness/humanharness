@@ -17,11 +17,17 @@ export const toolsSchema = z
 /** The harness declares at least one tool. False: no slice-2 code runs (D0). */
 export const hasTools = (h: { tools?: Record<string, string> }): boolean => !!h.tools && Object.keys(h.tools).length > 0;
 
+/**
+ * The size caps on `uses` in tools.json, matching the manifest's and the plugins' limits: a host name (253) and its port,
+ * a secret id (40, as PLUGIN_LOCAL_ID), a command (64, as EXEC_CMD) and its tokens (20 × 200), a collection name (40, as
+ * COLLECTION_NAME). The patterns themselves are toolProblems' (each with its own message); the caps keep a huge value from
+ * reaching those messages.
+ */
 const usesJson = z.strictObject({
-  hosts: z.array(z.string()).max(20).optional(),
-  secrets: z.array(z.string()).max(10).optional(),
-  exec: z.array(z.strictObject({ cmd: z.string(), args: z.array(z.string()) })).max(10).optional(),
-  data: z.strictObject({ read: z.array(z.string()).optional(), write: z.array(z.string()).optional() }).optional(),
+  hosts: z.array(z.string().max(260)).max(20).optional(),
+  secrets: z.array(z.string().max(40)).max(10).optional(),
+  exec: z.array(z.strictObject({ cmd: z.string().max(64), args: z.array(z.string().max(200)).max(20) })).max(10).optional(),
+  data: z.strictObject({ read: z.array(z.string().max(40)).max(50).optional(), write: z.array(z.string().max(40)).max(50).optional() }).optional(),
   files: z.enum(["read", "write"]).optional(),
 });
 /** One tool's entry in `dist/tools.json` (tools spec §3.2): what the build read from its `defineTool`. */
@@ -38,7 +44,10 @@ export const toolMetaSchema = z.strictObject({
   file: z.string().regex(/^tools\/[a-z][a-z0-9_-]{0,63}\.js$/),
 });
 /** `dist/tools.json`, written by `humanharness build` and read by the app at start (tools spec §3.2). */
-export const toolsJsonSchema = z.strictObject({ version: z.literal(1), tools: z.record(z.string().regex(TOOL_ID), toolMetaSchema) });
+export const toolsJsonSchema = z.strictObject({
+  version: z.literal(1),
+  tools: z.record(z.string().regex(TOOL_ID), toolMetaSchema).refine((t) => Object.keys(t).length <= TOOLS_MAX, { message: `at most ${TOOLS_MAX} tools` }),
+});
 export type ToolsJson = z.output<typeof toolsJsonSchema>;
 export type ToolMeta = z.output<typeof toolMetaSchema>;
 

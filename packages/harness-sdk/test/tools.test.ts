@@ -125,4 +125,39 @@ describe("tools.json (tools spec §3.2)", () => {
     expect(() => toolsJsonSchema.parse({ ...ok, tools: { "due-today": { ...ok.tools["due-today"], file: "../x.js" } } })).toThrow();
     expect(() => toolsJsonSchema.parse({ ...ok, tools: { "due-today": { ...ok.tools["due-today"], timeout: 121 } } })).toThrow();
   });
+  it("refuses more than 50 tools", () => {
+    const entry = (id: string) => ({ ...ok.tools["due-today"], file: `tools/${id}.js` });
+    const many = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`t${i}`, entry(`t${i}`)]));
+    expect(toolsJsonSchema.safeParse({ version: 1, tools: many(50) }).success).toBe(true);
+    expect(toolsJsonSchema.safeParse({ version: 1, tools: many(51) }).success).toBe(false);
+  });
+  it("caps every uses string and list, never echoing a long value in its message", () => {
+    const withUses = (uses: unknown) => ({ ...ok, tools: { "due-today": { ...ok.tools["due-today"], uses } } });
+    const huge = "x".repeat(10_000);
+    const refused = (uses: unknown) => {
+      const r = toolsJsonSchema.safeParse(withUses(uses));
+      expect(r.success, JSON.stringify(uses).slice(0, 80)).toBe(false);
+      if (!r.success) expect(r.error.message).not.toContain("x".repeat(300));
+    };
+    // A long but sane value of each kind still passes: the caps match the manifest's own limits.
+    const fine = {
+      hosts: Array.from({ length: 20 }, (_, i) => `${"a".repeat(60)}.${"b".repeat(60)}.${"c".repeat(60)}.example${i}.com:65535`),
+      secrets: Array.from({ length: 10 }, (_, i) => `k${i}${"a".repeat(38)}`),
+      exec: Array.from({ length: 10 }, () => ({ cmd: "g".repeat(64), args: Array.from({ length: 20 }, () => "a".repeat(200)) })),
+      data: { read: Array.from({ length: 50 }, (_, i) => `c${i}${"a".repeat(37)}`), write: [`c${"a".repeat(39)}`] },
+    };
+    expect(toolsJsonSchema.safeParse(withUses(fine)).success).toBe(true);
+    refused({ hosts: [huge] });
+    refused({ hosts: Array.from({ length: 21 }, () => "a.com") });
+    refused({ secrets: [huge] });
+    refused({ secrets: Array.from({ length: 11 }, (_, i) => `k${i}`) });
+    refused({ exec: [{ cmd: huge, args: [] }] });
+    refused({ exec: [{ cmd: "git", args: [huge] }] });
+    refused({ exec: [{ cmd: "git", args: Array.from({ length: 21 }, () => "a") }] });
+    refused({ exec: Array.from({ length: 11 }, () => ({ cmd: "git", args: [] })) });
+    refused({ data: { read: [huge] } });
+    refused({ data: { write: [huge] } });
+    refused({ data: { read: Array.from({ length: 51 }, (_, i) => `c${i}`) } });
+    refused({ data: { write: Array.from({ length: 51 }, (_, i) => `c${i}`) } });
+  });
 });

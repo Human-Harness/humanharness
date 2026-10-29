@@ -57,6 +57,11 @@ export class LineReader {
     }
   }
 
+  /** The stream ended: a last line without its newline is handed over (or reported, if too long) as if it had one. */
+  flush(): void {
+    if (this.size > 0 || this.discarding !== null) this.end();
+  }
+
   private keep(part: Buffer): void {
     if (part.length === 0) return;
     if (this.discarding !== null) {

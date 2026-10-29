@@ -27,6 +27,19 @@ describe("LineReader", () => {
     r.push(bytes.subarray(cut));
     expect(lines).toEqual(['{"s":"ñ"}']);
   });
+  it("flush() hands over a last line that never got its newline, once", () => {
+    const lines: string[] = [];
+    const dropped: number[] = [];
+    const r = new LineReader((l) => lines.push(l), (n) => dropped.push(n), 8);
+    r.push(Buffer.from('{"a":1}\n{"b":2}'));
+    expect(lines).toEqual(['{"a":1}']);
+    r.flush();
+    r.flush();
+    expect(lines).toEqual(['{"a":1}', '{"b":2}']);
+    r.push(Buffer.from("123456789"));
+    r.flush();
+    expect(dropped).toEqual([9]);
+  });
 });
 
 describe("classifyIncoming (B3, B4)", () => {

@@ -52,7 +52,11 @@ const IMPORTS = [
   /\b(npx|pnpx|bunx|uvx|pipx)[ \t]/,
 ];
 
-/** A script's text loads other code (an import, a `source`, a package runner). Linear in the text's length. */
+/**
+ * A script's text loads other code (an import, a `source`, a package runner), or its `#!` line finds the interpreter
+ * on PATH (`#!/usr/bin/env node`: a shim or a folder on PATH may answer). Linear in the text's length.
+ */
 export function importsOtherCode(text: string): boolean {
+  if (/^#![ \t]*\/usr\/bin\/env[ \t]/.test(text)) return true;
   return text.split(/\r?\n|\r/).some((line) => IMPORTS.some((re) => re.test(line)));
 }

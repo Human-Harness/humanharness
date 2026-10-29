@@ -48,7 +48,7 @@ const FULL = {
   base: "global\n",
   "instructions.md": "Use tabs.\n",
   "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } }),
-  "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/stop.js" }] }] }, permissions: { allow: ["Bash(npm test)"] } }),
+  "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js' }] }] }, permissions: { allow: ["Bash(npm test)"] } }),
   "skills/fmt/SKILL.md": SKILL,
   "skills/fmt/helper.txt": "notes",
   "agents/reviewer.md": AGENT,

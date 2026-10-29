@@ -77,7 +77,7 @@ async function setup(
 const SERVER = JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } });
 const SETTINGS = JSON.stringify({
   defaultMode: "bypassPermissions",
-  hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/stop.js" }] }], PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node ./tools/stop.js --pre" }] }] },
+  hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js' }] }], PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js --pre' }] }] },
   permissions: { allow: ["Bash(npm test)"] },
 });
 const TOOLS = { "tools/lint.js": "console.log('lint')", "tools/stop.js": "console.log('stop')" };
@@ -88,7 +88,7 @@ const FULL = {
   "settings.json": SETTINGS,
   "skills/fmt/SKILL.md": "---\nname: fmt\ndescription: Formats files\n---\nRun the formatter.\n",
   "agents/reviewer.md": "---\ndescription: Reviews changes\ntools: [Read, Grep]\npermissionMode: plan\n---\nYou review.\n",
-  "codex.toml": 'model_verbosity = "low"\nhide_agent_reasoning = true\nhooks = { Stop = [ { hooks = [ { type = "command", command = "sh ./tools/stop.js" } ] } ] }\n',
+  "codex.toml": 'model_verbosity = "low"\nhide_agent_reasoning = true\n',
   "actions/study/instructions.md": "Quiz me.",
   "actions/study/mcp.json": JSON.stringify({ mcpServers: { cards: { command: "node", args: ["./tools/lint.js", "--deck", "a"] } } }),
   "actions/study/settings.json": JSON.stringify({ permissions: { defaultMode: "plan", deny: ["Bash(git push:*)"] } }),
@@ -102,9 +102,8 @@ describe("engine IPC (E10)", () => {
     expect(v.base).toBe("global");
     expect(v.codexLimit).toBe(true);
     expect(v.runsCommands).toEqual([
-      { kind: "hook", label: "Stop", command: "node ./tools/stop.js", args: [], layer: "", file: "settings.json" },
-      { kind: "hook", label: "PreToolUse · Bash", command: "node ./tools/stop.js --pre", args: [], layer: "", file: "settings.json" },
-      { kind: "hook", label: "Stop", command: "sh ./tools/stop.js", args: [], layer: "", file: "codex.toml" },
+      { kind: "hook", label: "Stop", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js', args: [], layer: "", file: "settings.json" },
+      { kind: "hook", label: "PreToolUse · Bash", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js --pre', args: [], layer: "", file: "settings.json" },
       { kind: "server", label: "scope-lint", command: "node", args: ["./tools/lint.js"], layer: "", file: "mcp.json" },
       { kind: "server", label: "scope-cards", command: "node", args: ["./tools/lint.js", "--deck", "a"], layer: "study", file: "actions/study/mcp.json" },
     ]);
@@ -152,7 +151,6 @@ describe("engine IPC (E10)", () => {
     }
     // Within it: the scope's own first (hooks, then servers), then each action layer's.
     expect(v.runsCommands.map((r) => [r.layer, r.kind])).toEqual([
-      ["", "hook"],
       ["", "hook"],
       ["", "hook"],
       ["", "server"],
@@ -268,7 +266,7 @@ describe("engine IPC (E10)", () => {
         "mcp.json": JSON.stringify({
           mcpServers: { lint: { command: "node", args: ["./tools/lint.js"], env: { LOG_LEVEL: "debug" } }, fetch: { command: "uvx", args: ["mcp-fetch"] } },
         }),
-        "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "npx -y some-tool" }, { type: "command", command: "node ./tools/stop.js" }] }] } }),
+        "settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "npx -y some-tool" }, { type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js' }] }] } }),
       },
       { "tools/lint.js": "const x = require('./helpers');", "tools/stop.js": "console.log('stop')" },
     );
@@ -284,7 +282,7 @@ describe("engine IPC (E10)", () => {
     expect(v.runsCommands.find((r) => r.label === "scope-fetch")).not.toHaveProperty("env");
     expect(v.runsCommands.map((r) => [r.command, r.loadsOtherCode ?? false])).toEqual([
       ["npx -y some-tool", true],
-      ["node ./tools/stop.js", false],
+      ['node "$CLAUDE_PROJECT_DIR"/tools/stop.js', false],
       ["node", false],
       ["uvx", true],
     ]);

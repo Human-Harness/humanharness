@@ -15,6 +15,7 @@ describe("code outside the approval (hatches spec §5.3)", () => {
       "require 'json'\n",
       "use strict;\nuse Foo::Bar;\n",
       "npx -y tool\n",
+      "#!/usr/bin/env node\nconsole.log(1);\n",
     ]) {
       expect(importsOtherCode(text), text).toBe(true);
     }
@@ -37,7 +38,7 @@ describe("code outside the approval (hatches spec §5.3)", () => {
     expect(commandLoadsOtherCode(["pnpm", "dlx", "x"])).toBe(true);
     expect(commandLoadsOtherCode(["python3", "-m", "server"])).toBe(true);
     expect(commandLoadsOtherCode("sh -c 'npx tool'")).toBe(true);
-    expect(commandLoadsOtherCode("node ./tools/stop.js")).toBe(false);
+    expect(commandLoadsOtherCode('node "$CLAUDE_PROJECT_DIR"/tools/stop.js')).toBe(false);
     expect(commandLoadsOtherCode(["node", "./tools/lint.js"])).toBe(false);
     // Words it can't read for sure: said rather than hidden.
     expect(commandLoadsOtherCode("node $HOME/x.js")).toBe(true);

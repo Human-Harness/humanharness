@@ -165,7 +165,7 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
   });
 
   it("a change to a referenced script changes the hash (E2)", async () => {
-    const hooks = { Stop: [{ hooks: [{ type: "command", command: "node ./tools/check.js" }] }] };
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/check.js' }] }] };
     const { folder, read } = setup(
       { "settings.json": JSON.stringify({ hooks }), "mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } }) },
       { "tools/check.js": "one", "tools/lint.js": "lint" },
@@ -184,24 +184,23 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
     ["a symbolic link", "is a symbolic link"],
     ["a folder", "is a folder"],
   ])("a command naming %s in the folder is refused naming it (E2, E8)", async (kind, why) => {
-    const hooks = { Stop: [{ hooks: [{ type: "command", command: "node ./tools/run.js" }] }] };
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/run.js' }] }] };
     const { folder, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/real.js": "one" });
     const run = path.join(folder, "tools/run.js");
     if (kind === "a folder") fs.mkdirSync(run);
     else fs.symlinkSync(path.join(folder, "tools/real.js"), run);
     const c = (await read())!;
-    expect(c.refusals).toEqual([{ file: run, message: `${run}: ${why}, named by "node ./tools/run.js"; a command must name a plain script file` }]);
+    expect(c.refusals).toEqual([{ file: run, message: `${run}: ${why}, named by ${JSON.stringify('node "$CLAUDE_PROJECT_DIR"/tools/run.js')}; a command must name a plain script file` }]);
     expect(c.scriptFiles.size).toBe(0);
   });
 
   it("codex.toml hooks and action-layer servers join the scripts too", async () => {
-    const { folder, read } = setup(
-      {
-        "codex.toml": '[[hooks.Stop]]\nhooks = [{ type = "command", command = "sh ./a.sh" }]\n',
-        "actions/review/mcp.json": JSON.stringify({ mcpServers: { x: { command: "./b.sh" } } }),
-      },
-      { "a.sh": "a", "b.sh": "b" },
+    const { folder, dir, read } = setup(
+      { "actions/review/mcp.json": JSON.stringify({ mcpServers: { x: { command: "./b.sh" } } }) },
+      { "a.sh": "a", "b.sh": "#!/bin/sh\nb" },
     );
+    // Codex sets no CLAUDE_PROJECT_DIR: its hooks name absolute paths.
+    fs.writeFileSync(path.join(dir, "codex.toml"), `[[hooks.Stop]]\nhooks = [{ type = "command", command = "sh ${folder}/a.sh" }]\n`);
     const c = (await read())!;
     expect(c.refusals).toEqual([]);
     expect(c.scripts).toEqual([path.join(folder, "a.sh"), path.join(folder, "b.sh")]);
@@ -234,7 +233,7 @@ describe("readEngineConfig (spec §5.1–5.4)", () => {
   });
 
   it("refuses hard links, in the engine folder and as scripts", async () => {
-    const hooks = { Stop: [{ hooks: [{ type: "command", command: "node ./tools/x.js" }] }] };
+    const hooks = { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/x.js' }] }] };
     const { folder, dir, read } = setup({ "settings.json": JSON.stringify({ hooks }) }, { "tools/x.js": "x", "secret.json": "s" });
     fs.linkSync(path.join(folder, "secret.json"), path.join(dir, "instructions.md"));
     fs.linkSync(path.join(folder, "tools/x.js"), path.join(folder, "x-again.js"));

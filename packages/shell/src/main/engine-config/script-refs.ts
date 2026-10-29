@@ -1,6 +1,7 @@
 import type { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { USER_NPMRC } from "../user-npmrc";
 
 // Referenced scripts (hatches spec §5.3, threat model E2). A hook command or an MCP server's command may run a file
 // in the person's folder or a linked folder (`node ./tools/x.js`); that file joins the scope's hash, or an agent could
@@ -9,17 +10,30 @@ import path from "node:path";
 // A denylist of shell forms can't be completed (comments, heredocs, reserved words, option values, programs that run
 // code from their arguments or the folder's config…), so commands follow a strict allowlist grammar and anything else
 // is refused:
-// - a hook (shell text) is one simple command of plain words: no `; | & < > ( ) { } # ` ! \ * ? [ ~`, no new line, no
-//   `$` but a leading `$CLAUDE_PROJECT_DIR` on a path word, no leading `VAR=`; a word may be wrapped whole in quotes;
+// - a hook (shell text) is one simple command of plain words: no `; | & < > ( ) { } # ` ! \ * ? [ ~`, no control
+//   character, no `$` but `"$CLAUDE_PROJECT_DIR"/…` (quoted, so sh neither splits nor globs it) starting a word, no
+//   leading `VAR=`; a word may be wrapped whole in quotes. A hook runs in the session's current folder, which follows
+//   the agent's `cd`: its script and every path-like argument must be absolute (`"$CLAUDE_PROJECT_DIR"/…` is). Codex
+//   sets no CLAUDE_PROJECT_DIR: there, absolute paths only;
 // - its shape is `<interpreter> <script> [args…]` or `<script> [args…]`: the interpreter is node, python3, python,
-//   bash or sh (any case), bare or in /usr/bin, /bin, /usr/local/bin, /opt/homebrew/bin, with no options; the script is
-//   a regular file in the folder or a linked folder (hashed); an argument naming anything there must be a regular
-//   file (hashed): a root, a folder, a link or a FIFO is refused;
-// - a stdio server takes the same shape, or a remote package: `npx [-y] <npm name>[@version] [args…]` or
-//   `uvx <PyPI name>[==version] [args…]`, refused when the package is local; only there may an argument be a root.
+//   bash or sh (any case), bare or in /usr/bin, /bin, /usr/local/bin, /opt/homebrew/bin, with no options; without one
+//   the script is a path (it has a `/`: a bare word is a program on PATH or a shell builtin) and starts with an allowed
+//   `#!` line; the script is a regular file in the folder or a linked folder (hashed); an argument naming anything
+//   there must be a regular file (hashed): a root, a folder, a link or a FIFO is refused;
+// - a stdio server takes the same shape (relative paths from the folder, the engines' working folder), or a remote
+//   package: `npx [-y] <npm name>[@version] [args…]` or `uvx <PyPI name>[==version] [args…]`, refused when the package
+//   is local or the folders hold config the runner reads (`.npmrc`, `node_modules`; `uv.toml`, `pyproject.toml`…); only
+//   there may an argument be a root. Its env values follow the arguments' rule (a root refused too).
 
-/** A command: a hook's shell text, or a server's program and arguments (run without a shell). */
-export type ScriptCommand = string | readonly string[];
+/**
+ * A command: a Claude hook's shell text; a Codex hook's (`{ codex }`); a server's program and arguments, run without a
+ * shell (`argv`, with its `env`, or the bare list).
+ */
+export type ScriptCommand =
+  | string
+  | readonly string[]
+  | { readonly codex: string }
+  | { readonly argv: readonly string[]; readonly env?: Readonly<Record<string, string>> };
 
 const FORM = "a hook or server must run a plain script file: <interpreter> <script> [args]";
 const INTERPRETERS = new Set(["node", "python3", "python", "bash", "sh"]);
@@ -28,15 +42,24 @@ const WORDS_MAX = 64;
 const COMMAND_MAX = 4096;
 /** Stands for the folder while a hook is split, so the folder's own characters are never read as shell. */
 const FOLDER_MARK = "\u0000folder\u0000";
-// A leading `$CLAUDE_PROJECT_DIR` (also `${…}`, or quoted whole) on a word, followed by `/`, a quote, a space or the end.
-const PROJECT_DIR = /(^|[ \t])(?:"\$CLAUDE_PROJECT_DIR"|"\$\{CLAUDE_PROJECT_DIR\}"|(")?(?:\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR(?![A-Za-z0-9_])))(?=[/" \t]|$)/g;
+// `"$CLAUDE_PROJECT_DIR"` or `"${CLAUDE_PROJECT_DIR}"` starting a word, followed by `/`.
+const PROJECT_DIR = /(^|[ \t])"\$(?:CLAUDE_PROJECT_DIR|\{CLAUDE_PROJECT_DIR\})"(?=\/)/g;
+/** Every C0 control character but tab, and DEL: refused before anything else (NUL would pass for the folder mark). */
+const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f]/;
 /** Shell syntax a hook may not use: everything that runs, redirects, groups, expands or comments. */
-const FORBIDDEN = /[;|&<>(){}#`!$\\*?[~\n\r\u0001-\u0008\u000b-\u001f\u007f]/;
+const FORBIDDEN = /[;|&<>(){}#`!$\\*?[~]/;
 const NPM_NAME = /^(@[a-z0-9][a-z0-9-._~]*\/)?[a-z0-9][a-z0-9-._~]*(@[A-Za-z0-9._^~-]+)?$/;
 const PYPI_NAME = /^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?(==[A-Za-z0-9._+!-]+)?$/;
+/** What npx reads from a folder or any folder above it: its config and the packages (and `.bin`) installed there. */
+const NPM_CONFIG = [".npmrc", "node_modules"];
+/** What uvx reads from a folder or any folder above it: its config, a project, a pinned Python, a lock. */
+const UV_CONFIG = ["uv.toml", "pyproject.toml", ".python-version", "uv.lock"];
 
-/** What a word is to the command. `script`: the file it runs (must be a hashed regular file). `arg`: any argument. */
-type Role = "script" | "arg" | "npm" | "pypi";
+/**
+ * What a word is to the command. `interp`: the interpreter (not inside a root). `script`: the file it runs (a hashed
+ * regular file); `direct` also needs an allowed `#!` line. `arg`: any argument; `env`: an env value (a root refused).
+ */
+type Role = "interp" | "script" | "direct" | "arg" | "env" | "npm" | "pypi";
 interface Parsed {
   words: string[];
   checks: { word: string; role: Role }[];
@@ -48,10 +71,20 @@ const refuse = (why: string): never => {
   throw new Error(`${why}: ${FORM}`);
 };
 
+/** The command as the screen and the refusals show it. */
+export function commandText(command: ScriptCommand): string {
+  if (typeof command === "string") return command;
+  if ("codex" in command) return command.codex;
+  return ("argv" in command ? command.argv : command).join(" ");
+}
+
 /** A hook's words: plain, or wrapped whole in single or double quotes. */
-function hookWords(text: string, folder: string): string[] {
+function hookWords(text: string, folder: string, codex: boolean): string[] {
   if (text.length > COMMAND_MAX) refuse(`is over ${COMMAND_MAX / 1024} KB`);
-  const marked = text.replace(PROJECT_DIR, (_m, lead: string, quote?: string) => `${lead}${quote ?? ""}${FOLDER_MARK}`);
+  if (CONTROL.test(text)) refuse("uses a control character");
+  if (codex && text.includes("CLAUDE_PROJECT_DIR")) refuse("uses $CLAUDE_PROJECT_DIR, which Codex doesn't set: write the absolute path");
+  const marked = text.replace(PROJECT_DIR, (_m, lead: string) => `${lead}"${FOLDER_MARK}"`);
+  if (marked.includes("CLAUDE_PROJECT_DIR")) refuse('uses $CLAUDE_PROJECT_DIR other than as "$CLAUDE_PROJECT_DIR"/path (sh would split and glob it)');
   const bad = FORBIDDEN.exec(marked);
   if (bad) refuse(`uses ${JSON.stringify(bad[0])}`);
   const words: string[] = [];
@@ -101,20 +134,55 @@ function interpreterOf(word: string): string | null {
   return path.isAbsolute(word) && INTERPRETER_DIRS.has(path.dirname(word)) ? name : null;
 }
 
+/** The places an argument may name: itself, a glued short flag's value (`-c./x`), every part between `=`, `,` or `:`, each without a leading `@`. */
+function candidates(word: string): string[] {
+  const glued = /^-[^-]./.test(word) ? [word.slice(2)] : [];
+  const parts = /[=,:]/.test(word) ? word.split(/[=,:]/) : [];
+  const all = [word, ...glued, ...parts];
+  return [...new Set([...all, ...all.filter((t) => t.startsWith("@")).map((t) => t.slice(1))])].filter((t) => t !== "");
+}
+
+/** A word a hook would read relative to its working folder: it has a `/` or starts with `.`, and is not absolute. */
+const relativePath = (t: string) => (t.includes("/") || t.startsWith(".")) && !path.isAbsolute(t);
+
+/**
+ * In a hook, the script and every path-like part of an argument must be absolute: a hook runs in the session's current
+ * folder, which follows the agent's `cd`.
+ */
+function anchorHook(words: readonly string[], scriptAt: number, codex: boolean): void {
+  const fix = (t: string) => (codex ? "write its absolute path (Codex sets no CLAUDE_PROJECT_DIR)" : `write "$CLAUDE_PROJECT_DIR"/${t.replace(/^(\.\/)+/, "")}`);
+  const why = (t: string) => `names ${JSON.stringify(t.slice(0, 60))} relative to the hook's working folder, which follows the agent's cd; ${fix(t)}`;
+  const script = words[scriptAt]!;
+  if (!path.isAbsolute(script)) refuse(why(script));
+  for (const w of words.slice(scriptAt + 1)) {
+    // A word with parts (`--c=/x`, `-c./x`, `a,b`, `@./x`) is checked by its parts; a plain word as itself.
+    const parts = candidates(w).filter((t) => t !== w);
+    for (const t of parts.length > 0 ? parts : [w]) if (relativePath(t)) refuse(why(t));
+  }
+}
+
 /** The grammar: `<interpreter> <script> [args]`, `<script> [args]`, or (servers) a remote npx/uvx package. */
 function parse(command: ScriptCommand, folder: string): Parsed {
+  const hook = typeof command === "string" || "codex" in command;
+  const codex = typeof command !== "string" && "codex" in command;
   let words: string[];
-  if (typeof command === "string") words = hookWords(command, folder);
+  let env: Readonly<Record<string, string>> = {};
+  if (typeof command === "string") words = hookWords(command, folder, false);
+  else if ("codex" in command) words = hookWords(command.codex, folder, true);
   else {
-    words = [...command];
+    const argv = "argv" in command ? command.argv : command;
+    env = "argv" in command ? (command.env ?? {}) : {};
+    words = [...argv];
     if (words.length === 0) refuse("is empty");
     if (words.length > WORDS_MAX) refuse(`has over ${WORDS_MAX} words`);
     if (words.reduce((n, w) => n + w.length, 0) > COMMAND_MAX) refuse(`is over ${COMMAND_MAX / 1024} KB`);
     if (words.some((w) => /[\u0000-\u001f\u007f]/.test(w))) refuse("uses a control character");
+    if (Object.values(env).some((v) => /[\u0000-\u001f\u007f]/.test(v))) refuse("uses a control character in env");
   }
   const out: Parsed = { words, checks: [], remote: false };
-  const args = (from: number) => {
+  const rest = (from: number) => {
     for (const w of words.slice(from)) out.checks.push({ word: w, role: "arg" });
+    for (const v of Object.values(env)) out.checks.push({ word: v, role: "env" });
   };
   const first = words[0]!;
   const interpreter = interpreterOf(first);
@@ -122,30 +190,34 @@ function parse(command: ScriptCommand, folder: string): Parsed {
     const script = words[1];
     if (script === undefined) refuse(`runs ${interpreter} without a script`);
     if (script!.startsWith("-")) refuse(`gives ${interpreter} an option (${script!.slice(0, 40)})`);
+    if (hook) anchorHook(words, 1, codex);
+    if (path.isAbsolute(first)) out.checks.push({ word: first, role: "interp" });
     out.checks.push({ word: script!, role: "script" });
-    args(2);
+    rest(2);
     return out;
   }
-  if (typeof command !== "string" && first === "npx") {
+  if (!hook && first === "npx") {
     const at = words[1] === "-y" || words[1] === "--yes" ? 2 : 1;
     const pkg = words[at];
     if (pkg === undefined || !NPM_NAME.test(pkg)) refuse(`runs npx with ${pkg === undefined ? "no package" : JSON.stringify(pkg.slice(0, 60))}, not a remote npm package`);
     out.remote = true;
     out.checks.push({ word: pkg!, role: "npm" });
-    args(at + 1);
+    rest(at + 1);
     return out;
   }
-  if (typeof command !== "string" && first === "uvx") {
+  if (!hook && first === "uvx") {
     const pkg = words[1];
     if (pkg === undefined || !PYPI_NAME.test(pkg)) refuse(`runs uvx with ${pkg === undefined ? "no package" : JSON.stringify(pkg.slice(0, 60))}, not a remote PyPI package`);
     out.remote = true;
     out.checks.push({ word: pkg!, role: "pypi" });
-    args(2);
+    rest(2);
     return out;
   }
-  // `<script> [args]`: the first word is the file it runs (a bare program name on PATH is no such file: refused below).
-  out.checks.push({ word: first, role: "script" });
-  args(1);
+  // `<script> [args]`: a path to the file it runs. A bare word is a program on PATH or a shell builtin, never the file.
+  if (!first.includes("/")) refuse(`runs ${JSON.stringify(first.slice(0, 40))}, which is not a path to a script (write ./${first.slice(0, 40)} for a file)`);
+  if (hook) anchorHook(words, 0, codex);
+  out.checks.push({ word: first, role: "direct" });
+  rest(1);
   return out;
 }
 
@@ -155,6 +227,17 @@ function parse(command: ScriptCommand, folder: string): Parsed {
  */
 export function commandWords(command: ScriptCommand, folder: string): string[] {
   return parse(command, folder).words;
+}
+
+/**
+ * Why the first line of a script run directly is not allowed, or null: only `#!/usr/bin/env <interpreter>` or
+ * `#!<interpreter's absolute path>` (in a system folder), with no options.
+ */
+export function shebangProblem(head: string): string | null {
+  const line = head.split(/\r?\n/)[0]!.replace(/\r$/, "");
+  const m = /^#![ \t]*(\S+)(?:[ \t]+(\S+))?[ \t]*$/.exec(line);
+  const ok = m !== null && (m[1] === "/usr/bin/env" ? m[2] !== undefined && INTERPRETERS.has(m[2]) : m[2] === undefined && INTERPRETER_DIRS.has(path.dirname(m[1]!)) && INTERPRETERS.has(path.basename(m[1]!)));
+  return ok ? null : "starts with no allowed #! line (#!/usr/bin/env node, python3, python, bash or sh, no options)";
 }
 
 // macOS file systems are usually case- and normalization-insensitive: compare without either (as clean.ts).
@@ -174,12 +257,6 @@ async function realOrNull(p: string): Promise<string | null> {
 }
 
 const exists = (p: string) => fs.lstat(p).then(() => true, () => false);
-
-/** The places an argument may name: itself, a glued short flag's value (`-c./x`), every part between `=`. */
-function candidates(word: string): string[] {
-  const glued = /^-[^-]./.test(word) ? [word.slice(2)] : [];
-  return [...new Set([word, ...glued, ...(word.includes("=") ? word.split("=") : [])])].filter((t) => t !== "");
-}
 
 type Root = { lex: string; real: string };
 
@@ -214,23 +291,26 @@ async function classify(p: string, st: Stats, roots: Root[]): Promise<"outside" 
   return st.isFile() ? "file" : "is not a regular file";
 }
 
-/** The folders npx searches from `folder` (it and each folder above it) and the linked roots. */
-function searchDirs(folder: string, roots: Root[]): string[] {
-  const dirs: string[] = [];
-  for (let d = path.resolve(folder); ; d = path.dirname(d)) {
-    dirs.push(d);
-    if (path.dirname(d) === d) break;
+/** `dir` and every folder above it, to /. */
+function ancestors(dir: string): string[] {
+  const out: string[] = [];
+  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+    out.push(d);
+    if (path.dirname(d) === d) return out;
   }
-  return [...dirs, ...roots.flatMap((r) => [r.lex, r.real])];
 }
 
-/** An npm package installed where npx would find it first (`node_modules/.bin/<bin>`, `node_modules/<name>`). */
-async function localPackage(spec: string, folder: string, roots: Root[]): Promise<string | null> {
-  const at = spec.indexOf("@", 1);
-  const name = at > 0 ? spec.slice(0, at) : spec;
-  const bin = name.slice(name.lastIndexOf("/") + 1);
-  for (const d of searchDirs(folder, roots)) {
-    for (const p of [path.join(d, "node_modules", ".bin", bin), path.join(d, "node_modules", name)]) if (await exists(p)) return p;
+/**
+ * The first of `names` that exists (lstat only, never read) in the folder, a linked folder, or any folder above them:
+ * config a package runner reads, so what it runs would follow the folder. The person's own npm config file (`USER_NPMRC`) is theirs.
+ */
+async function runnerConfig(names: readonly string[], folder: string, roots: Root[]): Promise<string | null> {
+  const dirs = new Set([folder, ...roots.flatMap((r) => [r.lex, r.real])].flatMap(ancestors));
+  for (const d of dirs) {
+    for (const n of names) {
+      const p = path.join(d, n);
+      if (p !== USER_NPMRC && (await exists(p))) return p;
+    }
   }
   return null;
 }
@@ -253,12 +333,26 @@ export interface ScriptIssue {
   command: string;
 }
 
+/** The first bytes of the regular file `p` (enough for a `#!` line); "" when it can't be read. */
+async function head(p: string): Promise<string> {
+  const h = await fs.open(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW).catch(() => null);
+  if (!h) return "";
+  try {
+    const buf = Buffer.alloc(256);
+    const { bytesRead } = await h.read(buf, 0, buf.length, 0);
+    return buf.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await h.close();
+  }
+}
+
 /**
  * What `commands` run from `folder` and its linked folders: `files`, the regular files they name (hashed), absolute,
- * sorted; `issues`, what can't be hashed: a script that is not a regular file in a root, an argument naming a root, a
- * folder, a link or a FIFO there (a root passes only for a remote-package server), a remote package that is local.
- * Relative paths are taken from `folder`, the engine's working folder. Throws as `commandWords` does: check each
- * command with it first.
+ * sorted; `issues`, what can't be hashed: a script that is not a regular file in a root (or, run directly, has no
+ * allowed `#!` line), an argument or env value naming a root, a folder, a link or a FIFO there (a root passes only as a
+ * remote-package server's argument), a remote package that is local or whose runner would read the folders' config, an
+ * interpreter inside a root. Relative paths are taken from `folder`, the engines' working folder. Throws as
+ * `commandWords` does: check each command with it first.
  */
 export async function scanScripts(
   commands: ReadonlyArray<ScriptCommand>,
@@ -268,23 +362,38 @@ export async function scanScripts(
   const files = new Set<string>();
   const issues = new Map<string, ScriptIssue>();
   for (const command of commands) {
-    const shown = typeof command === "string" ? command : command.join(" ");
+    const shown = commandText(command);
     const issue = (p: string, why: string) => {
       if (!issues.has(p)) issues.set(p, { path: p, why, command: shown.length > 120 ? `${shown.slice(0, 120)}…` : shown });
     };
     const parsed = parse(command, o.folder);
     for (const { word, role } of parsed.checks) {
-      if (role === "npm" || role === "pypi") {
-        const local = await (role === "npm" ? localPackage(word, o.folder, roots) : localModule(word, o.folder, roots));
-        if (local) issue(local, "is a local package: the server would run the folder's own copy, which the approval doesn't cover");
+      if (role === "npm") {
+        const found = await runnerConfig(NPM_CONFIG, o.folder, roots);
+        if (found) issue(found, "is npm config or packages npx would use: the server could run the folder's code, which the approval doesn't cover");
         continue;
       }
-      if (role === "script") {
+      if (role === "pypi") {
+        const found = (await runnerConfig(UV_CONFIG, o.folder, roots)) ?? (await localModule(word, o.folder, roots));
+        if (found) issue(found, "is a Python project, config or module uvx would use: the server could run the folder's code, which the approval doesn't cover");
+        continue;
+      }
+      if (role === "interp") {
+        const real = (await realOrNull(word)) ?? word;
+        if (roots.some((r) => inside(word, r.lex) || inside(word, r.real) || inside(real, r.real))) issue(word, "is an interpreter inside the folder or a linked folder");
+        continue;
+      }
+      if (role === "script" || role === "direct") {
         const p = path.resolve(o.folder, word);
         const st = await fs.lstat(p).catch(() => null);
         const kind = st ? await classify(p, st, roots) : "missing";
-        if (kind === "file") files.add(p);
-        else issue(p, kind === "missing" || kind === "outside" ? "is not a script file in the folder or a linked folder" : kind === "root" ? "is a folder" : kind);
+        if (kind !== "file") {
+          issue(p, kind === "missing" || kind === "outside" ? "is not a script file in the folder or a linked folder" : kind === "root" ? "is a folder" : kind);
+          continue;
+        }
+        const bad = role === "direct" ? shebangProblem(await head(p)) : null;
+        if (bad) issue(p, bad);
+        else files.add(p);
         continue;
       }
       for (const t of candidates(word)) {
@@ -295,7 +404,7 @@ export async function scanScripts(
         if (kind === "file") files.add(p);
         else if (kind === "outside") continue;
         else if (kind === "root") {
-          if (!parsed.remote) issue(p, "is a folder");
+          if (!parsed.remote || role === "env") issue(p, "is a folder");
         } else issue(p, kind);
       }
     }

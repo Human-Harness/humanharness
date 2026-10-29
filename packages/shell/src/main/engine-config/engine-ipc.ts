@@ -5,6 +5,7 @@ import { engineApprovalTag } from "./approval";
 import type { Hooks } from "./clean";
 import { agentFromMarkdown, parseFrontmatter } from "./frontmatter";
 import { commandLoadsOtherCode, importsOtherCode } from "./outside-code";
+import type { ScriptCommand } from "./script-refs";
 import type { EngineConfig, EngineLayer } from "./read-config";
 
 export type { EngineConfigView };
@@ -47,14 +48,14 @@ function hookItems(hooks: Hooks | undefined, layer: string, file: string): Engin
   return Object.entries(hooks ?? {}).flatMap(([event, matchers]) =>
     matchers.flatMap((m) =>
       m.hooks.map((h) =>
-        withOutside({ kind: "hook" as const, label: m.matcher ? `${event} · ${m.matcher}` : event, command: h.command, args: [], layer, file }, h.command),
+        withOutside({ kind: "hook" as const, label: m.matcher ? `${event} · ${m.matcher}` : event, command: h.command, args: [], layer, file }, file === "codex.toml" ? { codex: h.command } : h.command),
       ),
     ),
   );
 }
 
 /** `item` marked when its command may load code the approval doesn't cover (a package runner, `python -m`). */
-function withOutside(item: EngineRunsCommandView, command: string | readonly string[]): EngineRunsCommandView {
+function withOutside(item: EngineRunsCommandView, command: ScriptCommand): EngineRunsCommandView {
   return commandLoadsOtherCode(command) ? { ...item, loadsOtherCode: true } : item;
 }
 

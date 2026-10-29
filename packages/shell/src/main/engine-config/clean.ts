@@ -40,9 +40,10 @@ const CREDENTIAL_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIV
 /** A server's env name: upper-case letters, digits and `_`. */
 const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
 // Variables that make a program load code, config or a home the hash never saw (E2): search paths, homes and config
-// folders, option variables, preloads, and the families of node, python, perl, ruby, java, bash, git, npm, the linker.
+// folders, option variables, preloads, the families of node, python, perl, ruby, java, bash, git, npm, uv, pip, the
+// linker, and the programs a tool may start on its own (editor, pager, shell, browser, askpass, lua's init).
 const LOADER_NAME =
-  /(PATH|HOME|DIR|OPTIONS|OPTS|CONFIG|PREFIX|RC|STARTUP|USERBASE|PROFILE|PRELOAD|LIBRARY|LIB|INCLUDE)$|^(GIT_|NPM_CONFIG_|NODE_|PYTHON|PERL|RUBY|JAVA_|BASH_|ZDOTDIR|LD_|DYLD_|PROMPT_COMMAND)|^ENV$/;
+  /(PATH|HOME|DIR|OPTIONS|OPTS|CONFIG|PREFIX|RC|STARTUP|USERBASE|PROFILE|PRELOAD|LIBRARY|LIB|INCLUDE)$|^(GIT_|NPM_CONFIG_|NODE_|PYTHON|PERL|RUBY|JAVA_|BASH_|ZDOTDIR|LD_|DYLD_|PROMPT_COMMAND|UV_|PIP_|LUA_INIT)|^(ENV|EDITOR|VISUAL|PAGER|SHELL|BROWSER|LESSOPEN|LESSCLOSE|SSH_ASKPASS|SUDO_ASKPASS|PS4|IFS)$/;
 /** Map keys a preset may use (hook events, feature flags). */
 const MAP_KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);

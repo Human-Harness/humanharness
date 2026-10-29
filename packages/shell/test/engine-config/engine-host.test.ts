@@ -63,7 +63,7 @@ async function setup(files: Record<string, string> | null, extra: Record<string,
 }
 
 const SERVER = JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js"] } } });
-const SETTINGS = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/stop.js" }] }] }, permissions: { allow: ["Bash(npm test)"] } });
+const SETTINGS = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js' }] }] }, permissions: { allow: ["Bash(npm test)"] } });
 const TOOLS = { "tools/lint.js": "console.log('lint')", "tools/stop.js": "console.log('stop')" };
 const BASIC = { "instructions.md": "Use tabs.\n", "mcp.json": SERVER, "settings.json": SETTINGS };
 
@@ -137,7 +137,7 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
     expect(got.preset).toEqual({
       hash,
       base: "isolated",
-      settings: { hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/stop.js" }] }] }, permissions: { allow: ["Bash(npm test)"] } },
+      settings: { hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/stop.js' }] }] }, permissions: { allow: ["Bash(npm test)"] } },
       servers: [{ name: "scope-lint", command: "node", args: ["./tools/lint.js"], env: {} }],
     });
     // The snapshot was written from what was approved.
@@ -188,7 +188,7 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
         "actions/review/instructions.md": "Be strict.\n",
         "actions/review/mcp.json": JSON.stringify({ mcpServers: { lint: { command: "node", args: ["./tools/lint.js", "--strict"] }, docs: { command: "node", args: ["./tools/lint.js"] } } }),
         "actions/review/settings.json": JSON.stringify({
-          hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/lint.js" }] }] },
+          hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/lint.js' }] }] },
           permissions: { allow: ["Bash(npm run lint)"], deny: ["Bash(git push:*)"] },
         }),
       },
@@ -202,7 +202,7 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
       { name: "scope-docs", command: "node", args: ["./tools/lint.js"], env: {} },
     ]);
     expect(got.preset?.settings).toEqual({
-      hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./tools/lint.js" }] }] },
+      hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/tools/lint.js' }] }] },
       permissions: { allow: ["Bash(npm test)", "Bash(npm run lint)"], deny: ["Bash(git push:*)"] },
     });
     // Another action gets the scope's only.
@@ -234,7 +234,7 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
   });
 
   it("pinned to A after B was approved: a script only A runs, edited since, drops the preset (E1)", async () => {
-    const hooked = (file: string) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node ./tools/${file}` }] }] } });
+    const hooked = (file: string) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node "$CLAUDE_PROJECT_DIR"/tools/${file}` }] }] } });
     const w = await setup({ "instructions.md": "Hi.\n", "settings.json": hooked("x.js") }, { "tools/x.js": "console.log('x')", "tools/y.js": "console.log('y')" });
     const a = await w.approve();
     expect((await w.host.presetFor("intro", undefined)).hash).toBe(a);
@@ -248,7 +248,7 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
   });
 
   it.each(["symlink", "hard link"])("pinned to A after B was approved: a script only A runs, replaced by a %s to the same bytes, drops the preset", async (kind) => {
-    const hooked = (file: string) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node ./tools/${file}` }] }] } });
+    const hooked = (file: string) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node "$CLAUDE_PROJECT_DIR"/tools/${file}` }] }] } });
     const w = await setup({ "instructions.md": "Hi.\n", "settings.json": hooked("x.js") }, { "tools/x.js": "console.log('x')", "tools/y.js": "console.log('y')" });
     const a = await w.approve();
     expect((await w.host.presetFor("intro", undefined)).hash).toBe(a);
@@ -268,7 +268,7 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
 
   it("pinned to A after B was approved: an engine-folder file A runs, changed in B, drops the preset", async () => {
     // A script inside the engine folder (a skill's file): hashed with the folder, so B's hash covers B's bytes only.
-    const hook = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./.harness/engine/intro/skills/s/stop.js" }] }] } });
+    const hook = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/.harness/engine/intro/skills/s/stop.js' }] }] } });
     const w = await setup({ "instructions.md": "Hi.\n", "settings.json": hook, "skills/s/SKILL.md": "---\nname: s\ndescription: S\n---\nDo.\n", "skills/s/stop.js": "console.log('a')" });
     const a = await w.approve();
     expect((await w.host.presetFor("intro", undefined)).hash).toBe(a);

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import { cleanCodex, cleanMcp, cleanSettings, duplicateJsonKey, type CleanContext, type CleanSettings, type Hooks } from "./clean";
 import { agentFromMarkdown, skillFromMarkdown, type AgentDefinition } from "./frontmatter";
-import { commandWords, scanScripts, scriptRefs, type ScriptCommand } from "./script-refs";
+import { commandText, commandWords, scanScripts, scriptRefs, type ScriptCommand } from "./script-refs";
 import { parseToml } from "./toml-lite";
 
 // Reads a scope's engine folder, `.harness/engine/<scope>/` (hatches spec §5.1–5.4), into an EngineConfig: what each
@@ -265,7 +265,7 @@ export function configFromFiles(
       commandWords(c, o.folder);
       commands.push(c);
     } catch (err) {
-      const shown = typeof c === "string" ? c : c.join(" ");
+      const shown = commandText(c);
       refuse(file, `${kind} ${JSON.stringify(shown.length > 120 ? `${shown.slice(0, 120)}…` : shown)} ${(err as Error).message}`);
     }
   };
@@ -283,7 +283,7 @@ export function configFromFiles(
         for (const c of hookCommands(cleaned.settings.hooks)) command(`${prefix}settings.json`, "the hook command", c);
       }
     }
-    for (const s of l.servers) command(`${prefix}mcp.json`, `the server ${s.name.slice("scope-".length)}`, [s.command, ...s.args]);
+    for (const s of l.servers) command(`${prefix}mcp.json`, `the server ${s.name.slice("scope-".length)}`, { argv: [s.command, ...s.args], env: s.env });
     return l;
   };
 
@@ -348,7 +348,7 @@ export function configFromFiles(
     const codex = attempt("codex.toml", () => cleanCodex(parseToml(toml), { web: o.web === true }));
     if (codex) {
       config.codex = codex;
-      if (isPlainObject(codex.hooks)) for (const c of hookCommands(codex.hooks as Hooks)) command("codex.toml", "the hook command", c);
+      if (isPlainObject(codex.hooks)) for (const c of hookCommands(codex.hooks as Hooks)) command("codex.toml", "the hook command", { codex: c });
     }
   }
 

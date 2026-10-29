@@ -46,9 +46,8 @@ describe("recipes surface (tools spec §7; D0)", () => {
     expect(fn).toContain("registry: t.registry,");
     expect(fn).toContain("withRunTrailer: (trailer, fn) => t.withRunTrailer(trailer, fn),");
     expect(fn).toContain("limits: (job) => jobLimits(harness, job),");
-    // The last call, never a trace note (an AI round's "AI step: …" would give "step_output: AI step…").
-    expect(fn).toContain("const last = [...(await t.trace(run))].reverse().find((e) => e.note === undefined);");
-    expect(fn).toContain("return last ? { tool: last.tool, resultSummary: last.summary } : null;");
+    // The last call, never a trace note: lastCallOf's behaviour is tested in jobs-recipes/tools-host-run-trailer.test.ts.
+    expect(fn).toContain("lastCall: async (run) => lastCallOf(await t.trace(run)),");
     expect(fn).toContain('readAiBrief: (p) => fs.readFile(resolveInHarness(harness, p), "utf8"),');
   });
 });

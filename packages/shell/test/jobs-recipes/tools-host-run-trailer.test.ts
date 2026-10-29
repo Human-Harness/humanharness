@@ -1,11 +1,12 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ToolMeta } from "@humanharness/harness-sdk";
+import { type ToolMeta, z } from "@humanharness/harness-sdk";
+import type { ToolCallView } from "@humanharness/runtime";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDataCall } from "../../src/main/data-requests";
 import type { ToolChannel, ToolHostAnswer, ToolHostCall } from "../../src/main/tools/tool-host";
-import { type ToolsHostDeps, createToolsHost } from "../../src/main/tools/tools-host";
+import { type ToolsHarness, type ToolsHostDeps, createToolsHost, lastCallOf } from "../../src/main/tools/tools-host";
 
 const RUN = "run-1";
 let root: string;
@@ -27,7 +28,7 @@ afterEach(async () => {
 });
 
 /** A host whose one tool, `write`, puts a note through ctx (the host page's channel, out of the registry's chain). */
-function wire() {
+function wire(jobs: ToolsHarness["jobs"] = { sync: {} }) {
   const data: { request: unknown; call: ToolDataCall }[] = [];
   let channel: ToolChannel | null = null;
   const page: (() => void)[] = [];
@@ -44,7 +45,7 @@ function wire() {
       permissions: { edit: "folder", exec: false, web: false },
       data: { notes: { label: "Notes", agent: "read" } } as never,
       tools: { write: "./tools/write.ts" },
-      jobs: { sync: {} },
+      jobs,
     },
     base: async () => base,
     references: async () => [],
@@ -87,5 +88,38 @@ describe("toolsHost.withRunTrailer (tools spec §7.1: a recipe's tool steps)", (
     const { t } = wire();
     expect(await t.withRunTrailer({ task: RUN, job: "sync" }, async () => 7)).toBe(7);
     await expect(t.withRunTrailer({ task: RUN, job: "sync" }, async () => Promise.reject(new Error("x")))).rejects.toThrow("x");
+  });
+});
+
+describe("the tools host's harness: a job's steps (tools spec §3.3)", () => {
+  it("a recipe's steps reach the tools.json checks: a source that can't be checked turns tools off", async () => {
+    // `write` declares no returns, so the AI step can't read its result: typed in ToolsHarness, so never dropped on the way.
+    const { t } = wire({ sync: { steps: [{ tool: "write", as: "w" }, { ai: "./jobs/a.md", input: ["w"], output: z.object({ ok: z.boolean() }), tier: "standard" }] } });
+    await t.start();
+    expect(t.info().off).toMatch(/^Job "sync": steps\[1\]: input "w"/);
+  });
+});
+
+describe("lastCallOf (a recipe run's line: its last call, tools spec §7.4)", () => {
+  const view = (tool: string, summary: string, note?: string): ToolCallView => ({
+    tool,
+    caller: "job",
+    ok: true,
+    ms: 1,
+    summary,
+    args: "{}",
+    accesses: [],
+    at: "2026-10-29T10:00:00.000Z",
+    ...(note ? { note } : {}),
+  });
+
+  it("skips a trace note after the last call: an AI round's note never becomes the run's line", () => {
+    const trace = [view("fetch-ci", "3 runs"), view("notify", "a string"), view("step_output", "", "AI step: round 1")];
+    expect(lastCallOf(trace)).toStrictEqual({ tool: "notify", resultSummary: "a string" });
+  });
+
+  it("only notes, or nothing: null", () => {
+    expect(lastCallOf([view("notify", "", "notify was not called")])).toBeNull();
+    expect(lastCallOf([])).toBeNull();
   });
 });

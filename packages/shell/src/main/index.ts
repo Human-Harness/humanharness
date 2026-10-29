@@ -199,7 +199,7 @@ import { testCrypto } from "./secrets/test-crypto";
 import { isPublicHost } from "./material-fetch";
 import { ToolHost } from "./tools/tool-host";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
-import { type ToolsHost, createToolsHost, jobLimits, slotTaskOf } from "./tools/tools-host";
+import { type ToolsHost, createToolsHost, jobLimits, lastCallOf, slotTaskOf } from "./tools/tools-host";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
@@ -1932,10 +1932,7 @@ function recipeTools(t: ToolsHost): NonNullable<JobsHostDeps["tools"]> {
     registry: t.registry,
     withRunTrailer: (trailer, fn) => t.withRunTrailer(trailer, fn),
     limits: (job) => jobLimits(harness, job),
-    lastCall: async (run) => {
-      const last = [...(await t.trace(run))].reverse().find((e) => e.note === undefined);
-      return last ? { tool: last.tool, resultSummary: last.summary } : null;
-    },
+    lastCall: async (run) => lastCallOf(await t.trace(run)),
     readAiBrief: (p) => fs.readFile(resolveInHarness(harness, p), "utf8"),
   };
 }

@@ -68,7 +68,7 @@ export async function runToolStep(r: StepRegistry, step: ToolStep, values: StepV
     const a = await r.call({ ...base, tool: step.tool, args, ...(step.input ? { inputs } : {}) });
     const line = a.summary !== undefined ? { summary: a.summary } : {};
     if (!a.ok) return { ok: false, error: a.error, ...line };
-    return { ok: true, value: a.result, ...line, ...(a.ok && a.requestAi ? { requestAi: a.requestAi } : {}) };
+    return { ok: true, value: a.result, ...line, ...(a.requestAi ? { requestAi: a.requestAi } : {}) };
   };
   if (step.forEach === undefined) return one({ ...(step.args ?? {}) });
   const src = earlier(values, step.forEach);

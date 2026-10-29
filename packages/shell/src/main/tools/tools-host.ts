@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type ActionLike, type HarnessSecret, PRE_TOKENS_DEFAULT, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
+import { type ActionLike, type HarnessSecret, type JobStep, PRE_TOKENS_DEFAULT, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { Event, ToolCallView } from "@humanharness/runtime";
 import type { ToolsInfo } from "@humanharness/ui/client";
@@ -57,8 +57,11 @@ export interface ToolsHarness extends ToolsManifest {
   id: string;
   root: string;
   secrets?: readonly HarnessSecret[];
-  /** Each job's `permissions` (only narrowing the harness's): a job run's tool calls stay inside them. */
-  jobs?: Record<string, { permissions?: PermissionsOverride }>;
+  /**
+   * Each job's `permissions` (only narrowing the harness's): a job run's tool calls stay inside them. A recipe's `steps`
+   * are typed too, so a harness built for the host never drops them on the way to the tools.json checks.
+   */
+  jobs?: Record<string, { permissions?: PermissionsOverride; steps?: JobStep[] }>;
   /** The actions' pre-steps and their phases' `expects` (tools spec §6); the label names a part in a miss note. */
   actions?: Record<string, Omit<ActionLike, "phases"> & { phases?: { id: string; label?: string; expects?: string[] }[] }>;
 }
@@ -146,6 +149,12 @@ export interface ToolsHost {
    * job call runs: a tool's data write is committed under the run.
    */
   withRunTrailer<T>(trailer: HistoryTrailer, fn: () => Promise<T>): Promise<T>;
+}
+
+/** A recipe run's last call (its line, tools spec §7.4), never a trace note: an AI round's "AI step: …" would give "step_output: AI step…". */
+export function lastCallOf(trace: readonly ToolCallView[]): { tool: string; resultSummary: string } | null {
+  const last = [...trace].reverse().find((e) => e.note === undefined);
+  return last ? { tool: last.tool, resultSummary: last.summary } : null;
 }
 
 /**

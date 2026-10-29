@@ -68,6 +68,32 @@ describe("the tool host script: ctx.summary and ctx.requestAi (tools spec §4.2,
     expect(of("done")).toEqual([{ callId: "c1", ok: true, value: 2 }]);
   });
 
+  it("ctx.requestAi refuses a function, a symbol or a bigint, at the top or inside, without calling main", async () => {
+    const got: unknown[] = [];
+    const inputs: unknown[] = [() => 1, Symbol("s"), 10n, { ids: ["a"], f: () => 1 }, [Symbol("s")], { n: { big: 1n } }];
+    const tools: Record<string, unknown> = {
+      post: bundle({
+        run: async (_a: unknown, ctx: Any) => {
+          for (const input of inputs) {
+            try {
+              await ctx.requestAi(input);
+              got.push("sent");
+            } catch (e) {
+              got.push([(e as Error).name, (e as Error).message]);
+            }
+          }
+          return 3;
+        },
+      }),
+    };
+    const { rpc, of } = fakeRpc([call("c1", "post")]);
+    void runHost(rpc, Object.keys(tools), async (id: string) => tools[id]);
+    await settle();
+    expect(of("ctx")).toEqual([]);
+    expect(got).toEqual(inputs.map(() => ["ToolRefused", "ctx.requestAi takes JSON data"]));
+    expect(of("done")).toEqual([{ callId: "c1", ok: true, value: 3 }]);
+  });
+
   it("the ctx keeps its other members: summary and requestAi are the only new ones", async () => {
     let keys: string[] = [];
     const tools: Record<string, unknown> = {

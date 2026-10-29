@@ -120,7 +120,7 @@ export interface JobsHostDeps {
   /**
    * What a recipe's run needs of the tools (tools spec §7): the registry its tool steps call as caller "job", the run's
    * history trailer on those calls, the job's limits, the trace's last call (the run's line) and the AI step's brief.
-   * Absent without tools (D0): a job with `steps` then fails its run "Tools are off".
+   * Absent without tools (D0): a job with `steps` then fails its run at its first tool step, as "<tool> failed: Tools are off".
    */
   tools?: {
     registry: RecipeRunDeps["registry"];

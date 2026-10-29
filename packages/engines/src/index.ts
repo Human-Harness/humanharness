@@ -1,6 +1,8 @@
 import { CLAUDE_MODELS, EFFORTS, type EngineModels } from "./models";
 
 export * from "./models";
+export * from "./contract";
+export { classifyError } from "./classify";
 
 export type LegalStatus = "allowed" | "pending" | "excluded";
 

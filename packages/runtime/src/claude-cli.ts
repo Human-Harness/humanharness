@@ -2,9 +2,8 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
-import { type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
+import { type ModelProfile, classifyError, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
-import { classifyError } from "./classify";
 import { type ActivityKind, type Event, fail } from "./events";
 import type { Transport, TransportOptions } from "./transport";
 

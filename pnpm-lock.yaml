@@ -282,6 +282,9 @@ importers:
 
   packages/engines:
     dependencies:
+      '@humanharness/blocks':
+        specifier: workspace:*
+        version: link:../blocks
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk

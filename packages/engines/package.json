@@ -4,5 +4,8 @@
   "type": "module",
   "license": "Apache-2.0",
   "exports": { ".": "./src/index.ts", "./assets/*": "./assets/*" },
-  "dependencies": { "@humanharness/harness-sdk": "workspace:*" }
+  "dependencies": {
+    "@humanharness/blocks": "workspace:*",
+    "@humanharness/harness-sdk": "workspace:*"
+  }
 }

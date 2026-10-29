@@ -78,7 +78,7 @@ A dropped link is logged once per folder and reason, and the turn runs without i
 
 ### To the agent
 
-A turn carries a `TurnScope` (`packages/runtime/src/transport.ts`): `{ linked: LinkedAccess[] }`, each `{ path, mode, tracked }`, built for **each turn** from the turn's task scope (`TurnDeps.scopeAccess`, L5), never from the open scope or a window argument, and passed through `SlotSendOptions.scope` to `Transport.turn(…, scope)`. Linking or unlinking mid-task reaches the next turn (Decision 4). System tasks (Sidekick, language: `noTools`, `mcpOnly`) never get one; `claudeArgs` throws if they do.
+A turn carries a `TurnScope` (`packages/engines/src/contract.ts`): `{ linked: LinkedAccess[] }`, each `{ path, mode, tracked }`, built for **each turn** from the turn's task scope (`TurnDeps.scopeAccess`, L5), never from the open scope or a window argument, and passed through `SlotSendOptions.scope` to `Transport.turn(…, scope)`. Linking or unlinking mid-task reaches the next turn (Decision 4). System tasks (Sidekick, language: `noTools`, `mcpOnly`) never get one; `claudeArgs` throws if they do.
 
 - **Claude** (`claude-cli.ts`, `settingsArgs`). Linked paths join the reference folders in the one `--settings '{"permissions":{"additionalDirectories":[…]}}'` (references first); never `--add-dir`, so a linked folder's `.claude/skills`, `commands` and `agents` are not loaded (`engines.md`; not checked live). A `read` folder gets the references' `Edit`/`Write`/`MultiEdit` deny rules by absolute path. A `write` folder gets explicit allow rules (`Edit(//<path>/**)`, `Write(…)`, `MultiEdit(…)`, only under `edit: "folder"`, Decision 8) and deny rules for `<path>/.claude/**` and `<path>/.git/**`; deny wins. A path no rule can spell makes `claudeArgs` throw.
 - **Codex and OpenCode** (`acp.ts`). `initialize` must advertise `sessionCapabilities.additionalDirectories`. Then the `write` folders go in `additionalDirectories` on `session/new` and on every `session/load` (only when there is one; otherwise the params are today's). A changed list reopens the session before the prompt (`reopenWithDirs`): `session/load` with the new list, which replaces the old one (not checked live), or, without `loadSession`, a new session starts and the conversation is lost (Decision 9). `read` folders are never sent (the engine's sandbox would make them writable): they join `decidePermission`'s read roots. The policy's roots are replaced before every prompt. Write roots refuse edits under `<root>/{.git,.codex,.agents,.opencode,.claude}/**` (any case), the root itself, and any path whose real path leads out of the root or into those folders. Without the capability no folder is sent and the policy grants nothing under them; the transport calls `onLinkedUnsupported()` once, and Scope settings says "Linked folders don't work with this version of Codex yet." (Decision 15). OpenCode follows the same rule (Decision 10).
@@ -175,7 +175,7 @@ PR decision reversed during review: a write link inside or around another scope'
 ## Where to look
 
 - `packages/harness-sdk/src/hatches.ts`; `packages/workspace/src/scopes.ts` (`LinkedFolderEntry`), `instructions.ts` (`linkedFolderLines`).
-- `packages/runtime/src/transport.ts` (`LinkedAccess`, `TurnScope`), `claude-cli.ts` (`settingsArgs`, `ruleUnsafePath`), `acp.ts`, `workspace.ts` (linked histories), `runtime.ts` (`instructionLinked`, `linkedGitdir`).
+- `packages/engines/src/contract.ts` (`LinkedAccess`, `TurnScope`), `claude/transport.ts` (`settingsArgs`, `ruleUnsafePath`), `acp/client.ts`, `packages/runtime/src/workspace.ts` (linked histories), `runtime.ts` (`instructionLinked`, `linkedGitdir`).
 - `packages/shell/src/main/linked-folders.ts`, `linked-history.ts`, `linked-ipc.ts`, `scope-access.ts`, `linked-restore.ts`; wiring in `index.ts`, `turn-controller.ts`, `task-manager.ts`, `board-host.ts`, `jobs/job-runner.ts`.
 - `packages/ui/src/hatches/`, `ScopePicker.tsx`, `HistoryPanel.tsx`, `ContextPanel.tsx`; `en.json` `hatches.*`.
 - Tests: the D0 and threat-model tables above; `packages/fake-agent/fixtures/hatches-harness`; `packages/e2e/tests/hatches-linked.spec.ts`.
@@ -428,7 +428,7 @@ agents.json                   for --agents; absent without agents
 
 ### What reaches each engine
 
-`EnginePreset` (`packages/runtime/src/transport.ts`) rides on the turn's `TurnScope.engine`, next to the linked folders (`withEngine`, `scope-access.ts`). An action layer is merged on top: its instructions follow the scope's, a server of the same name replaces the scope's, a hook event it sets replaces the scope's, and allow/deny/ask lists are joined (a deny is never lost). Sidekick and language sessions (`noTools`, `mcpOnly`) never get one: both transports throw.
+`EnginePreset` (`packages/engines/src/contract.ts`) rides on the turn's `TurnScope.engine`, next to the linked folders (`withEngine`, `scope-access.ts`). An action layer is merged on top: its instructions follow the scope's, a server of the same name replaces the scope's, a hook event it sets replaces the scope's, and allow/deny/ask lists are joined (a deny is never lost). Sidekick and language sessions (`noTools`, `mcpOnly`) never get one: both transports throw.
 
 | File | Claude (`claude-cli.ts`) | Codex (`acp.ts`) | OpenCode (`acp.ts`) |
 |---|---|---|---|
@@ -567,6 +567,6 @@ Taken during review (listed for Marco):
 
 - `packages/harness-sdk/src/hatches.ts` (`hasEnginePresets`, `hatchProblems`); `packages/workspace/src/layout.ts` (`ENGINE_PREFIX`, `engineConfigDir`), `history.ts` (`appHistoryKeep`), `scopes.ts` (`EngineApproval`, `approveEngine`).
 - `packages/shell/src/main/engine-config/`: `toml-lite.ts`, `frontmatter.ts`, `clean.ts`, `script-refs.ts`, `read-config.ts`, `snapshot.ts`, `approval.ts`, `epochs.ts`, `prune.ts`, `engine-host.ts`, `engine-ipc.ts`, `outside-code.ts`; wiring in `index.ts` (`engineHost_`, `engineIpcDeps`, `pruneEngineConfig`, `scopesView`), `task-manager.ts` (`withScopeInstructions`, `turnPreset`), `task-store.ts` (`engineHash`, `engineTag`, `engineNotice`), `scope-access.ts` (`withEngine`).
-- `packages/runtime/src/transport.ts` (`EnginePreset`), `claude-cli.ts` (`settingsArgs`, `presetRules`, `checkPreset`), `acp.ts` (`mergeCodex`, `codexConfig`, the policy's `mcpServers`).
+- `packages/engines/src/contract.ts` (`EnginePreset`), `search-path.ts` (`absoluteSearchPath`), `claude/transport.ts` (`settingsArgs`, `presetRules`, `checkPreset`), `acp/client.ts` (`mergeCodex`, `codexConfig`, the policy's `mcpServers`).
 - `packages/ui/src/hatches/EngineConfig.tsx`, `EngineNotice.tsx`, `ScopeSettings.tsx`; `en.json` `hatches.engine*`.
 - Tests: the tables above; `packages/fake-agent/fixtures/hatches-harness`.

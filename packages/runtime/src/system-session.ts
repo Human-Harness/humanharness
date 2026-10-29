@@ -2,12 +2,10 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { type McpServerSpec, openRpc } from "@humanharness/blocks";
-import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { AcpTransport } from "./acp";
-import { ClaudeCliTransport } from "./claude-cli";
+import type { CommonOptions, EngineDef, ModelProfile, Transport } from "@humanharness/engines";
+import { createTransport } from "@humanharness/engines/registry";
 import type { EngineError, Event } from "./events";
 import type { SystemTaskResult } from "./system";
-import { type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface SystemSessionOptions {
   engine: EngineDef;
@@ -76,21 +74,20 @@ export async function runSystemSession(o: SystemSessionOptions): Promise<SystemS
   let turns = 0;
   let error: EngineError | undefined;
   try {
-    const options: TransportOptions = {
+    const options: CommonOptions = {
       folder,
       session: { id: randomUUID(), started: false },
       mcp: [o.server({ path: rpc.path, token: rpc.token })],
       permissions: { edit: "none", exec: false, web: false },
       // Its only tool is the server's: nothing is read, not even the (empty) folder.
       mcpOnly: true,
-      ...acpFields(o.engine, "none"),
       // Turns resume the same session (Claude needs it on disk); the app never reads the engine's own store.
       persistSession: true,
       command: o.command,
       ...(o.env ? { env: o.env } : {}),
       onSessionStarted: () => {},
     };
-    transport = o.engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(options) : new AcpTransport(options);
+    transport = createTransport(o.engine, options);
     for (let i = 0; i < (o.maxTurns ?? MAX_TURNS); i++) {
       if (o.signal?.aborted) {
         error = { code: "cancelled" };

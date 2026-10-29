@@ -111,7 +111,7 @@ The harness's store holds the person's API tokens. The plugins' rows (B6, B8, `p
 
 ## Known gaps
 
-- **`plugin-fetch.ts` and `plugin-exec.ts` keep their plugin names** although the core broker uses them; their refusal texts name the plugin manifest (a refused host says "… is not declared in permissions.hosts", which `BrokerGrant.refusals` doesn't cover). The tool broker gives its own texts through `BrokerGrant.refusals.host` ("… is not declared in uses.hosts"); a rename is a later cleanup.
+- **`plugin-fetch.ts` and `plugin-exec.ts` keep their plugin names** although the core broker uses them; their refusal texts name the plugin manifest (a refused host says "… is not declared in permissions.hosts"): plugins don't set `BrokerGrant.refusals.host`, which the tool broker uses for its own texts ("… is not declared in uses.hosts"). A rename is a later cleanup.
 - **No per-profile keys**: one set of harness keys per harness, shared by every profile (Decision 9).
 
 ## Where to look

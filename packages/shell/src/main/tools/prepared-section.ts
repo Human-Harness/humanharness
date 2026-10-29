@@ -78,13 +78,22 @@ export function preparedSection(results: StepResult[], o: { descriptions: Record
     if (!r.ok) return { key, tool, header, body: line(`${r.tool} failed: ${r.error ?? "unknown error"}`) };
     return { key, tool, header, body: line(o.descriptions[r.tool] ?? ""), json: JSON.stringify(r.value ?? null) };
   });
-  const total = () => tokensOf([HEAD, ...shown.filter((s) => !s.dropped).map(block)].join("\n\n").length);
-  const fits = () => total() <= o.preTokens;
+  // The section's length as a running sum (HEAD, then "\n\n" and each kept block): a change re-measures only its block.
+  const lens = shown.map((s) => block(s).length);
+  let chars = HEAD.length + lens.reduce((a, n) => a + 2 + n, 0);
+  /** Block `i` changed: its length again. */
+  const remeasure = (i: number) => {
+    const n = block(shown[i]).length;
+    chars += n - lens[i];
+    lens[i] = n;
+  };
+  const fits = () => tokensOf(chars) <= o.preTokens;
   /** Cuts by block, in the order they were first made; a later cut of the same block replaces its text. */
   const cuts = new Map<number, string>();
   const tooLarge = (i: number) => {
     shown[i].json = undefined;
     shown[i].cut = TOO_LARGE;
+    remeasure(i);
     cuts.set(i, TOO_LARGE);
   };
 
@@ -101,7 +110,7 @@ export function preparedSection(results: StepResult[], o: { descriptions: Record
     const value = results[i].value;
     const size = partsOf(value);
     let best: { json: string; note: string } | null = null;
-    // The largest n that fits, by halving: each try measures the whole section.
+    // The largest n that fits, by halving: each try re-measures only this block.
     let lo = 0;
     let hi = size - 1;
     while (size > 0 && lo <= hi) {
@@ -109,6 +118,7 @@ export function preparedSection(results: StepResult[], o: { descriptions: Record
       const c = cutTo(value, mid);
       shown[i].json = c.json;
       shown[i].cut = c.note;
+      remeasure(i);
       if (fits()) {
         best = c;
         lo = mid + 1;
@@ -117,6 +127,7 @@ export function preparedSection(results: StepResult[], o: { descriptions: Record
     if (best) {
       shown[i].json = best.json;
       shown[i].cut = best.note;
+      remeasure(i);
       cuts.set(i, best.note);
     } else tooLarge(i);
   }
@@ -128,6 +139,7 @@ export function preparedSection(results: StepResult[], o: { descriptions: Record
   // 3. Still over (the headers alone): the last blocks go.
   for (let i = shown.length - 1; i >= 0 && !fits(); i--) {
     shown[i].dropped = true;
+    chars -= 2 + lens[i];
     cuts.set(i, TOO_LARGE);
   }
 

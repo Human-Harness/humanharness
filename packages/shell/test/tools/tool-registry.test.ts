@@ -1,6 +1,6 @@
 import type { ToolMeta } from "@humanharness/harness-sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TraceAccess } from "../../src/main/tools/tool-broker";
+import { TOOL_BROKER_LIMITS, type TraceAccess, type TraceLog } from "../../src/main/tools/tool-broker";
 import { TRACE_CUT, ToolRegistry, type ToolRegistryDeps } from "../../src/main/tools/tool-registry";
 import type { TraceEntry } from "../../src/main/tools/tool-trace";
 
@@ -21,7 +21,7 @@ function meta(over: Partial<ToolMeta> = {}): ToolMeta {
 
 type HostAnswer = Awaited<ReturnType<ToolRegistryDeps["host"]["call"]>>;
 
-function registry(o: { tools?: Record<string, ToolMeta>; answer?: (tool: string, args: unknown) => HostAnswer | Promise<HostAnswer>; off?: string; accesses?: TraceAccess[] } = {}) {
+function registry(o: { tools?: Record<string, ToolMeta>; answer?: (tool: string, args: unknown) => HostAnswer | Promise<HostAnswer>; off?: string; accesses?: TraceAccess[]; logs?: TraceLog[] } = {}) {
   const seen = {
     calls: [] as { callId: string; tool: string; args: unknown; scope: string | null; timeoutMs: number }[],
     started: [] as (string | null)[],
@@ -39,7 +39,7 @@ function registry(o: { tools?: Record<string, ToolMeta>; answer?: (tool: string,
     },
     broker: () => ({
       startCall: (scope) => (seen.started.push(scope), { id: `run-${++n}`, signal: new AbortController().signal }),
-      endCall: (id) => (seen.ended.push(id), { accesses: o.accesses ?? [] }),
+      endCall: (id) => (seen.ended.push(id), { accesses: o.accesses ?? [], logs: o.logs ?? [] }),
     }),
     trace: { append: async (e) => void seen.entries.push(e) },
     secretValues: async () => [SECRET],
@@ -218,6 +218,39 @@ describe("ToolRegistry (tools spec §4.3)", () => {
     // Short of the cap, nothing is dropped.
     const { r: r2 } = registry({ answer: () => ({ ok: false, error: `plain error ${SECRET}` }) });
     expect(await r2.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null })).toEqual({ ok: false, error: "plain error [redacted]" });
+  });
+
+  it("ctx.log lines go into the call's trace entry (spec §4.2), in order, and a call without one has no logs key", async () => {
+    const { r, seen } = registry({ logs: [{ level: "warn", message: "slow page" }, { level: "info", message: "done" }] });
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(seen.entries[0]!.logs).toEqual([
+      { level: "warn", message: "slow page" },
+      { level: "info", message: "done" },
+    ]);
+    const plain = registry();
+    await plain.r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(Object.hasOwn(plain.seen.entries[0]!, "logs")).toBe(false);
+  });
+
+  it("a key inside a log line is hidden, and one across the 300-character cut is hidden before the cut", async () => {
+    const { r, seen } = registry({ logs: [{ level: "info", message: `token ${SECRET} sent` }, { level: "error", message: "x".repeat(295) + SECRET }] });
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(seen.entries[0]!.logs).toEqual([
+      { level: "info", message: "token [redacted] sent" },
+      { level: "error", message: `${"x".repeat(295)}[reda` },
+    ]);
+    expect(JSON.stringify(seen.entries)).not.toContain("tok-SE");
+  });
+
+  it("a log line that arrived at the broker's cap loses its tail, so a key the broker cut never shows its start", async () => {
+    // Two hidden keys leave the start of the third, cut by the broker, inside the first 300 characters.
+    const key = `LONGKEY-${"q".repeat(7992)}`;
+    const { deps } = registry({ logs: [{ level: "info", message: key.repeat(3).slice(0, TOOL_BROKER_LIMITS.logLook) }] });
+    const seen: TraceEntry[] = [];
+    const r = new ToolRegistry({ ...deps, secretValues: async () => [key], trace: { append: async (e) => void seen.push(e) } });
+    await r.call({ tool: "count", args: { folder: "n" }, caller: "ui", scope: null });
+    expect(seen[0]!.logs![0]!.message).not.toContain("LONGKEY");
+    expect(seen[0]!.logs![0]!.message.length).toBeLessThanOrEqual(300);
   });
 
   it("a key across the summary's 200-character cut is hidden before the cut", async () => {

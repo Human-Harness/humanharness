@@ -13,10 +13,10 @@ import type { ToolDataCall } from "../data-requests";
 import { isJobSlot } from "../jobs/jobs-host";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
-import { ToolBroker } from "./tool-broker";
+import { TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
 import { toolFiles } from "./tool-files";
 import type { ToolHost } from "./tool-host";
-import { TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
+import { LOG_CHARS, TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
 import { ToolTrace, type TraceEntry } from "./tool-trace";
 import { type ToolsState, readToolsJson } from "./tools-json";
 
@@ -158,8 +158,24 @@ export function toolCallView(e: TraceEntry): ToolCallView {
     args: shown(e.args),
     ...(e.ok && e.result !== undefined ? { result: shown(e.result) } : {}),
     accesses: e.accesses.map((a) => ({ kind: a.kind, target: a.target, allowed: a.allowed })),
+    ...logsView(e.logs),
     at: e.at,
   };
+}
+
+const LEVELS = new Set(["info", "warn", "error"]);
+
+/** A trace entry's `ctx.log` lines as the line shows them (the file is read unchecked): well-formed ones, at most 20 of 300. */
+function logsView(raw: unknown): Pick<ToolCallView, "logs"> {
+  if (!Array.isArray(raw)) return {};
+  const logs = (raw as unknown[])
+    .filter((l): l is { level: "info" | "warn" | "error"; message: string } => {
+      const v = l as { level?: unknown; message?: unknown } | null;
+      return typeof v === "object" && v !== null && typeof v.level === "string" && LEVELS.has(v.level) && typeof v.message === "string";
+    })
+    .slice(0, TOOL_BROKER_LIMITS.logs)
+    .map((l) => ({ level: l.level, message: upTo(l.message, LOG_CHARS) }));
+  return logs.length > 0 ? { logs } : {};
 }
 
 /** The broker's data op as the person path's request (`query` flat). */

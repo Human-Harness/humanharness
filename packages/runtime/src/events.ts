@@ -60,6 +60,8 @@ export interface ToolCallView {
   args: string;
   result?: string;
   accesses: { kind: "fetch" | "exec" | "data" | "files"; target: string; allowed: boolean }[];
+  /** The tool's `ctx.log` lines, keys hidden; absent when it logged none. */
+  logs?: { level: "info" | "warn" | "error"; message: string }[];
   at: string;
 }
 

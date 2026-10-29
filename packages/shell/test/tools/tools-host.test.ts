@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDataCall } from "../../src/main/data-requests";
 import { TOOLS_OFF_CRASHES } from "@humanharness/ui/client";
 import { TOOLS_OFF, type ToolChannel, type ToolHostAnswer, type ToolHostCall } from "../../src/main/tools/tool-host";
-import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, createToolsHost, slotTaskOf, toolExecEnv } from "../../src/main/tools/tools-host";
+import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, createToolsHost, slotTaskOf, toolCallView, toolExecEnv } from "../../src/main/tools/tools-host";
 
 const TASK = randomUUID();
 const RUN = randomUUID();
@@ -317,6 +317,33 @@ describe("createToolsHost (tools spec §4, §5)", () => {
     await t.uiCall("leak", {});
     const lines = seen.logs.filter((l) => l.includes("token is"));
     expect(lines).toEqual(["leak: info: token is [redacted]"]);
+  });
+
+  it("a tool's ctx.log lines go into its trace entry and its chat line, keys hidden (spec §4.2)", async () => {
+    await built();
+    const answer: Answer = async (c, channel) => {
+      await channel.ctx(c.tool, c.callId, "log", ["warn", `token is ${SECRET}`]);
+      return { ok: true, value: 1 };
+    };
+    const { t, seen } = wire({ answer });
+    const ws = (await t.workspaceOptions())!;
+    await ws.request({ tool: "leak" }, { key: "main" });
+    const [entry] = await traceLines(TASK);
+    expect(entry!.logs).toEqual([{ level: "warn", message: "token is [redacted]" }]);
+    const view = (seen.events[0]!.event as { call: { logs?: unknown } }).call;
+    expect(view.logs).toEqual([{ level: "warn", message: "token is [redacted]" }]);
+    expect(JSON.stringify(seen.events)).not.toContain(SECRET);
+  });
+
+  it("the chat line takes a trace entry's logs only when well formed: at most 20 lines of at most 300 characters", () => {
+    const e = { at: "t", tool: "count", caller: "agent" as const, args: {}, resultSummary: "1", ms: 1, ok: true, accesses: [] };
+    expect(toolCallView(e)).not.toHaveProperty("logs");
+    const logs = [{ level: "loud", message: "x" }, { level: "info", message: 5 }, "nope", ...Array.from({ length: 25 }, (_, i) => ({ level: "info", message: `${i}${"y".repeat(400)}` }))];
+    const view = toolCallView({ ...e, logs: logs as never });
+    expect(view.logs).toHaveLength(20);
+    expect(view.logs![0]!.message).toHaveLength(300);
+    expect(view.logs![0]!.message.startsWith("0y")).toBe(true);
+    expect(toolCallView({ ...e, logs: "x" as never })).not.toHaveProperty("logs");
   });
 
   it("two agent calls at once (a task's and a job run's): each data write carries its own call's trailer, in any order", async () => {

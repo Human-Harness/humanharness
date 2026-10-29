@@ -1,7 +1,7 @@
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { LinkRefused, checkFolders, isTaskId, readNoLinks, removeNoLinks, writeNoLinks } from "@humanharness/workspace";
-import type { TraceAccess } from "./tool-broker";
+import type { TraceAccess, TraceLog } from "./tool-broker";
 
 /**
  * The tool trace (tools spec §8.1, Decision 8): one JSON line per call, in `.harness/trace/<task>.jsonl` for a task's
@@ -31,6 +31,8 @@ export interface TraceEntry {
   ok: boolean;
   error?: string;
   accesses: TraceAccess[];
+  /** The call's `ctx.log` lines (spec §4.2), keys hidden then cut; absent when it logged none. */
+  logs?: TraceLog[];
 }
 
 /** Entries older than this are pruned at start. */

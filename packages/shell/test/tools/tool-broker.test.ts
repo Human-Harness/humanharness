@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ToolMeta } from "@humanharness/harness-sdk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TOOL_CALLS, ToolBroker, type ToolBrokerDeps, localOrIp, toolAllowHost } from "../../src/main/tools/tool-broker";
+import { TOOL_BROKER_LIMITS, TOOL_CALLS, ToolBroker, type ToolBrokerDeps, localOrIp, toolAllowHost } from "../../src/main/tools/tool-broker";
 
 const SECRET = "tok-SECRET-1234";
 let userData: string;
@@ -190,7 +190,7 @@ describe("ToolBroker: one core broker per tool, bound to its uses (tools spec §
     expect(accesses[5]!.target).toHaveLength(200);
     expect(JSON.stringify(accesses)).not.toContain("header value");
     expect(JSON.stringify(accesses)).not.toContain("body text");
-    expect(b.endCall(run.id)).toEqual({ accesses: [] });
+    expect(b.endCall(run.id)).toEqual({ accesses: [], logs: [] });
   });
 
   it("accesses belong to their own call", async () => {
@@ -243,5 +243,30 @@ describe("ToolBroker: one core broker per tool, bound to its uses (tools spec §
     const run = b.startCall(null);
     expect(await b.call(run.id, "data.put", ["tickets", { key: "a" }])).toMatchObject({ ok: false, refused: "A rule refused the write" });
     expect(b.endCall(run.id).accesses).toEqual([{ kind: "data", target: "put tickets", allowed: false }]);
+  });
+
+  it("ctx.log lines are kept per call for its trace entry (spec §4.2): one line each, the first 20, still sent to main's log", async () => {
+    const { b, seen } = broker({});
+    const run = b.startCall(null);
+    const other = b.startCall(null);
+    expect(await b.call(run.id, "log", ["warn", "first\nline"])).toMatchObject({ ok: true });
+    expect(await b.call(other.id, "log", ["info", "other call"])).toMatchObject({ ok: true });
+    for (let i = 0; i < 25; i++) await b.call(run.id, "log", ["info", `n${i}`]);
+    expect(await b.call(run.id, "log", ["loud", "bad level"])).toMatchObject({ ok: false });
+    const { logs } = b.endCall(run.id);
+    expect(logs).toHaveLength(TOOL_BROKER_LIMITS.logs);
+    expect(logs[0]).toEqual({ level: "warn", message: "first line" });
+    expect(logs[19]).toEqual({ level: "info", message: "n18" });
+    expect(b.endCall(other.id).logs).toEqual([{ level: "info", message: "other call" }]);
+    expect(seen.logs).toContainEqual(["warn", "first line"]);
+    expect(seen.logs).toContainEqual(["info", "n24"]);
+  });
+
+  it("a ctx.log line is kept with the keys this tool's fetches were filled with already hidden", async () => {
+    const { b } = broker({ hosts: ["api.x.com"], secrets: ["jira"] });
+    const run = b.startCall(null);
+    await b.call(run.id, "fetch", ["https://api.x.com/a", { headers: { Authorization: "{{secret:jira}}" } }]);
+    await b.call(run.id, "log", ["info", `sent ${SECRET}`]);
+    expect(b.endCall(run.id).logs).toEqual([{ level: "info", message: "sent [redacted]" }]);
   });
 });

@@ -1,6 +1,6 @@
 import { TOOL_ID, type ToolMeta, jsonSchemaToZod } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
-import type { ToolBroker, TraceAccess } from "./tool-broker";
+import { TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
 import type { ToolHostAnswer, ToolHostCall } from "./tool-host";
 import { TOOL_RPC_LIMITS } from "./tool-protocol";
 import type { ToolCaller, ToolTrace, TraceEntry } from "./tool-trace";
@@ -35,6 +35,8 @@ export const TRACE_CUT = 2048;
 const SUMMARY_CHARS = 200;
 const ACCESS_CHARS = 200;
 const ERROR_CHARS = 4096;
+/** Each `ctx.log` line of a trace entry is cut here (the broker keeps at most 20 a call). */
+export const LOG_CHARS = 300;
 /** A compiled params or returns schema. */
 type Schema = ReturnType<typeof jsonSchemaToZod>;
 
@@ -187,6 +189,7 @@ export class ToolRegistry {
     const given = c.args === undefined ? {} : c.args;
     let args: unknown = given;
     let accesses: TraceAccess[] = [];
+    let logs: TraceLog[] = [];
     let ran: Ran;
     const params = this.schema(meta.params);
     const checked = typeof params === "string" ? null : params.safeParse(given);
@@ -197,6 +200,7 @@ export class ToolRegistry {
       args = checked!.data;
       const out = await this.run(id, meta, args, c.scope);
       accesses = out.accesses;
+      logs = out.logs;
       ran = out.ran.ok ? this.checkReturns(meta, out.ran) : out.ran;
     }
 
@@ -220,6 +224,8 @@ export class ToolRegistry {
       ...(error !== undefined ? { error } : {}),
       // The broker already hid the keys its fetches were filled with; the stored ones are hidden again here.
       accesses: keys.length > 0 ? accesses.map((a) => ({ ...a, target: upTo(hideSecrets(a.target, keys), ACCESS_CHARS) })) : accesses,
+      // Spec §4.2: the tool's log lines, the stored keys hidden before each line's cut (a line the broker cut loses its tail).
+      ...(logs.length > 0 ? { logs: logs.map((l) => ({ level: l.level, message: shownText(l.message, keys, LOG_CHARS, TOOL_BROKER_LIMITS.logLook) })) } : {}),
     };
     try {
       await this.d.trace.append(entry);
@@ -235,7 +241,7 @@ export class ToolRegistry {
   }
 
   /** One run in the host under a fresh run of the tool's broker; the registry's own timer backs the host's. */
-  private async run(id: string, meta: ToolMeta, args: unknown, scope: string | null): Promise<{ ran: Ran; accesses: TraceAccess[] }> {
+  private async run(id: string, meta: ToolMeta, args: unknown, scope: string | null): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[] }> {
     let broker: Pick<ToolBroker, "startCall" | "endCall">;
     let callId: string;
     try {
@@ -243,7 +249,7 @@ export class ToolRegistry {
       callId = broker.startCall(scope).id;
     } catch (err) {
       this.d.log?.(`Tool ${id} could not start`, err);
-      return { ran: { ok: false, error: BROKE }, accesses: [] };
+      return { ran: { ok: false, error: BROKE }, accesses: [], logs: [] };
     }
     const timeoutMs = meta.timeout * 1000;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,6 +258,7 @@ export class ToolRegistry {
     });
     let ran: Ran;
     let accesses: TraceAccess[] = [];
+    let logs: TraceLog[] = [];
     try {
       ran = await Promise.race([
         // A host that throws, even before it returns a promise, is this call's failure.
@@ -267,12 +274,12 @@ export class ToolRegistry {
       clearTimeout(timer);
       // Ends the run (its fetches and commands abort) and takes its accesses, whatever happened.
       try {
-        accesses = broker.endCall(callId).accesses;
+        ({ accesses, logs } = broker.endCall(callId));
       } catch (err) {
         this.d.log?.(`A run of tool ${id} did not end cleanly`, err);
       }
     }
-    return { ran, accesses };
+    return { ran, accesses, logs };
   }
 
   /** The result against `returns` when the tool declares it: a mismatch is the tool's error. */

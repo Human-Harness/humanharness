@@ -101,6 +101,25 @@ describe("tool calls in a chat (tools spec §8.2)", () => {
     expect(details.hidden).toBe(true);
   });
 
+  it("unfolding shows the tool's log lines, each with its level (spec §4.2)", async () => {
+    await renderIn("en", <ToolCallLine call={call({ logs: [{ level: "warn", message: "slow page" }, { level: "info", message: "12 found" }] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /^pr-ci/ }));
+    const details = document.querySelector(".hh-tool-details")!;
+    expect([...details.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["Arguments", "Result", "Accesses", "Log"]);
+    expect([...details.querySelectorAll(".hh-tool-logs li")].map((li) => li.textContent)).toEqual(["warn: slow page", "info: 12 found"]);
+  });
+
+  it("a saved call's log lines are drawn only when well formed", async () => {
+    const client = new FakeClient(ready);
+    const logs = [{ level: "warn", message: "kept" }, { level: "loud", message: "dropped" }, { level: "info", message: 7 }, "x"];
+    client.chat = [user, reply({ tools: [call({ logs: logs as never }), call({ tool: "other", logs: "nope" as never })] })];
+    render(<HarnessApp client={client} />);
+    await clickStart();
+    await screen.findByText("Done.");
+    expect([...document.querySelectorAll(".hh-tool-logs li")].map((li) => li.textContent)).toEqual(["warn: kept"]);
+    expect(document.querySelectorAll(".hh-tool-call > button")).toHaveLength(2);
+  });
+
   it("folded, aria-controls still names the details, which are hidden", async () => {
     await renderIn("en", <ToolCallLine call={call()} />);
     const line = screen.getByRole("button", { name: /^pr-ci/ });

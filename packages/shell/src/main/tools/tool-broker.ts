@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import { type HarnessSecret, SECRETS_MAX, type ToolMeta, redact } from "@humanharness/harness-sdk";
 import { Broker, type BrokerAnswer, type BrokerDataOp, type BrokerHandler, type BrokerRun, type CoreBrokerDeps } from "../broker/broker";
-import { CONTROLS, str } from "../broker/broker-checks";
+import { CONTROLS, oneLine, str } from "../broker/broker-checks";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
 import { missingSecretMessage } from "../secrets/connections";
@@ -27,7 +27,17 @@ export interface TraceAccess {
   allowed: boolean;
 }
 
-export const TOOL_BROKER_LIMITS = { targetChars: 200, accesses: 200 } as const;
+/** A `ctx.log` line as a call's trace entry keeps it (spec §4.2); the registry hides the stored keys, then cuts. */
+export interface TraceLog {
+  level: "info" | "warn" | "error";
+  message: string;
+}
+
+/**
+ * `logs`: the `ctx.log` lines kept per call (the first ones); `logLook`: how much of each line is kept for the
+ * registry, which hides the keys in it before its own cut.
+ */
+export const TOOL_BROKER_LIMITS = { targetChars: 200, accesses: 200, logs: 20, logLook: 16_384 } as const;
 
 export interface ToolBrokerDeps {
   harnessId: string;
@@ -66,6 +76,7 @@ interface CallState {
   key: string;
   scope: string | null;
   accesses: TraceAccess[];
+  logs: TraceLog[];
 }
 
 /** localhost, *.localhost or an IP literal (bracketed or not; one final dot as the name's root). */
@@ -217,21 +228,21 @@ export class ToolBroker {
   /** A run for one call of the tool, in the caller's scope. Its id is what the host's ctx calls carry. */
   startCall(scope: string | null): { id: string; signal: AbortSignal } {
     const key = randomUUID();
-    const state: CallState = { key, scope: typeof scope === "string" ? scope : null, accesses: [] };
+    const state: CallState = { key, scope: typeof scope === "string" ? scope : null, accesses: [], logs: [] };
     this.byKey.set(key, state);
     const run = this.core.startRun(key);
     this.byId.set(run.id, state);
     return run;
   }
 
-  /** Ends the call's run (its fetches and commands abort) and hands back its accesses. */
-  endCall(id: string): { accesses: TraceAccess[] } {
+  /** Ends the call's run (its fetches and commands abort) and hands back its accesses and `ctx.log` lines. */
+  endCall(id: string): { accesses: TraceAccess[]; logs: TraceLog[] } {
     const state = this.byId.get(id);
-    if (!state) return { accesses: [] };
+    if (!state) return { accesses: [], logs: [] };
     this.byId.delete(id);
     this.byKey.delete(state.key);
     this.core.endRun(id);
-    return { accesses: state.accesses };
+    return { accesses: state.accesses, logs: state.logs };
   }
 
   killAll(): void {
@@ -241,6 +252,8 @@ export class ToolBroker {
   async call(id: unknown, name: unknown, args: unknown): Promise<BrokerAnswer> {
     const state = typeof id === "string" ? this.byId.get(id) : undefined;
     const answer = await this.core.call(id, name, args);
+    // A log line the core took (and sent to main's log) goes into the call's trace entry too (spec §4.2).
+    if (state && answer.ok && name === "log" && Array.isArray(args)) this.keepLog(state, args[0], args[1]);
     if (state && !answer.ok && typeof name === "string" && DENIED.test(answer.refused)) {
       const t = targetOf(name, args);
       if (t) this.record(state, { ...t, allowed: false });
@@ -253,6 +266,14 @@ export class ToolBroker {
     if (state.accesses.length >= TOOL_BROKER_LIMITS.accesses) return;
     const target = cut(this.filled.size > 0 ? redact(access.target.slice(0, 16_384), [...this.filled]) : access.target.slice(0, 16_384));
     state.accesses.push({ ...access, target });
+  }
+
+  /** Keeps a `ctx.log` line as the core sent it (one line), every filled key hidden, then cut; the first `logs` only. */
+  private keepLog(state: CallState, level: unknown, message: unknown): void {
+    if (state.logs.length >= TOOL_BROKER_LIMITS.logs || (level !== "info" && level !== "warn" && level !== "error") || typeof message !== "string") return;
+    // Hidden first, then cut: a line cut at logLook ends exactly there, so the registry knows to drop its tail too.
+    const line = oneLine(message);
+    state.logs.push({ level, message: (this.filled.size > 0 ? redact(line, [...this.filled]) : line).slice(0, TOOL_BROKER_LIMITS.logLook) });
   }
 
   /** `ctx.files` (arguments already checked): only with `uses.files`; a path refused by the folder rules is "access denied", any other end is an access. */

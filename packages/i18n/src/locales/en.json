@@ -1443,6 +1443,7 @@
     "args": "Arguments",
     "result": "Result",
     "accesses": "Accesses",
+    "logs": "Log",
     "off": "Tools are off after repeated crashes. Restart the app to turn them on."
   }
 }

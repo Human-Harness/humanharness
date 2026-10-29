@@ -7,7 +7,7 @@ const seconds = (ms: number): string => (Math.max(0, ms) / 1000).toFixed(1);
 
 /**
  * One harness tool call in a task's chat (tools spec §8.2, Decision 10): a folded line "<id> · <summary> · <s> s ·
- * 0 tokens" that unfolds to its arguments, result and accesses. A failed call reads "<id> failed · <message>" and starts
+ * 0 tokens" that unfolds to its arguments, result, accesses and the tool's log lines. A failed call reads "<id> failed · <message>" and starts
  * unfolded. It shows only what main's trace view holds: arguments and result already cut and with key values hidden,
  * and each access as one target line (never a header, a body or a key).
  */
@@ -52,6 +52,20 @@ export function ToolCallLine({ call }: { call: ToolCallView }) {
             </dd>
           </>
         )}
+        {call.logs && call.logs.length > 0 && (
+          <>
+            <dt>{t("tools.logs")}</dt>
+            <dd>
+              <ul className="hh-tool-logs">
+                {call.logs.map((l, i) => (
+                  <li key={i}>
+                    {l.level}: <span dir="auto">{l.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        )}
       </dl>
     </div>
   );
@@ -65,6 +79,19 @@ function cleanAccess(a: unknown): ToolCallView["accesses"][number] | null {
   if (typeof a !== "object" || a === null) return null;
   const { kind, target, allowed } = a as Record<string, unknown>;
   return isText(kind) && ACCESS_KINDS.has(kind) && isText(target) && typeof allowed === "boolean" ? { kind: kind as ToolCallView["accesses"][number]["kind"], target, allowed } : null;
+}
+
+const LOG_LEVELS = new Set(["info", "warn", "error"]);
+
+/** A call's log lines as main writes them: only well-formed ones (none: no key). */
+function cleanLogs(raw: unknown): Pick<ToolCallView, "logs"> {
+  if (!Array.isArray(raw)) return {};
+  const logs = (raw as unknown[]).flatMap((l) => {
+    if (typeof l !== "object" || l === null) return [];
+    const { level, message } = l as Record<string, unknown>;
+    return isText(level) && LOG_LEVELS.has(level) && isText(message) ? [{ level: level as "info" | "warn" | "error", message }] : [];
+  });
+  return logs.length > 0 ? { logs } : {};
 }
 
 /** The chat log is read from disk unchecked: only well-formed calls are drawn, with only the fields the line shows. */
@@ -86,6 +113,7 @@ export function cleanToolCalls(raw: unknown): ToolCallView[] {
       args: v.args,
       ...(isText(v.result) ? { result: v.result } : {}),
       accesses: (v.accesses as unknown[]).map(cleanAccess).filter((a) => a !== null),
+      ...cleanLogs(v.logs),
       at: v.at,
     });
   }

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
-import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
+import type { CommonOptions, Effort, EngineDef, ModelChoice, ModelProfile, Session, Transport } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, hasMaterial, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import {
@@ -19,10 +19,9 @@ import {
   refreshInstructions,
   writeInstructions,
 } from "@humanharness/workspace";
-import { AcpTransport, ClaudeCliTransport } from "@humanharness/engines/registry";
+import { type Registry, registry as appRegistry } from "@humanharness/engines/registry";
 import { turnDocuments } from "./documents";
 import type { Event } from "./events";
-import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
@@ -56,6 +55,8 @@ export interface RuntimeOptions {
   launcher?: Launcher;
   /** Override the engine's CLI command (tests, dev). */
   command?: string[];
+  /** The engine adapters (tests add their own engine); default: the app's registry. */
+  registry?: Registry;
   /** Extra CLI environment (tests, dev). Never credentials. */
   env?: Record<string, string>;
   /** Folders the agent may read but never change (absolute paths), with the label `AGENTS.md` shows. */
@@ -167,7 +168,8 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   }
 
   async function buildRuntime(bridge: Bridge, rpc: Rpc | null, materialRpc: Rpc | null, reviewRpc: Rpc | null): Promise<HarnessRuntime> {
-    const transportOptions: TransportOptions = {
+    const engines = opts.registry ?? appRegistry;
+    const transportOptions: CommonOptions = {
       folder,
       session,
       mcp: [
@@ -178,8 +180,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
       ],
       permissions: harness.permissions,
       references: references.map((r) => r.path),
-      ...acpFields(engine, harness.permissions.edit),
-      command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
+      command: opts.command ?? engines.commandLine(engine),
       env: opts.env,
       onModels: opts.onModels,
       onSessionStarted: (s) => {
@@ -190,8 +191,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         }
       },
     };
-    const transport: Transport =
-      engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(transportOptions) : new AcpTransport(transportOptions);
+    const transport: Transport = engines.createTransport(engine, transportOptions);
 
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;

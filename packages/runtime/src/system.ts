@@ -3,11 +3,10 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Launcher, devLauncher, openRpc } from "@humanharness/blocks";
-import type { EngineDef, ModelProfile } from "@humanharness/engines";
+import type { CommonOptions, EngineDef, ModelProfile, Transport } from "@humanharness/engines";
 import { materialServerSpec } from "@humanharness/material/light";
-import { AcpTransport, ClaudeCliTransport } from "@humanharness/engines/registry";
+import { createTransport } from "@humanharness/engines/registry";
 import type { EngineError, Event, LimitWindow } from "./events";
-import { type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface SystemTaskOptions {
   engine: EngineDef;
@@ -54,18 +53,17 @@ export async function runSystemTask(o: SystemTaskOptions): Promise<SystemTaskRes
     await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
     return { ok: false, error: { code: "agent-crashed", detail: "rpc" } };
   }
-  const options: TransportOptions = {
+  const options: CommonOptions = {
     folder,
     session: { id: randomUUID(), started: false },
     mcp: [materialServerSpec({ rpc, launcher: o.launcher ?? devLauncher(), mode: "system", tools: o.tools, ...(o.entry ? { entry: o.entry } : {}) })],
     permissions: { edit: "none", exec: false, web: false },
-    ...acpFields(o.engine, "none"),
     persistSession: false,
     command: o.command,
     ...(o.env ? { env: o.env } : {}),
     onSessionStarted: () => {},
   };
-  const transport: Transport = o.engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(options) : new AcpTransport(options);
+  const transport: Transport = createTransport(o.engine, options);
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   if (o.signal?.aborted) controller.abort();

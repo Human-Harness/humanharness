@@ -106,12 +106,40 @@ describe("the connect step (tools spec §9)", () => {
     c.connectionsSet.add("jira").add("gh");
     await renderIn("en", <Flow c={c} startAt="keys" />);
     await waitFor(() => expect(next().disabled).toBe(false));
+    // The next step's keys stay unknown until this test lets them through.
+    const real = c.connections.get;
+    let release = () => {};
+    c.connections.get = () => new Promise((resolve) => (release = () => resolve(real())));
     fireEvent.click(next());
     await screen.findByRole("heading", { name: "Optional extras" });
     expect(c.setupCalls).toContain("complete:keys");
     expect(c.setupState.steps.keys).toBe("done");
-    // The next connect step starts from its own keys, not the last step's readiness.
+    // The next connect step starts from its own keys, not the last step's readiness: disabled before they are known.
+    expect(next().disabled).toBe(true);
+    expect(screen.queryByRole("group")).toBeNull();
+    release();
     await screen.findByRole("group", { name: "Slack token" });
+    expect(next().disabled).toBe(true);
+  });
+
+  it("a step that lists no key never enables Next", async () => {
+    const c = client([{ ...EXTRA, secrets: [] }]);
+    c.connectionsSet.add("jira").add("gh").add("slack");
+    await renderIn("en", <Flow c={c} startAt="extra" />);
+    // The keys are known (the caption shows only then) and the step still isn't ready.
+    await screen.findByText("Paste each key to go on.");
+    expect(screen.queryByRole("group")).toBeNull();
+    expect(next().disabled).toBe(true);
+  });
+
+  it("a step that lists an undeclared key never enables Next", async () => {
+    const c = client([{ ...KEYS, secrets: [{ id: "jira", label: "Jira API token" }, { id: "nope", label: "Not declared" }] }]);
+    c.connectionsSet.add("jira").add("gh").add("slack");
+    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await screen.findByRole("group", { name: "Jira API token" });
+    expect(within(row("Jira API token")).getByText("Set")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Not declared" })).toBeNull();
+    expect(screen.getByText("Paste each key to go on.")).toBeTruthy();
     expect(next().disabled).toBe(true);
   });
 
@@ -122,9 +150,8 @@ describe("the connect step (tools spec §9)", () => {
     await renderIn("en", <Flow c={c} startAt="keys" />);
     await waitFor(() => expect(next().disabled).toBe(false));
     fireEvent.click(next());
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "The app doesn't have what it needs yet. Continue the interview to finish it.",
-    );
+    // Worded for keys, not the interview's text.
+    expect((await screen.findByRole("alert")).textContent).toBe("A key is missing. Paste it to go on.");
     expect(screen.getByRole("heading", { name: "Connect your tools" })).toBeTruthy();
   });
 

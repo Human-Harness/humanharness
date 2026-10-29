@@ -1429,6 +1429,7 @@
     "failed": "That didn't save.",
     "unavailable": "Your keys can't be read right now.",
     "stepNext": "Paste each key to go on.",
+    "stepIncomplete": "A key is missing. Paste it to go on.",
     "open": "Open"
   }
 }

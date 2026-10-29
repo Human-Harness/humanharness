@@ -315,7 +315,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
             {stepError && (
               <p className="hh-save-error" role="alert">
-                {t(stepError === "incomplete" ? "setupSteps.incomplete" : "setupSteps.failed")}
+                {t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}
               </p>
             )}
           </section>

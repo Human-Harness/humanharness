@@ -65,6 +65,16 @@ export const jobUsesAi = (j: JobLike): boolean => j.steps === undefined || aiSte
 /** Some job is a recipe. False: no slice-4 code runs (D0). */
 export const hasRecipes = (h: { jobs?: Record<string, JobLike> }): boolean => Object.values(h.jobs ?? {}).some((j) => j.steps !== undefined);
 
+/** The AI step's output as JSON Schema (`step_output`'s input, the source of later steps); null when zod can't convert it (a date, a transform). */
+export function aiOutputSchema(step: AiStep): Record<string, unknown> | null {
+  try {
+    return z.toJSONSchema(step.output) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+const NO_JSON_SCHEMA = "the AI step's output must convert to JSON Schema (no dates, transforms or other types JSON can't hold)";
+
 /** The manifest-only checks of recipes (tools spec §3.3), for the manifest's `superRefine`. */
 export function recipeProblems(h: { tools?: Record<string, string>; jobs?: Record<string, JobLike> }): StepProblem[] {
   const out: StepProblem[] = [];
@@ -78,6 +88,7 @@ export function recipeProblems(h: { tools?: Record<string, string>; jobs?: Recor
     out.push(...orderProblems(ordered, tools, at, "steps").map((p) => ({ ...p, message: `Job "${id}": ${p.message}` })));
     const aiAt = j.steps.findIndex(isAiStep);
     const step = aiAt >= 0 ? (j.steps[aiAt] as AiStep) : undefined;
+    if (step && aiOutputSchema(step) === null) out.push({ path: [...at, aiAt, "output"], message: `Job "${id}": steps[${aiAt}]: ${NO_JSON_SCHEMA}` });
     if (step?.when) {
       const earlier = new Set(j.steps.slice(0, aiAt).map((s) => s.as).filter((a): a is string => a !== undefined));
       if (!earlier.has(step.when.from)) out.push({ path: [...at, aiAt, "when"], message: `Job "${id}": steps[${aiAt}]: when "${step.when.from}" names no earlier step's as` });
@@ -95,13 +106,19 @@ export function recipeSourceProblems(
   for (const [id, j] of Object.entries(h.jobs ?? {})) {
     if (!j.steps) continue;
     const sources = new Map<string, StepSource>();
+    // One step at a time so that the AI step's source sits between them; the label keeps the recipe's index.
+    const at = (i: number) => (p: string) => `Job "${id}": ${p.replace("steps[0]", `steps[${i}]`)}`;
     j.steps.forEach((s, i) => {
       if (isAiStep(s)) {
-        if (s.as !== undefined) sources.set(s.as, { kind: "ai", returns: z.toJSONSchema(s.output) as Record<string, unknown> });
+        // The model reads its input as data: each part comes from a maker that declares returns, like a tool step's input.
+        out.push(...sourceProblems([{ input: s.input }], json, "steps", sources).map(at(i)));
+        // recipeProblems refuses such an output at load; a manifest that skipped it is a problem here, never a throw.
+        const returns = aiOutputSchema(s);
+        if (returns === null) out.push(at(i)(`steps[0]: ${NO_JSON_SCHEMA}`));
+        else if (s.as !== undefined) sources.set(s.as, { kind: "ai", returns });
         return;
       }
-      // One step at a time so that the AI step's source sits between them; the label keeps the recipe's index.
-      out.push(...sourceProblems([s], json, "steps", sources).map((p) => `Job "${id}": ${p.replace("steps[0]", `steps[${i}]`)}`));
+      out.push(...sourceProblems([s], json, "steps", sources).map(at(i)));
     });
   }
   return out;

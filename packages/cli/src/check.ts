@@ -7,13 +7,16 @@ import {
   type LoadedHarness,
   SETTINGS_TOKENS_WARN,
   SIDEKICK_TIPS_TOKENS_WARN,
+  aiStepOf,
   blockToolName,
   hasTools,
   inputBlocks,
   inputFields,
   isStringArray,
+  jobUsesAi,
   loadHarness,
   parseAnswer,
+  recipeSourceProblems,
   resolveInHarness,
   settingsSentences,
   settingsValues,
@@ -291,8 +294,19 @@ async function jobFindings(h: LoadedHarness): Promise<Finding[]> {
       if (text === null) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} does not exist.`, MANIFEST));
       else if (!text.trim()) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} is empty.`, path.relative(h.root, file)));
     }
+    // A recipe's AI step has a brief of its own (tools spec §7.1).
+    const step = aiStepOf(job);
+    if (step) {
+      const file = resolveInHarness(h, step.ai);
+      const text = await read(file);
+      if (text === null) out.push(error("brief-missing", `Job "${id}": its AI step brief ${step.ai} does not exist.`, MANIFEST));
+      else if (!text.trim()) out.push(error("brief-missing", `Job "${id}": its AI step brief ${step.ai} is empty.`, path.relative(h.root, file)));
+    }
     if (job.dailyTokens !== undefined && job.on.every === undefined) {
       out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only periodic runs and the job has no every, so it caps nothing.`, MANIFEST));
+    } else if (job.dailyTokens !== undefined && !jobUsesAi(job)) {
+      // A recipe without an AI step costs no tokens and is never paused by a daily cap (Decision 2).
+      out.push(warning("job-daily-tokens", `Job "${id}": dailyTokens caps only runs that use AI and its recipe has no AI step, so it caps nothing.`, MANIFEST));
     }
   }
   return out;
@@ -595,7 +609,7 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
 /**
  * Tools (tools spec §3.3): the build runs in memory, nothing written; each tool that fails is one `tool-build` error. A
  * build that passes is checked against the manifest: each problem is one `tool-uses` error, then each pre-step and
- * expects problem one `tool-steps` error (`stepProblems`). None without tools (D0).
+ * expects problem one `tool-steps` error (`stepProblems`), then each job recipe's (`recipeSourceProblems`). None without tools (D0).
  */
 async function toolBuildFindings(root: string, h: LoadedHarness): Promise<Finding[]> {
   if (!hasTools(h)) return [];
@@ -605,6 +619,7 @@ async function toolBuildFindings(root: string, h: LoadedHarness): Promise<Findin
     return [
       ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),
       ...stepProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
+      ...recipeSourceProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
     ];
   } catch (err) {
     if (err instanceof ToolBuildError) return err.problems.map((p) => error("tool-build", p.message, p.file));

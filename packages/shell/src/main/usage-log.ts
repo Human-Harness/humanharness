@@ -195,6 +195,17 @@ export function preRecord(
   return { at, engine: o.engine, kind: "pre", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), steps: o.steps, ms: o.ms, preparedTokens: o.preparedTokens, ok: o.ok };
 }
 
+/**
+ * A recipe run (tools spec §8.4, slice 4): one row per run. `phase: "job"` keeps it with the job lines (the tasks'
+ * readers leave it out), and it has no `usage`, so no token reader counts it: its AI steps write their own job lines.
+ */
+export function recipeRecord(
+  o: { engine: string; job: string; run: string; scope?: string; toolSteps: number; aiSteps: number; ms: number; ok: boolean },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return { at, engine: o.engine, phase: "job", kind: "recipe", job: o.job, task: o.run, run: o.run, ...(o.scope ? { scope: o.scope } : {}), toolSteps: o.toolSteps, aiSteps: o.aiSteps, ms: o.ms, ok: o.ok };
+}
+
 /** A phase that ended without a call to a tool it expects (tools spec §6.1). The spec's `phase` is `taskPhase` here. */
 export function expectsMissRecord(o: { engine: string; action: string; task: string; scope?: string; taskPhase: string; tool: string }, at: string = new Date().toISOString()): UsageRecord {
   return { at, engine: o.engine, kind: "expects-miss", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), taskPhase: o.taskPhase, tool: o.tool, ok: true };

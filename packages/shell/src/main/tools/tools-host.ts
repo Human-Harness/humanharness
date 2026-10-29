@@ -141,6 +141,11 @@ export interface ToolsHost {
   prepare(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer>;
   /** The task left part `phase`: its `expects` checked (tools spec §6.1): TaskDeps.phaseEnded. */
   phaseEnded(o: { task: string; action: string; scope: string; phase: string }): Promise<void>;
+  /**
+   * Runs `fn` (a recipe run's tool steps, tools spec §7.1) with a job run's history trailer on its calls, as an agent
+   * job call runs: a tool's data write is committed under the run.
+   */
+  withRunTrailer<T>(trailer: HistoryTrailer, fn: () => Promise<T>): Promise<T>;
 }
 
 /**
@@ -500,6 +505,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
     start,
     prepare,
     phaseEnded,
+    withRunTrailer: (trailer, fn) => callTrailer.run({ trailer }, fn),
     stop: () => {
       for (const b of brokers.values()) b.killAll();
       d.host.stop();

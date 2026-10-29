@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { promises as fs, realpath as realpathCb } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
+import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, toolsServerSpec, uiServerSpec } from "@humanharness/blocks";
 import type { ModelProfile } from "@humanharness/engines";
-import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasEnginePresets, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasEnginePresets, hasJobs, hasMaterial, hasTools, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -27,6 +27,12 @@ export interface WorkspaceOptions extends Omit<RuntimeOptions, "session" | "onSe
   data?: (request: unknown, slot: SlotRef) => Promise<unknown>;
   /** Answers the `material` server's tools for the asking slot; `entry` as in `RuntimeOptions`. */
   material?: { request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
+  /**
+   * The core `tools` MCP server (tools spec §5) for task and job slots: `catalogue` lists the agent's tools, `request`
+   * runs a call for the asking slot. The app passes it only when the harness has an `agent: "call"` tool; absent, or a
+   * harness without tools: no server (D0).
+   */
+  tools?: { catalogue: string; request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
   /** ACP: the adapter can't take a scope's linked folders (hatches §3.3, Decision 15). */
   onLinkedUnsupported?: () => void;
 }
@@ -165,6 +171,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const linked = (await opts.instructionLinked?.()) ?? [];
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
+  const tools = opts.tools && hasTools(harness) ? opts.tools : undefined;
   const review = opts.review && harness.permissions.edit === "folder" ? reviewHandler(opts.review) : undefined;
   // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4); the review
   // lines only with the review tools (review spec §4).
@@ -235,13 +242,17 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     let rpc: Rpc | null = null;
     let materialRpc: Rpc | null = null;
     let reviewRpc: Rpc | null = null;
+    let toolsRpc: Rpc | null = null;
     try {
       const data = opts.data;
       if (data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc((r) => data(r, ref));
       if (material) materialRpc = await openRpc((r) => material.request(r, ref));
+      // Task and job slots alike (Decision 9): a job's agent may call the tools too.
+      if (tools) toolsRpc = await openRpc((r) => tools.request(r, ref));
       // The review tools ask the person (review spec §4): a task's slot only, never a job's (it can't ask, J1).
       if (review && o.kind !== "job") reviewRpc = await openRpc(review);
     } catch (err) {
+      await toolsRpc?.close().catch(() => {});
       await reviewRpc?.close().catch(() => {});
       await materialRpc?.close().catch(() => {});
       await rpc?.close().catch(() => {});
@@ -250,6 +261,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     }
     // Checked again after the awaits: a second openSlot for the same key may have won meanwhile.
     if (closing || slots.has(o.key)) {
+      await toolsRpc?.close().catch(() => {});
       await reviewRpc?.close().catch(() => {});
       await materialRpc?.close().catch(() => {});
       await rpc?.close().catch(() => {});
@@ -267,6 +279,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // Only with jobs declared: without them the spec is today's (D0).
         o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1" } } : hasJobs(harness) ? { ...ui, env: { ...ui.env, HH_JOB: "" } } : ui,
         ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
+        ...(toolsRpc && tools ? [toolsServerSpec({ catalogue: tools.catalogue, rpc: toolsRpc, launcher, entry: tools.entry })] : []),
         ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
         ...harnessMcpServers(harness, launcher),
       ],
@@ -316,7 +329,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             try {
               await materialRpc?.close();
             } finally {
-              await reviewRpc?.close();
+              try {
+                await reviewRpc?.close();
+              } finally {
+                await toolsRpc?.close();
+              }
             }
           }
         }

@@ -36,6 +36,8 @@ export default defineConfig({
           "ui-server": path.join(__dirname, "../blocks/src/ui-server-bin.ts"),
           "data-server": path.join(__dirname, "../blocks/src/data-server-bin.ts"),
           "translate-server": path.join(__dirname, "../blocks/src/translate-server-bin.ts"),
+          // The core `tools` MCP server (tools spec §5): in slots only when the harness has an agent: "call" tool.
+          "tools-server": path.join(__dirname, "../blocks/src/tools-server-bin.ts"),
           "material-server": path.join(__dirname, "../material/src/server-bin.ts"),
           // The converter's worker thread (material convert/isolate.ts): the app passes this built file as its entry.
           "material-worker": path.join(__dirname, "../material/src/convert/worker.ts"),

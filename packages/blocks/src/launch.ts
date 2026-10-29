@@ -82,3 +82,23 @@ export function translateServerSpec(opts: {
     env: { ...opts.launcher.env, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token },
   };
 }
+
+/**
+ * The core `tools` MCP server (tools spec §5): the `agent: "call"` tools listed in `catalogue` (a file the app writes
+ * per workspace); each call asks the app over `rpc`. Only in slots of a harness with such a tool (D0).
+ */
+export function toolsServerSpec(opts: {
+  catalogue: string;
+  rpc: { path: string; token: string };
+  launcher: Launcher;
+  /** Built entry for the tools server (app); defaults to the TS source (dev). */
+  entry?: string;
+}): McpServerSpec {
+  const entry = opts.entry ?? fileURLToPath(new URL("./tools-server-bin.ts", import.meta.url));
+  return {
+    name: "tools",
+    command: opts.launcher.command,
+    args: [...opts.launcher.args, entry],
+    env: { ...opts.launcher.env, HH_TOOLS: opts.catalogue, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token },
+  };
+}

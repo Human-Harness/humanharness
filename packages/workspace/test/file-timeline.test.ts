@@ -4,7 +4,7 @@ import { type TimelineCommit, classifyCommit, groupTimeline, namedPath } from ".
 const DOC = "specs/filter.md";
 let n = 0;
 /** A commit of the file, `minute` minutes after 10:00; `blob` null: the file is not there. */
-function c(subject: string, opts: { task?: string; action?: string; blob?: string | null; minute?: number } = {}): TimelineCommit {
+function c(subject: string, opts: { task?: string; action?: string; tool?: string; blob?: string | null; minute?: number } = {}): TimelineCommit {
   n++;
   const id = n.toString(16).padStart(40, "0");
   return {
@@ -15,6 +15,7 @@ function c(subject: string, opts: { task?: string; action?: string; blob?: strin
     action: opts.action ?? null,
     at: new Date(Date.UTC(2026, 9, 28, 10, opts.minute ?? n)).toISOString(),
     blob: opts.blob === undefined ? `b${n}` : opts.blob,
+    ...(opts.tool ? { tool: opts.tool } : {}),
   };
 }
 const label = (id: string | null) => (id === "spec" ? "Spec writer" : id === null ? "A question" : id);
@@ -163,5 +164,25 @@ describe("groupTimeline", () => {
   it("the first commit of the history has no parent", () => {
     const first = { ...c("Start"), parent: null };
     expect(groupTimeline([first], DOC, label)[0].from).toBeNull();
+  });
+});
+
+describe("a tool's commits (tools spec §8.3)", () => {
+  it("an entry whose commit has Tool: shows the tool's id as the author", () => {
+    const entries = groupTimeline([c("Data: cards", { tool: "due-today" }), c("Data: cards", { task: "t1", action: "spec", tool: "apply-triage" })], DOC, label);
+    expect(entries.map((e) => [e.kind, e.author])).toEqual([
+      ["task", { kind: "tool", label: "apply-triage", tool: "apply-triage", task: "t1", action: "spec" }],
+      ["task", { kind: "tool", label: "due-today", tool: "due-today" }],
+    ]);
+  });
+
+  it("a tool's commits don't merge with the task's own turns", () => {
+    const entries = groupTimeline([c("Turn: a", { task: "t1", action: "spec" }), c("Data: cards", { task: "t1", action: "spec", tool: "apply-triage" }), c("Turn: b", { task: "t1", action: "spec" })], DOC, label);
+    expect(entries.map((e) => e.author.kind)).toEqual(["agent", "tool", "agent"]);
+  });
+
+  it("D0: without Tool: the author is as before", () => {
+    const entries = groupTimeline([c("Turn: a", { task: "t1", action: "spec" }), c("Data: cards")], DOC, label);
+    expect(entries.map((e) => e.author)).toEqual([{ kind: "outside", label: "Outside the app" }, { kind: "agent", label: "Spec writer", task: "t1", action: "spec" }]);
   });
 });

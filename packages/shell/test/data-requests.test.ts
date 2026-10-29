@@ -6,8 +6,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
 import { callMcpTool } from "@humanharness/fake-agent";
 import { SIDEKICK_COLLECTION, dataCollections, dataSchema, loadHarness, settingsSchema, sidekickCollection, z } from "@humanharness/harness-sdk";
-import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
-import { DataUnavailable, type PersonDataDeps, agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
+import { type CommitTrailer, DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
+import { DataUnavailable, type PersonDataDeps, type ToolDataDeps, agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords, toolDataRequests } from "../src/main/data-requests";
 
 const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -27,7 +27,7 @@ function setup(
     profile: dataFile(base, "_app", "profile"),
   };
   /** Each commit, with the data files the folder held when it was saved. */
-  const commits: { message: string; trailer?: HistoryTrailer; files: string[] }[] = [];
+  const commits: { message: string; trailer?: CommitTrailer; files: string[] }[] = [];
   const deps: PersonDataDeps = {
     store: async () => store,
     chatScope: async () => opts.open ?? "fracciones",
@@ -319,5 +319,89 @@ describe("storeFor (sidekick spec §6.4)", () => {
     const ui = harnessUiDataRequests(async () => "reached", () => false);
     await expect(ui({ op: "get", collection: SIDEKICK_COLLECTION, key: "settings" }, {})).rejects.toThrow(/no collection "sidekick"/);
     await expect(ui({ op: "query", collection: "notes" }, {})).resolves.toBe("reached");
+  });
+});
+
+describe("toolDataRequests (tools spec §8.3)", () => {
+  function tool(opts: { blocked?: string; board?: boolean; registered?: string[]; store?: DataStore | null } = {}) {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const store = new DataStore(base, data);
+    const changes: unknown[] = [];
+    store.onChange((c) => void changes.push(c));
+    const save = vi.fn(async (_m: string, _t?: CommitTrailer) => {});
+    const commitPaths = vi.fn(async (_p: readonly string[], _m: string, _t?: CommitTrailer) => {});
+    const deps: ToolDataDeps = {
+      store: async () => (opts.store === undefined ? store : opts.store),
+      history: async () => ({ save, commitPaths }),
+      ...(opts.board ? { board: () => true } : {}),
+      blocked: () => opts.blocked ?? null,
+      scopeExists: async (id) => (opts.registered ?? ["fracciones"]).includes(id),
+      noScope: () => "_app",
+    };
+    return { base, store, changes, save, commitPaths, run: toolDataRequests(deps) };
+  }
+  const put = { op: "put", collection: "concepts", record: { id: "a", name: "A" } };
+
+  it("writes as the tool in the call's scope; the commit carries the calling task's trailer and Tool:", async () => {
+    const t = tool();
+    await t.run(put, { scope: "fracciones", tool: "apply-triage", trailer: { task: "t1", action: "study", scope: "fracciones" } });
+    expect(t.changes).toEqual([{ collection: "concepts", scope: "fracciones", who: "tool", tool: "apply-triage", op: "put", key: "a" }]);
+    expect(t.save.mock.calls).toEqual([["Data: concepts", { task: "t1", action: "study", scope: "fracciones", tool: "apply-triage" }]]);
+  });
+
+  it("a call with no task commits with Tool: alone", async () => {
+    const t = tool();
+    await t.run(put, { scope: "fracciones", tool: "due-today" });
+    expect(t.save.mock.calls).toEqual([["Data: concepts", { task: null, tool: "due-today" }]]);
+  });
+
+  it("a call with no scope runs in the no-scope scope; reads commit nothing", async () => {
+    const t = tool();
+    await t.run({ op: "put", collection: "profile", record: { name: "Ana" } }, { scope: null, tool: "due-today" });
+    expect(await t.run({ op: "get", collection: "profile" }, { scope: null, tool: "due-today" })).toEqual({ name: "Ana" });
+    expect(t.save).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(dataFile(t.base, "_app", "profile"))).toBe(true);
+  });
+
+  it("writes a collection the agent may only read: the tool is not the agent", async () => {
+    const t = tool();
+    await expect(t.run({ op: "put", collection: "profile", record: { name: "Ana" } }, { scope: "fracciones", tool: "x" })).resolves.toEqual({ name: "Ana" });
+  });
+
+  it("board mode commits only the collection's file", async () => {
+    const t = tool({ board: true });
+    await t.run(put, { scope: "fracciones", tool: "apply-triage" });
+    expect(t.save).not.toHaveBeenCalled();
+    expect(t.commitPaths.mock.calls).toEqual([[[".harness/data/fracciones/concepts.json"], "Data: concepts", { task: null, tool: "apply-triage" }]]);
+  });
+
+  it("refuses a scope the registry doesn't hold, writes while blocked, and the settings collection's writes", async () => {
+    await expect(tool().run(put, { scope: "ghost", tool: "x" })).rejects.toThrow("Unknown scope");
+    await expect(tool().run(put, { scope: "../x", tool: "x" })).rejects.toThrow("Unknown scope");
+    await expect(tool({ blocked: "A restore is running" }).run(put, { scope: "fracciones", tool: "x" })).rejects.toBeInstanceOf(DataUnavailable);
+    await expect(tool().run({ op: "put", collection: "settings", record: {} }, { scope: null, tool: "x" })).rejects.toMatchObject({ code: "refused" });
+    await expect(tool({ store: null }).run(put, { scope: "fracciones", tool: "x" })).rejects.toThrow("The app is not set up yet");
+  });
+
+  it("tells the tool a refusal's reason but nothing about any other failure", async () => {
+    const broken = { get: () => Promise.reject(new Error("EACCES: /Users/someone/secret")) } as unknown as DataStore;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const failure = tool({ store: broken }).run({ op: "get", collection: "concepts", key: "a" }, { scope: "fracciones", tool: "x" });
+      await expect(failure).rejects.toThrow("Something went wrong with the data");
+      await expect(failure).rejects.not.toThrow(/secret/);
+    } finally {
+      error.mockRestore();
+    }
+    await expect(tool().run({ op: "put", collection: "concepts", record: { id: "a" } }, { scope: "fracciones", tool: "x" })).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("D0: the person's writes still go out as the person, with no tool and no Tool: trailer", async () => {
+    const t = setup({ trailer: { task: "t1" } });
+    const changes: unknown[] = [];
+    t.store.onChange((c) => void changes.push(c));
+    await t.run(put, undefined);
+    expect(changes).toEqual([{ collection: "concepts", scope: "fracciones", who: "person", op: "put", key: "a" }]);
+    expect(t.commits).toEqual([{ message: "Data: concepts", trailer: { task: "t1" }, files: ["concepts"] }]);
   });
 });

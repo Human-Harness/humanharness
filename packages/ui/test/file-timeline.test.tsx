@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TimelineEntry } from "../src/client";
-import { clock, FileTimeline, timeAgo } from "../src/FileTimeline";
+import { authorName, clock, FileTimeline, timeAgo } from "../src/FileTimeline";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -125,5 +125,18 @@ describe("FileTimeline (file-timeline spec §6.1)", () => {
     expect(calls).toBe(1);
     expect(screen.getByText("Spec writer")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("a tool's entry (tools spec §8.3)", () => {
+  it("names the tool as the author, in a task or not", async () => {
+    const client = new FakeClient();
+    client.timelines[DOC] = [
+      { kind: "task", author: { kind: "tool", label: "apply-triage", tool: "apply-triage", task: "t1", action: "spec" }, label: "", at: at(5), from: sha(0), to: sha(1), commits: [{ id: sha(1), subject: "Data: cards", at: at(5) }] },
+    ];
+    await renderIn("en", <FileTimeline client={client} path={DOC} />);
+    const list = await screen.findByRole("list", { name: "Versions and changes" });
+    expect(list.querySelector(".hh-timeline-author")?.textContent).toBe("apply-triage");
+    expect(authorName((k) => k, { kind: "tool", label: "due-today", tool: "due-today" })).toBe("due-today");
   });
 });

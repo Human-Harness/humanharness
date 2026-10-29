@@ -10,8 +10,8 @@ export type DataAgent = (typeof DATA_AGENT)[number];
 
 export type DataKey = string | number;
 export type DataRecord = Record<string, unknown>;
-/** Who makes a request: the agent (its tools), the person (the harness UI) or the app itself. */
-export type DataWho = "agent" | "person" | "app";
+/** Who makes a request: the agent (its tools), the person (the harness UI), the app itself, or a harness tool (tools spec §8.3). */
+export type DataWho = "agent" | "person" | "app" | "tool";
 
 /** What a collection's `rules` get besides the records (spec §4.3). */
 export interface RulesContext {
@@ -20,6 +20,8 @@ export interface RulesContext {
   /** The scope the write is made in (`_app` for app-wide work). */
   scope: string;
   who: DataWho;
+  /** The tool's id, only with `who: "tool"`. */
+  tool?: string;
   /** A copy of another collection's records (same scope, or app-wide), taken before the rule ran. A collection whose file was broken by hand reads as empty (the app logs it). */
   records(collection: string): DataRecord[];
 }

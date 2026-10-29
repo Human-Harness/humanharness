@@ -2066,6 +2066,8 @@ export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
 export function authorName(t: (key: string) => string, a: TimelineAuthor): string {
   if (a.kind === "person") return t("timeline.you");
   if (a.kind === "outside") return t("timeline.outsideAuthor");
+  // A harness tool's write (tools spec §8.3): its id.
+  if (a.kind === "tool") return a.label;
   return a.action ? a.label : t("history.question");
 }
 

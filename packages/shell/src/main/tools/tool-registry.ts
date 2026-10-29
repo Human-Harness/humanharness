@@ -1,4 +1,4 @@
-import { TOOL_ID, type ToolMeta, jsonSchemaToZod } from "@humanharness/harness-sdk";
+import { HIDDEN_CHARS, TOOL_ID, type ToolMeta, jsonSchemaToZod } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import { type JobLimits, TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
 import type { ToolHostAnswer, ToolHostCall } from "./tool-host";
@@ -53,8 +53,8 @@ export const INPUTS_TOO_LARGE = "The inputs are too large";
 
 /** Controls, line and paragraph separators: a space in a note. */
 const NOTE_BREAKS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
-/** Hidden characters (zero-width, bidi controls, BOM): removed from a note. */
-const NOTE_HIDDEN = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+/** The SDK's hidden characters (zero-width, bidi controls, BOM, variation selectors, tags…): removed from a note, after the breaks became spaces. */
+const NOTE_HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
 
 /** A step's inputs as the host gets them, or why they can't go (P3: too large, or not JSON). */
 function inputsProblem(inputs: Record<string, unknown>): string | null {
@@ -284,7 +284,7 @@ export class ToolRegistry {
       this.d.log?.("A trace note named no tool and was not written");
       return;
     }
-    const text = upTo(n.text.replace(NOTE_HIDDEN, "").replace(NOTE_BREAKS, " ").replace(/\s+/g, " ").trim(), NOTE_CHARS);
+    const text = upTo(n.text.replace(NOTE_BREAKS, " ").replace(NOTE_HIDDEN, "").replace(/\s+/g, " ").trim(), NOTE_CHARS);
     const entry: TraceEntry = {
       at: this.now().toISOString(),
       tool: n.tool,

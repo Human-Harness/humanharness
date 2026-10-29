@@ -54,6 +54,12 @@ describe("trace notes (tools spec §6.3, §6.1; P6)", () => {
     expect(seen.entries[0]!.note).toBe("abcde");
   });
 
+  it("every hidden character the SDK names is removed (U+061C, soft hyphen, variation selectors, tags), breaks still a space", async () => {
+    const { r, seen } = registry();
+    await r.note({ tool: "t", caller: "pre", task: TASK, text: "a؜b­c͏d᠋e️f￹g\u{e0041}h\u{e0100}i j k" });
+    expect(seen.entries[0]!.note).toBe("abcdefghi j k");
+  });
+
   it("a note is cut at 200 characters (code points)", async () => {
     const { r, seen } = registry();
     await r.note({ tool: "t", caller: "pre", task: TASK, text: "x".repeat(300) });

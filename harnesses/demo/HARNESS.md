@@ -52,8 +52,11 @@ Each closed topic saves a note with the core `save_note` fields: a title, up to 
 
 Name: Demo (es, en). Tagline: "How Human Harness works". Author: Marco Zanger. Two custom blocks, `diagram` and `files`. The suggested folder is `Documents/Human Harness Demo`, seeded from `agent/seed`.
 
+A small backend (`backend/index.ts`, hatches H2) shows the protocol to a developer reading the demo: it answers `echo` with what it got and whether the app is in mock mode, and `stream` with a few `tick` events. The side panel's Backend section calls it. It reads and writes nothing, so it changes none of the permissions above.
+
 ## Open questions
 
 ## Decision log
 
 - 2026-10-14 — Added this file so `humanharness check` and `dev --mock` accept the demo. It describes the manifest as it is; it adds no decision.
+- 2026-10-28 — Added an echo backend (`backend: "./backend/index.ts"`) as the sample of the harness backend: a developer sees a call answered and events streamed, in mock mode too, and the e2e test drives it. Plain Node, erasable TypeScript, no dependencies.

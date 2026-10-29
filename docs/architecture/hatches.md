@@ -1,6 +1,6 @@
 # Harness hatches
 
-A hatch is a small, generic extension point: the core adds an option any harness may declare and does nothing harness-specific with it (spec D4). The core validates, passes paths and flags, and shows what the person must approve; it never runs git, a terminal or a harness's business logic. Spec: `docs/superpowers/specs/2026-10-27-harness-hatches-design.md`. Three are planned: H1 linked folders (built, this page), H2 a harness backend and H3 engine config per scope (not built yet).
+A hatch is a small, generic extension point: the core adds an option any harness may declare and does nothing harness-specific with it (spec D4). The core validates, passes paths and flags, and shows what the person must approve; it never runs git, a terminal or a harness's business logic. Spec: `docs/superpowers/specs/2026-10-27-harness-hatches-design.md`. Three are planned: H1 linked folders and H2 a harness backend (built, this page), and H3 engine config per scope (not built yet).
 
 ## H1: linked folders
 
@@ -179,3 +179,154 @@ PR decision reversed during review: a write link inside or around another scope'
 - `packages/shell/src/main/linked-folders.ts`, `linked-history.ts`, `linked-ipc.ts`, `scope-access.ts`, `linked-restore.ts`; wiring in `index.ts`, `turn-controller.ts`, `task-manager.ts`, `board-host.ts`, `jobs/job-runner.ts`.
 - `packages/ui/src/hatches/`, `ScopePicker.tsx`, `HistoryPanel.tsx`, `ContextPanel.tsx`; `en.json` `hatches.*`.
 - Tests: the D0 and threat-model tables above; `packages/fake-agent/fixtures/hatches-harness`; `packages/e2e/tests/hatches-linked.spec.ts`.
+
+## H2: the harness backend
+
+A harness may declare `backend`: a Node process of its own that the harness UI talks to, for work the window can't do (convert a file, watch a folder, later a terminal). Main launches it once per app start, after setup, keeps it alive within limits and stops it on quit and around a folder move or profile switch. It can answer the window's calls and send it events, nothing else: it has no channel to the history, notes, data, sessions or engines. Spec §4 (4.1–4.3, 4.5), plan `docs/superpowers/plans/2026-10-28-harness-hatches-part2.md`. Native modules (§4.4, `node-pty`) wait for plan 4b.
+
+### The manifest
+
+```ts
+backend: "./backend/index.ts",
+```
+
+`backendSchema` and `hasBackend` (`packages/harness-sdk/src/hatches.ts`): a relative path to a `.ts`, `.mts`, `.js` or `.mjs` file. `loadHarness` resolves it with `resolveInHarness`, so a path that leaves the harness folder is refused at load; at each start `BackendProcess.start` also takes the entry's real path and refuses it unless it is inside the harness folder's real path ("The backend's entry is outside the harness folder"), so a symlink can't lead out either. `hasBackend(h)` is false without the key: no part-2 code runs (D0, below).
+
+### Launch and trust
+
+The backend is the harness's own code, at the trust level of its MCP servers, which already run arbitrary code (spec §4.1). Nothing asks the person to approve it.
+
+- **Process.** `BackendProcess.start` (`packages/shell/src/main/backend/backend-process.ts`) spawns `launcher.command [...launcher.args, <entry's real path>]` on the MCP servers' launcher, `electronLauncher(process.execPath)`: Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, Node 24), in the app and in `humanharness dev` alike. `cwd` is the harness folder; the environment is the app's (`process.env`) plus the launcher's; stdin and stdout are the protocol, stderr goes to `backend.log`. On macOS and Linux it gets its own process group (`detached`), so a stop reaches whatever it started.
+- **TypeScript.** Node 24 strips erasable TypeScript itself: a `.ts` backend may use only erasable syntax (no `enum`, no `namespace`, no parameter properties) and imports the SDK's types with `import type` (`BackendInit`, `BackendScope` from `@humanharness/cli/sdk`, which re-exports `packages/harness-sdk/src/harness-backend.ts`). Node never strips types under `node_modules`, so the SDK file is types and constants only and a backend loads nothing from it at run time.
+- **When.** The first time the app is set up in this process (folder chosen, setup done): at start with the jobs' start moment, or when the setup's save finishes it (`backendReady` in `packages/shell/src/main/index.ts`). It doesn't wait for an engine. Never while the app quits.
+- **No OS sandbox.** It runs as the same user as the app, so it can read and write whatever the person can. The boundaries below keep it from reaching the app's own state through the app; they don't confine the process.
+
+### The protocol
+
+JSON-RPC 2.0, one JSON message per line (`\n`) on stdin and stdout (`backend-protocol.ts`, pure). The app sends `init` once, right after the spawn, then calls (with an `id`) and the `scopesChanged` notification; the backend answers calls (`result` or `error`, same `id`) and sends notifications, which are events for the window. A sample exchange with the demo's backend:
+
+```
+app     {"jsonrpc":"2.0","method":"init","params":{"folder":"/Users/ana/Documents/Human Harness Demo","scopes":[],"language":"en","coreVersion":"0.1.0","dataDir":"/Users/ana/Library/Application Support/Demo/backend-data","mock":false}}
+app     {"jsonrpc":"2.0","id":1,"method":"echo","params":{"text":"hi"}}
+backend {"jsonrpc":"2.0","id":1,"result":{"echo":{"text":"hi"},"mock":false}}
+app     {"jsonrpc":"2.0","id":2,"method":"stream","params":{"n":2}}
+backend {"jsonrpc":"2.0","method":"tick","params":{"i":0}}
+backend {"jsonrpc":"2.0","method":"tick","params":{"i":1}}
+backend {"jsonrpc":"2.0","id":2,"result":{"sent":2}}
+backend {"jsonrpc":"2.0","id":"a","method":"notes.write","params":{}}
+app     {"jsonrpc":"2.0","id":"a","error":{"code":-32601,"message":"The app takes no requests from a backend"}}
+```
+
+- **`init`** (`BackendInit`): exactly `folder` (the base: with profiles, the active profile's folder), `scopes` (the active, unarchived ones, each `{ id, title, linked: [{ key, path, mode }] }`; `[]` in a harness without scopes), `language`, `coreVersion` (`app.getVersion()`), `dataDir` and `mock`. No credential, no engine path (`backendInit` in `backend-ipc.ts`).
+- **Links.** A scope's `linked` holds only the links a turn in that scope would use now: the scope access's checks (signed, live nonce, declared key, today's mode, the folder still the one linked, the picker's refusals passed; part 1, "Re-checked at every use") through `usableLinks`. A dropped link is left out (and logged once, as for turns); a harness without `linkedFolders` sends `linked: []`.
+- **`scopesChanged`** carries a full `BackendInit` again, not a diff: the same keys with the new scopes. It is sent when a scope is made, renamed, archived or brought back, and on every link or unlink. Scopes that change while the backend starts reach it right after its `init`; a scopes read that a rebase overtook is dropped (`backendGen`).
+- **Every line must carry `"jsonrpc":"2.0"`.** A line without it is dropped and logged ("not JSON-RPC 2.0 (every line needs "jsonrpc":"2.0")"): an answer without it never reaches its call, which then times out after 30 s.
+- **What the app refuses.** A request from the backend (an `id` and a `method`) is answered `-32601` "The app takes no requests from a backend" and logged, whatever it names: the app has no method a backend may call. A request whose `id` can't be echoed (not an integer, or a string over 200 characters) is logged only, never answered. A response to an id the app never sent (or one that timed out), a line that isn't JSON or isn't an object, an event with an invalid name or params over 64 KB, and a line over 1 MB are dropped and logged. An `error` without a `message` string still rejects the call ("The backend answered with an error").
+
+| Limit | Value | Enforced in |
+|---|---|---|
+| Call timeout | 30 s, then "The backend didn't answer in time" | `BackendProcess.call` |
+| Calls in flight | 64; the 65th is refused at once ("Too many calls to the backend") | `registerBackendIpc` and `BackendProcess.call` |
+| Line, either way (a call's params too) | 1 MB | `LineReader`, `hh:backendCall` |
+| Event payload | 64 KB | `classifyIncoming` |
+| Events | 200 in any rolling second; the rest dropped, "Dropped N backend events" logged once a second | `EventLimiter` |
+| Method and event names | `^[a-zA-Z][a-zA-Z0-9_.:-]{0,99}$` (`BACKEND_NAME`) | `isBackendName` |
+| Error message to the window | 500 characters | `classifyIncoming`, `hh:backendCall` |
+
+The constants are in `packages/harness-sdk/src/harness-backend.ts`.
+
+### Lifecycle
+
+`BackendSupervisor` (`backend-supervisor.ts`) runs every transition (start, crash restart, rebase, Restart, stop) on one promise chain, so they never interleave; while one is queued or running, calls are refused with "The backend isn't running" and `scopesChanged` waits for the next `init`. States: `stopped`, `starting`, `running`, `failed`.
+
+| Moment | What happens |
+|---|---|
+| Crash | An unexpected exit, or a start that throws (a spawn error, an entry outside the folder), is a crash. It restarts at once as long as this crash is one of at most 3 in the last 5 minutes; the 4th crash inside 5 minutes leaves it `failed`: the card shows, and the main log gets one line ("[backend] The harness's backend stopped working after crashing too often; see backend.log"). Only the person's Restart (`hh:backendRestart`, which acts only from `failed`) clears the count. A move or profile switch starts a failed backend again but keeps the count, so one more crash in the window fails it again. Calls in flight when it dies reject with "The backend isn't running" |
+| Quit | In `before-quit`, after the plugins stop and before the runtime closes: `stop({ quit: true })`, SIGTERM to the process group, SIGKILL after 3 s, and quit waits for it. From then on start, rebase and Restart do nothing: an exit during the stop is never a crash and nothing brings it back, so a quit never restarts it |
+| Folder move | Step 2 (`history.md`): in `closeRuntime`, after the runtime and the plugins, the backend stops. When the move ends, moved, refused or failed, it starts again with an `init` for whichever folder is the app's now (`rebase`) |
+| Another folder in Settings | A rebase with the new folder's `init` |
+| Profile switch | It stops after the plugins and before anything reads the new profile (`backendLeaveBase`), then starts there once the profile's scopes are settled (`rebase`): new `folder`, `scopes` and `dataDir` |
+| Scopes change | `scopesChanged` to a running backend (above); remembered for the next start otherwise |
+| Engine switch | Nothing: `dropRuntime` doesn't touch it, it keeps running (spec §4.3) |
+| Harness update | No in-app update path exists yet; the supervisor's `stop()` and `start()` are the hooks for plan 4b. In development a rebuild of the harness restarts the app, and with it the backend |
+
+### The window
+
+`client.backend` (`packages/ui/src/client.ts`, `BackendClient`; preload `packages/shell/src/preload/backend.ts`) has exactly `call(method, params)`, `on(event, cb)` (returns the unsubscribe), `state()`, `onState(cb)` and `restart()`. `state` is a method (Decision 1). Main's channels, registered only under `hasBackend` (`registerBackendIpc` in `backend-ipc.ts`, through `handle()`): `hh:backendCall`, `hh:backendState`, `hh:backendRestart`, and the pushes `hh:backendEvent` (`{ event, data }`) and `hh:backendStateChange`.
+
+A rejected call carries a plain message: the backend's own `error.message` (cut to 500 characters), "The backend didn't answer in time", "The backend isn't running", "Too many calls to the backend", "Invalid backend method", "The call's params can't be sent to the backend" or "Too large". The preload strips Electron's "Error invoking remote method '…': Error: " prefix, and for a harness without `backend` (no handler registered) every call rejects with "This harness has no backend".
+
+`useBackend(client)` (`packages/ui/src/hatches/useBackend.ts`, exported from `@humanharness/cli/ui`) gives a harness view `{ state, call, on }` with the state kept fresh. `BackendCard` (`packages/ui/src/hatches/BackendCard.tsx`), mounted by `HarnessApp` only with `state.hatches.backend`, shows only while `failed`: "The harness's helper stopped working." with "Restart" (`role="alert"`), "Restarting…" until the state changes, and the button back if the Restart fails. Nothing shows while it starts after a crash. `AppState.hatches.backend` is `true` only for a harness with `backend` (`hatchesState` in `linked-ipc.ts`).
+
+### Logs
+
+`backend.log` in the app's data folder (`<userData>/backend.log`, `BackendLog` in `backend-log.ts`): one line per entry, `<ISO time> <stream> <text>`, where `stream` is `stderr` (the backend's own stderr, line by line) or `app` (the app's notes: refused requests, dropped lines and events, spawn failures, a failing event listener). Blank lines are skipped and a line is cut at 8 KB. Writes run one at a time. When the next write would take a non-empty file past 5 MB, the file is renamed to `backend.log.1` (replacing the older one), so a noisy backend holds at most two files. It never throws: the first failure to write is reported once to the main log. The file is created only on its first line; a harness without `backend` never gets one.
+
+Today the log follows a symlink at `backend.log` (`fs.appendFile`) and is written with the default file mode. Refusing links (`O_NOFOLLOW`) and mode `0600` are a pending follow-up; until it lands, don't count on the log ignoring a link.
+
+### Mock mode
+
+The backend runs as usual, with `init.mock: true` (`hooks.mock`). A backend that would reach the network or the person's tools checks it and fakes the work if it wants; the demo's echo answers with `mock` in its result (`mock-mode.md`).
+
+### D0
+
+A harness without `backend` runs no part-2 code: no process is spawned, no `backend.log` or `backend-data/` is made, no `hh:backend*` channel is registered and nothing is pushed on them, `AppState.hatches` has no `backend` key (and is absent with no other hatch), there is no card, `client.backend` calls reject ("This harness has no backend"), and quit, folder move, profile switch and engine switch run exactly their earlier steps.
+
+| What stays as before | Pinned by |
+|---|---|
+| The manifest | `packages/harness-sdk/test/hatches.test.ts` ("D0: no backend key without one") |
+| No process, no file | `packages/shell/test/backend/backend-wiring.test.ts` ("D0: a harness without backend never constructs a supervisor") |
+| IPC | `packages/shell/test/hatches-surface.test.ts` ("backend channels are registered only under hasBackend (D0)") |
+| State | `hatches-surface.test.ts` ("hatchesState carries backend: true only with a backend (D0)") |
+| UI | `packages/ui/test/backend-ui.test.tsx` ("D0: no card and no listener without state.hatches.backend") |
+| End to end | `packages/e2e/tests/history.spec.ts` (the demo's commit messages) unchanged now that the demo has a backend |
+
+### Threat model (part 2)
+
+The boundaries protect the app and the person from a buggy or noisy backend and keep the window → backend path narrow. They are not a sandbox (B1).
+
+| # | Boundary | What enforces it | Test |
+|---|---|---|---|
+| B1 | Process isolation | A separate child, never imported in main; `cwd` the harness folder; the entry's real path inside the folder's; stdout protocol only, stderr only to the log; its own process group on POSIX. No OS sandbox: it runs as the same user and can touch whatever the person can | `backend-process.test.ts` ("runs in its own process with the harness folder as cwd and the launcher's env (B1)", "refuses an entry that leads outside the harness folder, through a symlink too", "stop kills its whole process group, grandchildren included (B1)") |
+| B2 | Window → backend | `hh:backendCall` through `handle()` (the app's page only); the method must match the name pattern; params must serialise and fit 1 MB; at most 64 in flight | `backend-ipc.test.ts` ("registerBackendIpc (threat model B2)") |
+| B3 | Backend → app | Only responses to the app's own ids in flight and notifications; requests refused `-32601` and logged (unechoable ones logged only); an unknown id, non-JSON, a line without `"jsonrpc":"2.0"`, a line over 1 MB, a bad event name or an event over 64 KB dropped and logged | `backend-protocol.test.ts` ("classifyIncoming (B3, B4)", "drops a line over 1 MB and reports it, then goes on (B3)") |
+| B4 | No core writes from the backend | The protocol has no method the app answers; `client.backend` has exactly `call`, `on`, `state`, `onState`, `restart` | `backend-protocol.test.ts` ("refusal of history writes: any request from the backend is refused, whatever it names"); `backend-process.test.ts` ("a request from the backend is refused with -32601 and logged (B4)"); `backend-ui.test.tsx` ("client.backend has exactly call, on, state, onState, restart (B4)") |
+| B5 | A noisy backend can't freeze the window | 200 events per rolling second, the rest dropped and counted in the log once a second; the log rotated at 5 MB with lines cut at 8 KB | `backend-protocol.test.ts` ("EventLimiter (B5)"); `backend-process.test.ts` ("events over 200 per second are dropped and counted (B5)"); `backend-log.test.ts` ("rotates to backend.log.1 past the limit, keeping one old file") |
+| B6 | A crashing backend can't loop | At most 3 restarts in 5 minutes, then `failed` until the person's Restart; nothing restarts after quit | `backend-supervisor.test.ts` ("restarts after a crash, up to 3 times in 5 minutes, then failed", "restart() from failed starts again and clears the count", "after stop({ quit: true }) nothing brings it back") |
+| B7 | No secrets reach it from the app | `init` has exactly folder, scopes, language, core version, data folder and mock; the app adds no engine auth variable (its environment is the app's, as the MCP servers get) | `backend-process.test.ts` ("sends init first; init has exactly these keys (B7)") |
+| B8 | Quit never hangs | SIGTERM, SIGKILL after 3 s; quit waits for the stop | `backend-process.test.ts` ("stop sends SIGTERM; a backend that ignores SIGTERM is killed after 3 s (B8)") |
+| B9 | The app never reads `~/.claude` or `~/.codex` for it | No engine path is passed; `init.dataDir` is the app's `backend-data/` | `backend-wiring.test.ts` ("never names an engine home (B9)", a source scan) |
+
+End to end: `packages/e2e/tests/backend.spec.ts` (mock mode) runs the demo's echo backend ("the demo's echo backend answers and streams events in mock mode") and kills it from outside until the card offers Restart ("a backend killed from outside restarts; after three restarts the card offers Restart").
+
+### Decisions
+
+1. `client.backend.state` is a method plus `onState`, not a property: values cross `contextBridge` by copy.
+2. The entry may be `.ts`, `.mts`, `.js` or `.mjs`; a `.ts` one uses erasable syntax only, run by Electron's Node, which strips the types. The SDK ships types only (no `defineHarnessBackend` helper): a helper would need a JS build of the SDK to run there. The demo shows the loop instead.
+3. `dataDir` is `<userData>/backend-data/` (with profiles `<userData>/backend-data/<profile id>`), made at every start.
+4. `init.folder` is the base; `scopes` are the base's active scopes with the links a turn would use. A profile switch is a rebase.
+5. It starts the first time the app is set up in this process, with the jobs' start, and doesn't wait for an engine.
+6. Harness update: no in-app path yet; the supervisor's `stop()` and `start()` are the hooks for plan 4b.
+7. An engine switch keeps it running.
+8. A call's errors reach the window as a rejected promise with a plain message (above).
+9. The card: "The harness's helper stopped working." with "Restart", only when `failed`; `failed` also writes one main-log line.
+10. Mock mode: it runs as usual with `init.mock: true`.
+11. The rate limit is a rolling one-second window per event; drops are logged once a second as "Dropped N backend events".
+
+### Known gaps
+
+- **Native modules and packaging** (spec §4.4): no `humanharness build` check of `.node` files, no `--rebuild`, no `node-pty` packaging, signing or Gatekeeper story. Plan 4b. A backend may use only pure JavaScript dependencies until then.
+- **No harness update path.** Nothing in the app updates a harness yet, so nothing stops and starts the backend around one (Decision 6).
+- **One backend per app, not per window.** The app has one window per data folder today (spec §10 Q2).
+- **No OS sandbox** (B1): the backend runs as the person's user with the app's environment.
+- **The log follows a symlink** at `backend.log` and uses the default file mode until the pending `O_NOFOLLOW`/`0600` fix.
+- **Windows**: no process group, so a stop kills only the backend itself, not processes it started; and there is no SIGTERM grace there.
+- **A stale scopes read** that a rebase overtakes is dropped by a generation counter in `index.ts` (`backendGen`) that no test pins yet.
+
+### Where to look
+
+- `packages/harness-sdk/src/hatches.ts` (`backendSchema`, `hasBackend`), `harness-backend.ts` (types and limits).
+- `packages/shell/src/main/backend/`: `backend-protocol.ts`, `backend-log.ts`, `backend-process.ts`, `backend-supervisor.ts`, `backend-ipc.ts` (`backendFor`, `registerBackendIpc`, `usableLinks`, `backendInit`); wiring in `index.ts` (`backendReady`, `backendRebase`, `backendScopes`, `backendLeaveBase`, the move's `closeRuntime`, `before-quit`).
+- `packages/shell/src/preload/backend.ts`; `packages/ui/src/hatches/useBackend.ts`, `BackendCard.tsx`; `en.json` `hatches.backend*`.
+- Tests: `packages/shell/test/backend/` with fixtures in `packages/shell/test/fixtures/backends/`; `packages/ui/test/backend-ui.test.tsx`; `packages/e2e/tests/backend.spec.ts`.
+- The demo: `harnesses/demo/backend/index.ts` and its side panel, `harnesses/demo/ui/BackendPanel.tsx`.

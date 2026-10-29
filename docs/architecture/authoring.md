@@ -80,6 +80,21 @@ Declare `profiles: { label, fields }` when several people use one install on one
 
 Declare `linkedFolders` (it needs `scopes`) when a scope's work lives partly outside the person's folder and the folders differ per scope: a project's repositories, a book's manuscript folder. Each key is a kind of folder with a `label`, a `mode` (`read`, or `write` with `permissions.edit: "folder"`), a `history` (`auto` or `own`, git required) and `many`. The person links the folders through the system picker in Scope settings; the harness UI can open that picker with `client.scopes.linkFolder(scope, key)` but can never pass a path. `check` reports the manifest rules as `schema` findings. `run` wires no linked folders: try them in the app (`humanharness dev`). Folders every person shares and the agent never changes stay `folder.references`. See `docs/architecture/hatches.md`.
 
+### A backend
+
+Declare `backend: "./backend/index.ts"` when the harness UI needs work the window can't do: convert a file, watch a folder, keep a cache. The backend is a Node process of the harness's own (`docs/architecture/hatches.md`, H2):
+
+- **The loop.** Read stdin line by line; each line is one JSON-RPC 2.0 message. The app sends `init` once (`BackendInit`: `folder`, `scopes` with their usable links, `language`, `coreVersion`, `dataDir`, `mock`), then `scopesChanged` with a full `BackendInit` whenever a scope or a link changes, and calls with an `id`. Answer each call with one line `{"jsonrpc":"2.0","id":<same id>,"result":…}` or `…"error":{"code":…,"message":"…"}}`; send events as notifications `{"jsonrpc":"2.0","method":"<event>","params":…}`. The harness UI calls with `client.backend.call(method, params)` (30 s timeout) or `useBackend(client).call`, and listens with `client.backend.on(event, cb)`.
+- **Every line carries `"jsonrpc":"2.0"`.** The app drops a line without it, so a call answered that way times out after 30 s; `backend.log` says why.
+- **Stdout is protocol only.** A stray `console.log` is a dropped line. Write logs to stderr: they go to `backend.log` in the app's data folder (rotated at 5 MB).
+- **Ask the app for nothing.** A request from the backend gets `-32601` "The app takes no requests from a backend". History, notes, data and tasks go through the harness UI and `client`; the backend's own writes in the person's folder show as changes from outside the app.
+- **Limits.** Names `^[a-zA-Z][a-zA-Z0-9_.:-]{0,99}$`, lines up to 1 MB, events up to 64 KB and 200 per second (the rest dropped), 64 calls in flight. On quit or a stop it gets SIGTERM, then SIGKILL after 3 s: finish quickly. It restarts after a crash, at most 3 times in 5 minutes; then the person sees a card with Restart.
+- **TypeScript.** It runs on Electron's Node 24, which strips types itself: erasable syntax only (no `enum`, `namespace` or parameter properties), and `import type { BackendInit } from "@humanharness/cli/sdk"`, never a value import from the SDK. Plain JavaScript dependencies only: native modules wait for plan 4b.
+- **`init.mock`.** In mock mode (`dev --mock`, the e2e tests) the backend runs as usual with `mock: true`: fake anything that would reach the network or the person's tools.
+- **`dataDir`** is a folder of its own in the app's data folder, per profile, for caches.
+
+`check` reports the manifest rule as a `schema` finding. `run` starts no backend: try it in the app (`humanharness dev`). The demo's `harnesses/demo/backend/index.ts` is a complete one (an `echo` call and a `stream` of `tick` events), and `harnesses/demo/ui/BackendPanel.tsx` is the side panel that calls it with `useBackend`.
+
 ## run's report
 
 Per phase (`run`, `follow-up`, `checkpoint`, `close`; a phase change turn and the wrap-up count as follow-ups here, while `usage.jsonl` keeps their own kinds): turns, input, output, cache read and cache write tokens; the tier, model (asked and reported), effort and cap; the peak context against the cap; and the verdict, "used about N tokens (input+output, uncached)" with the total cache reads and writes printed next to it (not added), then the action's cost hint. The same lines go to `<folder>/.harness/usage.jsonl`, as in the app.

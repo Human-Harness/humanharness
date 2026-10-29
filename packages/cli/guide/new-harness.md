@@ -122,6 +122,8 @@ Ask for the minimal permissions the flow needs, each with its reason:
 
 Write one line each in `HARNESS.md` (`- edit: none — reason`) and one `- engines: claude, codex` line. `check` compares them with the manifest, warns about a wide permission without a reason, and refuses an engine whose terms don't allow this use. List only the engines you test with.
 
+Ask too whether the harness's own screens need work the window can't do and the agent shouldn't (convert a file, watch a folder, keep a cache). If so, declare `backend: "./backend/index.ts"`: a Node process of the harness's own that the app starts after setup and the harness UI calls with `client.backend.call` and hears with `client.backend.on`. It reads JSON-RPC 2.0 lines on stdin and writes them on stdout, every line with `"jsonrpc":"2.0"`; logs go to stderr, never stdout. A `.ts` backend uses erasable syntax only and imports the SDK with `import type`; no native modules yet. It runs as the person's user, so it gets the same care as an MCP server, and it can't write the history, notes or data: those go through the harness UI. Record it as a decision with its reason. See `<core>/docs/architecture/authoring.md` ("A backend") and `<core>/harnesses/demo/backend/index.ts`.
+
 ## Phase 7 — Identity
 
 Fills: HARNESS.md → Identity

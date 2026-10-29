@@ -63,8 +63,11 @@ export function liveToolRunDeps(stdin: Readable, stdout: Writable): ToolRunDeps 
   };
 }
 
-/** A line for the terminal: no control characters a tool could use to redraw it. */
-const plain = (text: string) => text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, " ");
+/**
+ * One line for the terminal: no control characters a tool or a server reply could use to redraw it, and no line
+ * break or tab either, so a reply put into a log line or an error can't pass for a line of its own.
+ */
+const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 
 /** The broker's data op as the person path's request (`query` flat), as the app's tools host does. */
 function dataRequest(op: BrokerDataOp): unknown {
@@ -75,7 +78,7 @@ function dataRequest(op: BrokerDataOp): unknown {
 
 /** One trace entry as lines: the call, then each access. */
 function traceLines(e: TraceEntry): string[] {
-  const lines = [`${e.tool} · ${e.ms} ms · ${e.ok ? "ok" : `failed${e.error !== undefined ? `: ${e.error.split("\n")[0]}` : ""}`}`];
+  const lines = [`${e.tool} · ${e.ms} ms · ${e.ok ? "ok" : `failed${e.error !== undefined ? `: ${e.error}` : ""}`}`];
   for (const a of e.accesses) lines.push(`  ${a.kind} ${a.target} ${a.allowed ? "allowed" : "denied"}`);
   return lines;
 }
@@ -168,10 +171,23 @@ export async function runToolOnce(dir: string, o: ToolRunOptions, d: ToolRunDeps
       log: (line) => say(line),
     });
     const answer = await tools.registry.call({ tool: o.tool, args: o.args, caller: "ui", scope: o.scope ?? null });
-    if (answer.ok) say(JSON.stringify(answer.result ?? null, null, 2));
-    else say(`Error: ${answer.error}`);
+    let ok = answer.ok;
+    if (answer.ok) {
+      let text: string | null = null;
+      try {
+        text = JSON.stringify(answer.result ?? null, null, 2) ?? "null";
+      } catch {
+        // A BigInt or a cycle: nothing the app could send either.
+      }
+      // JSON escapes every control character inside a string: the result's own line breaks are its layout only.
+      if (text !== null) for (const line of text.split("\n")) say(line);
+      else {
+        say("Error: a result that isn't JSON");
+        ok = false;
+      }
+    } else say(`Error: ${answer.error}`);
     for (const e of tools.entries) for (const line of traceLines(e)) say(line);
-    return answer.ok ? 0 : 1;
+    return ok ? 0 : 1;
   } finally {
     tools?.close();
     await fs.rm(built, { recursive: true, force: true });

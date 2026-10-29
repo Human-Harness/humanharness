@@ -56,6 +56,32 @@ export default defineTool({
   },
 });
 `,
+  noisy: `import { defineTool, z } from "@humanharness/cli/tool";
+export default defineTool({
+  description: "Fetches with the key, logs the reply, then returns it or throws it.",
+  params: z.object({ fail: z.boolean() }),
+  uses: { hosts: ["api.example.test"], secrets: ["api"] },
+  async run(args, ctx) {
+    const res = await ctx.fetch("https://api.example.test/x", { headers: { authorization: "Bearer {{secret:api}}" } });
+    const text = res.text();
+    ctx.log("info", text);
+    if (args.fail) throw new Error(text);
+    return { text };
+  },
+});
+`,
+  odd: `import { defineTool, z } from "@humanharness/cli/tool";
+export default defineTool({
+  description: "Returns a value JSON can't carry: a BigInt or a cycle.",
+  params: z.object({ kind: z.enum(["bigint", "cycle"]) }),
+  async run(args) {
+    if (args.kind === "bigint") return { n: 10n };
+    const a: Record<string, unknown> = {};
+    a.self = a;
+    return a;
+  },
+});
+`,
   where: `import { defineTool, z } from "@humanharness/cli/tool";
 export default defineTool({
   description: "Reads a file and says its scope.",
@@ -114,7 +140,7 @@ function folder(files: Record<string, string> = {}): string {
 }
 
 /** Deps that reach nothing: fetch answers with the authorization header it got, commands never run. */
-function fakeDeps(o: { allow?: boolean; tty?: boolean } = {}) {
+function fakeDeps(o: { allow?: boolean | ((hostname: string, n: number) => boolean); tty?: boolean; body?: string } = {}) {
   const asked: string[] = [];
   const requests: string[] = [];
   const hosts: string[] = [];
@@ -124,7 +150,7 @@ function fakeDeps(o: { allow?: boolean; tty?: boolean } = {}) {
       fetch: (async (input: string, init?: RequestInit) => {
         requests.push(String(input));
         sent.push(new Headers(init?.headers).get("authorization"));
-        return new Response(`got ${new Headers(init?.headers).get("authorization")}`, { status: 200 });
+        return new Response(`${o.body ?? ""}got ${new Headers(init?.headers).get("authorization")}`, { status: 200 });
       }) as typeof fetch,
       run: (async () => {
         throw new Error("no command runs in these tests");
@@ -136,7 +162,7 @@ function fakeDeps(o: { allow?: boolean; tty?: boolean } = {}) {
     },
     allowHost: async (hostname) => {
       hosts.push(hostname);
-      return o.allow ?? true;
+      return typeof o.allow === "function" ? o.allow(hostname, hosts.length) : (o.allow ?? true);
     },
     resolve: async () => null,
     isTTY: o.tty ?? true,
@@ -203,6 +229,62 @@ describe("humanharness tool run (tools spec §11, A5, A6)", () => {
     expect(hosts).toContain("api.example.test");
     expect(requests).toEqual([]);
     expect(out).toMatch(/^fetcher · \d+ ms · failed/m);
+  });
+
+  it("the second host check refuses a host the broker let through, before the request", { timeout: 60_000 }, async () => {
+    const dir = harness(["fetcher"]);
+    // The broker asks first (and passes); tool-run asks again right before the request (and fails).
+    const { deps, requests, hosts } = fakeDeps({ allow: (_host, n) => n === 1 });
+    const { code, out } = await once(dir, { tool: "fetcher", folder: folder() }, deps);
+    expect(code).toBe(1);
+    expect(hosts).toEqual(["api.example.test", "api.example.test"]);
+    expect(requests).toEqual([]);
+    expect(out).toContain("Not a public host: api.example.test");
+  });
+
+  it("no control character or line break of a reply reaches the terminal, and the key stays hidden", { timeout: 60_000 }, async () => {
+    const dir = harness(["noisy"]);
+    const f = folder();
+    const body = "\u001b[2J\rfake · 1 ms · ok\n\u009b31m\tX ";
+    const bad = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
+    for (const fail of [false, true]) {
+      const { deps, sent } = fakeDeps({ body });
+      const { code, out } = await once(dir, { tool: "noisy", args: { fail }, folder: f }, deps);
+      expect(code).toBe(fail ? 1 : 0);
+      expect(sent).toEqual([`Bearer ${KEY}`]);
+      expect(out).not.toMatch(bad);
+      expect(out).not.toContain(KEY);
+      const lines = out.split("\n");
+      // The reply's fake trace line never stands as a line of its own.
+      expect(lines.filter((l) => l.startsWith("fake · ")), out).toEqual([]);
+      // The ctx.log line: one line, the reply in it.
+      expect(lines.some((l) => l.includes("noisy: info:") && l.includes("fake · 1 ms · ok") && l.includes("got Bearer ")), out).toBe(true);
+      if (fail) {
+        expect(lines.some((l) => l.startsWith("Error: ") && l.includes("fake · 1 ms · ok") && l.includes("got Bearer ")), out).toBe(true);
+        expect(lines.some((l) => /^noisy · \d+ ms · failed: .*fake · 1 ms · ok/.test(l)), out).toBe(true);
+      }
+    }
+  });
+
+  it("a result JSON can't carry is an error, exit 1", { timeout: 60_000 }, async () => {
+    const dir = harness(["odd"]);
+    const f = folder();
+    for (const kind of ["bigint", "cycle"]) {
+      const { code, out } = await once(dir, { tool: "odd", args: { kind }, folder: f }, fakeDeps().deps);
+      expect(code, out).toBe(1);
+      expect(out, kind).toMatch(/^Error: a result that isn't JSON$/m);
+    }
+  });
+
+  it("without --folder a new folder is made, printed and kept", { timeout: 60_000 }, async () => {
+    const dir = harness(["echo"]);
+    const { code, out } = await once(dir, { tool: "echo", args: { a: 1 } }, fakeDeps().deps);
+    expect(code).toBe(0);
+    const made = /^Folder: (.+)$/m.exec(out)?.[1];
+    expect(made).toBeDefined();
+    expect(path.dirname(made!)).toBe(root);
+    expect(path.basename(made!)).toMatch(/^hh-run-tool-run-/);
+    expect(fs.statSync(made!).isDirectory()).toBe(true);
   });
 
   it("the printed trace hides the key", { timeout: 60_000 }, async () => {

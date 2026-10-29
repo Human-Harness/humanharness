@@ -204,3 +204,73 @@ describe("scanScripts fails closed (E2, E8: what a command runs must be fully ac
   });
 });
 
+describe("programs that run code from the folder's own config (E2)", () => {
+  const w = tree("cfg", { "tools/ok.js": "ok", "localmod.py": "x", "localpkg/__init__.py": "", "node_modules/.bin/localbin": "x", "node_modules/@s/kit/index.js": "k", "test/a.js": "a" });
+  const o = { folder: w, linked: [] as string[] };
+  const issues = async (c: string | string[]) => (await scanScripts([c], o)).issues.map((i) => [path.relative(w, i.path), i.why.split(":")[0]]);
+
+  it("a bare word naming a folder passes as data; a path to one, a link or a FIFO is still refused", async () => {
+    execFileSync("mkfifo", [path.join(w, "pipe")]);
+    fs.symlinkSync(path.join(w, "tools/ok.js"), path.join(w, "ln"));
+    expect(await issues("ls test")).toEqual([]);
+    expect(await issues(["rsync", "-a", "test", "/tmp/x"])).toEqual([]);
+    expect(await issues("ls ./test")).toEqual([["test", "is a folder"]]);
+    expect(await issues("cat pipe")).toEqual([["pipe", "is not a regular file"]]);
+    expect(await issues("cat ln")).toEqual([["ln", "is a symbolic link"]]);
+    // As an interpreter's script or a server's first argument, a bare folder is still refused.
+    expect(await issues("node test")).toEqual([["test", "is a folder"]]);
+    expect(await issues(["mcp-tool", "test"])).toEqual([["test", "is a folder"]]);
+  });
+
+  it.each([
+    "npm run build",
+    "npm test",
+    "npm start",
+    "npm --silent run x",
+    "pnpm test",
+    "pnpm build-docs",
+    "pnpm exec tsc",
+    "yarn lint",
+    "yarn exec x",
+    "bun run dev",
+    "bun test",
+    "bun lint",
+    "make",
+    "make test",
+    "just fmt",
+    "rake",
+    "gradle build",
+    "cargo run",
+    "go run .",
+    "deno task dev",
+    "uv run tool",
+    "poetry run pytest",
+    ["npm", "start"],
+    ["make", "serve"],
+  ])("refuses %s", async (command) => {
+    await expect(scanScripts([command], o)).rejects.toThrow(/runs code from the folder's own config/);
+  });
+
+  it.each([
+    ["npx localbin", "node_modules/.bin/localbin"],
+    ["npx -y @s/kit@1.0", "node_modules/@s/kit"],
+    ["npx --package=./tools x", "tools"],
+    ["npm exec localbin", "node_modules/.bin/localbin"],
+    ["pnpm dlx localbin", "node_modules/.bin/localbin"],
+    ["bunx ./tools", "tools"],
+    ["python -m localmod", "localmod.py"],
+    ["python3 -m localpkg.sub", "localpkg"],
+    ["uvx localmod", "localmod.py"],
+    ["uvx --from ./tools x", "tools"],
+    ["uv tool run localpkg", "localpkg"],
+  ])("refuses %s (a local package or module)", async (command, local) => {
+    expect(await issues(command)).toEqual([[local, expect.stringMatching(/^is a local (package|module)$/)]]);
+  });
+
+  it("remote packages and modules pass (the npx/uvx hint covers them), and so do commands that run nothing local", async () => {
+    for (const c of ["npx -y @modelcontextprotocol/server-filesystem .", "bunx cowsay hi", "uvx mcp-server-fetch", "python -m json.tool ./tools/ok.js", "npm install", "pnpm add x", "yarn install", "node ./tools/ok.js"]) {
+      expect(await issues(c), c).toEqual([]);
+    }
+  });
+});
+

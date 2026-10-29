@@ -11,8 +11,11 @@ import { LOADER_NAME } from "./clean";
 // it and why. In hook text (shell): any `$` but `$CLAUDE_PROJECT_DIR`, a backquote, a glob, `~`, `cd`, `eval`,
 // `xargs`, a leading assignment to a loader variable (`NODE_OPTIONS=…`, also after `env`), a shell reading its input
 // or with an option the check doesn't read; `sh -c "…"` (and bash, zsh, dash, with `-o`/`-O` values) is read again.
-// On disk: any word (bare or a path, each part between `=`, a glued flag's value) naming a link, a folder, a FIFO, a
-// path through a link, or a link from outside into a root is refused; a root or folder as an interpreter's script
+// Programs that run code from the folder's own config are refused too: package.json scripts (`npm test`, `pnpm build`,
+// `yarn x`, `bun run`), build files (`make`, `just`, `cargo`…), `uv run`, and a runner's or `python -m`'s package or
+// module when it is local. On disk: any word (bare or a path, each part between `=`, a glued flag's value) naming a
+// link, a FIFO, a path through a link, or a link from outside into a root is refused, and so is a folder named as a
+// path (a bare word naming a folder is data); a root or folder as an interpreter's script
 // (`node .`) or a server's first argument is refused; node's `-r`/`--import`/`--loader`/`--env-file` must name a
 // hashed regular file. A root passed as data elsewhere is allowed. The program word itself (found on PATH) is not
 // checked unless it is a path. A word that names nothing yet is not a script (Known gaps).
@@ -53,9 +56,11 @@ const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=/;
 /**
  * What a word is to the program that gets it. `arg`: any argument (a root passes: it is data). `script`: the file an
  * interpreter runs, or a server's first argument (a folder or a root runs an index or `main` the hash never saw).
- * `require`: a file node loads first (`-r`, `--import`): it must be a hashed regular file.
+ * `require`: a file node loads first (`-r`, `--import`): it must be a hashed regular file. `module`: a Python module
+ * (`python -m X`, `uvx X`): refused when X is local (cwd is on sys.path). `package`: a package a runner (`npx`) fetches:
+ * refused when it is a local path or installed in the folder's `node_modules`.
  */
-type Role = "arg" | "script" | "require";
+type Role = "arg" | "script" | "require" | "module" | "package";
 interface Check {
   word: string;
   role: Role;
@@ -151,7 +156,7 @@ function interpreter(prog: string, args: string[], out: Parsed): void {
   const name = prog === "python3" ? "python" : prog;
   const opts = table[name]!;
   let i = 0;
-  if ((name === "deno" || name === "bun") && args[0] === "run") i = 1;
+  if (name === "deno" && args[0] === "run") i = 1;
   for (; i < args.length; i++) {
     const w = args[i]!;
     if (w === "--") {
@@ -177,6 +182,7 @@ function interpreter(prog: string, args: string[], out: Parsed): void {
     if (value === undefined) throw new Error(`${prog} ${key} has no value`);
     if (kind === "require") out.checks.push({ word: value, role: "require" });
     else if (kind === "arg") out.checks.push({ word: value, role: "arg" });
+    else if (kind === "module") out.checks.push({ word: value, role: "module" });
     if (kind === "inline" || kind === "module") {
       words(i + 1);
       return;
@@ -189,6 +195,48 @@ function interpreter(prog: string, args: string[], out: Parsed): void {
 }
 
 const INTERPRETERS = new Set(["node", "python", "python3", "deno", "bun", "ruby", "perl"]);
+
+// Programs that run code from the folder's own config files (package.json scripts, a Makefile, pyproject.toml, a
+// local module), which the hash never covers: refused (E2). A config that needs one wraps it in a plain script file.
+/** Refused whatever they are asked: they read a build file in the folder. */
+const CONFIG_RUNNERS = new Set(["make", "gmake", "just", "rake", "gradle", "gradlew", "mvn", "mvnw", "ant", "task", "invoke", "nox", "tox", "scons", "ninja", "cargo"]);
+/** Refused with these subcommands. */
+const CONFIG_SUBS: Record<string, ReadonlySet<string>> = {
+  npm: new Set(["run", "run-script", "rum", "urn", "test", "tst", "t", "start", "restart", "stop", "explore"]),
+  go: new Set(["run", "test", "generate"]),
+  deno: new Set(["task"]),
+  uv: new Set(["run"]),
+  poetry: new Set(["run"]),
+  pipenv: new Set(["run"]),
+  hatch: new Set(["run"]),
+  pdm: new Set(["run"]),
+  rye: new Set(["run"]),
+  composer: new Set(["run", "run-script", "exec"]),
+};
+/** pnpm, yarn and bun run a package.json script by its bare name: only these subcommands run none. */
+const PM_SAFE = new Set(["install", "i", "add", "remove", "rm", "uninstall", "update", "up", "upgrade", "list", "ls", "info", "view", "why", "outdated", "audit", "help", "version", "init", "link", "unlink", "pm", "store", "config", "cache", "whoami", "login", "logout", "publish", "pack", "build", "create", "import", "licenses", "patch"]);
+/** Package runners and the subcommand that makes one (`npm exec`): what they fetch is outside the hash (a hint). */
+const PACKAGE_RUNNERS: Record<string, ReadonlySet<string> | null> = { npx: null, bunx: null, pnpx: null, npm: new Set(["exec", "x"]), pnpm: new Set(["dlx"]), yarn: new Set(["dlx"]), bun: new Set(["x"]) };
+const LOCAL_CONFIG = "runs code from the folder's own config (package.json scripts, a build file, a local module) the approval doesn't cover; wrap it in a plain script file";
+
+/** The first word of `args` that is not an option. */
+const subcommand = (args: readonly string[]) => args.find((a) => !a.startsWith("-"));
+
+/** A package runner's package (`npx -y pkg args…`, `--package pkg`): checked as a `package`, the rest as words. */
+function packageRunner(args: string[], from: number, out: Parsed): void {
+  let i = from;
+  for (; i < args.length && args[i]!.startsWith("-"); i++) {
+    const w = args[i]!;
+    if (w === "-p" || w === "--package") out.checks.push({ word: args[++i] ?? "", role: "package" });
+    else if (w.startsWith("--package=")) out.checks.push({ word: w.slice("--package=".length), role: "package" });
+    else if (w === "--") {
+      i++;
+      break;
+    }
+  }
+  if (i < args.length) out.checks.push({ word: args[i]!, role: "package" });
+  for (const w of args.slice(i + 1)) out.checks.push({ word: w, role: "arg" });
+}
 
 /** A shell's options, then its `-c` script (read again) or its script file. Anything else is refused. */
 function shell(prog: string, args: string[], folder: string, depth: number, out: Parsed): void {
@@ -266,6 +314,32 @@ function simple(argv: string[], folder: string, depth: number, server: boolean, 
     return;
   }
   if (SHELLS.has(prog)) return shell(prog, args, folder, depth, out);
+  if (CONFIG_RUNNERS.has(prog)) throw new Error(`runs ${prog}, which ${LOCAL_CONFIG}`);
+  const sub = subcommand(args);
+  const runner = Object.hasOwn(PACKAGE_RUNNERS, prog) ? PACKAGE_RUNNERS[prog] : undefined;
+  if (runner === null) return packageRunner(args, 0, out);
+  if (runner && sub !== undefined && runner.has(sub)) return packageRunner(args, args.indexOf(sub) + 1, out);
+  if (Object.hasOwn(CONFIG_SUBS, prog) && sub !== undefined && CONFIG_SUBS[prog]!.has(sub)) throw new Error(`runs ${prog} ${sub}, which ${LOCAL_CONFIG}`);
+  if (prog === "uvx" || (prog === "uv" && sub === "tool" && args[args.indexOf(sub) + 1] === "run")) {
+    const from = prog === "uvx" ? 0 : args.indexOf("run") + 1;
+    for (let i = from; i < args.length; i++) {
+      const w = args[i]!;
+      if (w === "--from" || w === "--with") out.checks.push({ word: args[++i] ?? "", role: "module" });
+      else if (w.startsWith("--from=") || w.startsWith("--with=")) out.checks.push({ word: w.slice(w.indexOf("=") + 1), role: "module" });
+      else if (!w.startsWith("-")) {
+        out.checks.push({ word: w, role: "module" });
+        for (const a of args.slice(i + 1)) out.checks.push({ word: a, role: "arg" });
+        return;
+      }
+    }
+    return;
+  }
+  if (prog === "pnpm" || prog === "yarn" || (prog === "bun" && sub !== undefined && !/[./]/.test(sub))) {
+    // A bare name runs the package.json script of that name.
+    if (sub !== undefined && !PM_SAFE.has(sub)) throw new Error(`runs ${prog} ${sub}, which ${LOCAL_CONFIG}`);
+    args.forEach((w) => out.checks.push({ word: w, role: "arg" }));
+    return;
+  }
   if (INTERPRETERS.has(prog)) return interpreter(prog, args, out);
   args.forEach((w, k) => out.checks.push({ word: w, role: server && k === 0 ? "script" : "arg" }));
 }
@@ -328,6 +402,45 @@ async function classify(p: string, st: Stats, roots: Root[]): Promise<"outside" 
   return st.isFile() ? "file" : "is not a regular file";
 }
 
+/** A token that reads as a path (`./x`, `a/b`, `/x`, `..`). */
+const pathLike = (t: string) => t.startsWith(".") || t.includes("/") || t.includes(path.sep);
+const exists = (p: string) => fs.lstat(p).then(() => true, () => false);
+
+/** The folders a runner searches from `folder`: it, each folder above it, and the linked roots. */
+function searchDirs(folder: string, roots: Root[]): string[] {
+  const dirs: string[] = [];
+  for (let d = path.resolve(folder); ; d = path.dirname(d)) {
+    dirs.push(d);
+    if (path.dirname(d) === d) break;
+  }
+  return [...dirs, ...roots.flatMap((r) => [r.lex, r.real])];
+}
+
+/** A Python module or package spec that is local: a path, or `X.py` / `X/` in the folder or a root (on sys.path). */
+async function localModule(spec: string, folder: string, roots: Root[]): Promise<{ path: string; why: string } | null> {
+  const why = "is a local module: python puts the folder on its path, so it runs code the approval doesn't cover";
+  if (spec === "" || pathLike(spec) || spec.startsWith("file:")) return { path: path.resolve(folder, spec), why };
+  const name = spec.split(/[.=<>!~[@\s]/)[0]!;
+  for (const d of [path.resolve(folder), ...roots.flatMap((r) => [r.lex, r.real])]) {
+    for (const p of [path.join(d, `${name}.py`), path.join(d, name)]) if (await exists(p)) return { path: p, why };
+  }
+  return null;
+}
+
+/** A package a runner fetches that is local: a path, or installed in a `node_modules` it searches. */
+async function localPackage(spec: string, folder: string, roots: Root[]): Promise<{ path: string; why: string } | null> {
+  const why = "is a local package: the runner would run the folder's own copy, which the approval doesn't cover";
+  if (spec === "" || spec.startsWith(".") || spec.startsWith("/") || /^(file|link|portal|git\+file):/.test(spec)) return { path: path.resolve(folder, spec), why };
+  // `@scope/name@1.2` → name `@scope/name`, bin `name`.
+  const at = spec.indexOf("@", 1);
+  const name = at > 0 ? spec.slice(0, at) : spec;
+  const bin = name.slice(name.lastIndexOf("/") + 1);
+  for (const d of searchDirs(folder, roots)) {
+    for (const p of [path.join(d, "node_modules", ".bin", bin), path.join(d, "node_modules", name)]) if (await exists(p)) return { path: p, why };
+  }
+  return null;
+}
+
 /** A word that names something the hash can't cover: the path, why, and the command that names it. */
 export interface ScriptIssue {
   path: string;
@@ -355,6 +468,11 @@ export async function scanScripts(
       if (!issues.has(p)) issues.set(p, { path: p, why, command: shown.length > 120 ? `${shown.slice(0, 120)}…` : shown });
     };
     for (const { word, role } of parse(command, o.folder).checks) {
+      if (role === "module" || role === "package") {
+        const local = await (role === "module" ? localModule(word, o.folder, roots) : localPackage(word, o.folder, roots));
+        if (local) issue(local.path, local.why);
+        continue;
+      }
       for (const t of role === "require" ? [word] : candidates(word)) {
         const p = path.isAbsolute(t) ? path.resolve(t) : path.resolve(o.folder, t);
         const st = await fs.lstat(p).catch(() => null);
@@ -368,7 +486,10 @@ export async function scanScripts(
           if (role === "require") issue(p, "is outside the folder (node loads it first)");
         } else if (kind === "root") {
           if (role !== "arg") issue(p, "is a folder: the program would run a file in it the approval doesn't cover");
-        } else if (kind === "is a folder" && role === "arg") issue(p, kind);
+        } else if (kind === "is a folder" && role === "arg") {
+          // A folder as data is refused only when named as a path (`ls ./dir`); a bare word (`npm test`) passes.
+          if (pathLike(t)) issue(p, kind);
+        }
         else issue(p, kind === "is a folder" ? "is a folder: the program would run a file in it the approval doesn't cover" : kind);
       }
     }

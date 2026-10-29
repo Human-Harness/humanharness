@@ -99,9 +99,10 @@ const exists = (p: string) => fs.access(p).then(() => true, () => false);
 /**
  * Validates the harness in `dir` (spec §7). Errors make the CLI exit with 1.
  * `fixtures`: run each tool's fixtures (rule `tool-fixture`, tools Decision 4), with `note` where the P12 note for tools
- * goes before any of them runs. `check` passes it; without it no fixture runs (as before).
+ * goes before any of them runs and `temp` where their temp folders go. `check` passes it; without it no fixture runs (as
+ * before).
  */
-export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: { note(line: string): void } } = {}): Promise<CheckResult> {
+export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: { note(line: string): void; temp?: string } } = {}): Promise<CheckResult> {
   const root = path.resolve(dir);
   const findings: Finding[] = [];
   const harness = await loadManifest(root, findings);
@@ -706,7 +707,7 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
  * `fixtures`) each failing or unreadable fixture one `tool-fixture` error. None without tools (D0); no fixture runs
  * when the build fails.
  */
-async function toolBuildFindings(root: string, h: LoadedHarness, fixtures?: { note(line: string): void }, built?: BuiltTools): Promise<Finding[]> {
+async function toolBuildFindings(root: string, h: LoadedHarness, fixtures?: { note(line: string): void; temp?: string }, built?: BuiltTools): Promise<Finding[]> {
   if (!hasTools(h)) return [];
   let build: Awaited<ReturnType<typeof buildTools>>;
   try {
@@ -777,7 +778,11 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 /** One line per finding, then the counts. */
 export function formatFindings(findings: Finding[]): string {
   if (findings.length === 0) return "No problems found.\n";
-  const lines = findings.map((f) => `${f.severity.padEnd(8)}${f.rule.padEnd(21)}${(f.line ? `${f.file}:${f.line}` : f.file).padEnd(22)}${f.message}`);
+  // A fixture's path (tools/<id>/fixtures/<file>) is always longer than the column: one space keeps it off its message.
+  // Every other rule's line is as before.
+  const lines = findings.map(
+    (f) => `${f.severity.padEnd(8)}${f.rule.padEnd(21)}${(f.line ? `${f.file}:${f.line}` : f.file).padEnd(22)}${f.rule === "tool-fixture" ? " " : ""}${f.message}`,
+  );
   const errors = findings.filter((f) => f.severity === "error").length;
   return `${lines.join("\n")}\n\n${plural(errors, "error")}, ${plural(findings.length - errors, "warning")}\n`;
 }

@@ -95,7 +95,11 @@ function memoryData(collections: Record<string, Collection>, seed: ToolFixture["
   for (const [name, records] of Object.entries(seed ?? {})) {
     const c = collectionOf(name);
     const s = storeOf(name);
-    for (const r of records) s.set(keyOf(name, c, r), structuredClone(r));
+    // A seeded record is checked as a put would be: a fixture can't start from data the app would refuse.
+    for (const r of records) {
+      const record = checked(name, c, r);
+      s.set(keyOf(name, c, record), record);
+    }
   }
   return async (op: BrokerDataOp): Promise<unknown> => {
     const c = collectionOf(op.collection);
@@ -170,7 +174,14 @@ function verdict(expect: ToolFixture["expect"], answer: { ok: true; result: unkn
     return `expected an error with ${JSON.stringify(expect.error)} got the result ${shown(answer.result)}`;
   }
   if (!answer.ok) return `expected ${shown(expect.result)} got the error ${JSON.stringify(answer.error)}`;
-  return isDeepStrictEqual(asJson(answer.result), asJson(expect.result)) ? null : `expected ${shown(expect.result)} got ${shown(answer.result)}`;
+  let got: unknown;
+  try {
+    got = asJson(answer.result);
+  } catch (err) {
+    // A BigInt or a cycle: JSON can't carry it, so it can't equal what a fixture file holds.
+    return `expected ${shown(expect.result)} got a result that isn't JSON: ${errText(err)}`;
+  }
+  return isDeepStrictEqual(got, asJson(expect.result)) ? null : `expected ${shown(expect.result)} got ${shown(answer.result)}`;
 }
 
 /**
@@ -249,7 +260,7 @@ export function formatToolReports(reports: ToolTestReport[]): string {
   const out: string[] = [];
   for (const r of reports) {
     const failed = r.cases.filter((c) => !c.ok).length;
-    out.push(r.cases.length === 0 ? `${r.tool}: no fixtures` : `${r.tool}: ${plural(r.cases.length, "fixture")}, ${failed} failed`);
+    out.push(r.cases.length === 0 ? `${r.tool}: ${r.skipped.length > 0 ? "no valid fixtures" : "no fixtures"}` : `${r.tool}: ${plural(r.cases.length, "fixture")}, ${failed} failed`);
     for (const s of r.skipped) out.push(`  warn: ${s}`);
     for (const c of r.cases) {
       const writes = c.writes.length > 0 ? `${plural(c.writes.length, "write")}: ${c.writes.map(writeText).join(", ")}` : "";
@@ -292,7 +303,7 @@ const skippedWhy = (err: unknown): string => {
  * `check`'s rule `tool-fixture` (tools spec §3.3, Decision 4): every tool's `tools/<id>/fixtures/*.json` run as
  * `tool test` runs them (`runCase`), from bundles `check`'s in-memory build already made (`files`). Each failing case and
  * each file that isn't a valid case is one problem: `Tool "<id>": fixtures/<file>: <why>`. When no tool has a valid
- * case nothing runs and `note` is never called; else the P12 note for tools goes to `note` once, before any tool code.
+ * case nothing runs and `note` is never called; else the P12 note for tools goes to `note` once, before any fixture runs.
  */
 export async function toolFixtureFindings(
   root: string,
@@ -322,8 +333,9 @@ export async function toolFixtureFindings(
         const c = await runCase(harness, built, base, tool, file, fixture);
         why = c.ok ? null : (c.why ?? "failed");
       } catch (err) {
-        // A result JSON can't carry (a BigInt, a cycle) throws in the comparison: a finding, never a crashed check.
-        why = err instanceof TypeError ? `got a result that isn't JSON: ${errText(err)}` : errText(err);
+        // A case that couldn't run (its temp folder, say): a finding, never a crashed check. A result JSON can't carry
+        // is the verdict's own reason.
+        why = errText(err);
       }
       if (why !== null) problems.push({ message: `Tool "${tool}": fixtures/${file}: ${why}`, file: `tools/${tool}/fixtures/${file}` });
     }

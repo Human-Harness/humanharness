@@ -80,6 +80,16 @@ export default defineTool({
   },
 });
 `,
+  big: `import { defineTool, z } from "@humanharness/cli/tool";
+export default defineTool({
+  description: "Returns a BigInt, which JSON can't carry.",
+  params: z.object({}),
+  agent: "none",
+  async run() {
+    return { n: 1n };
+  },
+});
+`,
   bare: `import { defineTool, z } from "@humanharness/cli/tool";
 export default defineTool({
   description: "Has no fixtures at all.",
@@ -302,5 +312,44 @@ describe("humanharness tool test (tools spec §11)", () => {
     expect(formatToolReports(reports)).toContain("  warn: tools/echo/fixtures/junk.json skipped");
     fs.writeFileSync(path.join(dir, "tools", "echo.ts"), 'import fs from "node:fs";\nexport default fs;\n');
     await expect(run(dir)).rejects.toBeInstanceOf(CliError);
+  });
+
+  it("says 'no valid fixtures' when every fixture file was skipped", { timeout: 60_000 }, async () => {
+    const dir = harness(["echo", "bare"], { "echo/fixtures/junk.json": { nope: true } });
+    const text = formatToolReports((await run(dir)).reports);
+    expect(text).toContain("echo: no valid fixtures\n");
+    expect(text).toContain("bare: no fixtures\n");
+  });
+
+  it("a result JSON can't carry fails its case, and the command goes on", { timeout: 60_000 }, async () => {
+    const dir = harness(["big", "echo"], {
+      "big/fixtures/n.json": { expect: { result: { n: 1 } } },
+      "echo/fixtures/ok.json": { args: { a: 1 }, expect: { result: { a: 1 } } },
+    });
+    const { reports } = await run(dir);
+    expect(reports.map((r) => r.cases.map((c) => c.ok))).toEqual([[false], [true]]);
+    expect(reports[0]!.cases[0]!.why).toMatch(/^expected \{"n":1\} got a result that isn't JSON: \S/);
+  });
+
+  it("seeded data is checked against the collection's schema", { timeout: 60_000 }, async () => {
+    const dir = harness(["writer"], {
+      "writer/fixtures/bad.json": { data: { notes: [{ id: "a", text: 5 }] }, expect: { result: { seen: 5, total: 2 } } },
+    });
+    const { reports } = await run(dir);
+    expect(reports[0]!.cases).toMatchObject([{ file: "bad.json", ok: false, trace: [] }]);
+    expect(reports[0]!.cases[0]!.why).toMatch(/^Not a record of "notes": /);
+  });
+
+  it("the harness's own dist/ is never read: a stale one changes nothing and stays as it was", { timeout: 60_000 }, async () => {
+    const dir = harness(["echo"], { "echo/fixtures/ok.json": { args: { a: 1 }, expect: { result: { a: 1 } } } });
+    const stale = "export default { run: async () => ({ a: 999 }) };\n";
+    fs.mkdirSync(path.join(dir, "dist", "tools"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "dist", "tools", "echo.js"), stale);
+    fs.writeFileSync(path.join(dir, "dist", "tools.json"), "{ not json");
+    const { reports } = await run(dir);
+    expect(reports[0]!.cases).toMatchObject([{ file: "ok.json", ok: true }]);
+    expect(fs.readFileSync(path.join(dir, "dist", "tools", "echo.js"), "utf8")).toBe(stale);
+    expect(fs.readFileSync(path.join(dir, "dist", "tools.json"), "utf8")).toBe("{ not json");
+    expect(fs.readdirSync(path.join(dir, "dist")).sort()).toEqual(["tools", "tools.json"]);
   });
 });

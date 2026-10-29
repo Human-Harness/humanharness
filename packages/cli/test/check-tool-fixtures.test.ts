@@ -142,7 +142,8 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     const { code, out } = await check(dir);
     expect(code).toBe(1);
     const line = out.split("\n").find((l) => l.startsWith("error   tool-fixture"));
-    expect(line).toContain("tools/echo/fixtures/bad.json");
+    // The path never runs into the message.
+    expect(line).toContain("tools/echo/fixtures/bad.json Tool");
     expect(line).toMatch(/Tool "echo": fixtures\/bad\.json: expected \{"a":1\} got \{"a":2\}$/);
   });
 
@@ -150,7 +151,7 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     const dir = harness({ "big/fixtures/cycle.json": { expect: { result: {} } } }, { big: true });
     const { findings } = await fixtureFindings(dir);
     expect(findings.map((f) => [f.rule, f.file])).toEqual([["tool-fixture", "tools/big/fixtures/cycle.json"]]);
-    expect(findings[0]!.message).toMatch(/^Tool "big": fixtures\/cycle\.json: got a result that isn't JSON: /);
+    expect(findings[0]!.message).toMatch(/^Tool "big": fixtures\/cycle\.json: expected \{\} got a result that isn't JSON: \S/);
   });
 
   it("a fixture file that doesn't parse is a tool-fixture error", { timeout: 60_000 }, async () => {
@@ -195,5 +196,18 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     const dir = harness({ "echo/fixtures/bad.json": { args: { a: 2 }, expect: { result: { a: 1 } } } });
     const r = await checkHarness(dir);
     expect(r.findings.filter((f) => f.rule === "tool-fixture")).toEqual([]);
+  });
+
+  it("the fixtures' temp folders are removed after check", { timeout: 60_000 }, async () => {
+    const dir = harness({
+      "echo/fixtures/bad.json": { args: { a: 2 }, expect: { result: { a: 1 } } },
+      "echo/fixtures/ok.json": { args: { a: 1 }, expect: { result: { a: 1 } } },
+    });
+    const temp = path.join(root, `temp-${++n}`);
+    fs.mkdirSync(temp);
+    const r = await checkHarness(dir, { fixtures: { note: () => undefined, temp } });
+    expect(r.findings.filter((f) => f.rule === "tool-fixture")).toHaveLength(1);
+    // hh-tool-check-* (the bundles) and hh-tool-files-* (each case's folder) are gone.
+    expect(fs.readdirSync(temp)).toEqual([]);
   });
 });

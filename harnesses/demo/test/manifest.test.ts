@@ -50,4 +50,12 @@ describe("demo manifest", () => {
     });
     expect(h.questions).toEqual({ tier: "light" });
   });
+
+  it("declares an echo backend inside the harness folder (hatches spec §4)", async () => {
+    const h = await loadHarness(CONFIG);
+    expect(h.backend).toBe("./backend/index.ts");
+    const entry = resolveInHarness(h, h.backend!);
+    expect(entry).toBe(path.resolve(here, "../backend/index.ts"));
+    expect(fs.existsSync(entry)).toBe(true);
+  });
 });

@@ -18,3 +18,7 @@
 .demo-files li span { flex: 1; font-size: 12px; color: var(--hh-muted); }
 .demo-files button { height: 24px; padding: 0 9px; font-size: 12px; }
 .demo-files [role="alert"] { padding: 0 12px 10px; }
+.demo-backend { display: grid; gap: 8px; padding: 10px 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
+.demo-backend-buttons { display: flex; gap: 8px; }
+.demo-backend button { height: 24px; padding: 0 9px; font-size: 12px; }
+.demo-backend p, .demo-backend ol { margin: 0; font-size: 12px; }

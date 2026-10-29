@@ -57,7 +57,7 @@ The window learns of every change turn through `hh:taskTurn` → `client.onTaskT
 
 A part's `expects` is checked by the tools host (`phaseEnded`, `docs/architecture/tools.md`, "Expects") through `TaskDeps.phaseEnded`, which exists only when some part declares `expects` and the harness has tools:
 
-- On a move of any kind (the agent, the person, an approval, the time box), for the part left; the move doesn't wait for it.
+- On a move of any kind (the agent, the person, an approval, the time box), for the part left. A move that sends a phase brief waits for it at most 2 s (`EXPECTS_CHECK_MS`, as a close) before the brief, so a miss line is its own line before the brief; a move without a brief doesn't wait.
 - On a close, for the part it closes in: after the closing turn, or when the task finishes with its note already saved. It runs before the task ends, waiting at most 2 s (`EXPECTS_CHECK_MS`), so the miss line reaches the chat. A cancelled or unfinished close, or a Stop before it, checks nothing.
 - A call counts when its trace entry has the task's id and the part's id, whatever its caller, failed calls included. A part entered again is checked again.
 

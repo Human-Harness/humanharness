@@ -1,6 +1,6 @@
 # Replaceable parts — design
 
-Status: design approved by Marco section by section, 2026-10-29, in a brainstorming session. The written spec is pending his review. Not in the roadmap yet.
+Status: approved by Marco, 2026-10-29, after a brainstorming session and a section-by-section review of the written spec. Not in the roadmap yet.
 
 AI moves fast, so parts of Human Harness will age quickly: how it talks to engines, how it picks models, how it manages context. This spec opens four seams so those parts can be replaced by writing one new module and changing config, without touching the app around them. It changes structure only: after each part, the app behaves exactly as before.
 

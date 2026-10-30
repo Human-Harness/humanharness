@@ -13,10 +13,13 @@ function sources(dir: string): string[] {
   });
 }
 
-/** Every "hh:…" string literal in a folder's sources (comments use backticks, so they don't count). */
+/** A file's text without block comments and `//` comment lines, so a channel only mentioned in a comment doesn't count. */
+const code = (file: string) => fs.readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+/** Every "hh:…" string literal in a folder's code. */
 function literals(dir: string): Set<string> {
   const found = new Set<string>();
-  for (const file of sources(dir)) for (const m of fs.readFileSync(file, "utf8").matchAll(/"(hh:[A-Za-z]+)"/g)) found.add(m[1]);
+  for (const file of sources(dir)) for (const m of code(file).matchAll(/"(hh:[A-Za-z]+)"/g)) found.add(m[1]);
   return found;
 }
 

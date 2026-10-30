@@ -19,15 +19,15 @@ interface Import {
   typeOnly: boolean;
 }
 
-/** Every static import and re-export with a `from` (multi-line ones included). */
+/** Every static import and re-export with a `from` (multi-line ones included), plus side-effect, dynamic and `require` imports. */
 function imports(dir: string): Import[] {
-  return sources(dir).flatMap((file) =>
-    [...fs.readFileSync(file, "utf8").matchAll(/^(import|export)\s+(type\s+)?[^;]*?\sfrom\s+"([^"]+)"/gms)].map((m) => ({
-      file: path.relative(packages, file),
-      spec: m[3],
-      typeOnly: m[2] !== undefined,
-    })),
-  );
+  return sources(dir).flatMap((file) => {
+    const text = fs.readFileSync(file, "utf8");
+    const rel = path.relative(packages, file);
+    const statics = [...text.matchAll(/^(import|export)\s+(type\s+)?[^;]*?\sfrom\s+"([^"]+)"/gms)].map((m) => ({ file: rel, spec: m[3], typeOnly: m[2] !== undefined }));
+    const others = [...text.matchAll(/^import\s+"([^"]+)"|\b(?:import|require)\(\s*"([^"]+)"\s*\)/gm)].map((m) => ({ file: rel, spec: m[1] ?? m[2], typeOnly: false }));
+    return [...statics, ...others];
+  });
 }
 
 const offenders = (list: Import[], bad: (i: Import) => boolean) => list.filter(bad).map((i) => `${i.file} → ${i.spec}`);

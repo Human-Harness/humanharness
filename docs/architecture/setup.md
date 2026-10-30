@@ -1,6 +1,6 @@
 # Harness setup steps
 
-A harness can add its own steps to the setup screen, after the folder and the engine: a form, a short interview with the AI, or a React component of its own. Each step leaves its result where the app already keeps things (a data record or the settings), so the app reads it like anything else. Spec: `docs/superpowers/specs/2026-10-25-harness-setup-steps-design.md`. A harness without `setup` works exactly as before: no `.harness/setup.json`, no interview section, the same screens.
+A harness can add its own steps to the setup screen, after the folder and the engine: a form, a short interview with the AI, a React component of its own, or a connect step that asks for the harness's keys. Each step leaves its result where the app already keeps things (a data record, the settings or the key store), so the app reads it like anything else. Spec: `docs/superpowers/specs/2026-10-25-harness-setup-steps-design.md`. A harness without `setup` works exactly as before: no `.harness/setup.json`, no interview section, the same screens.
 
 ## Declaring them
 
@@ -9,6 +9,7 @@ A harness can add its own steps to the setup screen, after the folder and the en
 - `form`: `collection` + `fields` (a collection that is `single` and not scoped; every field one the core form can draw), or `settings` (names of harness settings; the harness needs `settings`). Not both. The core form draws the fields from their schemas; settings keep their option labels.
 - `interview`: `action` and `writes`. The action is not in `path`, not at tier `deep`, runs app-wide (`scope: "none"` when the harness has scopes) and backs one interview only. `writes` is a collection that is `single`, not scoped, and `agent: "write"`. The action runs as a task on the setup screen, in a slim chat.
 - `component`: `component`, the name the harness passes to `HarnessApp setupSteps={{ … }}`, and an optional `writes` (a declared collection, for the reader). It gets `{ client, profile, done, skip }`; `profile` is the active profile (`ProfileView`) in a harness with profiles, `null` without them.
+- `connect` (tools slice 1, `docs/architecture/secrets.md`): `secrets`, 1 to 10 ids the harness declares in its `secrets`, each listed once (the harness needs `secrets`); a key may appear in several steps. The core draws it. `test` (a tool that checks the keys) comes with tools in slice 2; until then the schema doesn't know it and drops it.
 
 These rules are schema errors in the manifest. `check` adds three warnings (`packages/cli/src/check.ts`):
 
@@ -37,8 +38,9 @@ A required step that is missing blocks Start on Home ("One step left: <label>"),
 - An interview's body shows its cost when the action isn't `light`, then a slim chat: no side panel, no topics, no composer until the interview's task runs. Start (or "Continue the interview" when the action has run before) starts a new task of the action. The slim chat shows only that task: another open task is not shown, and a choice or input that would start another action is refused.
 - An interview's Next waits while a turn runs, then closes the task with the usual closing turn and checks the record. "Incomplete" says the app doesn't have what it needs yet and offers to continue, which starts a new task (the interview section is only in a task's first message). A task started on the setup screen resumes only while the app stays open: an app start interrupts open tasks.
 - A component step draws the harness's component; it calls `done()` or `skip()`.
+- A connect step draws one row per listed key, in the step's order: its label, help, "Set" or "Not set", a password field with Save (Replace when set) and Delete when set, the same rows as Settings › Connections. "Paste each key to go on." shows until every listed key is set. Next is disabled until then, and focus moves to it when the last key is saved; it marks the step done. Main checks again: `SetupSteps.complete` refuses a connect step with `incomplete` unless every listed key is stored (no answer or an error refuse too). A step whose keys are already set from Settings shows Next at once. A key value never reaches the window, only whether it is set.
 - Profiles (`docs/architecture/profiles.md`): the "Who's using it" step ("Who's using <name>?") shows when no profile is active, and whenever the person presses "Add <label>" (the switcher), which opens the setup screen at that step (the folder and engine steps are done; Cancel goes back). It draws the `profiles.fields` form; Next creates the profile and makes it active, and the steps after it are that profile's own (its `setup.json`), then "All set". The privacy note shows on it while the second profile is created. Once a profile is active the title is "Set up <name> for <profile>". Home with no active profile says "One step left: add a <label>", and "Set up" opens this step.
-- Settings shows the steps first on the harness's tab, under "Setup", with their state (Done, Skipped, Not done yet). The tab is named "Setup" when the harness has no settings. Edit opens a form step's fields in place; Do it again (or Do it now, for a step not done) opens the setup screen at that step alone, and its end (or Cancel) reopens Settings on the tab it came from. Showing the list acknowledges the steps (adds them to `known`).
+- Settings shows the steps first on the harness's tab, under "Setup", with their state (Done, Skipped, Not done yet). The tab is named "Setup" when the harness has no settings. Edit opens a form step's fields in place; Do it again (or Do it now, for a step not done) opens the setup screen at that step alone, and its end (or Cancel) reopens Settings on the tab it came from. A connect step's row has Open instead, which switches to Settings › Connections. Showing the list acknowledges the steps (adds them to `known`).
 
 ## What the agent sees
 
@@ -50,8 +52,8 @@ An interview's first message is the action's brief, then a core section (`interv
 
 - `packages/harness-sdk/test/setup.test.ts`: the schema and its rules. `packages/cli/test/check.test.ts`: the `setup-*` warnings. `packages/cli/test/run.test.ts`: the interview section in a terminal run.
 - `packages/shell/test/setup-store.test.ts`, `setup-steps.test.ts` and `task-manager-setup.test.ts`: the file, the controller and the interview section.
-- `packages/ui/test/setup-home.test.tsx`, `setup-flow.test.tsx`, `setup-interview.test.tsx` and `setup-settings.test.tsx`: Home, the setup screen, the slim chat and the Settings list.
-- `packages/fake-agent/fixtures/setup-harness` (id `tutor`) has a step of each kind.
+- `packages/ui/test/setup-home.test.tsx`, `setup-flow.test.tsx`, `setup-interview.test.tsx` and `setup-settings.test.tsx`: Home, the setup screen, the slim chat and the Settings list. `setup-connect.test.tsx`: the connect step.
+- `packages/fake-agent/fixtures/setup-harness` (id `tutor`) has a form, an interview and a component step. `packages/fake-agent/fixtures/secrets-harness` (id `secrets`) has a required connect step, run by `packages/e2e/tests/connections.spec.ts`.
 
 ## Known gaps
 

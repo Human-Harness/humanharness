@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type HarnessInput, SETUP_STEP_ID, defineHarness, hasSetup, interviewCollections, loadHarness, setupFormSpec, settingsSchema, z } from "../src";
+import { type HarnessInput, SETUP_STEP_ID, defineHarness, hasSetup, interviewCollections, loadHarness, setupFormSpec, setupStepSchema, settingsSchema, z } from "../src";
 
 const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/setup-harness/harness.config.ts");
 
@@ -154,5 +154,9 @@ describe("setup steps in the manifest (setup-steps spec §3)", () => {
   it("the setup-harness fixture loads", async () => {
     const h = await loadHarness(fixture);
     expect(h.setup?.map((s) => s.id)).toEqual(["conocerte", "estilo", "goal", "ready"]);
+  });
+
+  it("the setup step kinds are form, interview, component and connect", () => {
+    expect(setupStepSchema.options.map((o) => o.shape.kind.value).sort()).toEqual(["component", "connect", "form", "interview"]);
   });
 });

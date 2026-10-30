@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { Collection } from "./data";
 import { type InputField, type InputSpec, inputFields } from "./input";
+import { PLUGIN_LOCAL_ID } from "./plugin";
+import { SECRETS_MAX } from "./secrets";
 import { type HarnessSettings, inferSetting } from "./settings";
 
 /** A setup step's id (setup-steps spec §3): it keys `.harness/setup.json`. */
@@ -45,6 +47,12 @@ export const setupStepSchema = z.discriminatedUnion("kind", [
     component: z.string().regex(SETUP_COMPONENT),
     /** What the component writes, for the reader and `check`. */
     writes: z.string().min(1).optional(),
+  }),
+  z.object({
+    ...common,
+    kind: z.literal("connect"),
+    /** The declared secrets this step asks for (tools spec §9). A test tool comes with slice 2. */
+    secrets: z.array(z.string().regex(PLUGIN_LOCAL_ID)).min(1).max(SECRETS_MAX),
   }),
 ]);
 export type HarnessSetupStep = z.output<typeof setupStepSchema>;

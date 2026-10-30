@@ -5,10 +5,21 @@ import { SetupStepForm } from "./SetupStepForm";
 
 /**
  * Settings' list of the harness's setup steps (setup-steps spec §5): each with its status. A form edits in place;
- * an interview or a component runs again on the setup screen (`onRun`). Showing it acknowledges the steps, so the
+ * an interview or a component runs again on the setup screen (`onRun`); a connect step opens Settings › Connections
+ * (`onConnections`, given when the harness declares keys). Showing it acknowledges the steps, so the
  * ones a harness update added count from now on (spec §8 Q3).
  */
-export function SetupStepsList({ client, steps, onRun }: { client: HarnessClient; steps: SetupStepView[]; onRun: (id: string) => void }) {
+export function SetupStepsList({
+  client,
+  steps,
+  onRun,
+  onConnections,
+}: {
+  client: HarnessClient;
+  steps: SetupStepView[];
+  onRun: (id: string) => void;
+  onConnections?: () => void;
+}) {
   const { t } = useTranslation();
   const [state, setState] = useState<SetupStepsState | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -69,6 +80,8 @@ export function SetupStepsList({ client, steps, onRun }: { client: HarnessClient
                     {t("setupSteps.edit")}
                   </button>
                 )
+              ) : s.kind === "connect" && onConnections ? (
+                <button onClick={onConnections}>{t("connections.open")}</button>
               ) : (
                 <button onClick={() => onRun(s.id)}>{t(st === "done" ? "setupSteps.redo" : "setupSteps.doNow")}</button>
               )}

@@ -469,6 +469,8 @@ export interface AppState {
   backup?: { status: SyncStatus | null; locations: SyncLocationView[] };
   /** The hatches the harness declares (hatches spec). Absent: none (D0). */
   hatches?: HatchesState;
+  /** The harness declares secrets (tools spec §9). Absent: none (D0). */
+  connections?: ConnectionsInfo;
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -1059,7 +1061,7 @@ export type SetupStepResult =
 /** A harness setup step as the window draws it (setup-steps spec §3): never an action's brief. */
 export interface SetupStepView {
   id: string;
-  kind: "form" | "interview" | "component";
+  kind: "form" | "interview" | "component" | "connect";
   label: string;
   /** One line under the step's heading. */
   description?: string;
@@ -1071,6 +1073,8 @@ export interface SetupStepView {
   cost?: ActionCost;
   /** component: the name the harness registers its component under. */
   component?: string;
+  /** connect: the secrets it asks for, in the step's order (ids, labels, help; never a value). */
+  secrets?: { id: string; label: string; help?: string }[];
 }
 
 /** What a harness's own setup step component gets (setup-steps spec §3 `component`). */
@@ -1561,6 +1565,8 @@ export interface HarnessClient {
     open(plugin: string, key: string): Promise<AttentionTarget>;
     onChange(listener: (view: AttentionView) => void): () => void;
   };
+  /** The harness's secrets, Settings › Connections (tools spec §9). Only with `state.connections` (D0). */
+  connections: ConnectionsClient;
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {
     get(): Promise<SetupStepsState>;
@@ -1838,6 +1844,30 @@ export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";
 /** Plugins (plugins spec §7): the harness takes them; `local`: the person may add their own from a folder. */
 export interface PluginsInfo {
   local: boolean;
+}
+
+/** A harness secret as Settings › Connections shows it (tools spec §9): never its value. */
+export interface ConnectionView {
+  id: string;
+  label: string;
+  help?: string;
+  set: boolean;
+}
+export interface ConnectionsView {
+  connections: ConnectionView[];
+}
+export type ConnectionResult = { ok: true } | { ok: false; message: string };
+/** The harness declares secrets (tools spec §9). Absent from AppState without (D0). */
+export interface ConnectionsInfo {
+  count: number;
+}
+/** Settings › Connections (tools spec §9). Only with `state.connections`: a main without secrets registers none (D0). */
+export interface ConnectionsClient {
+  get(): Promise<ConnectionsView | null>;
+  /** Stores a key (at most 8,192 characters once trimmed); its value never comes back. */
+  set(id: string, value: string): Promise<ConnectionResult>;
+  delete(id: string): Promise<ConnectionResult>;
+  onChange(listener: (view: ConnectionsView) => void): () => void;
 }
 export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
 export interface PluginRow {

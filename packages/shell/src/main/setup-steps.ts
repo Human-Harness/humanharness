@@ -1,4 +1,4 @@
-import { type ActionCost, type Collection, type HarnessSettings, type HarnessSetupStep, setupFormSpec, type z } from "@humanharness/harness-sdk";
+import { type ActionCost, type Collection, type HarnessSecret, type HarnessSettings, type HarnessSetupStep, setupFormSpec, type z } from "@humanharness/harness-sdk";
 import type { InputIssue, SettingsResult, SetupStepResult, SetupStepView, SetupStepsState } from "@humanharness/ui/client";
 import { APP_SCOPE, type DataContext, DataError, type DataRequest, type DataStore } from "@humanharness/workspace";
 import { DataUnavailable } from "./data-requests";
@@ -27,6 +27,8 @@ export interface SetupStepsDeps {
   openAction(): Promise<string | undefined>;
   /** The folder ran tasks before (`tasks.json` exists). */
   ranBefore(base: string): Promise<boolean>;
+  /** ConnectionsController.allSet: every id is stored. Absent without `secrets`: a connect step is then never done. */
+  secretsSet?(ids: readonly string[]): Promise<boolean>;
   quitting(): boolean;
   /** Tells the window. */
   changed(state: SetupStepsState): void;
@@ -97,7 +99,10 @@ export class SetupSteps {
     });
   }
 
-  /** An interview's or a component's end. An interview needs its task closed and a valid record (spec §3). */
+  /**
+   * An interview's, a component's or a connect step's end. An interview needs its task closed and a valid record
+   * (spec §3); a connect step needs every secret it lists set (tools spec §9).
+   */
   complete(id: unknown): Promise<SetupStepResult> {
     return this.serial(async () => {
       const step = this.find(id);
@@ -108,6 +113,7 @@ export class SetupSteps {
         if ((await this.d.openAction().catch(() => undefined)) === step.action) return { ok: false, reason: "open" };
         if (!(await this.hasRecord(step.writes))) return { ok: false, reason: "incomplete" };
       }
+      if (step.kind === "connect" && !(await this.secretsSet(step.secrets))) return { ok: false, reason: "incomplete" };
       return this.mark(base, step.id, "done");
     });
   }
@@ -208,6 +214,15 @@ export class SetupSteps {
     return state;
   }
 
+  private async secretsSet(ids: readonly string[]): Promise<boolean> {
+    // An empty list is never "all set", whatever the schema lets through.
+    if (!this.d.secretsSet || ids.length === 0) return false;
+    return this.d.secretsSet(ids).then(
+      (all) => all === true,
+      () => false,
+    );
+  }
+
   private async hasRecord(collection: string): Promise<boolean> {
     const store = await this.d.store().catch(() => null);
     if (!store) return false;
@@ -285,18 +300,24 @@ export async function recordSetup(ctl: SetupSteps | null, configured: () => Prom
   }
 }
 
-/** What the window draws of each setup step (spec §3), in order: a form's fields, an interview's action and cost, a component's name. */
+/**
+ * What the window draws of each setup step (spec §3), in order: a form's fields, an interview's action and cost, a
+ * connect step's secrets (ids, labels, help; never a value), a component's name.
+ */
 export function setupStepViews(h: {
   setup?: readonly HarnessSetupStep[];
   actions: Record<string, { cost: ActionCost }>;
   data: Record<string, Collection>;
   settings?: HarnessSettings;
+  secrets?: readonly HarnessSecret[];
 }): SetupStepView[] {
   return (h.setup ?? []).map((s): SetupStepView => {
     const base = { id: s.id, kind: s.kind, label: s.label, required: s.required, ...(s.description ? { description: s.description } : {}) };
     if (s.kind === "form") return { ...base, form: setupFormSpec(s, h) };
     // The manifest guarantees an interview's action exists.
     if (s.kind === "interview") return { ...base, action: s.action, cost: h.actions[s.action].cost };
+    // The manifest guarantees each listed id is declared; the step's order is kept.
+    if (s.kind === "connect") return { ...base, secrets: s.secrets.flatMap((id) => (h.secrets ?? []).filter((x) => x.id === id).map((x) => ({ id: x.id, label: x.label, ...(x.help ? { help: x.help } : {}) }))) };
     return { ...base, component: s.component };
   });
 }

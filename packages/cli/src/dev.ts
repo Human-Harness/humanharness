@@ -35,7 +35,8 @@ export async function devCommand(o: DevOptions): Promise<number> {
   if (o.keep && !o.mock) throw new UsageError("--keep only works with --mock");
   if (o.mock && o.engine && o.engine !== "claude") throw new UsageError("Mock mode replays as Claude; drop --engine or use --engine claude.");
   const root = path.resolve(o.harnessDir);
-  const checked = await checkHarness(root);
+  // P12 for tools, before the check's build imports them (none without tools); the build below adds no second one.
+  const checked = await checkHarness(root, { note: (line) => o.out.write(`${line}\n`) });
   const harness = checked.harness;
   // A broken recording only stops the app that replays it: without --mock it is a warning.
   const findings = o.mock ? checked.findings : checked.findings.map((f) => (f.rule.startsWith("mock-") ? { ...f, severity: "warning" as const } : f));

@@ -122,10 +122,10 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     expect(json.err).toBe("");
   });
 
-  it("D0: tools without fixtures give the same output as before, and no note", { timeout: 60_000 }, async () => {
+  it("tools without fixtures: the findings as before, after the P12 note (the build imports the tools)", { timeout: 60_000 }, async () => {
     const dir = harness();
     const { code, out, err } = await check(dir);
-    expect(out).toBe(ECHO_BEFORE);
+    expect(out).toBe(`${TOOL_P12_NOTE}\n${ECHO_BEFORE}`);
     expect(err).toBe("");
     expect(code).toBe(1);
     const { findings, notes } = await fixtureFindings(dir);
@@ -196,7 +196,7 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     expect(notes).toEqual([]);
   });
 
-  it("check prints the P12 note for tools only when it runs a fixture", { timeout: 60_000 }, async () => {
+  it("check prints the P12 note for tools once, before the build, whether or not a fixture runs", { timeout: 60_000 }, async () => {
     const dir = harness({ "echo/fixtures/ok.json": { args: { a: 1 }, expect: { result: { a: 1 } } } });
     const plain = await check(dir);
     expect(plain.out.split(TOOL_P12_NOTE)).toHaveLength(2);
@@ -206,10 +206,10 @@ describe("check runs tool fixtures (tools spec §11, Decision 4)", () => {
     const json = await check(dir, ["--json"]);
     expect(json.err).toBe(`${TOOL_P12_NOTE}\n`);
     expect(JSON.parse(json.out).map((f: { rule: string }) => f.rule)).toEqual(["harness-md-missing", "pillar-decisions"]);
-    // Only invalid fixture files: nothing runs, no note.
+    // Only invalid fixture files: no fixture runs, but the build still imports the tool, so the note is there once.
     const invalid = harness({ "echo/fixtures/shape.json": { args: { a: 1 } } });
     const none = await check(invalid);
-    expect(none.out).not.toContain(TOOL_P12_NOTE);
+    expect(none.out.split(TOOL_P12_NOTE)).toHaveLength(2);
     expect(none.err).toBe("");
   });
 

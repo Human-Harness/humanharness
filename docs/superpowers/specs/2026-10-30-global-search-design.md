@@ -1,6 +1,6 @@
 # Global search (⌘K) — design
 
-Status: draft, decisions D1–D8 taken with Marco on 2026-10-30 (brainstorming, one question at a time). Waiting for the section-by-section review of the written spec. Not in the roadmap yet.
+Status: approved by Marco, 2026-10-30. Decisions D1–D8 were taken with him in a brainstorming session, one question at a time, and the written spec then passed a section-by-section review. Not in the roadmap yet. It starts after `feat/protocol` merges.
 
 One place to find anything in a harness: a task, a note, a file, a setting or an action. The person presses ⌘K (Ctrl+K off macOS), types, and opens the result with Enter, or turns the query into a question for the AI with ⌘Enter. Search is deterministic: no AI, no tokens, nothing leaves the machine.
 

@@ -4,6 +4,8 @@
 
 **Goal:** Give the app the approved "soft cards" look: new tokens and font, one shell (top bar + icon rail + side columns), restyled screens, Home's "Pick up where you left", the Start view's Cards / List switch, the Inbox board, Settings as a page, drawers, and the "what happens next" copy rule.
 
+**Status:** approved by Marco on 2026-10-30, every section as written. Not started: waits for `feat/protocol` to merge (see the gate below).
+
 **Spec:** `docs/superpowers/specs/2026-10-30-ui-refresh-design.md` (approved 2026-10-30, Q1–Q6 defaults). Mockups: https://claude.ai/artifact/6WpeDVxxusFqaU6rJRH2RS.
 
 **Architecture:** Tokens stay CSS custom properties in `packages/ui/src/styles.css` (`--hh-*`), renamed in one pass. The shell is two new pieces in `chrome.tsx` (`Rail`, a slotted `TopBar`) that `HarnessApp` places around every in-harness screen; screens stop putting their own controls in the top bar. New screens (`InboxBoard`, `SettingsPage`) reuse the existing hooks (`useTasks`, `useJobs`, the tab components), so no IPC or `client` change.

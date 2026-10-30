@@ -219,7 +219,7 @@ The move never happens from the last phase or a `close` phase. A stale document 
 
 ## For harness views
 
-`HarnessClient.documents` (`packages/ui/src/client.ts`):
+`HarnessClient.documents` (`packages/protocol/src/client.ts`):
 
 - **Reading:** `view(path)` (the record, the summary and the blob of the version read), `review(path)` (a `ReviewSummary` or null), `summaries(paths)` (at most 200 paths).
 - **The person's actions:** `answer`, `comment`, `editDraft`, `reopen`, `send`, `approve(path, blob, { reason?, discard? })` and `approvedText`.

@@ -174,7 +174,7 @@ This is a decision (Task 6 review, per D3 "one host for every tool"), and a devi
 
 ## `client.tools`
 
-`ToolsClient` (`packages/ui/src/client.ts`; preload; `registerToolsIpc` in `tools/tools-ipc.ts` through `index.ts`'s `handle()`, so only the app's page):
+`ToolsClient` (`packages/protocol/src/client.ts`; preload; `registerToolsIpc` in `tools/tools-ipc.ts` through `index.ts`'s `handle()`, so only the app's page):
 
 | Channel | Sends | Answers |
 |---|---|---|

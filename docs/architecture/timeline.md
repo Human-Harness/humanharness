@@ -89,7 +89,7 @@ Main (`FileTimelineService`) keeps up to 32 timelines per history, each keyed on
 
 ## For harness views
 
-`HarnessClient.files` (`packages/ui/src/client.ts`); every call answers with data, refusals are `FileRefusal`: `not-ready`, `outside`, `untracked`, `bad-input`, `not-found`, `deleted`, `busy`, `unsafe`, `failed`.
+`HarnessClient.files` (`packages/protocol/src/client.ts`); every call answers with data, refusals are `FileRefusal`: `not-ready`, `outside`, `untracked`, `bad-input`, `not-found`, `deleted`, `busy`, `unsafe`, `failed`.
 
 - `timeline(path)` → `{ ok: true, entries } | { ok: false, reason }` (plan Conflicts 5).
 - `diff(path, from, to)` → `FileDiffView | { ok: false, reason }`; `from` null is "nothing before", `to` a commit or `"current"`. It takes any two commits that are the `from` or `to` of an entry on that path's timeline.
@@ -142,5 +142,5 @@ What the person sees that is new (the reader's "File history" button, the Histor
 
 - `packages/workspace/src/subjects.ts` (`ANSWER_PREFIX`, `ANSWER_SEPARATOR`, `APPROVED_PREFIX`, `FILE_RESTORE_PREFIX`), `file-timeline.ts` (`namedPath`, `classifyCommit`, `groupTimeline`), `file-index.ts`, `history.ts` (`tracks`, `onCommit`, `fileCommits`, `fileTimeline`, `readBytesAt`, `restoreFile`), `file-diff.ts`, `safe-read.ts` (`readPrefix`).
 - `packages/shell/src/main/file-timeline.ts` (`FileTimelineService`), `file-ipc.ts`, `go-back.ts` (`hh:fileRestore` and its native dialog), `diff-runner.ts`, `diff-worker.ts`, `index.ts` (wiring, `hh:fileCommits`), `reviews.ts`; `packages/shell/src/preload/file-restore.ts`, `file-commits.ts`, `index.ts`.
-- `packages/ui/src/client.ts` (`HarnessClient.files`), `FileTimeline.tsx`, `FileDiff.tsx`, `EntryDiff.tsx`, `FileTimelinePanel.tsx`, `ApprovedDiff.tsx`, `DocumentReader.tsx`, `HistoryPanel.tsx`, `ChatView.tsx`, `styles.css`; `packages/i18n/src/locales/en.json` (`timeline.*`).
+- `packages/protocol/src/client.ts` (`HarnessClient.files`), `FileTimeline.tsx`, `FileDiff.tsx`, `EntryDiff.tsx`, `FileTimelinePanel.tsx`, `ApprovedDiff.tsx`, `DocumentReader.tsx`, `HistoryPanel.tsx`, `ChatView.tsx`, `styles.css`; `packages/i18n/src/locales/en.json` (`timeline.*`).
 - Tests: `packages/workspace/test/file-timeline.test.ts`, `file-index.test.ts`, `history-index.test.ts`, `history-timeline.test.ts`, `history-restore-file.test.ts`, `file-diff.test.ts`, `file-diff-markdown.test.ts`, `file-diff-parse-error.test.ts`; `packages/shell/test/file-timeline.test.ts`, `file-ipc.test.ts`, `file-restore.test.ts`, `go-back.test.ts`, `file-commits.test.ts`; the `packages/ui/test` timeline, diff and reader tests; `packages/e2e/tests/review.spec.ts`.

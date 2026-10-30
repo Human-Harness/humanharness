@@ -8,6 +8,7 @@ import { type TaskDeps, TaskManager } from "../src/main/task-manager";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
 import { type CurrentTask, QUESTION_MAX, type TasksFile, emptyTasks } from "../src/main/task-store";
 import { TurnController, type TurnOptions } from "../src/main/turn-controller";
+import type { UsageMeta } from "../src/main/usage-log";
 
 const label = (en: string) => en;
 const note: SavedNote = {
@@ -1308,5 +1309,107 @@ describe("TaskManager: the scope's engine preset (hatches spec §5.2, Decision 2
     expect(t.turns[0]!.options).not.toHaveProperty("engine");
     expect(t.state().current).toMatchObject({ engineHash: HASH, engineNotice: "unapproved" });
     expect(t.views.at(-1)?.current).toMatchObject({ engineNotice: "unapproved" });
+  });
+});
+
+describe("TaskManager policy ids (replaceable-parts §8: fixed per task)", () => {
+  const deep: ModelProfile = { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 };
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000, fallbackFrom: "opus" };
+  const unavailable: Event = { type: "done", ok: false, error: { code: "model-unavailable" } };
+
+  /** profileFor / fallbackFor that record their arguments. */
+  function recorded(policies?: () => Promise<{ model?: string; context?: string }>) {
+    const picks: unknown[][] = [];
+    const falls: unknown[][] = [];
+    const deps: Partial<TaskDeps> = {
+      profileFor: async (...args: unknown[]) => {
+        picks.push(args);
+        return deep;
+      },
+      fallbackFor: async (...args: unknown[]) => {
+        falls.push(args.map((a) => (Array.isArray(a) ? [...a] : a)));
+        return (args[0] as ModelProfile).model === "opus" ? standard : null;
+      },
+      ...(policies ? { policies } : {}),
+    } as Partial<TaskDeps>;
+    return { picks, falls, deps };
+  }
+
+  it("a new task keeps the ids it started with and passes them on every pick and fallback", async () => {
+    let model = "eco";
+    const r = recorded(async () => ({ model }));
+    const t = setup({ deps: r.deps, script: [[unavailable]] });
+    await t.manager.start("manifest");
+    expect(r.picks).toEqual([["manifest", undefined, undefined, { model: "eco" }]]);
+    expect(r.falls).toEqual([
+      [deep, [], { model: "eco" }],
+      [standard, ["opus"], { model: "eco" }],
+    ]);
+    expect(t.state().current).toMatchObject({ profile: standard, policies: { model: "eco" } });
+    expect(t.turns.map((x) => x.options.policies)).toEqual([{ model: "eco" }, { model: "eco" }]);
+    // config.json changes mid-task: the open task keeps its ids.
+    model = "other";
+    await t.manager.ask("More?");
+    expect(t.turns[2].options.policies).toEqual({ model: "eco" });
+    expect(t.state().current?.policies).toEqual({ model: "eco" });
+  });
+
+  it("a resumed task reuses its stored ids", async () => {
+    const asked: number[] = [];
+    const state: TasksFile = { ...emptyTasks(), current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 1, policies: { model: "eco" } } };
+    const t = setup({ state, deps: { policies: async () => (asked.push(1), { model: "other" }) } });
+    await t.manager.ask("More?");
+    expect(t.turns[0].options.policies).toEqual({ model: "eco" });
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("Again?");
+    expect(t.turns[1].options.policies).toEqual({ model: "eco" });
+    expect(t.state().current?.policies).toEqual({ model: "eco" });
+    expect(asked).toEqual([]);
+  });
+
+  it("without ids (no deps.policies, {} or only defaults) every call keeps today's arguments and nothing new is saved", async () => {
+    for (const policies of [undefined, async () => ({}), async () => ({ model: "default", context: "default" })]) {
+      const r = recorded(policies);
+      const t = setup({ deps: r.deps, script: [[unavailable]] });
+      await t.manager.start("manifest");
+      expect(r.picks).toEqual([["manifest"]]);
+      expect(r.falls).toEqual([
+        [deep, []],
+        [standard, ["opus"]],
+      ]);
+      expect(t.state().current).not.toHaveProperty("policies");
+      expect(t.turns.every((x) => !("policies" in x.options))).toBe(true);
+    }
+  });
+
+  it("the turn's usage meta carries the task's ids; a task without them carries none", async () => {
+    for (const [policies, expected] of [
+      [{ model: "eco", context: "lean" }, { modelPolicy: "eco", contextPolicy: "lean" }],
+      [{}, {}],
+    ] as const) {
+      const metas: UsageMeta[] = [];
+      const runtime = {
+        send: (_message: string, emit: (e: Event) => void) => ({ cancel: () => {}, done: Promise.resolve().then(() => emit(ok)) }),
+      } as unknown as HarnessRuntime;
+      const controller = new TurnController({
+        ensureRuntime: async () => runtime,
+        chatLog: async () => ({ append: async () => {} }),
+        stateBlocks: () => new Set(),
+        emit: () => {},
+        recordUsage: async (_entry, meta) => void metas.push(meta),
+      });
+      const t = setup({ profile: deep, turns: controller, window: [], deps: { policies: async () => policies } });
+      await t.manager.start("manifest");
+      await t.manager.checkpointBeforeMove();
+      expect(metas.map((m) => m.phase)).toEqual(["run", "checkpoint"]);
+      for (const m of metas) {
+        expect(m.modelPolicy).toBe((expected as UsageMeta).modelPolicy);
+        expect(m.contextPolicy).toBe((expected as UsageMeta).contextPolicy);
+        if (!("modelPolicy" in expected)) {
+          expect(m).not.toHaveProperty("modelPolicy");
+          expect(m).not.toHaveProperty("contextPolicy");
+        }
+      }
+    }
   });
 });

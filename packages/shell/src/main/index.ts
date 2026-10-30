@@ -1487,7 +1487,10 @@ const taskDeps: TaskDeps = {
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
-  profileFor: async (action, floor, tier) => {
+  // The ids a new task starts with (replaceable-parts §8): config.json's, already cleaned by ConfigStore.load().
+  policies: async () => (await config.load()).policies ?? {},
+  // `policies`: the task's own ids, fixed when it started; none passed runs the defaults (never config.json's now).
+  profileFor: async (action, floor, tier, policies) => {
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
@@ -1495,11 +1498,11 @@ const taskDeps: TaskDeps = {
     // the action's, or the free questions'.
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
-    return pickProfile(c.policies?.model, { engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
+    return pickProfile(policies?.model, { engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
   },
-  fallbackFor: async (profile, tried) => {
+  fallbackFor: async (profile, tried, policies) => {
     const c = await config.load();
-    const next = modelPolicy(c.policies?.model).fallback(profile, cleanModels(c.models), tried);
+    const next = modelPolicy(policies?.model).fallback(profile, cleanModels(c.models), tried);
     return next ? supportedEffort(next) : null;
   },
   fitProfile: (profile) => supportedEffort(profile),
@@ -1513,6 +1516,8 @@ const taskDeps: TaskDeps = {
         ...(task.mode ? { mode: task.mode } : {}),
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
         ...(task.profile ? profileMeta(task.profile) : {}),
+        ...(task.policies?.model ? { modelPolicy: task.policies.model } : {}),
+        ...(task.policies?.context ? { contextPolicy: task.policies.context } : {}),
       }),
     );
   },
@@ -1909,7 +1914,8 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
     },
     gate,
     base: currentBase,
-    taskDeps,
+    // A job is not a task (replaceable-parts §8 fixes ids per task): its picks read config.json's ids, as material does.
+    taskDeps: { ...taskDeps, profileFor: async (a, f, t) => taskDeps.profileFor!(a, f, t, (await config.load()).policies) },
     scoped,
     scopes: async () => {
       const c = await validConfig();

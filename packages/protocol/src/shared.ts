@@ -1,5 +1,6 @@
+// Pure helpers and constants both the core and the window use (replaceable parts §5): no I/O.
 import type { TimelineAuthor } from "@humanharness/workspace";
-import type { ActionStatus, AnswerPart, AppConfig, ChatEntry, ConfiguredApp, HistoryTaskView, ReaderPrefs, TextSize, ToolsInfo } from "./views";
+import type { ActionStatus, AnswerPart, AppConfig, ChatEntry, ConfiguredApp, HistoryTaskView, ReaderPrefs, TextSize } from "./views";
 
 /** Settings › General › Text size: the whole window is zoomed by this factor (chrome, chat and the harness's blocks alike). */
 export const TEXT_SIZES = { normal: 1, large: 1.15, larger: 1.3, largest: 1.5 } as const;

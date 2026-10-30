@@ -49,7 +49,9 @@ export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
 export type Appearance = "system" | "light" | "dark";
 
+/** A text size: a key of TEXT_SIZES (./shared). */
 export type TextSize = keyof typeof TEXT_SIZES;
+
 /** The reader's look (document-reader spec §5.2): global app preferences. */
 export interface ReaderPrefs {
   font?: "sans" | "serif";

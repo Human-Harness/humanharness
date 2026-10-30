@@ -2,10 +2,12 @@ import { type SpawnOptions, spawn } from "node:child_process";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import { availableEngines } from "@humanharness/engines";
+import { hasTools } from "@humanharness/harness-sdk";
 import { checkHarness, formatFindings } from "./check";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { actionMatches, mockEnv } from "./mock-session";
 import { shellDir } from "./paths";
+import { buildTools } from "./tool-build";
 
 /** The part of child_process.spawn `dev` uses (tests replace it). */
 export type DevSpawn = (command: string, args: string[], options: SpawnOptions) => { on(event: "exit", listener: (code: number | null) => void): unknown; on(event: "error", listener: (err: Error) => void): unknown };
@@ -47,6 +49,16 @@ export async function devCommand(o: DevOptions): Promise<number> {
   }
   if (o.mock && !availableEngines(harness.engines, "development").some((e) => e.id === "claude")) {
     throw new UsageError(`Mock mode replays as Claude, which ${harness.id} doesn't offer.`);
+  }
+  // The app reads dist/tools.json at start (tools Decision 2): build first. Without tools nothing is written (D0).
+  if (hasTools(harness)) {
+    try {
+      await buildTools(root, { write: true, harness });
+    } catch (err) {
+      if (!(err instanceof CliError)) throw err;
+      o.out.write(`${err.message}\n`);
+      return 1;
+    }
   }
   const shell = shellDir();
   const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: root };

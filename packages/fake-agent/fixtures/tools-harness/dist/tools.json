@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "tools": {
+    "check-key": {
+      "description": "Checks that the demo key works.",
+      "agent": "none",
+      "uses": {
+        "secrets": [
+          "demo"
+        ],
+        "hosts": [
+          "api.example.invalid"
+        ]
+      },
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/check-key.js"
+    },
+    "count-notes": {
+      "description": "Counts the person's markdown notes in each folder of their work folder.",
+      "agent": "call",
+      "uses": {
+        "files": "read"
+      },
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "folder": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "folder",
+            "notes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "timeout": 30,
+      "file": "tools/count-notes.js"
+    },
+    "hidden": {
+      "description": "A tool only the app's own screens call.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/hidden.js"
+    },
+    "peek-folder": {
+      "description": "Reads the person's notes.md without having declared any access to files.",
+      "agent": "call",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/peek-folder.js"
+    },
+    "probe": {
+      "description": "Reports whether Node's require and process exist where the tools run.",
+      "agent": "call",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "require": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "require",
+          "process"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/probe.js"
+    }
+  }
+}

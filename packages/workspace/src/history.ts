@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { PLUGIN_ID } from "@humanharness/harness-sdk";
+import { PLUGIN_ID, TOOL_ID } from "@humanharness/harness-sdk";
 import { CONTEXT_PREFIX, DATA_PREFIX, ENGINE_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
 import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
 import { type TimelineCommit, type TimelineEntry, groupTimeline, namedPath } from "./file-timeline";
@@ -83,6 +83,8 @@ export interface HistoryEntry {
   job?: string;
   /** The other running tasks this commit's paths are shared with (its `Shared:` trailers), only on a shared commit. */
   shared?: string[];
+  /** The harness tool that wrote this commit's data (its `Tool:` trailer), only for a tool's write. */
+  tool?: string;
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
@@ -99,7 +101,18 @@ export interface HistoryTrailer {
   job?: string;
   /** Other running tasks that may also have changed this commit's paths (spec §5.2); only on a shared commit. */
   shared?: string[];
+  /** The harness tool whose data write this is (tools spec §8.3); only for a tool's write. */
+  tool?: string;
 }
+
+/** A harness tool's write outside any task (tools spec §8.3): its commit carries the `Tool:` line alone. */
+export interface ToolOnlyTrailer {
+  task: null;
+  tool: string;
+}
+
+/** What a commit may be tagged with: a task's trailer, or a tool's alone. */
+export type CommitTrailer = HistoryTrailer | ToolOnlyTrailer;
 
 /** The tracked paths that differ from HEAD, each with its working blob id (null: deleted). */
 export type DirtyState = ReadonlyMap<string, string | null>;
@@ -212,10 +225,15 @@ export const isTrailerId = (id: string): boolean => TRAILER_ID.test(id);
 /** At most this many `Shared:` lines on one commit, written or read. */
 const SHARED_MAX = 8;
 
-/** `message` folded to one line, plus `Task:` and `Action:` trailers when `trailer` holds valid ids. */
-export function withTrailer(message: string, trailer?: HistoryTrailer): string {
+/**
+ * `message` folded to one line, plus `Task:` and `Action:` trailers when `trailer` holds valid ids, and a tool's
+ * `Tool:` line last (tools spec §8.3; alone for a tool's write outside any task).
+ */
+export function withTrailer(message: string, trailer?: CommitTrailer): string {
   const subject = message.replace(/\s*\n\s*/g, " ").trim();
-  if (!trailer || !TRAILER_ID.test(trailer.task)) return subject;
+  if (!trailer) return subject;
+  const tool = trailer.tool !== undefined && TOOL_ID.test(trailer.tool) ? `Tool: ${trailer.tool}` : null;
+  if (trailer.task === null || !TRAILER_ID.test(trailer.task)) return tool ? `${subject}\n\n${tool}` : subject;
   const lines = [`Task: ${trailer.task}`];
   if (trailer.action !== undefined && TRAILER_ID.test(trailer.action)) lines.push(`Action: ${trailer.action}`);
   // Checked on its own: `_app` is a scope folder, but not a valid TRAILER_ID.
@@ -225,15 +243,16 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (trailer.job !== undefined && TRAILER_ID.test(trailer.job)) lines.push(`Job: ${trailer.job}`);
   const shared = new Set((trailer.shared ?? []).filter((t) => t !== trailer.task && TRAILER_ID.test(t)));
   for (const other of [...shared].slice(0, SHARED_MAX)) lines.push(`Shared: ${other}`);
+  if (tool) lines.push(tool);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin|Job|Shared): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin|Job|Shared|Tool): \S+$/;
 
 /**
- * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase`, `plugin`, `job` and
- * `shared` only when present). Only a last paragraph made entirely of trailer lines counts.
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase`, `plugin`, `job`,
+ * `shared` and `tool` only when present). Only a last paragraph made entirely of trailer lines counts.
  */
 export function parseCommitMessage(raw: string): {
   subject: string;
@@ -244,6 +263,7 @@ export function parseCommitMessage(raw: string): {
   plugin?: string;
   job?: string;
   shared?: string[];
+  tool?: string;
 } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
@@ -258,6 +278,7 @@ export function parseCommitMessage(raw: string): {
   const plugin = /^Plugin: (.+)$/m.exec(trailers)?.[1];
   const job = value("Job");
   const shared = [...trailers.matchAll(/^Shared: (.+)$/gm)].map((m) => m[1]).filter((t) => TRAILER_ID.test(t)).slice(0, SHARED_MAX);
+  const tool = /^Tool: (.+)$/m.exec(trailers)?.[1];
   return {
     subject: text.split("\n")[0],
     task: value("Task"),
@@ -267,6 +288,7 @@ export function parseCommitMessage(raw: string): {
     ...(plugin !== undefined && PLUGIN_ID.test(plugin) ? { plugin } : {}),
     ...(job ? { job } : {}),
     ...(shared.length > 0 ? { shared } : {}),
+    ...(tool !== undefined && TOOL_ID.test(tool) ? { tool } : {}),
   };
 }
 
@@ -403,7 +425,7 @@ export class History {
   }
 
   /** Commits the current state; `trailer` names the task it belongs to. Returns the new sha, or null when nothing changed. */
-  save(message: string, trailer?: HistoryTrailer): Promise<string | null> {
+  save(message: string, trailer?: CommitTrailer): Promise<string | null> {
     return this.serialize(() => this.saveNow(withTrailer(message, trailer)));
   }
 
@@ -660,7 +682,7 @@ export class History {
    * Commits only `paths` (tracked ones) as they are in the folder now; every other path keeps HEAD's content (parallel
    * spec §5.2 step 4: a turn's partial commit). Null when none of them changed.
    */
-  commitPaths(paths: readonly string[], message: string, trailer?: HistoryTrailer): Promise<string | null> {
+  commitPaths(paths: readonly string[], message: string, trailer?: CommitTrailer): Promise<string | null> {
     return this.serialize(() => this.saveNow(withTrailer(message, trailer), new Set(paths)));
   }
 
@@ -854,7 +876,7 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action, scope, phase, plugin, job, shared } = parseCommitMessage(e.commit.message);
+      const { subject, task, action, scope, phase, plugin, job, shared, tool } = parseCommitMessage(e.commit.message);
       return {
         sha: e.oid,
         message: subject,
@@ -866,6 +888,7 @@ export class History {
         ...(plugin ? { plugin } : {}),
         ...(job ? { job } : {}),
         ...(shared ? { shared } : {}),
+        ...(tool ? { tool } : {}),
       };
     });
   }
@@ -1018,7 +1041,7 @@ export class History {
     const commits: TimelineCommit[] = [];
     for (const id of ids) {
       const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: id, cache });
-      const { subject, task, action } = parseCommitMessage(commit.message);
+      const { subject, task, action, tool } = parseCommitMessage(commit.message);
       commits.push({
         id,
         parent: commit.parent[0] ?? null,
@@ -1028,6 +1051,7 @@ export class History {
         at: new Date(commit.author.timestamp * 1000).toISOString(),
         // The tree it already read: no second read of the commit.
         blob: (await this.entryAt(commit.tree, file, cache))?.oid ?? null,
+        ...(tool ? { tool } : {}),
       });
     }
     return groupTimeline(commits, file, actionLabel);

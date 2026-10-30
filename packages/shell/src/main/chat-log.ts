@@ -3,7 +3,7 @@ import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, isTaskId, taskChatFile } from "@humanharness/workspace";
 import type { BlockAnswer } from "@humanharness/harness-sdk";
-import type { Event, LimitWindow } from "@humanharness/runtime";
+import type { Event, LimitWindow, ToolCallView } from "@humanharness/runtime";
 import { type AnswerPart, type ChatEntry, type DocumentCard, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
 
 export class ChatLog {
@@ -185,6 +185,8 @@ export class TurnRecorder {
   /** The cards for the `.md` files the turn added or changed (none: the entry has no field). */
   private documents: DocumentCard[] | undefined;
   private limits: LimitWindow[] | undefined;
+  /** The harness tool calls during the turn (tools spec §8.2; none: the entry has no field). */
+  private tools: ToolCallView[] | undefined;
   /** The turn's first limits snapshot (the reply keeps the last): usage estimates measure from it. */
   firstLimits: LimitWindow[] | undefined;
   private state: Record<string, unknown> = {};
@@ -218,6 +220,7 @@ export class TurnRecorder {
         ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}),
       };
     } else if (e.type === "documents") this.documents = e.documents;
+    else if (e.type === "tool-call") (this.tools ??= []).push(e.call);
   }
 
   finish(done: Extract<Event, { type: "done" }>): ChatEntry {
@@ -233,6 +236,7 @@ export class TurnRecorder {
       ...(this.usage ? { usage: this.usage } : {}),
       ...(this.limits ? { limits: this.limits } : {}),
       ...(Object.keys(this.state).length ? { state: this.state } : {}),
+      ...(this.tools ? { tools: this.tools } : {}),
       ...(done.ok ? {} : { error: done.error }),
     };
   }

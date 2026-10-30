@@ -22,7 +22,8 @@ const workspacePackages = [
 
 export default defineConfig({
   main: {
-    define: { __HARNESS_DIR__: JSON.stringify(harnessDir) },
+    // __SHELL_RESOURCES__: the plugin and tool hosts' files and the Dock icon, wherever HH_OUT_DIR puts main.
+    define: { __HARNESS_DIR__: JSON.stringify(harnessDir), __SHELL_RESOURCES__: JSON.stringify(path.join(__dirname, "resources")) },
     // The build fails on a bare __dirname/__filename: its ESM shim once landed inside a bundled comment.
     plugins: [noBareDirname()],
     build: {
@@ -36,6 +37,8 @@ export default defineConfig({
           "ui-server": path.join(__dirname, "../blocks/src/ui-server-bin.ts"),
           "data-server": path.join(__dirname, "../blocks/src/data-server-bin.ts"),
           "translate-server": path.join(__dirname, "../blocks/src/translate-server-bin.ts"),
+          // The core `tools` MCP server (tools spec §5): in slots only when the harness has an agent: "call" tool.
+          "tools-server": path.join(__dirname, "../blocks/src/tools-server-bin.ts"),
           "material-server": path.join(__dirname, "../material/src/server-bin.ts"),
           // The converter's worker thread (material convert/isolate.ts): the app passes this built file as its entry.
           "material-worker": path.join(__dirname, "../material/src/convert/worker.ts"),

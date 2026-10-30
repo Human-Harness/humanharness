@@ -45,6 +45,7 @@ import {
   hasPhases,
   hasProfiles,
   hasSecrets,
+  hasTools,
   inputBlocks,
   inputSpecs,
   interviewCollections,
@@ -137,7 +138,7 @@ import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, cleanJobs, historyDir } from "./config";
-import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
+import { agentDataRequest, dataWriteQueue, harnessUiDataRequests, personDataRequests, saveAnswerRecords, toolDataRequests } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, engineSearchPath, loginShellPath, resolveBinary } from "./engine-command";
@@ -161,6 +162,7 @@ import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChang
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
+import { shellResourcesDir } from "./shell-resources";
 import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
 import {
   type UsageRecord,
@@ -189,9 +191,14 @@ import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
-import { ConnectionsController } from "./secrets/connections";
+import { ConnectionsController, connectTests } from "./secrets/connections";
 import { registerConnectionsIpc } from "./secrets/connections-ipc";
 import { testCrypto } from "./secrets/test-crypto";
+import { isPublicHost } from "./material-fetch";
+import { ToolHost } from "./tools/tool-host";
+import { TOOL_SCHEME } from "./tools/tool-protocol";
+import { type ToolsHost, createToolsHost, slotTaskOf } from "./tools/tools-host";
+import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
@@ -262,6 +269,7 @@ import {
 } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
+declare const __SHELL_RESOURCES__: string;
 
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
@@ -273,6 +281,8 @@ const requireFromHere = createRequire(import.meta.url);
 // The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
 // `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
 const here = import.meta.dirname;
+/** The plugin and tool hosts' files and the Dock icon: the build's packages/shell/resources, or the packaged app's. */
+const shellResources = shellResourcesDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __SHELL_RESOURCES__ });
 const commandDeps = createCommandDeps(process.execPath);
 
 let harness: LoadedHarness;
@@ -328,6 +338,11 @@ let sidekickCtl: SidekickController | null = null;
 let pluginsCtl: PluginsController | null = null;
 /** The plugins' backend windows (Electron), with pluginsCtl. */
 let pluginHost: PluginBackendHost | null = null;
+/**
+ * The harness's tools (tools spec §4, §5); null for a harness without `tools` (D0): no tools scheme, no host
+ * window, no IPC handler, no `tools` server, no AppState.tools, no trace.
+ */
+let toolsHost: ToolsHost | null = null;
 let secretStore_: SecretStore | null | undefined;
 /**
  * The one key store (tools spec §9, Decision 8), in the app's own per-harness folder (outside every base): for the
@@ -343,10 +358,23 @@ const secretCrypto = () => (hooks.fakeSecrets ? testCrypto() : safeStorageCrypto
 let connections_: ConnectionsController | undefined;
 /** Settings › Connections (tools spec §9): only when the harness declares secrets, so the store exists. Built once. */
 function connections(): ConnectionsController {
+  const steps = connectTests(harness.setup);
   connections_ ??= new ConnectionsController({
     secrets: harness.secrets!,
     store: secretStore()!,
     changed: (view) => sendToWindow("hh:connectionsChange", view),
+    // Test connection (slice 2): only when a connect step names a test, whose tool the manifest declares (D0).
+    ...(steps.length > 0
+      ? {
+          test: {
+            steps,
+            file: path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "connections.json"),
+            // Built after this controller: looked up at each test. As the UI, with {}, in no scope.
+            run: (tool: string) =>
+              toolsHost ? toolsHost.registry.call({ tool, args: {}, caller: "ui", scope: null }) : Promise.resolve({ ok: false as const, error: "Tools are off" }),
+          },
+        }
+      : {}),
   });
   return connections_;
 }
@@ -438,6 +466,7 @@ async function refreshJobBadge(): Promise<void> {
 /** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
 let pluginStateRoot: string | null = null;
 const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
+const toolsLog = (message: string, err?: unknown) => console.error(`[tools] ${message}`, err ?? "");
 /** The base changed (profile switch, folder change or move, set up): the old base's plugins stop, the new base's start. */
 const rebasePlugins = (): Promise<void> => pluginsCtl?.rebase().catch((err: unknown) => pluginLog("Could not move the plugins to the new folder", err)) ?? Promise.resolve();
 /** The harness's setup steps (setup-steps spec); null without any (D0): no `.harness/setup.json` is ever read or written. */
@@ -722,6 +751,8 @@ async function appState(): Promise<AppState> {
     ...(hatches ? { hatches } : {}),
     // Only a harness that declares secrets sends this: Settings › Connections (tools spec §9, D0).
     ...(hasSecrets(harness) ? { connections: { count: harness.secrets!.length } } : {}),
+    // Only a harness that declares tools sends this: their ids and why they are off, if they are (tools spec §5, D0).
+    ...(toolsHost ? { tools: toolsHost.info() } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -980,6 +1011,8 @@ async function runtimeOptions(
 ) {
   const settings = settingsCtl;
   const plugins = pluginsCtl;
+  // The core `tools` server for task and job slots (tools spec §5): only with an `agent: "call"` tool (D0).
+  const tools = await toolsHost?.workspaceOptions();
   return {
     harness,
     engine,
@@ -1012,6 +1045,8 @@ async function runtimeOptions(
       : {}),
     // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
     ...linkedRuntimeOptions(),
+    // The asking slot names the caller (P3); createRuntime's only slot is "main".
+    ...(tools ? { tools } : {}),
     onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
   };
@@ -2279,8 +2314,11 @@ const switches = new ProfileSwitch({
 /** Why a new turn can't start now (engine change, folder move, engine update, a restore, a profile switch), or null. */
 const turnBlocked = hold.turnBlocked;
 
+/** The person's data writes and the tools' (tools spec §8.3) in one order: no commit holds the other's write. */
+const dataWrites = dataWriteQueue();
 /** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
 const personData = personDataRequests({
+  serial: dataWrites,
   store: async () => {
     const c = await validConfig();
     return c ? dataStoreFor(baseOf(c)) : null;
@@ -3299,21 +3337,22 @@ if (loaded) {
   });
   // Board and single mode (parallel spec §9.2): one Attention store per base for the plugins, the waiting tasks and
   // the jobs, with the plugins' tag key (outside every base, P5). A task's items show while it is an open lane; a job's
-  // while the harness declares it. Plain mode: none (D0).
+  // while the harness declares it; the harness tools' item while it has tools (tools Decision 7). Plain mode: none (D0).
   if (hostMode(harness) !== "plain") {
     const stores = attentionStores({ tagKey: (create) => sourceTagKey(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "attention-key"), create), log: pluginLog });
     stores.registerKnown("task", (id) => host?.board.laneIds().includes(id) ?? false);
     if (harness.jobs) stores.registerKnown("job", jobOriginKnown(harness.jobs));
+    if (hasTools(harness)) stores.registerKnown("tool", (id) => id === harness.id);
     sharedAttention = stores;
   }
   // Plugins (plugins spec): only a harness that takes them, or dev folders (HH_PLUGIN_DIRS, development builds). D0:
   // otherwise no scheme, no controller, no window, no IPC handler and no file.
   if (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0) {
     // Before "ready" (spike S2): the backend windows' own scheme. Nothing else registers one.
-    protocol.registerSchemesAsPrivileged([PLUGIN_SCHEME]);
+    protocol.registerSchemesAsPrivileged(hasTools(harness) ? [PLUGIN_SCHEME, TOOL_SCHEME] : [PLUGIN_SCHEME]);
     // The app's own per-harness folder (outside every base, B8/B13): pointers, approvals, keys, the inbox's tag key.
     const appDir = path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id);
-    const host = new PluginBackendHost({ resources: path.join(here, "../../resources"), devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
+    const host = new PluginBackendHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
     pluginHost = host;
     pluginStateRoot = path.join(appDir, PLUGIN_STATE_DIR);
     // Board mode: the inbox's store is shared with the waiting tasks (Decision 10). Plain mode passes nothing (D0).
@@ -3381,6 +3420,80 @@ if (loaded) {
   }
   // Settings › Connections (tools spec §9): only a harness that declares secrets (D0: no channel, no controller).
   if (hasSecrets(harness)) registerConnectionsIpc(handle, connections());
+  // Tools (tools spec §4, §5): only a harness that declares them. D0: otherwise no scheme, no window, no IPC handler,
+  // no `tools` server and no trace.
+  if (hasTools(harness)) {
+    // Before "ready". Electron takes one call: with plugins, theirs above registers this scheme too.
+    if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0) protocol.registerSchemesAsPrivileged([TOOL_SCHEME]);
+    const sandbox = new ToolHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: toolsLog });
+    const toolData = toolDataRequests({
+      store: async () => {
+        const c = await validConfig();
+        return c ? dataStoreFor(baseOf(c)) : null;
+      },
+      history: () => currentHistory(),
+      board: ownCommits,
+      blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+      scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
+      // A call in no scope (the UI's with none open, before a task): `_app` with scopes, `main` without.
+      noScope: () => (scoped() ? APP_SCOPE : MAIN_SCOPE),
+      serial: dataWrites,
+    });
+    toolsHost = createToolsHost({
+      harness,
+      base: currentBase,
+      references: async () => {
+        const c = await validConfig();
+        return c ? (await workReferences(c, baseOf(c))).map((r) => ({ id: r.id, path: r.path })) : [];
+      },
+      userData: app.getPath("userData"),
+      // The one key store; a harness with tools but no secrets has no key to read.
+      store: secretStore() ?? { harnessValues: async () => ({}) },
+      data: toolData,
+      exec: {
+        resolve: async (cmd) => resolveBinary(cmd, await loginShellPath(commandDeps), commandDeps),
+        run: runFile,
+        // The tools host keeps only PATH, HOME and LANG of this, and sets TERM=dumb (Decision 6).
+        env: async () => ({ PATH: await loginShellPath(commandDeps), HOME: os.homedir(), LANG: process.env.LANG ?? "en_US.UTF-8" }),
+      },
+      fetch: globalThis.fetch,
+      // Public addresses only, on every hop: a tool never reaches this computer or its network.
+      allowHost: isPublicHost,
+      host: sandbox,
+      openScope: () => tasks.currentScope(),
+      // Board mode: the lane whose slot asks; otherwise the open task (the `main` slot).
+      slotTask: (key) => slotTaskOf(host ? host.lane(key)?.manager : tasks),
+      jobRun: (key) => jobsHost?.runOf(key) ?? null,
+      // A call during the task's turn is saved on its reply (tools spec §8.2); otherwise it is only shown.
+      emitToTask: (task, event) => {
+        if (host) {
+          const lane = host.lane(task);
+          if (lane && !lane.controller.addToTurn(task, event)) lane.emit(event);
+          return;
+        }
+        if (turns.addToTurn(task, event)) return;
+        void tasks.runningTask().then((t) => {
+          if (t?.id === task) emit(event);
+        });
+      },
+      changed: () => {
+        if (toolsHost) sendToWindow(TOOLS_CHANGE_CHANNEL, toolsHost.info());
+      },
+      // Off after repeated crashes (Decision 7): an action item in the base's shared Attention store, when the app has
+      // one. Without one, only the chat's top line says so.
+      ...(sharedAttention
+        ? {
+            attention: async (create: boolean) => {
+              const base = await currentBase().catch(() => null);
+              return base && sharedAttention ? sharedAttention.forBase(base, create) : null;
+            },
+          }
+        : {}),
+      serverEntry: path.join(here, "tools-server.js"),
+      log: toolsLog,
+    });
+    registerToolsIpc(handle, toolsHost);
+  }
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {
     const settings = settingsCtl;
@@ -3446,10 +3559,10 @@ if (primary) {
   });
 
   app.whenReady().then(async () => {
-    // Development builds: the harness's logo in the Dock, else Human Harness's (`resources/` beside `out/`).
+    // Development builds: the harness's logo in the Dock, else Human Harness's (packages/shell/resources).
     if (process.platform === "darwin" && !app.isPackaged) {
       const icon = devDockIcon(
-        [() => (harness.logo ? resolveInHarness(harness, harness.logo) : undefined), () => path.join(here, "../../resources/hh-logo.png")],
+        [() => (harness.logo ? resolveInHarness(harness, harness.logo) : undefined), () => path.join(shellResources, "hh-logo.png")],
         (file) => nativeImage.createFromPath(file),
       );
       if (icon) app.dock?.setIcon(icon);
@@ -3518,6 +3631,8 @@ if (primary) {
       void plugins.start().catch((err: unknown) => pluginLog("Could not start the plugins", err));
       powerMonitor.on("resume", () => plugins.resumed());
     }
+    // The tools host window, warm from now (Decision 7). Without tools, nothing (D0).
+    void toolsHost?.start().catch((err: unknown) => toolsLog("Could not start the tools", err));
     // Jobs: the `start` runs and `every` timers, once the app is set up (now, or when setup or a profile finishes).
     void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
     // The harness's backend, the same moment (hatches Decision 5). Without one, nothing (D0).
@@ -3552,6 +3667,8 @@ if (primary) {
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
+      // The tools host window closes; a call still running fails "Tools stopped".
+      toolsHost?.stop();
       // The backend stops for good (SIGTERM, SIGKILL after 3 s) before the agent goes; nothing starts it again.
       await backend?.stop({ quit: true }).catch((err: unknown) => console.error("Could not stop the backend", err));
       // A translation run stops; the batches it saved stay.

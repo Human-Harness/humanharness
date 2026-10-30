@@ -230,7 +230,8 @@ const pluginCollectionSchema = z.strictObject({
   context: z.union([z.literal(false), z.strictObject({ fields: z.union([z.literal("all"), z.array(text).min(1)]), tokens: z.number().int().min(50).max(4000) })]).default(false),
 });
 
-const execPattern = z
+/** An `exec` pattern: a bare command and its argument tokens, `*` only last, no secret (Decision 9). */
+export const execPattern = z
   .strictObject({
     cmd: z.string().regex(EXEC_CMD),
     args: z.array(z.string().min(1).max(200)).max(20),
@@ -448,7 +449,7 @@ export const definePlugin = (d: PluginDefinition): PluginDefinition => d;
  * zod's JSON Schema in plugin.json's words: drops the bounds `.int()` adds on its own (±MAX_SAFE_INTEGER, noise,
  * not the author's limit) and writes `z.looseObject`'s `additionalProperties: {}` as the `true` it means.
  */
-function tidyJsonSchema(v: unknown): unknown {
+export function tidyJsonSchema(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(tidyJsonSchema);
   if (!isNode(v)) return v;
   const out: SchemaNode = {};

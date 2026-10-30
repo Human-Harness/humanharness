@@ -179,6 +179,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   // ⌘+, ⌘− and ⌘0 change the text size in the main process: Settings shows the new one.
   useEffect(() => client.onTextSize((textSize) => setState((s) => s && { ...s, config: { ...s.config, textSize } })), [client]);
+  // Tools that went off while the app runs (tools spec Decision 7): only a harness with tools listens (D0).
+  const hasTools = state?.tools !== undefined;
+  useEffect(() => (hasTools ? client.tools.onChange((tools) => setState((s) => s && { ...s, tools })) : undefined), [client, hasTools]);
 
   const engineId = state?.config.engineId;
   const configured = state ? isConfigured(state.config) : false;

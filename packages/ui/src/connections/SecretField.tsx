@@ -1,24 +1,52 @@
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionResult, ConnectionView } from "../client";
 
 /**
  * One declared key (tools spec §9): its label, help and whether it is set, never its value. The typed value lives only
- * in this password field until Save, which clears it before the answer comes (S1).
+ * in this password field until Save, which clears it before the answer comes (S1). With `onTest` (a connect step names
+ * a test for this key), Test connection runs it and the outcome shows under the row: this click's answer, else the
+ * last test main kept.
  */
 export function SecretField({
   connection,
   onSave,
   onDelete,
+  onTest,
 }: {
   connection: ConnectionView;
   onSave: (value: string) => Promise<ConnectionResult>;
   onDelete: () => Promise<ConnectionResult>;
+  onTest?: () => Promise<ConnectionResult>;
 }) {
   const { t } = useTranslation();
   const id = useId();
   const [value, setValue] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const [testing, setTesting] = useState(false);
+  const [tested, setTested] = useState<ConnectionResult | null>(null);
+  // A new kept test, or the key stored or deleted: main's record is the outcome again.
+  const lastAt = connection.lastTest?.at;
+  useEffect(() => setTested(null), [lastAt, connection.set]);
+  const live = useRef(true);
+  useEffect(() => {
+    // Set again on each mount: StrictMode unmounts and mounts once more.
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  const runTest = () => {
+    if (!onTest || testing) return;
+    setTesting(true);
+    void onTest().then((r) => {
+      if (!live.current) return;
+      setTesting(false);
+      setTested(r);
+    });
+  };
+  const last = connection.lastTest;
+  const outcome: ConnectionResult | null = tested ?? (last ? (last.ok ? { ok: true } : { ok: false, message: last.message ?? "" }) : null);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const v = value;
@@ -55,7 +83,17 @@ export function SecretField({
             {t("connections.delete")}
           </button>
         )}
+        {onTest && (
+          <button type="button" disabled={testing} onClick={runTest}>
+            {t("connections.test")}
+          </button>
+        )}
       </form>
+      {onTest && outcome && (
+        <p className="hh-caption hh-row-note" role="status" dir="auto">
+          {outcome.ok ? t("connections.works") : t("connections.testFailed", { message: outcome.message })}
+        </p>
+      )}
       {connection.help && (
         <p className="hh-caption hh-row-note" id={`${id}-help`} dir="auto">
           {connection.help}

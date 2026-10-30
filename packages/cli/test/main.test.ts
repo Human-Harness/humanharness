@@ -18,7 +18,7 @@ describe("humanharness", () => {
     expect(m.err()).toContain("Unknown command: deploy");
   });
 
-  it("keeps every harness line of its usage and adds only the plugin group (D0)", () => {
+  it("keeps every harness line of its usage and adds only the plugin group and build (D0)", () => {
     const before = [
       "Usage: humanharness <command>",
       "",
@@ -35,8 +35,9 @@ describe("humanharness", () => {
       "",
     ];
     const lines = USAGE.split("\n");
-    expect(lines.filter((l) => !/^ {2}plugin\b/.test(l))).toEqual(before);
+    expect(lines.filter((l) => !/^ {2}(plugin|build)\b/.test(l))).toEqual(before);
     expect(lines.filter((l) => /^ {2}plugin\b/.test(l)).length).toBe(1);
+    expect(lines.filter((l) => /^ {2}build\b/.test(l))).toEqual(["  build [--harness <dir>]                  Bundle the harness's tools into dist/ (tools.json)"]);
   });
 
   it("prints the plugin usage and exits 2 for `plugin` with no sub-command", async () => {

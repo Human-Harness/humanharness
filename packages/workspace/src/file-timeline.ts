@@ -13,13 +13,15 @@ import {
 
 export type TimelineKind = "task" | "answers" | "approval" | "outside" | "goBack";
 
-/** Who made an entry (§3.1). `job` is for parallel jobs, which do not exist yet. */
+/** Who made an entry (§3.1). `job` is for parallel jobs, which do not exist yet. `tool`: a harness tool's write (tools spec §8.3). */
 export interface TimelineAuthor {
-  kind: "agent" | "person" | "outside";
+  kind: "agent" | "person" | "outside" | "tool";
   label: string;
   task?: string;
   action?: string;
   job?: string;
+  /** The tool's id, only for `kind: "tool"` (its label too). */
+  tool?: string;
 }
 
 /** One entry of a file's timeline (§3.2). Times are ISO strings. */
@@ -64,6 +66,8 @@ export interface TimelineCommit {
   action: string | null;
   at: string;
   blob: string | null;
+  /** The commit's `Tool:` trailer, only for a tool's write. */
+  tool?: string;
 }
 
 /**
@@ -95,6 +99,8 @@ export function classifyCommit(c: TimelineCommit, file: string): { kind: Timelin
   if (s.startsWith(APPROVED_PREFIX)) return s === `${APPROVED_PREFIX}${file}` ? { kind: "approval", key: c.id } : { kind: "outside", key: c.id };
   if (isGoBack(s)) return { kind: "goBack", key: c.id };
   if (s === START || s === BEFORE_MESSAGE) return { kind: "outside", key: c.id };
+  // A tool's write, in a task or not: its own entry, never merged with the task's turns.
+  if (c.tool !== undefined) return { kind: "task", key: `tool:${c.tool}:${c.task ?? ""}` };
   if (c.task !== null) return { kind: "task", key: `task:${c.task}` };
   return { kind: "outside", key: c.id };
 }
@@ -104,6 +110,10 @@ const OUTSIDE: TimelineAuthor = { kind: "outside", label: "Outside the app" };
 
 function agent(c: TimelineCommit, actionLabel: (id: string | null) => string): TimelineAuthor {
   return { kind: "agent", label: actionLabel(c.action), ...(c.task ? { task: c.task } : {}), ...(c.action ? { action: c.action } : {}) };
+}
+
+function tool(c: TimelineCommit & { tool: string }): TimelineAuthor {
+  return { kind: "tool", label: c.tool, tool: c.tool, ...(c.task ? { task: c.task } : {}), ...(c.action ? { action: c.action } : {}) };
 }
 
 /**
@@ -127,7 +137,9 @@ export function groupTimeline(commits: TimelineCommit[], file: string, actionLab
     const e: TimelineEntry = {
       kind: g.kind,
       author:
-        g.kind === "task" || (g.kind === "goBack" && last.subject.startsWith(UNDO_PREFIX) && last.task !== null)
+        g.kind === "task" && last.tool !== undefined
+          ? tool({ ...last, tool: last.tool })
+          : g.kind === "task" || (g.kind === "goBack" && last.subject.startsWith(UNDO_PREFIX) && last.task !== null)
           ? agent(last, actionLabel)
           : g.kind === "outside"
             ? OUTSIDE

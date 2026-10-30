@@ -31,7 +31,7 @@ const packageDir = (from: string, name: string) => path.dirname(createRequire(fr
  * esbuild as tsx carries it (no install: spike P-S8; making it a direct CLI dependency is an open question), and the
  * CLI's own copies of everything a plugin imports, so a plugin folder outside the repo builds without node_modules.
  */
-function toolchain() {
+export function toolchain() {
   const esbuild = createRequire(req.resolve("tsx/package.json"))("esbuild") as Esbuild;
   const pluginUi = req.resolve("@humanharness/ui/plugin-ui");
   const sdk = req.resolve("@humanharness/harness-sdk");
@@ -61,7 +61,7 @@ function commonAncestor(paths: string[]): string {
   return parts.join(path.sep) || path.sep;
 }
 
-type Toolchain = ReturnType<typeof toolchain>;
+export type Toolchain = ReturnType<typeof toolchain>;
 
 interface ResolveArgs {
   path: string;
@@ -145,7 +145,7 @@ function localPlugin(dir: string, root: string) {
  * and `minifyWhitespace` drops the path comments; the plugin's own files load under `hh-plugin:` (localPlugin), so the
  * output names no machine path and doesn't depend on where the plugin sits. Top-level await is refused: panels are classic scripts and Task 17 runs backend.js as an IIFE.
  */
-function common(t: Toolchain, dir: string, files: Record<string, string>) {
+export function common(t: Toolchain, dir: string, files: Record<string, string>) {
   return {
     bundle: true,
     write: false,
@@ -165,7 +165,7 @@ function common(t: Toolchain, dir: string, files: Record<string, string>) {
 }
 
 /** esbuild's errors as one CliError, each "file:line: text" with the file relative to the plugin. */
-function bundleError(err: unknown, t: Toolchain, dir: string): unknown {
+export function bundleError(err: unknown, t: Toolchain, dir: string): unknown {
   const errors = (err as { errors?: EsbuildMessage[] }).errors;
   if (!Array.isArray(errors) || errors.length === 0) return err;
   const lines = errors.map((e) => {
@@ -294,7 +294,7 @@ async function checkOut(dir: string, out: string): Promise<void> {
 }
 
 /** Writes `files` to a temp folder beside `out`, then swaps it in: a failed write leaves the previous build whole. */
-async function writeDist(out: string, files: Map<string, Uint8Array | string>): Promise<void> {
+export async function writeDist(out: string, files: Map<string, Uint8Array | string>): Promise<void> {
   const tag = randomBytes(6).toString("hex");
   const temp = `${out}.tmp-${tag}`;
   const old = `${out}.old-${tag}`;

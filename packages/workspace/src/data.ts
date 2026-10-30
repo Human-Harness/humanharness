@@ -27,11 +27,17 @@ class FileTooLarge extends DataError {
   }
 }
 
+/** `who`, and `tool` only for a tool's request (D0: no `tool` key otherwise). */
+const writer = (ctx: DataContext): { who: DataWho; tool?: string } =>
+  ctx.who === "tool" && ctx.tool !== undefined ? { who: ctx.who, tool: ctx.tool } : { who: ctx.who };
+
 /** Who asks, and in which scope (the running task's for the agent; the open one for the person). */
 export interface DataContext {
   who: DataWho;
   scope: string;
   action?: string;
+  /** The tool's id, only with `who: "tool"`; passed to rules and change events. */
+  tool?: string;
 }
 
 export interface DataQuery {
@@ -54,6 +60,8 @@ export interface DataChange {
   collection: string;
   scope: string;
   who: DataWho;
+  /** The tool's id, only with `who: "tool"`. */
+  tool?: string;
   op: "put" | "patch" | "delete" | "replaceAll";
   key?: DataKey;
 }
@@ -274,7 +282,7 @@ export class DataStore {
       const records = c.single ? [next] : [...file.records.filter((r) => r[c.key!] !== key), next];
       await this.save(name, c, scope, records);
       await this.touch(name, scope, key, true);
-      this.emit({ collection: name, scope, who: ctx.who, op: "put", ...(key !== undefined ? { key } : {}) });
+      this.emit({ collection: name, scope, ...writer(ctx), op: "put", ...(key !== undefined ? { key } : {}) });
       return next;
     });
   }
@@ -312,7 +320,7 @@ export class DataStore {
       }
       await this.save(name, c, scope, current);
       await this.touch(name, scope, written.map((w) => w.key), true);
-      for (const { key } of written) this.emit({ collection: name, scope, who: ctx.who, op: "put", ...(key !== undefined ? { key } : {}) });
+      for (const { key } of written) this.emit({ collection: name, scope, ...writer(ctx), op: "put", ...(key !== undefined ? { key } : {}) });
       return written.map((w) => w.record);
     });
   }
@@ -333,7 +341,7 @@ export class DataStore {
       const records = c.single ? [next] : file.records.map((r) => (r[c.key!] === key ? next : r));
       await this.save(name, c, scope, records);
       await this.touch(name, scope, key, true);
-      this.emit({ collection: name, scope, who: ctx.who, op: "patch", ...(key !== undefined && !c.single ? { key } : {}) });
+      this.emit({ collection: name, scope, ...writer(ctx), op: "patch", ...(key !== undefined && !c.single ? { key } : {}) });
       return next;
     });
   }
@@ -351,7 +359,7 @@ export class DataStore {
       if (c.single) await this.removeFile(this.file(scope, name));
       else await this.save(name, c, scope, file.records.filter((r) => r[c.key!] !== key));
       await this.touch(name, scope, c.single ? undefined : key, false);
-      this.emit({ collection: name, scope, who: ctx.who, op: "delete", ...(key !== undefined && !c.single ? { key } : {}) });
+      this.emit({ collection: name, scope, ...writer(ctx), op: "delete", ...(key !== undefined && !c.single ? { key } : {}) });
       return true;
     });
   }
@@ -413,7 +421,7 @@ export class DataStore {
       if (unread) await this.removeFile(this.metaFile(scope, name)).catch(() => {});
       if (removed.length > 0) await this.touch(name, scope, removed.map(stampKey), false);
       if (changed.length > 0) await this.touch(name, scope, changed.map(stampKey), true);
-      this.emit({ collection: name, scope, who: ctx.who, op: "replaceAll" });
+      this.emit({ collection: name, scope, ...writer(ctx), op: "replaceAll" });
       return next;
     });
   }
@@ -497,7 +505,7 @@ export class DataStore {
     const rulesCtx: RulesContext = {
       ...(ctx.action !== undefined ? { action: ctx.action } : {}),
       scope,
-      who: ctx.who,
+      ...writer(ctx),
       records: (other) => structuredClone(snapshot.get(other) ?? []),
     };
     const rules = c.rules;

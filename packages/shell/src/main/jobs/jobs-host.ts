@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type HarnessJob, hasJobs } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, type HarnessWorkspace, type Session, type SessionSlot, type TurnScope, runtimeOnSlot } from "@humanharness/runtime";
 import type { AppConfig, JobSummary, JobsInfo } from "@humanharness/ui/client";
-import { APP_SCOPE, ATTENTION_LIMITS, type AttentionStore, MAIN_SCOPE } from "@humanharness/workspace";
+import { APP_SCOPE, ATTENTION_LIMITS, type AttentionStore, type HistoryTrailer, MAIN_SCOPE } from "@humanharness/workspace";
 import { type Turns, gatedTurns } from "../gated-turns";
 import { cleanJobSettings } from "../config";
 import { effectiveCaps, engineHold } from "../parallel-config";
@@ -10,7 +10,7 @@ import type { TaskDeps } from "../task-manager";
 import { type BeforeStart, TurnGate } from "../turn-gate";
 import { UsageLog, type UsageRecord, jobRecord } from "../usage-log";
 import { JobLog, type JobRunRecord, type JobTrigger, dedupeKey } from "./job-log";
-import { jobMessageFor, runJob } from "./job-runner";
+import { jobMessageFor, jobRunTrailer, runJob } from "./job-runner";
 import { JobScheduler, type SchedulerTimer } from "./job-scheduler";
 
 type Usage = Extract<Event, { type: "usage" }>;
@@ -136,7 +136,7 @@ export function createJobsHost(d: JobsHostDeps) {
     return log;
   };
   /** The runs queued or running, by slot key: a request from that slot is the run's, in its scope. */
-  const runs = new Map<string, { id: string; scope: string }>();
+  const runs = new Map<string, { id: string; scope: string; job: string; trailer: HistoryTrailer }>();
   /** Every run under way (from its trigger on, before it knows its base): a stop waits for them. */
   const inFlight = new Set<Promise<unknown>>();
   const appendUsage = d.usage ?? ((base: string, record: UsageRecord) => new UsageLog(base).append(record));
@@ -200,7 +200,8 @@ export function createJobsHost(d: JobsHostDeps) {
     }
     const runId = randomUUID();
     const key = `job:${runId}`;
-    runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE) });
+    // The run's history trailer, the same one its own commits carry: a harness tool's data write from this slot commits under it.
+    runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE), job: id, trailer: jobRunTrailer(runId, id, scope) });
     try {
       const record = await runJob(
         {
@@ -312,7 +313,15 @@ export function createJobsHost(d: JobsHostDeps) {
     /** Quit (Decision 11): runs cancelled, timers cleared, nothing starts again. */
     stopAll: () => scheduler.stopAll(),
     /** The run whose slot is `key` (a data or material request's task, P3); null for any other slot. */
-    runningOf: (key: string): { id: string; scope: string } | null => runs.get(key) ?? null,
+    runningOf: (key: string): { id: string; scope: string } | null => {
+      const r = runs.get(key);
+      return r ? { id: r.id, scope: r.scope } : null;
+    },
+    /** `runningOf` with the job's id and the run's history trailer (a harness tool's call from that slot). */
+    runOf: (key: string): { id: string; scope: string; job: string; trailer: HistoryTrailer } | null => {
+      const r = runs.get(key);
+      return r ? { ...r, trailer: { ...r.trailer } } : null;
+    },
     /** A run is queued or running: an app change commits only its own files, never a run's work. */
     running: (): boolean => runs.size > 0,
     /** The base's shared log (the Jobs section, Task 9). */

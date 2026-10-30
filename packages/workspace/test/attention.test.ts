@@ -270,6 +270,16 @@ describe("AttentionStore (plugins spec §6)", () => {
     expect(await store(base).list()).toEqual([]);
   });
 
+  it("the harness tools' item (tools Decision 7) is written, read back and resolved like any origin's", async () => {
+    const base = await tmp();
+    const tools = { kind: "tool" as const, id: "notes" };
+    await store(base).raise(tools, { key: "off", severity: "action", title: "Tools are off after repeated crashes. Restart the app to turn them on." });
+    expect(await store(base).list()).toMatchObject([{ origin: tools, key: "off", severity: "action" }]);
+    expect(await store(base, { known: (o) => o.kind === "plugin" }).list()).toEqual([]);
+    await store(base).resolve(tools, "off");
+    expect(await store(base).list()).toEqual([]);
+  });
+
   it("markRead with a key but no origin is refused", async () => {
     const s = store(await tmp());
     await s.raise(oncall, { key: "k", severity: "action", title: "A" });

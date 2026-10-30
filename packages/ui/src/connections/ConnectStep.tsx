@@ -11,7 +11,7 @@ import { SecretField } from "./SecretField";
  */
 export function ConnectStep({ client, step, onReady }: { client: HarnessClient; step: SetupStepView; onReady: (ready: boolean) => void }) {
   const { t } = useTranslation();
-  const { view, unavailable, error, save, remove } = useConnections(client);
+  const { view, unavailable, error, save, remove, test } = useConnections(client);
   const ids = (step.secrets ?? []).map((s) => s.id);
   const rows = view && !unavailable ? ids.flatMap((id) => view.connections.filter((c) => c.id === id)) : [];
   // Every listed key is declared and set; a step listing none never counts as ready (main refuses it too).
@@ -35,7 +35,13 @@ export function ConnectStep({ client, step, onReady }: { client: HarnessClient; 
       {rows.length > 0 && (
         <div className="hh-rows">
           {rows.map((c) => (
-            <SecretField key={c.id} connection={c} onSave={(value) => save(c.id, value).then(counted)} onDelete={() => remove(c.id).then(counted)} />
+            <SecretField
+              key={c.id}
+              connection={c}
+              onSave={(value) => save(c.id, value).then(counted)}
+              onDelete={() => remove(c.id).then(counted)}
+              {...(c.test ? { onTest: () => test(c.id) } : {})}
+            />
           ))}
         </div>
       )}

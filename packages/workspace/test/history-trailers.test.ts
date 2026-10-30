@@ -57,3 +57,36 @@ describe("Job: and Shared: trailers (parallel spec §5.1, §5.2)", () => {
     expect(SHARED_PREFIX).toBe("Shared: ");
   });
 });
+
+describe("Tool: trailer (tools spec §8.3)", () => {
+  it("withTrailer writes Tool: after the task's lines", () => {
+    expect(withTrailer("Data: put cards", { task: "t1", tool: "apply-triage" })).toBe("Data: put cards\n\nTask: t1\nTool: apply-triage");
+    expect(withTrailer("Data: cards", { task: "t1", action: "triage", job: "sync", shared: ["t2"], tool: "apply-triage" })).toBe(
+      "Data: cards\n\nTask: t1\nAction: triage\nJob: sync\nShared: t2\nTool: apply-triage",
+    );
+  });
+
+  it("a tool write with no task carries Tool: alone", () => {
+    expect(withTrailer("Data: put cards", { task: null, tool: "due-today" })).toBe("Data: put cards\n\nTool: due-today");
+  });
+
+  it("parseCommitMessage reads it back, with or without a task", () => {
+    expect(parseCommitMessage("Data: cards\n\nTask: t1\nTool: apply-triage")).toEqual({ subject: "Data: cards", task: "t1", action: null, tool: "apply-triage" });
+    expect(parseCommitMessage("Data: cards\n\nTool: due-today")).toEqual({ subject: "Data: cards", task: null, action: null, tool: "due-today" });
+  });
+
+  it("an id that isn't a tool id is never written or read", () => {
+    expect(withTrailer("m", { task: "t1", tool: "Bad Tool" })).toBe("m\n\nTask: t1");
+    expect(withTrailer("m", { task: null, tool: "Bad" })).toBe("m");
+    expect(parseCommitMessage("m\n\nTask: t1\nTool: Bad")).toEqual({ subject: "m", task: "t1", action: null });
+    // Text in the subject never forges one: the message is folded to one line.
+    expect(parseCommitMessage(withTrailer("m\n\nTool: evil", { task: "t1" }))).not.toHaveProperty("tool");
+  });
+
+  it("D0: withTrailer without tool writes what it wrote", () => {
+    expect(withTrailer("Turn: x", { task: "t1", action: "a" })).toBe("Turn: x\n\nTask: t1\nAction: a");
+    expect(withTrailer("Data: concepts", { task: "t1", action: "study", scope: "fracciones" })).toBe("Data: concepts\n\nTask: t1\nAction: study\nScope: fracciones");
+    expect(withTrailer("Data: concepts")).toBe("Data: concepts");
+    expect(parseCommitMessage("Turn: x\n\nTask: t1\nAction: a")).toEqual({ subject: "Turn: x", task: "t1", action: "a" });
+  });
+});

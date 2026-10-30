@@ -13,10 +13,11 @@ import { checkFolders, LinkRefused, readNoLinks, TooLarge, writeNoLinks } from "
 export type AttentionSeverity = "info" | "warn" | "action";
 /**
  * Who raised an item: a plugin; a task that waits for the person (C7 "waiting for you", plugins spec §6); a job whose
- * last run needs the person (parallel part 3, `<job>:<scope>`).
+ * last run needs the person (parallel part 3, `<job>:<scope>`); the harness's tools, off after repeated crashes (tools
+ * Decision 7, the harness id).
  */
 export interface AttentionOrigin {
-  kind: "plugin" | "task" | "job";
+  kind: "plugin" | "task" | "job" | "tool";
   id: string;
 }
 export type AttentionTarget = { panel: string; focus?: string } | { action: string; vars?: Record<string, unknown> };
@@ -109,7 +110,7 @@ function cleanTarget(v: unknown): AttentionTarget | null {
 function cleanItem(v: unknown): { item: AttentionItem; tag: unknown } | null {
   if (!isObject(v) || !isObject(v.origin)) return null;
   const { origin } = v;
-  if ((origin.kind !== "plugin" && origin.kind !== "task" && origin.kind !== "job") || !text(origin.id, ATTENTION_LIMITS.idChars)) return null;
+  if ((origin.kind !== "plugin" && origin.kind !== "task" && origin.kind !== "job" && origin.kind !== "tool") || !text(origin.id, ATTENTION_LIMITS.idChars)) return null;
   if (!text(v.key, ATTENTION_LIMITS.keyChars) || !isSeverity(v.severity) || !text(v.title, ATTENTION_LIMITS.titleChars)) return null;
   if (typeof v.at !== "string" || Number.isNaN(Date.parse(v.at)) || typeof v.read !== "boolean") return null;
   const item: AttentionItem = { origin: { kind: origin.kind, id: origin.id }, key: v.key, severity: v.severity, title: v.title, at: v.at, read: v.read };

@@ -1,4 +1,4 @@
-import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type ChatNotice, type DocumentCard, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
+import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type ChatNotice, type DocumentCard, type Event, type LimitWindow, type ToolCallView, type TurnUsage, addParagraph, addText, finishParts } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -24,6 +24,8 @@ export interface LiveTurn {
   notices?: ChatNotice[];
   /** The `.md` files the turn added or changed (document-reader spec §5.1), saved on the entry. */
   documents?: DocumentCard[];
+  /** The harness tool calls during the turn (tools spec §8.2), saved on the entry. */
+  tools?: ToolCallView[];
 }
 
 export interface ChatState {
@@ -149,6 +151,13 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
     case "compaction":
       // The task view carries them (the side panel's meter); the conversation doesn't change.
       return state;
+    case "tool-call":
+      // Only a harness with tools sends it (tools spec §8.2): on the turn it ran in, else a line of its own.
+      if (live) return { ...state, live: { ...live, tools: [...(live.tools ?? []), action.call] } };
+      return {
+        ...state,
+        entries: [...state.entries, { id: newId(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), tools: [action.call] }],
+      };
     case "limits":
       return { ...state, limits: action.windows, live: live ? { ...live, limits: action.windows } : live };
     case "usage":
@@ -205,12 +214,21 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         ...(live.limits ? { limits: live.limits } : {}),
         ...(live.state ? { state: live.state } : {}),
         ...(live.documents ? { documents: live.documents } : {}),
+        ...(live.tools ? { tools: live.tools } : {}),
         ...(action.ok ? {} : { error: action.error }),
         ...(action.task ? { task: action.task } : {}),
       };
       return { ...state, entries: [...state.entries, entry, ...(live.notices ?? []).map(noticeEntry)], live: null };
     }
   }
+}
+
+/**
+ * A tool call's own line, from a call that came with no turn on screen: no text, blocks, parts or error of its own. It
+ * never counts as a reply (the chat's last turn or last answer).
+ */
+export function isToolLine(e: Pick<ChatEntry, "role" | "text" | "blocks" | "parts" | "error" | "tools">): boolean {
+  return e.role === "assistant" && e.tools !== undefined && e.parts === undefined && !e.text && e.blocks.length === 0 && e.error === undefined;
 }
 
 /** A notice's own entry: no text of its own (a system line, never a reply). */

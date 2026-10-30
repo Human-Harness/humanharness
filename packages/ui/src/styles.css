@@ -525,6 +525,18 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-mode-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
 .hh-mode-bar .hh-mode-list { flex-basis: 100%; }
 .hh-mode-line { margin: 0; text-align: center; color: var(--hh-muted); font-size: 13px; }
+/* A harness tool call in a task's chat (tools spec §8.2): a folded system line; a failed one sits in the error card's colours. */
+.hh-tool-calls { display: grid; gap: 4px; margin: 4px 0; }
+.hh-tool-call { display: grid; gap: 4px; justify-items: start; }
+.hh-tool-line { background: none; border: none; padding: 2px 0; color: var(--hh-muted); font-size: 13px; text-align: start; overflow-wrap: anywhere; }
+.hh-tool-call.hh-error .hh-tool-line { color: var(--hh-ink); }
+.hh-tool-details { margin: 0; display: grid; gap: 4px; font-size: 13px; color: var(--hh-slate); width: 100%; }
+.hh-tool-details[hidden] { display: none; }
+.hh-tool-details dt { font-weight: 600; }
+.hh-tool-details dd { margin: 0; }
+.hh-tool-details pre { margin: 0; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.hh-tool-details ul { margin: 0; padding-inline-start: 18px; overflow-wrap: anywhere; }
+.hh-tools-off { text-align: center; margin: 4px 0; }
 .hh-phase-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
 .hh-phase-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
 .hh-phase-steps button { border-radius: 999px; padding: 4px 12px; }

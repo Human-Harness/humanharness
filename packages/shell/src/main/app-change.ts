@@ -1,9 +1,9 @@
-import { MATERIAL_DIR, type HistoryTrailer, notesPrefix } from "@humanharness/workspace";
+import { type CommitTrailer, MATERIAL_DIR, notesPrefix } from "@humanharness/workspace";
 
 /** The history calls a change of the app's own files needs. */
 export interface AppChangeHistory {
-  save(message: string, trailer?: HistoryTrailer): Promise<unknown>;
-  commitPaths?(paths: readonly string[], message: string, trailer?: HistoryTrailer): Promise<unknown>;
+  save(message: string, trailer?: CommitTrailer): Promise<unknown>;
+  commitPaths?(paths: readonly string[], message: string, trailer?: CommitTrailer): Promise<unknown>;
   changedSince?(start: null): Promise<string[]>;
 }
 
@@ -16,7 +16,7 @@ export type OwnPaths = readonly string[] | ((file: string) => boolean);
  * folder right now, and its work must never be filed under this trailer, or undoing this task would undo it too
  * (parallel spec §5.3).
  */
-export async function saveAppChange(history: AppChangeHistory | null, board: boolean, own: OwnPaths, message: string, trailer?: HistoryTrailer): Promise<void> {
+export async function saveAppChange(history: AppChangeHistory | null, board: boolean, own: OwnPaths, message: string, trailer?: CommitTrailer): Promise<void> {
   if (!history) return;
   if (!board) {
     await history.save(message, trailer);

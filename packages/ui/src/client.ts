@@ -16,7 +16,7 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow, TaskNotice } from "@humanharness/runtime";
+import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow, TaskNotice, ToolCallView } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
@@ -471,6 +471,8 @@ export interface AppState {
   hatches?: HatchesState;
   /** The harness declares secrets (tools spec §9). Absent: none (D0). */
   connections?: ConnectionsInfo;
+  /** The harness declares tools (tools spec §5). Absent: none (D0). */
+  tools?: ToolsInfo;
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -538,6 +540,8 @@ export interface ChatEntry {
   notice?: ChatNotice;
   /** The `.md` files this turn added or changed (document-reader spec §5.1). Absent: none. */
   documents?: DocumentCard[];
+  /** Assistant entries: the tool calls during the turn (tools spec §8.2). Absent: none. */
+  tools?: ToolCallView[];
 }
 
 /** A line the app added to a task's chat (board mode): see the runtime's `TaskNotice`. */
@@ -1567,6 +1571,8 @@ export interface HarnessClient {
   };
   /** The harness's secrets, Settings › Connections (tools spec §9). Only with `state.connections` (D0). */
   connections: ConnectionsClient;
+  /** The harness's tools (tools spec §5). Only with `state.tools`; without, every call rejects (D0). */
+  tools: ToolsClient;
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {
     get(): Promise<SetupStepsState>;
@@ -1852,6 +1858,16 @@ export interface ConnectionView {
   label: string;
   help?: string;
   set: boolean;
+  /** A connect step names a test for this key: Test connection is offered (slice 2). Absent otherwise (D0). */
+  test?: true;
+  /** The last Test connection's outcome; absent until one ran, and again once the key is replaced or deleted. */
+  lastTest?: ConnectionLastTest;
+}
+/** When the last test ran, whether it worked, and, when it didn't, the error with the stored keys hidden. */
+export interface ConnectionLastTest {
+  at: string;
+  ok: boolean;
+  message?: string;
 }
 export interface ConnectionsView {
   connections: ConnectionView[];
@@ -1867,7 +1883,27 @@ export interface ConnectionsClient {
   /** Stores a key (at most 8,192 characters once trimmed); its value never comes back. */
   set(id: string, value: string): Promise<ConnectionResult>;
   delete(id: string): Promise<ConnectionResult>;
+  /** Runs the key's test tool once (only for a key whose view says `test`); ok, or the error to show. */
+  test(id: string): Promise<ConnectionResult>;
   onChange(listener: (view: ConnectionsView) => void): () => void;
+}
+export type { ToolCallView } from "@humanharness/runtime";
+export type ToolCallResult = { ok: true; result: unknown } | { ok: false; error: string };
+/** The harness's tools (tools spec §5). Only with `state.tools`; without, every call rejects (D0). */
+export interface ToolsClient {
+  /** Runs tool `id` as the UI (caller "ui"), in the open scope (or none), with no task. Refusals come back as data. */
+  call(id: string, args?: unknown): Promise<ToolCallResult>;
+  /** A task's or a job run's calls, oldest first. */
+  trace(id: string): Promise<ToolCallView[]>;
+  /** Main's tools info changed (the host started, or went off after repeated crashes). */
+  onChange(listener: (info: ToolsInfo) => void): () => void;
+}
+/** `ToolsInfo.off` when the tools host crashed too often: the chat's top line says so (tools Decision 7). */
+export const TOOLS_OFF_CRASHES = "Tools are off after repeated crashes";
+/** The harness declares tools. Absent without (D0). `off`: why every call fails now (not built, a problem, or crashes). */
+export interface ToolsInfo {
+  ids: string[];
+  off?: string;
 }
 export type PluginStatus = "on" | "off" | "review" | "crashed" | "error";
 export interface PluginRow {
@@ -2066,6 +2102,8 @@ export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
 export function authorName(t: (key: string) => string, a: TimelineAuthor): string {
   if (a.kind === "person") return t("timeline.you");
   if (a.kind === "outside") return t("timeline.outsideAuthor");
+  // A harness tool's write (tools spec §8.3): its id.
+  if (a.kind === "tool") return a.label;
   return a.action ? a.label : t("history.question");
 }
 

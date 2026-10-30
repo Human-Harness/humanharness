@@ -86,3 +86,28 @@ describe("History.fileTimeline (file-timeline spec §3)", () => {
     expect(await history.readBytesAt(sha, "nope.md", 4)).toBeNull();
   });
 });
+
+describe("History and a tool's commits (tools spec §8.3)", () => {
+  it("a commit with Tool: reads back in the list and shows the tool as the timeline's author", async () => {
+    await history.save("Start");
+    write(DOC, "a\n");
+    await history.save("Data: cards", { task: null, tool: "due-today" });
+    write(DOC, "b\n");
+    await history.save("Data: cards", { task: "t1", action: "spec", tool: "apply-triage" });
+    const [last, first] = await history.list();
+    expect(last).toMatchObject({ message: "Data: cards", task: "t1", action: "spec", tool: "apply-triage" });
+    expect(first).toMatchObject({ message: "Data: cards", task: null, action: null, tool: "due-today" });
+    const entries = await history.fileTimeline(DOC, label);
+    expect(entries.map((e) => e.author)).toEqual([
+      { kind: "tool", label: "apply-triage", tool: "apply-triage", task: "t1", action: "spec" },
+      { kind: "tool", label: "due-today", tool: "due-today" },
+    ]);
+  });
+
+  it("D0: commits without Tool: list with no tool key", async () => {
+    await history.save("Start");
+    write(DOC, "a\n");
+    await history.save("Turn: write", { task: "t1" });
+    for (const e of await history.list()) expect(e).not.toHaveProperty("tool");
+  });
+});

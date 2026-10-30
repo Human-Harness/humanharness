@@ -313,3 +313,32 @@ describe("per-task chats (parallel spec §6)", () => {
     expect(() => new ChatLog(base, undefined, "archive", "t1")).toThrow(/archive/);
   });
 });
+
+describe("tool calls on a chat entry (tools spec §8.2)", () => {
+  const call = { tool: "pr-ci", caller: "agent" as const, ok: true, ms: 300, summary: "12 items", args: "{}", result: "[]", accesses: [], at: "2026-10-29T10:00:00.000Z" };
+
+  it("TurnRecorder keeps the turn's tool calls on its entry; none: no field (D0)", () => {
+    const r = new TurnRecorder(new Set());
+    r.add({ type: "tool-call", call });
+    r.add({ type: "text", delta: "CI is green." });
+    r.add({ type: "tool-call", call: { ...call, tool: "notes" } });
+    expect(r.finish({ type: "done", ok: true }).tools?.map((c) => c.tool)).toEqual(["pr-ci", "notes"]);
+    const plain = new TurnRecorder(new Set());
+    plain.add({ type: "text", delta: "Hi" });
+    expect("tools" in plain.finish({ type: "done", ok: true })).toBe(false);
+  });
+
+  it("an entry's tools are saved and read back; an old log without them reads as before", async () => {
+    const folder = fs.mkdtempSync(path.join(root, "tools-"));
+    const log = new ChatLog(folder);
+    const old = { id: "o", role: "assistant" as const, text: "Before", blocks: [], activities: [], at: "t" };
+    await log.append(old);
+    await log.append({ id: "n", role: "assistant", text: "", blocks: [], activities: [], at: "t", tools: [call] });
+    const raw = fs.readFileSync(path.join(folder, ".harness", "chats", "main.jsonl"), "utf8").split("\n");
+    expect(raw[0]).toBe(JSON.stringify(old));
+    const [a, b] = await new ChatLog(folder).load();
+    expect(a).toEqual(old);
+    expect(a).not.toHaveProperty("tools");
+    expect(b.tools).toEqual([call]);
+  });
+});

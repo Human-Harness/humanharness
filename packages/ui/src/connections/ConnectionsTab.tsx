@@ -12,6 +12,8 @@ export interface Connections {
   error: string | null;
   save: (id: string, value: string) => Promise<ConnectionResult>;
   remove: (id: string) => Promise<ConnectionResult>;
+  /** Test connection: its answer is shown under the key's row, not as the shared refusal. */
+  test: (id: string) => Promise<ConnectionResult>;
 }
 
 /**
@@ -73,13 +75,23 @@ export function useConnections(client: HarnessClient): Connections {
     error,
     save: (id, value) => answer(() => client.connections.set(id, value)),
     remove: (id) => answer(() => client.connections.delete(id)),
+    test: async (id) => {
+      let result: ConnectionResult;
+      try {
+        result = await client.connections.test(id);
+      } catch {
+        result = { ok: false, message: t("connections.testCouldNotRun") };
+      }
+      if (live.current) refresh();
+      return result;
+    },
   };
 }
 
 /** Settings › Connections (tools spec §9): one row per declared key, in manifest order. Only with `state.connections`. */
 export function ConnectionsTab({ client }: { client: HarnessClient }) {
   const { t } = useTranslation();
-  const { view, unavailable, error, save, remove } = useConnections(client);
+  const { view, unavailable, error, save, remove, test } = useConnections(client);
   // Each refusal is a new alert (a new node), so the same text twice is announced twice.
   const [refusals, setRefusals] = useState(0);
   const counted = (result: ConnectionResult) => {
@@ -93,7 +105,13 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
       {view && !unavailable && (
         <div className="hh-rows">
           {view.connections.map((c) => (
-            <SecretField key={c.id} connection={c} onSave={(value) => save(c.id, value).then(counted)} onDelete={() => remove(c.id).then(counted)} />
+            <SecretField
+              key={c.id}
+              connection={c}
+              onSave={(value) => save(c.id, value).then(counted)}
+              onDelete={() => remove(c.id).then(counted)}
+              {...(c.test ? { onTest: () => test(c.id) } : {})}
+            />
           ))}
         </div>
       )}

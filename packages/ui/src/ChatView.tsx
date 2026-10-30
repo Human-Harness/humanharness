@@ -26,6 +26,7 @@ import {
   type SidekickReview,
   type TaskTurnNotice,
   type TaskView,
+  TOOLS_OFF_CRASHES,
   isTurnEntry,
   nextInPath,
   partsOf,
@@ -34,6 +35,7 @@ import { ContextPanel } from "./ContextPanel";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
+import { ToolCallLines } from "./tools/ToolCallLine";
 import { FileTimelinePanel } from "./FileTimelinePanel";
 import { ContextMeter, FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
@@ -63,12 +65,14 @@ import { useNarrow } from "./sidekick/useNarrow";
 import { EngineNotice } from "./hatches/EngineNotice";
 import { useSidekick } from "./sidekick/useSidekick";
 import { type StartViewCopy, StartView } from "./StartView";
-import { initialChat, reduceChat } from "./state";
+import { initialChat, isToolLine, reduceChat } from "./state";
 import { UsageMeter } from "./UsageMeter";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 
 /** How close to the bottom (px) the user must be for new content to keep the chat pinned. */
 const STICK_THRESHOLD = 80;
+/** A turn's own entry: never an app notice or a tool call's line that came with no turn (tools spec §8.2). */
+const isReply = (e: ChatEntry): boolean => isTurnEntry(e) && !isToolLine(e);
 const NO_TASKS: TaskView = { current: null, actions: {}, notes: [] };
 
 export type SendFn = (text: string, options?: SendOptions) => boolean;
@@ -600,11 +604,11 @@ export function ChatView({
         // The task's "waiting" comes after `done` (the note is saved first): it is counted below, on its own.
         paused.current = countPaused(paused.current, { quota: chat.entries.at(-1)?.error?.code === "out-of-quota" });
       } else {
-        setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant" && isTurnEntry(e))?.text ?? "", (id) => citationsRef.current?.known?.(id)));
+        setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant" && isReply(e))?.text ?? "", (id) => citationsRef.current?.known?.(id)));
         inputRef.current?.focus();
       }
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
-      if (!chat.entries.findLast(isTurnEntry)?.error) onTurnOk?.();
+      if (!chat.entries.findLast(isReply)?.error) onTurnOk?.();
     }
     wasLive.current = Boolean(chat.live);
   }, [chat.live, chat.entries, t, client, onTurnOk]);
@@ -982,7 +986,7 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   // A notice the app added after a reply (a conflict) never takes the reply's place: its blocks stay answerable.
-  const lastAssistant = chat.entries.findLast((e) => e.role === "assistant" && isTurnEntry(e));
+  const lastAssistant = chat.entries.findLast((e) => e.role === "assistant" && isReply(e));
   /**
    * A block answer's free text before it goes (spec §4.1): `card` holds the form, anything else sends it. The same
    * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
@@ -1160,12 +1164,12 @@ export function ChatView({
     const el = chatRef.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
   };
-  const last = chat.entries.findLast(isTurnEntry);
+  const last = chat.entries.findLast(isReply);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);
   const liveEntry: ChatEntry | null = chat.live
-    ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "" }
+    ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "", ...(chat.live.tools ? { tools: chat.live.tools } : {}) }
     : null;
   const showStart = flow && since === null && !chat.live;
   // The cards on screen, checked once per change of the list, when the window gets focus back, and when the reader
@@ -1476,6 +1480,12 @@ export function ChatView({
                   {t("chat.loadError")}
                 </p>
               )}
+              {/* Tools spec Decision 7: only a harness with tools has `state.tools`, and only crashes put this line here. */}
+              {state.tools?.off === TOOLS_OFF_CRASHES && (
+                <p className="hh-caption hh-tools-off" role="status">
+                  {t("tools.off")}
+                </p>
+              )}
               {/* The last turn's card already offers the fix for this same problem: one fix button is enough. */}
               {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
                 <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
@@ -1507,6 +1517,7 @@ export function ChatView({
               {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
                 <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
                   <div data-entry={entry.id} data-role={entry.role}>
+                    {entry.role === "assistant" && entry.tools !== undefined && <ToolCallLines calls={entry.tools} />}
                     <Message
                       key={pickResets}
                       entry={entry}

@@ -5,7 +5,7 @@ import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
 import type { History, LinkedFolderLine, ReferenceFolder } from "@humanharness/workspace";
 import type { Event } from "./events";
 import type { Session } from "./transport";
-import { type HarnessWorkspace, type SessionSlot, type SlotSendOptions, createWorkspace } from "./workspace";
+import { type HarnessWorkspace, type SessionSlot, type SlotRef, type SlotSendOptions, createWorkspace } from "./workspace";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
@@ -33,6 +33,12 @@ export interface RuntimeOptions {
    * the folder; absent, or `permissions.edit: "none"`: no tools and no review lines in AGENTS.md (D0).
    */
   review?: (request: unknown) => Promise<unknown>;
+  /**
+   * The core `tools` MCP server (tools spec §5) for task and job slots: `catalogue` lists the agent's tools, `request`
+   * runs a call for the asking slot (`createRuntime`'s is `"main"`). The app passes it only when the harness has an
+   * `agent: "call"` tool; absent, or a harness without tools: no server (D0).
+   */
+  tools?: { catalogue: string; request: (request: unknown, slot: SlotRef) => Promise<unknown>; entry?: string };
   harness: LoadedHarness;
   engine: EngineDef;
   /** The user's visible folder. */

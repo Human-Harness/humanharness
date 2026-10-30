@@ -10,7 +10,11 @@ import type {
   AttentionView,
   ChatEntry,
   ChoiceOption,
+  ConnectionLastTest,
   ConnectionResult,
+  ToolCallResult,
+  ToolCallView,
+  ToolsInfo,
   ConnectionsView,
   ContextPick,
   ContextResult,
@@ -1552,11 +1556,35 @@ export class FakeClient implements HarnessClient {
   /** client.connections (tools spec §9): the declared secrets and which are set; values are never kept. */
   connectionsDeclared: { id: string; label: string; help?: string }[] = [];
   connectionsSet = new Set<string>();
-  /** What connections was asked to change, in order, without values: ["set", id], ["delete", id]. */
-  connectionsCalls: ["set" | "delete", string][] = [];
+  /** What connections was asked to do, in order, without values: ["set", id], ["delete", id], ["test", id]. */
+  connectionsCalls: ["set" | "delete" | "test", string][] = [];
+  /** Test connection (slice 2): what each key's test answers (by id); a key absent here has no test (D0). */
+  connectionsTests: Record<string, ConnectionResult> = {};
+  /** The last test per key, as main keeps it (cleared by set and delete). */
+  connectionsLastTest: Record<string, ConnectionLastTest> = {};
   private connectionsListeners = new Set<(v: ConnectionsView) => void>();
   private connectionsView(): ConnectionsView {
-    return { connections: this.connectionsDeclared.map(({ id, label, help }) => ({ id, label, ...(help ? { help } : {}), set: this.connectionsSet.has(id) })) };
+    return {
+      connections: this.connectionsDeclared.map(({ id, label, help }) => ({
+        id,
+        label,
+        ...(help ? { help } : {}),
+        set: this.connectionsSet.has(id),
+        ...(Object.hasOwn(this.connectionsTests, id) ? { test: true as const } : {}),
+        ...(Object.hasOwn(this.connectionsTests, id) && Object.hasOwn(this.connectionsLastTest, id) ? { lastTest: this.connectionsLastTest[id] } : {}),
+      })),
+    };
+  }
+  private connectionsTest(id: string): ConnectionResult {
+    this.connectionsCalls.push(["test", id]);
+    if (typeof id !== "string" || !/^[a-z][a-z0-9_-]{0,39}$/.test(id)) return { ok: false, message: "Invalid request" };
+    if (!this.connectionsDeclared.some((s) => s.id === id)) return { ok: false, message: "This harness declares no such key" };
+    if (!Object.hasOwn(this.connectionsTests, id)) return { ok: false, message: "This key has no test" };
+    const answer = this.connectionsTests[id];
+    this.connectionsLastTest[id] = { at: new Date().toISOString(), ok: answer.ok, ...(answer.ok ? {} : { message: answer.message }) };
+    const view = this.connectionsView();
+    for (const l of this.connectionsListeners) l(view);
+    return answer;
   }
   /** Main's checks in order, with its texts: the IPC's id pattern, the controller's declared ids, the store's value rules. */
   private connectionsChange(op: "set" | "delete", id: string, value?: string): ConnectionResult {
@@ -1571,6 +1599,7 @@ export class FakeClient implements HarnessClient {
       if (/[\u0000-\u001f\u007f]/.test(v)) return { ok: false, message: "A key is one line" };
       this.connectionsSet.add(id);
     } else this.connectionsSet.delete(id);
+    delete this.connectionsLastTest[id];
     const view = this.connectionsView();
     for (const l of this.connectionsListeners) l(view);
     return { ok: true };
@@ -1579,11 +1608,34 @@ export class FakeClient implements HarnessClient {
     get: async (): Promise<ConnectionsView | null> => this.connectionsView(),
     set: async (id: string, value: string) => this.connectionsChange("set", id, value),
     delete: async (id: string) => this.connectionsChange("delete", id),
+    test: async (id: string) => this.connectionsTest(id),
     onChange: (l: (v: ConnectionsView) => void) => {
       this.connectionsListeners.add(l);
       return () => {
         this.connectionsListeners.delete(l);
       };
+    },
+  };
+
+  /** client.tools (tools spec §5): what each call answers (by tool id), the calls made, and the traces by task or run id. */
+  toolAnswers: Record<string, ToolCallResult> = {};
+  toolCalls: { id: string; args: unknown }[] = [];
+  toolTraces: Record<string, ToolCallView[]> = {};
+  private toolsListeners = new Set<(info: ToolsInfo) => void>();
+  /** Main pushes new tools info (the host went off). */
+  toolsChanged(info: ToolsInfo): void {
+    this.state.tools = info;
+    for (const l of [...this.toolsListeners]) l(info);
+  }
+  tools = {
+    call: async (id: string, args?: unknown): Promise<ToolCallResult> => {
+      this.toolCalls.push({ id, args });
+      return Object.hasOwn(this.toolAnswers, id) ? this.toolAnswers[id]! : { ok: false, error: `Unknown tool "${id}"` };
+    },
+    trace: async (id: string): Promise<ToolCallView[]> => (Object.hasOwn(this.toolTraces, id) ? this.toolTraces[id]! : []),
+    onChange: (listener: (info: ToolsInfo) => void) => {
+      this.toolsListeners.add(listener);
+      return () => void this.toolsListeners.delete(listener);
     },
   };
 

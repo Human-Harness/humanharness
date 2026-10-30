@@ -51,6 +51,14 @@ function issues(input: HarnessInput): string[] {
 }
 
 describe("material in the manifest (material spec §8)", () => {
+  it("refuses the harness id material with its own MCP servers when it declares material: they would shadow the core material server", () => {
+    expect(issues({ ...withMaterial, id: "material", mcp: ["./mcp.ts"] })).toEqual([
+      'id: "material" is a built-in MCP server name and the harness\'s MCP servers are named after its id: use another id',
+    ]);
+    // Without servers of its own, or without material (no core material server), the id stays free.
+    expect(issues({ ...withMaterial, id: "material" })).toEqual([]);
+    expect(issues({ ...base, id: "material", mcp: ["./mcp.ts"] })).toEqual([]);
+  });
   it("D0: a manifest without material has none", () => {
     const h = defineHarness(base);
     expect(h).not.toHaveProperty("material");

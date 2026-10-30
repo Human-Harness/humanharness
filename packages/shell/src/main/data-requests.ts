@@ -1,5 +1,5 @@
 import { SETTINGS_COLLECTION, SIDEKICK_COLLECTION } from "@humanharness/harness-sdk";
-import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, dataPath, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
+import { APP_SCOPE, type CommitTrailer, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, dataPath, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
 import { saveAppChange } from "./app-change";
 
 /** The request can't run now (the app isn't set up, turns are blocked); its message is safe to show. */
@@ -7,9 +7,25 @@ export class DataUnavailable extends Error {}
 
 /** Where a person's write is recorded: the folder's history. */
 export interface DataHistory {
-  save(message: string, trailer?: HistoryTrailer): Promise<unknown>;
+  save(message: string, trailer?: CommitTrailer): Promise<unknown>;
   /** Board mode's commit of the collection's file alone. */
-  commitPaths?(paths: readonly string[], message: string, trailer?: HistoryTrailer): Promise<unknown>;
+  commitPaths?(paths: readonly string[], message: string, trailer?: CommitTrailer): Promise<unknown>;
+}
+
+/** Runs writes one at a time, each with its commit, in the order they came. */
+export type DataWriteQueue = <T>(run: () => Promise<T>) => Promise<T>;
+
+/**
+ * A write queue to share between writers of one folder: outside board mode a commit holds the whole folder, so a
+ * write that ran during another's commit would be filed under the other's trailer.
+ */
+export function dataWriteQueue(): DataWriteQueue {
+  let writes: Promise<unknown> = Promise.resolve();
+  return <T>(run: () => Promise<T>): Promise<T> => {
+    const next = writes.then(run, run);
+    writes = next.catch(() => undefined);
+    return next;
+  };
 }
 
 export interface PersonDataDeps {
@@ -35,6 +51,8 @@ export interface PersonDataDeps {
    * collection. Absent: every request goes to `store()` (D0).
    */
   storeFor?(collection: string): Promise<DataStore | null> | undefined;
+  /** The write queue shared with the tools' writes (tools spec §8.3). Absent: a queue of its own (D0). */
+  serial?: DataWriteQueue;
 }
 
 /**
@@ -47,12 +65,7 @@ export interface PersonDataDeps {
  * the next write starts only once the commit is saved, so a commit never holds another write's file.
  */
 export function personDataRequests(d: PersonDataDeps): (request: unknown, options: unknown) => Promise<unknown> {
-  let writes: Promise<unknown> = Promise.resolve();
-  const serial = <T>(run: () => Promise<T>): Promise<T> => {
-    const next = writes.then(run, run);
-    writes = next.catch(() => undefined);
-    return next;
-  };
+  const serial = d.serial ?? dataWriteQueue();
   const storeOf = async (request: unknown): Promise<DataStore | null> => {
     const collection = typeof request === "object" && request !== null ? (request as { collection?: unknown }).collection : undefined;
     const own = typeof collection === "string" ? d.storeFor?.(collection) : undefined;
@@ -91,6 +104,86 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
       }
       return result;
     });
+  };
+}
+
+export interface ToolDataDeps extends Pick<PersonDataDeps, "store" | "history" | "board" | "blocked" | "scopeExists"> {
+  /** The scope of a call made in none (no task, no open scope): `_app` with scopes, `main` without. */
+  noScope(): string;
+  /** The person's write queue (`PersonDataDeps.serial`): one order for both, so no commit holds the other's write. */
+  serial: DataWriteQueue;
+}
+
+/** One tool call's data context: its scope (null: none), the tool, and the calling task's trailer when it has one. */
+export interface ToolDataCall {
+  scope: string | null;
+  tool: string;
+  trailer?: HistoryTrailer;
+}
+
+/**
+ * A harness tool's data requests (tools spec §8.3): the person's path (same store, scope check and commit), as
+ * `who: "tool"` with the tool's id, so collection rules see it and the agent-only limits don't apply. The tool broker
+ * has already held the request to the tool's `uses.data`. Each write is recorded as `Data: <collection>` under the
+ * calling task's trailer plus `Tool: <id>` (`Tool:` alone with no task). Writes run in the person's queue (`serial`),
+ * and the scope is checked again once a write's turn comes, so a scope archived meanwhile is not written.
+ *
+ * Its error message goes back to the tool (and its trace): a refusal says why; any other failure is logged and the
+ * tool gets a plain message, so no file path reaches it.
+ */
+/** A tool call's scope that isn't registered (or no longer is): its message is the person path's. */
+class UnknownScope extends Error {
+  constructor() {
+    super("Unknown scope");
+  }
+}
+
+export function toolDataRequests(d: ToolDataDeps): (request: unknown, call: ToolDataCall) => Promise<unknown> {
+  const scopeOf = async (call: ToolDataCall): Promise<string> => {
+    const scope = call.scope ?? d.noScope();
+    if (scope !== APP_SCOPE && !(await d.scopeExists(scope))) throw new UnknownScope();
+    return scope;
+  };
+  const run = async (request: unknown, call: ToolDataCall): Promise<unknown> => {
+    if (!isDataWrite(request)) {
+      const scope = await scopeOf(call);
+      const ctx = { who: "tool" as const, tool: call.tool, scope };
+      const store = await d.store();
+      if (!store) throw new DataUnavailable("The app is not set up yet");
+      return runDataRequest(store, request, ctx);
+    }
+    // Settings change only through their controller (harness-settings spec), never from a tool.
+    if ((request as { collection?: unknown }).collection === SETTINGS_COLLECTION) throw new DataError("refused", "A tool can't change settings");
+    return d.serial(async () => {
+      const blocked = d.blocked();
+      if (blocked) throw new DataUnavailable(blocked);
+      const store = await d.store();
+      if (!store) throw new DataUnavailable("The app is not set up yet");
+      const scope = await scopeOf(call);
+      const ctx = { who: "tool" as const, tool: call.tool, scope };
+      const history = await d.history();
+      const result = await runDataRequest(store, request, ctx);
+      const collection = String((request as { collection: unknown }).collection);
+      const trailer: CommitTrailer = call.trailer ? { ...call.trailer, tool: call.tool } : { task: null, tool: call.tool };
+      try {
+        const board = d.board?.() === true;
+        const own = board ? [dataPath(store.scopeFor(collection, scope), collection)] : [];
+        await saveAppChange(history, board, own, `${DATA_CHANGE_PREFIX}${collection}`, trailer);
+      } catch (err) {
+        console.error("Could not record the tool's data change in the history", err);
+      }
+      return result;
+    });
+  };
+  return async (request, call) => {
+    if (call.scope !== null && !isScopeDir(call.scope)) throw new UnknownScope();
+    try {
+      return await run(request, call);
+    } catch (err) {
+      if (err instanceof DataError || err instanceof DataUnavailable || err instanceof UnknownScope) throw err;
+      console.error("A tool's data request failed", err);
+      throw new Error("Something went wrong with the data");
+    }
   };
 }
 

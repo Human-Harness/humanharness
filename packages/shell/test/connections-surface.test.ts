@@ -49,8 +49,9 @@ describe("connections surface (tools spec §9, D0)", () => {
       /^function secretStore\(\): SecretStore \| null \{\s*if \(!pluginsAccepted\(harness\) && \(hooks\.pluginDirs\?\.length \?\? 0\) === 0 && !hasSecrets\(harness\)\) return null;/,
     );
     expect(count(store, /new SecretStore\(/)).toBe(1);
-    // Reached only through secretStore(): the plugins' controller and the connections' controller.
-    expect(count(index, /\bsecretStore\(\)/)).toBe(3); // the definition and those two
+    // Reached only through secretStore(): the plugins' controller, the connections' controller and the tools host
+    // (built only under hasTools, tools-surface.test.ts).
+    expect(count(index, /\bsecretStore\(\)/)).toBe(4); // the definition and those three
     // No other main file builds one.
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts") && f !== "index.ts")) {
       expect(await read(f), f).not.toMatch(/new SecretStore\(/);

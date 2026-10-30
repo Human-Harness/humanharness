@@ -28,6 +28,7 @@ import type {
   TaskTurnNotice,
   TasksState,
   TaskView,
+  ToolsInfo,
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
@@ -260,7 +261,15 @@ const client: HarnessClient = {
     get: () => ipcRenderer.invoke("hh:connectionsGet"),
     set: (id, value) => ipcRenderer.invoke("hh:connectionsSet", id, value),
     delete: (id) => ipcRenderer.invoke("hh:connectionsDelete", id),
+    test: (id) => ipcRenderer.invoke("hh:connectionsTest", id),
     onChange: (listener) => subscribe<ConnectionsView>("hh:connectionsChange", listener),
+  },
+  // Main registers these only when the harness declares tools (D0). The page names a tool and its arguments, never a
+  // caller, task or scope.
+  tools: {
+    call: (id, args) => ipcRenderer.invoke("hh:toolsCall", id, args),
+    trace: (id) => ipcRenderer.invoke("hh:toolsTrace", id),
+    onChange: (listener) => subscribe<ToolsInfo>("hh:toolsChange", listener),
   },
   // Main's board-mode inbox channels; plain mode refuses every call and never sends hh:tasksChange (D0).
   tasks: {

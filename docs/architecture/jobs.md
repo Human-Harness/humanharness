@@ -1,6 +1,6 @@
 # Background jobs
 
-A harness may declare `jobs`: work the AI does with no chat and no person in the loop. A sync of tickets, a check after a task, a digest every few hours. Each run gets its own engine session on a job slot, ends with a `job_result` block and is logged in `.harness/jobs.jsonl`. A run that needs the person raises an item that starts one of the harness's actions. Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §3, §8, §9, §10 (slices 5 and 6). Slots are in `turn.md`, the gate and the inbox in `parallel.md`, the trailers in `history.md`.
+A harness may declare `jobs`: work that runs with no chat and no person in the loop. A sync of tickets, a check after a task, a digest every few hours. A job is `prompt` (a brief the agent runs) or, from slice 4 of the tools spec, `steps` (a recipe: tool steps, and an AI step only when a condition holds, `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` §7). Today every job is `prompt`: each run gets its own engine session on a job slot, ends with a `job_result` block and is logged in `.harness/jobs.jsonl`. A run that needs the person raises an item that starts one of the harness's actions. Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §3, §8, §9, §10 (slices 5 and 6). Slots are in `turn.md`, the gate and the inbox in `parallel.md`, the trailers in `history.md`.
 
 ## The manifest
 
@@ -63,6 +63,8 @@ The time limit counts from the first setup step, so a slot that never opens can'
 **Usage lines** (Decision 2): `{ phase: "job", job: <id>, task: <run>, scope? }` (`jobRecord`, `usage-log.ts`). Settings › Usage splits them out by `phase === "job"`: they stay out of the topics' estimates and the per-scope rows, and a caption says "Background jobs: about N tokens" when there are any. Sidekick's daily card counts them as ", background jobs N". `recentUsage(records, n)` keeps the last `n` lines that aren't a job's plus the job lines among them, so a job on a timer never pushes the tasks' turns, the material stages or the latest limits window out of what the app reads.
 
 **Data and material requests** from a job slot belong to the run (`runningOf(key)`: `{ id: <run>, scope }`), never to the open task.
+
+**Harness tools** (`docs/architecture/tools.md`, tools Decision 9): in a harness with an `agent: "call"` tool, a job slot gets the core `tools` MCP server as a task slot does (a `prompt` job's agent may call tools; nothing assumes a job is an AI run). A call from a job slot belongs to the run (`runOf(key)`: `{ id: <run>, scope, job, trailer }`, the trailer being `jobRunTrailer(run, job, scope)`, the run's own history trailer): it traces `caller: "agent"`, `job: <job id>`, `run: <run id>`, in the run's scope, and a tool's data write commits under the run's trailer plus `Tool: <id>`. The job's permissions hold for its tools too: with `web: false` a tool it calls can't `ctx.fetch`, with `exec: false` it can't `ctx.exec` (refused naming them; an undeclared job reaches neither), so a narrowed job never reaches more through a tool (`jobLimits`, tools.md). Each run's calls go to `.harness/trace/jobs/<run-id>.jsonl`, whatever the job runs, and `client.tools.trace(runId)` returns them. The inbox doesn't show them yet: job inbox lines come with slice 4 (tools Decision 11).
 
 ## Triggers
 

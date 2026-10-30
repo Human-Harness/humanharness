@@ -31,7 +31,9 @@ describe("engineProblem", () => {
 });
 
 describe("@humanharness/ui/client", () => {
-  it("imports no runtime code (no React)", () => {
+  it("is exported on its own and imports no runtime code (no React)", () => {
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
+    expect(pkg.exports["./client"]).toBe("./src/client.ts");
     const src = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
     expect(src.match(/^import .*$/gm)?.every((line) => line.startsWith("import type "))).toBe(true);
   });

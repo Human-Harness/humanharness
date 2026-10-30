@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { ConfigStore, cleanJobs, historyDir } from "../src/main/config";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { ConfigStore, cleanJobs, cleanPolicies, historyDir } from "../src/main/config";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -180,6 +180,36 @@ describe("ConfigStore", () => {
     expect(cleanJobs(null, declared)).toBeUndefined();
     expect(cleanJobs([{ off: true }], declared)).toBeUndefined();
     expect(Object.getPrototypeOf(cleanJobs(JSON.parse('{"__proto__":{"off":true}}'), () => true))).toBe(Object.prototype);
+  });
+
+  it("cleanPolicies: only known non-default ids are kept; an unknown one is logged once per id", () => {
+    const warn = vi.fn();
+    expect(cleanPolicies({ model: "default", context: "x-once" }, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('"x-once"');
+    expect(cleanPolicies({ context: "x-once" }, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(cleanPolicies("junk", warn)).toBeUndefined();
+    expect(cleanPolicies(["eco"], warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    // An id of the wrong kind is unknown too.
+    expect(cleanPolicies({ model: 3 }, warn)).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("a hand-edited policies entry is cleaned when read: an unknown id runs the default", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", policies: { model: "eco-on-load", context: "default" } }));
+      expect(await store.load()).toEqual({ folder: "/x" });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"eco-on-load"'));
+      fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", policies: "eco" }));
+      expect(await store.load()).toEqual({ folder: "/x" });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("setProfile refuses anything that isn't an id", async () => {

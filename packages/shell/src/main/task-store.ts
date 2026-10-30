@@ -211,7 +211,7 @@ function cleanPending(p: unknown, taskId: string): PendingInput | undefined {
   return { blockId: p.blockId, block: p.block, shownAt: p.shownAt };
 }
 
-const ITEM_KINDS: readonly string[] = ["instructions", "scope-instructions", "brief", "notes-index", "app-notes-index", "data", "material", "pinned", "pinned-title", "prepared"];
+const ITEM_KINDS: readonly string[] = ["instructions", "scope-instructions", "brief", "notes-index", "app-notes-index", "data", "material", "pinned", "pinned-title", "prepared", "linked-folders"];
 /** Longest item id kept: `pin:<scope>:<path>` with a long path. */
 const ITEM_ID_MAX = 1100;
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;

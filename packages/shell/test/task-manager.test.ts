@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import type { ChoiceOption, SavedNote } from "@humanharness/harness-sdk";
+import { DefaultContextPolicy, registerContextPolicy } from "@humanharness/policies";
 import type { Event, HarnessRuntime } from "@humanharness/runtime";
 import type { TaskView } from "@humanharness/protocol";
 import type { Note, NoteMeta } from "@humanharness/workspace";
@@ -1411,5 +1412,34 @@ describe("TaskManager policy ids (replaceable-parts §8: fixed per task)", () =>
         }
       }
     }
+  });
+});
+
+describe("TaskManager: the task's context policy decides the checkpoint (replaceable-parts §7.3)", () => {
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+  const ctx = (used: number): Event => ({ type: "context", used });
+  let unregister: () => void;
+  beforeEach(() => {
+    unregister = registerContextPolicy({
+      ...DefaultContextPolicy,
+      id: "half",
+      beforeFollowUp: (s) => (s.used !== undefined && s.cap !== undefined && !s.checkpointed && s.used >= 0.5 * s.cap ? "checkpoint" : "go"),
+    });
+  });
+  afterEach(() => unregister());
+
+  it("a registered policy that checkpoints at 50% runs the checkpoint turn before the next follow-up", async () => {
+    const t = setup({ profile: standard, script: [[ctx(100_000), ok], [saveNote(), ok], [ok]], deps: { policies: async () => ({ context: "half" }) } });
+    await t.manager.start("manifest");
+    await t.manager.ask("And the blocks?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run"]);
+    expect(t.state().current).toMatchObject({ checkpointed: true, policies: { context: "half" } });
+  });
+
+  it("the default policy runs no checkpoint at 50%", async () => {
+    const t = setup({ profile: standard, script: [[ctx(100_000), ok], [ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("And the blocks?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
   });
 });

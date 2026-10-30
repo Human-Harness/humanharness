@@ -26,7 +26,7 @@ import {
   setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
-import { CHECKPOINT_AT } from "@humanharness/policies";
+import { CHECKPOINT_AT, type ContextPolicy, DefaultContextPolicy, type TurnState, contextPolicy } from "@humanharness/policies";
 import { type EnginePreset, type Event, type Session, type ToolCallView, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
@@ -359,9 +359,14 @@ export { CHECKPOINT_AT };
 /** Claude doesn't report compactions: the context falling by more than this share means one happened. */
 const COMPACTED_DROP = 0.5;
 
-/** The context reached 80% of the task's cap and no checkpoint ran since the last compaction (spec §6). */
+/** Where the task's context stands before a follow-up turn, for its context policy (replaceable-parts §7.1). */
+function turnState(c: CurrentTask): TurnState {
+  return { used: c.context?.used, cap: c.profile?.cap, checkpointed: c.checkpointed === true };
+}
+
+/** The context reached 80% of the task's cap and no checkpoint ran since the last compaction (spec §6): `DefaultContextPolicy`'s call, kept for importers. */
 export function needsCheckpoint(c: CurrentTask): boolean {
-  return c.profile !== undefined && c.context !== undefined && c.checkpointed !== true && c.context.used >= CHECKPOINT_AT * c.profile.cap;
+  return DefaultContextPolicy.beforeFollowUp(turnState(c)) === "checkpoint";
 }
 
 /**
@@ -463,6 +468,16 @@ export class TaskManager {
     this.newId = d.newId ?? randomUUID;
     this.minute = d.minuteMs ?? MINUTE_MS;
     this.timers = d.timer ?? { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
+  }
+
+  /** The task's context policy: its id is fixed when the task starts (replaceable-parts §8); none is the default. */
+  private contextPolicyOf(c: CurrentTask): ContextPolicy {
+    return contextPolicy(c.policies?.context);
+  }
+
+  /** The task's context policy asks for a checkpoint before the next follow-up. */
+  private needsCheckpoint(c: CurrentTask): boolean {
+    return this.contextPolicyOf(c).beforeFollowUp(turnState(c)) === "checkpoint";
   }
 
   /** A task operation or a turn is under way. */
@@ -1354,7 +1369,7 @@ export class TaskManager {
     }
     take({ ok: true, switched: "turn" });
     return this.endsInWindow(async () => {
-      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      if (this.needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       const language = await this.languageOf(c.id);
       // Read again: a checkpoint just taken here saved the note this line carries.
       const after = (await this.d.store.load()).current;
@@ -1404,7 +1419,7 @@ export class TaskManager {
     take({ ok: true });
     this.tellTurn({ task: c.id, kind: "context", path: file });
     return this.endsInWindow(async () => {
-      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      if (this.needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       // Lines kept for the task's next message go with it (review spec §5.4); a lost session resumes as askNow does.
       const said = await this.withNotices(c, contextAddPrompt(file));
       const message = c.resume ? await this.resumeMessageFor(c, said) : said;
@@ -1517,7 +1532,7 @@ export class TaskManager {
   private async askNow(text: string, display?: string): Promise<void> {
     const c = await this.storedCurrent();
     if (c?.status === "waiting") {
-      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      if (this.needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       // After the session was lost a new one starts, told what the task is and what the notes hold; the
       // chat still shows what was typed. Lines kept for this message (review spec §5.4) go before it, unshown.
       const said = await this.withNotices(c, text);
@@ -1583,7 +1598,7 @@ export class TaskManager {
     }
     const parsed = parseAnswer(block, raw);
     if (!parsed.ok) return refuse("invalid", parsed.errors);
-    if (needsCheckpoint(c)) {
+    if (this.needsCheckpoint(c)) {
       if (!(await this.checkpoint(c))) return refuse("stopped");
       await this.setStatus(c.id, "waiting");
     }
@@ -2118,7 +2133,7 @@ export class TaskManager {
       this.tellTurn({ task: c.id, kind: "phase", phase: to.id, by, ...(back ? { back: true as const } : {}) });
       const before = (await this.d.store.load()).current;
       if (before?.id !== c.id) return this.stopped();
-      if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
+      if (this.needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
     }
     const at = this.now().toISOString();
     let moved = false;
@@ -2369,7 +2384,7 @@ export class TaskManager {
       this.tellTurn({ task: c.id, kind: "wrap-up" });
       const before = (await this.d.store.load()).current;
       if (before?.id !== c.id) return this.stopped();
-      if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
+      if (this.needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
       const now = (await this.d.store.load()).current;
       if (now?.id !== c.id) return this.stopped();
       await this.setStatus(c.id, "running");

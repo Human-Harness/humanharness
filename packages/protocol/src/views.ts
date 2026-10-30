@@ -1,6 +1,5 @@
 // The view models the core sends the window and the window sends back (replaceable parts §5): data only.
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-export type { Effort, ModelChoice, ModelSpec, ModelsConfig, TaskModelChoice } from "@humanharness/engines";
 import type {
   ActionCost,
   BlockAnswer,
@@ -1497,6 +1496,7 @@ export interface FocusState {
   path?: string;
 }
 export type { AnswerPick, Review, ReviewComment, ReviewSummary } from "@humanharness/harness-sdk/review";
+export type { Effort, ModelChoice, ModelSpec, ModelsConfig, TaskModelChoice } from "@humanharness/engines";
 
 export type { DiffPart, FileDiffView, LineChange, MdBlockType, MdDiffBlock, TimelineAuthor, TimelineEntry, TimelineKind } from "@humanharness/workspace";
 

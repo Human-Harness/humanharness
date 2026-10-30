@@ -1,9 +1,8 @@
 import { useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
-import type { Effort, ModelSpec, ModelsConfig, TaskModelChoice } from "./client";
 import { Segmented } from "./chrome";
-import type { AppState, HarnessClient, ModelsView } from "./client";
+import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
 
 // Local copies: the UI only imports types from the core packages.

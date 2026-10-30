@@ -26,7 +26,7 @@ import {
   setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
-import { APP_INDEX_TOKENS, CHECKPOINT_AT, type ContextPolicy, DefaultContextPolicy, type StartPart, type TurnState, contextPolicy } from "@humanharness/policies";
+import { APP_INDEX_TOKENS, CHECKPOINT_AT, type Continuity, type ContinuityEvent, type ContextPolicy, DefaultContextPolicy, type StartPart, type TurnState, contextPolicy } from "@humanharness/policies";
 import { type EnginePreset, type Event, type Session, type ToolCallView, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
@@ -336,6 +336,11 @@ export interface PersonContext {
 /** The error the caller sees: the turn's own reason when it never started. */
 const unwrap = (err: unknown) => (err instanceof TurnNotStarted ? err.reason : err);
 
+/** A policy answer this code does not handle: a compile error while the union grows, a throw if one slips through. */
+function unhandled(how: never): never {
+  throw new Error(`Unhandled context policy answer: ${String(how)}`);
+}
+
 const noteView = (n: Note): NoteView => ({
   slug: n.slug,
   title: n.title,
@@ -468,6 +473,11 @@ export class TaskManager {
   /** The task's context policy: its id is fixed when the task starts (replaceable-parts §8); none is the default. */
   private contextPolicyOf(c: CurrentTask): ContextPolicy {
     return contextPolicy(c.policies?.context);
+  }
+
+  /** How the work goes on after `event` (replaceable-parts §7.1): the task's context policy decides; no task, the default. */
+  private continuity(c: CurrentTask | undefined, event: ContinuityEvent): Continuity {
+    return (c ? this.contextPolicyOf(c) : DefaultContextPolicy).continuity(event);
   }
 
   /** The task's context policy asks for a checkpoint before the next follow-up. */
@@ -867,8 +877,15 @@ export class TaskManager {
     return this.queue(() =>
       this.update((s) => {
         if (!s.current) return s;
-        const { session: _session, context: _context, checkpointed: _checkpointed, ...rest } = s.current;
-        return { ...s, current: { ...rest, resume: true } };
+        const how = this.continuity(s.current, "move");
+        switch (how) {
+          case "new-session-from-notes": {
+            const { session: _session, context: _context, checkpointed: _checkpointed, ...rest } = s.current;
+            return { ...s, current: { ...rest, resume: true } };
+          }
+          default:
+            return unhandled(how);
+        }
       }),
     );
   }
@@ -1717,7 +1734,14 @@ export class TaskManager {
 
   /** The first message of a resumed task's new session (its old session ends first). */
   private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
-    await this.endSession();
+    const how = this.continuity(c, "resume");
+    switch (how) {
+      case "new-session-from-notes":
+        await this.endSession();
+        break;
+      default:
+        unhandled(how);
+    }
     const language = await this.languageOf(c.id);
     let brief: string | undefined;
     try {
@@ -2618,17 +2642,28 @@ export class TaskManager {
     this.begun = true;
     this.taskLanguages.delete(id);
     let closed: CurrentTask | undefined;
+    let ended: CurrentTask | undefined;
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;
+      ended = c;
       if (outcome === "done") closed = c;
       if (outcome !== "done") return interrupted(s, outcome);
       if (!c.action) return { ...s, current: null };
       return { ...withStatus(s, scopeOfTask(c), c.action, "done"), current: null };
     });
     if (closed) this.taskClosed(closed);
-    await this.endSession();
-    await this.between();
+    // No task ended here (another one is open, or none): the default policy answers.
+    const how = this.continuity(ended, "task-end");
+    switch (how) {
+      case "new-session-from-notes":
+        // The session ends; the next task's first turn starts a new one from the notes.
+        await this.endSession();
+        await this.between();
+        break;
+      default:
+        unhandled(how);
+    }
   }
 
   private async saveNote(task: CurrentTask, note: SavedNote, final = true): Promise<void> {

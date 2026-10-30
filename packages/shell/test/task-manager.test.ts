@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import type { ChoiceOption, SavedNote } from "@humanharness/harness-sdk";
-import { DefaultContextPolicy, registerContextPolicy } from "@humanharness/policies";
+import { DefaultContextPolicy, DefaultModelPolicy, registerContextPolicy, registerModelPolicy } from "@humanharness/policies";
 import type { Event, HarnessRuntime } from "@humanharness/runtime";
 import type { TaskView } from "@humanharness/protocol";
 import type { Note, NoteMeta } from "@humanharness/workspace";
@@ -1317,6 +1317,13 @@ describe("TaskManager policy ids (replaceable-parts §8: fixed per task)", () =>
   const deep: ModelProfile = { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 };
   const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000, fallbackFrom: "opus" };
   const unavailable: Event = { type: "done", ok: false, error: { code: "model-unavailable" } };
+  const unregister: (() => void)[] = [];
+  beforeEach(() => {
+    unregister.push(registerModelPolicy({ ...DefaultModelPolicy, id: "eco" }), registerContextPolicy({ ...DefaultContextPolicy, id: "lean" }));
+  });
+  afterEach(() => {
+    for (const u of unregister.splice(0)) u();
+  });
 
   /** profileFor / fallbackFor that record their arguments. */
   function recorded(policies?: () => Promise<{ model?: string; context?: string }>) {
@@ -1413,6 +1420,26 @@ describe("TaskManager policy ids (replaceable-parts §8: fixed per task)", () =>
       }
     }
   });
+
+  it("a stored id no policy is registered under runs the default, and the usage meta names no policy", async () => {
+    const metas: UsageMeta[] = [];
+    const runtime = {
+      send: (_message: string, emit: (e: Event) => void) => ({ cancel: () => {}, done: Promise.resolve().then(() => emit(ok)) }),
+    } as unknown as HarnessRuntime;
+    const controller = new TurnController({
+      ensureRuntime: async () => runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      recordUsage: async (_entry, meta) => void metas.push(meta),
+    });
+    const state: TasksFile = { ...emptyTasks(), current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 1, policies: { model: "gone", context: "gone" } } };
+    const t = setup({ state, profile: deep, turns: controller, window: [] });
+    await t.manager.ask("More?");
+    expect(metas.map((m) => m.phase)).toEqual(["run"]);
+    expect(metas[0]).not.toHaveProperty("modelPolicy");
+    expect(metas[0]).not.toHaveProperty("contextPolicy");
+  });
 });
 
 describe("TaskManager: the task's context policy decides the checkpoint (replaceable-parts §7.3)", () => {
@@ -1441,6 +1468,45 @@ describe("TaskManager: the task's context policy decides the checkpoint (replace
     await t.manager.start("manifest");
     await t.manager.ask("And the blocks?");
     expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
+  });
+});
+
+describe("TaskManager: continuity asks the task's context policy (replaceable-parts §7.1)", () => {
+  const asked: string[] = [];
+  let unregister: () => void;
+  beforeEach(() => {
+    asked.length = 0;
+    unregister = registerContextPolicy({ ...DefaultContextPolicy, id: "spy", continuity: (e) => (asked.push(e), DefaultContextPolicy.continuity(e)) });
+  });
+  afterEach(() => unregister());
+
+  it("a folder move, the resume after it and the task's end each ask the task's policy, and today's flow runs", async () => {
+    const state: TasksFile = {
+      ...emptyTasks(),
+      current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 1, session: { id: "s1", started: true }, policies: { context: "spy" } },
+    };
+    const t = setup({ state, betweenTasks: () => {} });
+    await t.manager.resumeFromNotes();
+    expect(asked).toEqual(["move"]);
+    expect(t.state().current).toMatchObject({ resume: true });
+    expect(t.state().current).not.toHaveProperty("session");
+    await t.manager.ask("Again?");
+    expect(asked).toEqual(["move", "resume"]);
+    const sessions = () => t.log.filter((x) => x === "endSession" || x === "between");
+    expect(sessions()).toEqual(["endSession"]);
+    await t.manager.interrupt();
+    expect(asked).toEqual(["move", "resume", "task-end"]);
+    expect(t.state().current).toBeNull();
+    expect(sessions()).toEqual(["endSession", "endSession", "between"]);
+  });
+
+  it("a task with the default policy asks the registered one nothing", async () => {
+    const state: TasksFile = { ...emptyTasks(), current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 1 } };
+    const t = setup({ state });
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("Again?");
+    await t.manager.interrupt();
+    expect(asked).toEqual([]);
   });
 });
 

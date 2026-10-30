@@ -175,6 +175,7 @@ import {
   compactionRecord,
   dayTokens,
   measuredMaterialCosts,
+  policyMeta,
   profileMeta,
   profilesUsage,
   recentUsage,
@@ -1521,8 +1522,7 @@ const taskDeps: TaskDeps = {
         ...(task.mode ? { mode: task.mode } : {}),
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
         ...(task.profile ? profileMeta(task.profile) : {}),
-        ...(task.policies?.model ? { modelPolicy: task.policies.model } : {}),
-        ...(task.policies?.context ? { contextPolicy: task.policies.context } : {}),
+        ...policyMeta(task.policies),
       }),
     );
   },

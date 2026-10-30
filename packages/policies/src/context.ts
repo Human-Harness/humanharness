@@ -21,6 +21,11 @@ export interface TurnState {
   checkpointed: boolean;
 }
 
+/** What ended the task's session: the task ended, the folder moved, or a stored task resumes. */
+export type ContinuityEvent = "task-end" | "move" | "resume";
+/** How the work goes on after a `ContinuityEvent`. One value today: a new session that starts from the notes. */
+export type Continuity = "new-session-from-notes";
+
 /** Decides what a new session starts with, when to checkpoint, and how work goes on (spec §7.1). Decides only: no I/O. */
 export interface ContextPolicy {
   id: string;
@@ -29,7 +34,7 @@ export interface ContextPolicy {
   /** Before a follow-up turn (a phase change and a wrap-up included). */
   beforeFollowUp(state: TurnState): "go" | "checkpoint";
   /** How the work goes on after a task ends, a folder move, or a resume. */
-  continuity(event: "task-end" | "move" | "resume"): "new-session-from-notes";
+  continuity(event: ContinuityEvent): Continuity;
 }
 
 /** Share of the task's cap at which the checkpoint runs (spec D4). */

@@ -15,7 +15,7 @@ import {
 import type { ChatEntry, PolicyIds, SendOptions } from "@humanharness/protocol";
 import { TurnRecorder } from "./chat-log";
 import { withEngine } from "./scope-access";
-import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
+import { type TurnKind, type UsageMeta, policyMeta, profileMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -254,8 +254,7 @@ export class TurnController {
         ...(phase ? { phase } : {}),
         ...(profile ? profileMeta(profile) : {}),
         ...(reportedModel ? { reportedModel } : {}),
-        ...(policies?.model ? { modelPolicy: policies.model } : {}),
-        ...(policies?.context ? { contextPolicy: policies.context } : {}),
+        ...policyMeta(policies),
       });
       // A held attempt keeps its events until its model answers: one that fails shows nothing.
       let pending: Event[] | null = holdModelError ? [] : null;

@@ -72,6 +72,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `note`: a `save_note` call (`title` required, the rest as the app's note fields).
 - `writes`: file writes in the work folder. `content: null` deletes the file. Paths are relative, with no `..`. A written `.md` becomes a document card, as in a real turn (`docs/architecture/documents.md`); `packages/e2e/fixtures/reader-mock` records one.
 - `reads`: files the turn reads, at most 20, each relative to the work folder (no `..`, nothing absolute). The fake prints each as a `Read` tool call and its result, as Claude does, before the text, so the app records them in the context panel's "During the task" (`docs/architecture/context.md`). Nothing is actually read; a read that leaves the work folder, or goes through a symlink that resolves outside it, fails the turn before any of its writes runs. Optional and not defaulted, so a recording without it parses and is written exactly as before. The demo's `t1` reads `README.md`.
+- `tools`: the agent's calls on the harness's `tools` server, in order, at most 20 (`[{ "tool": "weather", "args": { "city": "lima" } }]`; a tool id and an object, no own `__proto__` key). Optional and not defaulted, so a recording without it parses and is written exactly as before. They play after the text and before the blocks; see "Tools" below.
 - `usage`: feeds the usage and context meters (400 in, 20 out when missing). A built-in reply that keeps the session at a turn (an off-script reply, Add now) reports that turn's usage.
 - `next`: reply to next turn id. A key is the label of a choice the turn offers, or `*` for anything else. A turn with no `next` ends the script.
 - `respond`: recorded answers to an input block the turn shows, each `{ "block", "value", "next" }`. An answer whose JSON equals `value` (key order aside) plays `next`; any other answer follows the turn's `next["*"]`, then the fallback.
@@ -95,7 +96,7 @@ The agent's review tools are recorded the same way. In a harness whose agent may
 - **Add now.** The context panel's prompt (`CONTEXT_ADD_PROMPT`, possibly after kept lines, like the phase change) gets a built-in reply: it reads the path the prompt names (one recorded read) and answers "I read <path> and will take it into account." The session keeps its turn, and that turn's choices and usage come back, as after an off-script reply, so the walk goes on and the app sees no compaction.
 - **Time.** `dev --mock` sets `HH_TEST_MINUTE_MS=1000`: a time-box minute lasts one second, so a 15-minute box wraps up in about 13 seconds of test.
 - **Free questions.** They match no recording and always get the default fallback.
-- **Errors.** Any failure inside a turn (a write refused, a `ui` call rejected) becomes an error result `mock: <reason>` and exit code 1. The app shows it as an engine error.
+- **Errors.** Any failure inside a turn (a write refused, a `ui` call rejected) becomes an error result `mock: <reason>` and exit code 1. The app shows it as an engine error. A recorded **tool** call that fails is the exception ("Tools" below): it is written to stderr and the turn goes on.
 - **Write containment.** A write or delete is refused when its path leaves the work folder, lands in `.claude` or `.harness`, goes through a symlinked folder that resolves outside, or targets a symlink itself.
 
 ## Recording
@@ -114,6 +115,7 @@ The agent's review tools are recorded the same way. In a harness whose agent may
 - **First visit only.** If an action is run again in the same folder as another task, only its first visit is recorded, with a warning.
 - **Atomic write.** Each file is written to a temp file and renamed, so a recording is never half written.
 - **Review.** The output says the recording holds what you typed and what the AI answered, and should be reviewed before committing.
+- **Tools.** In a harness with tools, `run` runs them, and `--record` adds each turn's agent tool calls (`tools`) and writes every tool's fetches and commands to `mock/tools/<tool>/` ("Tools" below; `docs/architecture/tools.md`, "`run --record`"). A harness without tools records exactly as before.
 
 ## check rules
 
@@ -124,6 +126,8 @@ The agent's review tools are recorded the same way. In a harness whose agent may
 - `mock-match`: `match` appears in the action's brief. It also fails when `match` appears in another action's brief, since replay could pick the wrong recording. That is allowed only when the other action has a longer `match` of its own that its brief contains (the longest match wins).
 - `mock-next`: turn ids are unique and every `next` target is a turn.
 - `mock-choice`: every `next` key except `*` is the label of a choice that turn's `show_choices` offers.
+- `mock-schema` also covers a turn's `tools` in a harness with tools: `Turn "<id>": tools[i] calls "<x>", which is not a tool of this harness.` (every call, when the harness has none) or `…, which the agent can't call (agent: "none").`; no check when the tools don't build (`tool-build` says why).
+- `mock-step`: each `mock/steps/*.json`, only in a harness with tools or recipes: a real file (not a link or hard link, ≤ 10 MB; a linked `steps` folder is one error, nothing read), valid JSON of the schema, named after its `job`, a job of the manifest with an AI step, and an `output` (and `request`) that the AI step's `output` schema accepts.
 - `mock-input`: each `respond` answers an input block the turn shows (by its tool) with a value the block's `input` accepts; a `respond[].next` that is no turn is `mock-next`.
 
 `run --record` warns up front when the match it will save is also in another brief.
@@ -137,11 +141,27 @@ The agent's review tools are recorded the same way. In a harness whose agent may
 - `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Models shows the test model.
 - `packages/e2e/tests/review.spec.ts`: the review fixture `packages/fake-agent/fixtures/review-harness` (id `reviewer`, edit "folder", a spec part with `approve: "specs/*.md"`) and its hand-written `mock/ticket.json` walk a review from the agent's questions to the approval that moves the part, including focus mode. Its build is the fixture's own (`launchMock`'s third argument). A D0 test replays `packages/e2e/fixtures/review-d0-mock` on the demo (edit "none"): its call to `ask_in_document` finds no such tool, and no review UI or record appears.
 - `packages/e2e/tests/context.spec.ts`: the demo's recordings walk the context panel (the meter, the start items and totals, the `README.md` read, Add now through a stubbed file dialog, a pin written to `.harness/context/main.json` and shown in the next task, nothing marked as summarized after Add now, an exclusion, no absolute path in `tasks.json` under either spelling of the folder), and a D0 test that leaves no `.harness/context/`, before and after the task ends.
+- Tools: `packages/fake-agent/test/mock-tools.test.ts` (the `tools` key, step recordings), `mock-claude-tools.test.ts` (calls on the `tools` server, a failed call, step turns), `packages/shell/test/tools/tools-mock.test.ts` (the recorded transport, keys, the reader), `packages/shell/test/test-hooks.test.ts` (`mockToolsDir`), `packages/cli/test/record-tools.test.ts` and `check-mock-tools.test.ts`; e2e `tools-mock.spec.ts`.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.
 
 ## Plugins
 
 In mock mode a harness's plugins run on their **fixtures**, never on the network, and their keys are never read (`docs/architecture/plugins.md`, "Fixture mode"). Each source plays the recorded exchanges in `<plugin folder>/fixtures/<source>/*.json` (for a bundled plugin, `<harness>/plugins/<id>/fixtures/`); a key is the placeholder `fixture-<id>` and the key store is not opened; a command runs nothing. A request with no fixture fails that run with "No fixture for GET https://host/path", which shows as the plugin's sync error. Which plugins run is decided as in the real app: a bundled plugin starts only when it is in `plugins.on` or the tester turns it on (the demo's `on-this-day` starts off). A harness without plugins sees no difference. The same fixture mode runs under `HH_PLUGIN_FIXTURES=1` (e2e, and `humanharness plugin dev` without `--live`). Fixtures come from `humanharness plugin record <source>` or are written by hand (`docs/architecture/authoring.md`, "Plugins").
+
+## Tools
+
+Tools slice 5 (`docs/architecture/tools.md`, "Mock mode"; plan `docs/superpowers/plans/2026-10-29-tools-slice5-authoring.md`, "Decision N"). A harness's tools run **for real** in mock mode, in the mock session's folder and data, pre-steps included. Only their outside world is replayed:
+
+- **Replies** (Decision 8): `mock/tools/<tool>/<NNN>.json`, one exchange per file in the plugin fixture format (`plugins.md`, "Fixture mode"): a fetch `{ request: { method, url, headers?, body? }, response: { status, headers, text } }` or a command `{ request: { cmd, args }, response: { code, stdout, stderr } }`. Read in file-name order with the plugin fixture files' rules (at most 200 files of 10 MB, no link or hard link, real folders); a bad file is logged as skipped. Matching ignores headers and body; the first unused match plays. `run --record` writes them, or write them by hand.
+- **A miss** (Decision 10) fails that `ctx.fetch` or `ctx.exec`: "Not recorded: GET https://api.weather.test/v1/oslo" (the tool sees "The request failed: Not recorded: …") or "Not recorded: gh pr checks 12". Nothing reaches the network and no command runs.
+- **Keys** are `fixture-<id>`; the key store is never opened.
+- **When**: only with the mock hook and an absolute `HH_FAKE_MOCK_DIR` (`mockToolsDir`): `dev --mock` and `launchMock` set both, and the folder is `<HH_FAKE_MOCK_DIR>/tools`. A mock-hook run with a scripted engine (e2e `tools.spec.ts`) keeps the real transport and key store.
+- **Read once per host**: a tool's recordings are read on its first fetch or exec and kept, a failed read too. Edit `mock/tools/` and restart.
+- **The agent's calls** (`tools` in a turn, Decision 9) are made on the app's `tools` server, so they run the real tool and appear as tool lines in the chat. One that fails (the tool's error, "Not recorded", a refusal) **doesn't end the turn**: `mock: the tools server rejected <tool>: <message>` goes to stderr, and the next calls, the blocks and the note still play, as a real agent carries on after a tool error. Only a turn with calls in a session the app gave no `tools` server fails (`the app configured no tools MCP server`).
+- **A recipe's AI step** (Decision 11, not in the spec): a step turn (non-empty `HH_STEP` on the `ui` server) answers from `mock/steps/<job>.json`, `{ "version": 1, "job": "<job>", "output": { … }, "request"?: { … } }`, with one `step_output` call and 0 tokens; it never touches the recordings or the session state. Without the file the turn plays nothing and the run fails "The AI step gave no valid output: it was not called". The file is opened with `O_NOFOLLOW`, refused when it is a hard link or over 10 MB, and must name its own job; a bad file fails the turn with `mock: <problem>`. A prompt job keeps its canned `job_result` (`docs/architecture/jobs.md`, "Mock mode").
+- **First round or request round** is told by a heuristic: a prompt holding `### request` as a heading of its own (`\n### request\n`) is a request round and plays `request` (or `output` without one); any other plays `output`. Its limits: a tool step saved `as: "request"` puts the same heading in the first round's data, and a retried request round answers as its first prompt did.
+
+The e2e `packages/e2e/tests/tools-mock.spec.ts` (fixture `packages/fake-agent/fixtures/mock-tools-harness`, id `mock-tools`) runs a pre-step and two recorded agent calls through a recording: one answered from `mock/tools/weather/001.json`, one "Not recorded", after which the turn's choices still show.
 
 ## The harness backend
 
@@ -158,4 +178,6 @@ A harness's backend (`docs/architecture/hatches.md`, H2) runs in mock mode as in
 - Harness settings work in mock mode (the tab saves, `AGENTS.md` follows), but a recording plays the same whatever the settings.
 - `run --record` does not capture reads: a recording from a real engine has no `reads`; add them by hand.
 - Mock mode can't run a translation, so a tester sees the screens in English.
+- AI steps: the round is told by the `### request` heuristic above.
+- Tool replies are kept per tool, not per turn or action: two recordings that fetch the same URL share its files.
 - Task modes: `m <id>` under `run --record` is recorded like a typed follow-up (the `*` link), even when nothing switched. Replay plays a switch as any other reply, so a recording can't branch by mode.

@@ -8,6 +8,7 @@ import {
   isMockEngine,
   mockEngineText,
   mockModels,
+  mockToolsDir,
   offeredEngines,
   readTestHooks,
   testEngineStatus,
@@ -106,6 +107,25 @@ describe("mock mode hooks", () => {
     const fake = { command: ["node"], env: {} };
     expect(offeredEngines(defs, { mock: true, engines: { claude: fake } }).map((e) => e.id)).toEqual(["claude"]);
     expect(offeredEngines(defs, { engines: { claude: fake } }).map((e) => e.id)).toEqual(["claude", "codex"]);
+  });
+});
+
+describe("mockToolsDir (tools spec §12, end follow-up M14)", () => {
+  const claude = (env: Record<string, string>) => ({ claude: { command: ["node"], env } });
+
+  it("mock mode replaying recordings: the tools answer from <HH_FAKE_MOCK_DIR>/tools", () => {
+    expect(mockToolsDir({ mock: true, engines: claude({ HH_FAKE_MOCK_DIR: "/h/mock" }) })).toBe(path.join("/h/mock", "tools"));
+  });
+
+  it("not mock mode: the real transport, whatever the fake engine reads", () => {
+    expect(mockToolsDir({ engines: claude({ HH_FAKE_MOCK_DIR: "/h/mock" }) })).toBeNull();
+    expect(mockToolsDir({})).toBeNull();
+  });
+
+  it("mock mode with a scripted engine (no HH_FAKE_MOCK_DIR, as e2e tools.spec) or a relative one: the real transport", () => {
+    expect(mockToolsDir({ mock: true, engines: claude({ HH_FAKE_SCRIPT: "/s.json" }) })).toBeNull();
+    expect(mockToolsDir({ mock: true })).toBeNull();
+    expect(mockToolsDir({ mock: true, engines: claude({ HH_FAKE_MOCK_DIR: "h/mock" }) })).toBeNull();
   });
 });
 

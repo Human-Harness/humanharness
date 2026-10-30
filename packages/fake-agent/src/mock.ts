@@ -1,5 +1,6 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { JOB_ID, TOOL_ID } from "@humanharness/harness-sdk";
 import { z } from "zod";
 
 /** Folders the app owns in a work folder: a recording never writes there. */
@@ -51,6 +52,15 @@ const respondSchema = z.strictObject({
   next: z.string().min(1),
 });
 
+/** A JSON object; checked on the raw input first: zod's record silently drops a `__proto__` key. */
+const jsonObject = z
+  .unknown()
+  .refine((o) => typeof o !== "object" || o === null || !Object.hasOwn(o, "__proto__"), "\"__proto__\" is not a valid key")
+  .pipe(z.record(z.string(), z.unknown()));
+
+/** One call the agent made on the `tools` MCP server (tools spec §12). */
+const toolCallSchema = z.strictObject({ tool: z.string().regex(TOOL_ID), args: jsonObject });
+
 export const mockTurnSchema = z.strictObject({
   id: z.string().min(1),
   text: z.string().default(""),
@@ -62,6 +72,12 @@ export const mockTurnSchema = z.strictObject({
    * defaulted: a recording without reads parses (and is written by `--record`) exactly as before.
    */
   reads: z.array(folderRelative).max(20).optional(),
+  /**
+   * The agent's tool calls this turn (tools spec §12, Decision 9), made on the `tools` MCP server before the turn's
+   * blocks, in order. Optional, not defaulted: a recording without them parses (and is written by `--record`) exactly as
+   * before.
+   */
+  tools: z.array(toolCallSchema).max(20).optional(),
   usage: usageSchema.optional(),
   delayMs: z.number().int().min(0).max(60_000).optional(),
   /**
@@ -92,7 +108,19 @@ export const recordingSchema = z.strictObject({
   turns: z.array(mockTurnSchema).min(1),
 });
 
+/** A recipe's AI step in mock mode (tools Decision 11): `mock/steps/<job>.json`. */
+export const stepRecordingSchema = z.strictObject({
+  version: z.literal(1),
+  job: z.string().regex(JOB_ID),
+  /** step_output's input for a first round. */
+  output: jsonObject,
+  /** step_output's input for a round a post-step asked for; `output` when absent. */
+  request: jsonObject.optional(),
+});
+
 export type Recording = z.infer<typeof recordingSchema>;
+export type StepRecording = z.infer<typeof stepRecordingSchema>;
+export type MockToolCall = z.infer<typeof toolCallSchema>;
 export type MockTurn = z.infer<typeof mockTurnSchema>;
 export type MockBlock = z.infer<typeof blockSchema>;
 export type MockWrite = z.infer<typeof writeSchema>;
@@ -120,4 +148,59 @@ export function loadRecordings(dir: string): { recordings: Recording[]; problems
     }
   }
   return { recordings, problems };
+}
+
+/** The folder of step recordings inside a mock folder, and a step recording's size cap (the plugin fixture files' 10 MB). */
+export const STEP_RECORDINGS_DIR = "steps";
+export const STEP_RECORDING_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The text of a step recording file, or null when there is none. Opened without following a link and checked on the
+ * open file (as the plugin fixture files): a link, a folder, a hard link or a file over the cap throws "<name> is …".
+ */
+export function readStepRecordingFile(file: string, name: string): string | null {
+  let fd: number;
+  try {
+    fd = openSync(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    if (code === "ELOOP" || code === "EISDIR") throw new Error(`${name} is not a file.`);
+    throw new Error(`${name}: ${(err as Error).message}`);
+  }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error(`${name} is not a file.`);
+    if (st.nlink > 1) throw new Error(`${name} is a hard link.`);
+    if (st.size > STEP_RECORDING_BYTES) throw new Error(`${name} is too big (over ${STEP_RECORDING_BYTES / 1024 / 1024} MB).`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * `<dir>/steps/<job>.json` (tools Decision 11), or null when there is none. `job` is checked against the job id pattern
+ * before it joins a path; a linked folder or file, a folder, a hard link, a file over the cap, one that doesn't parse or one whose
+ * `job` isn't `job` throws with its problem.
+ */
+export function loadStepRecording(dir: string, job: string): StepRecording | null {
+  if (!JOB_ID.test(job)) throw new Error(`"${job}" is not a job id.`);
+  const folder = path.join(dir, STEP_RECORDINGS_DIR);
+  const name = `${STEP_RECORDINGS_DIR}/${job}.json`;
+  const folderStat = lstatSync(folder, { throwIfNoEntry: false });
+  if (!folderStat) return null;
+  if (!folderStat.isDirectory()) throw new Error(`${STEP_RECORDINGS_DIR} is not a folder.`);
+  const text = readStepRecordingFile(path.join(folder, `${job}.json`), name);
+  if (text === null) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${name}: ${(err as Error).message}`);
+  }
+  const parsed = stepRecordingSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(`${name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"} ${i.message}`).join("; ")}`);
+  if (parsed.data.job !== job) throw new Error(`${name}: its job is "${parsed.data.job}", not "${job}" (it must be named after its job).`);
+  return parsed.data;
 }

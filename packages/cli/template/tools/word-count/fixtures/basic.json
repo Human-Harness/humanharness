@@ -1,0 +1,1 @@
+{ "args": { "path": "notes/a.md" }, "files": { "notes/a.md": "one two  three\nfour" }, "expect": { "result": { "path": "notes/a.md", "words": 4 } } }

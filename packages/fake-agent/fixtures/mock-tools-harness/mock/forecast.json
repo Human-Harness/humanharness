@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "action": "forecast",
+  "match": "Forecast task:",
+  "recordedWith": "claude",
+  "turns": [
+    {
+      "id": "t1",
+      "text": "Lima is clear.",
+      "tools": [
+        { "tool": "weather", "args": { "city": "lima" } },
+        { "tool": "weather", "args": { "city": "oslo" } }
+      ],
+      "blocks": [
+        { "tool": "show_choices", "input": { "options": [{ "label": "Another city", "next": true }] } }
+      ],
+      "usage": { "input": 1200, "output": 40, "cacheRead": 0, "cacheWrite": 0 }
+    }
+  ]
+}

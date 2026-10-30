@@ -76,6 +76,19 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   return hooks;
 }
 
+/**
+ * Where the tools' recorded replies are in mock mode (tools spec §12, slice 5 Decision 10): `<HH_FAKE_MOCK_DIR>/tools`
+ * when the app is in mock mode AND the fake claude engine replays recordings from an absolute folder (`dev --mock`:
+ * `<harness>/mock`, the folder it reads AI step recordings from). Otherwise null: the tools' real transport (D0).
+ * Mock mode alone is not enough on purpose: e2e tools.spec runs HH_TEST_MOCK=1 with a scripted engine (HH_FAKE_SCRIPT,
+ * no recordings) and pins the real key store's "not set" answer, so without recordings the tools stay as they are.
+ */
+export function mockToolsDir(hooks: Pick<TestHooks, "mock" | "engines">): string | null {
+  if (!hooks.mock) return null;
+  const replayed = hooks.engines?.claude?.env.HH_FAKE_MOCK_DIR;
+  return replayed && path.isAbsolute(replayed) ? path.join(replayed, "tools") : null;
+}
+
 /** A fake engine is always installed, signed in and tested; only the legal notice is real. */
 export function testEngineStatus(engine: EngineDef, noticeAccepted: boolean): EngineStatus {
   return {

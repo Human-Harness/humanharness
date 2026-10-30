@@ -16,6 +16,9 @@ const FILES = [
   "README.md",
   "HARNESS.md",
   "tsconfig.json",
+  "tools/word-count.ts",
+  "tools/word-count/fixtures/basic.json",
+  "tools/word-count/fixtures/outside.json",
 ];
 
 describe("template", () => {

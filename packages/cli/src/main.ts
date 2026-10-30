@@ -6,6 +6,7 @@ import { initCommand } from "./init";
 import { measureCommand } from "./measure";
 import { pluginCommand } from "./plugin";
 import { runCommand } from "./run";
+import { toolCommand } from "./tool-command";
 
 type Command = (args: string[], io: Io) => Promise<number>;
 
@@ -23,6 +24,7 @@ export const USAGE = [
   "  build [--harness <dir>]                  Bundle the harness's tools into dist/ (tools.json)",
   "  measure [--folder <dir>]                 Print first-turn tokens with and without pre-steps, per action",
   "  plugin <command>                         Build, check and try a plugin (humanharness plugin --help)",
+  "  tool <command>                           Test and run the harness's tools (humanharness tool --help)",
   "",
   "check, run and dev take --harness <dir> to work on another folder than the current one.",
   "",
@@ -37,15 +39,16 @@ const COMMANDS: Record<string, Command> = {
   plugin: pluginCommand,
   build: buildCommand,
   measure: measureCommand,
+  tool: toolCommand,
 };
 
 /**
  * Commands that end the process once they have printed: `plugin test` and `record` run plugin code in this process
- * (P12), and what it leaves behind (a timer or a request made through this realm, past the run's time limit) would
+ * (P12), as `tool test` and `tool run` run tool code, and what it leaves behind (a timer or a request made through this realm, past the run's time limit) would
  * otherwise keep the command alive.
  */
 export function exitsWhenDone(argv: string[]): boolean {
-  return argv[0] === "plugin" && (argv[1] === "test" || argv[1] === "record");
+  return (argv[0] === "plugin" && (argv[1] === "test" || argv[1] === "record")) || (argv[0] === "tool" && (argv[1] === "test" || argv[1] === "run"));
 }
 
 export async function main(argv: string[], io: Io): Promise<number> {

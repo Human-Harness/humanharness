@@ -30,6 +30,8 @@ export default defineHarness({
   permissions: { edit: "none", exec: false, web: false },
   // Custom blocks, by name. The core adds `choices` and `save_note` to every harness.
   blocks: { example_card: exampleCard },
+  // Code the AI (or a task's pre-steps) can call instead of doing mechanical work by hand. Each one is a file in tools/ with fixtures in tools/<id>/fixtures/.
+  tools: { "word-count": "./tools/word-count.ts" },
   // Tasks the person can start. Each one runs in its own engine session and ends with a note.
   actions: {
     example: {

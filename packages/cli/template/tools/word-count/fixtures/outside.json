@@ -1,0 +1,1 @@
+{ "args": { "path": "../x" }, "expect": { "error": "a path stays inside the folder" } }

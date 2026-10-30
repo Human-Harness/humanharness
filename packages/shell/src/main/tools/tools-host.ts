@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type ActionLike, type HarnessSecret, type JobStep, PRE_TOKENS_DEFAULT, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
+import { type ActionLike, type HarnessSecret, type JobStep, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { Event, ToolCallView } from "@humanharness/runtime";
 import type { ToolsInfo } from "@humanharness/ui/client";
@@ -14,11 +14,11 @@ import { isJobSlot } from "../jobs/jobs-host";
 import { PREPARE_FAILED, type PrepareAnswer } from "../task-manager";
 import { type UsageRecord, expectsMissRecord, preRecord } from "../usage-log";
 import { expectsMisses } from "./expects";
-import { runPreSteps } from "./pre-steps";
-import { preparedSection } from "./prepared-section";
+import { prepareTask } from "./prepare-task";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
 import { type JobLimits, TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
+import { recordedToolTransport, readToolRecordings } from "./recorded-transport";
 import { toolFiles } from "./tool-files";
 import type { ToolHost } from "./tool-host";
 import { LOG_CHARS, TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
@@ -116,6 +116,13 @@ export interface ToolsHostDeps {
   engine?(): Promise<string>;
   /** The harness has scopes: the rows and a pre-step's history trailer name the task's scope only then (D2). */
   scoped?(): boolean;
+  /**
+   * Mock mode (`dev --mock`, tools spec §12, Decision 10; absent: the real transport, D0): the tools run for real, but
+   * each one's `ctx.fetch` and `ctx.exec` answer only from `<dir>/<tool>/*.json` ("Not recorded: <target>" otherwise),
+   * read once per tool per start; no command is looked up and no host name resolved; every key is `fixture-<id>` and
+   * the key store is never read (A2, A7).
+   */
+  mock?: { dir: string };
   log(message: string, err?: unknown): void;
 }
 
@@ -262,6 +269,23 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   const trailers = new Map<string, HistoryTrailer | undefined>();
   /** The pre calls (and their cut notes) of each start being prepared, by task: shown with its first turn, not live. */
   const prepared = new Map<string, ToolCallView[]>();
+  const mock = d.mock;
+  /** The keys: the store's, or in mock mode `fixture-<id>` without touching it (A7). */
+  const store: Pick<SecretStore, "harnessValues"> = mock ? { harnessValues: async (ids) => Object.fromEntries(ids.map((id) => [id, `fixture-${id}`])) } : d.store;
+  /**
+   * Mock mode: each tool's recorded transport, made on its first access and kept for the host's life — a read that
+   * failed too (its fetch and exec then fail with that error): files added to or fixed in mock/tools/ count from the
+   * next start (end follow-up M17).
+   */
+  const recorded = new Map<string, Promise<ReturnType<typeof recordedToolTransport>>>();
+  const recordedOf = (dir: string, tool: string) => {
+    let t = recorded.get(tool);
+    if (!t) {
+      t = readToolRecordings(dir, tool, d.log).then(recordedToolTransport);
+      recorded.set(tool, t);
+    }
+    return t;
+  };
 
   /**
    * The trace of the current base. Each base is pruned once, before its trace is first used: the base at start, and
@@ -282,7 +306,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   const secretValues = async (tool: string): Promise<string[]> => {
     if (!state.on || !Object.hasOwn(state.tools, tool)) return [];
     const ids = state.tools[tool]!.uses.secrets ?? [];
-    return ids.length > 0 ? Object.values(await d.store.harnessValues(ids)) : [];
+    return ids.length > 0 ? Object.values(await store.harnessValues(ids)) : [];
   };
 
   const brokerOf = (tool: string): ToolBroker => {
@@ -294,7 +318,7 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
       tool,
       meta: state.tools[tool]!,
       secrets: h.secrets ?? [],
-      store: d.store,
+      store,
       data: (op, ctx) => d.data(dataRequest(op), { scope: ctx.scope, tool: ctx.tool, ...withTrailer(callTrailer.getStore()?.trailer) }),
       files: async () => {
         const base = await d.base();
@@ -302,9 +326,18 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
         return toolFiles({ base, references: await d.references() });
       },
       fetch: d.fetch,
-      allowHost: d.allowHost,
       userData: d.userData,
-      exec: { resolve: d.exec.resolve, run: d.exec.run, env: async () => toolExecEnv(await d.exec.env()) },
+      ...(mock
+        ? {
+            // As plugins' fixture mode: nothing is resolved or looked up, and only the recorded exchanges answer.
+            allowHost: async () => true,
+            exec: { resolve: async (cmd: string) => path.resolve(path.sep, "fixture", path.basename(cmd)), run: d.exec.run, env: async () => toolExecEnv({}) },
+            transport: (id: string) => ({
+              fetch: (async (input: string | URL | Request, init?: RequestInit) => (await recordedOf(mock.dir, id)).fetch(input, init)) as typeof fetch,
+              run: (async (file, args, o) => (await recordedOf(mock.dir, id)).run(file, args, o)) as typeof runFile,
+            }),
+          }
+        : { allowHost: d.allowHost, exec: { resolve: d.exec.resolve, run: d.exec.run, env: async () => toolExecEnv(await d.exec.env()) } }),
       // As plugins (B6): the stored keys hidden first, then cut. Main's log (`d.log`) adds the "[tools]" itself.
       log: async (level, message) => {
         const keys = await secretValues(tool).catch(() => []);
@@ -466,28 +499,25 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
   }
 
   async function prepare(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer> {
-    const action = actionOf(o.action);
-    const steps = action?.pre ?? [];
     const phase = o.phase !== undefined ? { phase: o.phase } : {};
     // The task's own trailer, as its commits will carry it: a pre-step's data write is the task's (plus `Tool:`).
     const trailer: HistoryTrailer = { task: o.task, action: o.action, ...(scoped() ? { scope: o.scope } : {}), ...phase };
     const views: ToolCallView[] = [];
     prepared.set(o.task, views);
     try {
-      // The task's scope as is (`_app` and `main` included), as its agent calls.
-      const run = await callTrailer.run({ trailer }, () => runPreSteps({ registry, steps, task: o.task, scope: o.scope, ...phase }));
-      await start();
-      const descriptions: Record<string, string> = state.on ? Object.fromEntries(Object.entries(state.tools).map(([id, m]) => [id, m.description])) : {};
-      const part = preparedSection(run.results, { descriptions, preTokens: action?.preTokens ?? PRE_TOKENS_DEFAULT });
-      // After the calls, so each cut joins the group under them; sent even when nothing is left of the section.
-      for (const c of part.cuts) await registry.note({ tool: c.tool, caller: "pre", task: o.task, ...phase, text: c.text });
-      // A refused start sent no section: its row counts no prepared tokens.
-      await row((engine) =>
-        preRecord({ engine, action: o.action, task: o.task, ...(scoped() ? { scope: o.scope } : {}), steps: steps.length, ms: run.ms, preparedTokens: run.requiredFailure ? 0 : part.tokens, ok: run.results.every((r) => r.ok) }),
-      );
-      // The step's message is the registry's (secrets hidden, P5).
-      if (run.requiredFailure) return { text: "", items: [], views, failed: `${run.requiredFailure.tool} failed: ${run.requiredFailure.error}` };
-      return { text: part.text, items: part.items, views };
+      // Shared with `humanharness run` (prepare-task.ts): steps, section, cut notes, the `pre` row.
+      return await prepareTask(o, {
+        registry,
+        action: actionOf(o.action),
+        scoped: scoped(),
+        around: (run) => callTrailer.run({ trailer }, run),
+        descriptions: async () => {
+          await start();
+          return state.on ? Object.fromEntries(Object.entries(state.tools).map(([id, m]) => [id, m.description])) : {};
+        },
+        row: (f) => row((engine) => preRecord({ engine, ...f })),
+        views,
+      });
     } catch (err) {
       // Never the thrown text: it may hold a path or anything else (P5).
       d.log("Could not run the pre-steps", err);

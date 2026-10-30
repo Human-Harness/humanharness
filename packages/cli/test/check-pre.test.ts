@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkHarness } from "../src/check";
 import { initHarness } from "../src/init";
-import { CORE, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-pre-");
 afterAll(cleanup);
@@ -26,6 +26,8 @@ export default defineTool({
 async function fixture(pre: string | null, returns?: string): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  // The template's own example tool out first: the manifest gets one `tools` key, this test's.
+  dropExampleTool(dir);
   replaceIn(dir, "harness.config.ts", "  actions: {\n", '  tools: { "due-today": "./tools/due-today.ts", "warmup-cards": "./tools/warmup-cards.ts" },\n  actions: {\n');
   if (pre) replaceIn(dir, "harness.config.ts", '      tier: "standard",\n', `      tier: "standard",\n      pre: ${pre},\n`);
   fs.mkdirSync(path.join(dir, "tools"), { recursive: true });

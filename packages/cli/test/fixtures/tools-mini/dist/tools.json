@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "tools": {
+    "ai": {
+      "description": "Calls ctx.summary and ctx.requestAi.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "requestAi": {
+            "type": "string"
+          },
+          "refused": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "requestAi",
+          "refused"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/ai.js"
+    },
+    "echo": {
+      "description": "Returns its arguments.",
+      "agent": "call",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a"
+        ]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/echo.js"
+    },
+    "escape": {
+      "description": "Reports whether process, require, fetch and Buffer exist where the tools run.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "string"
+          },
+          "require": {
+            "type": "string"
+          },
+          "fetch": {
+            "type": "string"
+          },
+          "Buffer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "process",
+          "require",
+          "fetch",
+          "Buffer"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/escape.js"
+    },
+    "fetcher": {
+      "description": "Fetches api.example.test with the API key.",
+      "agent": "call",
+      "uses": {
+        "hosts": [
+          "api.example.test"
+        ],
+        "secrets": [
+          "api"
+        ]
+      },
+      "params": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/fetcher.js"
+    },
+    "wait": {
+      "description": "Waits forever.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "timeout": 1,
+      "file": "tools/wait.js"
+    }
+  }
+}

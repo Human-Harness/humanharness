@@ -6,7 +6,7 @@ import { pluginGuideFileOf, pluginTemplateDirOf } from "../src/paths";
 import { CORE, read } from "./helpers";
 
 const guide = read(path.join(CORE, "packages", "cli", "guide"), "new-harness.md");
-const PHASES = ["Task", "Decisions", "Flow", "Context", "Models", "Permissions and engines", "Identity", "Verify"];
+const PHASES = ["Task", "Decisions", "Flow", "Mechanical work", "Context", "Models", "Permissions and engines", "Identity", "Verify"];
 
 /** Each `## Phase N — Name` with its body (up to the next `## `). */
 function phases(text: string): { n: number; name: string; body: string }[] {
@@ -18,7 +18,7 @@ function phases(text: string): { n: number; name: string; body: string }[] {
 }
 
 describe("the /new-harness guide", () => {
-  it("runs the eight phases in order", () => {
+  it("runs the nine phases in order", () => {
     expect(phases(guide).map((p) => [p.n, p.name])).toEqual(PHASES.map((name, i) => [i + 1, name]));
   });
 

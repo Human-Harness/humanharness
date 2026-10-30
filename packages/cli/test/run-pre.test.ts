@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { initHarness } from "../src/init";
 import { runTask } from "../src/run";
-import { CORE, memoryStream, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, memoryStream, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-pre-");
 afterAll(cleanup);
@@ -46,6 +46,8 @@ export default defineTool({
 async function fixture(withPre: boolean): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  // The template's own example tool out first: the manifest gets one `tools` key, this test's.
+  dropExampleTool(dir);
   replaceIn(dir, "harness.config.ts", "  actions: {\n", '  tools: { "due-today": "./tools/due-today.ts" },\n  actions: {\n');
   if (withPre) replaceIn(dir, "harness.config.ts", '      tier: "standard",\n', '      tier: "standard",\n      pre: [{ tool: "due-today", as: "today" }],\n');
   fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
@@ -73,15 +75,13 @@ async function run(harnessDir: string) {
 }
 
 describe("run: pre-steps (tools Decision 18)", () => {
-  it("prints 'Pre-steps are not run in the terminal yet.' once before the first turn, and the first message has no Prepared data", { timeout: 60_000 }, async () => {
+  it("runs the pre-steps and prints no notice", { timeout: 60_000 }, async () => {
+    // Slice 5 Task 8: the terminal runs pre-steps, so slice 3's notice is gone and the first message has the section.
     const { text, first } = await run(await fixture(true));
-    expect(text.split(NOTICE)).toHaveLength(2);
-    expect(text.indexOf(NOTICE)).toBeGreaterThan(-1);
-    expect(text.indexOf(NOTICE)).toBeLessThan(text.indexOf("First turn here."));
-    expect(text).toContain(`${NOTICE}\n`);
+    expect(text).not.toContain(NOTICE);
     expect(first).toContain("# Task: example");
-    expect(first).not.toContain("Prepared data");
-    expect(first).not.toContain("card one");
+    expect(first).toContain("## Prepared data");
+    expect(first).toContain("card one");
   });
 
   it("D0: an action without pre prints nothing new", { timeout: 60_000 }, async () => {

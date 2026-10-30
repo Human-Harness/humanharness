@@ -70,6 +70,11 @@ export class TerminalView {
     }
   }
 
+  /** A line of the run's tools (a call, a note): on a line of its own, as given. */
+  toolLine(s: string): void {
+    this.line(s);
+  }
+
   /** A turn the app starts on its own (task-phases spec §4.4, §5): its line, before its answer. */
   taskTurn(n: TaskTurnNotice, label?: string): void {
     this.newline();

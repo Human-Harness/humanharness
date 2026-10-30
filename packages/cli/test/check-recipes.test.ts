@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkHarness } from "../src/check";
 import { initHarness } from "../src/init";
-import { CORE, replaceIn, tempRoot } from "./helpers";
+import { CORE, dropExampleTool, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-recipes-");
 afterAll(cleanup);
@@ -35,6 +35,8 @@ const TOOLS = {
 async function fixture(steps: string, brief: string | null = "Pick the failing pull requests.\n"): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  // The template's own example tool out first: the manifest gets one `tools` key, this test's.
+  dropExampleTool(dir);
   const tools = Object.keys(TOOLS).map((id) => `"${id}": "./tools/${id}.ts"`).join(", ");
   replaceIn(dir, "harness.config.ts", "  actions: {\n", `  tools: { ${tools} },\n  actions: {\n`);
   replaceIn(dir, "harness.config.ts", 'questions: { tier: "light" },', `questions: { tier: "light" },\n  jobs: {\n    sync: { label: "Sync", on: { manual: true }, steps: ${steps} },\n  },`);

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type Recording, choiceLabels, recordingSchema } from "@humanharness/fake-agent";
+import { type Recording, STEP_RECORDINGS_DIR, choiceLabels, readStepRecordingFile, recordingSchema, stepRecordingSchema } from "@humanharness/fake-agent";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import {
   type InputFieldUi,
@@ -9,6 +9,7 @@ import {
   SIDEKICK_TIPS_TOKENS_WARN,
   aiStepOf,
   blockToolName,
+  hasRecipes,
   hasTools,
   inputBlocks,
   inputFields,
@@ -30,6 +31,7 @@ import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, pa
 import { clashMessage, matchClashes } from "./mock-match";
 import { HARNESS_MD, MANIFEST } from "./paths";
 import { ToolBuildError, buildTools } from "./tool-build";
+import { toolFixtureFindings } from "./tool-test";
 
 export type Severity = "error" | "warning";
 export type RuleId =
@@ -66,7 +68,9 @@ export type RuleId =
   | "job-daily-tokens"
   | "tool-build"
   | "tool-uses"
-  | "tool-steps";
+  | "tool-steps"
+  | "tool-fixture"
+  | "mock-step";
 
 export interface Finding {
   rule: RuleId;
@@ -92,8 +96,13 @@ const warning = finding("warning");
 const read = (file: string) => fs.readFile(file, "utf8").catch(() => null);
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
 
-/** Validates the harness in `dir` (spec §7). Errors make the CLI exit with 1. */
-export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Promise<CheckResult> {
+/**
+ * Validates the harness in `dir` (spec §7). Errors make the CLI exit with 1.
+ * `fixtures`: run each tool's fixtures (rule `tool-fixture`, tools Decision 4), with `note` where the P12 note for tools
+ * goes before any of them runs and `temp` where their temp folders go. `check` passes it; without it no fixture runs (as
+ * before).
+ */
+export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: { note(line: string): void; temp?: string } } = {}): Promise<CheckResult> {
   const root = path.resolve(dir);
   const findings: Finding[] = [];
   const harness = await loadManifest(root, findings);
@@ -108,8 +117,10 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await modeFindings(harness)));
   findings.push(...(await phaseFindings(harness)));
   findings.push(...(await jobFindings(harness)));
-  findings.push(...(await toolBuildFindings(root, harness)));
-  findings.push(...(await mockFindings(harness, briefs)));
+  const built: BuiltTools = {};
+  findings.push(...(await toolBuildFindings(root, harness, opts.fixtures, built)));
+  findings.push(...(await mockFindings(harness, briefs, agentOf(harness, built))));
+  findings.push(...(await mockStepFindings(harness)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
   findings.push(...settingsFindings(harness));
@@ -174,8 +185,22 @@ async function readBriefs(h: LoadedHarness): Promise<Map<string, string | null>>
 
 const MOCK_DIR = "mock";
 
-/** `mock/*.json` (spec 3e §3): each file a valid recording of an action, whose branches lead somewhere real. */
-async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>): Promise<Finding[]> {
+/** The in-memory build's tools.json, when the harness has tools and they built. */
+type BuiltTools = { json?: Awaited<ReturnType<typeof buildTools>>["json"] };
+/** A tool's `agent`, undefined for no such tool; null when it can't be known (the tools didn't build). */
+type AgentOf = ((tool: string) => "call" | "none" | undefined) | null;
+
+function agentOf(h: LoadedHarness, built: BuiltTools): AgentOf {
+  if (!hasTools(h)) return () => undefined;
+  const tools = built.json?.tools;
+  return tools ? (id) => (Object.hasOwn(tools, id) ? tools[id].agent : undefined) : null;
+}
+
+/**
+ * `mock/*.json` (spec 3e §3): each file a valid recording of an action, whose branches lead somewhere real; a turn's
+ * recorded tool calls name tools the agent can call (tools Decision 9; not checked when the tools didn't build).
+ */
+async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>, agent: AgentOf): Promise<Finding[]> {
   const dir = path.join(h.root, MOCK_DIR);
   const entries = (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter((e) => e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name));
   const findings: Finding[] = [];
@@ -212,6 +237,12 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
     const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
     if (dupes.length > 0) findings.push(error("mock-next", `Turn ids appear more than once: ${[...new Set(dupes)].join(", ")}.`, file));
     for (const turn of rec.turns) {
+      for (const [i, call] of (agent ? (turn.tools ?? []) : []).entries()) {
+        const kind = agent?.(call.tool);
+        const where = `Turn "${turn.id}": tools[${i}] calls "${call.tool}"`;
+        if (kind === undefined) findings.push(error("mock-schema", `${where}, which is not a tool of this harness.`, file));
+        else if (kind !== "call") findings.push(error("mock-schema", `${where}, which the agent can't call (agent: "${kind}").`, file));
+      }
       const labels = new Set(choiceLabels(turn.blocks));
       for (const [key, target] of Object.entries(turn.next ?? {})) {
         if (!ids.includes(target)) findings.push(error("mock-next", `Turn "${turn.id}": "${key}" leads to "${target}", which is not a turn.`, file));
@@ -241,6 +272,69 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
   for (const { rec, file } of valid) {
     for (const other of matchClashes(rec.action, rec.match, briefs, (id) => valid.find((v) => v.rec.action === id)?.rec.match)) {
       findings.push(error("mock-match", clashMessage(rec.match, other), file));
+    }
+  }
+  return findings;
+}
+
+/**
+ * `mock/steps/*.json` (tools Decision 11): each a step recording of a recipe with an AI step, named after its job, whose
+ * `output` and `request` the AI step's `output` takes. Nothing without tools or recipes (D0).
+ */
+async function mockStepFindings(h: LoadedHarness): Promise<Finding[]> {
+  if (!hasTools(h) && !hasRecipes(h)) return [];
+  const dir = path.join(h.root, MOCK_DIR, STEP_RECORDINGS_DIR);
+  // As mock mode's loadStepRecording: a linked steps folder is never followed.
+  const st = await fs.lstat(dir).catch(() => null);
+  if (!st) return [];
+  if (!st.isDirectory()) return [error("mock-step", `${STEP_RECORDINGS_DIR} is not a folder.`, `${MOCK_DIR}/${STEP_RECORDINGS_DIR}`)];
+  const entries = (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter((e) => e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name));
+  const findings: Finding[] = [];
+  for (const entry of entries) {
+    const name = entry.name;
+    const file = `${MOCK_DIR}/${STEP_RECORDINGS_DIR}/${name}`;
+    if (!entry.isFile()) {
+      findings.push(error("mock-step", `${name} is not a file.`, file));
+      continue;
+    }
+    // The same read as mock mode's (no link, no hard link, the size cap), so check passes only what mock mode takes.
+    let text: string | null;
+    try {
+      text = readStepRecordingFile(path.join(dir, name), name);
+    } catch (err) {
+      findings.push(error("mock-step", (err as Error).message, file));
+      continue;
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text ?? "");
+    } catch (err) {
+      findings.push(error("mock-step", `Not valid JSON: ${(err as Error).message}`, file));
+      continue;
+    }
+    const parsed = stepRecordingSchema.safeParse(raw);
+    if (!parsed.success) {
+      for (const i of parsed.error.issues) findings.push(error("mock-step", `${i.path.join(".") || "(root)"}: ${i.message}`, file));
+      continue;
+    }
+    const rec = parsed.data;
+    const jobs = h.jobs ?? {};
+    if (!Object.hasOwn(jobs, rec.job)) {
+      findings.push(error("mock-step", `Job "${rec.job}" is not in the manifest.`, file));
+      continue;
+    }
+    if (name !== `${rec.job}.json`) findings.push(error("mock-step", `The step recording of "${rec.job}" must be named ${rec.job}.json.`, file));
+    const step = aiStepOf(jobs[rec.job]);
+    if (!step) {
+      findings.push(error("mock-step", `Job "${rec.job}" has no AI step, so nothing plays this recording.`, file));
+      continue;
+    }
+    for (const key of ["output", "request"] as const) {
+      const value = rec[key];
+      if (value === undefined) continue;
+      const result = step.output.safeParse(value);
+      const first = result.success ? undefined : result.error.issues[0];
+      if (first) findings.push(error("mock-step", `${key} is not a valid output of the AI step: ${first.path.join(".") || "(output)"}: ${first.message}`, file));
     }
   }
   return findings;
@@ -609,22 +703,28 @@ function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, in
 /**
  * Tools (tools spec §3.3): the build runs in memory, nothing written; each tool that fails is one `tool-build` error. A
  * build that passes is checked against the manifest: each problem is one `tool-uses` error, then each pre-step and
- * expects problem one `tool-steps` error (`stepProblems`), then each job recipe's (`recipeSourceProblems`). None without tools (D0).
+ * expects problem one `tool-steps` error (`stepProblems`), then each job recipe's (`recipeSourceProblems`), then (with
+ * `fixtures`) each failing or unreadable fixture one `tool-fixture` error. None without tools (D0); no fixture runs
+ * when the build fails.
  */
-async function toolBuildFindings(root: string, h: LoadedHarness): Promise<Finding[]> {
+async function toolBuildFindings(root: string, h: LoadedHarness, fixtures?: { note(line: string): void; temp?: string }, built?: BuiltTools): Promise<Finding[]> {
   if (!hasTools(h)) return [];
+  let build: Awaited<ReturnType<typeof buildTools>>;
   try {
-    const { json } = await buildTools(root, { write: false, harness: h });
-    const tools = h.tools ?? {};
-    return [
-      ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),
-      ...stepProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
-      ...recipeSourceProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
-    ];
+    build = await buildTools(root, { write: false, harness: h });
   } catch (err) {
     if (err instanceof ToolBuildError) return err.problems.map((p) => error("tool-build", p.message, p.file));
     return [error("tool-build", err instanceof Error ? err.message : String(err), MANIFEST)];
   }
+  const { json, files } = build;
+  if (built) built.json = json;
+  const tools = h.tools ?? {};
+  return [
+    ...toolProblems(h, json).map((p) => error("tool-uses", p.message, Object.hasOwn(tools, p.tool) ? tools[p.tool].replace(/^\.\//, "") : MANIFEST)),
+    ...stepProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
+    ...recipeSourceProblems(h, json).map((p) => error("tool-steps", p, MANIFEST)),
+    ...(fixtures ? (await toolFixtureFindings(root, h, files, fixtures)).map((p) => error("tool-fixture", p.message, p.file)) : []),
+  ];
 }
 
 function tierCostFindings(h: LoadedHarness): Finding[] {
@@ -678,7 +778,11 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 /** One line per finding, then the counts. */
 export function formatFindings(findings: Finding[]): string {
   if (findings.length === 0) return "No problems found.\n";
-  const lines = findings.map((f) => `${f.severity.padEnd(8)}${f.rule.padEnd(21)}${(f.line ? `${f.file}:${f.line}` : f.file).padEnd(22)}${f.message}`);
+  // A fixture's path (tools/<id>/fixtures/<file>) is always longer than the column: one space keeps it off its message.
+  // Every other rule's line is as before.
+  const lines = findings.map(
+    (f) => `${f.severity.padEnd(8)}${f.rule.padEnd(21)}${(f.line ? `${f.file}:${f.line}` : f.file).padEnd(22)}${f.rule === "tool-fixture" ? " " : ""}${f.message}`,
+  );
   const errors = findings.filter((f) => f.severity === "error").length;
   return `${lines.join("\n")}\n\n${plural(errors, "error")}, ${plural(findings.length - errors, "warning")}\n`;
 }
@@ -686,7 +790,9 @@ export function formatFindings(findings: Finding[]): string {
 export async function checkCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, { json: { type: "boolean" }, harness: { type: "string" } });
   if (positionals.length > 0) throw new UsageError("Usage: humanharness check [--json] [--harness <dir>]");
-  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."));
+  // P12 for tools, only when a fixture runs: on stderr with --json, so stdout stays one JSON document.
+  const note = (line: string) => (values.json ? io.stderr : io.stdout).write(`${line}\n`);
+  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."), { fixtures: { note } });
   io.stdout.write(values.json ? `${JSON.stringify(findings, null, 2)}\n` : formatFindings(findings));
   return findings.some((f) => f.severity === "error") ? 1 : 0;
 }

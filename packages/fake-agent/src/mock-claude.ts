@@ -1,9 +1,10 @@
 // fake-claude's mock mode (spec 3e): replays <harness>/mock/*.json instead of a test script.
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { STEP_OUTPUT_TOOL } from "@humanharness/harness-sdk";
 import { z } from "zod";
 import { callMcpTool } from "./mcp-call";
-import { APP_FOLDERS, loadRecordings } from "./mock";
+import { APP_FOLDERS, loadRecordings, loadStepRecording } from "./mock";
 import { type ActionMatch, type SessionPosition, isMockJobTurn, replay } from "./mock-replay";
 
 type McpServers = Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
@@ -137,6 +138,18 @@ export function readTarget(cwd: string, p: string): string {
   return target;
 }
 
+/** Calls `tool` on the app's `name` MCP server; a refusal throws with the server's message, so the turn fails with it. */
+async function callOn(mcpServers: McpServers, name: "ui" | "tools", tool: string, args: Record<string, unknown>): Promise<void> {
+  const server = Object.hasOwn(mcpServers, name) ? mcpServers[name] : undefined;
+  if (!server) throw new Error(`the app configured no ${name} MCP server`);
+  const res = await callMcpTool({ command: server.command, args: server.args ?? [], env: server.env ?? {} }, tool, args);
+  if (res.isError) {
+    const content = res.content as { text?: string }[] | undefined;
+    const msg = content?.map((c) => c.text ?? "").join(" ").trim();
+    throw new Error(`the ${name} server rejected ${tool}${msg ? `: ${msg}` : ""}`);
+  }
+}
+
 /** One engine turn in mock mode: prints Claude's stream-json, calls the ui tools and writes the files. Returns the exit code. */
 export async function runMockTurn(argv: string[], prompt: string, mcpServers: McpServers, env: MockEnv): Promise<number> {
   const resumed = flag(argv, "--resume");
@@ -151,11 +164,18 @@ export async function runMockTurn(argv: string[], prompt: string, mcpServers: Mc
 }
 
 async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: MockEnv, sessionId: string, newSession: boolean): Promise<void> {
-  // A recipe's AI step (HH_STEP on its ui server): no recording answers it yet (slice 5), so it ends with no output and
-  // the run fails on its own terms. It never touches the recordings or the session state. Checked first: the env
-  // the app set decides, never the prompt's words.
-  if (mcpServers.ui?.env?.HH_STEP) {
+  // A recipe's AI step (HH_STEP on its ui server): answered from `mock/steps/<job>.json` (tools Decision 11) with one
+  // step_output call, `request` for a round a post-step asked for; without that file it ends with no output and the run
+  // fails on its own terms. It never touches the recordings or the session state. Checked first: the env the app set
+  // decides, never the prompt's words. A bad file fails the turn with its problem (the turn's own error only).
+  const step = mcpServers.ui?.env?.HH_STEP;
+  if (step) {
+    const rec = loadStepRecording(env.dir, step);
     print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });
+    // A request round is told by its prompt: "### request" as a heading of its own in the step's data. A heuristic with
+    // known limits (end follow-up M15): a pre-step or tool step saved `as: "request"` puts the same heading in the first
+    // round's data, and a retried round of a request answers as its first prompt did. Mock mode only; docs say so.
+    if (rec) await callOn(mcpServers, "ui", STEP_OUTPUT_TOOL, prompt.includes("\n### request\n") ? (rec.request ?? rec.output) : rec.output);
     print({ type: "result", subtype: "success", is_error: false, result: "", session_id: sessionId, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
     return;
   }
@@ -208,16 +228,18 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
     }
     event({ type: "content_block_stop", index: 0 });
   }
-  const ui = mcpServers.ui;
-  const call = async (tool: string, args: Record<string, unknown>) => {
-    if (!ui) throw new Error("the app configured no ui MCP server");
-    const res = await callMcpTool({ command: ui.command, args: ui.args ?? [], env: ui.env ?? {} }, tool, args);
-    if (res.isError) {
-      const content = res.content as { text?: string }[] | undefined;
-      const msg = content?.map((c) => c.text ?? "").join(" ").trim();
-      throw new Error(`the ui server rejected ${tool}${msg ? `: ${msg}` : ""}`);
+  const call = (tool: string, args: Record<string, unknown>) => callOn(mcpServers, "ui", tool, args);
+  // The agent's recorded tool calls (tools spec §12): on the `tools` server, in order, before the blocks. A call that
+  // fails (the tool's error, "Not recorded: …") doesn't end the turn: a real agent reads the error and carries on, so the
+  // next calls and the blocks still play (end follow-up M18). Only a missing tools server stays fatal: the app is wired wrong.
+  if (play.tools.length > 0 && !Object.hasOwn(mcpServers, "tools")) throw new Error("the app configured no tools MCP server");
+  for (const c of play.tools) {
+    try {
+      await callOn(mcpServers, "tools", c.tool, c.args);
+    } catch (err) {
+      process.stderr.write(`mock: ${(err as Error).message}\n`);
     }
-  };
+  }
   for (const b of play.blocks) await call(b.tool, b.input);
   if (play.note) await call("save_note", play.note);
   const u = play.usage;

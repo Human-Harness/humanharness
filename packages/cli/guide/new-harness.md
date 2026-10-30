@@ -21,7 +21,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 
 - The core checkout is the folder `package.json` links to: `"@humanharness/cli": "link:<core>/packages/cli"`. Below, `<core>` is that folder.
 - `<core>/harnesses/demo` is a complete example (custom blocks, a guided path, briefs, references). Read it for ideas; never copy it as a starting point.
-- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `parallel.md`, `jobs.md`, `setup.md`, `profiles.md`, `turn.md`, `engines.md`, `language.md`, `authoring.md`.
+- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `parallel.md`, `jobs.md`, `tools.md`, `setup.md`, `profiles.md`, `turn.md`, `engines.md`, `language.md`, `authoring.md`.
 - In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `agent/phases/*.md` (one brief per part, when an action has parts), `ui/` (the screen and the block components), `locales/en.json` (the UI strings).
 - Import the SDK from `@humanharness/cli/sdk` (`defineHarness`, `defineBlock`, `z`) and the UI kit from `@humanharness/cli/ui` (`HarnessApp`, `BlockProps`, `useTranslation`).
 
@@ -75,7 +75,29 @@ Ask which tasks (actions) exist. For each one: an id, a label and a one-line des
 
 Remove the template's `example` action and its brief once the harness has its own.
 
-## Phase 4 — Context
+## Phase 4 — Mechanical work
+
+Fills: HARNESS.md → Mechanical work
+
+Go through the flow moment by moment with the person. For each key moment, ask what happens there and sort it:
+
+- **Code** when the answer is fixed by the data: what is due today, which tickets changed, a count, a date, a list of files. Code is exact, instant and free.
+- **AI** when it takes judgment: what a student got wrong, which CI failure matters, how to word a reply.
+
+For each moment write a row: the moment, code or AI, the tool or step, and why it matters (time, tokens, mistakes avoided). Then propose:
+
+- **tools** for the code parts (`tools/<id>.ts`, `defineTool`): a `description` the agent can act on, `params`, `returns` when another step reads the result, `agent: "none"` for anything with effects outside the folder (moving a ticket, commenting on a PR), and `uses` with only what it reaches;
+- **pre-steps** (`pre` on an action) for what a task always needs at its start: their results go into the first message, so the AI doesn't spend turns finding them;
+- **`expects`** on a phase when the AI should call a tool there (a phase that ends without it is counted);
+- **job recipes** (`steps` on a job) for background work that is mostly mechanical: tool steps, at most one AI step with a `when`, then a post-step that applies the AI's judgment.
+
+Write one fixture per tool (`tools/<id>/fixtures/<case>.json`: the `args`, the `exchanges` its fetches and commands get, the `data` and `files` it starts from, and the `expect`ed `result` or `error`) and run `humanharness tool test <id>` before wiring it. A fixture reaches no network and no keys: fetches and commands answer only from its `exchanges`, keys are `fixture-<id>`, data stays in memory and files go to a temp folder. `corepack pnpm check` runs every fixture too, and a failing one is an error.
+
+`humanharness tool run <id> --args '{…}'` then tries the tool once, for real, and prints its result and trace: its fetches reach public hosts only, its commands run on this computer, and it reads and writes `--folder <dir>` (a new temp folder without it) with `--scope <id>` if it needs one. The terminal can't read the app's keys, so it asks for each key the tool declares, hidden. A tool that writes to the folder or its data needs `--yes`; fetches and commands always run for real, so ask the developer before every `tool run` and before adding `--yes`. `tool test`, `tool run`, `check` and `run` print a note before fixtures or calls run: tool code runs in the terminal's own process, not in the app's sandbox, so run only tools you trust. Building (`build`, `dev`, `check`) also imports each tool's module top level to read its meta, without a note, as it imports `harness.config.ts`.
+
+`humanharness run <action>` runs the tools as the app does: the pre-steps before the first message (a required one that fails stops the task) and the agent's tool calls, one line each. With `--record`, the recording keeps the agent's tool calls and each tool's fetches and commands under `mock/tools/<tool>/`, every key replaced. In `dev --mock` the tools run for real, but their fetches and commands answer only from those files ("Not recorded: <target>" otherwise), and a recipe's AI step answers from `mock/steps/<job>.json`, which `check` compares with the step's `output`. See `<core>/docs/architecture/tools.md`.
+
+## Phase 5 — Context
 
 Fills: HARNESS.md → Context
 
@@ -98,7 +120,7 @@ Every task ends with a note the app writes from the core `save_note` block (titl
 
 Say it in the briefs where it matters, for example: "the decisions are the options the person chose, each with its reason".
 
-## Phase 5 — Models
+## Phase 6 — Models
 
 Fills: HARNESS.md → Models
 
@@ -110,7 +132,7 @@ For each action, and for free questions (`questions.tier`), choose a tier and gi
 
 Write the tiers in `harness.config.ts` and in the Flow table. A `heavy` action at `light`, or a `light` one at `deep`, makes `check` warn: explain it or change it.
 
-## Phase 6 — Permissions and engines
+## Phase 7 — Permissions and engines
 
 Fills: HARNESS.md → Permissions and engines
 
@@ -124,7 +146,7 @@ Write one line each in `HARNESS.md` (`- edit: none — reason`) and one `- engin
 
 Ask too whether the harness's own screens need work the window can't do and the agent shouldn't (convert a file, watch a folder, keep a cache). If so, declare `backend: "./backend/index.ts"`: a Node process of the harness's own that the app starts after setup and the harness UI calls with `client.backend.call` and hears with `client.backend.on`. It reads JSON-RPC 2.0 lines on stdin and writes them on stdout, every line with `"jsonrpc":"2.0"`; logs go to stderr, never stdout. A `.ts` backend uses erasable syntax only and imports the SDK with `import type`; no native modules yet. It runs as the person's user, so it gets the same care as an MCP server, and it can't write the history, notes or data: those go through the harness UI. Record it as a decision with its reason. See `<core>/docs/architecture/authoring.md` ("A backend") and `<core>/harnesses/demo/backend/index.ts`.
 
-## Phase 7 — Identity
+## Phase 8 — Identity
 
 Fills: HARNESS.md → Identity
 
@@ -139,12 +161,22 @@ Ask for the name, a one-line tagline, the author and, optionally, a logo file (S
 - Give the manifest a `tone`: one English line on how the translated screens should sound ("warm and informal, short sentences"). Record it in `HARNESS.md`.
 - In a brief, `{{language}}` is the person's language by its English name ("Brazilian Portuguese").
 
-## Phase 8 — Verify
+## Lessons
+
+Mistakes already seen. Read them before writing tools; add one when a harness teaches a new one.
+
+- English ids: tool ids, step names (`as`), fields and examples are in English.
+- Give a tool `returns` whenever a step reads its result (`input`, `forEach`): `check` refuses the step otherwise.
+- No date or counting logic in prompts when a tool can do it: "what is due today" is a tool, not a paragraph in a brief.
+- One tool per mechanical job, not one tool that does everything: small tools are easier to test, trace and reuse.
+- Test every tool with a fixture before wiring it into a step.
+
+## Phase 9 — Verify
 
 Fills: HARNESS.md → Open questions, Decision log
 
 1. Run `corepack pnpm check` and fix every error.
 2. Go through the warnings with the developer: fix each one, or record in the Decision log why it stays.
 3. Open the app with `corepack pnpm dev`. The first time, the developer accepts the engine's notice there; `run` needs it.
-4. Ask the developer before running a task for real: it uses their engine plan. If they agree, run at least one: `corepack pnpm run run <action> --engine claude` (or `codex`); the engine's official CLI must be signed in. Read its report (tokens per phase, peak context against the cap, the cost hint) and adjust tiers or briefs.
+4. Ask the developer before running a task for real: it uses their engine plan. If they agree, run at least one: `corepack pnpm run run <action> --engine claude` (or `codex`); the engine's official CLI must be signed in. When the harness's tools declare keys, the developer runs it in their own terminal: `run` asks for each key there, hidden, refuses without a terminal, and the tools reach real services. Read its report (tokens per phase, peak context against the cap, the cost hint) and adjust tiers or briefs.
 5. Leave **Open questions** empty, or with only what the developer chose to keep open.

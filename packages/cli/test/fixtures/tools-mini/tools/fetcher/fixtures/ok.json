@@ -1,0 +1,10 @@
+{
+  "exchanges": [
+    {
+      "kind": "fetch",
+      "request": { "method": "GET", "url": "https://api.example.test/x" },
+      "response": { "status": 200, "headers": { "content-type": "text/plain" }, "text": "hello" }
+    }
+  ],
+  "expect": { "result": { "status": 200, "text": "hello" } }
+}

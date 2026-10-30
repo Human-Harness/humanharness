@@ -15,6 +15,7 @@ const workspacePackages = [
   "@humanharness/harness-sdk",
   "@humanharness/i18n",
   "@humanharness/material",
+  "@humanharness/protocol",
   "@humanharness/runtime",
   "@humanharness/workspace",
   "@humanharness/ui",
@@ -51,7 +52,7 @@ export default defineConfig({
   },
   // The preload entry is the default src/preload/index.ts (see the note above).
   preload: {
-    build: { ...out("preload"), externalizeDeps: { exclude: ["@humanharness/ui"] } },
+    build: { ...out("preload"), externalizeDeps: { exclude: ["@humanharness/ui", "@humanharness/protocol", "@humanharness/workspace"] } },
   },
   renderer: {
     root: path.join(__dirname, "src/renderer"),
@@ -59,7 +60,7 @@ export default defineConfig({
     resolve: {
       alias: { "@harness/ui": path.join(harnessDir, "ui/App.tsx") },
       // A harness repo depends only on @humanharness/cli: its UI uses the shell's React and i18n, one copy each.
-      dedupe: ["react", "react-dom", "react-i18next", "i18next", "@humanharness/ui"],
+      dedupe: ["react", "react-dom", "react-i18next", "i18next", "@humanharness/ui", "@humanharness/protocol"],
     },
     // The dev server may serve the harness folder, which may live outside this repository.
     server: { fs: { allow: [searchForWorkspaceRoot(__dirname), harnessDir] } },

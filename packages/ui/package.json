@@ -8,6 +8,7 @@
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
+    "@humanharness/protocol": "workspace:*",
     "@humanharness/runtime": "workspace:*",
     "@humanharness/workspace": "workspace:*",
     "highlight.js": "~11.11.0",

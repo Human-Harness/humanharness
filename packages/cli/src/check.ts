@@ -31,6 +31,7 @@ import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, pa
 import { clashMessage, matchClashes } from "./mock-match";
 import { HARNESS_MD, MANIFEST } from "./paths";
 import { ToolBuildError, buildTools } from "./tool-build";
+import { TOOL_P12_NOTE } from "./tool-host-node";
 import { toolFixtureFindings } from "./tool-test";
 
 export type Severity = "error" | "warning";
@@ -101,8 +102,13 @@ const exists = (p: string) => fs.access(p).then(() => true, () => false);
  * `fixtures`: run each tool's fixtures (rule `tool-fixture`, tools Decision 4), with `note` where the P12 note for tools
  * goes before any of them runs and `temp` where their temp folders go. `check` passes it; without it no fixture runs (as
  * before).
+ * `note`: where the P12 note for tools goes, once, before the in-memory build imports the tool modules (only when the
+ * harness has tools); the fixtures then print none of their own. `check` and `dev` pass it.
  */
-export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: { note(line: string): void; temp?: string } } = {}): Promise<CheckResult> {
+export async function checkHarness(
+  dir: string,
+  opts: { mode?: Mode; fixtures?: { note(line: string): void; temp?: string }; note?: (line: string) => void } = {},
+): Promise<CheckResult> {
   const root = path.resolve(dir);
   const findings: Finding[] = [];
   const harness = await loadManifest(root, findings);
@@ -118,7 +124,9 @@ export async function checkHarness(dir: string, opts: { mode?: Mode; fixtures?: 
   findings.push(...(await phaseFindings(harness)));
   findings.push(...(await jobFindings(harness)));
   const built: BuiltTools = {};
-  findings.push(...(await toolBuildFindings(root, harness, opts.fixtures, built)));
+  const fixtures = opts.fixtures && opts.note ? { ...opts.fixtures, note: () => {} } : opts.fixtures;
+  if (opts.note && hasTools(harness)) opts.note(TOOL_P12_NOTE);
+  findings.push(...(await toolBuildFindings(root, harness, fixtures, built)));
   findings.push(...(await mockFindings(harness, briefs, agentOf(harness, built))));
   findings.push(...(await mockStepFindings(harness)));
   findings.push(...(await i18nFindings(harness)));
@@ -790,9 +798,10 @@ export function formatFindings(findings: Finding[]): string {
 export async function checkCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, { json: { type: "boolean" }, harness: { type: "string" } });
   if (positionals.length > 0) throw new UsageError("Usage: humanharness check [--json] [--harness <dir>]");
-  // P12 for tools, only when a fixture runs: on stderr with --json, so stdout stays one JSON document.
+  // P12 for tools, before the build imports them (none without tools): on stderr with --json, so stdout stays one JSON
+  // document.
   const note = (line: string) => (values.json ? io.stderr : io.stdout).write(`${line}\n`);
-  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."), { fixtures: { note } });
+  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."), { fixtures: { note }, note });
   io.stdout.write(values.json ? `${JSON.stringify(findings, null, 2)}\n` : formatFindings(findings));
   return findings.some((f) => f.severity === "error") ? 1 : 0;
 }

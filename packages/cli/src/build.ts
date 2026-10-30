@@ -3,6 +3,7 @@ import { type LoadedHarness, hasTools, loadHarness } from "@humanharness/harness
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { buildTools } from "./tool-build";
+import { TOOL_P12_NOTE } from "./tool-host-node";
 
 /** `humanharness build [--harness <dir>]` (tools Decision 2): the harness's tools into dist/. Nothing to do without tools. */
 export async function buildCommand(args: string[], io: Io): Promise<number> {
@@ -19,6 +20,8 @@ export async function buildCommand(args: string[], io: Io): Promise<number> {
     io.stdout.write("This harness declares no tools.\n");
     return 0;
   }
+  // P12: the build imports each tool's module in this process.
+  io.stdout.write(`${TOOL_P12_NOTE}\n`);
   const { json } = await buildTools(dir, { write: true, harness });
   const n = Object.keys(json.tools).length;
   io.stdout.write(`Built ${n} tool${n === 1 ? "" : "s"} into dist/\n`);

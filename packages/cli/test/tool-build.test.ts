@@ -8,6 +8,7 @@ import { checkHarness } from "../src/check";
 import { type DevSpawn, devCommand } from "../src/dev";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
+import { TOOL_P12_NOTE } from "../src/tool-host-node";
 import { buildTools } from "../src/tool-build";
 import { CORE, dropExampleTool, memoryIo, memoryStream, read, replaceIn, tempRoot } from "./helpers";
 
@@ -59,7 +60,8 @@ describe("humanharness build (tools spec §3.2)", () => {
     const dir = await harness({ "count-notes": COUNT_NOTES });
     const m = memoryIo(dir);
     expect(await main(["build"], m.io)).toBe(0);
-    expect(m.out()).toBe("Built 1 tool into dist/\n");
+    // The P12 note first: the build imports the tool modules in this process.
+    expect(m.out()).toBe(`${TOOL_P12_NOTE}\nBuilt 1 tool into dist/\n`);
     const json = toolsJsonSchema.parse(JSON.parse(read(dir, "dist/tools.json")));
     const meta = json.tools["count-notes"];
     expect(meta.description).toBe("Lists the notes of a month.");
@@ -203,9 +205,13 @@ describe("humanharness build (tools spec §3.2)", () => {
       queueMicrotask(() => child.emit("exit", 0));
       return child;
     };
-    expect(await devCommand({ harnessDir: dir, out: memoryStream().stream, spawn })).toBe(0);
+    const first = memoryStream();
+    expect(await devCommand({ harnessDir: dir, out: first.stream, spawn })).toBe(0);
     expect(calls).toHaveLength(1);
     expect(fs.existsSync(path.join(dir, "dist", "tools.json"))).toBe(true);
+    // P12 once, before the check's build imports the tools; dev's own build adds no second one.
+    expect(first.text().split(TOOL_P12_NOTE)).toHaveLength(2);
+    expect(first.text().startsWith(`${TOOL_P12_NOTE}\n`)).toBe(true);
 
     const bad = await harness({ odd: "export default 42;\n" });
     const out = memoryStream();
@@ -226,8 +232,10 @@ describe("humanharness build (tools spec §3.2)", () => {
       queueMicrotask(() => child.emit("exit", 0));
       return child;
     };
-    expect(await devCommand({ harnessDir: dir, out: memoryStream().stream, spawn })).toBe(0);
+    const out = memoryStream();
+    expect(await devCommand({ harnessDir: dir, out: out.stream, spawn })).toBe(0);
     expect(calls).toHaveLength(1);
     expect(fs.existsSync(path.join(dir, "dist"))).toBe(false);
+    expect(out.text()).not.toContain(TOOL_P12_NOTE);
   });
 });

@@ -132,9 +132,10 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     expect(prompt?.params.prompt[0].text).toContain(
       "- El manifiesto (manifest): defineHarness valida el manifiesto; Las acciones traen su brief → .harness/notes/manifest.md",
     );
-    // Free questions are light; Codex runs its default model, so CODEX_CONFIG has no model.
+    // Free questions are light; Codex runs its default model, so CODEX_CONFIG has no model. The demo has no web, so
+    // Codex's web search is off too (engines.md).
     const env = readJsonl<{ method: string; params: { CODEX_CONFIG: string | null; OPENCODE_CONFIG_CONTENT?: string | null } }>(s.acpLog).find((l) => l.method === "env");
-    expect(JSON.parse(env!.params.CODEX_CONFIG!)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000 });
+    expect(JSON.parse(env!.params.CODEX_CONFIG!)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000, web_search: "disabled" });
     // OpenCode's permission environment never reaches Codex (D0).
     expect(env!.params.OPENCODE_CONFIG_CONTENT).toBeNull();
     // The models Codex offered are saved for Settings › Modelos.

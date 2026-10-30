@@ -1,6 +1,6 @@
 # UI refresh — design
 
-Status: draft for Marco's review (2026-10-30). Mockups: https://claude.ai/artifact/6WpeDVxxusFqaU6rJRH2RS (Design canvas "Human Harness UI refresh", every screen in light and dark; sources are its `project/*.dc.html` files).
+Status: approved by Marco on 2026-10-30, every section as written; the open questions take their proposed defaults (§10). Mockups: https://claude.ai/artifact/6WpeDVxxusFqaU6rJRH2RS (Design canvas "Human Harness UI refresh", every screen in light and dark; sources are its `project/*.dc.html` files).
 
 **When it is built:** only after `feat/protocol` is merged to master. That branch (replaceable parts plan 2, local tip a39263f) rewrites most of `packages/ui`, so this spec is written against its UI, not master's. Every component name below is as it exists on `feat/protocol`. Writing the plan before that merge is fine; starting the code is not.
 
@@ -249,7 +249,7 @@ How to apply it:
 - Component tests: rail entries per declared feature (D0), Home "Pick up where you left" sources and hiding, Start view switch remembered, Settings page open / Done / Escape returning to the screen it came from.
 - e2e: the existing flows still pass with the new selectors; one screenshot per screen and theme, compared with the mockups by eye in the plan's review.
 
-## 10. Open questions (defaults proposed)
+## 10. Open questions (decided: the defaults, 2026-10-30)
 
 - **Q1. Search trigger before search exists.** Default: hidden until the search spec ships. Alternative: shown, opening a stub that searches tasks only.
 - **Q2. Profile avatar without profiles.** Default: not shown. Alternative: a generic avatar opening Settings › General.

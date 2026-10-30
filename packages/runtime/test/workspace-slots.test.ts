@@ -177,7 +177,8 @@ describe("an engine preset's codex part (hatches spec §5.2)", () => {
     const { ws, log } = await acpWorkspace({ turns: [[{ stop: "end_turn" }]] });
     const slot = await ws.openSlot({ key: "t1" });
     await slot.send("one", () => {}, { scope: { linked: [], engine } }).done;
-    expect(JSON.parse(codexConfigOf(log) as string)).toEqual({ model_verbosity: "low" });
+    // The fixture harness has no web, so Codex's web search is off too (engines.md).
+    expect(JSON.parse(codexConfigOf(log) as string)).toEqual({ model_verbosity: "low", web_search: "disabled" });
   });
 
   it("never reaches Kimi", async () => {

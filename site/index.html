@@ -163,6 +163,14 @@ nav ul a:hover { color: var(--ink); }
 .part code { font-size: 11px; opacity: .75; }
 .part.s { background: var(--slab); color: var(--on-slab); }
 .part.f { border: 2px dashed var(--signal); position: relative; padding-right: 48px; }
+.arch { position: relative; }
+.part { position: relative; padding-right: 34px; }
+.part.f { padding-right: 52px; }
+.info-btn { position: absolute; right: 6px; bottom: 6px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid currentColor; background: transparent; color: inherit; opacity: .6; font: italic 600 11px/1 Georgia, serif; display: grid; place-items: center; padding: 0; cursor: pointer; }
+.info-btn:hover, .info-btn[aria-expanded="true"] { opacity: 1; }
+.info-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; opacity: 1; }
+.info-pop { position: absolute; z-index: 15; width: min(300px, calc(100% - 8px)); padding: 12px 14px; background: var(--ink); color: var(--paper); font-size: 13px; line-height: 1.5; box-shadow: 0 12px 28px -14px rgba(20, 26, 34, .6); }
+.info-pop b { display: block; font: 700 13px/1.3 var(--display); margin-bottom: 4px; }
 .part.f::after { content: "swap"; position: absolute; top: 7px; right: 7px; font: 500 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--signal); }
 .part.empty { color: var(--ink-3); border-style: dotted; }
 .part.ext { border: 1px solid var(--rule); color: var(--ink-2); }
@@ -389,63 +397,63 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
         <div class="layer">
           <div class="layer-name"><b>Your harness</b><code>its own repository</code></div>
           <div class="parts">
-            <div class="part s">Manifest<code>defineHarness()</code></div>
-            <div class="part s">Phases and actions<code>the flow</code></div>
-            <div class="part s">Decision blocks<code>defineBlock()</code></div>
-            <div class="part s">HARNESS.md<code>living design doc</code></div>
+            <div class="part s" data-info="The harness&#x27;s description: its name, actions, phases, permissions, engines and model tiers, written with defineHarness(). The core reads it to build the app.">Manifest<code>defineHarness()</code></div>
+            <div class="part s" data-info="What the person can start (actions) and the parts each task moves through (phases). The flow keeps the AI on the same goal as the person.">Phases and actions<code>the flow</code></div>
+            <div class="part s" data-info="Pieces of UI the agent shows mid-turn: choices, cards, forms. Defined with defineBlock(). The person answers on screen instead of typing.">Decision blocks<code>defineBlock()</code></div>
+            <div class="part s" data-info="The harness&#x27;s living design document. The /new-harness guide records every decision there, and the check command validates it.">HARNESS.md<code>living design doc</code></div>
           </div>
         </div>
         <div class="down">↓ harness-sdk</div>
         <div class="layer">
           <div class="layer-name"><b>Screens</b><code>ui</code></div>
           <div class="parts">
-            <div class="part s">Home, chat, settings, onboarding</div>
-            <div class="part s">Blocks, reviews, document reader</div>
-            <div class="part s">Usage and limits</div>
+            <div class="part s" data-info="The screens every harness gets for free: start a task, talk to the agent, pick an engine and models, and a first-run setup that installs the engine and signs in.">Home, chat, settings, onboarding</div>
+            <div class="part s" data-info="Where decisions happen: the blocks the agent sends, review views for documents, and a reader for the Markdown files the agent writes.">Blocks, reviews, document reader</div>
+            <div class="part s" data-info="Where the person stands on their plan&#x27;s limits, and what each task spent, before a heavy workflow starts.">Usage and limits</div>
           </div>
         </div>
         <div class="seam"><span>protocol</span><span>A typed contract. Screens never import the core, so either side can be redone.</span></div>
         <div class="layer">
           <div class="layer-name"><b>App core</b><code>shell · services</code></div>
           <div class="parts">
-            <div class="part s">Task flow, phases, time boxes, reviews<code>shell</code></div>
-            <div class="part s">Folder, notes, history<code>workspace</code></div>
-            <div class="part s">Blocks bridge<code>blocks</code></div>
-            <div class="part f">Document converters<code>material</code></div>
-            <div class="part f">Translation<code>i18n</code></div>
+            <div class="part s" data-info="Electron&#x27;s main process. Starts and follows up tasks, moves between phases, runs time boxes and reviews. It decides what happens next and never knows which engine runs.">Task flow, phases, time boxes, reviews<code>shell</code></div>
+            <div class="part s" data-info="The person&#x27;s visible folder, the notes each task keeps, and a hidden local history that can undo what the agent changed.">Folder, notes, history<code>workspace</code></div>
+            <div class="part s" data-info="An MCP server the engine calls to show a block. It checks the call and forwards it to the screen over a private local socket.">Blocks bridge<code>blocks</code></div>
+            <div class="part f" data-info="Turn PDFs and other files the person adds into text the agent can read. Better converters appear often, so this part stays replaceable.">Document converters<code>material</code></div>
+            <div class="part f" data-info="The app ships in English; other languages are translated by the AI on demand. The translation engine can be replaced.">Translation<code>i18n</code></div>
           </div>
         </div>
         <div class="layer">
           <div class="layer-name"><b>Decisions</b><code>policies</code></div>
           <div class="parts">
-            <div class="part f">Model policy<code>light · standard · deep</code></div>
-            <div class="part f">Context policy<code>what a session starts with</code></div>
-            <div class="part f empty">Tool policy<code>later</code></div>
+            <div class="part f" data-info="Decides which model and effort each task uses (light, standard or deep) and what to fall back to. It returns a choice and never runs anything.">Model policy<code>light · standard · deep</code></div>
+            <div class="part f" data-info="Decides what a new session starts with and how much of each part, when to save a checkpoint, and how work continues after a task ends.">Context policy<code>what a session starts with</code></div>
+            <div class="part f empty" data-info="Will decide which tools and recipes the agent may call. Not built yet.">Tool policy<code>later</code></div>
           </div>
         </div>
         <div class="layer">
           <div class="layer-name"><b>Turn loop</b><code>runtime</code></div>
           <div class="parts">
-            <div class="part s">Runs a turn, saves history, streams events<code>never knows which engine</code></div>
+            <div class="part s" data-info="Runs one turn: saves the folder in the history, sends the message through the engine&#x27;s transport and streams the events back to the screen. It never asks which engine it is talking to.">Runs a turn, saves history, streams events<code>never knows which engine</code></div>
           </div>
         </div>
         <div class="seam"><span>engine adapter</span><span>One folder per engine, one line in the registry.</span></div>
         <div class="layer">
           <div class="layer-name"><b>Engines</b><code>engines</code></div>
           <div class="parts">
-            <div class="part f">Claude<code>official claude CLI</code></div>
-            <div class="part f">Codex<code>ACP</code></div>
-            <div class="part f">OpenCode<code>ACP</code></div>
-            <div class="part f empty">Next engine<code>a new folder</code></div>
+            <div class="part f" data-info="Anthropic&#x27;s official claude CLI, unmodified, one process per turn. Runs on the person&#x27;s Claude subscription.">Claude<code>official claude CLI</code></div>
+            <div class="part f" data-info="OpenAI&#x27;s Codex through its Agent Client Protocol adapter. Runs on the person&#x27;s ChatGPT subscription.">Codex<code>ACP</code></div>
+            <div class="part f" data-info="The open-source opencode acp, unmodified. Uses whatever provider the person set up in it, a local model included, and reports real cost in USD.">OpenCode<code>ACP</code></div>
+            <div class="part f empty" data-info="A new engine is one folder (definition, transport, checks) and one line in the registry. It ships only once its terms allow it.">Next engine<code>a new folder</code></div>
           </div>
         </div>
         <div class="down">↓ the person's own account</div>
         <div class="layer">
           <div class="layer-name"><b>AI provider</b><code>chosen by the person</code></div>
           <div class="parts">
-            <div class="part ext">Anthropic</div>
-            <div class="part ext">OpenAI</div>
-            <div class="part ext">Any OpenCode provider or a local model</div>
+            <div class="part ext" data-info="The person&#x27;s own Claude account. The app never sees their key or credentials.">Anthropic</div>
+            <div class="part ext" data-info="The person&#x27;s own ChatGPT account, used through Codex.">OpenAI</div>
+            <div class="part ext" data-info="Any provider OpenCode supports, with the person&#x27;s own key, or a model running on their own computer.">Any OpenCode provider or a local model</div>
           </div>
         </div>
       </div>
@@ -552,6 +560,57 @@ corepack pnpm dev</pre>
     </div>
   </section>
 </main>
+
+<script>
+(function () {
+  var arch = document.querySelector(".arch");
+  var pop = document.createElement("div");
+  pop.className = "info-pop";
+  pop.setAttribute("role", "tooltip");
+  pop.id = "info-pop";
+  pop.hidden = true;
+  arch.appendChild(pop);
+  var open = null;
+  function close() {
+    if (open) open.setAttribute("aria-expanded", "false");
+    open = null;
+    pop.hidden = true;
+  }
+  function show(btn, part) {
+    var name = part.firstChild.textContent.trim();
+    pop.innerHTML = "";
+    var b = document.createElement("b");
+    b.textContent = name;
+    pop.appendChild(b);
+    pop.appendChild(document.createTextNode(part.dataset.info));
+    pop.hidden = false;
+    var a = arch.getBoundingClientRect(), r = part.getBoundingClientRect();
+    var left = Math.min(Math.max(r.left - a.left, 0), a.width - pop.offsetWidth);
+    pop.style.left = left + "px";
+    pop.style.top = (r.bottom - a.top + 6) + "px";
+    btn.setAttribute("aria-expanded", "true");
+    open = btn;
+  }
+  arch.querySelectorAll(".part[data-info]").forEach(function (part) {
+    var name = part.firstChild.textContent.trim();
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "info-btn";
+    btn.textContent = "i";
+    btn.setAttribute("aria-label", "What is " + name + "?");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-describedby", "info-pop");
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (open === btn) close(); else { close(); show(btn, part); }
+    });
+    part.appendChild(btn);
+  });
+  document.addEventListener("click", function (e) { if (!pop.contains(e.target)) close(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  window.addEventListener("resize", close);
+})();
+</script>
 
 <footer>
   <div class="wrap">

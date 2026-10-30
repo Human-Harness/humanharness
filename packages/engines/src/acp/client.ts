@@ -255,10 +255,17 @@ export function acpExtras(call: { kind?: unknown; locations?: unknown; rawInput?
 }
 
 /**
+ * Codex's own web search runs server side, where no permission request ever reaches the app, and it is on by default
+ * (`web_search = "cached"`). A harness without the web turns it off by name.
+ */
+const WEB_OFF = { web_search: "disabled" } as const;
+
+/**
  * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
  * written; `model` is left out for the engine's default model. Checked again here before it is used.
+ * `webOff` adds `web_search = "disabled"` (a harness without `permissions.web`).
  */
-export function codexConfig(profile: ModelProfile, preset?: Record<string, unknown>): string {
+export function codexConfig(profile: ModelProfile, preset?: Record<string, unknown>, webOff = false): string {
   if (profile.model !== undefined && !isModelId(profile.model)) {
     throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(profile.model)}`);
   }
@@ -268,6 +275,7 @@ export function codexConfig(profile: ModelProfile, preset?: Record<string, unkno
     ...(profile.model !== undefined ? { model: profile.model } : {}),
     model_reasoning_effort: profile.effort,
     model_auto_compact_token_limit: profile.cap,
+    ...(webOff ? WEB_OFF : {}),
   };
   return JSON.stringify(preset === undefined ? core : mergeCodex(core, preset));
 }
@@ -881,7 +889,15 @@ export class AcpTransport implements Transport {
       // Codex only (it declares `codex-config`): the preset's codex.toml joins CODEX_CONFIG. OpenCode, Kimi, Gemini
       // and Qwen get the servers alone. Empty: as without one.
       const codex = this.o.profileMethod === "codex-config" && engine?.codex && Object.keys(engine.codex).length > 0 ? engine.codex : undefined;
-      if (!this.byConfigOption) config = profile ? codexConfig(profile, codex) : codex ? JSON.stringify(mergeCodex({}, codex)) : undefined;
+      // Codex only, like the preset: its web search is off unless the harness allows the web.
+      const webOff = this.o.profileMethod === "codex-config" && !this.o.permissions.web;
+      if (!this.byConfigOption) {
+        config = profile
+          ? codexConfig(profile, codex, webOff)
+          : codex || webOff
+            ? JSON.stringify(mergeCodex(webOff ? { ...WEB_OFF } : {}, codex ?? {}))
+            : undefined;
+      }
     } catch (err) {
       // No ErrorCode fits a profile or a preset the core built wrong (it is not the plan's model, nor the user's
       // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile and

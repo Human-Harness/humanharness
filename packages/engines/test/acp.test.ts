@@ -466,6 +466,45 @@ describe("codexConfig", () => {
     expect(JSON.parse(codexConfig(light))).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000 });
     expect(() => codexConfig({ ...deep, model: "-x" })).toThrow(/flag/);
   });
+
+  it("webOff adds web_search = disabled after the profile's keys", () => {
+    expect(JSON.parse(codexConfig(light, undefined, true))).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000, web_search: "disabled" });
+  });
+});
+
+describe("Codex's web search follows permissions.web", () => {
+  const envOf = async (web: boolean, profileMethod: "codex-config" | undefined, profile?: ModelProfile) => {
+    const folder = fs.mkdtempSync(path.join(root, "w-"));
+    const logFile = path.join(root, `log-w-${path.basename(folder)}.jsonl`);
+    transport = new AcpTransport({
+      folder,
+      session: { id: "local-id", started: false },
+      mcp: [],
+      permissions: { ...permissions, web },
+      ...(profileMethod ? { profileMethod } : {}),
+      command: fakeAcpCommand(),
+      env: { HH_FAKE_SCRIPT: writeScript(root, { turns: [[{ update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "a" } } }]] }), HH_FAKE_LOG: logFile },
+      onSessionStarted: () => {},
+    });
+    await transport.turn("hi", () => {}, new AbortController().signal, profile);
+    const env = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { method: string; params: any }).find((l) => l.method === "env")!;
+    return env.params.CODEX_CONFIG as string | null;
+  };
+
+  it("Codex without the web: web_search disabled, with or without a profile", async () => {
+    expect(JSON.parse((await envOf(false, "codex-config", deep))!)).toEqual({ model: "gpt-5.5", model_reasoning_effort: "high", model_auto_compact_token_limit: 400_000, web_search: "disabled" });
+    expect(JSON.parse((await envOf(false, "codex-config"))!)).toEqual({ web_search: "disabled" });
+  });
+
+  it("Codex with the web: CODEX_CONFIG as before", async () => {
+    expect(await envOf(true, "codex-config", deep)).toBe(codexConfig(deep));
+    expect(await envOf(true, "codex-config")).toBeNull();
+  });
+
+  it("other ACP engines (no codex-config) never get the key", async () => {
+    expect(await envOf(false, undefined, deep)).toBe(codexConfig(deep));
+    expect(await envOf(false, undefined)).toBeNull();
+  });
 });
 
 describe("offeredModels", () => {
@@ -1445,21 +1484,22 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     const { transport: t, log } = setup({ turns: [[chunk("a")]] }, undefined, codexEngine);
     await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low", features: { web_search_request: false } } }) }, light);
     const raw = log().find((l) => l.method === "env")!.params.CODEX_CONFIG as string;
-    expect(JSON.parse(raw)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000, model_verbosity: "low", features: { web_search_request: false } });
+    // The harness here has no web, so Codex's web search is off too.
+    expect(JSON.parse(raw)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000, web_search: "disabled", model_verbosity: "low", features: { web_search_request: false } });
     // The profile's keys come first, as today's CODEX_CONFIG.
-    expect(Object.keys(JSON.parse(raw))).toEqual(["model_reasoning_effort", "model_auto_compact_token_limit", "model_verbosity", "features"]);
+    expect(Object.keys(JSON.parse(raw))).toEqual(["model_reasoning_effort", "model_auto_compact_token_limit", "web_search", "model_verbosity", "features"]);
   });
 
   it("a preset's codex.toml reaches CODEX_CONFIG on a turn without a profile", async () => {
     const { transport: t, log } = setup({ turns: [[chunk("a")]] }, undefined, codexEngine);
     await turnWith(t, { linked: [], engine: preset({ codex: { model_verbosity: "low" } }) });
-    expect(JSON.parse(log().find((l) => l.method === "env")!.params.CODEX_CONFIG)).toEqual({ model_verbosity: "low" });
+    expect(JSON.parse(log().find((l) => l.method === "env")!.params.CODEX_CONFIG)).toEqual({ web_search: "disabled", model_verbosity: "low" });
   });
 
   it("an empty codex.toml leaves CODEX_CONFIG as the profile's", async () => {
     const { transport: t, log } = setup({ turns: [[chunk("a")]] }, undefined, codexEngine);
     await turnWith(t, { linked: [], engine: preset({ codex: {} }) }, deep);
-    expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBe(codexConfig(deep));
+    expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBe(codexConfig(deep, undefined, true));
   });
 
   it("keeps the process and the session while the hash stays", async () => {

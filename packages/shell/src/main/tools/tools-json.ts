@@ -1,11 +1,11 @@
 import path from "node:path";
-import { TOOLS_MAX, type ToolsJson, type ToolsManifest, toolProblems, toolsJsonSchema } from "@humanharness/harness-sdk";
+import { TOOLS_MAX, type ToolsJson, type ToolsManifest, stepProblems, toolProblems, toolsJsonSchema } from "@humanharness/harness-sdk";
 import { readNoLinks } from "@humanharness/workspace";
 
 /**
  * `<harness root>/dist/tools.json` as the app reads it at start (tools spec §3.2, Decision 3): at most 1 MB, never
- * through a link, its shape checked and then every rule of §3.3 the build can't see (`toolProblems`), so a stale or
- * hand-edited file never runs. Any failure turns tools off: every call answers the reason, and main logs why once.
+ * through a link, its shape checked and then every rule of §3.3 the build can't see (`toolProblems`, then `stepProblems`),
+ * so a stale or hand-edited file never runs. Any failure turns tools off: every call answers the reason, and main logs why once.
  * `toolProblems` also ties each entry's `file` to its id (`tools/<id>.js`): the host only ever loads a tool's bundle
  * by its id, and a tools.json pointing one id at another tool's bundle is refused here.
  */
@@ -43,9 +43,10 @@ export async function readToolsJson(root: string, manifest: ToolsManifest, log: 
     return off(`Tools are off: dist/tools.json: ${i ? `${i.path.join(".") || "(root)"}: ${i.message}` : "invalid"}`);
   }
   if (Object.keys(parsed.data.tools).length > TOOLS_MAX) return off(`Tools are off: dist/tools.json lists at most ${TOOLS_MAX} tools`);
-  const problem = toolProblems(manifest, parsed.data)[0];
+  // Then the pre-steps and expects that need tools.json (`stepProblems`, slice 3): none without them (D0).
+  const problem = toolProblems(manifest, parsed.data)[0]?.message ?? stepProblems(manifest, parsed.data)[0];
   if (problem) {
-    const reason = line(problem.message);
+    const reason = line(problem);
     return off(`Tools are off: ${reason}`, reason);
   }
   return { on: true, tools: parsed.data.tools };

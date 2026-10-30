@@ -563,3 +563,15 @@ describe("the tool host (tools spec §4.1; T1, T2, T6)", () => {
     expect(fake.ipcMain.handle).not.toHaveBeenCalled();
   });
 });
+
+describe("the tool host passes a step's inputs on (tools spec §4.2; slice 3)", () => {
+  it("the call command carries inputs when the call has them, and no inputs key when it doesn't", async () => {
+    const t = await started();
+    await t.ready();
+    void t.host.call({ callId: "c1", tool: "count", args: {}, scope: null, inputs: { today: [1] } }, 30_000);
+    expect(await t.next()).toEqual({ kind: "call", callId: "c1", tool: "count", args: {}, scope: null, inputs: { today: [1] } });
+    void t.host.call({ callId: "c2", tool: "count", args: {}, scope: null }, 30_000);
+    expect(await t.next()).toEqual({ kind: "call", callId: "c2", tool: "count", args: {}, scope: null });
+    t.host.stop();
+  });
+});

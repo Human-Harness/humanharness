@@ -59,6 +59,8 @@ export interface ToolHostCall {
   /** Already checked against the tool's params by the registry. */
   args: unknown;
   scope: string | null;
+  /** A step's earlier results by `as` (tools spec §6), the tool's `ctx.inputs`; absent for a UI or agent call. */
+  inputs?: Record<string, unknown>;
 }
 
 export type ToolHostAnswer = { ok: true; value: unknown; summary?: string } | { ok: false; error: string };
@@ -78,7 +80,7 @@ export interface ToolHostDeps {
   now?(): number;
 }
 
-type Command = { kind: "call"; callId: string; tool: string; args: unknown; scope: string | null } | { kind: "idle" };
+type Command = { kind: "call"; callId: string; tool: string; args: unknown; scope: string | null; inputs?: Record<string, unknown> } | { kind: "idle" };
 
 interface Pending {
   call: ToolHostCall;
@@ -306,7 +308,8 @@ export class ToolHost {
         continue;
       }
       p.running = true;
-      this.waiting.shift()!({ kind: "call", callId: id, tool: p.call.tool, args: p.call.args, scope: p.call.scope });
+      const { tool, args, scope, inputs } = p.call;
+      this.waiting.shift()!({ kind: "call", callId: id, tool, args, scope, ...(inputs !== undefined ? { inputs } : {}) });
     }
   }
 

@@ -15,7 +15,9 @@ export type ErrorCode =
   /** The user hasn't accepted the engine's legal notice (at its current version) in this app. */
   | "notice-required"
   /** The plan doesn't include the model the task asked for (resources spec §5.3). */
-  | "model-unavailable";
+  | "model-unavailable"
+  /** A required pre-step failed: the task didn't start (tools spec §6.5). */
+  | "prepare-failed";
 
 export interface EngineError {
   code: ErrorCode;
@@ -67,6 +69,8 @@ export interface ToolCallView {
   accesses: { kind: "fetch" | "exec" | "data" | "files"; target: string; allowed: boolean }[];
   /** The tool's `ctx.log` lines, keys hidden; absent when it logged none. */
   logs?: { level: "info" | "warn" | "error"; message: string }[];
+  /** A trace note, not a call (a pre-step's cut, an expected tool not called); one line, at most 200 characters. */
+  note?: string;
   at: string;
 }
 

@@ -302,7 +302,9 @@ export type ContextItemKind =
   | "pinned"
   | "pinned-title"
   /** A board-mode task's linked folders (hatches Decision 6): its first message lists them. */
-  | "linked-folders";
+  | "linked-folders"
+  /** Data a pre-step prepared (tools spec §6.4): pre-step results in the first message, one item per block. */
+  | "prepared";
 
 /** One part of what the app loaded into a task, with its approximate size. */
 export interface ContextItem {

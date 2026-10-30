@@ -39,10 +39,12 @@ import {
   dataCollections,
   hasBackend,
   hasEnginePresets,
+  hasExpects,
   hasJobs,
   hasLinkedFolders,
   hasModes,
   hasPhases,
+  hasPre,
   hasProfiles,
   hasSecrets,
   hasTools,
@@ -1408,6 +1410,16 @@ const taskDeps: TaskDeps = {
   get phaseMoved() {
     const sidekick = sidekickCtl;
     return sidekick ? (e: PhaseMoved) => void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err)) : undefined;
+  },
+  // An action's pre-steps and a part's expects (tools spec §6, §6.1). Getters: undefined without tools (no toolsHost)
+  // or when no action declares them (D0).
+  get prepare() {
+    const tools = toolsHost;
+    return tools && hasPre(harness) ? tools.prepare : undefined;
+  },
+  get phaseEnded() {
+    const tools = toolsHost;
+    return tools && hasExpects(harness) ? tools.phaseEnded : undefined;
   },
   // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
   get modes() {
@@ -3490,6 +3502,13 @@ if (loaded) {
           }
         : {}),
       serverEntry: path.join(here, "tools-server.js"),
+      // The `pre` and `expects-miss` rows (tools spec §6); written only when an action declares them.
+      usage: async (record) => {
+        const c = await validConfig();
+        if (c) await new UsageLog(baseOf(c)).append(record);
+      },
+      engine: async () => (await config.load()).engineId ?? "",
+      scoped,
       log: toolsLog,
     });
     registerToolsIpc(handle, toolsHost);

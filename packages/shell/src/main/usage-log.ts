@@ -73,8 +73,20 @@ export interface UsageRecord extends ProfileFields {
   /** Translate lines only: the target language and the batch's number in its run, 1-based (the first batch is 1). */
   language?: string;
   batch?: number;
-  /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
-  kind?: "checkpoint" | "compaction";
+  /**
+   * `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage).
+   * `pre`, `recipe` and `expects-miss`: tool rows (TOOL_ROW_KINDS), not turns.
+   */
+  kind?: "checkpoint" | "compaction" | "pre" | "recipe" | "expects-miss";
+  /** Tool rows only (tools spec §8.4): a pre row's step count, time and prepared section's tokens; a miss's tool. */
+  steps?: number;
+  ms?: number;
+  preparedTokens?: number;
+  tool?: string;
+  /** Recipe rows only (slice 4): the run's id and its step counts. */
+  run?: string;
+  toolSteps?: number;
+  aiSteps?: number;
   ok: boolean;
   usage?: TurnUsage;
   /** Latest windows the turn reported. */
@@ -170,6 +182,63 @@ export function usageRecord(entry: ChatEntry, engine: string, meta: UsageMeta = 
 /** A line for a compaction the task manager detected (spec §8). */
 export function compactionRecord(engine: string, meta: UsageMeta, at: string = new Date().toISOString()): UsageRecord {
   return { at, engine, ...metaFields(meta), kind: "compaction", ok: true };
+}
+
+/** Rows that are not turns (tools spec §8.4): a pre-step group, a recipe run (slice 4), an expected tool not called. */
+export const TOOL_ROW_KINDS: readonly NonNullable<UsageRecord["kind"]>[] = ["pre", "recipe", "expects-miss"];
+
+/** A task's pre-steps (tools spec §8.4): one row per start that ran them; `ok` when no step failed. */
+export function preRecord(
+  o: { engine: string; action: string; task: string; scope?: string; steps: number; ms: number; preparedTokens: number; ok: boolean },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return { at, engine: o.engine, kind: "pre", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), steps: o.steps, ms: o.ms, preparedTokens: o.preparedTokens, ok: o.ok };
+}
+
+/** A phase that ended without a call to a tool it expects (tools spec §6.1). The spec's `phase` is `taskPhase` here. */
+export function expectsMissRecord(o: { engine: string; action: string; task: string; scope?: string; taskPhase: string; tool: string }, at: string = new Date().toISOString()): UsageRecord {
+  return { at, engine: o.engine, kind: "expects-miss", action: o.action, task: o.task, ...(o.scope ? { scope: o.scope } : {}), taskPhase: o.taskPhase, tool: o.tool, ok: true };
+}
+
+/** One action's first turns with and without pre-steps (tools spec §8.4); averages, rounded. */
+export interface PreMeasure {
+  without: { tasks: number; firstTurn: number };
+  with: { tasks: number; firstTurn: number; preparedTokens: number; ms: number };
+}
+
+/**
+ * First-turn tokens of each action's tasks with and without pre-steps (tools spec §8.4: the baseline for savings). A
+ * task's first turn is its first `run` line (a line without a turn kind counts as one; tool rows, checkpoints and
+ * compactions don't), and its tokens are what it read: input, cache reads and cache writes. A task whose first turn
+ * reported no usage is left out, and so are free questions (no action). A task "with" pre-steps has a `pre` row.
+ * A first turn whose engine reported neither usage nor limits writes no line at all: the task's next run line is then
+ * taken as its first turn.
+ */
+export function measurePre(records: UsageRecord[]): Record<string, PreMeasure> {
+  const pre = new Map<string, UsageRecord>();
+  for (const r of records) if (r.kind === "pre" && r.task) pre.set(r.task, r);
+  const first = new Map<string, UsageRecord>();
+  for (const r of records) if (r.task && r.action && (r.phase ?? "run") === "run" && !r.kind && !first.has(r.task)) first.set(r.task, r);
+  const sums = new Map<string, { w: number[]; wo: number[]; prep: number[]; ms: number[] }>();
+  for (const [task, r] of first) {
+    if (!r.usage) continue;
+    const read = r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheWriteTokens;
+    const s = sums.get(r.action!) ?? { w: [], wo: [], prep: [], ms: [] };
+    sums.set(r.action!, s);
+    const p = pre.get(task);
+    if (p) {
+      s.w.push(read);
+      s.prep.push(p.preparedTokens ?? 0);
+      s.ms.push(p.ms ?? 0);
+    } else s.wo.push(read);
+  }
+  const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0);
+  return Object.fromEntries(
+    [...sums].map(([action, s]) => [
+      action,
+      { without: { tasks: s.wo.length, firstTurn: avg(s.wo) }, with: { tasks: s.w.length, firstTurn: avg(s.w), preparedTokens: avg(s.prep), ms: avg(s.ms) } },
+    ]),
+  );
 }
 
 /** One AI stage of material processing (material spec §11). */
@@ -324,12 +393,12 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out, and so are material stages, translation batches, Sidekick turns
+ * Checkpoint turns, compaction lines and tool rows (TOOL_ROW_KINDS) are left out, and so are material stages, translation batches, Sidekick turns
  * and job runs (not tasks; their windows still count as the latest limits). Job lines are told apart by `phase: "job"`,
  * never by their id (a job may be called "questions").
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
-  const all = records.filter((r) => r.kind !== "compaction");
+  const all = records.filter((r) => r.kind !== "compaction" && !(r.kind !== undefined && TOOL_ROW_KINDS.includes(r.kind)));
   const last = all.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();

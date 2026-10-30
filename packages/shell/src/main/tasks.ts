@@ -14,4 +14,4 @@ export { SharedConfigStore, sharedConfigDir } from "./shared-config";
 export { type TaskDeps, TaskManager } from "./task-manager";
 export { TaskStore } from "./task-store";
 export { EngineUnavailable, TurnController, type TurnOptions, memoise } from "./turn-controller";
-export { type TurnKind, UsageLog, type UsageMeta, usageRecord } from "./usage-log";
+export { type PreMeasure, type TurnKind, UsageLog, type UsageMeta, measurePre, usageRecord } from "./usage-log";

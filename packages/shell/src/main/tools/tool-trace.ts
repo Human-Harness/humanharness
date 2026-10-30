@@ -33,7 +33,12 @@ export interface TraceEntry {
   accesses: TraceAccess[];
   /** The call's `ctx.log` lines (spec §4.2), keys hidden then cut; absent when it logged none. */
   logs?: TraceLog[];
+  /** Set on a note, not a call (a pre-step's cut, an expected tool not called; spec §6): one line, ≤ NOTE_CHARS. */
+  note?: string;
 }
+
+/** A trace note's longest text, in code points (P6). */
+export const NOTE_CHARS = 200;
 
 /** Entries older than this are pruned at start. */
 export const TRACE_DAYS = 30;
@@ -176,7 +181,10 @@ function entries(text: string): TraceEntry[] {
   for (const l of text.split("\n")) {
     if (l === "") continue;
     const e = parsed(l);
-    if (e) out.push(e);
+    if (!e) continue;
+    // The file is read unchecked: a note is kept only as the registry writes it, a string of at most NOTE_CHARS.
+    if (e.note !== undefined && (typeof e.note !== "string" || [...e.note].length > NOTE_CHARS)) delete e.note;
+    out.push(e);
   }
   return out;
 }

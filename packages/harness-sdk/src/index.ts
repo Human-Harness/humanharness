@@ -18,6 +18,7 @@ import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
+import { preProblems, preSchema, preTokensSchema, expectsSchema } from "./steps";
 import { CORE_SERVER_NAMES, hasTools, toolsSchema } from "./tools";
 
 export * from "./block";
@@ -44,6 +45,7 @@ export * from "./review";
 export * from "./review-schema";
 export * from "./secrets";
 export * from "./tools";
+export * from "./steps";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -81,6 +83,8 @@ const phaseSchema = z.object({
   close: z.literal(true).optional(),
   /** A glob of documents (relative to the folder): approving one in this phase moves the task to the next (review spec §5.5). */
   approve: z.string().refine(validApproveGlob, "A relative glob of .md files: * and ? within a part, ** across parts").optional(),
+  /** Tools the agent should call in this part; a miss is counted (tools spec §6.1). Absent: none (D0). */
+  expects: expectsSchema.optional(),
 });
 export type HarnessPhase = z.output<typeof phaseSchema>;
 /** A time box the person may choose at the start (spec §5). */
@@ -116,6 +120,10 @@ const actionSchema = z.object({
   phases: z.array(phaseSchema).min(1).max(12).optional(),
   /** Lengths the person may choose for the task (spec D6); absent: no time box. */
   timeBox: timeBoxSchema.optional(),
+  /** Tool steps run when the task starts, before its session opens (tools spec §6). Absent: none (D0). */
+  pre: preSchema.optional(),
+  /** The cap on the prepared data in the first message; default PRE_TOKENS_DEFAULT. Only with `pre`. */
+  preTokens: preTokensSchema.optional(),
 });
 /** A folder the agent may read but never change. */
 const referenceSchema = z.object({
@@ -305,6 +313,8 @@ const manifestSchema = z.object({
     if (tools.has(id)) issue(`Tool id "${id}" clashes with a block tool name`);
     if ((CORE_SERVER_NAMES as readonly string[]).includes(id)) issue(`"${id}" is a core MCP server name: use another tool id`);
   }
+  // Pre-steps and expects (tools spec §3.3): declared tools, unique `as`, input and forEach naming an earlier `as`.
+  for (const p of preProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
   // The harness's own MCP servers are named after its id, next to the core's `ui`, `data` (and `tools`, `material`) servers.
   if (m.mcp.length > 0 && reservedMcpNames(m).includes(m.id)) {
     ctx.addIssue({ code: "custom", path: ["id"], message: `"${m.id}" is a built-in MCP server name and the harness's MCP servers are named after its id: use another id` });

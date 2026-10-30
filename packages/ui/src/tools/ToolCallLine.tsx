@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolCallView } from "../client";
+import { PreparedGroup } from "./PreparedGroup";
 
 /** "0.3 s": a call's time in seconds, one decimal. */
 const seconds = (ms: number): string => (Math.max(0, ms) / 1000).toFixed(1);
@@ -12,6 +13,20 @@ const seconds = (ms: number): string => (Math.max(0, ms) / 1000).toFixed(1);
  * and each access as one target line (never a header, a body or a key).
  */
 export function ToolCallLine({ call }: { call: ToolCallView }) {
+  // A trace note (a pre-step's cut, an expected tool not called) is a line of text, not a call.
+  if (call.note !== undefined) return <NoteLine note={call.note} />;
+  return <CallLine call={call} />;
+}
+
+function NoteLine({ note }: { note: string }) {
+  return (
+    <p className="hh-tool-note" dir="auto">
+      {note}
+    </p>
+  );
+}
+
+function CallLine({ call }: { call: ToolCallView }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(!call.ok);
   const details = useId();
@@ -73,6 +88,8 @@ export function ToolCallLine({ call }: { call: ToolCallView }) {
 
 const ACCESS_KINDS = new Set(["fetch", "exec", "data", "files"]);
 const isText = (v: unknown): v is string => typeof v === "string";
+/** A trace note's longest text, in code points (main's tool-trace NOTE_CHARS, threat row P6). */
+const NOTE_CHARS = 200;
 
 /** One access as main writes it, else null. */
 function cleanAccess(a: unknown): ToolCallView["accesses"][number] | null {
@@ -114,21 +131,28 @@ export function cleanToolCalls(raw: unknown): ToolCallView[] {
       ...(isText(v.result) ? { result: v.result } : {}),
       accesses: (v.accesses as unknown[]).map(cleanAccess).filter((a) => a !== null),
       ...cleanLogs(v.logs),
+      // A note as the trace reader keeps it: a string of at most NOTE_CHARS code points.
+      ...(isText(v.note) && [...v.note].length <= NOTE_CHARS ? { note: v.note } : {}),
       at: v.at,
     });
   }
   return out;
 }
 
-/** A turn's tool calls, in the order they ran (none well-formed: nothing). */
+/**
+ * A turn's tool calls, in the order they ran (none well-formed: nothing). Its leading pre-step calls fold into one
+ * group (tools spec §8.2); an entry without them draws as before.
+ */
 export function ToolCallLines({ calls }: { calls: unknown }) {
   const shown = cleanToolCalls(calls);
   if (shown.length === 0) return null;
+  const lead = shown.findIndex((c) => c.caller !== "pre");
+  const pre = lead < 0 ? shown.length : lead;
+  const line = (c: ToolCallView, i: number) => <ToolCallLine key={`${c.at}-${i}`} call={c} />;
   return (
     <div className="hh-tool-calls">
-      {shown.map((c, i) => (
-        <ToolCallLine key={`${c.at}-${i}`} call={c} />
-      ))}
+      {pre > 0 && <PreparedGroup calls={shown.slice(0, pre)}>{shown.slice(0, pre).map(line)}</PreparedGroup>}
+      {shown.slice(pre).map((c, i) => line(c, pre + i))}
     </div>
   );
 }

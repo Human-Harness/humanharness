@@ -1,6 +1,29 @@
 {
   "version": 1,
   "tools": {
+    "always-fails": {
+      "description": "Always fails.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/always-fails.js"
+    },
     "check-key": {
       "description": "Checks that the demo key works.",
       "agent": "none",
@@ -63,6 +86,36 @@
       "timeout": 30,
       "file": "tools/count-notes.js"
     },
+    "due-today": {
+      "description": "Lists what is due today.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "timeout": 30,
+      "file": "tools/due-today.js"
+    },
     "hidden": {
       "description": "A tool only the app's own screens call.",
       "agent": "none",
@@ -108,6 +161,36 @@
       },
       "timeout": 30,
       "file": "tools/peek-folder.js"
+    },
+    "pick-two": {
+      "description": "Picks the first two items due today as a warm-up.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "timeout": 30,
+      "file": "tools/pick-two.js"
     },
     "probe": {
       "description": "Reports whether Node's require and process exist where the tools run.",

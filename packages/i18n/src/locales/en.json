@@ -1437,6 +1437,10 @@
     "testCouldNotRun": "The test couldn't run."
   },
   "tools": {
+    "contextPrepared": "Prepared · {{name}}",
+    "prepared_one": "Prepared {{count}} item · {{seconds}} s · 0 tokens",
+    "prepared_other": "Prepared {{count}} items · {{seconds}} s · 0 tokens",
+    "prepareFailed": "Couldn't prepare this task: {{detail}}",
     "line": "{{tool}} · {{summary}} · {{seconds}} s · 0 tokens",
     "failed": "{{tool}} failed · {{message}}",
     "accessDenied": "access denied",

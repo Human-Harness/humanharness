@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type HarnessSecret, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
+import { type ActionLike, type HarnessSecret, PRE_TOKENS_DEFAULT, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { Event, ToolCallView } from "@humanharness/runtime";
 import type { ToolsInfo } from "@humanharness/ui/client";
@@ -11,13 +11,18 @@ import type { BrokerDataOp } from "../broker/broker";
 import { BROKER_LIMITS } from "../broker/broker-checks";
 import type { ToolDataCall } from "../data-requests";
 import { isJobSlot } from "../jobs/jobs-host";
+import { PREPARE_FAILED, type PrepareAnswer } from "../task-manager";
+import { type UsageRecord, expectsMissRecord, preRecord } from "../usage-log";
+import { expectsMisses } from "./expects";
+import { runPreSteps } from "./pre-steps";
+import { preparedSection } from "./prepared-section";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
 import { type JobLimits, TOOL_BROKER_LIMITS, ToolBroker } from "./tool-broker";
 import { toolFiles } from "./tool-files";
 import type { ToolHost } from "./tool-host";
 import { LOG_CHARS, TRACE_CUT, type ToolAnswer, type ToolCall, ToolRegistry } from "./tool-registry";
-import { ToolTrace, type TraceEntry } from "./tool-trace";
+import { NOTE_CHARS, ToolTrace, type TraceEntry } from "./tool-trace";
 import { type ToolsState, readToolsJson } from "./tools-json";
 
 /**
@@ -29,6 +34,8 @@ import { type ToolsState, readToolsJson } from "./tools-json";
  *   whatever the job runs), and an `agent: "none"` tool is unknown to it (T7);
  * - the harness UI (`uiCall`): caller "ui", the open scope, no task (T9, Decision 14);
  * - `trace(id)`: a task's or a job run's calls, as the chat's folded lines show them.
+ * And, only when index.ts wires them (D0): `prepare`, an action's pre-steps before its task starts (caller "pre", shown
+ * with the first turn, never live), and `phaseEnded`, a part's `expects` checked when the task leaves it.
  * A tool's data write carries the calling task's history trailer plus `Tool: <id>`.
  */
 
@@ -52,6 +59,8 @@ export interface ToolsHarness extends ToolsManifest {
   secrets?: readonly HarnessSecret[];
   /** Each job's `permissions` (only narrowing the harness's): a job run's tool calls stay inside them. */
   jobs?: Record<string, { permissions?: PermissionsOverride }>;
+  /** The actions' pre-steps and their phases' `expects` (tools spec §6); the label names a part in a miss note. */
+  actions?: Record<string, Omit<ActionLike, "phases"> & { phases?: { id: string; label?: string; expects?: string[] }[] }>;
 }
 
 /** The task a slot runs now, with its history trailer (the scope and phase of its commits). */
@@ -98,6 +107,12 @@ export interface ToolsHostDeps {
   attention?(create: boolean): Promise<Pick<AttentionStore, "raise" | "resolve"> | null>;
   /** `info()` changed: once started, and when the host goes off after repeated crashes (the window's top line, Task 11). */
   changed?(): void;
+  /** Appends a `pre` or `expects-miss` row to the base's usage.jsonl (tools spec §6). Absent: no row. */
+  usage?(record: UsageRecord): Promise<void>;
+  /** The engine in use, for those rows. */
+  engine?(): Promise<string>;
+  /** The harness has scopes: the rows and a pre-step's history trailer name the task's scope only then (D2). */
+  scoped?(): boolean;
   log(message: string, err?: unknown): void;
 }
 
@@ -122,6 +137,10 @@ export interface ToolsHost {
   info(): ToolsInfo;
   /** Runs whose call trailer is kept (tests: each is dropped when its call ends). */
   openRuns(): number;
+  /** An action's pre-steps for a new task (tools spec §6): TaskDeps.prepare. Never throws. */
+  prepare(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer>;
+  /** The task left part `phase`: its `expects` checked (tools spec §6.1): TaskDeps.phaseEnded. */
+  phaseEnded(o: { task: string; action: string; scope: string; phase: string }): Promise<void>;
 }
 
 /**
@@ -184,6 +203,7 @@ export function toolCallView(e: TraceEntry): ToolCallView {
     ...(e.ok && e.result !== undefined ? { result: shown(e.result) } : {}),
     accesses: e.accesses.map((a) => ({ kind: a.kind, target: a.target, allowed: a.allowed })),
     ...logsView(e.logs),
+    ...(typeof e.note === "string" ? { note: upTo(e.note, NOTE_CHARS) } : {}),
     at: e.at,
   };
 }
@@ -226,6 +246,8 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
    */
   const callTrailer = new AsyncLocalStorage<{ trailer?: HistoryTrailer }>();
   const trailers = new Map<string, HistoryTrailer | undefined>();
+  /** The pre calls (and their cut notes) of each start being prepared, by task: shown with its first turn, not live. */
+  const prepared = new Map<string, ToolCallView[]>();
 
   /**
    * The trace of the current base. Each base is pruned once, before its trace is first used: the base at start, and
@@ -303,6 +325,11 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
     trace: { append: async (e) => (await traceFor()).append(e) },
     secretValues,
     called: (e) => {
+      // A pre-step's call or note goes to its start's group (the first turn shows it, tools spec §8.2), never live.
+      if (e.caller === "pre") {
+        if (e.task !== undefined) prepared.get(e.task)?.push(toolCallView(e));
+        return;
+      }
       if (e.task !== undefined) d.emitToTask(e.task, { type: "tool-call", call: toolCallView(e) });
     },
     log: d.log,
@@ -411,8 +438,68 @@ export function createToolsHost(d: ToolsHostDeps): ToolsHost {
     return answer.result;
   }
 
+  const actionOf = (id: string) => (h.actions && Object.hasOwn(h.actions, id) ? h.actions[id] : undefined);
+  const scoped = () => d.scoped?.() ?? false;
+
+  /** The usage row, logged when it can't be written (a row never stops a start or a move). */
+  async function row(make: (engine: string) => UsageRecord): Promise<void> {
+    if (!d.usage) return;
+    try {
+      await d.usage(make((await d.engine?.()) ?? ""));
+    } catch (err) {
+      d.log("Could not record a tools row in usage.jsonl", err);
+    }
+  }
+
+  async function prepare(o: { action: string; scope: string; task: string; phase?: string }): Promise<PrepareAnswer> {
+    const action = actionOf(o.action);
+    const steps = action?.pre ?? [];
+    const phase = o.phase !== undefined ? { phase: o.phase } : {};
+    // The task's own trailer, as its commits will carry it: a pre-step's data write is the task's (plus `Tool:`).
+    const trailer: HistoryTrailer = { task: o.task, action: o.action, ...(scoped() ? { scope: o.scope } : {}), ...phase };
+    const views: ToolCallView[] = [];
+    prepared.set(o.task, views);
+    try {
+      // The task's scope as is (`_app` and `main` included), as its agent calls.
+      const run = await callTrailer.run({ trailer }, () => runPreSteps({ registry, steps, task: o.task, scope: o.scope, ...phase }));
+      await start();
+      const descriptions: Record<string, string> = state.on ? Object.fromEntries(Object.entries(state.tools).map(([id, m]) => [id, m.description])) : {};
+      const part = preparedSection(run.results, { descriptions, preTokens: action?.preTokens ?? PRE_TOKENS_DEFAULT });
+      // After the calls, so each cut joins the group under them; sent even when nothing is left of the section.
+      for (const c of part.cuts) await registry.note({ tool: c.tool, caller: "pre", task: o.task, ...phase, text: c.text });
+      // A refused start sent no section: its row counts no prepared tokens.
+      await row((engine) =>
+        preRecord({ engine, action: o.action, task: o.task, ...(scoped() ? { scope: o.scope } : {}), steps: steps.length, ms: run.ms, preparedTokens: run.requiredFailure ? 0 : part.tokens, ok: run.results.every((r) => r.ok) }),
+      );
+      // The step's message is the registry's (secrets hidden, P5).
+      if (run.requiredFailure) return { text: "", items: [], views, failed: `${run.requiredFailure.tool} failed: ${run.requiredFailure.error}` };
+      return { text: part.text, items: part.items, views };
+    } catch (err) {
+      // Never the thrown text: it may hold a path or anything else (P5).
+      d.log("Could not run the pre-steps", err);
+      return { text: "", items: [], views: [], failed: PREPARE_FAILED };
+    } finally {
+      prepared.delete(o.task);
+    }
+  }
+
+  async function phaseEnded(o: { task: string; action: string; scope: string; phase: string }): Promise<void> {
+    // The ids passed only: the task may be closed already (this runs after its end).
+    const part = actionOf(o.action)?.phases?.find((p) => p.id === o.phase);
+    const expects = part?.expects ?? [];
+    if (expects.length === 0) return;
+    const misses = expectsMisses(await (await traceFor()).read(o.task), { task: o.task, phase: o.phase, expects });
+    for (const tool of misses) {
+      await row((engine) => expectsMissRecord({ engine, action: o.action, task: o.task, ...(scoped() ? { scope: o.scope } : {}), taskPhase: o.phase, tool }));
+      // Reaches the chat through `called`, as an agent call (Decision 12).
+      await registry.note({ tool, caller: "agent", task: o.task, phase: o.phase, text: `Expected ${tool} in ${part?.label ?? o.phase}: not called` });
+    }
+  }
+
   return {
     start,
+    prepare,
+    phaseEnded,
     stop: () => {
       for (const b of brokers.values()) b.killAll();
       d.host.stop();

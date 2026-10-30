@@ -47,6 +47,8 @@ export interface ToolContext {
   files: { read(path: string): Promise<string>; list(dir: string, glob?: string): Promise<string[]> };
   /** The scope of the calling task or job run, or null. */
   scope: string | null;
+  /** The results named by the step's input (tools spec §6, §7); {} for a call that isn't a step. Frozen. */
+  readonly inputs: Readonly<Record<string, unknown>>;
   log(level: "info" | "warn" | "error", message: string): void;
 }
 

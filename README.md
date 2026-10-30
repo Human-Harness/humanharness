@@ -4,6 +4,8 @@
 
 Open-source framework for building **harnesses**: installable desktop apps that put a purpose-built interface and workflow on top of an AI agent.
 
+**Website:** [human-harness.github.io/humanharness](https://human-harness.github.io/humanharness/): the project's spirit, its architecture and the harnesses it can build.
+
 Each user brings **their own AI subscription** through the provider's official CLI, which the app installs and configures. No developer API keys, no terminals, no Node or git in sight: harnesses are made for non-technical people.
 
 > **Status:** early development. The Node foundations (plan 1), the desktop app (plans 2a and 2b), the flow and context management (plans 3 and 3c) and the authoring CLI and guide (plan 4a) are in place: harnesses run their actions as tasks with one engine session each, keep notes in the user's folder and start every session from them. The demo harness is an architecture explainer for developers. Design: [`docs/superpowers/specs/`](docs/superpowers/specs/). Roadmap: [`docs/superpowers/plans/`](docs/superpowers/plans/).
@@ -38,6 +40,7 @@ harnesses/
   demo/          architecture explainer (development only)
 docs/            specs, plans and spikes
 docs/architecture/  short curated docs the explainer starts from
+site/            the public website, deployed to GitHub Pages
 ```
 
 Planned: `harnesses/socrates`, `tooling/`.

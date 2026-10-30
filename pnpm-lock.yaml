@@ -242,6 +242,9 @@ importers:
       '@humanharness/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@humanharness/policies':
+        specifier: workspace:*
+        version: link:../policies
       '@humanharness/protocol':
         specifier: workspace:*
         version: link:../protocol

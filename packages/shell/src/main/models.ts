@@ -12,7 +12,7 @@ import {
   isModelId,
   PINNED_MAX,
 } from "@humanharness/engines";
-import { tierSpec } from "@humanharness/policies";
+import { fitEffort, tierSpec } from "@humanharness/policies";
 import { DEFAULT_PINNED_TOKENS } from "@humanharness/workspace";
 
 export { QUESTIONS, firstOffered, fitEffort, nextFallback, offered, resolveProfile, taskKey, tierSpec } from "@humanharness/policies";
@@ -118,4 +118,9 @@ export function engineOffer(engine: EngineDef, saved: { models?: ModelChoice[]; 
     models: fixed ? fixed.map((id) => ({ id })) : savedModels,
     efforts: savedEfforts.length && !fixed ? savedEfforts : [...(engine.models?.efforts ?? ["low", "medium", "high"])],
   };
+}
+
+/** `p` with an effort `engine` offers (`engineOffer`), for a profile that didn't come from a pick (a fallback, a restored task). */
+export function offeredEffort(p: ModelProfile, engine: EngineDef, saved: { models?: ModelChoice[]; efforts?: Effort[] }): ModelProfile {
+  return fitEffort(p, engineOffer(engine, saved).efforts);
 }

@@ -1,4 +1,4 @@
-import type { SetupOutput, SetupResult, SetupStep } from "@humanharness/ui/client";
+import type { SetupOutput, SetupResult, SetupStep } from "@humanharness/protocol";
 import type { EngineGuards } from "./engine-guards";
 import { type HasNotice, requireNoticeForStep } from "./notice-policy";
 import type { RunningSetup } from "./setup-runner";

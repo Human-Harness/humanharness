@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { HarnessClient } from "@humanharness/ui/client";
+import type { HarnessClient } from "@humanharness/protocol";
 import { CONNECTIONS_IPC_CHANNELS } from "../src/main/secrets/connections-ipc";
 
 const electron = vi.hoisted(() => ({

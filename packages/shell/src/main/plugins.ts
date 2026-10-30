@@ -43,7 +43,7 @@ import type {
   PluginsView,
   PluginTestResult,
   PreparedTaskView,
-} from "@humanharness/ui/client";
+} from "@humanharness/protocol";
 import { type AttentionInput, type AttentionItem, type AttentionOrigin, AttentionStore, type AttentionTarget, type DataContextPart, DataError } from "@humanharness/workspace";
 import { BROKER_LIMITS, type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";

@@ -1,4 +1,4 @@
-import type { ReviewSummary } from "@humanharness/ui/client";
+import type { ReviewSummary } from "@humanharness/protocol";
 import type { ReviewService } from "./reviews";
 
 export const REVIEW_CHANNELS = [

@@ -1,4 +1,4 @@
-import type { ConnectionResult } from "@humanharness/ui/client";
+import type { ConnectionResult } from "@humanharness/protocol";
 import type { ConnectionsController } from "./connections";
 
 /** Settings › Connections (tools spec §9). The push, hh:connectionsChange, goes out from index.ts. */

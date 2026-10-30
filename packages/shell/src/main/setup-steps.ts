@@ -1,5 +1,5 @@
 import { type ActionCost, type Collection, type HarnessSecret, type HarnessSettings, type HarnessSetupStep, setupFormSpec, type z } from "@humanharness/harness-sdk";
-import type { InputIssue, SettingsResult, SetupStepResult, SetupStepView, SetupStepsState } from "@humanharness/ui/client";
+import type { InputIssue, SettingsResult, SetupStepResult, SetupStepView, SetupStepsState } from "@humanharness/protocol";
 import { APP_SCOPE, type DataContext, DataError, type DataRequest, type DataStore } from "@humanharness/workspace";
 import { DataUnavailable } from "./data-requests";
 import { type SetupFile, SetupStore, type StepMark, emptySetup, setupState } from "./setup-store";

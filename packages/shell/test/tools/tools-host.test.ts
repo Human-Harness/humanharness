@@ -6,7 +6,7 @@ import type { ToolMeta } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDataCall } from "../../src/main/data-requests";
-import { TOOLS_OFF_CRASHES } from "@humanharness/ui/client";
+import { TOOLS_OFF_CRASHES } from "@humanharness/protocol";
 import { TOOLS_OFF, type ToolChannel, type ToolHostAnswer, type ToolHostCall } from "../../src/main/tools/tool-host";
 import { TOOL_BROKE, type ToolsHarness, type ToolsHostDeps, TOOLS_OFF_ITEM, createToolsHost, slotTaskOf, toolCallView, toolExecEnv } from "../../src/main/tools/tools-host";
 

@@ -3,7 +3,7 @@ import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema, recom
 import type { ReviewSummary } from "@humanharness/harness-sdk/review";
 import { CORE_LOCALES } from "@humanharness/i18n";
 import type { Event } from "@humanharness/runtime";
-import type { TaskTurnNotice } from "@humanharness/ui/client";
+import type { TaskTurnNotice } from "@humanharness/protocol";
 
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";

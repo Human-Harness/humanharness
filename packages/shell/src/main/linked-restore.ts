@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
-import type { HistoryTaskView, LinkedHistoryView } from "@humanharness/ui/client";
+import type { HistoryTaskView, LinkedHistoryView } from "@humanharness/protocol";
 import { History, type LinkedFolderEntry, type ScopeEntry, isScopeId } from "@humanharness/workspace";
 import { type RestoreByPaths, restoreTaskByPaths } from "./restore-paths";
 

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { JOB_ID, canonicalLanguage } from "@humanharness/harness-sdk";
-import { type AppConfig, cleanReaderPrefs, isTextSize } from "@humanharness/ui/client";
+import { type AppConfig, cleanReaderPrefs, isTextSize } from "@humanharness/protocol";
 import { isProfileId } from "@humanharness/workspace";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */

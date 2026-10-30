@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PhaseResult } from "@humanharness/ui/client";
+import type { PhaseResult } from "@humanharness/protocol";
 import { setPhaseHandler, timeBoxOffered } from "../src/main/phase-ipc";
 
 function setup(opts: { quitting?: boolean; blocked?: string | null; result?: PhaseResult; doneError?: Error } = {}) {

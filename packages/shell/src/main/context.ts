@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
-import type { ContextGetResult, ContextPick, ContextRefusal, ContextResult, ExcludedView, TaskContext } from "@humanharness/ui/client";
+import type { ContextGetResult, ContextPick, ContextRefusal, ContextResult, ExcludedView, TaskContext } from "@humanharness/protocol";
 import {
   APP_SCOPE,
   CONTEXT_CHANGE_PREFIX,

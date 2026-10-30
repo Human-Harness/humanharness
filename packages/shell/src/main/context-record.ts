@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { Event } from "@humanharness/runtime";
-import type { ContextItem, ContextRead } from "@humanharness/ui/client";
+import type { ContextItem, ContextRead } from "@humanharness/protocol";
 
 /** How many start items tasks.json keeps for a task: a bound on a hand-edited file. */
 export const START_ITEMS_MAX = 100;

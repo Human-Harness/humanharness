@@ -1,4 +1,4 @@
-import type { SetupStep } from "@humanharness/ui/client";
+import type { SetupStep } from "@humanharness/protocol";
 import { EngineUnavailable } from "./turn-controller";
 
 /** Whether the engine's legal notice is accepted at the current version. */

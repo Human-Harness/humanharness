@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import type { SetupOutput } from "@humanharness/ui/client";
+import type { SetupOutput } from "@humanharness/protocol";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "../src/main/setup-runner";
 
 const node = (script: string) => ({ command: [process.execPath, "-e", script], env: {} });

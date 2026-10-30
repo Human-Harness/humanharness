@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
-import type { ChatEntry } from "@humanharness/ui";
+import type { ChatEntry } from "@humanharness/protocol";
 import { EngineUnavailable, TurnController, type TurnDeps, type TurnOptions, forWindow, memoise } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 

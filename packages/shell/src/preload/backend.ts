@@ -1,4 +1,4 @@
-import type { BackendClient, BackendState } from "@humanharness/ui/client";
+import type { BackendClient, BackendState } from "@humanharness/protocol";
 import type { Invoke } from "./context";
 
 type Subscribe = (channel: string, listener: (value: unknown) => void) => () => void;

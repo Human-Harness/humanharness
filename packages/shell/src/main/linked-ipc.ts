@@ -3,7 +3,7 @@ import { promises as fs, realpath } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { LINKED_MANY_MAX, type LinkedFolderDecl, hasBackend, hasEnginePresets, hasLinkedFolders } from "@humanharness/harness-sdk";
-import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/ui/client";
+import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/protocol";
 import { type LinkedFolderEntry, type ScopeEntry, type ScopeStore, isScopeId } from "@humanharness/workspace";
 import { checkLink, isGitRepo } from "./linked-folders";
 import { linkedHistoryDir, markRelinked, markUnlinked } from "./linked-history";

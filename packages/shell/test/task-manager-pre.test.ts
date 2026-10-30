@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import type { Event, ToolCallView } from "@humanharness/runtime";
-import type { ContextItem } from "@humanharness/ui/client";
+import type { ContextItem } from "@humanharness/protocol";
 import { approxTokens } from "../src/main/context-record";
 import type { PrepareAnswer, TaskDeps } from "../src/main/task-manager";
 import { PHASES, ok, profile, setup } from "./task-manager-fixture";

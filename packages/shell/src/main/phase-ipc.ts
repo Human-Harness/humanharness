@@ -1,5 +1,5 @@
 import { PHASE_ID } from "@humanharness/harness-sdk";
-import type { PhaseResult } from "@humanharness/ui/client";
+import type { PhaseResult } from "@humanharness/protocol";
 
 export interface SetPhaseDeps {
   quitting(): boolean;

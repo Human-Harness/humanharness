@@ -1,6 +1,6 @@
 import { sidekickRecordSchema } from "@humanharness/harness-sdk";
 import { isScopeId } from "@humanharness/workspace";
-import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/protocol";
 import type { SidekickController } from "./sidekick";
 import { SIDEKICK_MAX, type SidekickInput, type SidekickScope } from "./sidekick-store";
 import { IMPORT_MAX_BYTES } from "./sidekick-import";

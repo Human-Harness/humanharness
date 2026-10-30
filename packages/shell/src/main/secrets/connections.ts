@@ -3,7 +3,7 @@ import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import type { HarnessSecret, HarnessSetupStep } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
-import type { ConnectionLastTest, ConnectionResult, ConnectionView, ConnectionsView } from "@humanharness/ui/client";
+import type { ConnectionLastTest, ConnectionResult, ConnectionView, ConnectionsView } from "@humanharness/protocol";
 import type { SecretStore } from "./secret-store";
 
 /** What a tool's call says when a key it needs isn't stored (tools spec §9, §10). Used by slice 2's tool broker. */

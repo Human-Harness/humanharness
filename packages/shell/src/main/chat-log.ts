@@ -4,7 +4,7 @@ import path from "node:path";
 import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, isTaskId, taskChatFile } from "@humanharness/workspace";
 import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow, ToolCallView } from "@humanharness/runtime";
-import { type AnswerPart, type ChatEntry, type DocumentCard, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
+import { type AnswerPart, type ChatEntry, type DocumentCard, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/protocol";
 
 export class ChatLog {
   private readonly file: string;

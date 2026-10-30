@@ -1,5 +1,5 @@
 import { PARALLEL_MAX, type ParallelCaps } from "@humanharness/harness-sdk";
-import type { AppConfig, ParallelInfo } from "@humanharness/ui/client";
+import type { AppConfig, ParallelInfo } from "@humanharness/protocol";
 
 /** What an engine allows at once. `singleSession`: one live engine process in all, jobs included. */
 export interface EngineHold {

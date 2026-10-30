@@ -1,5 +1,5 @@
 import { HIDDEN_CHARS } from "@humanharness/harness-sdk";
-import type { ContextItem } from "@humanharness/ui/client";
+import type { ContextItem } from "@humanharness/protocol";
 import { fenceFor } from "@humanharness/workspace";
 import { approxTokens } from "../context-record";
 import type { StepResult } from "./pre-steps";

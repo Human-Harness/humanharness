@@ -1,6 +1,6 @@
 import type { EngineApproval, ScopeStore } from "@humanharness/workspace";
 import { ENGINE_PREFIX, isScopeId } from "@humanharness/workspace";
-import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView, EngineSkillView } from "@humanharness/ui/client";
+import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView, EngineSkillView } from "@humanharness/protocol";
 import { engineApprovalTag } from "./approval";
 import type { Hooks } from "./clean";
 import { agentFromMarkdown, parseFrontmatter } from "./frontmatter";

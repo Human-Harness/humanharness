@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ModeChoice, ModeResult } from "@humanharness/ui/client";
+import type { ModeChoice, ModeResult } from "@humanharness/protocol";
 import { chooseModeHandler } from "../src/main/mode-ipc";
 
 function setup(opts: { quitting?: boolean; blocked?: string | null; result?: ModeResult; doneError?: Error; task?: string | null } = {}) {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { LanguageState } from "@humanharness/ui/client";
+import type { LanguageState } from "@humanharness/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TranslationCache } from "../src/main/translation-cache";
 import { type Runner, TranslationService } from "../src/main/translation";

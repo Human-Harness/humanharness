@@ -7,7 +7,7 @@ import {
   authorName,
   laterTasks,
   timeAgo,
-} from "@humanharness/ui/client";
+} from "@humanharness/protocol";
 import { isSha } from "./history-view";
 
 /**

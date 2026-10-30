@@ -15,7 +15,7 @@ import {
   refusedShape,
   summarizeReview,
 } from "@humanharness/harness-sdk";
-import type { ApprovedText, CommentInput, ReviewFailure, ReviewResult, ReviewSendResult, ReviewView } from "@humanharness/ui/client";
+import type { ApprovedText, CommentInput, ReviewFailure, ReviewResult, ReviewSendResult, ReviewView } from "@humanharness/protocol";
 import {
   ANSWER_PREFIX,
   ANSWER_SEPARATOR,

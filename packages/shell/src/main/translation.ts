@@ -10,7 +10,7 @@ import {
   toResourceEntries,
 } from "@humanharness/i18n/translate";
 import type { EngineError, SystemTaskResult } from "@humanharness/runtime";
-import type { GeneratedStrings, LanguageChoose, LanguageRun, LanguageStart, LanguageState } from "@humanharness/ui/client";
+import type { GeneratedStrings, LanguageChoose, LanguageRun, LanguageStart, LanguageState } from "@humanharness/protocol";
 import { translatePrompt } from "./task-prompts";
 import { type CacheFile, type TranslationCache, safeKey } from "./translation-cache";
 

@@ -10,6 +10,7 @@
     "@humanharness/fake-agent": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
+    "@humanharness/protocol": "workspace:*",
     "@humanharness/runtime": "workspace:*",
     "@humanharness/shell": "workspace:*",
     "@humanharness/ui": "workspace:*",

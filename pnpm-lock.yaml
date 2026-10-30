@@ -242,6 +242,9 @@ importers:
       '@humanharness/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@humanharness/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@humanharness/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -490,9 +493,6 @@ importers:
 
   packages/ui:
     dependencies:
-      '@humanharness/engines':
-        specifier: workspace:*
-        version: link:../engines
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk
@@ -502,12 +502,6 @@ importers:
       '@humanharness/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@humanharness/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@humanharness/workspace':
-        specifier: workspace:*
-        version: link:../workspace
       highlight.js:
         specifier: ~11.11.0
         version: 11.11.2

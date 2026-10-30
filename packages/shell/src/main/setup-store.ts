@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { SetupStepStatus, SetupStepsState } from "@humanharness/ui/client";
+import type { SetupStepStatus, SetupStepsState } from "@humanharness/protocol";
 import { setupFile } from "@humanharness/workspace";
 
 /** What a person did with a step. Absent: not done yet. */

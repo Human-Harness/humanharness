@@ -1,4 +1,4 @@
-import type { TaskContext } from "@humanharness/ui/client";
+import type { TaskContext } from "@humanharness/protocol";
 
 export type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>;
 

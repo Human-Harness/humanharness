@@ -1,5 +1,5 @@
 import { type EngineDef, type EngineSetup, NOTICE_VERSION, meetsMinVersion, parseVersion } from "@humanharness/engines";
-import type { EngineStatus } from "@humanharness/ui/client";
+import type { EngineStatus } from "@humanharness/protocol";
 import { type CommandDeps, cliCommand } from "./engine-command";
 import { type SharedConfigStore, noticeAccepted } from "./shared-config";
 

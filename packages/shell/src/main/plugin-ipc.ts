@@ -10,7 +10,7 @@ import type {
   PluginSurfaceView,
   PluginsView,
   PluginTestResult,
-} from "@humanharness/ui/client";
+} from "@humanharness/protocol";
 import type { PluginBackendHost } from "./plugin-host";
 import type { PluginsController, PreparedStart } from "./plugins";
 import { ScopeRequired } from "./task-manager";

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { canOpenFile } from "@humanharness/ui/client";
+import { canOpenFile } from "@humanharness/protocol";
 
 /**
  * The real path of `rel` inside one of `roots` (tried in order): a regular file, symlinks resolved, that

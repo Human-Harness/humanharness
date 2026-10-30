@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, ToolCallView } from "@humanharness/runtime";
-import type { ChatEntry } from "@humanharness/ui";
+import type { ChatEntry } from "@humanharness/protocol";
 import { TurnController, type TurnDeps } from "../src/main/turn-controller";
 
 type Emit = (e: Event) => void;

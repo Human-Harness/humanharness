@@ -1,4 +1,4 @@
-import type { FileRefusal, FileRestoreResult } from "@humanharness/ui/client";
+import type { FileRefusal, FileRestoreResult } from "@humanharness/protocol";
 
 export type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>;
 

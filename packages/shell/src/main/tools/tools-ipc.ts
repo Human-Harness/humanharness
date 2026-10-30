@@ -1,5 +1,5 @@
 import { TOOL_ID } from "@humanharness/harness-sdk";
-import type { ToolCallResult, ToolCallView } from "@humanharness/ui/client";
+import type { ToolCallResult, ToolCallView } from "@humanharness/protocol";
 import { isTaskId } from "@humanharness/workspace";
 import type { ToolsHost } from "./tools-host";
 

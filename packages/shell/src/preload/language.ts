@@ -1,4 +1,4 @@
-import type { GeneratedStrings, LanguageChoose, LanguageClient, LanguageStart, LanguageState } from "@humanharness/ui/client";
+import type { GeneratedStrings, LanguageChoose, LanguageClient, LanguageStart, LanguageState } from "@humanharness/protocol";
 import type { Invoke } from "./context";
 
 type Subscribe = (channel: string, listener: (value: unknown) => void) => () => void;

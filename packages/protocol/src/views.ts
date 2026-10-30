@@ -1,5 +1,6 @@
 // The view models the core sends the window and the window sends back (replaceable parts §5): data only.
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
+export type { Effort, ModelChoice, ModelSpec, ModelsConfig, TaskModelChoice } from "@humanharness/engines";
 import type {
   ActionCost,
   BlockAnswer,

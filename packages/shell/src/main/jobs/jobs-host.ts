@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type HarnessJob, hasJobs } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, type HarnessWorkspace, type Session, type SessionSlot, type TurnScope, runtimeOnSlot } from "@humanharness/runtime";
-import type { AppConfig, JobSummary, JobsInfo } from "@humanharness/ui/client";
+import type { AppConfig, JobSummary, JobsInfo } from "@humanharness/protocol";
 import { APP_SCOPE, ATTENTION_LIMITS, type AttentionStore, type HistoryTrailer, MAIN_SCOPE } from "@humanharness/workspace";
 import { type Turns, gatedTurns } from "../gated-turns";
 import { cleanJobSettings } from "../config";

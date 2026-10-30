@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HarnessTimeBox } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
-import type { ContextItem } from "@humanharness/ui/client";
+import type { ContextItem } from "@humanharness/protocol";
 import type { Note } from "@humanharness/workspace";
 import { READS_MAX, approxTokens } from "../src/main/context-record";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";

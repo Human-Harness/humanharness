@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { ActionStatus } from "@humanharness/ui/client";
+import type { ActionStatus } from "@humanharness/protocol";
 import type { CurrentTask, TasksFile } from "./task-store";
 
 /**

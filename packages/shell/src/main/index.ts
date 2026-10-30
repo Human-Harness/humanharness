@@ -105,7 +105,7 @@ import {
   type TextSize,
   isConfigured,
   stepTextSize,
-} from "@humanharness/ui/client";
+} from "@humanharness/protocol";
 import {
   APP_SCOPE,
   DATA_CHANGE_PREFIX,

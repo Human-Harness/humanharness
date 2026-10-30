@@ -30,8 +30,8 @@ import type {
   TaskView,
   ToolsInfo,
   TextSize,
-} from "@humanharness/ui/client";
-import { hearsDataChange } from "@humanharness/ui/data-change";
+} from "@humanharness/protocol";
+import { hearsDataChange } from "@humanharness/protocol/data-change";
 import { backendClient } from "./backend";
 import { askContext, contextListener } from "./context";
 import { documentWatcher } from "./document-watch";

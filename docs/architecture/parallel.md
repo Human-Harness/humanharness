@@ -144,5 +144,5 @@ An answer to an input block is marked in the task's own chat file (`chats/<scope
 
 - `packages/harness-sdk/src/parallel.ts` (`parallelSchema`, `isConcurrent`, `parallelCaps`), `index.ts` (`parallel`, `inbox`).
 - `packages/shell/src/main/`: `board-host.ts`, `task-board.ts`, `lane-store.ts`, `turn-gate.ts`, `gated-turns.ts`, `parallel-config.ts`, `live-buffer.ts`, `chat-migration.ts`, `restore-paths.ts`, `tasks-ipc.ts`, `attention-stores.ts`, `task-attention.ts`, `task-store.ts` (`lanes`, `focus`, `cleanLanes`, `interruptedLanes`).
-- `packages/ui/src/parallel/` (`Inbox.tsx`, `TaskStrip.tsx`, `useTasks.ts`), `client.ts` (`TaskSummary`, `TasksState`, `TasksClient`, `ParallelInfo`), `SettingsSheet.tsx`, `HarnessApp.tsx`, `Message.tsx` (the notice line).
+- `packages/ui/src/parallel/` (`Inbox.tsx`, `TaskStrip.tsx`, `useTasks.ts`), `packages/protocol/src/views.ts` (`TaskSummary`, `TasksState`, `ParallelInfo`) and `client.ts` (`TasksClient`), `SettingsSheet.tsx`, `HarnessApp.tsx`, `Message.tsx` (the notice line).
 - `packages/fake-agent/fixtures/parallel-harness` (id `parallel`, actions "Write A" and "Write B", `parallel: { tasks: 2, jobs: 1 }`) backs `packages/e2e/tests/parallel.spec.ts`.

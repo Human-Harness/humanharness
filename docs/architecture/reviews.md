@@ -284,6 +284,6 @@ The tests that hold this: `packages/blocks/test/ui-server.test.ts` (unchanged), 
 - `packages/workspace/src/reviews.ts` (record files, locks, own documents, `blobId`, `reviewSummarySync`), `review-requests.ts`, `history.ts` (`readBlob`, the kept prefix), `layout.ts` (`REVIEWS_PREFIX`), `instructions.ts`.
 - `packages/blocks/src/ui-server.ts`, `ui-server-bin.ts`, `launch.ts`; `packages/runtime/src/runtime.ts` (`review`, `reviewHandler`).
 - `packages/shell/src/main/reviews.ts`, `review-ipc.ts`, `task-manager.ts` (`reviewRound`, `documentApproved`, `withNotices`), `task-prompts.ts` (`REVIEW_PROMPT`), `task-store.ts` (`notices`), `index.ts`, `packages/shell/src/preload/index.ts`.
-- `packages/ui/src/review-marks.ts`, `ReviewColumn.tsx`, `ReviewBar.tsx`, `ApprovedDiff.tsx`, `FocusMarkers.tsx`, `focus-notices.ts`, `DocumentReader.tsx`, `DocumentCards.tsx`, `ChatView.tsx`, `client.ts`.
+- `packages/ui/src/review-marks.ts`, `ReviewColumn.tsx`, `ReviewBar.tsx`, `ApprovedDiff.tsx`, `FocusMarkers.tsx`, `focus-notices.ts`, `DocumentReader.tsx`, `DocumentCards.tsx`, `ChatView.tsx`; `packages/protocol/src/{client,views}.ts`.
 - `packages/cli/src/run.ts`, `terminal.ts`.
 - `packages/fake-agent/fixtures/review-harness` (id `reviewer`) and `packages/e2e/tests/review.spec.ts`.

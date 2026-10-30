@@ -1,6 +1,6 @@
 // The subjects of the history's commits: raw git data in English, written by the runtime, the task manager
 // and the restores, and read back by the History panel (through i18n keys). Plain constants with no imports,
-// so the renderer can use them (`@humanharness/workspace/subjects`, re-exported by `@humanharness/ui/client`).
+// so the renderer can use them (`@humanharness/workspace/subjects`, re-exported by `@humanharness/protocol`).
 
 /** The runtime started: changes made outside the app. */
 export const START = "Start";

@@ -38,8 +38,8 @@ describe("import boundaries (replaceable parts §5.5, §8)", () => {
     expect(offenders(imports(path.join(packages, "ui/src")), (i) => core.test(i.spec))).toEqual([]);
   });
 
-  it("the shell's main and preload do not import ui", () => {
-    const list = [...imports(path.join(packages, "shell/src/main")), ...imports(path.join(packages, "shell/src/preload"))];
+  it("the shell's main, preload and tests do not import ui", () => {
+    const list = [...imports(path.join(packages, "shell/src/main")), ...imports(path.join(packages, "shell/src/preload")), ...imports(path.join(packages, "shell/test"))];
     expect(offenders(list, (i) => /^@humanharness\/ui(\/|$)/.test(i.spec))).toEqual([]);
   });
 

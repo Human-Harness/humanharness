@@ -5,7 +5,7 @@ import { Segmented } from "./chrome";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
 
-// Local copies: the UI only imports types from the core packages.
+// Local copies: the UI imports nothing from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
 const CAPS: readonly number[] = [100_000, 200_000, 400_000, 1_000_000];
 /** The engines package's `PINNED_OPTIONS`. */

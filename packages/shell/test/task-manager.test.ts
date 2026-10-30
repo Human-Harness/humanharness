@@ -1443,3 +1443,111 @@ describe("TaskManager: the task's context policy decides the checkpoint (replace
     expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
   });
 });
+
+describe("TaskManager: a new session's start follows the task's context policy (replaceable-parts §7.1)", () => {
+  const own: Note = { slug: "own", path: ".harness/scopes/intro/notes/own.md", title: "Own note", date: "2026-10-20T10:00:00.000Z", engine: "claude", summary: ["own"], decisions: [], files: [], open: [] };
+  const appNotes: Note[] = Array.from({ length: 30 }, (_, i) => ({
+    slug: `app-${i}`,
+    path: `.harness/scopes/_app/notes/app-${i}.md`,
+    title: `App note number ${i} with a longer title`,
+    date: `2026-10-${String(10 + (i % 18)).padStart(2, "0")}T10:00:00.000Z`,
+    engine: "claude",
+    summary: [`what app note ${i} says, in a sentence that takes some room in the index`],
+    decisions: [`decision ${i}`],
+    files: [],
+    open: [],
+  }));
+  const MATERIAL = "## Material\n\nsheet";
+  const hooks = () => ({
+    scoped: true,
+    notes: vi.fn(async (scope?: string) => (scope === "_app" ? appNotes : [own])),
+    dataContext: vi.fn(async () => "## Data: tickets\n\n| id |"),
+    personContext: vi.fn(async () => ({ pinned: "## Pinned", items: [{ id: "pin:intro:a.md", kind: "pinned" as const, label: "Pinned · a.md", path: "a.md", tokens: 3, scope: "intro" }], excluded: new Set<string>() })),
+    materialContext: vi.fn(async (_scope: string, _budget?: number) => MATERIAL),
+    linkedContext: vi.fn(async () => "## Folders of this scope"),
+  });
+  const unregister: (() => void)[] = [];
+  beforeEach(() => {
+    unregister.push(registerContextPolicy({ ...DefaultContextPolicy, id: "lean", start: () => ({ parts: [{ part: "notes" }, { part: "material" }] }) }));
+    unregister.push(registerContextPolicy({ ...DefaultContextPolicy, id: "backwards", start: () => ({ parts: [{ part: "material" }, { part: "notes" }] }) }));
+    unregister.push(
+      registerContextPolicy({
+        ...DefaultContextPolicy,
+        id: "tight",
+        start: (task) => ({ parts: DefaultContextPolicy.start(task).parts.map((p) => (p.part === "app-notes" ? { ...p, budgetTokens: 100 } : p.part === "material" ? { ...p, budgetTokens: 50 } : p)) }),
+      }),
+    );
+  });
+  afterEach(() => {
+    for (const u of unregister.splice(0)) u();
+  });
+  const scoped = (deps: Partial<TaskDeps>, state: TasksFile = { ...emptyTasks(), open: "intro" }) => setup({ state, deps });
+
+  it("a plan with only notes and material gives a first message with only those, in order; the omitted parts' hooks are not called", async () => {
+    const h = hooks();
+    const t = scoped({ ...h, policies: async () => ({ context: "lean" }) });
+    await t.manager.start("manifest");
+    expect(t.turns[0]!.message.startsWith("# Topic: manifest\nAnswer in English.\n\n")).toBe(true);
+    const context = t.turns[0]!.message.slice("# Topic: manifest\nAnswer in English.\n\n".length);
+    expect(context.indexOf("Own note")).toBeGreaterThanOrEqual(0);
+    expect(context.endsWith(`\n\n${MATERIAL}`)).toBe(true);
+    expect(context).not.toContain("App-wide");
+    expect(context).not.toContain("## Data");
+    expect(context).not.toContain("## Pinned");
+    expect(context).not.toContain("## Folders of this scope");
+    expect(t.state().current?.start?.map((i) => i.id)).toEqual(["brief", "notes", "material"]);
+    // The start reads the app-wide notes once less than the default plan's (the window's notes view reads them too).
+    const dh = hooks();
+    await scoped(dh).manager.start("manifest");
+    const appReads = (n: typeof h.notes) => n.mock.calls.filter((c) => c[0] === "_app").length;
+    expect(appReads(h.notes)).toBe(appReads(dh.notes) - 1);
+    expect(h.dataContext).not.toHaveBeenCalled();
+    // The person's context is still read: its exclusions apply to the notes index. Its pins stay out (above).
+    expect(h.linkedContext).not.toHaveBeenCalled();
+    // No budget in the plan and none from the manifest: the hook's own default.
+    expect(h.materialContext).toHaveBeenCalledWith("intro");
+    expect(t.state().current).toMatchObject({ policies: { context: "lean" } });
+  });
+
+  it("the plan's order is the message's and the items' order", async () => {
+    const t = scoped({ ...hooks(), policies: async () => ({ context: "backwards" }) });
+    await t.manager.start("manifest");
+    const m = t.turns[0]!.message;
+    expect(m.indexOf(MATERIAL)).toBeLessThan(m.indexOf("Own note"));
+    expect(t.state().current?.start?.map((i) => i.id)).toEqual(["brief", "material", "notes"]);
+  });
+
+  it("a 100-token app-notes budget trims the app-wide index; the material gets the plan's budget", async () => {
+    const plain = scoped({ ...hooks(), materialIndexTokens: 600 });
+    await plain.manager.start("manifest");
+    const h = hooks();
+    const tight = scoped({ ...h, materialIndexTokens: 600, policies: async () => ({ context: "tight" }) });
+    await tight.manager.start("manifest");
+    const app = (x: typeof plain) => x.state().current!.start!.find((i) => i.id === "app-notes")!;
+    expect(app(tight).tokens).toBeLessThan(app(plain).tokens);
+    expect(app(tight).tokens).toBeLessThanOrEqual(120);
+    expect(h.materialContext).toHaveBeenCalledWith("intro", 50);
+    expect(tight.state().current?.start?.map((i) => i.id)).toEqual(plain.state().current?.start?.map((i) => i.id));
+  });
+
+  it("the default plan passes the manifest's material budget to the hook", async () => {
+    const h = hooks();
+    const t = scoped({ ...h, materialIndexTokens: 600 });
+    await t.manager.start("manifest");
+    expect(h.materialContext).toHaveBeenCalledWith("intro", 600);
+  });
+
+  it("a resumed task's new session follows its stored policy's plan", async () => {
+    const h = hooks();
+    const state: TasksFile = {
+      ...emptyTasks(),
+      open: "intro",
+      current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 2, resume: true, scope: "intro", policies: { context: "lean" } },
+    };
+    const t = scoped({ ...h, policies: async () => ({}) }, state);
+    await t.manager.ask("Go on");
+    expect(t.state().current?.start?.map((i) => i.id)).toEqual(["brief", "notes", "material"]);
+    expect(h.dataContext).not.toHaveBeenCalled();
+    expect(t.turns[0]!.message).not.toContain("App-wide");
+  });
+});

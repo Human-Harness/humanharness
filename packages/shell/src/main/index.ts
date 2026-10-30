@@ -1372,14 +1372,19 @@ const taskDeps: TaskDeps = {
   get materialContext() {
     const m = harness.material;
     if (!m) return undefined;
-    return async (scope: string) => {
+    // `budgetTokens`: the task's context policy's (replaceable-parts §7.1); absent (a job run), the manifest's.
+    return async (scope: string, budgetTokens?: number) => {
       const c = await validConfig();
       if (!c || scope === APP_SCOPE || !isScopeId(scope)) return "";
       const store = materialStore(baseOf(c), scope);
       const rows = await store.indexRows();
       if (rows.length === 0) return "";
-      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
+      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: budgetTokens ?? m.budget.indexTokens });
     };
+  },
+  // The manifest's material index budget, which the default context policy's start plan passes back (replaceable-parts §7.1).
+  get materialIndexTokens() {
+    return harness.material?.budget.indexTokens;
   },
   // The scope's approved engine preset for each task (hatches spec §5.2). A getter: undefined without enginePresets (D0).
   get enginePreset() {

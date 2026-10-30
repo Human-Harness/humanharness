@@ -18,7 +18,7 @@ describe("the engine registry", () => {
   it("has an adapter for every engine, and none can fork or keep memory yet", () => {
     for (const e of ENGINES) {
       expect(ADAPTERS[e.id], e.id).toBeDefined();
-      expect(ADAPTERS[e.id].capabilities).toEqual({ forkSession: false, nativeMemory: false });
+      expect(ADAPTERS[e.id].capabilities).toEqual({ forkSession: false, nativeMemory: false, noBuiltins: e.id === "claude" });
     }
   });
 

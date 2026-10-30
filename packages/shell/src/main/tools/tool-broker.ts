@@ -8,6 +8,7 @@ import { CONTROLS, oneLine, str } from "../broker/broker-checks";
 import type { runFile } from "../plugin-exec";
 import type { SecretStore } from "../secrets/secret-store";
 import { missingSecretMessage } from "../secrets/connections";
+import { plainLine } from "./one-line";
 import { ToolFileRefused, type ToolFiles } from "./tool-files";
 
 /**
@@ -18,8 +19,22 @@ import { ToolFileRefused, type ToolFiles } from "./tool-files";
  * command line, "<op> <collection>", a path), never a header, a body or a key.
  */
 
-/** The calls a tool's ctx makes (tools spec §4.2, slice 2: no inputs, requestAi or summary yet). */
-export const TOOL_CALLS: readonly string[] = ["fetch", "exec", "data.get", "data.query", "data.put", "data.patch", "data.delete", "files.read", "files.list", "scope", "log"];
+/** The calls a tool's ctx makes (tools spec §4.2; `summary` and `requestAi` since slice 4, §7.3, §7.4). */
+export const TOOL_CALLS: readonly string[] = [
+  "fetch",
+  "exec",
+  "data.get",
+  "data.query",
+  "data.put",
+  "data.patch",
+  "data.delete",
+  "files.read",
+  "files.list",
+  "scope",
+  "log",
+  "summary",
+  "requestAi",
+];
 
 export interface TraceAccess {
   kind: "fetch" | "exec" | "data" | "files";
@@ -49,6 +64,15 @@ export interface JobLimits {
  * registry, which hides the keys in it before its own cut.
  */
 export const TOOL_BROKER_LIMITS = { targetChars: 200, accesses: 200, logs: 20, logLook: 16_384 } as const;
+
+/**
+ * `ctx.summary`'s line as the broker keeps it for the registry, which hides the stored keys in it and only then cuts it
+ * to a job summary's 300 characters (part 3's limit).
+ */
+export const SUMMARY_LOOK = 16_384;
+/** The largest `ctx.requestAi` input, as JSON in UTF-8 bytes (R5). */
+export const REQUEST_MAX_BYTES = 1024 * 1024;
+export const POST_ONLY = "ctx.requestAi is only for the step right after a job's AI step";
 
 export interface ToolBrokerDeps {
   harnessId: string;
@@ -89,6 +113,12 @@ interface CallState {
   accesses: TraceAccess[];
   logs: TraceLog[];
   limits?: JobLimits;
+  /** A job's post-step call: only then may the tool call ctx.requestAi (tools spec §7.3). */
+  post: boolean;
+  /** The last `ctx.summary` line (one line, filled keys hidden, at most SUMMARY_LOOK units). */
+  summary?: string;
+  /** The `ctx.requestAi` input, a plain JSON copy; at most one a call. */
+  request?: { input: unknown };
 }
 
 /** localhost, *.localhost or an IP literal (bracketed or not; one final dot as the name's root). */
@@ -165,6 +195,8 @@ export class ToolBroker {
         },
       ],
       ["scope", { max: 0, fn: async (run) => ({ ok: true, value: this.byKey.get(run.key)?.scope ?? null }) }],
+      ["summary", { max: 1, fn: async (run, [text]) => this.summary(run, text) }],
+      ["requestAi", { max: 1, fn: async (run, [input]) => this.requestAi(run, input) }],
     ]);
     this.core = new Broker({
       grant: {
@@ -245,26 +277,41 @@ export class ToolBroker {
   }
 
   /**
-   * A run for one call of the tool, in the caller's scope; `limits`: the calling job run's permissions. Its id is what
-   * the host's ctx calls carry.
+   * A run for one call of the tool, in the caller's scope; `limits`: the calling job run's permissions; `o.post`: a job's
+   * post-step call (the only one that may call ctx.requestAi). Its id is what the host's ctx calls carry.
    */
-  startCall(scope: string | null, limits?: JobLimits): { id: string; signal: AbortSignal } {
+  startCall(scope: string | null, limits?: JobLimits, o: { post?: boolean } = {}): { id: string; signal: AbortSignal } {
     const key = randomUUID();
-    const state: CallState = { key, scope: typeof scope === "string" ? scope : null, accesses: [], logs: [], ...(limits ? { limits: { ...limits } } : {}) };
+    const state: CallState = {
+      key,
+      scope: typeof scope === "string" ? scope : null,
+      accesses: [],
+      logs: [],
+      ...(limits ? { limits: { ...limits } } : {}),
+      post: o.post === true,
+    };
     this.byKey.set(key, state);
     const run = this.core.startRun(key);
     this.byId.set(run.id, state);
     return run;
   }
 
-  /** Ends the call's run (its fetches and commands abort) and hands back its accesses and `ctx.log` lines. */
-  endCall(id: string): { accesses: TraceAccess[]; logs: TraceLog[] } {
+  /**
+   * Ends the call's run (its fetches and commands abort) and hands back its accesses and `ctx.log` lines, and its
+   * `ctx.summary` line and `ctx.requestAi` input when it gave them.
+   */
+  endCall(id: string): { accesses: TraceAccess[]; logs: TraceLog[]; summary?: string; requestAi?: { input: unknown } } {
     const state = this.byId.get(id);
     if (!state) return { accesses: [], logs: [] };
     this.byId.delete(id);
     this.byKey.delete(state.key);
     this.core.endRun(id);
-    return { accesses: state.accesses, logs: state.logs };
+    return {
+      accesses: state.accesses,
+      logs: state.logs,
+      ...(state.summary !== undefined ? { summary: state.summary } : {}),
+      ...(state.request ? { requestAi: state.request } : {}),
+    };
   }
 
   killAll(): void {
@@ -303,6 +350,41 @@ export class ToolBroker {
     // Hidden first, then cut: a line cut at logLook ends exactly there, so the registry knows to drop its tail too.
     const line = oneLine(message);
     state.logs.push({ level, message: (this.filled.size > 0 ? redact(line, [...this.filled]) : line).slice(0, TOOL_BROKER_LIMITS.logLook) });
+  }
+
+  /**
+   * `ctx.summary(text)` (tools spec §7.4): accepted from every caller, the last one of the call kept; a job run uses it.
+   * One line, every filled key hidden, then cut at SUMMARY_LOOK (the registry hides the stored keys, then cuts at 300).
+   * A text with nothing left on its line changes nothing.
+   */
+  private async summary(run: BrokerRun, text: unknown): Promise<BrokerAnswer> {
+    const state = this.byKey.get(run.key);
+    if (!state) return { ok: false, refused: ENDED };
+    if (typeof text !== "string") return { ok: false, refused: "ctx.summary takes a string" };
+    const line = plainLine(text);
+    if (line !== "") state.summary = (this.filled.size > 0 ? redact(line, [...this.filled]) : line).slice(0, SUMMARY_LOOK);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `ctx.requestAi(input)` (tools spec §7.3; R3, R5): only in a job's post-step call, once a call, at most
+   * REQUEST_MAX_BYTES of JSON. What is kept is a plain copy parsed back from that JSON: nothing of the tool's object.
+   */
+  private async requestAi(run: BrokerRun, input: unknown): Promise<BrokerAnswer> {
+    const state = this.byKey.get(run.key);
+    if (!state) return { ok: false, refused: ENDED };
+    if (!state.post) return { ok: false, refused: POST_ONLY };
+    if (state.request) return { ok: false, refused: "ctx.requestAi was already called in this call" };
+    let json: string | undefined;
+    try {
+      json = JSON.stringify(input);
+    } catch {
+      return { ok: false, refused: "ctx.requestAi takes JSON data" };
+    }
+    if (json === undefined) return { ok: false, refused: "ctx.requestAi takes JSON data" };
+    if (json.length > REQUEST_MAX_BYTES || Buffer.byteLength(json, "utf8") > REQUEST_MAX_BYTES) return { ok: false, refused: "The request is too large" };
+    state.request = { input: JSON.parse(json) as unknown };
+    return { ok: true, value: null };
   }
 
   /** `ctx.files` (arguments already checked): only with `uses.files`; a path refused by the folder rules is "access denied", any other end is an access. */

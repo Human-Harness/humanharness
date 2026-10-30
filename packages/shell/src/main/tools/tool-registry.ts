@@ -1,6 +1,6 @@
 import { HIDDEN_CHARS, TOOL_ID, type ToolMeta, jsonSchemaToZod } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
-import { type JobLimits, TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
+import { type JobLimits, SUMMARY_LOOK, TOOL_BROKER_LIMITS, type ToolBroker, type TraceAccess, type TraceLog } from "./tool-broker";
 import type { ToolHostAnswer, ToolHostCall } from "./tool-host";
 import { TOOL_RPC_LIMITS } from "./tool-protocol";
 import { NOTE_CHARS, type ToolCaller, type ToolTrace, type TraceEntry } from "./tool-trace";
@@ -31,8 +31,14 @@ export interface ToolCall {
   limits?: JobLimits;
   /** A step's earlier results by `as` (tools spec §6), the tool's `ctx.inputs`; absent for a UI or agent call. Never traced. */
   inputs?: Record<string, unknown>;
+  /** A job's post-step call (tools spec §7.3): only then may the tool call ctx.requestAi. Only with caller "job". */
+  post?: boolean;
 }
-export type ToolAnswer = { ok: true; result: unknown } | { ok: false; error: string };
+/**
+ * `summary` (the tool's last `ctx.summary` line) and `requestAi` (its `ctx.requestAi` input) are a job run's (tools
+ * spec §7.3, §7.4): only an answer to caller "job" carries them, and `requestAi` only on success. Never traced.
+ */
+export type ToolAnswer = { ok: true; result: unknown; summary?: string; requestAi?: { input: unknown } } | { ok: false; error: string; summary?: string };
 
 /** `args` and results are cut at this many code points in a trace entry (§8.1), never in the answer. */
 export const TRACE_CUT = 2048;
@@ -41,6 +47,8 @@ const ACCESS_CHARS = 200;
 const ERROR_CHARS = 4096;
 /** Each `ctx.log` line of a trace entry is cut here (the broker keeps at most 20 a call). */
 export const LOG_CHARS = 300;
+/** A `ctx.summary` line in a job step's answer: part 3's job summary limit. */
+export const RUN_SUMMARY_CHARS = 300;
 /** A compiled params or returns schema. */
 type Schema = ReturnType<typeof jsonSchemaToZod>;
 
@@ -214,6 +222,7 @@ export class ToolRegistry {
     let args: unknown = given;
     let accesses: TraceAccess[] = [];
     let logs: TraceLog[] = [];
+    let kept: { summary?: string; requestAi?: { input: unknown } } = {};
     let ran: Ran;
     const params = this.schema(meta.params);
     const checked = typeof params === "string" ? null : params.safeParse(given);
@@ -226,9 +235,12 @@ export class ToolRegistry {
     } else {
       // Only the parsed value reaches the tool: keys params doesn't name are gone.
       args = checked!.data;
-      const out = await this.run(id, meta, args, c.scope, c.limits, c.inputs);
+      // Only a job's call is ever a post-step call (D0: any other caller starts its run as before).
+      const post = c.caller === "job" && c.post === true;
+      const out = await this.run(id, meta, args, c.scope, c.limits, c.inputs, post);
       accesses = out.accesses;
       logs = out.logs;
+      kept = out.kept;
       ran = out.ran.ok ? this.checkReturns(meta, out.ran) : out.ran;
     }
 
@@ -265,7 +277,13 @@ export class ToolRegistry {
     } catch (err) {
       this.d.log?.(`A call of tool ${id} was not shown`, err);
     }
-    return ran.ok ? { ok: true, result } : { ok: false, error: error! };
+    if (c.caller !== "job") return ran.ok ? { ok: true, result } : { ok: false, error: error! };
+    // A job step's summary line and AI request: the stored keys hidden first, then cut (T4).
+    const line = kept.summary !== undefined ? shownText(kept.summary, keys, RUN_SUMMARY_CHARS, SUMMARY_LOOK).trim() : "";
+    const lineOf = line !== "" ? { summary: line } : {};
+    if (!ran.ok) return { ok: false, error: error!, ...lineOf };
+    const request = kept.requestAi ? { requestAi: { input: keys.length > 0 ? hideIn(kept.requestAi.input, keys) : kept.requestAi.input } } : {};
+    return { ok: true, result, ...lineOf, ...request };
   }
 
   /** A tool's tools.json entry; null when unknown or while tools are off. */
@@ -320,15 +338,16 @@ export class ToolRegistry {
     scope: string | null,
     limits: JobLimits | undefined,
     inputs: Record<string, unknown> | undefined,
-  ): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[] }> {
+    post: boolean,
+  ): Promise<{ ran: Ran; accesses: TraceAccess[]; logs: TraceLog[]; kept: { summary?: string; requestAi?: { input: unknown } } }> {
     let broker: Pick<ToolBroker, "startCall" | "endCall">;
     let callId: string;
     try {
       broker = this.d.broker(id);
-      callId = (limits ? broker.startCall(scope, limits) : broker.startCall(scope)).id;
+      callId = (post ? broker.startCall(scope, limits, { post: true }) : limits ? broker.startCall(scope, limits) : broker.startCall(scope)).id;
     } catch (err) {
       this.d.log?.(`Tool ${id} could not start`, err);
-      return { ran: { ok: false, error: BROKE }, accesses: [], logs: [] };
+      return { ran: { ok: false, error: BROKE }, accesses: [], logs: [], kept: {} };
     }
     const timeoutMs = meta.timeout * 1000;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -338,6 +357,7 @@ export class ToolRegistry {
     let ran: Ran;
     let accesses: TraceAccess[] = [];
     let logs: TraceLog[] = [];
+    let kept: { summary?: string; requestAi?: { input: unknown } } = {};
     try {
       ran = await Promise.race([
         // A host that throws, even before it returns a promise, is this call's failure.
@@ -353,12 +373,17 @@ export class ToolRegistry {
       clearTimeout(timer);
       // Ends the run (its fetches and commands abort) and takes its accesses, whatever happened.
       try {
-        ({ accesses, logs } = broker.endCall(callId));
+        const ended = broker.endCall(callId);
+        ({ accesses, logs } = ended);
+        kept = {
+          ...(typeof ended.summary === "string" ? { summary: ended.summary } : {}),
+          ...(ended.requestAi ? { requestAi: ended.requestAi } : {}),
+        };
       } catch (err) {
         this.d.log?.(`A run of tool ${id} did not end cleanly`, err);
       }
     }
-    return { ran, accesses, logs };
+    return { ran, accesses, logs, kept };
   }
 
   /** The result against `returns` when the tool declares it: a mismatch is the tool's error. */

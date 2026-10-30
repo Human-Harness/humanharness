@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { AppConfig, AppState, HarnessClient, JobSettings, JobSummary, JobsInfo } from "../client";
 import { useLatestConfig } from "../latest-config";
 import { shownLanguage } from "../language";
+import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
 
 /** The lowest daily cap the field takes: less would pause a periodic job after its first run. */
@@ -108,6 +109,7 @@ export function JobsTab({
             </span>
           )}
         </div>
+        {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
         {action && (
           <button
             className="hh-tk-cancel"

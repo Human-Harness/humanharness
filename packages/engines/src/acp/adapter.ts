@@ -10,7 +10,7 @@ function acpDef(engine: EngineDef): Extract<TransportDef, { kind: "acp" }> {
 
 /** Any engine that speaks the Agent Client Protocol: everything that differs between them is data in the definition. */
 export const acpAdapter: EngineAdapter = {
-  capabilities: { forkSession: false, nativeMemory: false },
+  capabilities: { forkSession: false, nativeMemory: false, noBuiltins: false },
   command: (engine) => [...acpDef(engine).command],
   createTransport: (engine, options) =>
     new AcpTransport({

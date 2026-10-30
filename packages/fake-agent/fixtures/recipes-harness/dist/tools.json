@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "tools": {
+    "apply-triage": {
+      "description": "Applies the AI step's triage.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "applied": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "applied"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/apply-triage.js"
+    },
+    "boom": {
+      "description": "Always fails.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "timeout": 30,
+      "file": "tools/boom.js"
+    },
+    "check-items": {
+      "description": "Lists two items and whether each failed.",
+      "agent": "none",
+      "uses": {},
+      "params": {
+        "type": "object",
+        "properties": {
+          "fail": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fail"
+        ]
+      },
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "failed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "timeout": 30,
+      "file": "tools/check-items.js"
+    }
+  }
+}

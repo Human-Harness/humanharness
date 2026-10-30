@@ -2,6 +2,7 @@ import { type FocusEvent, type KeyboardEvent, useEffect, useId, useLayoutEffect,
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
 import { shownLanguage } from "../language";
+import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
 
 const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
@@ -206,6 +207,7 @@ export function Inbox({
             </span>
           )}
         </div>
+        {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
         {action && (
           <button
             className="hh-tk-cancel"

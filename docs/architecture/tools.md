@@ -1,6 +1,6 @@
 # Harness tools
 
-Spec: `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` ("§" below), §1–§5, §8.1–§8.3, §9, §10, §17. Plan: `docs/superpowers/plans/2026-10-29-tools-slice2-tools.md` (slice 2; "Decision N" and the threat rows "T1"–"T9" below) and `docs/superpowers/plans/2026-10-29-tools-slice3-pre.md` (slice 3: "Pre-steps", "Expects" and "Measuring" below, with their own "slice 3 Decision N" and threat rows "P1"–"P6"). The broker and the key store under it are slice 1's (`docs/architecture/secrets.md`).
+Spec: `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` ("§" below), §1–§5, §8.1–§8.3, §9, §10, §17. Plan: `docs/superpowers/plans/2026-10-29-tools-slice2-tools.md` (slice 2; "Decision N" and the threat rows "T1"–"T9" below) and `docs/superpowers/plans/2026-10-29-tools-slice3-pre.md` (slice 3: "Pre-steps", "Expects" and "Measuring" below, with their own "slice 3 Decision N" and threat rows "P1"–"P6"). Slice 4 (job recipes, `docs/superpowers/plans/2026-10-29-tools-slice4-recipes.md`, threat rows "R1"–"R7") is in `docs/architecture/jobs.md`, "Recipes"; what it adds to tools is in "Job steps" below. The broker and the key store under it are slice 1's (`docs/architecture/secrets.md`).
 
 ## What it is
 
@@ -8,11 +8,11 @@ Spec: `docs/superpowers/specs/2026-10-28-tools-and-recipes-design.md` ("§" belo
 - A tool reaches the world **only through `ctx`** (D2): no `fs`, no `child_process`, no network of its own. It may import pure libraries that bundle for a browser.
 - Tools run in **one hidden sandboxed window per harness** (D3), the plugins' backend settings, and every call goes through a **registry in main** that checks the arguments and the result and writes a **trace** entry (D4).
 - **Each tool declares what it uses** (`uses`: hosts, secrets, commands, collections, files) and its broker grant is built from it (D7). But see "One window, one realm" below: the security boundary is the harness, not the tool.
-- **Each tool says whether the agent sees it** (`agent: "call" | "none"`, default `"call"`, D8). `"none"` tools run only from the harness UI (and, from slice 4, job recipes).
-- **Three callers** (§5): the harness UI (`client.tools.call`), the agent (the core MCP server `tools`), and the runner (pre-steps from slice 3; job recipes in slice 4).
+- **Each tool says whether the agent sees it** (`agent: "call" | "none"`, default `"call"`, D8). `"none"` tools run only from the harness UI, pre-steps and job recipes.
+- **Three callers** (§5): the harness UI (`client.tools.call`), the agent (the core MCP server `tools`), and the runner (pre-steps from slice 3, caller `pre`; job recipes from slice 4, caller `job`).
 - A harness without `tools` is today's app, byte for byte (D0, below).
 
-Slice 3 adds pre-steps, `"prepared"` context items, `ctx.inputs`, phase `expects`, the `pre` and `expects-miss` usage rows and `humanharness measure` (below). Not yet: job recipes, `when`, `ctx.requestAi`, `ctx.summary` (slice 4); `tool test` / `tool run`, the guide, a template tool and mock-mode transports (slice 5).
+Slice 3 adds pre-steps, `"prepared"` context items, `ctx.inputs`, phase `expects`, the `pre` and `expects-miss` usage rows and `humanharness measure` (below). Slice 4 adds job recipes, `when`, `ctx.requestAi`, `ctx.summary`, the `recipe` row and a run's Steps ("Job steps"). Not yet: `tool test` / `tool run`, the guide, a template tool and mock-mode transports (slice 5).
 
 ## The manifest and a tool file
 
@@ -102,6 +102,8 @@ export default defineTool({
 | `ctx.files.read(path)`, `list(dir, glob?)` | Only with `uses.files`. The base folder, and `refs/<id>/…` for a reference folder (`toolFiles`, `tool-files.ts`): `lstat` at every level, no link or hard link (skipped in lists, refused in reads), `.harness` and `.git` refused or skipped at any depth in any case, ≤ 1 MB a read, ≤ 1000 entries a list (sorted, in the form `read` takes); `*` stays within a segment and `**` spans them. An fs error never shows the disk path. |
 | `ctx.scope` | The calling task's or job run's scope, or null. |
 | `ctx.inputs` | A step's earlier results named by its `input` (slice 3, "Pre-steps"); `{}` for any other call. The host script deep-freezes it, except a typed array or `DataView` inside it, which can't be frozen and stays as it is; it holds only what the runner itself produced (P3). |
+| `ctx.summary(text)` | Sets a job run's summary line (slice 4, §7.4). Accepted from every caller, kept only by a job run (the registry adds it to the answer only for caller `job`): the run's summary is the last one any of its steps gave. One line (controls and hidden characters removed), every key the call's fetches were filled with hidden, kept up to 16,384 units (`SUMMARY_LOOK`); the registry hides the stored keys, then cuts it at 300 code points, and drops it when empty. A non-string: "ctx.summary takes a string". |
+| `ctx.requestAi(input)` | Asks the runner for another AI round (slice 4, §7.3, R3, R5). Only in a job's post-step call (`post`, the first tool step after the AI step): otherwise "ctx.requestAi is only for the step right after a job's AI step" (`POST_ONLY`). Once a call ("ctx.requestAi was already called in this call"); JSON data only ("ctx.requestAi takes JSON data"); at most 1 MB as UTF-8 JSON (`REQUEST_MAX_BYTES`, "The request is too large"). What is kept is a plain copy parsed back from that JSON, stored keys hidden in every string, and it reaches the runner only when the call succeeds. The call goes on and returns normally. |
 | `ctx.log(level, message)` | To main's log with the tool's id and the level, keys hidden then cut (as plugins), and into the call's trace entry (§4.2): the broker keeps the first 20 lines of a call (`TOOL_BROKER_LIMITS.logs`), one line each, the keys its fetches were filled with hidden and then cut to 16,384 units; the registry hides the stored keys and only then cuts each to 300 code points (`LOG_CHARS`; a line the broker cut loses its tail first, as errors do). |
 
 **A job run's permissions** (jobs J2): a call from a job slot carries `JobLimits` (`jobLimits(harness, job)`: the harness's permissions narrowed by the job's, as its slot's `narrowPermissions`), and the broker refuses before the tool's own grant: with `web: false` every `ctx.fetch` ('The job "<id>" runs with web: false: its tools can't fetch'), with `exec: false` every `ctx.exec` ('The job "<id>" runs with exec: false: its tools can't run commands'), each one recorded as access denied. It fails closed: a run whose job the harness doesn't declare reaches neither. `edit: "none"` narrows only the engine's file edits; data writes are not narrowed by it (as the `data` server's for the job's agent), so `ctx.data` is unchanged. Task and UI calls carry no limits: their reach is the harness's permissions, which `uses` already sits inside.
@@ -146,7 +148,7 @@ This is a decision (Task 6 review, per D3 "one host for every tool"), and a devi
 | A job run's call (whatever the job runs) | `.harness/trace/jobs/<run-id>.jsonl` |
 | A UI call with no task | `.harness/trace/ui/<YYYY-MM-DD>.jsonl` (the entry's UTC day) |
 
-- **Entry** (`TraceEntry`): `{ at, tool, caller, task?, job?, run?, phase?, args, result?, resultSummary, ms, ok, error?, accesses, logs?, note? }`. `logs` (`{ level, message }[]`) is there only when the tool logged; `note` only on a note entry (`read` drops one that isn't a string of at most 200 code points). `caller` is `"ui" | "agent" | "pre" | "job"` (`ToolCaller`; slice 2 makes `ui` and `agent`, slice 3 `pre`). `args` and `result` are the value, or `{ cut: true, text }` past 2 KB (`TRACE_CUT`), keys hidden before the cut.
+- **Entry** (`TraceEntry`): `{ at, tool, caller, task?, job?, run?, phase?, args, result?, resultSummary, ms, ok, error?, accesses, logs?, note? }`. `logs` (`{ level, message }[]`) is there only when the tool logged; `note` only on a note entry (`read` drops one that isn't a string of at most 200 code points). `caller` is `"ui" | "agent" | "pre" | "job"` (`ToolCaller`; slice 2 makes `ui` and `agent`, slice 3 `pre`, slice 4 `job`). A recipe's AI round writes a note with tool `step_output`, caller `job` ("Job steps"). `args` and `result` are the value, or `{ cut: true, text }` past 2 KB (`TRACE_CUT`), keys hidden before the cut.
 - **Files**: the id must pass `isTaskId` ("Not a task or run id"), never a path from a caller. Folders below the base walked with `lstat`; files opened `O_APPEND | O_NOFOLLOW`, 0600, not hard-linked. A torn last line gets a newline before the next entry. A file stops at 16 MB (`TRACE_FILE_MAX_BYTES`): later entries are dropped, logged once. `read(id)` reads the task file, then the jobs file, skipping lines that don't parse.
 - **Prune** (`prune()`): each base once per run, before its trace is first used: the base current at start, and one reached later by a profile or folder switch. Files untouched for 30 days (`TRACE_DAYS`) removed, older lines dropped; never throws, creates nothing, skips (and logs) a linked folder.
 - Nothing is created until a call is traced. The history never tracks `.harness/trace/` (it is under `.harness/`, not in the keep list).
@@ -157,7 +159,7 @@ This is a decision (Task 6 review, per D3 "one host for every tool"), and a devi
 
 - **The agent** (`caller: "agent"`), through the `tools` MCP server. The caller comes from the asking slot, never the request: a task slot gives `task`, its `scope` and its `phase` (`slotTask`: board mode, the lane's task manager; otherwise the open task; `slotTaskOf` drops a trailer of another task); a job slot gives `job` and `run` (`jobs-host.ts` `runOf`), whatever the job runs, and the job's narrowed permissions (above). No task or run: "No task is running in this session". A malformed request: "Invalid request". The agent reads only the registry's answers (its own texts, or the tool's error with keys hidden) or "Something went wrong running the tool": never a path, stack or key (T4).
 - **The harness UI** (`caller: "ui"`): `hh:toolsCall` runs in the scope main has open (or none), with no task (Decision 14), and works before a task opens. The page names a tool and its arguments, never a caller, task or scope (T9).
-- **The runner** (`caller: "pre"`): an action's pre-steps when a task starts ("Pre-steps" below). `"job"` recipes: slice 4.
+- **The runner** (`caller: "pre"`): an action's pre-steps when a task starts ("Pre-steps" below). (`caller: "job"`): a recipe's tool steps, with `job`, `run`, the run's scope and the job's `JobLimits` ("Job steps" below).
 
 **Data writes** (§8.3): a tool's write is committed as the person's are ("Data: <collection>"), with the calling task's trailer plus `Tool: <id>` (a job run's: the run's trailer, `jobRunTrailer`); a UI call's with `Tool: <id>` alone. The trailer follows each call through `AsyncLocalStorage`, kept per broker run id, so two calls at once each commit under their own.
 
@@ -190,6 +192,16 @@ A call with a `task` emits a runtime event `{ type: "tool-call", call: ToolCallV
 - `ToolCallLine` (`packages/ui/src/tools/ToolCallLine.tsx`, Decision 10, §8.2): a folded button "<tool id> · <resultSummary> · <seconds> s · 0 tokens" ("pr-ci · 12 items · 0.3 s · 0 tokens"), seconds with one decimal, that unfolds to Arguments, Result, Accesses (a refused one ends " · access denied") and Log (the tool's `ctx.log` lines as "<level>: <message>", when it logged; `toolCallView` and `cleanToolCalls` keep only well-formed lines, at most 20 of 300). A failed call reads "<tool id> failed · <message>" and starts unfolded. The lines sit above the assistant entry's message. A tool-only entry is never "the reply" (`isToolLine`): choices and Try again stay on the real last reply. A saved entry's `tools` is read unchecked from the chat log, so `cleanToolCalls` drops malformed items.
 - Strings: the `tools` block of `en.json` (`line`, `failed`, `accessDenied`, `args`, `result`, `accesses`, `logs`, `off`; slice 3: `contextPrepared`, `prepared_one`/`prepared_other`, `prepareFailed`).
 - **Tools off after crashes**: when `state.tools.off` is exactly `TOOLS_OFF_CRASHES`, the chat's top shows `tools.off` in a `role="status"` line (not for "not built" or a problem).
+
+## Job steps
+
+Slice 4 (spec §7; the walk, the AI step, rounds and results are in `docs/architecture/jobs.md`, "Recipes"). A recipe's tool steps run through slice 3's `runToolStep` as `{ caller: "job", job, run, scope, limits }` (`scope` as the run's agent calls get it: `_app` or `main` for an app-wide run), inside the run's history trailer (`ToolsHost.withRunTrailer`, the run's `jobRunTrailer`), so a data write commits under the run plus `Tool: <id>`. The job's `JobLimits` hold for them as for an agent's call from the job's slot.
+
+- **`ToolCall.post`**: the runner marks the post-step's call `post: true`. It reaches the broker (`startCall(scope, limits, { post })`) only when `caller === "job"`; any other call starts as before. Only a `post` call may use `ctx.requestAi`.
+- **`ToolAnswer`** gains `summary?` and `requestAi?: { input }`, **only for caller `job`**: a UI, agent or pre call answers exactly as in slice 2. `summary` is carried on a failure too; `requestAi` only on success. `runToolStep`'s outcome (`StepOutcome`, exported) carries both: for a `forEach` step, the summary is the last by item index and the request the first by item index (success only).
+- **The trace**: each call is an entry with `caller: "job"`, `job`, `run`, in `.harness/trace/jobs/<run-id>.jsonl`; each AI round adds a note (tool `step_output`, "AI step: valid output · N tokens" or "AI step: no valid output · N tokens"). `step_output` is reserved: no tool id or block may take it (the same check as `job_result`).
+- **Run lines** (D4, Decision 11 of slice 2): when the harness has tools, `JobSummary.last.run` carries the last run's id for every job, and the inbox's Jobs row and Settings › Jobs show "Steps" under the run's summary (`JobRunSteps`), which unfolds `client.tools.trace(run)` as `ToolCallLine`s: a note as a line, a failed call unfolded. Without tools, no `run` and no Steps.
+- **The run's line**: the last `ctx.summary` any step gave, else a line built from the counts and the last call's `resultSummary` (`lastCall` skips notes).
 
 ## "Test connection"
 
@@ -286,11 +298,12 @@ A phase may declare `expects`: 1 to 10 tools the agent should call in that part 
 
 ## Measuring
 
-`usage.jsonl` gets two tool rows (slice 3 Decision 10, spec §8.4). They aren't turns: `TOOL_ROW_KINDS` (`pre`, `recipe` for slice 4, `expects-miss`) are left out of `summarizeUsage`, so they never make a task unmeasured and add no tokens.
+`usage.jsonl` gets three tool rows (slice 3 Decision 10, spec §8.4). They aren't turns: `TOOL_ROW_KINDS` (`pre`, `recipe`, `expects-miss`) are left out of `summarizeUsage`, so they never make a task unmeasured and add no tokens.
 
 - `{ at, engine, kind: "pre", action, task, scope?, steps, ms, preparedTokens, ok }`: one per start that ran pre-steps; `ok` when no step failed; `steps` is the declared count. A refused start writes one too, with `preparedTokens` 0 since no section was sent (its task never gets a run line).
 - `{ at, engine, kind: "expects-miss", action, task, scope?, taskPhase, tool, ok: true }`: one per miss. The spec's `phase` is written `taskPhase`, the field every phased row uses; `phase` is the turn kind in this file.
-- Both carry ids and numbers only, never a step's message. `scope` only in a harness with scopes.
+- `{ at, engine, phase: "job", kind: "recipe", job, task: <run>, run, scope?, toolSteps, aiSteps, ms, ok }` (slice 4, `recipeRecord`): one per recipe run, failed or timed out too. `toolSteps` counts the tool calls made (a `forEach` as one); `aiSteps` the AI rounds. It has no `usage`: the AI rounds' tokens are their own job lines (`docs/architecture/jobs.md`, "Recipes").
+- All carry ids and numbers only, never a step's message. `scope` only in a harness with scopes.
 
 **`humanharness measure [--folder <dir>]`** (`packages/cli/src/measure.ts`, `measurePre` in `usage-log.ts`) reads only `<folder>/.harness/usage.jsonl` and prints, per action, the tasks without and with pre-steps and the average first-turn tokens of each, plus the average prepared tokens and pre time:
 
@@ -359,6 +372,8 @@ A harness without `tools` runs no slice-2 code: `defineHarness` gives no `tools`
 | Store | `packages/shell/test/task-store-prepared.test.ts` "D0: a file without prepared items reads as before" |
 | Chat | `packages/ui/test/prepared-ui.test.tsx` "D0: an entry without pre calls renders as before" |
 | `run` | `packages/cli/test/run-pre.test.ts` "D0: an action without pre prints nothing new" |
+
+**Slice 4.** A harness whose jobs all declare `prompt` runs no slice-4 code; for tools that means a call that uses neither `ctx.summary` nor `ctx.requestAi` answers exactly as in slice 2 (`packages/shell/test/tools/tool-run-summary.test.ts` "D0: a call without summary or requestAi answers as before"), and no `last.run` or Steps without tools. The full table is in `docs/architecture/jobs.md` ("D0").
 | Slice 2's pins | `runtime-d0`, `hatches-d0`, `claude-cli` goldens, `hatches-surface`, `history.spec`, `task-manager.test.ts`, `tools.test.ts`, `tool-registry.test.ts`, `tool-call-ui.test.tsx`: unchanged |
 
 ## Threat model
@@ -388,6 +403,8 @@ Tool code is the harness author's, but it handles outside data and runs beside t
 | P5 | Secrets never reach the first message | a step's error is the registry's, keys hidden (T4); a `prepare` throw shows a fixed text; usage rows carry ids and numbers only | `pre-steps.test.ts` "a failed step's message is the registry's redacted text"; `tools-host-pre.test.ts` |
 | P6 | A trace note is bounded data | one line, ≤ 200 code points, the SDK's hidden characters removed, tool id checked; `read` and the window (`cleanToolCalls`) drop a longer one | `tool-note.test.ts`, `ui/test/tool-call-note.test.ts` |
 
+**Slice 4** (R1–R7: the AI step reaches only `step_output`; its output is parsed in main before a tool sees it; `requestAi` only in a post call, once, ≤ 1 MB, never past `maxAi`; `## Data` fenced and cut at 200,000 characters; `ctx.summary` one line ≤ 300; the whole recipe under the job limit and cancel; `onLimit` a real action) is in `docs/architecture/jobs.md`, "Recipes", and the plan's threat model.
+
 Also: **no private network** (every fetch hop, `isPublicHost` plus the localhost/IP guard: `tool-broker.test.ts` "fetch: localhost, IP literals and hosts that resolve to a private address are refused, on every hop").
 
 ## Decisions
@@ -395,7 +412,7 @@ Also: **no private network** (every fetch hop, `isPublicHost` plus the localhost
 The plan's Decisions 1–18 hold as written, with these notes:
 
 - **Decision 7**: the Attention `action` item is raised as above in board and single mode (not in plain mode with plugins: "Known gaps"); every app also keeps the chat's top line.
-- **Decision 11**: job inbox lines wait for slice 4; slice 2 writes each run's trace and `client.tools.trace(runId)` returns it.
+- **Decision 11**: slice 2 writes each run's trace and `client.tools.trace(runId)` returns it; slice 4 shows it under the run ("Steps", "Job steps").
 - **Shared realm** (Task 6 review): "One window, one realm" above.
 
 Slice 3's Decisions 1–18 hold as written, with these notes:
@@ -411,7 +428,6 @@ Slice 3's Decisions 1–18 hold as written, with these notes:
 - **No packaging of `dist/`** into a shipped app: plan 4b.
 - **Packaging the host's files**: a packaged app looks for `tool-host.html`, `tool-host.mjs` and `tool-preload.cjs` under `process.resourcesPath`; plan 4b's packager must ship them there (until then a packaged app's tools are off, "Tools are off: the tool host's files are missing").
 - **The Decision 7 item in plain mode with plugins**: plain mode's plugins keep their own inbox store (a parallel-spec D0 pin), so the tools' item is raised only in board and single mode; a plain-mode app shows only the chat's top line. Open for Marco. And no inbox list shows a `tool` item yet (the plugins' list shows plugin origins only, as for job and task items).
-- **Job inbox lines** (D4): slice 4.
 - **`files: "write"`**: refused until a harness needs it (§17).
 - **Isolation between tools** is per harness, not per tool (above).
 - **The demo has no pre-steps**: slice 3 Task 13 (`list-sources` on its topics) is parked. With tools, the demo's hidden tool window and its `pre` rows break e2e specs that use it as the tools-free harness (some of them frozen); Marco decides how. Until then the first measurement has no harness to run on.
@@ -429,5 +445,6 @@ Slice 3's Decisions 1–18 hold as written, with these notes:
 - `packages/shell/src/main/tools/`: `tool-protocol.ts`, `tool-host.ts`, `tool-broker.ts`, `tool-files.ts`, `tool-registry.ts`, `tool-trace.ts`, `tools-json.ts`, `tools-host.ts`, `tools-ipc.ts`. `packages/shell/resources/tool-host.html`, `tool-host.mjs`, `tool-preload.cjs`. `shell-resources.ts` (`shellResourcesDir`). `data-requests.ts` (`toolDataRequests`, `dataWriteQueue`), `secrets/connections.ts` (`connectTests`, Test), `index.ts` (the wiring under `hasTools`).
 - `packages/blocks/src/tools-server.ts`, `tools-server-bin.ts`, `launch.ts` (`toolsServerSpec`); `packages/runtime/src/workspace.ts` (`RuntimeOptions.tools`), `events.ts` (`tool-call`, `ToolCallView`).
 - `packages/workspace/src/data.ts` (`who: "tool"`), `history.ts` (`Tool:`, `CommitTrailer`).
+- Slice 4: `tools/tool-broker.ts` (`summary`, `requestAi`, `SUMMARY_LOOK`, `REQUEST_MAX_BYTES`, `POST_ONLY`), `tool-registry.ts` (`ToolCall.post`, `ToolAnswer.summary`/`requestAi`), `pre-steps.ts` (`StepOutcome`), `one-line.ts` (`plainLine`), `tools-host.ts` (`withRunTrailer`), `resources/tool-host.mjs` (`ctx.summary`, `ctx.requestAi`); `packages/harness-sdk/src/tool.ts` (`ToolContext.summary`/`requestAi`); `packages/ui/src/tools/JobRunSteps.tsx`. The recipe runner: `docs/architecture/jobs.md`, "Where to look".
 - `packages/ui/src/tools/ToolCallLine.tsx`, `state.ts` (`tool-call`, `isToolLine`), `ChatView.tsx`, `client.ts` (`ToolsClient`, `ToolsInfo`, `TOOLS_OFF_CRASHES`), `connections/` (Test connection).
 - Tests: `packages/harness-sdk/test/tools.test.ts`, `tool-problems.test.ts`; `packages/cli/test/tool-build.test.ts`, `fixture-dist.test.ts`; `packages/shell/test/tools/`, `tools-surface.test.ts`; `packages/blocks/test/tools-server.test.ts`; `packages/runtime/test/workspace-tools.test.ts`; `packages/workspace/test/data-tool.test.ts`; `packages/ui/test/tool-call-ui.test.tsx`. E2E: `packages/e2e/tests/tool-host.spec.ts` (a bare Electron main with a hostile tool), `tools.spec.ts` (the fixture `packages/fake-agent/fixtures/tools-harness`, id `toolbox`), `tools-pre.spec.ts` (slice 3: first message, folded group, panel items, refused start and Try again, an expects miss).

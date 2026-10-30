@@ -96,7 +96,7 @@ describe("the jobs fixture (jobs without parallel)", () => {
     expect(hostMode(h)).toBe("single");
     expect(Object.keys(h.actions)).toEqual(["write-a"]);
     expect(Object.fromEntries(Object.entries(h.jobs!).map(([id, j]) => [id, j.on]))).toEqual({ sync: { start: true, manual: true }, check: { manual: true } });
-    for (const j of Object.values(h.jobs!)) expect(fs.existsSync(resolveInHarness(h, j.prompt))).toBe(true);
+    for (const j of Object.values(h.jobs!)) expect(fs.existsSync(resolveInHarness(h, j.prompt!))).toBe(true);
     expect(fs.existsSync(resolveInHarness(h, h.actions["write-a"].prompt))).toBe(true);
     expect(fs.existsSync(path.join(JOBS_DIR, "ui", "App.tsx"))).toBe(true);
   });

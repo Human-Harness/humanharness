@@ -50,6 +50,13 @@ export interface ToolContext {
   /** The results named by the step's input (tools spec §6, §7); {} for a call that isn't a step. Frozen. */
   readonly inputs: Readonly<Record<string, unknown>>;
   log(level: "info" | "warn" | "error", message: string): void;
+  /** Sets the job run's summary line (tools spec §7.4); the last one of a run counts. Ignored outside a job run. */
+  summary(text: string): Promise<void>;
+  /**
+   * Asks the runner for another AI round with `input` as its data (tools spec §7.3). Only in a job's post-step, once
+   * per call, at most 1 MB of JSON; the round runs after this call returns. Throws ToolRefused anywhere else.
+   */
+  requestAi(input: unknown): Promise<void>;
 }
 
 export interface ToolDefinition<P extends z.ZodObject = z.ZodObject, R extends z.ZodType = z.ZodType> {

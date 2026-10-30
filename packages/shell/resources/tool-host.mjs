@@ -40,6 +40,21 @@ function deepFreeze(v) {
 /** A step's earlier results (tools spec §6; P3): the command's `inputs` when it is a plain object, else {}; frozen. */
 const inputsOf = (raw) => deepFreeze(raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw : {});
 
+/** `v` holds a function, a symbol or a bigint (at the top or inside), which JSON would drop or turn into null; a cycle too. */
+function notJson(v) {
+  let bad = false;
+  try {
+    JSON.stringify(v, (_k, x) => {
+      const t = typeof x;
+      if (t === "function" || t === "symbol" || t === "bigint") bad = true;
+      return t === "bigint" ? null : x;
+    });
+  } catch {
+    bad = true;
+  }
+  return bad;
+}
+
 /** The `ctx` of one call (ToolContext): each call carries the call's id; a refusal throws an Error named "ToolRefused". */
 function contextOf(rpc, callId, scope, inputs) {
   const call = async (name, ...args) => {
@@ -73,6 +88,10 @@ function contextOf(rpc, callId, scope, inputs) {
     log(level, message) {
       call("log", level, message).catch(() => undefined);
     },
+    // A job run's line and its next AI round (tools spec §7.3, §7.4); main decides who may, a refusal throws.
+    summary: (text) => call("summary", text).then(() => undefined),
+    requestAi: (input) =>
+      notJson(input) ? Promise.reject(toolRefused({ refused: "ctx.requestAi takes JSON data" })) : call("requestAi", input).then(() => undefined),
   });
 }
 

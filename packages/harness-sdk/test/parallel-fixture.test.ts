@@ -42,7 +42,7 @@ describe("the parallel fixture harness (parallel spec §11)", () => {
       silent: { label: "Silent", on: { manual: true }, scope: "none" },
     });
     for (const [id, j] of Object.entries(jobs)) {
-      const brief = fs.readFileSync(resolveInHarness(h, j.prompt), "utf8");
+      const brief = fs.readFileSync(resolveInHarness(h, j.prompt!), "utf8");
       expect(brief.startsWith(`${j.label} job:`), id).toBe(true);
     }
   });

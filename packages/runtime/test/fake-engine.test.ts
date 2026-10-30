@@ -22,7 +22,7 @@ class EchoTransport implements Transport {
   async close(): Promise<void> {}
 }
 const echoAdapter: EngineAdapter = {
-  capabilities: { forkSession: false, nativeMemory: false },
+  capabilities: { forkSession: false, nativeMemory: false, noBuiltins: false },
   command: () => ["echo-agent"],
   createTransport: () => new EchoTransport(),
 };

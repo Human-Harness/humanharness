@@ -149,6 +149,11 @@ export interface CommonOptions {
    * and ACP read and search requests are refused. Off for tasks and material (D0).
    */
   mcpOnly?: boolean;
+  /**
+   * Claude only, an AI step's slot (tools spec §7.1, R1): `--tools ""` on top of mcpOnly, so no built-in tool reaches
+   * the turn, not even one a later CLI adds that reads without asking. Absent everywhere else (D0: argv as before).
+   */
+  noBuiltins?: boolean;
   /** Claude only: false runs the CLI with `--no-session-persistence` (one-off turns such as the setup test). */
   persistSession?: boolean;
   /**
@@ -224,6 +229,11 @@ export interface Capabilities {
   forkSession: boolean;
   /** The engine keeps its own memory across sessions. */
   nativeMemory: boolean;
+  /**
+   * A turn can run with no built-in tool at all (`CommonOptions.noBuiltins`), which a recipe's AI step needs (tools
+   * spec §7.1, R1). Claude only: an ACP engine's own sandbox still reads without asking.
+   */
+  noBuiltins: boolean;
 }
 
 /**

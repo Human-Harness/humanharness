@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Open-source framework for installable desktop apps that put a purpose-built interface and workflow on top of the AI agent a person already uses.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 26 26%27%3E%3Crect width=%2726%27 height=%2726%27 fill=%27%231b2129%27/%3E%3Cpath d=%27M7 6h3.4v5.4h5.2V6H19v14h-3.4v-5.4h-5.2V20H7z%27 fill=%27%23eef0f2%27/%3E%3C/svg%3E">
+<title>Human Harness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500..800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: engraved slate on cool paper, like the logo's chiseled H. Stable parts are
+   solid slabs; replaceable parts are dashed sockets marked "swap". */
+:root {
+  --paper: #eef0f2;
+  --paper-2: #e3e6ea;
+  --ink: #1b2129;
+  --ink-2: #4a5360;
+  --ink-3: #8a929d;
+  --rule: #c9ced5;
+  --slab: #2b323c;
+  --slab-hi: #3a424e;
+  --on-slab: #eef0f2;
+  --signal: #2f5bd3;
+  --signal-soft: #dde5fa;
+  --ok: #2e7d55;
+  --warn: #b0442c;
+  --wait: #a36a12;
+  --display: "Plus Jakarta Sans", "Helvetica Neue", Arial, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14181d; --paper-2: #1b2027; --ink: #e6e9ed; --ink-2: #9aa3af; --ink-3: #66707c; --rule: #2c333c;
+    --slab: #232a33; --slab-hi: #2f3742; --on-slab: #e6e9ed; --signal: #7c9cf5; --signal-soft: #1e2a47;
+    --ok: #5cbf8a; --warn: #e07a62; --wait: #e0a64a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14181d; --paper-2: #1b2027; --ink: #e6e9ed; --ink-2: #9aa3af; --ink-3: #66707c; --rule: #2c333c;
+  --slab: #232a33; --slab-hi: #2f3742; --on-slab: #e6e9ed; --signal: #7c9cf5; --signal-soft: #1e2a47;
+  --ok: #5cbf8a; --warn: #e07a62; --wait: #e0a64a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.6 var(--body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+section { padding-block: 72px; border-top: 1px solid var(--rule); }
+h1, h2, h3 { font-family: var(--display); font-stretch: 125%; line-height: 1.05; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.4rem, 6vw, 4.4rem); font-weight: 800; letter-spacing: -0.01em; max-width: 18ch; }
+h2 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 700; font-stretch: 112%; }
+p { margin: 0; max-width: 62ch; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+.lede { font-size: 1.2rem; color: var(--ink-2); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+a { color: var(--signal); }
+a:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+.stack { display: flex; flex-direction: column; gap: 20px; }
+
+/* nav */
+nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper); border-bottom: 1px solid var(--rule); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+nav .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; font: 700 15px/1 var(--display); font-stretch: 125%; color: var(--ink); text-decoration: none; }
+.mark { width: 26px; height: 26px; }
+nav ul { display: flex; gap: 22px; list-style: none; margin: 0; padding: 0; font-size: 14px; }
+nav ul a { color: var(--ink-2); text-decoration: none; }
+nav ul a:hover { color: var(--ink); }
+@media (max-width: 640px) { nav ul li:not(:last-child) { display: none; } }
+
+/* hero */
+.hero { border-top: 0; padding-block: 64px 80px; }
+.hero-head { display: flex; flex-direction: column; gap: 20px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; font: 600 15px/1 var(--body); text-decoration: none; border: 1px solid var(--ink); color: var(--ink); }
+.btn.primary { background: var(--ink); color: var(--paper); }
+.status { font: 400 13px/1.5 var(--mono); color: var(--ink-2); }
+
+/* chat vs harness */
+.vs { margin-top: 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.vs > * { min-width: 0; }
+@media (max-width: 820px) { .vs { grid-template-columns: 1fr; } }
+.panel { margin: 0; border: 1px solid var(--rule); background: var(--paper-2); display: flex; flex-direction: column; font-size: 14px; }
+.panel-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.panel-bar b { font: 700 13px/1 var(--display); font-stretch: 125%; }
+.panel-bar span { font: 400 11px/1 var(--mono); color: var(--ink-2); }
+.panel-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.panel-foot { padding: 10px 14px; border-top: 1px solid var(--rule); display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; font: 400 11px/1.2 var(--mono); color: var(--ink-2); }
+.bar { height: 6px; background: var(--rule); position: relative; }
+.bar i { position: absolute; inset: 0 auto 0 0; }
+
+.bub { max-width: 85%; padding: 8px 11px; line-height: 1.4; }
+.bub.you { align-self: flex-end; background: var(--ink); color: var(--paper); }
+.bub.ai { align-self: flex-start; background: var(--paper); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: 5px; width: 78%; }
+.bub.ai i { display: block; height: 5px; background: var(--rule); }
+.bub.ai i:nth-child(2) { width: 88%; } .bub.ai i:nth-child(3) { width: 64%; }
+.chat .faded { opacity: .45; }
+.chat .faded2 { opacity: .25; }
+.lost { align-self: flex-start; font: 400 11px/1.3 var(--mono); color: var(--warn); }
+
+.track { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.step { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 3px solid var(--rule); font-size: 12px; line-height: 1.2; min-width: 0; }
+.step.done { border-color: var(--ok); }
+.step.now { border-color: var(--signal); font-weight: 600; }
+.step em { font: 400 10px/1 var(--mono); font-style: normal; color: var(--ink-2); }
+.card { background: var(--paper); border: 1px solid var(--rule); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.card-q { font-weight: 600; }
+.opt { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 10px; border: 1px solid var(--rule); }
+.opt.pick { border-color: var(--signal); background: var(--signal-soft); }
+.opt small { color: var(--ink-2); }
+.opt .tag { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 400 10px/1 var(--mono); color: var(--ink-2); }
+.saved { display: flex; align-items: center; gap: 8px; font: 400 11px/1.3 var(--mono); color: var(--ok); }
+
+.diff { margin-top: 20px; overflow-x: auto; }
+.diff table { min-width: 560px; }
+.diff td:first-child { color: var(--ink-2); font-size: 14px; width: 22%; }
+.diff td.bad { color: var(--ink-2); }
+.diff td.good { font-weight: 500; }
+
+/* pillars */
+.pillars { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 40px; border: 1px solid var(--rule); }
+.pillars > div { padding: 28px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pillars > div + div { border-left: 1px solid var(--rule); }
+@media (max-width: 860px) { .pillars { grid-template-columns: 1fr; } .pillars > div + div { border-left: 0; border-top: 1px solid var(--rule); } }
+.pillars p { color: var(--ink-2); font-size: 15px; }
+.goal { margin-top: 40px; padding-left: 20px; border-left: 3px solid var(--ink); font: 600 1.25rem/1.45 var(--display); font-stretch: 112%; max-width: 46ch; }
+
+/* principles */
+.principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px 48px; margin-top: 40px; }
+.principles > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+@media (max-width: 700px) { .principles { grid-template-columns: 1fr; } }
+.principles p { color: var(--ink-2); font-size: 15px; }
+
+/* architecture */
+.ages { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.ages > div { min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.ages .slow { background: var(--slab); color: var(--on-slab); }
+.ages .fast { border: 2px dashed var(--signal); }
+.ages ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.ages .slow p, .ages .slow .eyebrow { color: var(--on-slab); opacity: .75; }
+.ages .fast p { color: var(--ink-2); }
+@media (max-width: 760px) { .ages { grid-template-columns: 1fr; } }
+
+.legend { margin-top: 48px; display: flex; flex-wrap: wrap; gap: 20px; font: 400 12px/1 var(--mono); color: var(--ink-2); align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 18px; height: 12px; display: inline-block; }
+.sw.s { background: var(--slab); }
+.sw.f { border: 2px dashed var(--signal); }
+
+.arch { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.layer { display: grid; grid-template-columns: 200px 1fr; border: 1px solid var(--rule); }
+.layer > * { min-width: 0; }
+.layer-name { padding: 16px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid var(--rule); }
+.layer-name b { font: 700 15px/1.2 var(--display); font-stretch: 125%; }
+.layer-name code { font-size: 11px; color: var(--ink-2); }
+.parts { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; align-content: center; }
+.part { padding: 8px 10px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; line-height: 1.3; }
+.part code { font-size: 11px; opacity: .75; }
+.part.s { background: var(--slab); color: var(--on-slab); }
+.part.f { border: 2px dashed var(--signal); position: relative; padding-right: 48px; }
+.arch { position: relative; }
+.part { position: relative; padding-right: 34px; }
+.part.f { padding-right: 52px; }
+.info-btn { position: absolute; right: 6px; bottom: 6px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid currentColor; background: transparent; color: inherit; opacity: .6; font: italic 600 11px/1 Georgia, serif; display: grid; place-items: center; padding: 0; cursor: pointer; }
+.info-btn:hover, .info-btn[aria-expanded="true"] { opacity: 1; }
+.info-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; opacity: 1; }
+.info-pop { position: absolute; z-index: 15; width: min(300px, calc(100% - 8px)); padding: 12px 14px; background: var(--ink); color: var(--paper); font-size: 13px; line-height: 1.5; box-shadow: 0 12px 28px -14px rgba(20, 26, 34, .6); }
+.info-pop b { display: block; font: 700 13px/1.3 var(--display); margin-bottom: 4px; }
+.part.f::after { content: "swap"; position: absolute; top: 7px; right: 7px; font: 500 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--signal); }
+.part.empty { color: var(--ink-3); border-style: dotted; }
+.part.ext { border: 1px solid var(--rule); color: var(--ink-2); }
+.seam { display: grid; grid-template-columns: 200px 1fr; align-items: center; font: 400 12px/1.3 var(--mono); color: var(--signal); }
+.seam span:first-child { text-align: right; padding-right: 16px; }
+.seam span:last-child { border-top: 2px dashed var(--signal); padding-top: 6px; }
+@media (max-width: 720px) {
+  .layer { grid-template-columns: 1fr; }
+  .layer-name { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .seam { grid-template-columns: 1fr; } .seam span:first-child { display: none; }
+}
+.down { font: 400 12px/1 var(--mono); color: var(--ink-3); padding-left: 216px; }
+@media (max-width: 720px) { .down { padding-left: 0; } }
+
+.seams { margin-top: 56px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.seams > article { min-width: 0; border: 1px solid var(--rule); padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 760px) { .seams { grid-template-columns: 1fr; } }
+.seam-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pill { display: inline-block; padding: 3px 8px; font: 500 11px/1.4 var(--mono); border: 1px solid currentColor; white-space: nowrap; }
+.pill.ok { color: var(--ok); }
+.pill.wait { color: var(--wait); }
+.pill.plan { color: var(--ink-2); }
+dl { margin: 0; display: grid; grid-template-columns: 76px 1fr; gap: 8px 12px; font-size: 14px; }
+dt { font: 500 11px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+dd { margin: 0; min-width: 0; }
+dd.how { font-weight: 500; }
+
+.rules { margin-top: 56px; display: grid; grid-template-columns: 1fr 1.4fr; gap: 48px; }
+.rules > * { min-width: 0; }
+@media (max-width: 820px) { .rules { grid-template-columns: 1fr; } }
+.rules ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-top: 1px solid var(--rule); }
+.rules li { padding: 14px 0; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: 1fr; gap: 4px; }
+.rules li b { font-weight: 600; }
+.rules li span { color: var(--ink-2); font-size: 15px; }
+
+/* turn sequence */
+.turn { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(5, 1fr); counter-reset: step; }
+.turn li { counter-increment: step; padding: 0 18px 0 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.turn li::before { content: counter(step); font: 700 2rem/1 var(--display); font-stretch: 125%; color: var(--ink); padding-bottom: 12px; border-bottom: 2px solid var(--ink); margin-bottom: 6px; }
+.turn p { font-size: 14px; color: var(--ink-2); }
+@media (max-width: 860px) { .turn { grid-template-columns: 1fr; gap: 24px; } .turn li::before { border-bottom: 0; padding-bottom: 0; } }
+
+/* tables */
+.table-wrap { overflow-x: auto; margin-top: 32px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+.table-wrap table { min-width: 620px; }
+th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 500 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+
+/* build */
+.build { display: grid; grid-template-columns: 1fr 1.1fr; gap: 48px; align-items: start; }
+.build > * { min-width: 0; }
+@media (max-width: 860px) { .build { grid-template-columns: 1fr; } }
+pre { margin: 0; padding: 20px; background: var(--slab); color: var(--on-slab); font: 400 13px/1.7 var(--mono); overflow-x: auto; }
+pre .c { opacity: .55; }
+.asks { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 15px; display: flex; flex-direction: column; gap: 4px; }
+
+footer { border-top: 1px solid var(--rule); padding-block: 32px; font-size: 14px; color: var(--ink-2); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <svg class="mark" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" fill="var(--ink)"/><path d="M7 6h3.4v5.4h5.2V6H19v14h-3.4v-5.4h-5.2V20H7z" fill="var(--paper)"/></svg>
+      Human Harness
+    </a>
+    <ul>
+      <li><a href="#spirit">Spirit</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#build">Build one</a></li>
+      <li><a href="https://github.com/Human-Harness/humanharness">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-head">
+        <span class="eyebrow">Open-source framework · Apache-2.0</span>
+        <h1>AI apps shaped around a task, not a chat box.</h1>
+        <p class="lede">Human Harness builds <strong>harnesses</strong>: installable desktop apps that put a purpose-built interface and workflow on top of the AI agent a person already pays for. No API keys, no terminal, no setup they need to understand.</p>
+        <div class="cta">
+          <a class="btn primary" href="#architecture">See how it's built</a>
+          <a class="btn" href="https://github.com/Human-Harness/humanharness">View on GitHub</a>
+        </div>
+      </div>
+
+      <div class="vs" aria-label="The same task in a generic chat and in a harness">
+        <figure class="panel chat">
+          <div class="panel-bar"><b>Generic chat</b><span>message 23</span></div>
+          <div class="panel-body">
+            <div class="bub you faded2">Help me write an essay from these three sources.</div>
+            <div class="bub ai faded2"><i></i><i></i><i></i></div>
+            <div class="bub you faded">No, the parking angle. And remember source two is a blog.</div>
+            <div class="bub ai faded"><i></i><i></i><i></i></div>
+            <div class="bub you">Wait. What thesis did we settle on?</div>
+            <div class="bub ai"><i></i><i></i><i></i></div>
+            <span class="lost">↑ the decision is somewhere up there</span>
+          </div>
+          <div class="panel-foot"><span>Context</span><span class="bar"><i style="width:91%;background:var(--warn)"></i></span><span>91% · top model</span></div>
+        </figure>
+
+        <figure class="panel">
+          <div class="panel-bar"><b>A harness: Essay Coach</b><span>task 2 of 4</span></div>
+          <div class="panel-body">
+            <div class="track">
+              <div class="step done">Explore<em>light</em></div>
+              <div class="step now">Choose thesis<em>standard</em></div>
+              <div class="step">Outline<em>standard</em></div>
+              <div class="step">Draft<em>deep</em></div>
+            </div>
+            <div class="card">
+              <span class="card-q">Which angle do you want to argue?</span>
+              <div class="opt pick"><b>Cities should price parking</b><small>Two sources agree.</small><span class="tag">recommended</span></div>
+              <div class="opt"><b>Free transit beats new roads</b><small>Rests on the blog.</small><span class="tag">weaker</span></div>
+            </div>
+            <span class="saved">✓ Saved to notes/thesis.md in your folder</span>
+          </div>
+          <div class="panel-foot"><span>Plan usage</span><span class="bar"><i style="width:38%;background:var(--ok)"></i></span><span>38% · fresh session</span></div>
+        </figure>
+      </div>
+
+      <div class="diff">
+        <table>
+          <thead><tr><th></th><th>Generic chat</th><th>Human Harness</th></tr></thead>
+          <tbody>
+            <tr><td>Starting point</td><td class="bad">A blank prompt</td><td class="good">A screen built for the task</td></tr>
+            <tr><td>Who keeps the goal</td><td class="bad">You, by re-prompting</td><td class="good">A flow of phases</td></tr>
+            <tr><td>Decisions</td><td class="bad">Buried in the scroll</td><td class="good">Cards with trade-offs, saved as notes</td></tr>
+            <tr><td>Memory</td><td class="bad">Grows until it compacts or ends</td><td class="good">Notes in your folder start every new session</td></tr>
+            <tr><td>Model</td><td class="bad">The same one for everything</td><td class="good">Light, standard or deep per step</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="spirit">
+    <div class="wrap">
+      <div class="stack">
+        <span class="eyebrow">The spirit</span>
+        <h2>A chat is the least specific app there is.</h2>
+        <p class="lede">Most people don't need a blank prompt. They need help doing one kind of work well. A harness organizes their work first and points the AI at it second. Every harness stands on three pillars.</p>
+      </div>
+      <div class="pillars">
+        <div>
+          <span class="eyebrow">Pillar 1</span>
+          <h3>A screen for decisions</h3>
+          <p>The interface shows options, criteria and trade-offs, and asks for confirmation at the moments that matter. The person decides; the agent prepares the decision.</p>
+        </div>
+        <div>
+          <span class="eyebrow">Pillar 2</span>
+          <h3>An agentic flow underneath</h3>
+          <p>Phases declared in the harness keep the AI moving toward the same goal the person is working on. Each action runs as a task with its own session, so it never drifts into a different job.</p>
+        </div>
+        <div>
+          <span class="eyebrow">Pillar 3</span>
+          <h3>Care with context and models</h3>
+          <p>Notes in the person's folder keep the key decisions across sessions and engines. Each task gets a light, standard or deep model, so small work never burns the top tier and hard work never lands on a weak one.</p>
+        </div>
+      </div>
+      <p class="goal">The goal: bring the person close to the best result for their task, with close to the best use of their resources.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="stack">
+        <span class="eyebrow">Principles</span>
+        <h2>What every harness promises its users.</h2>
+      </div>
+      <div class="principles">
+        <div><h3>Your own subscription</h3><p>People sign in to the official tool of the provider they already use. The app installs and configures it. The harness author never holds a key and never pays for anyone's tokens.</p></div>
+        <div><h3>Legal before technical</h3><p>An engine is offered only when its terms allow it. Working is not enough. Each engine records its legal status, the source and the date it was checked.</p></div>
+        <div><h3>Your data, in your folder</h3><p>Everything lives in a visible folder the person picks, with a hidden local history to undo what the agent changed. Nothing leaves the machine except toward the chosen provider. No telemetry.</p></div>
+        <div><h3>Know your limits</h3><p>The app shows where the person stands on their plan before a heavy workflow starts, and records tokens per task so the cost of each step is visible.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <div class="stack">
+        <span class="eyebrow">Architecture</span>
+        <h2>Built to outlast the models it runs on.</h2>
+        <p class="lede">AI changes every few months. How people make decisions about their work doesn't. So the code is split by how fast each part ages: what lasts is built solid, and what ages fast sits behind a seam where a new version can replace it without touching the rest.</p>
+      </div>
+
+      <div class="ages">
+        <div class="slow">
+          <span class="eyebrow">Ages slowly · built solid</span>
+          <h3>The human side</h3>
+          <ul>
+            <li>The decision UI: cards, choices, reviews</li>
+            <li>The harness contract: manifest, phases, blocks</li>
+            <li>The person's data: folder, notes, history, file timeline</li>
+            <li>The task flow: start, choose, finish</li>
+          </ul>
+          <p>Abstracting these would only add weight. They change when the product changes, not when a model ships.</p>
+        </div>
+        <div class="fast">
+          <span class="eyebrow" style="color:var(--signal)">Ages fast · built to swap</span>
+          <h3>The AI side</h3>
+          <ul>
+            <li>Engines and how we talk to them: CLI today, ACP, native APIs next</li>
+            <li>Which model runs each step</li>
+            <li>How context is managed: notes, checkpoints, cache, native memory</li>
+            <li>Document converters and translation</li>
+          </ul>
+          <p>Each one is a module with a thin interface. Replacing it means writing one new module and naming it in config.</p>
+        </div>
+      </div>
+
+      <div class="legend" aria-hidden="true">
+        <span><i class="sw s"></i>stable</span>
+        <span><i class="sw f"></i>replaceable</span>
+        <span>↓ dependencies point down only</span>
+      </div>
+
+      <div class="arch">
+        <div class="layer">
+          <div class="layer-name"><b>Your harness</b><code>its own repository</code></div>
+          <div class="parts">
+            <div class="part s" data-info="The harness&#x27;s description: its name, actions, phases, permissions, engines and model tiers, written with defineHarness(). The core reads it to build the app.">Manifest<code>defineHarness()</code></div>
+            <div class="part s" data-info="What the person can start (actions) and the parts each task moves through (phases). The flow keeps the AI on the same goal as the person.">Phases and actions<code>the flow</code></div>
+            <div class="part s" data-info="Pieces of UI the agent shows mid-turn: choices, cards, forms. Defined with defineBlock(). The person answers on screen instead of typing.">Decision blocks<code>defineBlock()</code></div>
+            <div class="part s" data-info="The harness&#x27;s living design document. The /new-harness guide records every decision there, and the check command validates it.">HARNESS.md<code>living design doc</code></div>
+          </div>
+        </div>
+        <div class="down">↓ harness-sdk</div>
+        <div class="layer">
+          <div class="layer-name"><b>Screens</b><code>ui</code></div>
+          <div class="parts">
+            <div class="part s" data-info="The screens every harness gets for free: start a task, talk to the agent, pick an engine and models, and a first-run setup that installs the engine and signs in.">Home, chat, settings, onboarding</div>
+            <div class="part s" data-info="Where decisions happen: the blocks the agent sends, review views for documents, and a reader for the Markdown files the agent writes.">Blocks, reviews, document reader</div>
+            <div class="part s" data-info="Where the person stands on their plan&#x27;s limits, and what each task spent, before a heavy workflow starts.">Usage and limits</div>
+          </div>
+        </div>
+        <div class="seam"><span>protocol</span><span>A typed contract. Screens never import the core, so either side can be redone.</span></div>
+        <div class="layer">
+          <div class="layer-name"><b>App core</b><code>shell · services</code></div>
+          <div class="parts">
+            <div class="part s" data-info="Electron&#x27;s main process. Starts and follows up tasks, moves between phases, runs time boxes and reviews. It decides what happens next and never knows which engine runs.">Task flow, phases, time boxes, reviews<code>shell</code></div>
+            <div class="part s" data-info="The person&#x27;s visible folder, the notes each task keeps, and a hidden local history that can undo what the agent changed.">Folder, notes, history<code>workspace</code></div>
+            <div class="part s" data-info="An MCP server the engine calls to show a block. It checks the call and forwards it to the screen over a private local socket.">Blocks bridge<code>blocks</code></div>
+            <div class="part f" data-info="Turn PDFs and other files the person adds into text the agent can read. Better converters appear often, so this part stays replaceable.">Document converters<code>material</code></div>
+            <div class="part f" data-info="The app ships in English; other languages are translated by the AI on demand. The translation engine can be replaced.">Translation<code>i18n</code></div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-name"><b>Decisions</b><code>policies</code></div>
+          <div class="parts">
+            <div class="part f" data-info="Decides which model and effort each task uses (light, standard or deep) and what to fall back to. It returns a choice and never runs anything.">Model policy<code>light · standard · deep</code></div>
+            <div class="part f" data-info="Decides what a new session starts with and how much of each part, when to save a checkpoint, and how work continues after a task ends.">Context policy<code>what a session starts with</code></div>
+            <div class="part f empty" data-info="Will decide which tools and recipes the agent may call. Not built yet.">Tool policy<code>later</code></div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-name"><b>Turn loop</b><code>runtime</code></div>
+          <div class="parts">
+            <div class="part s" data-info="Runs one turn: saves the folder in the history, sends the message through the engine&#x27;s transport and streams the events back to the screen. It never asks which engine it is talking to.">Runs a turn, saves history, streams events<code>never knows which engine</code></div>
+          </div>
+        </div>
+        <div class="seam"><span>engine adapter</span><span>One folder per engine, one line in the registry.</span></div>
+        <div class="layer">
+          <div class="layer-name"><b>Engines</b><code>engines</code></div>
+          <div class="parts">
+            <div class="part f" data-info="Anthropic&#x27;s official claude CLI, unmodified, one process per turn. Runs on the person&#x27;s Claude subscription.">Claude<code>official claude CLI</code></div>
+            <div class="part f" data-info="OpenAI&#x27;s Codex through its Agent Client Protocol adapter. Runs on the person&#x27;s ChatGPT subscription.">Codex<code>ACP</code></div>
+            <div class="part f" data-info="The open-source opencode acp, unmodified. Uses whatever provider the person set up in it, a local model included, and reports real cost in USD.">OpenCode<code>ACP</code></div>
+            <div class="part f empty" data-info="A new engine is one folder (definition, transport, checks) and one line in the registry. It ships only once its terms allow it.">Next engine<code>a new folder</code></div>
+          </div>
+        </div>
+        <div class="down">↓ the person's own account</div>
+        <div class="layer">
+          <div class="layer-name"><b>AI provider</b><code>chosen by the person</code></div>
+          <div class="parts">
+            <div class="part ext" data-info="The person&#x27;s own Claude account. The app never sees their key or credentials.">Anthropic</div>
+            <div class="part ext" data-info="The person&#x27;s own ChatGPT account, used through Codex.">OpenAI</div>
+            <div class="part ext" data-info="Any provider OpenCode supports, with the person&#x27;s own key, or a model running on their own computer.">Any OpenCode provider or a local model</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack" style="margin-top:72px">
+        <span class="eyebrow">The four seams</span>
+        <h2>What sits behind each seam, and what could replace it.</h2>
+      </div>
+      <div class="seams">
+        <article>
+          <div class="seam-head"><h3>Engine adapters</h3><span class="pill wait">in review</span></div>
+          <dl>
+            <dt>Today</dt><dd>Claude through its CLI; Codex and OpenCode through one shared ACP client.</dd>
+            <dt>Next</dt><dd>New CLIs, native APIs, engines not listed yet.</dd>
+            <dt>Swap</dt><dd class="how">Add a folder with its definition, transport and checks. Add one registry line.</dd>
+          </dl>
+        </article>
+        <article>
+          <div class="seam-head"><h3>Protocol</h3><span class="pill plan">planned</span></div>
+          <dl>
+            <dt>Today</dt><dd>Screens and core share types loosely, with about 90 IPC channel names as strings.</dd>
+            <dt>Next</dt><dd>A typed channel table: a renamed channel fails at compile time.</dd>
+            <dt>Swap</dt><dd class="how">Redo the screens or the core; the contract between them holds.</dd>
+          </dl>
+        </article>
+        <article>
+          <div class="seam-head"><h3>Model policy</h3><span class="pill plan">planned</span></div>
+          <dl>
+            <dt>Today</dt><dd>A tier per process with a floor, falling back deep → standard → light.</dd>
+            <dt>Next</dt><dd>Driving modes: eco, hybrid, sport. One setting that trades tokens for power.</dd>
+            <dt>Swap</dt><dd class="how">Write a policy with <code>pick</code> and <code>fallback</code>. Name it in config.</dd>
+          </dl>
+        </article>
+        <article>
+          <div class="seam-head"><h3>Context policy</h3><span class="pill plan">planned</span></div>
+          <dl>
+            <dt>Today</dt><dd>Every new session starts from notes; a checkpoint at 80% of the window.</dd>
+            <dt>Next</dt><dd>A warm prefix each task forks from, an engine's native memory, new research on long context.</dd>
+            <dt>Swap</dt><dd class="how">Answer three questions: what a session starts with, when to checkpoint, how work continues.</dd>
+          </dl>
+        </article>
+      </div>
+
+      <div class="rules">
+        <div class="stack">
+          <span class="eyebrow">How it stays fast to update</span>
+          <h2>Six rules, checked by a test.</h2>
+          <p>A boundary test reads every package's imports and fails the build when a rule breaks. That is what keeps the seams honest after the first refactor.</p>
+        </div>
+        <ol>
+          <li><b>Dependencies point down only.</b><span>An engine never knows about screens; screens never know about engines.</span></li>
+          <li><b>No engine checks outside an engine's folder.</b><span>Nothing else in the code asks "is this Claude?".</span></li>
+          <li><b>Policies decide and never execute.</b><span>They return a plan. They don't read files or start processes, so they are cheap to write and test.</span></li>
+          <li><b>Interfaces describe inputs and outputs, not today's mechanism.</b><span>A new strategy fits the same shape as the old one.</span></li>
+          <li><b>A policy is fixed for the whole task.</b><span>Switching mid-task would throw away the engine's prompt cache.</span></li>
+          <li><b>Every turn records which policy ran.</b><span>Variants are compared on real usage, not on a hunch.</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="stack">
+        <span class="eyebrow">A turn, end to end</span>
+        <h2>From a click to an answer in five hops.</h2>
+        <p class="lede">A turn is one message from the person and the agent's complete answer. Each hop lives in its own package.</p>
+      </div>
+      <ol class="turn">
+        <li><h3>Screen</h3><p>The chat or a decision block sends the message through the harness client.</p></li>
+        <li><h3>App core</h3><p>The task manager decides whether this starts a task or follows one up, and builds the first message.</p></li>
+        <li><h3>Runtime</h3><p>Saves the folder in the history, then runs the turn through the engine's transport.</p></li>
+        <li><h3>Engine</h3><p>The official CLI does the work. When it calls a UI tool, the blocks server checks it and forwards it.</p></li>
+        <li><h3>Events back</h3><p>Text, activity and blocks stream to the window. Tokens go to the usage log. One <code>done</code> closes it.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="build">
+    <div class="wrap build">
+      <div class="stack">
+        <span class="eyebrow">Build one</span>
+        <h2>A guide that interviews you, then writes the code.</h2>
+        <p>Create a harness from the template and open Claude Code or Codex in its folder. Run <code>/new-harness</code>. The guide asks one question at a time and records each answer in <code>HARNESS.md</code>:</p>
+        <ul class="asks">
+          <li>the task, and the decisions the person makes</li>
+          <li>the flow and its phases</li>
+          <li>what each task keeps as a note</li>
+          <li>the models, the permissions and the identity</li>
+        </ul>
+        <p>You are responsible for what your harness does with the AI and for the engines you offer.</p>
+      </div>
+      <pre><span class="c"># create a harness in its own repository</span>
+corepack pnpm humanharness init ~/code/my-harness
+cd ~/code/my-harness
+
+<span class="c"># shape it with the guide, inside Claude Code or Codex</span>
+/new-harness
+
+<span class="c"># validate, run one task, open the app</span>
+corepack pnpm check
+corepack pnpm run run &lt;action&gt; --engine claude
+corepack pnpm dev</pre>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var arch = document.querySelector(".arch");
+  var pop = document.createElement("div");
+  pop.className = "info-pop";
+  pop.setAttribute("role", "tooltip");
+  pop.id = "info-pop";
+  pop.hidden = true;
+  arch.appendChild(pop);
+  var open = null;
+  function close() {
+    if (open) open.setAttribute("aria-expanded", "false");
+    open = null;
+    pop.hidden = true;
+  }
+  function show(btn, part) {
+    var name = part.firstChild.textContent.trim();
+    pop.innerHTML = "";
+    var b = document.createElement("b");
+    b.textContent = name;
+    pop.appendChild(b);
+    pop.appendChild(document.createTextNode(part.dataset.info));
+    pop.hidden = false;
+    var a = arch.getBoundingClientRect(), r = part.getBoundingClientRect();
+    var left = Math.min(Math.max(r.left - a.left, 0), a.width - pop.offsetWidth);
+    pop.style.left = left + "px";
+    pop.style.top = (r.bottom - a.top + 6) + "px";
+    btn.setAttribute("aria-expanded", "true");
+    open = btn;
+  }
+  arch.querySelectorAll(".part[data-info]").forEach(function (part) {
+    var name = part.firstChild.textContent.trim();
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "info-btn";
+    btn.textContent = "i";
+    btn.setAttribute("aria-label", "What is " + name + "?");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-describedby", "info-pop");
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (open === btn) close(); else { close(); show(btn, part); }
+    });
+    part.appendChild(btn);
+  });
+  document.addEventListener("click", function (e) { if (!pop.contains(e.target)) close(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  window.addEventListener("resize", close);
+})();
+</script>
+
+<footer>
+  <div class="wrap">
+    <span>Human Harness · Apache-2.0 · early development</span>
+    <a href="https://github.com/Human-Harness/humanharness">github.com/Human-Harness/humanharness</a>
+  </div>
+</footer>
+</body>
+</html>

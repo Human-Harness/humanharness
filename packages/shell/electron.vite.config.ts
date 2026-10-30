@@ -15,6 +15,7 @@ const workspacePackages = [
   "@humanharness/harness-sdk",
   "@humanharness/i18n",
   "@humanharness/material",
+  "@humanharness/policies",
   "@humanharness/protocol",
   "@humanharness/runtime",
   "@humanharness/workspace",

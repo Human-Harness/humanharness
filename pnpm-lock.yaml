@@ -381,6 +381,15 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
 
+  packages/policies:
+    dependencies:
+      '@humanharness/engines':
+        specifier: workspace:*
+        version: link:../engines
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
+
   packages/protocol:
     dependencies:
       '@humanharness/engines':
@@ -438,6 +447,9 @@ importers:
       '@humanharness/material':
         specifier: workspace:*
         version: link:../material
+      '@humanharness/policies':
+        specifier: workspace:*
+        version: link:../policies
       '@humanharness/protocol':
         specifier: workspace:*
         version: link:../protocol

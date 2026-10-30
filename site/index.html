@@ -230,6 +230,40 @@ pre .c { opacity: .55; }
 
 footer { border-top: 1px solid var(--rule); padding-block: 32px; font-size: 14px; color: var(--ink-2); }
 footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+
+/* harnesses */
+.recipe { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); counter-reset: r; border-top: 2px solid var(--ink); }
+.recipe li { counter-increment: r; padding: 16px 16px 0 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.recipe li::before { content: counter(r); font: 700 1.4rem/1 var(--display); }
+.recipe b { font-weight: 600; font-size: 15px; }
+.recipe span { color: var(--ink-2); font-size: 14px; }
+@media (max-width: 860px) { .recipe { grid-template-columns: 1fr; } .recipe li { padding-right: 0; } }
+
+.hgrid { margin-top: 48px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.hgrid > * { min-width: 0; }
+@media (max-width: 820px) { .hgrid { grid-template-columns: 1fr; } }
+.harness { border: 1px solid var(--rule); display: flex; flex-direction: column; }
+.harness-top { padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--rule); }
+.harness-top .seam-head h3 { font-size: 1.35rem; }
+.harness-top p { color: var(--ink-2); font-size: 15px; }
+.harness-body { padding: 18px 22px 22px; display: flex; flex-direction: column; gap: 16px; }
+.harness dl { grid-template-columns: 84px 1fr; }
+.build-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.build-split > div { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+@media (max-width: 480px) { .build-split { grid-template-columns: 1fr; } }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 4px 8px; font-size: 12px; line-height: 1.3; }
+.chip.core { background: var(--slab); color: var(--on-slab); }
+.chip.own { border: 1px dashed var(--signal); color: var(--ink); }
+.split-label { font: 500 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.pill.built { color: var(--ok); }
+.pill.disc { color: var(--signal); }
+.ideas { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.ideas > article { min-width: 0; border: 1px dashed var(--rule); padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.ideas p { color: var(--ink-2); font-size: 14px; }
+.ideas .feat { font: 400 12px/1.4 var(--mono); color: var(--ink-2); }
+@media (max-width: 900px) { .ideas { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .ideas { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -242,6 +276,7 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
     <ul>
       <li><a href="#spirit">Spirit</a></li>
       <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#harnesses">Harnesses</a></li>
       <li><a href="#build">Build one</a></li>
       <li><a href="https://github.com/Human-Harness/humanharness">GitHub</a></li>
     </ul>
@@ -529,6 +564,103 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
         <li><h3>Engine</h3><p>The official CLI does the work. When it calls a UI tool, the blocks server checks it and forwards it.</p></li>
         <li><h3>Events back</h3><p>Text, activity and blocks stream to the window. Tokens go to the usage log. One <code>done</code> closes it.</p></li>
       </ol>
+    </div>
+  </section>
+
+  <section id="harnesses">
+    <div class="wrap">
+      <div class="stack">
+        <span class="eyebrow">Harnesses</span>
+        <h2>One core, one app per kind of work.</h2>
+        <p class="lede">Each harness is a broad role, not a single feature: a course builder lives inside the teacher, a code review inside the dev. Here is what we are building or exploring, and what making each one takes.</p>
+      </div>
+
+      <ol class="recipe" aria-label="How any harness is made">
+        <li><b>Interview</b><span>The <code>/new-harness</code> guide asks about the task and the decisions the person makes.</span></li>
+        <li><b>Flow</b><span>Actions, phases and a model tier for each step go in the manifest.</span></li>
+        <li><b>Screens</b><span>Pick blocks from the core and add the views only this role needs.</span></li>
+        <li><b>What it keeps</b><span>Notes, data collections and settings, declared as schemas.</span></li>
+        <li><b>Try it</b><span>Run one task against a real engine, check the usage report, open the app.</span></li>
+      </ol>
+
+      <div class="hgrid">
+        <article class="harness">
+          <div class="harness-top">
+            <div class="seam-head"><h3>Dev</h3><span class="pill disc">prototype</span></div>
+            <p>Takes developers away from the code while keeping them in control of the agents. Jira tickets in, pull requests out, with an IDE-like layout that shows specs and decisions instead of files.</p>
+          </div>
+          <div class="harness-body">
+            <dl>
+              <dt>Decides</dt><dd>Approves the spec, judges review findings against it, picks guided or autonomous QA, opens the PR.</dd>
+              <dt>Flow</dt><dd>Spec › Plan › Implement › Code review › QA › PR, run by a standard team of agents.</dd>
+              <dt>Keeps</dt><dd>A folder per ticket with spec, plan, decisions, review and QA notes. ADRs per project.</dd>
+            </dl>
+            <div class="build-split">
+              <div><span class="split-label">From the core</span><div class="chips"><span class="chip core">Parallel tasks</span><span class="chip core">Background jobs</span><span class="chip core">Document review</span><span class="chip core">File timeline</span><span class="chip core">Context panel</span><span class="chip core">Sidekicks</span></div></div>
+              <div><span class="split-label">Built for dev</span><div class="chips"><span class="chip own">Jira sync job</span><span class="chip own">GitHub via gh</span><span class="chip own">IDE layout</span><span class="chip own">Agent team</span><span class="chip own">Repos outside the folder</span></div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="harness">
+          <div class="harness-top">
+            <div class="seam-head"><h3>Student</h3><span class="pill disc">prototype</span></div>
+            <p>Helps anyone learn a topic or prepare an exam. It never does the work for them. It teaches with proven methods and tracks what they really know.</p>
+          </div>
+          <div class="harness-body">
+            <dl>
+              <dt>Decides</dt><dd>Which method to use, from seven: Socratic, Feynman, retrieval, worked examples, elaboration, interleaving, problem-based. The AI recommends one; the student chooses and can switch.</dd>
+              <dt>Flow</dt><dd>Warm-up recall › main block with the method › close with a summary and flashcards the student writes and the AI corrects.</dd>
+              <dt>Keeps</dt><dd>A concept map per topic. A concept is mastered only with evidence from different days.</dd>
+            </dl>
+            <div class="build-split">
+              <div><span class="split-label">From the core</span><div class="chips"><span class="chip core">Material processing</span><span class="chip core">Scopes</span><span class="chip core">Data store</span><span class="chip core">Profiles</span><span class="chip core">Input blocks</span><span class="chip core">Time box</span></div></div>
+              <div><span class="split-label">Built for student</span><div class="chips"><span class="chip own">Concept map</span><span class="chip own">Seven methods</span><span class="chip own">Spaced repetition</span><span class="chip own">Onboarding interview</span></div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="harness">
+          <div class="harness-top">
+            <div class="seam-head"><h3>Demo: architecture explainer</h3><span class="pill built">in the repo</span></div>
+            <p>Explains Human Harness to a developer who cloned the repository, by reading its own docs and code. It never changes anything.</p>
+          </div>
+          <div class="harness-body">
+            <dl>
+              <dt>Decides</dt><dd>Which topic to read next, whether to go deeper or move on, which files to open.</dd>
+              <dt>Flow</dt><dd>Six topics on a guided path: manifest, engines, turn, blocks, context, history.</dd>
+              <dt>Keeps</dt><dd>A short note per topic to come back to.</dd>
+            </dl>
+            <div class="build-split">
+              <div><span class="split-label">From the core</span><div class="chips"><span class="chip core">Choices</span><span class="chip core">Diagrams</span><span class="chip core">File lists</span><span class="chip core">Notes</span></div></div>
+              <div><span class="split-label">Built for demo</span><div class="chips"><span class="chip own">Six topic prompts</span><span class="chip own">Read-only permissions</span></div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="harness">
+          <div class="harness-top">
+            <div class="seam-head"><h3>Your harness</h3><span class="pill plan">start here</span></div>
+            <p>Any kind of work where a person makes the same decisions again and again, and a chat makes them repeat the context every time.</p>
+          </div>
+          <div class="harness-body">
+            <dl>
+              <dt>Ask</dt><dd>What does the person decide? What order does the work follow? What must never be lost?</dd>
+              <dt>Then</dt><dd>Run <code>humanharness init</code> and <code>/new-harness</code>. The guide turns the answers into a manifest and code.</dd>
+            </dl>
+          </div>
+        </article>
+      </div>
+
+      <div class="stack" style="margin-top:56px">
+        <span class="eyebrow">Next, not designed yet</span>
+      </div>
+      <div class="ideas">
+        <article><div class="seam-head"><h3>Teacher</h3><span class="pill plan">idea</span></div><p>Prepares and runs teaching work.</p><span class="feat">includes: course builder</span></article>
+        <article><div class="seam-head"><h3>Writer</h3><span class="pill plan">idea</span></div><p>Writes long pieces with the person in charge of the story.</p><span class="feat">includes: story, worldbuilding</span></article>
+        <article><div class="seam-head"><h3>Thinker</h3><span class="pill plan">idea</span></div><p>Works through a problem or an idea step by step.</p><span class="feat">to be defined</span></article>
+        <article><div class="seam-head"><h3>Cooker</h3><span class="pill plan">idea</span></div><p>Helps in the kitchen.</p><span class="feat">to be defined</span></article>
+      </div>
     </div>
   </section>
 

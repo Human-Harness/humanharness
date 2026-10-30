@@ -3,8 +3,9 @@ import { promises as fs, realpath } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { LINKED_MANY_MAX, type LinkedFolderDecl, hasBackend, hasEnginePresets, hasLinkedFolders } from "@humanharness/harness-sdk";
-import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/ui/client";
+import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/protocol";
 import { type LinkedFolderEntry, type ScopeEntry, type ScopeStore, isScopeId } from "@humanharness/workspace";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import { checkLink, isGitRepo } from "./linked-folders";
 import { linkedHistoryDir, markRelinked, markUnlinked } from "./linked-history";
 import { sourceTagKey } from "./sidekick-import";
@@ -187,7 +188,7 @@ const insideOf = (child: string, parent: string) => {
  * The linked-folder channels (hatches spec §3.2), registered only for a harness that declares `linkedFolders` (D0).
  * Every id from the window is checked here (L9); a folder is only ever the picker's answer (L1).
  */
-export function registerLinkedIpc(handle: (channel: string, fn: (...args: never[]) => unknown) => void, d: LinkedIpcDeps): void {
+export function registerLinkedIpc(handle: (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void, d: LinkedIpcDeps): void {
   // Link, unlink and confirm change scopes.json, the live set and the history marks: one at a time, so an unlink's
   // "is the history still used" never interleaves with a link's relink.
   let chain: Promise<unknown> = Promise.resolve();

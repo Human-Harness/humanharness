@@ -1,6 +1,6 @@
-import type { DataChangeView } from "./client";
+import type { DataChangeView } from "./views";
 
-/** The folder of app-wide collections (`APP_SCOPE` in the workspace; the UI imports no workspace code). */
+/** The folder of app-wide collections (`APP_SCOPE` in the workspace; protocol imports no workspace code but its subjects). */
 const APP_SCOPE = "_app";
 
 /**

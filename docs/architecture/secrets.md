@@ -121,5 +121,5 @@ The harness's store holds the person's API tokens. The plugins' rows (B6, B8, `p
 - `packages/shell/src/main/secrets/connections.ts`, `connections-ipc.ts`: Settings › Connections in main. `index.ts`: `secretStore()`, `secretCrypto`, `connections()`, the channels and `AppState.connections`.
 - `packages/shell/src/main/setup-steps.ts`: the connect view and its completion gate.
 - `packages/harness-sdk/src/secrets.ts`, `setup.ts`, `index.ts`: `secrets`, the `connect` kind and their checks.
-- `packages/ui/src/connections/`: `SecretField`, `ConnectionsTab` (`useConnections`), `ConnectStep`; `SettingsSheet.tsx`, `SetupFlow.tsx`, `SetupStepsList.tsx`: the wiring. `client.ts`: `ConnectionsClient` and the view types.
+- `packages/ui/src/connections/`: `SecretField`, `ConnectionsTab` (`useConnections`), `ConnectStep`; `SettingsSheet.tsx`, `SetupFlow.tsx`, `SetupStepsList.tsx`: the wiring. `packages/protocol/src/client.ts`: `ConnectionsClient`; `views.ts`: the view types.
 - Tests: `packages/shell/test/broker/`, `packages/shell/test/secrets/`, `connections-surface.test.ts`, `setup-steps.test.ts`, `test-hooks.test.ts`; `packages/harness-sdk/test/secrets.test.ts`, `setup.test.ts`; `packages/ui/test/connections-client.test.ts`, `connections-ui.test.tsx`, `setup-connect.test.tsx`; `packages/e2e/tests/connections.spec.ts`.

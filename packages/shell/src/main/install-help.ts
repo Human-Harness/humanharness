@@ -1,5 +1,5 @@
 import type { EngineDef } from "@humanharness/engines";
-import type { EngineOption, SetupStep } from "@humanharness/ui/client";
+import type { EngineOption, SetupStep } from "@humanharness/protocol";
 
 /**
  * The engine's official install command, for the user to copy and run themselves. Only this text is

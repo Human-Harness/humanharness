@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
 import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID, refusedShape } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
-import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, TaskStatus } from "@humanharness/ui/client";
+import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, TaskStatus } from "@humanharness/protocol";
 import { MAIN_SCOPE, isCanonicalPath, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
 import { INDEX_NOTES_MAX, LABEL_MAX, READS_MAX, START_ITEMS_MAX } from "./context-record";
 import { withTasksFile } from "./lane-store";

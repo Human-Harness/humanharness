@@ -5,7 +5,7 @@ import type { Effort, ModelProfile } from "@humanharness/engines";
 import type { Tier } from "@humanharness/harness-sdk";
 import { MEASURED_MIN, type MeasuredCosts } from "@humanharness/material/light";
 import type { LimitWindow } from "@humanharness/runtime";
-import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/ui/client";
+import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/protocol";
 
 /** The task's profile (plan 4a's `humanharness run` calibrates tiers from these) and what the engine said it ran. */
 interface ProfileFields {

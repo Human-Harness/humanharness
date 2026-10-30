@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
-import type { FolderProblem, MoveError } from "@humanharness/ui/client";
+import type { FolderProblem, MoveError } from "@humanharness/protocol";
 import { isProfileId, relativizeNoteFiles } from "@humanharness/workspace";
 import { pluginStateKey } from "./plugin-state";
 

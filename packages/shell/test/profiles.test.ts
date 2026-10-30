@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { type DataRecord, PROFILE_COLORS, z } from "@humanharness/harness-sdk";
 import { ProfileStore } from "@humanharness/workspace";
-import type { AppState } from "@humanharness/ui/client";
+import type { AppState } from "@humanharness/protocol";
 import { DataUnavailable } from "../src/main/data-requests";
 import { Profiles, type ProfilesDeps, profileResult } from "../src/main/profiles";
 import { ProfileSwitch } from "../src/main/profile-switch";

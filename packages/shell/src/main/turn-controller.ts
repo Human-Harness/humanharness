@@ -12,7 +12,7 @@ import {
   type TurnScope,
   fail,
 } from "@humanharness/runtime";
-import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
+import type { ChatEntry, SendOptions } from "@humanharness/protocol";
 import { TurnRecorder } from "./chat-log";
 import { withEngine } from "./scope-access";
 import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";

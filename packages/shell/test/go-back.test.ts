@@ -1,5 +1,5 @@
 import { createI18n } from "@humanharness/i18n";
-import type { FileRestorePrompt, HistoryTaskView } from "@humanharness/ui/client";
+import type { FileRestorePrompt, HistoryTaskView } from "@humanharness/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { CANCELLED, GO_BACK_CHANNELS, type GoBackAsk, type GoBackDeps, askNatively, dialogSafe, goBackHandlers, goBackText } from "../src/main/go-back";
 

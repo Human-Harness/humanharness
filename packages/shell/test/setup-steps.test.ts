@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { type HarnessSetupStep, type SetupFormStep, defineHarness, setupFormSpec, z } from "@humanharness/harness-sdk";
-import type { SettingsResult, SetupStepsState } from "@humanharness/ui/client";
+import type { SettingsResult, SetupStepsState } from "@humanharness/protocol";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
 import { SetupSteps, recordSetup, setupStepViews } from "../src/main/setup-steps";
 

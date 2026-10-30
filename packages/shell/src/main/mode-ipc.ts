@@ -1,5 +1,5 @@
 import { MODE_ID } from "@humanharness/harness-sdk";
-import type { ModeChoice, ModeResult } from "@humanharness/ui/client";
+import type { ModeChoice, ModeResult } from "@humanharness/protocol";
 
 export interface ChooseModeDeps {
   quitting(): boolean;

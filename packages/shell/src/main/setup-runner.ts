@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import type { EngineDef } from "@humanharness/engines";
-import type { SetupOutput, SetupStep } from "@humanharness/ui/client";
+import type { SetupOutput, SetupStep } from "@humanharness/protocol";
 import type { CliCommand } from "./engine-command";
 
 export interface ProcessCommand {

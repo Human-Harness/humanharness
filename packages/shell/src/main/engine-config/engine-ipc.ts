@@ -1,6 +1,7 @@
 import type { EngineApproval, ScopeStore } from "@humanharness/workspace";
 import { ENGINE_PREFIX, isScopeId } from "@humanharness/workspace";
-import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView, EngineSkillView } from "@humanharness/ui/client";
+import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView, EngineSkillView } from "@humanharness/protocol";
+import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import { engineApprovalTag } from "./approval";
 import type { Hooks } from "./clean";
 import { agentFromMarkdown, parseFrontmatter } from "./frontmatter";
@@ -18,7 +19,7 @@ export type { EngineConfigView };
 // pasted back, no longer verifies.
 
 const HASH = /^[0-9a-f]{64}$/;
-const CHANGED = "hh:engineConfigChanged";
+const CHANGED = "hh:engineConfigChanged" satisfies PushChannel;
 const SCOPES_FILE = ".harness/scopes.json";
 
 export interface EngineIpcDeps {
@@ -34,7 +35,7 @@ export interface EngineIpcDeps {
   codexLimit(): boolean;
   /** Decision 10: the engine the person chose ("" before one is), so the screen marks what it leaves out. */
   activeEngine(): Promise<string>;
-  send(channel: string, value: unknown): void;
+  send(channel: PushChannel, value: unknown): void;
   now?(): Date;
 }
 
@@ -214,7 +215,7 @@ function engineConfigView(scope: string, config: EngineConfig, approval: EngineA
  * The Engine config channels (hatches spec §5.3), registered only for a harness that declares `enginePresets` (D0).
  * Every id from the window is checked here (E10): a registered, active scope; a hash of 64 lowercase hex characters.
  */
-export function registerEngineIpc(handle: (channel: string, fn: (...args: never[]) => unknown) => void, d: EngineIpcDeps): EngineIpc {
+export function registerEngineIpc(handle: (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void, d: EngineIpcDeps): EngineIpc {
   // One approval or revoke at a time: each reads the folder and writes scopes.json.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {

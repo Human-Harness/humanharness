@@ -1,4 +1,4 @@
-import type { SetupStep } from "@humanharness/ui/client";
+import type { SetupStep } from "@humanharness/protocol";
 
 export interface SwitchDeps {
   /** A turn is starting or running. */

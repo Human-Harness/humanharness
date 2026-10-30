@@ -186,7 +186,7 @@ describe("hatches IPC surface (hatches D0)", () => {
       return [...text.slice(at, text.indexOf(";", at)).matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
     };
     const picker = union(await read("linked-folders.ts"), "LinkRefusal");
-    const view = union(await fs.readFile(path.resolve(__dirname, "../../ui/src/client.ts"), "utf8"), "LinkRefusalView");
+    const view = union(await fs.readFile(path.resolve(__dirname, "../../protocol/src/views.ts"), "utf8"), "LinkRefusalView");
     expect(picker.length).toBeGreaterThan(10);
     expect(view).toEqual(expect.arrayContaining(picker));
     const en = JSON.parse(await fs.readFile(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8")) as { hatches: { refused: Record<string, string> } };

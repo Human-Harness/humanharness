@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HistoryTask } from "@humanharness/workspace";
-import { RESTORE_POINT, RESTORE_TASK } from "@humanharness/ui/client";
+import { RESTORE_POINT, RESTORE_TASK } from "@humanharness/protocol";
 import { historyView, isSha } from "../src/main/history-view";
 
 const at = (iso: string) => new Date(iso);

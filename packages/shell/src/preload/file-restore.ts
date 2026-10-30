@@ -1,11 +1,12 @@
-import type { FileRefusal, FileRestoreResult } from "@humanharness/ui/client";
+import type { FileRefusal, FileRestoreResult } from "@humanharness/protocol";
+import type { InvokeArgs, InvokeChannel, InvokeResult } from "@humanharness/protocol/channels";
 
-export type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>;
+export type Invoke = (channel: InvokeChannel, ...args: unknown[]) => Promise<unknown>;
 
 /** `client.files.timeline` and `client.files.diff`: main's answer, or "failed" when the invoke rejects (data, never a throw). */
-export function askFile<T>(invoke: Invoke, channel: "hh:fileTimeline" | "hh:fileDiff", ...args: unknown[]): Promise<T | { ok: false; reason: "failed" }> {
+export function askFile<C extends "hh:fileTimeline" | "hh:fileDiff">(invoke: Invoke, channel: C, ...args: InvokeArgs<C>): Promise<InvokeResult<C> | { ok: false; reason: "failed" }> {
   return invoke(channel, ...args).then(
-    (v) => v as T,
+    (v) => v as InvokeResult<C>,
     () => ({ ok: false as const, reason: "failed" as const }),
   );
 }

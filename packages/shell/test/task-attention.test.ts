@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { TaskSummary } from "@humanharness/ui/client";
+import type { TaskSummary } from "@humanharness/protocol";
 import { EventEmitter } from "node:events";
 import { keepNotification, TaskAttention, type TaskAttentionDeps, WAITING_BODY } from "../src/main/task-attention";
 

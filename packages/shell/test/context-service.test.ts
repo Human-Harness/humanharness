@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { ContextItem, ContextRead } from "@humanharness/ui/client";
+import type { ContextItem, ContextRead } from "@humanharness/protocol";
 import { PINS_MAX, loadContext, saveContext } from "@humanharness/workspace";
 import { ContextService, type ContextDeps, shown } from "../src/main/context";
 

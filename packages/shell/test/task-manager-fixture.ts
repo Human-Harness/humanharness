@@ -1,7 +1,7 @@
 import type { ModelProfile } from "@humanharness/engines";
 import type { HarnessPhase, HarnessTimeBox, SavedNote } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
-import type { TaskTurnNotice, TaskView } from "@humanharness/ui/client";
+import type { TaskTurnNotice, TaskView } from "@humanharness/protocol";
 import type { NoteMeta } from "@humanharness/workspace";
 import { type TaskDeps, TaskManager } from "../src/main/task-manager";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";

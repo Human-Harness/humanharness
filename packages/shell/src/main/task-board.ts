@@ -1,5 +1,5 @@
 import type { ParallelCaps } from "@humanharness/harness-sdk";
-import type { TaskSummary, TaskView } from "@humanharness/ui/client";
+import type { TaskSummary, TaskView } from "@humanharness/protocol";
 import { APP_SCOPE, isScopeId } from "@humanharness/workspace";
 import { type TasksFileStore, withTasksFile } from "./lane-store";
 import type { EngineHold } from "./parallel-config";

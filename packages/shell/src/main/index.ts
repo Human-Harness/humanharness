@@ -105,7 +105,8 @@ import {
   type TextSize,
   isConfigured,
   stepTextSize,
-} from "@humanharness/ui/client";
+} from "@humanharness/protocol";
+import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import {
   APP_SCOPE,
   DATA_CHANGE_PREFIX,
@@ -609,7 +610,7 @@ const documentSessions: DocumentSessions = new DocumentSessions(
 );
 
 /** Sends to one window by its webContents id, when it is still there. */
-function sendToContents(id: number, channel: string, value: unknown) {
+function sendToContents(id: number, channel: PushChannel, value: unknown) {
   try {
     const to = webContents.fromId(id);
     if (to && !to.isDestroyed()) to.send(channel, value);
@@ -1208,7 +1209,7 @@ async function openHistory(): Promise<History | null> {
   return standaloneHistory(JSON.stringify({ folder: baseOf(c), ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
 }
 
-function sendToWindow(channel: string, value: unknown) {
+function sendToWindow(channel: PushChannel, value: unknown) {
   try {
     if (window && !window.isDestroyed()) window.webContents.send(channel, value);
   } catch (err) {
@@ -2288,17 +2289,22 @@ function linkedRuntimeOptions(): Pick<RuntimeOptions, "instructionLinked" | "lin
   };
 }
 
-/** Registers an IPC handler that only answers the app's own page. */
-function handle(channel: string, fn: (...args: never[]) => unknown) {
+/** Registers an IPC handler that only answers the app's own page; only table channels (replaceable parts §5.3). */
+function handle(channel: InvokeChannel, fn: (...args: never[]) => unknown) {
   handleFrom(channel, (_sender, ...args) => fn(...(args as never[])));
 }
 
 /** `handle`, also told which window asked (whatever is kept per window, such as the reader's watches). */
-function handleFrom(channel: string, fn: (sender: WebContents, ...args: unknown[]) => unknown) {
+function handleFrom(channel: InvokeChannel, fn: (sender: WebContents, ...args: unknown[]) => unknown) {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!event.senderFrame || !appUrl(event.senderFrame.url)) throw new Error("Unexpected sender");
     return fn(event.sender, ...args);
   });
+}
+
+/** `handle` for a module's handler map; a key outside the table fails to compile. */
+function handleAll<K extends InvokeChannel>(handlers: Record<K, (...args: never[]) => unknown>) {
+  for (const channel of Object.keys(handlers) as K[]) handle(channel, handlers[channel]);
 }
 
 /**
@@ -2812,12 +2818,12 @@ function registerIpc() {
   });
   handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
-  for (const [channel, fn] of Object.entries(reviewHandlers(reviews, () => harness.permissions.edit === "folder"))) handle(channel, fn);
+  handleAll(reviewHandlers(reviews, () => harness.permissions.edit === "folder"));
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
-  for (const [channel, fn] of Object.entries(fileHandlers(fileTimelines))) handle(channel, fn);
-  for (const [channel, fn] of Object.entries(contextHandlers(contextSvc))) handle(channel, fn);
+  handleAll(fileHandlers(fileTimelines));
+  handleAll(contextHandlers(contextSvc));
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
-  if (translation) for (const [channel, fn] of Object.entries(languageHandlers(translation))) handle(channel, fn);
+  if (translation) handleAll(languageHandlers(translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   const historyGroups = async () => {
@@ -2875,7 +2881,7 @@ function registerIpc() {
     file: fileTimelines,
   });
   // Every go-back but "Undo this task" as master registers it; that one also undoes by paths below.
-  for (const [channel, fn] of Object.entries(goBacks)) if (channel !== "hh:restoreTask") handleFrom(channel, fn);
+  for (const channel of Object.keys(goBacks) as (keyof typeof goBacks)[]) if (channel !== "hh:restoreTask") handleFrom(channel, goBacks[channel]);
   // The panel's rows; with tracked linked folders, a task that changed only one of them too (hatches spec §3.4), so it
   // can be undone. Without linked folders, exactly the work folder's (D0); a linked folder that can't be read adds none.
   handle("hh:historyTasks", async () => {

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { type Collection, type DataRecord, type InputIssue, inputIssues } from "@humanharness/harness-sdk";
 import { ProfileStore, cleanProfileTitle, isProfileId, prepareFolder, profileDir } from "@humanharness/workspace";
-import type { AppState, ProfileRefusal, ProfileResult, ProfilesState } from "@humanharness/ui/client";
+import type { AppState, ProfileRefusal, ProfileResult, ProfilesState } from "@humanharness/protocol";
 import { DataUnavailable } from "./data-requests";
 import { profileOfBase } from "./profile-base";
 import type { ProfileSwitchResult } from "./profile-switch";

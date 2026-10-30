@@ -1,6 +1,6 @@
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
-import type { ContextItem } from "@humanharness/ui/client";
+import type { ContextItem } from "@humanharness/protocol";
 import {
   PIN_INLINE_MAX_BYTES,
   type Pin,

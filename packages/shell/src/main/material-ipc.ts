@@ -1,7 +1,7 @@
 import path from "node:path";
 import { type Collection, type HarnessMaterial, MATERIAL_STAGES, type Tier, hasEnginePresets, hasMaterial, materialStageKey, stageTier } from "@humanharness/harness-sdk";
 import { LINK_MAX_ITEMS, type LinkItem, MAX_PAGES } from "@humanharness/material/light";
-import type { MaterialInfo, MaterialResult } from "@humanharness/ui/client";
+import type { MaterialInfo, MaterialResult } from "@humanharness/protocol";
 import { type HistoryKeep, appHistoryKeep } from "@humanharness/workspace";
 
 // The material pieces of the main process that every harness runs at start: small and free of the material service

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import type { SavedNote, Tier } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
-import type { ModeChoice, TaskView } from "@humanharness/ui/client";
+import type { ModeChoice, TaskView } from "@humanharness/protocol";
 import type { Note, NoteMeta } from "@humanharness/workspace";
 import { TaskManager, type TurnEnd } from "../src/main/task-manager";
 import { CLOSE_PROMPT, closePrompt, modePrompt, modeSection, recommendSection, resumeMessage } from "../src/main/task-prompts";

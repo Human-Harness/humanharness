@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { EngineDef, ModelChoice } from "@humanharness/engines";
-import type { EngineStatus } from "@humanharness/ui/client";
+import type { EngineStatus } from "@humanharness/protocol";
 
 /** A fake engine for the end-to-end tests: the command to run instead of the real CLI. */
 export interface TestEngine {

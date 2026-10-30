@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PluginSurfaceView } from "@humanharness/ui/client";
+import type { PluginSurfaceView } from "@humanharness/protocol";
 import { type Ctx, QUEUES, bundled, setup, until } from "./plugins-fixtures";
 
 const TRIAGE = {

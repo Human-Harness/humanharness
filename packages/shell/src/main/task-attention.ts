@@ -1,4 +1,4 @@
-import type { TaskSummary } from "@humanharness/ui/client";
+import type { TaskSummary } from "@humanharness/protocol";
 import { ATTENTION_LIMITS, type AttentionStore } from "@humanharness/workspace";
 
 /** The notification's body: the same text as the window's `parallel.waitingBody` (main has no i18n; plan 5a: English). */

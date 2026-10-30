@@ -1,6 +1,6 @@
 import { type ActionLike, PRE_TOKENS_DEFAULT } from "@humanharness/harness-sdk";
 import type { ToolCallView } from "@humanharness/runtime";
-import type { ContextItem } from "@humanharness/ui/client";
+import type { ContextItem } from "@humanharness/protocol";
 import { type StepRegistry, runPreSteps } from "./pre-steps";
 import { preparedSection } from "./prepared-section";
 import type { ToolRegistry } from "./tool-registry";

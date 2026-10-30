@@ -15,7 +15,7 @@ import {
   restoreTaskWithLinked,
 } from "../src/main/linked-restore";
 import { undoRefusalOf } from "../src/main/tasks-ipc";
-import type { HistoryTaskView } from "@humanharness/ui/client";
+import type { HistoryTaskView } from "@humanharness/protocol";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-lrestore-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

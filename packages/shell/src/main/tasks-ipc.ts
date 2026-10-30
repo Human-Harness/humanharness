@@ -1,4 +1,4 @@
-import type { TasksState, UndoRefusal } from "@humanharness/ui/client";
+import type { TasksState, UndoRefusal } from "@humanharness/protocol";
 import type { PartialRestore } from "./linked-restore";
 import type { RestoreByPaths } from "./restore-paths";
 

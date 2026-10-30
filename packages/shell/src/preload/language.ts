@@ -1,7 +1,8 @@
-import type { GeneratedStrings, LanguageChoose, LanguageClient, LanguageStart, LanguageState } from "@humanharness/ui/client";
+import type { GeneratedStrings, LanguageChoose, LanguageClient, LanguageStart, LanguageState } from "@humanharness/protocol";
+import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import type { Invoke } from "./context";
 
-type Subscribe = (channel: string, listener: (value: unknown) => void) => () => void;
+type Subscribe = (channel: PushChannel, listener: (value: unknown) => void) => () => void;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** A minimal shape check: enough that the screens can read it without a throw. */
@@ -22,7 +23,7 @@ const onlyStrings = (v: unknown): GeneratedStrings =>
 
 /** `client.language` (language spec): every answer is data, a rejected invoke included; the same fallbacks as main. */
 export function languageClient(invoke: Invoke, subscribe: Subscribe): LanguageClient {
-  const ask = <T>(fallback: T, ok: (v: unknown) => boolean, channel: string, ...args: unknown[]): Promise<T> =>
+  const ask = <T>(fallback: T, ok: (v: unknown) => boolean, channel: InvokeChannel, ...args: unknown[]): Promise<T> =>
     invoke(channel, ...args).then(
       (v) => (ok(v) ? (v as T) : fallback),
       () => fallback,

@@ -164,7 +164,7 @@ A harness without `documents` still gets, as the spec says (Q1–Q3): the "Writi
 
 ## Dependencies
 
-All in `@humanharness/ui`: `unified`, `remark-parse`, `remark-gfm`, `lowlight`, `highlight.js` (pinned `~11.11.0`, one copy with lowlight; only its grammar files), `mermaid` 12 (lazy), `@types/mdast` and `@types/hast` (dev). `packages/ui/src/client.ts` must never import any of them: the main process imports `@humanharness/ui/client`. Mermaid brings `elkjs`, under EPL-2.0: list it in the third-party notices when the app is packaged.
+All in `@humanharness/ui`: `unified`, `remark-parse`, `remark-gfm`, `lowlight`, `highlight.js` (pinned `~11.11.0`, one copy with lowlight; only its grammar files), `mermaid` 12 (lazy), `@types/mdast` and `@types/hast` (dev). `packages/protocol` and `packages/ui/src/client.ts` must never import any of them: the contract stays renderer- and preload-safe. Mermaid brings `elkjs`, under EPL-2.0: list it in the third-party notices when the app is packaged.
 
 ## Known gaps
 

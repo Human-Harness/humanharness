@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
-import type { LinkedHistoryView } from "@humanharness/ui/client";
+import type { LinkedHistoryView } from "@humanharness/protocol";
 import { ScopeStore, scopesFile } from "@humanharness/workspace";
 import { type LinkSigning, linkTag, linkTagValid, linkedSigning, registerLinkedIpc, signedLinks } from "../src/main/linked-ipc";
 import { linkedHistoryDir } from "../src/main/linked-history";

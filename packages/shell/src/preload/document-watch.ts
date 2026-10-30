@@ -1,7 +1,9 @@
-/** The part of `ipcRenderer` the reader's watches use (a fake in the tests). */
+import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
+
+/** The part of `ipcRenderer` the reader's watches use (a fake in the tests), on table channels only. */
 export interface WatchIpc {
-  on(channel: string, handler: (event: unknown, value: unknown) => void): void;
-  invoke(channel: string, ...args: unknown[]): Promise<unknown>;
+  on(channel: PushChannel, handler: (event: unknown, value: unknown) => void): void;
+  invoke(channel: InvokeChannel, ...args: unknown[]): Promise<unknown>;
 }
 
 /** How often one subscription watches again after main ended its watch (a cap, so evictions never ping-pong). */

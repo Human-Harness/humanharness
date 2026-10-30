@@ -1,7 +1,6 @@
-import type { BackendClient, BackendState } from "@humanharness/ui/client";
-import type { Invoke } from "./context";
-
-type Subscribe = (channel: string, listener: (value: unknown) => void) => () => void;
+import type { BackendClient, BackendState } from "@humanharness/protocol";
+import type { InvokeArgs, InvokeChannel, InvokeResult } from "@humanharness/protocol/channels";
+import type { invoke as ipcInvoke, subscribe as ipcSubscribe } from "./ipc";
 
 const STATES: readonly unknown[] = ["stopped", "starting", "running", "failed"] satisfies BackendState[];
 
@@ -16,26 +15,23 @@ function plainError(err: unknown): Error {
 }
 
 /** `client.backend` (hatches spec §4.2): main's channels, registered only for a harness with `backend`. */
-export function backendClient(invoke: Invoke, subscribe: Subscribe): BackendClient {
-  const ask = <T>(channel: string, ...args: unknown[]): Promise<T> =>
-    invoke(channel, ...args).then(
-      (v) => v as T,
-      (err: unknown) => {
-        throw plainError(err);
-      },
-    );
+export function backendClient(invoke: typeof ipcInvoke, subscribe: typeof ipcSubscribe): BackendClient {
+  const ask = <C extends InvokeChannel>(channel: C, ...args: InvokeArgs<C>): Promise<InvokeResult<C>> =>
+    invoke(channel, ...args).catch((err: unknown) => {
+      throw plainError(err);
+    });
   return {
-    call: (method, params) => ask<unknown>("hh:backendCall", method, params),
+    call: (method, params) => ask("hh:backendCall", method, params),
     // One hh:backendEvent subscription per listener, filtered by its event name.
     on: (event, listener) =>
       subscribe("hh:backendEvent", (m) => {
         if (typeof m === "object" && m !== null && (m as { event?: unknown }).event === event) listener((m as { data?: unknown }).data);
       }),
-    state: () => ask<BackendState>("hh:backendState"),
+    state: () => ask("hh:backendState"),
     onState: (listener) =>
       subscribe("hh:backendStateChange", (s) => {
         if (STATES.includes(s)) listener(s as BackendState);
       }),
-    restart: () => ask<void>("hh:backendRestart").then(() => undefined),
+    restart: () => ask("hh:backendRestart").then(() => undefined),
   };
 }

@@ -5,7 +5,7 @@ import path from "node:path";
 import { type ActionLike, type HarnessSecret, type JobStep, type PermissionsOverride, type ToolsManifest, narrowPermissions } from "@humanharness/harness-sdk";
 import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { Event, ToolCallView } from "@humanharness/runtime";
-import type { ToolsInfo } from "@humanharness/ui/client";
+import type { ToolsInfo } from "@humanharness/protocol";
 import type { AttentionStore, HistoryTrailer } from "@humanharness/workspace";
 import type { BrokerDataOp } from "../broker/broker";
 import { BROKER_LIMITS } from "../broker/broker-checks";

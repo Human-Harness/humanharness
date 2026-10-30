@@ -1,7 +1,7 @@
 import nodeFs, { type FSWatcher, promises as fs } from "node:fs";
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
-import type { DocumentRead } from "@humanharness/ui/client";
+import type { DocumentRead } from "@humanharness/protocol";
 import { type CappedRead, readCapped } from "@humanharness/workspace";
 import { stillSafe } from "./open-path";
 

@@ -38,6 +38,7 @@ import {
   workerRunner,
 } from "@humanharness/material";
 import { APP_SCOPE, MATERIAL_DIR, isScopeId } from "@humanharness/workspace";
+import type { PushChannel } from "@humanharness/protocol/channels";
 import type { Fetched } from "./material-fetch";
 
 /** One source as the window shows it (material spec §11). */
@@ -86,7 +87,7 @@ export interface MaterialDeps {
   /** The main process's open dialog; null when cancelled. */
   pickFiles(): Promise<string[] | null>;
   fetchLink(url: string): Promise<Fetched>;
-  send(channel: string, value: unknown): void;
+  send(channel: PushChannel, value: unknown): void;
   provider(): Promise<string>;
   window(): Promise<{ kind: string; utilization: number } | null>;
   /** After a change on disk: the queue looks for work (Task 17), the history records it. */

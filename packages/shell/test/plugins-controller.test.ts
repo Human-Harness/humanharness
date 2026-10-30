@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { secretForms } from "@humanharness/harness-sdk/plugin-fixtures";
-import type { PluginReview } from "@humanharness/ui/client";
+import type { PluginReview } from "@humanharness/protocol";
 import { attentionStores } from "../src/main/attention-stores";
 import { type Ctx, HIDDEN, QUEUES, TEAM, bundled, files, setup, tmp, until, writePlugin } from "./plugins-fixtures";
 

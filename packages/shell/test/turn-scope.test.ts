@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Event, HarnessRuntime } from "@humanharness/runtime";
-import type { ChatEntry } from "@humanharness/ui";
+import type { ChatEntry } from "@humanharness/protocol";
 import { TurnController } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 

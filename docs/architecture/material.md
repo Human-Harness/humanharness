@@ -129,7 +129,7 @@ Paths come from `packages/workspace/src/layout.ts`. `<base>` is `baseOf(config)`
 - `MaterialPanel` (`packages/ui/src/MaterialPanel.tsx`, `useMaterial`) sits in the flow side panel after the notes, only with `state.material` and an open scope (`main` without scopes), keyed by scope. It offers "Add a file" and "Add a link", one status line per source (with Remove and its confirm), waiting cards (the estimate, the window share, the privacy line, a page range, the spreadsheet choice, the full review), question cards, "What the check found", "Try again", the grounding choice (only when `canChange`), and "No material yet for: …" (coverage, only with `items`, hidden while a source is validating or the sheet or links are due). Adding and answering wait while a turn runs.
 - A harness replaces it with `HarnessApp materialPanel` (a component taking `MaterialPanelProps`: `client`, `scope`, `info`, `disabled`).
 - `AppState.material` (`MaterialInfo`: `accepts`, `items`, `grounding`, `maxPages`), absent without material.
-- `client.material` (`packages/ui/src/client.ts`, preload `hh:material*`; results travel as data, never thrown):
+- `client.material` (`packages/protocol/src/client.ts`, preload `hh:material*`; results travel as data, never thrown):
   - `list(scope)`: the scope's `MaterialView` (sources, grounding, provider, usage window, `uncovered`); null without material.
   - `add(scope)`: the main process's file dialog, then intake of each file picked (`{ added, refused }`).
   - `addLink(scope, url)`: fetched once with Node's `fetch` (no cookies), http(s) only, public addresses only (checked with `dns.lookup`, again on each of at most 5 manual redirects), at most `MAX_BYTES` within `FETCH_TIMEOUT_MS` (30 s) (`material-fetch.ts`).

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TaskContext } from "@humanharness/ui/client";
+import type { TaskContext } from "@humanharness/protocol";
 import { askContext, contextListener } from "../src/preload/context";
 
 describe("client.context in the preload (context-panel spec §5.2)", () => {

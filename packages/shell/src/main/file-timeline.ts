@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isMarkdownPath, refusedShape } from "@humanharness/harness-sdk/documents";
-import type { FileDiffResult, FileRefusal, FileRestoreAnswer, FileRestorePromptResult, FileTimelineResult, TimelineEntry } from "@humanharness/ui/client";
+import type { FileDiffResult, FileRefusal, FileRestoreAnswer, FileRestorePromptResult, FileTimelineResult, TimelineEntry } from "@humanharness/protocol";
 import {
   type DiffSide,
   FILE_RESTORE_PREFIX,

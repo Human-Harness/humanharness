@@ -1,4 +1,5 @@
-import type { ReviewSummary } from "@humanharness/ui/client";
+import type { ReviewSummary } from "@humanharness/protocol";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { ReviewService } from "./reviews";
 
 export const REVIEW_CHANNELS = [
@@ -11,7 +12,7 @@ export const REVIEW_CHANNELS = [
   "hh:reviewSend",
   "hh:reviewApprove",
   "hh:reviewApprovedText",
-] as const;
+] as const satisfies readonly InvokeChannel[];
 
 export type ReviewChannel = (typeof REVIEW_CHANNELS)[number];
 

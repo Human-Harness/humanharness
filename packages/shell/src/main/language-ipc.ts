@@ -1,7 +1,8 @@
 import { offeredLanguage } from "@humanharness/harness-sdk/language";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { TranslationService } from "./translation";
 
-export const LANGUAGE_CHANNELS = ["hh:languageState", "hh:languageChoose", "hh:languageTranslate", "hh:languageCancel", "hh:languageStrings"] as const;
+export const LANGUAGE_CHANNELS = ["hh:languageState", "hh:languageChoose", "hh:languageTranslate", "hh:languageCancel", "hh:languageStrings"] as const satisfies readonly InvokeChannel[];
 export type LanguageChannel = (typeof LANGUAGE_CHANNELS)[number];
 
 /** The window's harness map: a plain object, else none (the service bounds and flattens it). */

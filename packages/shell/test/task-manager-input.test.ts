@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import { type InputBlock, answerMessage, defineBlock, z } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
-import type { TaskView } from "@humanharness/ui/client";
+import type { TaskView } from "@humanharness/protocol";
 import { type TaskDeps, TaskManager } from "../src/main/task-manager";
 import { CHECKPOINT_PROMPT } from "../src/main/task-prompts";
 import { TaskStore, type TasksFile, emptyTasks } from "../src/main/task-store";

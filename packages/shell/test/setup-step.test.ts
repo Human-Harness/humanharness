@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SetupOutput } from "@humanharness/ui/client";
+import type { SetupOutput } from "@humanharness/protocol";
 import { EngineGuards } from "../src/main/engine-guards";
 import { requireNoticeForChoice, requireNoticeForStep, requireNoticeForTurn } from "../src/main/notice-policy";
 import type { RunningSetup } from "../src/main/setup-runner";

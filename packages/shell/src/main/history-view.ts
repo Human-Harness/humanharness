@@ -1,4 +1,4 @@
-import { type HistoryTaskView, NOTE } from "@humanharness/ui/client";
+import { type HistoryTaskView, NOTE } from "@humanharness/protocol";
 import type { HistoryTask } from "@humanharness/workspace";
 
 /** A commit id from the window: 40 lowercase hex characters. */

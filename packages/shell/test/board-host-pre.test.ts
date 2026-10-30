@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
-import type { AppConfig, ChatEntry, ChatNotice, TaskSummary, TasksState } from "@humanharness/ui/client";
+import type { AppConfig, ChatEntry, ChatNotice, TaskSummary, TasksState } from "@humanharness/protocol";
 import { type BoardHostDeps, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
 import { type InputBlock, defineBlock, z } from "@humanharness/harness-sdk";
 import { ChatLog } from "../src/main/chat-log";

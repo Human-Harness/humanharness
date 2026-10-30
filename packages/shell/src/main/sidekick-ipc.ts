@@ -1,6 +1,7 @@
 import { sidekickRecordSchema } from "@humanharness/harness-sdk";
 import { isScopeId } from "@humanharness/workspace";
-import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/protocol";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { SidekickController } from "./sidekick";
 import { SIDEKICK_MAX, type SidekickInput, type SidekickScope } from "./sidekick-store";
 import { IMPORT_MAX_BYTES } from "./sidekick-import";
@@ -34,7 +35,7 @@ function importInput(v: unknown): SidekickImportInput | null {
   return null;
 }
 
-type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
+type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
 type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick" | "list" | "removeSidekick" | "reorder" | "scopeSidekicks" | "setScope">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { ActionCost } from "@humanharness/harness-sdk";
 import type { UsageMeta } from "@humanharness/shell/tasks";
-import type { TurnUsage } from "@humanharness/ui/client";
+import type { TurnUsage } from "@humanharness/protocol";
 
 export const REPORT_PHASES = ["run", "follow-up", "checkpoint", "close"] as const;
 export type ReportPhase = (typeof REPORT_PHASES)[number];

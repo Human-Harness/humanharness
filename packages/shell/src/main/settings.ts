@@ -10,7 +10,7 @@ import {
   settingsValues,
   withSetting,
 } from "@humanharness/harness-sdk";
-import type { SettingsResult, SettingsState } from "@humanharness/ui/client";
+import type { SettingsResult, SettingsState } from "@humanharness/protocol";
 import { APP_SCOPE, type DataContext, DataError, type DataRequest, type DataStore } from "@humanharness/workspace";
 import { DataUnavailable } from "./data-requests";
 

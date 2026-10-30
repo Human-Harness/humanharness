@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { SETTINGS_COLLECTION, dataCollections, settingsSchema, z } from "@humanharness/harness-sdk";
-import type { SettingsState } from "@humanharness/ui/client";
+import type { SettingsState } from "@humanharness/protocol";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
 import { DataUnavailable } from "../src/main/data-requests";
 import { SettingsController } from "../src/main/settings";

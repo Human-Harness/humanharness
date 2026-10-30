@@ -42,7 +42,7 @@ import {
   type TaskView,
   type TimeBoxView,
   nextInPath,
-} from "@humanharness/ui/client";
+} from "@humanharness/protocol";
 import {
   APP_SCOPE,
   type DataContextPart,

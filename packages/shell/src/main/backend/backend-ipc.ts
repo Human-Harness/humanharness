@@ -1,6 +1,7 @@
 import path from "node:path";
 import { BACKEND_CALLS_IN_FLIGHT, BACKEND_LINE_MAX, type BackendInit, type BackendScope, hasBackend } from "@humanharness/harness-sdk";
 import { type LinkedFolderEntry, type ScopeEntry, isProfileId } from "@humanharness/workspace";
+import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import type { BackendLog } from "./backend-log";
 import { isBackendName } from "./backend-protocol";
 import { BackendSupervisor, type BackendState, type SupervisedProcess } from "./backend-supervisor";
@@ -12,7 +13,7 @@ export interface BackendWiringDeps {
   /** Spawns one process (BackendProcess.start on the harness's launcher, entry and folder). */
   startProcess: (init: BackendInit, onEvent: (event: string, data: unknown) => void) => Promise<SupervisedProcess>;
   /** Pushes to the app's window (never throws in main, but a throw here is caught too). */
-  send: (channel: string, value: unknown) => void;
+  send: (channel: PushChannel, value: unknown) => void;
   log: Pick<BackendLog, "write">;
   /** The main process's log (console.error in the app). */
   mainLog: (message: string, err?: unknown) => void;
@@ -62,7 +63,7 @@ export type BackendIpcSupervisor = Pick<BackendSupervisor, "state" | "call" | "r
  * BACKEND_CALLS_IN_FLIGHT calls wait at once.
  */
 export function registerBackendIpc(
-  handle: (channel: string, fn: (...args: never[]) => unknown) => void,
+  handle: (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void,
   d: { supervisor: BackendIpcSupervisor },
 ): void {
   let inFlight = 0;

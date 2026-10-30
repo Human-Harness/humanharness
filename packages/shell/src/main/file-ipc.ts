@@ -1,3 +1,4 @@
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { FileTimelineService } from "./file-timeline";
 
 /** The most paths one `hh:fileCommits` lists; a commit that changed more (a big Start) sends null: "refresh them all". */
@@ -29,7 +30,7 @@ export function commitAnnouncer(send: (paths: string[] | null) => void) {
   };
 }
 
-export const FILE_CHANNELS = ["hh:fileTimeline", "hh:fileDiff"] as const;
+export const FILE_CHANNELS = ["hh:fileTimeline", "hh:fileDiff"] as const satisfies readonly InvokeChannel[];
 export type FileChannel = (typeof FILE_CHANNELS)[number];
 
 const failed = { ok: false as const, reason: "failed" as const };

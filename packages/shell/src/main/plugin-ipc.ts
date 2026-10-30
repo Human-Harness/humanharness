@@ -11,6 +11,7 @@ import type {
   PluginsView,
   PluginTestResult,
 } from "@humanharness/protocol";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { PluginBackendHost } from "./plugin-host";
 import type { PluginsController, PreparedStart } from "./plugins";
 import { ScopeRequired } from "./task-manager";
@@ -50,9 +51,9 @@ export const PLUGIN_IPC_CHANNELS = [
   "hh:pluginsStartPrepared",
   "hh:pluginsCancelPrepared",
   "hh:attentionOpen",
-] as const;
+] as const satisfies readonly InvokeChannel[];
 
-type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
+type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
 type Ctl = Pick<
   PluginsController,
   | "view"

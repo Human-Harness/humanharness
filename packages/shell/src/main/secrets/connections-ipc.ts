@@ -1,12 +1,13 @@
 import type { ConnectionResult } from "@humanharness/protocol";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { ConnectionsController } from "./connections";
 
 /** Settings › Connections (tools spec §9). The push, hh:connectionsChange, goes out from index.ts. */
-export const CONNECTIONS_IPC_CHANNELS = ["hh:connectionsGet", "hh:connectionsSet", "hh:connectionsDelete"] as const;
+export const CONNECTIONS_IPC_CHANNELS = ["hh:connectionsGet", "hh:connectionsSet", "hh:connectionsDelete"] as const satisfies readonly InvokeChannel[];
 /** Test connection (slice 2): registered only when a connect step names a test (D0). */
-export const CONNECTIONS_TEST_CHANNEL = "hh:connectionsTest";
+export const CONNECTIONS_TEST_CHANNEL = "hh:connectionsTest" satisfies InvokeChannel;
 
-type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
+type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
 
 /** A declared key's id (the manifest's pattern); the controller checks it is declared. */
 const ID = /^[a-z][a-z0-9_-]{0,39}$/;

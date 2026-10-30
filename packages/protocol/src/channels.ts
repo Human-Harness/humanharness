@@ -225,8 +225,7 @@ export interface Invoke {
   "hh:languageStrings": (tag: Language, harness: Record<string, unknown>) => unknown;
   "hh:backendCall": BackendClient["call"];
   "hh:backendState": BackendClient["state"];
-  /** `backend.restart` drops main's answer. */
-  "hh:backendRestart": () => unknown;
+  "hh:backendRestart": () => void;
   "hh:engineConfig": EngineConfigClient["get"];
   "hh:engineApprove": EngineConfigClient["approve"];
   "hh:engineRevoke": EngineConfigClient["revoke"];

@@ -3,6 +3,7 @@ import { type ParallelCaps, hasJobs } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
 import { type AppConfig, type BlockAnswer, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/protocol";
 import { type History, type HistoryTrailer, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
+import type { PushChannel } from "@humanharness/protocol/channels";
 import { notePath } from "./app-change";
 import { ChatLog } from "./chat-log";
 import { migrateChats } from "./chat-migration";
@@ -84,7 +85,7 @@ export interface BoardHostDeps {
   /** An event for the window (the focused lane's only). */
   emit(e: Event): void;
   /** A message for the window (`hh:tasks`, `hh:tasksChange`). */
-  send(channel: string, value: unknown): void;
+  send(channel: PushChannel, value: unknown): void;
   /** The task's name as the history shows it. */
   label(t: CurrentTask): string;
   /**

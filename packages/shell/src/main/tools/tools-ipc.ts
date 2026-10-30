@@ -1,14 +1,15 @@
 import { TOOL_ID } from "@humanharness/harness-sdk";
 import type { ToolCallResult, ToolCallView } from "@humanharness/protocol";
 import { isTaskId } from "@humanharness/workspace";
+import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import type { ToolsHost } from "./tools-host";
 
 /** `client.tools` (tools spec §5). Registered only when the harness declares tools (D0). */
-export const TOOLS_IPC_CHANNELS = ["hh:toolsCall", "hh:toolsTrace"] as const;
+export const TOOLS_IPC_CHANNELS = ["hh:toolsCall", "hh:toolsTrace"] as const satisfies readonly InvokeChannel[];
 /** Main to the window: the tools info changed (`ToolsInfo`; sent only when the harness declares tools). */
-export const TOOLS_CHANGE_CHANNEL = "hh:toolsChange";
+export const TOOLS_CHANGE_CHANNEL = "hh:toolsChange" satisfies PushChannel;
 
-type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
+type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
 
 /** A UI call's arguments, as JSON, at most this many bytes. */
 export const TOOLS_IPC_ARGS_MAX_BYTES = 1024 * 1024;

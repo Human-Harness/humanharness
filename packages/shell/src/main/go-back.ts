@@ -8,6 +8,7 @@ import {
   laterTasks,
   timeAgo,
 } from "@humanharness/protocol";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 import { isSha } from "./history-view";
 
 /**
@@ -147,7 +148,7 @@ export interface GoBackDeps<S> {
   };
 }
 
-export const GO_BACK_CHANNELS = ["hh:restore", "hh:restoreTask", "hh:fileRestore"] as const;
+export const GO_BACK_CHANNELS = ["hh:restore", "hh:restoreTask", "hh:fileRestore"] as const satisfies readonly InvokeChannel[];
 export type GoBackChannel = (typeof GO_BACK_CHANNELS)[number];
 
 /**

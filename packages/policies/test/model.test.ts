@@ -13,9 +13,12 @@ describe("DefaultModelPolicy", () => {
     expect(DefaultModelPolicy.pick({ engine: "claude", action: "sidekick", tier: "light", models })).toMatchObject({ tier: "light", model: "haiku" });
   });
 
-  it("with an offer: falls back to a listed model, then fits the effort", () => {
-    const p = DefaultModelPolicy.pick({ engine: "codex", models: { tiers: { codex: { standard: { model: "gpt-9", effort: "max", cap: 200_000 } } } }, offer: { models: [{ id: "gpt-5.5" }], efforts: ["low", "medium", "high"] } });
-    expect(p).toEqual({ engine: "codex", tier: "light", effort: "low", cap: 100_000, fallbackFrom: "gpt-9" });
+  it("with an offer: falls back to a listed model, then fits the effort up and down", () => {
+    const models = { tiers: { codex: { standard: { model: "gpt-9", effort: "max" as const, cap: 200_000 } } } };
+    // Raised: light's "low" is not offered and nothing is below it, so the lowest offered.
+    expect(DefaultModelPolicy.pick({ engine: "codex", models, offer: { models: [{ id: "gpt-5.5" }], efforts: ["medium", "high"] } })).toEqual({ engine: "codex", tier: "light", effort: "medium", cap: 100_000, fallbackFrom: "gpt-9" });
+    // Lowered: the listed model stays, "max" is not offered, so the closest offered below it.
+    expect(DefaultModelPolicy.pick({ engine: "codex", models, offer: { models: [{ id: "gpt-9" }], efforts: ["low", "medium", "high"] } })).toEqual({ engine: "codex", tier: "standard", model: "gpt-9", effort: "high", cap: 200_000 });
   });
 
   it("falls back deep → standard → light → the engine's default, then null", () => {

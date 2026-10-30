@@ -8,7 +8,8 @@ import { type BoardHostDeps, conflictOf, createBoardHost, hostMode } from "../sr
 import { type InputBlock, defineBlock, z } from "@humanharness/harness-sdk";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
-import { TaskStore } from "../src/main/task-store";
+import type { TurnDeps } from "../src/main/turn-controller";
+import { TaskStore, emptyTasks } from "../src/main/task-store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-board-host-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -46,6 +47,10 @@ function host(
     saveOwn?: BoardHostDeps["saveOwn"];
     /** More task deps (Sidekick's hooks, phased actions). */
     taskDeps?: Partial<TaskDeps>;
+    /** Turn deps' descriptors laid over the defaults (a getter stays a getter). */
+    turnDeps?: Partial<TurnDeps>;
+    /** The harness declares scopes. */
+    scoped?: boolean;
   } = {},
 ) {
   const base = fs.mkdtempSync(path.join(root, "b-"));
@@ -57,6 +62,8 @@ function host(
   let asked: ((slot: SlotRef) => Promise<{ id: string } | null>) | null = null;
   const workspace: HarnessWorkspace = {
     history: null as never,
+    linkedHistory: async () => null,
+    linkedRunningPaths: async () => [],
     anyRunning: () => running > 0,
     runningPaths: async () => [],
     refreshInstructions: () => refresh(),
@@ -134,11 +141,14 @@ function host(
       asked = runningTask;
       return workspace;
     },
-    turnDeps: { ensureRuntime: async () => null, chatLog: async () => null, stateBlocks: () => new Set(), emit: () => {} },
+    turnDeps: Object.defineProperties(
+      { ensureRuntime: async () => null, chatLog: async () => null, stateBlocks: () => new Set(), emit: () => {} },
+      Object.getOwnPropertyDescriptors(o.turnDeps ?? {}),
+    ) as TurnDeps,
     checkTurn: async () => {},
     chatLog: async (chat, task) => (o.chatLogNull?.() ? null : new ChatLog(base, config.engineId, chat, task)),
     taskDeps,
-    scoped: () => false,
+    scoped: () => o.scoped === true,
     scopeExists: async () => true,
     emit: (e) => window.push(e),
     send: (channel, value) => sent.push({ channel, value }),
@@ -185,6 +195,29 @@ describe("a lane's note goes into the history alone (parallel spec §5.3)", () =
     expect(writeNote).toHaveBeenCalledWith("write", expect.anything(), expect.anything());
     expect(saveHistory).not.toHaveBeenCalled();
     expect(saveOwn).toHaveBeenCalledWith([".harness/notes/write.md"], "Note: Halves", expect.objectContaining({ task: t.turns[0].slot, action: "write" }));
+  });
+});
+
+describe("a lane reads the turn deps' scopeAccess getter at each turn (hatches L5)", () => {
+  it("a getter that was undefined when the lane opened still gives the lane's next turn its folders", async () => {
+    let access: ((scope: string) => Promise<{ linked: { path: string; mode: "write"; tracked: boolean }[] }>) | undefined;
+    const turnDeps = {} as Partial<TurnDeps>;
+    Object.defineProperty(turnDeps, "scopeAccess", { get: () => access });
+    const t = host({ tasks: 2, turnDeps, scoped: true, taskDeps: { scoped: true } });
+    await new TaskStore(t.base).save({ ...emptyTasks(), open: "app" });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    expect(t.turns[0].options?.scope).toBeUndefined();
+    t.turns[0].end();
+    await a;
+    access = async () => ({ linked: [{ path: "/repo", mode: "write", tracked: true }] });
+    const next = t.h.board.ask("More");
+    await until(() => t.turns.length === 2);
+    expect(t.turns[1].slot).toBe(t.turns[0].slot);
+    expect(t.turns[1].options?.scope).toEqual({ linked: [{ path: "/repo", mode: "write", tracked: true }] });
+    t.turns[1].end();
+    await next;
   });
 });
 

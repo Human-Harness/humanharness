@@ -1,4 +1,9 @@
 import type {
+  EngineApproveResult,
+  EngineConfigClient,
+  EngineConfigView,
+  BackendClient,
+  BackendState,
   AppConfig,
   AppState,
   AttentionTarget,
@@ -13,6 +18,9 @@ import type {
   DataQuery,
   DataRecord,
   DocumentRead,
+  LinkRefusalView,
+  LinkedHistoryView,
+  LinkedView,
   EngineError,
   FileDiffResult,
   FileRestoreAnswer,
@@ -122,6 +130,18 @@ export interface FakeTasks extends TasksClient {
 export interface FakeJobs extends JobsClient {
   run: Mock<JobsClient["run"]>;
   set(jobs: JobSummary[]): void;
+}
+
+/** `client.engineConfig` with spies on approvals and revokes. */
+export interface FakeEngineConfig extends EngineConfigClient {
+  approve: Mock<EngineConfigClient["approve"]>;
+  revoke: Mock<EngineConfigClient["revoke"]>;
+}
+
+/** `client.backend` with a spy on calls and restarts. */
+export interface FakeBackend extends BackendClient {
+  call: Mock<BackendClient["call"]>;
+  restart: Mock<BackendClient["restart"]>;
 }
 
 export class FakeClient implements HarnessClient {
@@ -271,6 +291,96 @@ export class FakeClient implements HarnessClient {
       for (const l of this.jobsListeners) l(jobs);
     },
   };
+  /** The backend's state (hatches spec §4); `backendStateSet` changes it and tells `onState`. */
+  backendState: BackendState = "running";
+  /** What `backend.call` answers, by method; a method without one answers null. */
+  backendAnswers: Record<string, unknown> = {};
+  private backendListeners = new Set<(m: { event: string; data: unknown }) => void>();
+  private backendStateListeners = new Set<(s: BackendState) => void>();
+  /** Like main and the preload: without `state.hatches.backend` every backend call rejects (D0). */
+  private needBackend() {
+    if (!this.state.hatches?.backend) throw new Error("This harness has no backend");
+  }
+  readonly backend: FakeBackend = {
+    call: vi.fn(async (method: string, _params?: unknown) => {
+      this.needBackend();
+      if (this.backendState !== "running") throw new Error("The backend isn't running");
+      return (Object.hasOwn(this.backendAnswers, method) ? this.backendAnswers[method] : undefined) ?? null;
+    }),
+    on: (event, listener) => {
+      const l = (m: { event: string; data: unknown }) => {
+        if (m.event === event) listener(m.data);
+      };
+      this.backendListeners.add(l);
+      return () => void this.backendListeners.delete(l);
+    },
+    state: async () => {
+      this.needBackend();
+      return this.backendState;
+    },
+    onState: (listener) => {
+      this.backendStateListeners.add(listener);
+      return () => void this.backendStateListeners.delete(listener);
+    },
+    restart: vi.fn(async () => {
+      this.needBackend();
+      if (this.backendState === "failed") this.backendStateSet("running");
+    }),
+  };
+  /** The calls made to `backend.call`, as [method, params]. */
+  get backendCalls(): unknown[][] {
+    return this.backend.call.mock.calls;
+  }
+  /** The backend sends `event` (as hh:backendEvent would). */
+  backendEmit(event: string, data: unknown): void {
+    for (const l of this.backendListeners) l({ event, data });
+  }
+  backendStateSet(s: BackendState): void {
+    this.backendState = s;
+    for (const l of this.backendStateListeners) l(s);
+  }
+  /** Engine config views by scope (hatches spec §5.3); `engineConfigSet` replaces one and tells `onChanged`. */
+  engineConfigs: Record<string, EngineConfigView> = {};
+  private engineListeners = new Set<(scope: string | null) => void>();
+  /** Like main and the preload: without `state.hatches.enginePresets` every call rejects (D0). */
+  private needEngine() {
+    if (!this.state.hatches?.enginePresets) throw new Error("This harness has no engine presets");
+  }
+  readonly engineConfig: FakeEngineConfig = {
+    get: async (scope) => {
+      this.needEngine();
+      return Object.hasOwn(this.engineConfigs, scope) ? this.engineConfigs[scope] : null;
+    },
+    // As main: only the hash the view carries now, and never with refusals.
+    approve: vi.fn(async (scope: string, hash: string): Promise<EngineApproveResult> => {
+      this.needEngine();
+      const v = Object.hasOwn(this.engineConfigs, scope) ? this.engineConfigs[scope] : undefined;
+      if (!v || v.hash !== hash) return { ok: false, reason: "changed" };
+      if (v.refusals.length > 0) return { ok: false, reason: "refused" };
+      const view = { ...v, approved: true, approvedAt: "2026-10-28T10:00:00.000Z" };
+      this.engineConfigSet(scope, view);
+      return { ok: true, view };
+    }),
+    // As main: the approval is gone (not "changed"); null without engine config.
+    revoke: vi.fn(async (scope: string): Promise<EngineConfigView | null> => {
+      this.needEngine();
+      const v = Object.hasOwn(this.engineConfigs, scope) ? this.engineConfigs[scope] : undefined;
+      if (!v) return null;
+      const { approvedAt: _at, changed: _changed, ...rest } = v;
+      const view = { ...rest, approved: false };
+      this.engineConfigSet(scope, view);
+      return view;
+    }),
+    onChanged: (listener) => {
+      this.engineListeners.add(listener);
+      return () => void this.engineListeners.delete(listener);
+    },
+  };
+  engineConfigSet(scope: string, view: EngineConfigView | null): void {
+    if (view) this.engineConfigs[scope] = view;
+    else delete this.engineConfigs[scope];
+    for (const l of this.engineListeners) l(scope);
+  }
   get tasks(): TaskView & FakeTasks {
     return Object.assign(Object.create(this.tasksApi) as FakeTasks, this.taskView);
   }
@@ -818,6 +928,16 @@ export class FakeClient implements HarnessClient {
     this.scopeList = this.scopeList.map((s, j) => (j === i ? next : s));
     return next;
   }
+  /** Linked folders by scope id (hatches spec §3.2); `linkedSet` replaces a scope's. */
+  linkedFolders: Record<string, LinkedView[]> = {};
+  linkedUnsupported = false;
+  linkedSet(scope: string, folders: LinkedView[]) {
+    this.linkedFolders = { ...this.linkedFolders, [scope]: folders };
+  }
+  /** What `linkedHistory` answers (the History panel's linked-folder lines). */
+  linkedHistoryAnswer: LinkedHistoryView = { uncovered: [], tasks: {} };
+  /** What the next `linkFolder` "picks": a folder (linked as read and write, tracked), a refusal, or null (cancelled). */
+  linkPickAnswer: { path: string; label?: string; mode?: "read" | "write"; tracked?: boolean } | { refused: LinkRefusalView } | null = null;
   scopes = {
     list: async () => this.scopeList,
     create: async (title: string) => {
@@ -852,6 +972,25 @@ export class FakeClient implements HarnessClient {
         this.scopeListeners.delete(listener);
       };
     },
+    linked: vi.fn(async (scope: string) => ({ folders: this.linkedFolders[scope] ?? [], unsupported: this.linkedUnsupported })),
+    linkFolder: vi.fn(async (scope: string, key: string): Promise<{ linked: LinkedView } | { refused: LinkRefusalView } | null> => {
+      const a = this.linkPickAnswer;
+      if (a === null || "refused" in a) return a;
+      const linked: LinkedView = { key, label: a.label ?? key, path: a.path, mode: a.mode ?? "write", tracked: a.tracked ?? true };
+      this.linkedSet(scope, [...(this.linkedFolders[scope] ?? []), linked]);
+      return { linked };
+    }),
+    unlinkFolder: vi.fn(async (scope: string, key: string, path: string) => {
+      const was = this.linkedFolders[scope] ?? [];
+      if (!was.some((l) => l.key === key && l.path === path)) throw new Error("Unknown linked folder");
+      this.linkedSet(scope, was.filter((l) => !(l.key === key && l.path === path)));
+    }),
+    confirmGit: vi.fn(async (scope: string, key: string, path: string, tracked: boolean) => {
+      const was = this.linkedFolders[scope] ?? [];
+      if (!was.some((l) => l.key === key && l.path === path)) throw new Error("Unknown linked folder");
+      this.linkedSet(scope, was.map((l) => (l.key === key && l.path === path ? { key: l.key, label: l.label, path: l.path, mode: l.mode, tracked } : l)));
+    }),
+    linkedHistory: vi.fn(async () => this.linkedHistoryAnswer),
   };
   /** The fake's data: records by collection, in the order they were put; `dataKey` names the key field. */
   records: Record<string, DataRecord[]> = {};

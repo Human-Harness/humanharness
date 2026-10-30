@@ -72,4 +72,6 @@ export default defineHarness({
   tagline: "How Human Harness works",
   tone: "clear and friendly, for developers; short sentences",
   author: "Marco Zanger",
+  // A small Node process of its own (hatches spec §4): the side panel's Backend section talks to it.
+  backend: "./backend/index.ts",
 });

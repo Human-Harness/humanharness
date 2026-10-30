@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude/transport";
-import type { CommonOptions as TransportOptions, Event, Session } from "../src/contract";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs, ruleUnsafePath } from "../src/claude/transport";
+import type { CommonOptions as TransportOptions, EnginePreset, Event, Session } from "../src/contract";
+import { absoluteSearchPath } from "../src/search-path";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -34,6 +35,54 @@ async function run(t: ClaudeCliTransport, message = "hi", signal = new AbortCont
   await t.turn(message, (e) => events.push(e), signal);
   return events;
 }
+
+describe("PATH on a preset turn (hatches spec §5.3, E2)", () => {
+  it("absoluteSearchPath keeps absolute entries outside the roots; nothing left falls back to /usr/bin:/bin (probe 6)", () => {
+    const r = fs.realpathSync(fs.mkdtempSync(path.join(root, "roots-")));
+    fs.mkdirSync(path.join(r, "work/bin"), { recursive: true });
+    fs.mkdirSync(path.join(r, "Linked"), { recursive: true });
+    const roots = [path.join(r, "work"), path.join(r, "Linked")];
+    expect(absoluteSearchPath(":.:rel/bin:/usr/bin::/bin:./x")).toBe("/usr/bin:/bin");
+    for (const [value, want] of [
+      ["", "/usr/bin:/bin"],
+      [".", "/usr/bin:/bin"],
+      ["~/bin:/usr/bin", "/usr/bin"],
+      ["$HOME/bin:/usr/bin", "/usr/bin"],
+      ["bin:/usr/bin", "/usr/bin"],
+      ["/a::/b:", "/a:/b"],
+      ["./x:/usr/bin", "/usr/bin"],
+      [`${r}/work/bin:/usr/bin`, "/usr/bin"],
+      [`${r}/WORK/bin:/opt/x`, "/opt/x"],
+      [`${r}/work/not-yet/bin:/usr/bin`, "/usr/bin"],
+      [`${r}/work/../Linked/bin:/usr/bin`, "/usr/bin"],
+      [`${r}/work`, "/usr/bin:/bin"],
+      [`${r}/other:/usr/bin`, `${r}/other:/usr/bin`],
+    ] as const) {
+      expect(absoluteSearchPath(value, roots), value).toBe(want);
+    }
+  });
+
+  it("a preset turn's CLI (and its hooks and servers) gets that PATH without the folder and linked folders; D0 keeps it as given", async () => {
+    for (const engine of [{ hash: "a".repeat(64), base: "isolated" as const, servers: [] }, undefined]) {
+      const folder = fs.realpathSync(fs.mkdtempSync(path.join(root, "t-")));
+      const linked = fs.realpathSync(fs.mkdtempSync(path.join(root, "l-")));
+      const dirty = `:.:rel/bin:${folder}/bin:/usr/bin::${linked}/bin:/bin`;
+      const pathFile = path.join(folder, "..", `path-${path.basename(folder)}.txt`);
+      const transport = new ClaudeCliTransport({
+        folder,
+        session: { id: "11111111-1111-1111-1111-111111111111", started: false },
+        mcp: [uiServer],
+        permissions,
+        command: fakeClaudeCommand(),
+        env: { HH_FAKE_SCRIPT: writeScript(root, { steps: [...claudeTextLines("ok"), claudeResultLine(true)] }), HH_FAKE_PATH: pathFile, PATH: dirty },
+        onSessionStarted: () => {},
+      });
+      const scope = { linked: [{ path: linked, mode: "read" as const, tracked: false }], ...(engine ? { engine } : {}) };
+      await transport.turn("hi", () => {}, new AbortController().signal, undefined, scope);
+      expect(fs.readFileSync(pathFile, "utf8"), engine ? "preset" : "D0").toBe(engine ? "/usr/bin:/bin" : dirty);
+    }
+  });
+});
 
 describe("allowedTools", () => {
   it("derives the whitelist from permissions and MCP servers", () => {
@@ -638,5 +687,224 @@ describe("edit paths (parallel spec §5.2)", () => {
     const reader = new StreamJsonReader((e) => events.push(e), () => {});
     reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/w/a.md" } }] } }));
     expect(events).toEqual([{ type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/a.md"], state: "start" }]);
+  });
+});
+
+describe("linked folders (hatches spec §3.3, §3.5)", () => {
+  const base = { session: { id: "a", started: false }, mcp: [], permissions };
+  const scope = { linked: [
+    { path: "/Users/me/code/app", mode: "write" as const, tracked: false },
+    { path: "/Users/me/manuscript", mode: "read" as const, tracked: false },
+  ] };
+  const settingsOf = (args: string[]) => JSON.parse(args[args.indexOf("--settings") + 1]);
+  const denied = (args: string[]) => args[args.indexOf("--disallowedTools") + 1].split(",");
+  const allowed = (args: string[]) => args[args.indexOf("--allowedTools") + 1].split(",");
+
+  it("gives every linked folder file access through one --settings, after the references, never --add-dir", () => {
+    const args = claudeArgs({ ...base, references: ["/opt/docs"], scope });
+    expect(args).not.toContain("--add-dir");
+    expect(args.filter((a) => a === "--settings")).toHaveLength(1);
+    expect(settingsOf(args)).toEqual({ permissions: { additionalDirectories: ["/opt/docs", "/Users/me/code/app", "/Users/me/manuscript"] } });
+  });
+
+  it("denies edits in a read folder, as in a reference folder", () => {
+    expect(denied(claudeArgs({ ...base, scope }))).toEqual(
+      expect.arrayContaining(["Edit(//Users/me/manuscript/**)", "Write(//Users/me/manuscript/**)", "MultiEdit(//Users/me/manuscript/**)"]),
+    );
+    expect(allowed(claudeArgs({ ...base, scope }))).not.toContain("Edit(//Users/me/manuscript/**)");
+  });
+
+  it("allows edits in a write folder but denies its .claude and .git", () => {
+    const args = claudeArgs({ ...base, scope });
+    expect(allowed(args)).toEqual(expect.arrayContaining(["Edit(//Users/me/code/app/**)", "Write(//Users/me/code/app/**)", "MultiEdit(//Users/me/code/app/**)"]));
+    for (const sub of [".claude", ".git"]) {
+      for (const tool of ["Edit", "Write", "MultiEdit"]) expect(denied(args)).toContain(`${tool}(//Users/me/code/app/${sub}/**)`);
+    }
+    expect(denied(args)).not.toContain("Edit(//Users/me/code/app/**)");
+  });
+
+  it("a write folder under edit: none gets no allow rule (the manifest wins)", () => {
+    const args = claudeArgs({ ...base, permissions: { edit: "none", exec: false, web: false }, scope });
+    expect(allowed(args).some((t) => t.includes("/Users/me/code/app"))).toBe(false);
+    expect(denied(args)).toContain("Edit");
+  });
+
+  const UNSAFE = [",", "(", ")", "*", "?", "[", "]", "{", "}", "\\", "\n", "\t", "\x00", "\x7f"];
+  for (const mode of ["read", "write"] as const) {
+    it.each(UNSAFE)(`refuses a ${mode} folder whose name has %j: no rule could spell it`, (ch) => {
+      const linked = [{ path: `/Users/me/a${ch}b`, mode, tracked: false }];
+      expect(() => claudeArgs({ ...base, scope: { linked } })).toThrow(/linked folder/);
+    });
+  }
+
+  it("refuses a relative linked folder, and takes names with spaces, quotes and non-ASCII letters", () => {
+    expect(() => claudeArgs({ ...base, scope: { linked: [{ path: "rel/dir", mode: "read", tracked: false }] } })).toThrow(/linked folder/);
+    const fine = ["/Users/me/My Docs", "/Users/me/Ñandú 📚", "/Users/me/a\"b'c", "/Users/me/x/"];
+    for (const p of fine) expect(ruleUnsafePath(p, "darwin"), p).toBe(false);
+    const args = claudeArgs({ ...base, scope: { linked: [{ path: "/Users/me/My Docs", mode: "read", tracked: false }] } });
+    expect(denied(args)).toContain("Edit(//Users/me/My Docs/**)");
+  });
+
+  it("ruleUnsafePath: a Windows path's backslashes are separators, not syntax", () => {
+    expect(ruleUnsafePath("C:\\Users\\me\\notes", "win32")).toBe(false);
+    expect(ruleUnsafePath("C:\\Users\\me\\notes[1]", "win32")).toBe(true);
+    expect(ruleUnsafePath("/Users/me/a\\b", "darwin")).toBe(true);
+  });
+
+  it("a no-tools or MCP-only session refuses linked folders", () => {
+    expect(() => claudeArgs({ ...base, noTools: true, scope })).toThrow(/linked/);
+    expect(() => claudeArgs({ ...base, mcpOnly: true, scope })).toThrow(/linked/);
+  });
+
+  it("the transport reads the scope per turn: a link reaches the next turn, an unlink drops it", async () => {
+    const { transport, args } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    await transport.turn("one", () => {}, new AbortController().signal, undefined, scope);
+    expect(settingsOf(args()).permissions.additionalDirectories).toEqual(["/Users/me/code/app", "/Users/me/manuscript"]);
+    await transport.turn("two", () => {}, new AbortController().signal, undefined, { linked: [] });
+    expect(args()).not.toContain("--settings");
+  });
+});
+
+describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
+  const o = { session: { id: "abc", started: false }, mcp: [uiServer], permissions };
+  const argAfter = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
+  const preset: EnginePreset = {
+    hash: "a".repeat(64),
+    base: "isolated",
+    settings: {
+      hooks: { Stop: [{ hooks: [{ type: "command", command: "node ./t.js" }] }] },
+      permissions: { allow: ["Bash(npm test)"], deny: ["Bash(rm:*)"] },
+    },
+    servers: [{ name: "scope-lint", command: "node", args: ["./lint.js"], env: {} }],
+    pluginDir: "/u/engine-config/aaa/plugin",
+    agentsFile: "/u/engine-config/aaa/agents.json",
+  };
+
+  it("one --settings: additionalDirectories plus the cleaned preset", () => {
+    const args = claudeArgs({ ...o, references: ["/r"], scope: { linked: [{ path: "/l", mode: "read", tracked: false }], engine: preset } });
+    expect(args.filter((a) => a === "--settings")).toHaveLength(1);
+    expect(JSON.parse(argAfter(args, "--settings"))).toEqual({
+      hooks: preset.settings!.hooks,
+      permissions: { additionalDirectories: ["/r", "/l"], allow: ["Bash(npm test)"], deny: ["Bash(rm:*)"] },
+    });
+  });
+
+  it("a preset alone brings its settings without additionalDirectories; ask rules pass", () => {
+    const engine = { ...preset, settings: { permissions: { ask: ["Bash(git push:*)"] } } };
+    expect(JSON.parse(argAfter(claudeArgs({ ...o, scope: { linked: [], engine } }), "--settings"))).toEqual({ permissions: { ask: ["Bash(git push:*)"] } });
+  });
+
+  it("a preset without settings adds no --settings", () => {
+    const { settings: _, ...engine } = preset;
+    expect(claudeArgs({ ...o, scope: { linked: [], engine } })).not.toContain("--settings");
+    expect(claudeArgs({ ...o, scope: { linked: [], engine: { ...engine, settings: { permissions: {} } } } })).not.toContain("--settings");
+  });
+
+  it("keeps preset mcp__ allow rules only for the preset's own servers (a global base would approve the person's)", () => {
+    const allow = ["mcp__scope-lint", "mcp__scope-lint__run", "mcp__github", "mcp__github__push", "mcp__ui__show", "mcp__scope-other__x", "mcp__scope-lintx", "Read"];
+    const engine = { ...preset, base: "global" as const, settings: { permissions: { allow, deny: ["mcp__github__push"] } } };
+    expect(JSON.parse(argAfter(claudeArgs({ ...o, scope: { linked: [], engine } }), "--settings")).permissions).toEqual({
+      allow: ["mcp__scope-lint", "mcp__scope-lint__run", "Read"],
+      deny: ["mcp__github__push"],
+    });
+  });
+
+  it("servers join --mcp-config after the core's", () => {
+    const cfg = JSON.parse(argAfter(claudeArgs({ ...o, scope: { linked: [], engine: preset } }), "--mcp-config"));
+    expect(Object.keys(cfg.mcpServers)).toEqual(["ui", "scope-lint"]);
+    expect(cfg.mcpServers["scope-lint"]).toEqual({ type: "stdio", command: "node", args: ["./lint.js"], env: {} });
+  });
+
+  it("refuses a preset server that is not scope-<name> or takes a core server's name", () => {
+    const bad = (name: string) => ({ ...preset, servers: [{ name, command: "node", args: [], env: {} }] });
+    expect(() => claudeArgs({ ...o, scope: { linked: [], engine: bad("ui") } })).toThrow(/server/);
+    expect(() => claudeArgs({ ...o, scope: { linked: [], engine: bad("lint") } })).toThrow(/server/);
+    expect(() => claudeArgs({ ...o, mcp: [uiServer, { ...uiServer, name: "scope-lint" }], scope: { linked: [], engine: preset } })).toThrow(/server/);
+  });
+
+  it("refuses a preset that names one server twice", () => {
+    const twice = { ...preset, servers: [...preset.servers, { name: "scope-lint", command: "sh", args: [], env: {} }] };
+    expect(() => claudeArgs({ ...o, scope: { linked: [], engine: twice } })).toThrow(/scope-lint/);
+  });
+
+  it("skills and agents from the snapshot, after --settings and before the session flags", () => {
+    const args = claudeArgs({ ...o, references: ["/r"], scope: { linked: [], engine: preset } });
+    expect(argAfter(args, "--plugin-dir")).toBe(preset.pluginDir);
+    expect(argAfter(args, "--agents")).toBe(preset.agentsFile);
+    expect(args.indexOf("--settings")).toBeLessThan(args.indexOf("--plugin-dir"));
+    expect(args.indexOf("--plugin-dir")).toBeLessThan(args.indexOf("--agents"));
+    expect(args.indexOf("--agents")).toBeLessThan(args.indexOf("--session-id"));
+    const { pluginDir: _p, agentsFile: _a, ...bare } = preset;
+    const without = claudeArgs({ ...o, scope: { linked: [], engine: bare } });
+    expect(without).not.toContain("--plugin-dir");
+    expect(without).not.toContain("--agents");
+  });
+
+  it("isolated keeps --setting-sources project and --strict-mcp-config", () => {
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: preset } });
+    expect(argAfter(args, "--setting-sources")).toBe("project");
+    expect(args).toContain("--strict-mcp-config");
+  });
+
+  it("global flags on Claude: --setting-sources user,project and no --strict-mcp-config", () => {
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: { ...preset, base: "global" } } });
+    expect(argAfter(args, "--setting-sources")).toBe("user,project");
+    expect(args).not.toContain("--strict-mcp-config");
+    expect(args).toContain("--mcp-config");
+  });
+
+  it("global keeps the folder's .mcp.json servers off: settings outrank user and project, and the agent can't write it", () => {
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: { ...preset, base: "global" } } });
+    const settings = JSON.parse(argAfter(args, "--settings"));
+    expect(settings.enableAllProjectMcpServers).toBe(false);
+    expect(settings.enabledMcpjsonServers).toEqual([]);
+    const denied = argAfter(args, "--disallowedTools").split(",");
+    for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) expect(denied).toContain(`${tool}(.mcp.json)`);
+    // Even a preset with no settings at all gets them.
+    const { settings: _, ...bare } = preset;
+    const plain = JSON.parse(argAfter(claudeArgs({ ...o, scope: { linked: [], engine: { ...bare, base: "global" } } }), "--settings"));
+    expect(plain).toEqual({ enableAllProjectMcpServers: false, enabledMcpjsonServers: [] });
+  });
+
+  it("isolated adds neither the .mcp.json settings nor its deny rules", () => {
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: preset } });
+    expect(JSON.parse(argAfter(args, "--settings"))).not.toHaveProperty("enableAllProjectMcpServers");
+    expect(argAfter(args, "--disallowedTools")).toBe(argAfter(claudeArgs(o), "--disallowedTools"));
+  });
+
+  it("refuses an unknown base", () => {
+    const engine = { ...preset, base: "user" as unknown as "global" };
+    expect(() => claudeArgs({ ...o, scope: { linked: [], engine } })).toThrow(/base/);
+  });
+
+  it("manifest denies over a preset allow: --disallowedTools is the harness's, unchanged", () => {
+    const none = { ...permissions, edit: "none" as const };
+    const engine = { ...preset, settings: { permissions: { allow: ["Edit", "Bash"] } } };
+    const withPreset = claudeArgs({ ...o, permissions: none, scope: { linked: [], engine } });
+    const without = claudeArgs({ ...o, permissions: none });
+    expect(argAfter(withPreset, "--disallowedTools")).toBe(argAfter(without, "--disallowedTools"));
+    expect(argAfter(withPreset, "--allowedTools")).toBe(argAfter(without, "--allowedTools"));
+    expect(argAfter(withPreset, "--permission-mode")).toBe("default");
+  });
+
+  it("refuses a preset with noTools or mcpOnly", () => {
+    expect(() => claudeArgs({ ...o, mcp: [], noTools: true, scope: { linked: [], engine: preset } })).toThrow(/engine preset/);
+    expect(() => claudeArgs({ ...o, mcpOnly: true, scope: { linked: [], engine: preset } })).toThrow(/engine preset/);
+  });
+
+  it("refuses a preset path that reads as a flag or is relative", () => {
+    for (const p of ["--dangerously-skip-permissions", "-x", "rel/plugin", ""]) {
+      expect(() => claudeArgs({ ...o, scope: { linked: [], engine: { ...preset, pluginDir: p } } }), p).toThrow(/path/);
+      expect(() => claudeArgs({ ...o, scope: { linked: [], engine: { ...preset, agentsFile: p } } }), p).toThrow(/path/);
+    }
+  });
+
+  it("the transport passes the turn's preset; a turn without one runs without it", async () => {
+    const { transport, args } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    await transport.turn("one", () => {}, new AbortController().signal, undefined, { linked: [], engine: preset });
+    expect(argAfter(args(), "--plugin-dir")).toBe(preset.pluginDir);
+    await transport.turn("two", () => {}, new AbortController().signal, undefined, { linked: [] });
+    expect(args()).not.toContain("--plugin-dir");
+    expect(args()).not.toContain("--settings");
   });
 });

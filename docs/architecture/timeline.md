@@ -126,7 +126,8 @@ What the person sees that is new (the reader's "File history" button, the Histor
 ## Known gaps
 
 - **Parallel tasks** don't exist yet (plan Conflicts 1): no per-file wait (a go-back waits for any running turn), no `Job:` author, no partial commits, so a shared path never shows two agents on one entry. `FileTimelineService.restorePrompt` is the one place a per-file check would go.
-- **No linked folders** (hatches spec): a path in a reference folder is outside the person's folder and has no history.
+- **Reference folders have no history**: a path in a reference folder is outside the person's folder.
+- **Linked folders have no timeline.** A tracked linked folder has its own core history (`hatches.md`), but the timeline and its index cover only the main folder: its files show no timeline, and the "not covered" line shows only in the History panel (spec §3.4 names both).
 - **Renames** start a new timeline; the old path's ends in "Deleted".
 - **A crashed turn leaves no trace on a file.** The runtime restores the "Before message" point before any commit of that turn, so neither a task entry nor an `Undo:` entry shows (plan Conflicts 4).
 - **Changed blocks drop inline formatting** (Q5): bold, links and code spans show as plain text with word marks.

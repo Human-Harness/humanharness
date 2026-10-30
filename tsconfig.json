@@ -19,5 +19,5 @@
       "@humanharness/plugin-ui": ["./packages/ui/src/plugin-ui/index.ts"]
     }
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test", "packages/cli/template/*.ts", "packages/cli/template/ui", "packages/cli/plugin-template/*.ts", "packages/cli/plugin-template/panels", "harnesses/*/plugins/*/*.ts", "harnesses/*/plugins/*/panels"]
+  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/backend", "harnesses/*/ui", "harnesses/*/test", "packages/cli/template/*.ts", "packages/cli/template/ui", "packages/cli/plugin-template/*.ts", "packages/cli/plugin-template/panels", "harnesses/*/plugins/*/*.ts", "harnesses/*/plugins/*/panels"]
 }

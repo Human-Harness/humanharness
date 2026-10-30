@@ -12,6 +12,8 @@ import type { ClaudeScript } from "./script";
 
 const argv = process.argv.slice(2);
 if (process.env.HH_FAKE_ARGS) writeFileSync(process.env.HH_FAKE_ARGS, JSON.stringify(argv));
+// The PATH it was started with, for tests of what a preset turn's hooks and servers inherit.
+if (process.env.HH_FAKE_PATH) writeFileSync(process.env.HH_FAKE_PATH, process.env.PATH ?? "");
 if (process.env.HH_FAKE_MOCK_DIR && process.env.HH_FAKE_MOCK_STATE) {
   let prompt = "";
   for await (const chunk of process.stdin) prompt += chunk;

@@ -2,7 +2,7 @@ import type { Launcher } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice } from "@humanharness/engines";
 import type { Registry } from "@humanharness/engines/registry";
 import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
-import type { History, ReferenceFolder } from "@humanharness/workspace";
+import type { History, LinkedFolderLine, ReferenceFolder } from "@humanharness/workspace";
 import type { Event } from "./events";
 import type { Session } from "./transport";
 import { type HarnessWorkspace, type SessionSlot, type SlotSendOptions, createWorkspace } from "./workspace";
@@ -55,6 +55,16 @@ export interface RuntimeOptions {
    * on every `refreshInstructions`. Absent: no settings section (D0).
    */
   instructionSettings?: () => Promise<string[]>;
+  /**
+   * The open scope's linked folders for AGENTS.md (hatches spec §3.3), asked when the runtime starts and on every
+   * `refreshInstructions`. Absent: none (D0).
+   */
+  instructionLinked?: () => Promise<LinkedFolderLine[]>;
+  /**
+   * The gitdir of a tracked linked folder's history (hatches spec §3.4), from its real path (`fs.realpath.native`);
+   * asked when a turn first opens that folder's history in this runtime. Absent: linked folders are never tracked (D0).
+   */
+  linkedGitdir?: (realPath: string) => string | Promise<string>;
   /** The engine session to continue (the dev CLI). Default: a new one. */
   session?: Session;
   /** Called when the engine starts a session. */
@@ -83,6 +93,8 @@ export interface HarnessRuntime {
    */
   refreshInstructions(): Promise<boolean>;
   history: History;
+  /** A tracked linked folder's history (hatches spec §3.4) once a turn opened it; null otherwise. */
+  linkedHistory?(realPath: string): Promise<History | null>;
   close(): Promise<void>;
 }
 
@@ -114,6 +126,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 export function runtimeOnSlot(ws: HarnessWorkspace, slot: SessionSlot): HarnessRuntime {
   return {
     history: ws.history,
+    linkedHistory: (realPath) => ws.linkedHistory(realPath),
     send: (message, emit, options) => slot.send(message, emit, options),
     endSession: () => slot.endSession(),
     refreshInstructions: () => ws.refreshInstructions(),

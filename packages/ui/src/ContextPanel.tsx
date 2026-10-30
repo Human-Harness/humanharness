@@ -173,6 +173,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   const itemText = (i: ContextItem): string => {
     if (i.kind === "brief" && i.at) return t("context.item.briefLater", { time: new Date(i.at).toLocaleTimeString(shownLanguage(i18n), { hour: "2-digit", minute: "2-digit" }) });
     if (i.kind === "data" && i.id.startsWith("data:")) return t("context.item.dataNamed", { name: i.id.slice("data:".length), count: i.count ?? 0 });
+    if (i.kind === "linked-folders") return t("hatches.contextLinked");
     return t(`context.item.${i.kind}`, { count: i.count ?? 0, path: i.path ?? "" });
   };
   const total = ctx.start.reduce((n, i) => n + i.tokens, 0);

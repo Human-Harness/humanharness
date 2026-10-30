@@ -24,6 +24,7 @@ import {
 import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import {
+  type BackendInit,
   DEFAULT_LANGUAGE,
   type LoadedHarness,
   PROFILE_COLLECTION,
@@ -36,7 +37,10 @@ import {
   allBlocks,
   choiceOptionSchema,
   dataCollections,
+  hasBackend,
+  hasEnginePresets,
   hasJobs,
+  hasLinkedFolders,
   hasModes,
   hasPhases,
   hasProfiles,
@@ -135,7 +139,7 @@ import { ConfigStore, cleanJobs, historyDir } from "./config";
 import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
-import { cliCommand, engineCommand, loginShellPath, resolveBinary } from "./engine-command";
+import { cliCommand, engineCommand, engineSearchPath, loginShellPath, resolveBinary } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
@@ -194,6 +198,28 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
+import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { EngineHost } from "./engine-config/engine-host";
+import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
+import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
+import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
+import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
+import { BackendLog } from "./backend/backend-log";
+import { BackendProcess } from "./backend/backend-process";
+import type { BackendSupervisor } from "./backend/backend-supervisor";
+import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
+import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
+import {
+  type LinkedHistoryRef,
+  linkedHistoriesFor,
+  linkedHistoryView,
+  linkedOnlyRows,
+  mergeTaskGroups,
+  openLinkedHistory,
+  restoreLinkedTask,
+  restoreTaskWithLinked,
+} from "./linked-restore";
+import { isGitRepo } from "./linked-folders";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -251,6 +277,24 @@ let shared: SharedConfigStore;
 let window: BrowserWindow | null = null;
 /** Set on the first before-quit: from then on, no new turns or restores. */
 let quitting = false;
+/** Codex can't take linked folders (hatches Decision 15): set once its transport says so. */
+let linkedUnsupported = false;
+/** Linked folders (hatches): the IPC's deps, the turns' access and AGENTS.md's rewrite. Null without them (D0). */
+let linkedParts: { access: ScopeAccess; instructions: LinkedInstructions } | null = null;
+/** The scopes' engine presets (hatches spec §5), made on first use: only a harness with `enginePresets` (D0: null). */
+let engineHost: EngineHost | null = null;
+/** The scopes' engine approval epochs (revocation record), shared by the host and the channels: one writer. */
+let engineEpochs: EngineEpochs | null = null;
+/** The Engine config channels (hatches spec §5.3), registered only under `enginePresets` (D0: null, nothing sent). */
+let engineIpc: EngineIpc | null = null;
+/** The linked-folder channels' deps, made once when they are registered (hasLinkedFolders only). */
+let linkedDeps: LinkedIpcDeps | null = null;
+/** The harness's backend (hatches spec §4); null without `backend` (D0: no process, no file, no channel). */
+let backend: BackendSupervisor | null = null;
+/** The backend was started in this process (Decision 5): from then on a base change is a rebase. */
+let backendStarted = false;
+/** Bumped when the backend's base changes: a scopes update read before it is stale and dropped. */
+const backendGen = new BackendGeneration();
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** The first web address the running step printed, for a screen that reopens while it runs. */
@@ -534,6 +578,7 @@ async function appState(): Promise<AppState> {
   const inputs = inputSpecs(harness.blocks);
   const interviews = interviewCollections(harness);
   const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
+  const hatches = hatchesState(harness);
   const state: AppState = {
     harness: {
       id: harness.id,
@@ -647,6 +692,8 @@ async function appState(): Promise<AppState> {
     ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
     // Documents can be reviewed only when the agent may edit the folder (review spec D0).
     ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
+    // Only a harness that declares a hatch sends this: Scope settings (hatches D0).
+    ...(hatches ? { hatches } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -771,12 +818,19 @@ async function scopesView(): Promise<ScopesView> {
   await scopesSettled();
   const c = await validConfig();
   if (!c || !scoped()) return { open: null, list: [] };
-  return { open: await tasks.currentScope(), list: await scopeStoreFor(baseOf(c)).list() };
+  // Linked folders reach the window only through their own channel, signed ones only (hatches L1); an engine approval
+  // only through the Engine config view (its tag is the app's). D0: no key to drop.
+  const list = (await scopeStoreFor(baseOf(c)).list())
+    .map(({ linked: _linked, ...s }) => s)
+    .map(({ engineApproval: _approval, ...s }) => s);
+  return { open: await tasks.currentScope(), list };
 }
 
 async function scopesChanged(): Promise<void> {
   // A scope made, archived or brought back: the Jobs section's rows follow (each active scope has its own).
   jobsChanged();
+  // A running backend hears the active scopes and their links (hatches spec §4.2). Without one, nothing (D0).
+  void backendScopes().catch((err: unknown) => console.error("Could not tell the backend the scopes", err));
   try {
     sendToWindow("hh:scopes", await scopesView());
   } catch (err) {
@@ -791,11 +845,15 @@ async function scopesChanged(): Promise<void> {
 async function arrivedInProfile(): Promise<void> {
   // Before anything reads the new base: the old profile's plugins stop, and nothing of theirs reaches the new one.
   await rebasePlugins();
+  // The old profile's backend too: stopped now, started in the new one once its scopes are settled (below).
+  await backendLeaveBase();
   // Another profile is another folder: the reader's watches were checked against the old one.
   documentSessions.closeAll();
   await interruptTasks();
   settingsCtl?.forget();
   await settingsCtl?.changed();
+  // The new profile's open scope and links reach AGENTS.md (hatches). Nothing without linked folders.
+  void linked_()?.instructions.changed();
   await settleScopes();
   await scopesChanged();
   if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
@@ -808,6 +866,8 @@ async function arrivedInProfile(): Promise<void> {
   void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
   // A profile chosen for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
   void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
+  // The backend follows the base: started, or stopped and started in the new profile. Without one, nothing (D0).
+  void backendRebase().catch((err: unknown) => console.error("Could not move the backend to the profile", err));
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -872,7 +932,7 @@ async function prepareEngine() {
     if (!status.installed) return null;
     if (status.outdated) throw new EngineUnavailable("outdated-version");
     if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
-    cmd = await engineCommand(engine, commandDeps);
+    cmd = await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
   }
   if (!cmd) return null;
   const plugins = pluginsCtl;
@@ -922,6 +982,8 @@ async function runtimeOptions(
     ...(settings || plugins
       ? { instructionSettings: async () => [...(settings ? await settings.sentences() : []), ...(plugins ? await plugins.sentences() : [])] }
       : {}),
+    // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
+    ...linkedRuntimeOptions(),
     onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
   };
@@ -1012,16 +1074,31 @@ async function dropRuntime() {
  * the task. Null in plain mode: the whole folder back to the task's start, as always (D0). `busy`: the task's own lane
  * (single mode: the task) or the job run being undone is still running.
  */
-function undoByPaths(): { running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>; busy: (id: string) => boolean } | null {
+function undoByPaths(): {
+  running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
+  /** The same in a tracked linked folder (hatches spec §3.4), relative to it. */
+  linkedRunning: (realPath: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
+  busy: (id: string) => boolean;
+} | null {
   const jobRunning = (id: string) => (jobsHost?.runningOf(`job:${id}`) ?? null) !== null;
   const board = host;
-  if (board) return { running: () => board.runningPaths(), busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id) };
+  if (board)
+    return {
+      running: () => board.runningPaths(),
+      linkedRunning: (p) => board.linkedRunningPaths(p),
+      busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id),
+    };
   if (!single) return null;
   return {
     running: async () => {
       const rt = await runtime.peek()?.catch(() => null);
       const ws = rt ? singleParts.get(rt)?.workspace : undefined;
       return ws ? ws.runningPaths() : [];
+    },
+    linkedRunning: async (p) => {
+      const rt = await runtime.peek()?.catch(() => null);
+      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
+      return ws ? ws.linkedRunningPaths(p) : [];
     },
     busy: (id) => tasks.isBusy() || jobRunning(id),
   };
@@ -1112,6 +1189,11 @@ const turnDeps: TurnDeps = {
   engineId: async () => (await config.load()).engineId,
   sessionExpired: async (engineId) => {
     await shared.update(engineId, { verifiedAt: null });
+  },
+  // The turn's own task scope's linked folders, checked each turn (hatches L5). A getter: undefined without them (D0).
+  get scopeAccess() {
+    const linked = linked_();
+    return linked ? (scope: string) => linked.access.access(scope) : undefined;
   },
 };
 const turns = new TurnController(turnDeps);
@@ -1219,6 +1301,16 @@ const taskDeps: TaskDeps = {
       return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
     };
   },
+  // The scope's approved engine preset for each task (hatches spec §5.2). A getter: undefined without enginePresets (D0).
+  get enginePreset() {
+    return engineHost_();
+  },
+  // Board mode only (hatches Decision 6): AGENTS.md is shared by lanes in different scopes, so each task's first message
+  // names its own scope's folders. A getter: undefined without linked folders (D0) or outside board mode.
+  get linkedContext() {
+    const linked = linked_();
+    return linked && host ? (scope: string) => linked.access.section(scope) : undefined;
+  },
   get path() {
     return harness.path ?? [];
   },
@@ -1227,9 +1319,12 @@ const taskDeps: TaskDeps = {
     const settings = settingsCtl;
     const sidekick = sidekickCtl;
     const plugins = pluginsCtl;
-    if (!settings && !sidekick && !plugins) return undefined;
+    const linked = linked_();
+    if (!settings && !sidekick && !plugins && !linked) return undefined;
     return async () => {
       await settings?.betweenTasks();
+      // A link change a running turn kept from AGENTS.md, or another scope opened since it was written.
+      await linked?.instructions.betweenTasks();
       await sidekick?.betweenTasks();
       // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
       await plugins?.betweenTasks();
@@ -1403,7 +1498,7 @@ const materialStageDeps: MaterialStageDeps = {
   },
   hasNotice,
   engine: getEngine,
-  command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+  command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),
   profile: async (engine, job) => {
     const models = cleanModels((await config.load()).models);
     const saved = await savedOffer(engine.id);
@@ -1493,7 +1588,7 @@ function buildTranslation(): TranslationService {
       if (hooks.mock) return null;
       const engine = await translateEngine(true);
       if (!engine) return null;
-      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps).catch(() => null));
+      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
       if (!cmd) return null;
       const models = cleanModels((await config.load()).models);
       const saved = await savedOffer(engine.id);
@@ -1736,6 +1831,10 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
       return (await scopeStoreFor(baseOf(c)).list()).filter((sc) => !sc.archived).map((sc) => sc.id);
     },
     scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
+    // A scoped run reaches its own scope's linked folders, checked as a task's turn (hatches). None without (D0).
+    ...(hasLinkedFolders(harness)
+      ? { linked: { access: async (sc: string) => linked_()?.access.access(sc), section: async (sc: string) => (await linked_()?.access.section(sc)) ?? "" } }
+      : {}),
     engine: async () => (await config.load()).engineId ?? "",
     // Settings › Jobs, read at each trigger: a change applies from the next one, without a restart.
     settings: (id) => jobSettings?.[id],
@@ -1775,6 +1874,70 @@ async function jobsReady(): Promise<void> {
 }
 
 /**
+ * The backend's `init` for the base the app is in now (hatches Decisions 3, 4), its data folder made; null before
+ * setup. Each scope's links are the ones a turn there would use (the scope access's checks), none without linked folders.
+ */
+async function backendInitNow(): Promise<BackendInit | null> {
+  await scopesSettled();
+  const c = await validConfig();
+  if (!c) return null;
+  const base = baseOf(c);
+  const profile = profilesOn() ? (c.profile ?? "") : "";
+  const scopes = scoped() ? await scopeStoreFor(base).list() : [];
+  const access = linked_()?.access;
+  const init = backendInit({
+    base,
+    scopes,
+    ...(access ? { links: await usableLinks(scopes, (id) => access.entries(id)) } : {}),
+    language: c.language,
+    coreVersion: app.getVersion(),
+    userData: app.getPath("userData"),
+    ...(profile ? { profile } : {}),
+    mock: hooks.mock === true,
+  });
+  await fs.mkdir(init.dataDir, { recursive: true });
+  return init;
+}
+
+/** The backend starts the first time the app is set up in this process (Decision 5); never while quitting. */
+async function backendReady(): Promise<void> {
+  const b = backend;
+  if (!b || quitting || backendStarted) return;
+  backendGen.bump();
+  // Null when another start, rebase or profile switch began meanwhile: that one's base wins.
+  const init = await backendGen.readFresh(backendInitNow);
+  if (!init || quitting || backendStarted) return;
+  backendStarted = true;
+  await b.start(init);
+}
+
+/** The base changed (profile switch, another folder, a move's end): a started backend starts again there. */
+async function backendRebase(): Promise<void> {
+  const b = backend;
+  if (!b || quitting) return;
+  if (!backendStarted) return backendReady();
+  backendGen.bump();
+  // Null when a later rebase or profile switch began meanwhile: this base is already stale.
+  const init = await backendGen.readFresh(backendInitNow);
+  if (init && !quitting) await b.rebase(init);
+}
+
+async function backendScopes(): Promise<void> {
+  const b = backend;
+  if (!b || !backendStarted || quitting) return;
+  // Null when a rebase began meanwhile: its own init is newer than these scopes.
+  const init = await backendGen.readFresh(backendInitNow);
+  // The supervisor drops scopes of another folder (Settings changed it; the rebase comes after).
+  if (init) b.scopesChanged(init.scopes, init.folder);
+}
+
+/** A profile switch begins: a started backend stops before anything reads the new base (backendRebase starts it). */
+async function backendLeaveBase(): Promise<void> {
+  backendGen.bump();
+  if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
+}
+
+/**
  * Board mode's waiting tasks (parallel spec §9.2, Decisions 10–11): an item in the base's shared Attention store, the
  * Dock badge (with the plugins' count) and, when Settings › General asks and the window isn't focused, a notification
  * whose click shows that task. Only a count and the task's label leave the board (P4).
@@ -1805,6 +1968,231 @@ function buildTaskAttention(): TaskAttention {
   });
   taskAttention = attention;
   return attention;
+}
+
+/** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
+function linkedIpcDeps(): LinkedIpcDeps {
+  // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
+  if (linkedDeps) return linkedDeps;
+  const userData = app.getPath("userData");
+  // Histories unlinked over 30 days ago go to the Trash first: no link handler runs before, so a relink never races it.
+  const ready = pruneUnlinked(userData, new Date(), (d) => shell.trashItem(d)).catch((err: unknown) =>
+    console.error("Could not prune the linked folders' histories", err),
+  );
+  linkedDeps = {
+    linkedFolders: harness.linkedFolders ?? {},
+    store: scopeStore,
+    // Links are signed per profile id (never its folder's path, so a move keeps them); "" without profiles.
+    profile: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      return profilesOn() ? (c.profile ?? "") : "";
+    },
+    // With profiles, every other profile's registry: a folder another profile changes or tracks counts.
+    otherStores: async () => {
+      const c = await validConfig();
+      if (!c || !profilesCtl) return [];
+      const out: { profile: string; store: ScopeStore }[] = [];
+      for (const p of (await profilesCtl.state()).list) {
+        const b = baseFor({ folder: c.folder, profile: p.id }, true);
+        if (b !== null && p.id !== c.profile) out.push({ profile: p.id, store: scopeStoreFor(b) });
+      }
+      return out;
+    },
+    context: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      return { home: os.homedir(), folder: baseOf(c), ...(profilesOn() ? { root: c.folder } : {}) };
+    },
+    references: async () => {
+      const c = await validConfig();
+      return c ? (await workReferences(c, baseOf(c))).map((r) => r.path) : [];
+    },
+    pick: async () => {
+      if (!window || window.isDestroyed()) return null;
+      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+      return r.canceled ? null : (r.filePaths[0] ?? null);
+    },
+    userData,
+    signing: linkedSigning(userData),
+    now: () => new Date(),
+    ready,
+    changed: async () => {
+      await scopesChanged();
+      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks (never lost).
+      void linked_()?.instructions.changed();
+    },
+    unsupported: () => linkedUnsupported,
+    // Scope settings opening checks git again (Decision 13), as the scope's opening does.
+    checkGit: async (scope) => linked_()?.access.checkGit(scope),
+    dropped: async (scope) => (await linked_()?.access.dropped(scope)) ?? new Map(),
+    linkedHistory: async () => {
+      const linked = linked_();
+      if (!linked) return { uncovered: [], tasks: {} };
+      const scope = await tasks.currentScope();
+      return linkedHistoryView(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
+    },
+  };
+  return linkedDeps;
+}
+
+/**
+ * A tracked linked folder's history (hatches spec §3.4): the open workspace's (board's or the runtime's) once a turn
+ * opened it, else one over its gitdir in the app's data folder when that exists. Never makes one.
+ */
+const openLinked = openLinkedHistory(
+  (real) => linkedHistoryDir(app.getPath("userData"), real),
+  async (real) => {
+    if (host) return host.linkedHistory(real);
+    const rt = await runtime.peek()?.catch(() => null);
+    return (await rt?.linkedHistory?.(real)) ?? null;
+  },
+);
+
+/**
+ * "Undo this task"'s tracked linked folders, of the task's scope (else the open one), checked as a turn's are: none
+ * without linked folders (D0). Git is looked at first: a folder that gained git is never restored (L7).
+ */
+async function linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHistoryRef[]> {
+  const linked = linked_();
+  if (!linked) return [];
+  const scope = scopeId ?? (await tasks.currentScope());
+  if (scope === null) return [];
+  await linked.access.checkGit(scope).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
+  // Fails closed on its own: a folder whose git can't be told now is left out (L7).
+  return linkedHistoriesFor(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
+}
+
+/**
+ * Which engine preset a task gets (hatches spec §5.2, §5.3): only a harness that declares `enginePresets` makes it
+ * (D0: undefined, and `.harness/engine/` is never read). Approvals are checked with the links' key, never created here.
+ */
+function engineHost_(): EngineHost | undefined {
+  if (!hasEnginePresets(harness)) return undefined;
+  if (engineHost) return engineHost;
+  const userData = app.getPath("userData");
+  const epochs = (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE)));
+  engineHost = new EngineHost({
+    userData,
+    context: async () => {
+      const c = await validConfig();
+      if (!c) return null;
+      const base = baseOf(c);
+      return { base, profile: profilesOn() ? (c.profile ?? "") : "", scopes: scopeStoreFor(base) };
+    },
+    // The folders a turn of the scope reaches now: preset path rules outside them are refused (E5).
+    linked: async (scope) => ((await linked_()?.access.access(scope))?.linked ?? []).map((l) => l.path),
+    secret: () => linkedSecret(userData)(false),
+    epoch: (profile, scope) => epochs.get(profile, scope),
+    // The engines' login PATH, the one value `engineCommand` gives them: cleaned per scope, a bare interpreter, npx or
+    // uvx found first inside a root is refused (E2).
+    loginPath: () => engineSearchPath(commandDeps),
+    // Read on each use: a harness update changes them.
+    get harness() {
+      return { permissions: harness.permissions, actions: harness.actions, mcp: harness.mcp };
+    },
+  });
+  return engineHost;
+}
+
+/**
+ * Decision 13: at start, the engine config snapshots no scope approves and no live task is pinned to, in this base or
+ * any other profile's, go to the Trash once older than 30 days. Called only under `enginePresets` (D0).
+ */
+async function pruneEngineConfig(): Promise<void> {
+  try {
+    const c = await validConfig();
+    if (!c) return;
+    const bases = [baseOf(c)];
+    if (profilesCtl) {
+      for (const p of (await profilesCtl.state()).list) {
+        const b = baseFor({ folder: c.folder, profile: p.id }, true);
+        if (b !== null && !bases.includes(b)) bases.push(b);
+      }
+    }
+    const known: PruneBase[] = bases.map((base) => ({ base, scopes: scopeStoreFor(base) }));
+    await pruneEngineSnapshots(app.getPath("userData"), known, new Date(), (d) => shell.trashItem(d));
+  } catch (err) {
+    console.error("Could not prune the engine config snapshots", err);
+  }
+}
+
+/**
+ * The Engine config channels' deps (hatches spec §5.3), made only when they are registered (enginePresets). Approving
+ * signs with the links' key, made then if there is none yet, for the same profile id the host checks it with.
+ */
+function engineIpcDeps(): EngineIpcDeps {
+  const host = engineHost_()!;
+  const userData = app.getPath("userData");
+  return {
+    current: (scope) => host.current(scope),
+    store: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The folder is not set up");
+      return { store: scopeStoreFor(baseOf(c)), profile: profilesOn() ? (c.profile ?? "") : "" };
+    },
+    secret: () => linkedSecret(userData)(true),
+    epochs: (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
+    codexLimit: () => harness.engines.includes("codex"),
+    activeEngine: async () => (await config.load()).engineId ?? "",
+    send: sendToWindow,
+  };
+}
+
+/**
+ * The linked-folder parts, made on first use once the channels' deps exist: only a harness that declares
+ * `linkedFolders` registers them (D0: null, and nothing of it runs). The IPC and the turns share one signing (one
+ * writer of the live set).
+ */
+function linked_(): typeof linkedParts {
+  if (linkedParts || !linkedDeps) return linkedParts;
+  const deps = linkedDeps;
+  const instructions = new LinkedInstructions({
+    whenNoTask: (fn) => tasks.whenNoTask(fn),
+    // Peek, never get (as the settings'). Board mode lists no folders in AGENTS.md (Decision 6): nothing to write.
+    refresh: async () => {
+      if (host) return false;
+      const rt = await runtime.peek()?.catch(() => null);
+      if (!rt) return false;
+      // A turn refused it (a task's that started meanwhile, or in `single` mode a job's on the same workspace): kept
+      // stale for the next gap, never taken as written.
+      return refreshUnlessBusy(() => rt.refreshInstructions(), () => turns.isBusy() || !!singleParts.get(rt)?.workspace.anyRunning());
+    },
+    openScope: () => tasks.currentScope(),
+  });
+  linkedParts = { access: createScopeAccess(deps), instructions };
+  return linkedParts;
+}
+
+/** The runtime's linked-folder options (hatches): none without linked folders (D0). */
+function linkedRuntimeOptions(): Pick<RuntimeOptions, "instructionLinked" | "linkedGitdir"> & { onLinkedUnsupported?: () => void } {
+  const linked = linked_();
+  if (!linked) return {};
+  const userData = app.getPath("userData");
+  return {
+    // Only a turn's checked access names a folder here (scope-access.ts): its history continues, never pruned.
+    linkedGitdir: async (real: string) => {
+      const dir = linkedHistoryDir(userData, real);
+      await markRelinked(dir);
+      return dir;
+    },
+    onLinkedUnsupported: () => {
+      linkedUnsupported = true;
+    },
+    // The open scope's folders (plain and single mode); board mode lists none (Decision 6). A failure lists none.
+    instructionLinked: async () => {
+      if (host) return [];
+      try {
+        const scope = await tasks.currentScope();
+        const lines = await linked.access.lines(scope);
+        linked.instructions.read(scope);
+        return lines;
+      } catch (err) {
+        console.error("Could not read the open scope's folders for AGENTS.md", err);
+        return [];
+      }
+    },
+  };
 }
 
 /** Registers an IPC handler that only answers the app's own page. */
@@ -1968,7 +2356,11 @@ async function sendContext(task: string): Promise<void> {
 }
 
 /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
-const commitAnnouncements = commitAnnouncer((paths) => sendToWindow("hh:fileCommits", paths));
+const commitAnnouncements = commitAnnouncer((paths) => {
+  sendToWindow("hh:fileCommits", paths);
+  // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
+  engineIpc?.committed(paths);
+});
 const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
 function registerIpc() {
@@ -2023,6 +2415,9 @@ function registerIpc() {
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     // Set up for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
     void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
+    // The backend starts now that the app is set up, or follows a new folder. Without one, nothing (D0).
+    const folderChanged = patch.folder !== undefined && patch.folder !== before.folder;
+    void (folderChanged ? backendRebase() : backendReady()).catch((err: unknown) => console.error("Could not start the backend", err));
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
     // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
@@ -2107,8 +2502,41 @@ function registerIpc() {
     if (id !== null && !isScopeId(id)) throw new Error("Unknown scope");
     const opened = await tasks.switchScope(id);
     await scopesChanged();
+    // Linked folders: a folder that gained or lost git is marked (Decision 13); AGENTS.md lists the new scope's folders.
+    const linked = linked_();
+    if (linked && opened) {
+      void (async () => {
+        if (id !== null) await linked.access.checkGit(id).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
+        await linked.instructions.changed();
+      })();
+    }
     return opened;
   });
+  // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
+  if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
+  // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
+  if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());
+  if (hasEnginePresets(harness)) void pruneEngineConfig();
+  // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
+  if (hasBackend(harness)) {
+    const backendLog = new BackendLog(app.getPath("userData"));
+    backend = backendFor(harness, {
+      // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
+      startProcess: (init, onEvent) =>
+        BackendProcess.start({
+          launcher: electronLauncher(process.execPath),
+          entry: resolveInHarness(harness, harness.backend!),
+          cwd: harness.root,
+          init,
+          log: backendLog,
+          onEvent,
+        }),
+      send: sendToWindow,
+      log: backendLog,
+      mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
+    });
+    if (backend) registerBackendIpc(handle, { supervisor: backend });
+  }
   handle("hh:data", async (request: unknown, options: unknown) => {
     // After the migration: it opens `main`, the scope a request made on mount acts in.
     await scopesSettled();
@@ -2300,6 +2728,17 @@ function registerIpc() {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
   };
+  /**
+   * The groups "Undo this task" acts on: the panel's, and with tracked linked folders theirs too (a task or a later
+   * task that changed only a linked folder, hatches spec §3.4). Without linked folders, exactly the panel's (D0).
+   */
+  const undoGroups = async (taskId: string) => {
+    const main = await historyGroups();
+    if (!linked_()) return main;
+    const refs = await linkedHistoriesOf(main.find((g) => g.taskId === taskId)?.scopeId);
+    if (refs.length === 0) return main;
+    return mergeTaskGroups(main, await Promise.all(refs.map(async (r) => ({ key: r.key, groups: historyView(await r.history.tasks()) }))));
+  };
   // Every go-back (one file, the whole folder, one task) asks first with main's native dialog (go-back.ts).
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
   // A restore changes tracked files with no data event: the settings may have changed.
@@ -2308,17 +2747,53 @@ function registerIpc() {
     blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
     groups: historyGroups,
     restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(afterRestore),
-    restoreTask: (taskId) =>
-      restoreWith(async (history) => {
+    taskGroups: undoGroups,
+    restoreTask: (taskId) => {
+      // Something was restored: the settings may have changed, even when a linked folder then failed.
+      let touched = false;
+      return restoreWith(async (history) => {
         const group = (await history.tasks()).find((g) => g.taskId === taskId);
-        if (!group?.start) throw new Error("Nothing to go back to");
-        await history.restore(group.start, RESTORE_TASK);
-      }).then(afterRestore),
+        // Its tracked linked folders too (hatches spec §3.4); none without linked folders (D0).
+        const linkedRefs = await linkedHistoriesOf(group?.scopeId);
+        if (!group?.start && linkedRefs.length === 0) throw new Error("Nothing to go back to");
+        if (group?.start) {
+          await history.restore(group.start, RESTORE_TASK);
+          touched = true;
+        }
+        if (linkedRefs.length === 0) return;
+        touched = true;
+        let restored: number;
+        try {
+          restored = await restoreLinkedTask(linkedRefs, taskId, RESTORE_TASK);
+        } catch (err) {
+          // A failure there is logged and fails the undo (the window's generic failure).
+          console.error("Undo covered the work folder but not its linked folders", err);
+          throw err;
+        }
+        if (!group?.start && restored === 0) throw new Error("Nothing to go back to");
+      }).then(afterRestore, (err: unknown) => {
+        if (touched) afterRestore();
+        throw err;
+      });
+    },
     file: fileTimelines,
   });
   // Every go-back but "Undo this task" as master registers it; that one also undoes by paths below.
   for (const [channel, fn] of Object.entries(goBacks)) if (channel !== "hh:restoreTask") handleFrom(channel, fn);
-  handle("hh:historyTasks", historyGroups);
+  // The panel's rows; with tracked linked folders, a task that changed only one of them too (hatches spec §3.4), so it
+  // can be undone. Without linked folders, exactly the work folder's (D0); a linked folder that can't be read adds none.
+  handle("hh:historyTasks", async () => {
+    const main = await historyGroups();
+    if (!linked_()) return main;
+    try {
+      const refs = await linkedHistoriesOf(undefined);
+      if (refs.length === 0) return main;
+      return linkedOnlyRows(main, await Promise.all(refs.map(async (r) => ({ key: r.key, groups: historyView(await r.history.tasks()) }))));
+    } catch (err) {
+      console.error("Could not read the linked folders' history", err);
+      return main;
+    }
+  });
   handleFrom("hh:restoreTask", async (sender, taskId: unknown, includeShared?: unknown) => {
     // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
     // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.
@@ -2327,22 +2802,31 @@ function registerIpc() {
     // Plain mode: the whole folder back to the task's start, after main's native confirmation (go-back.ts).
     if (!byPaths) return goBacks["hh:restoreTask"](sender, taskId);
     const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
-    const task = (await historyGroups()).find((g) => g.taskId === id);
+    const task = (await undoGroups(id)).find((g) => g.taskId === id);
     if (!task) return { refused: { reason: "nothing" as const } };
     if (quitting || hold.restoreHeld() !== null) throw new Error("Going back can't run now");
     // Main's native dialog too; by paths no later task is undone, so none is listed.
     if (!(await confirmGoBack(sender, { kind: "task", task, later: [] }))) return CANCELLED;
-    let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
+    let result: Awaited<ReturnType<typeof restoreTaskWithLinked>> | null = null;
     await restores.run(
       currentHistory,
       async (history: History) => {
-        result = await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
+        // With tracked linked folders, each of them by paths too (hatches spec §3.4); without, today's (D0).
+        const linkedRefs = await linkedHistoriesOf(task.scopeId);
+        result =
+          linkedRefs.length > 0
+            ? await restoreTaskWithLinked(history, linkedRefs, id, { running: byPaths.running, linkedRunning: byPaths.linkedRunning, includeShared: withShared })
+            : await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
       },
       { busy: () => byPaths.busy(id) },
     );
     const r = result!;
-    // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3).
-    if (!r.ok) return { refused: undoRefusalOf(r) };
+    // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3). A partial undo (linked
+    // folders) restored some folders: the settings may have changed.
+    if (!r.ok) {
+      if (r.reason === "partial") afterRestore();
+      return { refused: undoRefusalOf(r) };
+    }
     afterRestore();
     return { ok: true };
   });
@@ -2421,7 +2905,7 @@ function registerIpc() {
     return guards.runTest(engineId, async (signal): Promise<TestResult> => {
       if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
       // A fake engine is never tested against a real CLI.
-      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps);
+      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
       // The app may have started quitting while the CLI was being found.
       if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
@@ -2521,6 +3005,7 @@ function registerIpc() {
     // Checked and set with no await in between, so two requests can't both start a move.
     if (moving) return { ok: false, error: "busy" };
     let pluginsStopped = false;
+    let backendStopped = false;
     const run = guardedMove({
       guards,
       isBusy: hold.folderBusy,
@@ -2539,6 +3024,9 @@ function registerIpc() {
         await closeRuntime();
         pluginsStopped = true;
         await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins before the move", err));
+        // The backend works in the old folder too: stopped with the runtime, started again after (below).
+        backendStopped = backend !== null;
+        await backend?.stop().catch((err: unknown) => console.error("Could not stop the backend before the move", err));
       },
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
@@ -2554,6 +3042,8 @@ function registerIpc() {
       host?.board.moveEnded();
       // Moved or not, the plugins start again in whichever folder is the app's now.
       if (pluginsStopped) await rebasePlugins();
+      // Moved or not, the backend starts again in whichever folder is the app's now (never while quitting).
+      if (backendStopped) void backendRebase().catch((err: unknown) => console.error("Could not start the backend after the move", err));
       // The reader's watches were checked against the folder as it was.
       documentSessions.closeAll();
     }
@@ -2694,7 +3184,7 @@ if (loaded) {
     },
     hasNotice,
     engine: getEngine,
-    command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+    command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),
     // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens; a
     // sidekick's own tier (or the routing turn's light one) uses that tier's model instead.
     profile: async (engine, tier) => {
@@ -2997,6 +3487,8 @@ if (primary) {
     }
     // Jobs: the `start` runs and `every` timers, once the app is set up (now, or when setup or a profile finishes).
     void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
+    // The harness's backend, the same moment (hatches Decision 5). Without one, nothing (D0).
+    void backendReady().catch((err: unknown) => console.error("Could not start the backend", err));
     // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
     void sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
@@ -3027,6 +3519,8 @@ if (primary) {
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
+      // The backend stops for good (SIGTERM, SIGKILL after 3 s) before the agent goes; nothing starts it again.
+      await backend?.stop({ quit: true }).catch((err: unknown) => console.error("Could not stop the backend", err));
       // A translation run stops; the batches it saved stay.
       await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
       try {

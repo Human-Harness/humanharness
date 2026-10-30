@@ -131,6 +131,11 @@ export interface GoBackDeps<S> {
   blocked(): boolean;
   /** The History panel's groups, newest first (none when there is no history). */
   groups(): Promise<HistoryTaskView[]>;
+  /**
+   * The groups "Undo this task" of `taskId` acts on, when more than the panel's (linked folders' histories, hatches
+   * spec §3.4): the task and the later tasks the confirm lists come from them. Default: `groups`.
+   */
+  taskGroups?(taskId: string): Promise<HistoryTaskView[]>;
   /** The whole folder back to `sha` (index.ts: through the restore guard). */
   restorePoint(sha: string): Promise<void>;
   /** The folder back to before the task (index.ts: through the restore guard, which checks the task again). */
@@ -191,13 +196,14 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
     },
     "hh:restoreTask": async (sender, taskId): Promise<GoBackResult> => {
       if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
-      const groups = await d.groups();
+      const groupsOf = () => (d.taskGroups ? d.taskGroups(taskId) : d.groups());
+      const groups = await groupsOf();
       const task = groups.find((g) => g.taskId === taskId);
       if (!task?.start) throw new Error("Nothing to go back to");
       notBlocked();
       const later = laterTasks(groups, taskId, task.date);
       if (!(await confirm(sender, { kind: "task", task, later }))) return CANCELLED;
-      const now = await d.groups();
+      const now = await groupsOf();
       const again = now.find((g) => g.taskId === taskId);
       if (!again || grew(later, laterTasks(now, taskId, again.date))) return CANCELLED;
       await d.restoreTask(taskId);

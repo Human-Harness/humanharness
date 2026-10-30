@@ -60,13 +60,21 @@ acp
       OPENCODE_CONFIG_CONTENT: process.env.OPENCODE_CONFIG_CONTENT ?? null,
       OPENCODE_PERMISSION: process.env.OPENCODE_PERMISSION ?? null,
       OPENCODE_DISABLE_CLAUDE_CODE: process.env.OPENCODE_DISABLE_CLAUDE_CODE ?? null,
+      PATH: process.env.PATH ?? null,
     });
     log("initialize", ctx.params);
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: Boolean(script.loadSession),
-        ...(script.closeSession ? { sessionCapabilities: { close: {} } } : {}),
+        ...(script.closeSession || script.additionalDirectories
+          ? {
+              sessionCapabilities: {
+                ...(script.closeSession ? { close: {} } : {}),
+                ...(script.additionalDirectories ? { additionalDirectories: {} } : {}),
+              },
+            }
+          : {}),
       },
       ...(script.agentVersion ? { agentInfo: { name: "fake-acp", version: script.agentVersion } } : {}),
     };

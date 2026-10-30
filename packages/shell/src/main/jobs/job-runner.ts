@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { HIDDEN_CHARS, type HarnessJob, type JobResult, jobResultSchema, JOB_RESULT_TOOL } from "@humanharness/harness-sdk";
-import type { Event, HarnessWorkspace, SessionSlot } from "@humanharness/runtime";
+import type { Event, HarnessWorkspace, SessionSlot, TurnScope } from "@humanharness/runtime";
 import { APP_SCOPE, MAIN_SCOPE, type Note } from "@humanharness/workspace";
 import { pauseOutOfQuota, resetOf } from "../gated-turns";
 import { notesIndexFor } from "../notes-index";
@@ -36,6 +36,11 @@ export interface JobRunDeps {
    * check that the folder (or profile) the run was queued for is still the app's.
    */
   stillValid?(): Promise<boolean>;
+  /**
+   * The linked folders a run in `scope` reaches (hatches spec §3.3): the same checked access a task's turn in that scope
+   * gets. Absent without linked folders (D0).
+   */
+  scopeAccess?(scope: string): Promise<TurnScope | undefined>;
   now?: () => Date;
   newId?: () => string;
   maxMs?: number;
@@ -54,6 +59,19 @@ const oneLine = (t: string) => {
   // Cut by code points: a cut never splits a surrogate pair.
   return Array.from(line).slice(0, SUMMARY_CHARS).join("").trim() || "No summary";
 };
+
+/**
+ * What a run in `scope` may reach beyond the folder: its scope's linked folders, read once when the run starts (an
+ * app-wide run, none). Not tied to the AI turn: any step that touches files takes the same access. A failure is
+ * logged and gives none, never a failed run.
+ */
+export async function jobScope(d: Pick<JobRunDeps, "scopeAccess">, scope: string | null): Promise<TurnScope | undefined> {
+  if (scope === null || !d.scopeAccess) return undefined;
+  return d.scopeAccess(scope).catch((err: unknown) => {
+    console.error("Could not read the job's scope folders", err);
+    return undefined;
+  });
+}
 
 /**
  * Runs one job run (spec §8) on its own `job:<run>` slot, through the gate's `jobs` cap, and logs it in jobs.jsonl.
@@ -146,6 +164,7 @@ export async function runJob(
         throw err;
       });
       const message = await step(d.firstMessage(id, scope));
+      const access = await step(jobScope(d, scope));
       if (end !== "done") return end;
       let resetsAt: string | undefined;
       const running = slot.send(
@@ -168,7 +187,7 @@ export async function runJob(
           if (e.type === "done" && !e.ok && e.error.code === "out-of-quota") pauseOutOfQuota(d.gate, resetsAt, now().getTime());
           if (e.type === "done" && !e.ok && e.error.code === "cancelled" && end === "done") end = "cancelled";
         },
-        { ...(profile ? { profile } : {}), trailer: { task: run, job: id, ...(scope ? { scope } : {}) } },
+        { ...(profile ? { profile } : {}), trailer: { task: run, job: id, ...(scope ? { scope } : {}) }, ...(access ? { scope: access } : {}) },
       );
       cancelTurn = running.cancel;
       await running.done;
@@ -223,6 +242,8 @@ export function jobMessageFor(o: {
   /** A string, or one part per collection (master's per-collection context), joined as a task's first message joins them. */
   dataContext?(scope: string, action: string | undefined): Promise<string | { text: string }[]>;
   materialContext?(scope: string): Promise<string>;
+  /** The scope's linked folders section (scope-access.ts); a run with no scope gets none. */
+  linkedContext?(scope: string): Promise<string>;
   actions: Record<string, { label: string }>;
 }): (id: string, scope: string | null) => Promise<string> {
   const labels = Object.fromEntries(Object.entries(o.actions).map(([id, a]) => [id, a.label]));
@@ -238,6 +259,7 @@ export function jobMessageFor(o: {
       notesIndex: (s) => notesIndexFor((n) => o.notes(n), o.scoped, s),
       ...(data ? { dataContext: async (s: string) => joinData(await data(s, undefined)) } : {}),
       ...(material ? { materialContext: (s: string) => material(s) } : {}),
+      ...(o.linkedContext && scope !== null ? { linkedContext: o.linkedContext } : {}),
       actions: labels,
     });
   };

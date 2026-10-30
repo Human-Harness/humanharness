@@ -1,12 +1,14 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
-import { type ActivityKind, EDIT_PATH_MAX, type Event, type Transport, fail } from "../contract";
+import { type ActivityKind, EDIT_PATH_MAX, type EnginePreset, type Event, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
 import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "../models";
+import { absoluteSearchPath } from "../search-path";
 import type { TransportOptions } from "./options";
 
 type PermissionOption = { optionId: string; kind: string };
@@ -27,6 +29,8 @@ export interface PermissionPolicy {
   folder: string;
   /** Reference folders: reads and searches there are allowed, never edits. */
   readRoots?: string[];
+  /** Linked write folders (hatches §3.3): edits allowed there, except in their own config (L3). */
+  writeRoots?: string[];
   permissions: Permissions;
   /** No reading or searching at all, even inside the folder (see `TransportOptions.mcpOnly`). */
   mcpOnly?: boolean;
@@ -74,6 +78,58 @@ function inside(folder: string, target: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
+/** A write root's own config and git: never edited by the agent (hatches spec §3.3, L3). */
+const ROOT_CONFIG = [".git", ".codex", ".agents", ".opencode", ".claude"];
+
+/** `target` is strictly under `root` and not in its config (L3); compared without case, as APFS and NTFS do. */
+function underNotConfig(root: string, target: string): boolean {
+  if (!inside(root, target)) return false;
+  const rel = path.relative(path.resolve(root), path.resolve(root, target));
+  // The root itself is never edited, moved or deleted.
+  return rel !== "" && !ROOT_CONFIG.includes(rel.split(path.sep)[0].toLowerCase());
+}
+
+/** A link whose target is missing: writing through it would create a file wherever it points. */
+function dangling(p: string): boolean {
+  try {
+    fs.lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `p` with its deepest existing part resolved through links (what the engine would write); null when that fails. */
+function realDeepest(p: string): string | null {
+  let head = path.resolve(p);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(head), ...tail);
+    } catch (err) {
+      const parent = path.dirname(head);
+      if ((err as { code?: unknown }).code !== "ENOENT" || parent === head || dangling(head)) return null;
+      tail.unshift(path.basename(head));
+      head = parent;
+    }
+  }
+}
+
+function editAllowed(policy: PermissionPolicy, target: string): boolean {
+  if (inside(policy.folder, target)) return true;
+  const roots = (policy.writeRoots ?? []).filter((r) => inside(r, target));
+  if (roots.length === 0) return false;
+  // Every containing root (they may overlap), as written and through links: `app/g -> .git` or `app/out -> /elsewhere` is refused.
+  const real = realDeepest(target);
+  return (
+    real !== null &&
+    roots.every((r) => {
+      const realRoot = realDeepest(r);
+      return underNotConfig(r, target) && realRoot !== null && underNotConfig(realRoot, real);
+    })
+  );
+}
+
 /** Answers ACP permission requests from the harness manifest, without asking the user. Never picks "always" options. */
 export function decidePermission(params: PermissionRequest, policy: PermissionPolicy): PermissionResponse {
   const { toolCallId, kind, locations, rawInput } = params.toolCall;
@@ -84,7 +140,6 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
     const server = recorded;
     allow = server !== undefined && policy.mcpServers.includes(server);
   } else {
-    const allInside = (locations ?? []).every((l) => inside(policy.folder, l.path));
     switch (kind) {
       case "read":
       case "search":
@@ -94,7 +149,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "edit":
       case "delete":
       case "move":
-        allow = policy.permissions.edit === "folder" && (locations ?? []).length > 0 && allInside;
+        allow = policy.permissions.edit === "folder" && (locations ?? []).length > 0 && (locations ?? []).every((l) => editAllowed(policy, l.path));
         break;
       case "fetch":
         allow = policy.permissions.web;
@@ -203,17 +258,107 @@ export function acpExtras(call: { kind?: unknown; locations?: unknown; rawInput?
  * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
  * written; `model` is left out for the engine's default model. Checked again here before it is used.
  */
-export function codexConfig(profile: ModelProfile): string {
+export function codexConfig(profile: ModelProfile, preset?: Record<string, unknown>): string {
   if (profile.model !== undefined && !isModelId(profile.model)) {
     throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(profile.model)}`);
   }
   if (!isEffort(profile.effort)) throw new Error(`Unknown effort: ${JSON.stringify(profile.effort)}`);
   if (!isCap(profile.cap)) throw new Error(`Context cap out of range: ${JSON.stringify(profile.cap)}`);
-  return JSON.stringify({
+  const core = {
     ...(profile.model !== undefined ? { model: profile.model } : {}),
     model_reasoning_effort: profile.effort,
     model_auto_compact_token_limit: profile.cap,
-  });
+  };
+  return JSON.stringify(preset === undefined ? core : mergeCodex(core, preset));
+}
+
+/** The keys the core owns in `CODEX_CONFIG` (the profile's): a preset never sets them, even when the profile leaves one out. */
+const PROFILE_KEYS = new Set(["model", "model_reasoning_effort", "model_auto_compact_token_limit"]);
+const PROTO_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+/**
+ * Preset keys dropped whatever the shell's cleaner let through (defense in depth): they widen the sandbox, skip
+ * approvals, trust projects, add servers or commands (notifier, telemetry) outside the preset's list, pick a provider,
+ * a profile, a key, an auth store or a base URL, replace the instructions, or pass the shell's environment on.
+ */
+const DENIED_CODEX = new Set([
+  "sandbox_mode",
+  "approval_policy",
+  "sandbox_workspace_write.writable_roots",
+  "mcp_servers",
+  "model_provider",
+  "model_providers",
+  "profile",
+  "profiles",
+  "projects",
+  "notify",
+  "otel",
+  "chatgpt_base_url",
+  "cli_auth_credentials_store",
+  "experimental_instructions_file",
+  "model_instructions_file",
+  "instructions",
+  "shell_environment_policy",
+]);
+const deniedCodex = (key: string, k: string): boolean => DENIED_CODEX.has(key) || k.endsWith("_api_key");
+
+function plainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** A fresh copy of a JSON value from a preset, refusing prototype keys at any depth. */
+function copyJson(v: unknown, at: string): unknown {
+  if (Array.isArray(v)) return v.map((x, i) => copyJson(x, `${at}[${i}]`));
+  if (!plainObject(v)) return v;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(v)) {
+    if (PROTO_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${at}.${k}`);
+    Object.defineProperty(out, k, { value: copyJson(v[k], `${at}.${k}`), enumerable: true, writable: true, configurable: true });
+  }
+  return out;
+}
+
+function mergeInto(core: Record<string, unknown>, preset: Record<string, unknown>, at: string): Record<string, unknown> {
+  const out = copyJson(core, at) as Record<string, unknown>;
+  for (const k of Object.keys(preset)) {
+    if (PROTO_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${at ? `${at}.` : ""}${k}`);
+    const key = at ? `${at}.${k}` : k;
+    if (deniedCodex(key, k)) continue;
+    if (!Object.hasOwn(out, k)) {
+      // A table only the preset has goes through the merge too, so the denied keys inside it are dropped.
+      const value = plainObject(preset[k]) ? mergeInto({}, preset[k] as Record<string, unknown>, key) : copyJson(preset[k], key);
+      Object.defineProperty(out, k, { value, enumerable: true, writable: true, configurable: true });
+    } else if (plainObject(out[k]) && plainObject(preset[k])) {
+      out[k] = mergeInto(out[k] as Record<string, unknown>, preset[k] as Record<string, unknown>, key);
+    }
+    // Otherwise the core's value stays.
+  }
+  return out;
+}
+
+/**
+ * A scope's cleaned `codex.toml` (hatches spec §5.2) merged under the core's `CODEX_CONFIG`: deep, the core's keys
+ * first and winning at every depth. The profile's keys are refused outright and DENIED_CODEX's are dropped (the
+ * shell's cleaner already refuses both: a last guard).
+ */
+export function mergeCodex(core: Record<string, unknown>, preset: Record<string, unknown>): Record<string, unknown> {
+  for (const k of Object.keys(preset)) {
+    if (PROFILE_KEYS.has(k)) throw new Error(`Refusing the engine preset's codex key ${k}: the task's profile sets it`);
+  }
+  return mergeInto(core, preset, "");
+}
+
+/** A preset server's name: `scope-<name>` (hatches spec §5.2, E9). */
+const PRESET_SERVER = /^scope-[a-z0-9][a-z0-9-]{0,39}$/;
+
+/** Last guards on a turn's preset (the shell builds it from an approved snapshot): never more than a task session takes. */
+function checkPreset(preset: EnginePreset, o: TransportOptions): void {
+  if (o.noTools || o.mcpOnly) throw new Error("Refusing an engine preset on a session without tools");
+  const core = new Set(o.mcp.map((s) => s.name));
+  const seen = new Set<string>();
+  for (const s of preset.servers) {
+    if (!PRESET_SERVER.test(s.name) || core.has(s.name) || seen.has(s.name)) throw new Error(`Refusing the engine preset's server name ${JSON.stringify(s.name)}`);
+    seen.add(s.name);
+  }
 }
 
 type SelectOption = { value?: unknown; name?: unknown; description?: unknown };
@@ -315,6 +460,12 @@ export class AcpTransport implements Transport {
   private spawned = false;
   /** CODEX_CONFIG the last process was started with (undefined: none set by the app). */
   private spawnedConfig: string | undefined;
+  /** The engine preset hash the last process was started with (undefined: none, D0). */
+  private spawnedHash: string | undefined;
+  /** The PATH the last process got on a preset turn (`presetPath`); undefined without a preset (D0). */
+  private spawnedPath: string | undefined;
+  /** The turn's engine preset (hatches part 3); undefined without one (D0). */
+  private engine: EnginePreset | undefined;
   /** The profile of the turn being run. */
   private profile: ModelProfile | undefined;
   /** The model the session runs, as the agent reported it at session/new or session/load (without its effort). */
@@ -330,11 +481,80 @@ export class AcpTransport implements Transport {
   private costBaseline: number | undefined;
   /** A cost arrived in this turn (a turn without one records no cost and keeps the baseline). */
   private costSeen = false;
+  /** The adapter takes `additionalDirectories` on session/new|load (hatches spec §3.3). */
+  private dirsCap = false;
+  /** The turn's linked folders (hatches); empty without a scope (D0). */
+  private linked: LinkedAccess[] = [];
+  /** The write folders the open session was opened with, as JSON (null: no session yet). */
+  private sessionDirs: string | null = null;
+  /** `onLinkedUnsupported` was called already (once per process of the app). */
+  private warnedLinked = false;
+  /** Answers permission requests; its roots are replaced on every turn (L6). */
+  private readonly policy: PermissionPolicy;
 
-  constructor(private readonly o: TransportOptions) {}
+  constructor(private readonly o: TransportOptions) {
+    this.policy = {
+      folder: o.folder,
+      permissions: o.permissions,
+      readRoots: [...(o.references ?? [])],
+      ...(o.mcpOnly ? { mcpOnly: true } : {}),
+      mcpServers: o.mcp.map((s) => s.name),
+      lookup: (id) => this.calls.get(id),
+    };
+  }
+
+  /** The write folders the session is opened with: none without the capability or edit "folder" (hatches spec §3.3). */
+  private writeDirs(): string[] {
+    if (!this.dirsCap || this.o.permissions.edit !== "folder") return [];
+    return this.linked.filter((l) => l.mode === "write").map((l) => l.path);
+  }
+
+  /** `session/new|load` params: today's, plus `additionalDirectories` only when there is one (D0). */
+  private dirsParam(): { additionalDirectories?: string[] } {
+    const dirs = this.writeDirs();
+    return dirs.length > 0 ? { additionalDirectories: dirs } : {};
+  }
+
+  /**
+   * The policy's roots for this turn's linked folders: every one is read, only write folders are edited, and only
+   * when the adapter took them (without the capability the engine's sandbox can't reach them: the policy grants nothing).
+   */
+  private applyLinked(): void {
+    const references = this.o.references ?? [];
+    if (!this.dirsCap) {
+      this.policy.readRoots = [...references];
+      delete this.policy.writeRoots;
+      return;
+    }
+    this.policy.readRoots = [...references, ...this.linked.map((l) => l.path)];
+    const writes = this.writeDirs();
+    if (writes.length > 0) this.policy.writeRoots = writes;
+    else delete this.policy.writeRoots;
+  }
+
+  /**
+   * The turn's write folders differ from the open session's (L6): `session/load` with the new list replaces the old
+   * one (a load that fails starts a new session, as openSession does); an agent that can't load gets a new session
+   * with it (Decision 9: the conversation is lost).
+   */
+  private async reopenWithDirs(config: string | undefined): Promise<void> {
+    if (this.loadable) this.sessionId = undefined;
+    else {
+      await this.endSession();
+      if (!this.conn) await this.connect(config);
+    }
+    await this.openSession();
+  }
+
 
   private get byConfigOption(): boolean {
     return this.o.profileMethod === "config-option";
+  }
+
+  /** A preset turn's PATH: `value` without the work folder and the turn's linked folders (`absoluteSearchPath`). */
+  private presetPath(value: string, scope?: TurnScope): string {
+    const linked = scope ? scope.linked : this.linked;
+    return absoluteSearchPath(value, [this.o.folder, ...linked.map((l) => l.path)]);
   }
 
   /** Starts the agent process and initializes the connection. */
@@ -346,6 +566,8 @@ export class AcpTransport implements Transport {
     const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env, ...this.o.engineEnv };
     if (config !== undefined) env.CODEX_CONFIG = config;
     else delete env.CODEX_CONFIG;
+    // With a preset, its hooks and servers find programs on an absolute-only PATH (E2); without one, D0.
+    if (this.engine) env.PATH = this.presetPath(env.PATH ?? "");
     const child = spawn(binary, args, {
       cwd: this.o.folder,
       env,
@@ -355,6 +577,8 @@ export class AcpTransport implements Transport {
     this.child = child;
     this.spawned = true;
     this.spawnedConfig = config;
+    this.spawnedHash = this.engine?.hash;
+    this.spawnedPath = this.engine ? env.PATH : undefined;
     this.stderrTail = "";
     child.on("exit", () => {
       if (this.child === child) this.reset();
@@ -368,14 +592,7 @@ export class AcpTransport implements Transport {
       this.stderrTail = (this.stderrTail + d.toString()).slice(-STDERR_KEEP);
     });
 
-    const policy: PermissionPolicy = {
-      folder: this.o.folder,
-      permissions: this.o.permissions,
-      readRoots: this.o.references ?? [],
-      ...(this.o.mcpOnly ? { mcpOnly: true } : {}),
-      mcpServers: this.o.mcp.map((s) => s.name),
-      lookup: (id) => this.calls.get(id),
-    };
+    const policy = this.policy;
     const stream = acp.ndJsonStream(
       Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
@@ -396,10 +613,12 @@ export class AcpTransport implements Transport {
     }
     this.loadable = Boolean(init.agentCapabilities?.loadSession);
     this.closable = Boolean(init.agentCapabilities?.sessionCapabilities?.close);
+    this.dirsCap = Boolean(init.agentCapabilities?.sessionCapabilities?.additionalDirectories);
   }
 
+  /** The core's servers, then the turn's preset servers (hatches spec §5.2); the core's alone without a preset (D0). */
   private mcpServers() {
-    return this.o.mcp.map((s) => ({
+    return [...this.o.mcp, ...(this.engine?.servers ?? [])].map((s) => ({
       name: s.name,
       command: s.command,
       args: s.args,
@@ -420,7 +639,7 @@ export class AcpTransport implements Transport {
     if (this.o.session.started && this.loadable) {
       let loaded: { configOptions?: unknown; models?: { currentModelId?: unknown } | null } | undefined;
       try {
-        loaded = (await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers })) as typeof loaded;
+        loaded = (await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers, ...this.dirsParam() })) as typeof loaded;
         this.sessionId = this.o.session.id;
       } catch (e) {
         // An expired login must surface; any other load failure (lost session) falls back to a fresh one.
@@ -434,7 +653,7 @@ export class AcpTransport implements Transport {
       }
     }
     if (!this.sessionId) {
-      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as {
+      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers, ...this.dirsParam() })) as {
         sessionId: string;
         configOptions?: unknown;
         models?: { currentModelId?: unknown } | null;
@@ -446,6 +665,7 @@ export class AcpTransport implements Transport {
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
+    this.sessionDirs = JSON.stringify(this.writeDirs());
     if (this.o.sessionMode) {
       await agent.request("session/set_mode", { sessionId: this.sessionId, modeId: this.o.sessionMode });
     }
@@ -557,6 +777,7 @@ export class AcpTransport implements Transport {
     this.appliedModel = undefined;
     this.child = undefined;
     this.sessionId = undefined;
+    this.sessionDirs = null;
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
@@ -652,22 +873,33 @@ export class AcpTransport implements Transport {
     }
   }
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, scope?: TurnScope): Promise<void> {
     let config: string | undefined;
+    const engine = scope?.engine;
     try {
-      config = profile && !this.byConfigOption ? codexConfig(profile) : undefined;
+      if (engine) checkPreset(engine, this.o);
+      // Codex only (it declares `codex-config`): the preset's codex.toml joins CODEX_CONFIG. OpenCode, Kimi, Gemini
+      // and Qwen get the servers alone. Empty: as without one.
+      const codex = this.o.profileMethod === "codex-config" && engine?.codex && Object.keys(engine.codex).length > 0 ? engine.codex : undefined;
+      if (!this.byConfigOption) config = profile ? codexConfig(profile, codex) : codex ? JSON.stringify(mergeCodex({}, codex)) : undefined;
     } catch (err) {
-      // No ErrorCode fits a profile the core built wrong (it is not the plan's model, nor the user's
-      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile
-      // first, so this is a last guard that should never show.
+      // No ErrorCode fits a profile or a preset the core built wrong (it is not the plan's model, nor the user's
+      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile and
+      // preset first, so this is a last guard that should never show.
       emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
       return;
     }
     // CODEX_CONFIG is read when the agent starts: a task on another profile needs a new process,
     // and a fresh session, so a saved one never resumes under another model (spec D2).
-    if (this.spawned && config !== this.spawnedConfig) {
+    // An engine preset's servers are set at session/new: another hash (or none) needs a new process and session too.
+    if (this.spawned && (config !== this.spawnedConfig || engine?.hash !== this.spawnedHash)) {
       await this.close();
       this.o.session = { id: randomUUID(), started: false };
+    }
+    // A preset turn's PATH leaves out the turn's roots (`absoluteSearchPath`): linked folders changed since the agent
+    // started need a new process (the session is kept, and loaded again where the agent can).
+    if (this.spawned && engine && this.spawnedPath !== this.presetPath({ ...process.env, ...this.o.env, ...this.o.engineEnv }.PATH ?? "", scope)) {
+      await this.close();
     }
     // config-option: a session can't go back to the default model, so a profile without one starts afresh (D2).
     if (this.byConfigOption && this.appliedModel !== undefined && profile?.model === undefined) {
@@ -678,10 +910,26 @@ export class AcpTransport implements Transport {
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
+    // Built per turn from the task's scope (L5, L6): an unlinked folder is gone from this turn on.
+    this.linked = scope?.linked ?? [];
+    this.engine = engine;
+    // The approved preset's servers are trusted as the core's for this turn only (the person approved them); D0: the core's.
+    this.policy.mcpServers = [...this.o.mcp, ...(engine?.servers ?? [])].map((s) => s.name);
     try {
       if (!this.conn || !this.sessionId) {
         if (!this.conn) await this.connect(config);
         await this.openSession();
+      } else if (JSON.stringify(this.writeDirs()) !== this.sessionDirs) {
+        await this.reopenWithDirs(config);
+      }
+      this.applyLinked();
+      if (this.linked.length > 0 && !this.dirsCap && !this.warnedLinked) {
+        this.warnedLinked = true;
+        try {
+          this.o.onLinkedUnsupported?.();
+        } catch (err) {
+          console.error("Could not report the adapter's missing linked folders", err);
+        }
       }
       await this.applyProfile();
     } catch (e) {

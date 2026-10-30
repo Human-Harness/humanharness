@@ -304,25 +304,29 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       lane.known = stored?.started ? stored.id : null;
       return ws.openSlot({ key: id, ...(stored ? { session: stored } : {}), onSession: (s) => sessionStarted(lane, s) });
     });
-    lane.controller = new TurnController({
-      ...d.turnDeps,
-      ensureRuntime: async () => {
-        if (lane.startFailed) {
-          lane.startFailed = false;
-          throw new Error("Couldn't get ready for this turn");
-        }
-        await migrated.catch(() => undefined);
-        await d.checkTurn();
-        // A sleep started just before this turn (the idle timer): the slot is busy until it ends.
-        await sleeps.get(id)?.catch(() => undefined);
-        return lane.slot.get();
-      },
-      chatLog: async (chat) => {
-        await migrated.catch(() => undefined);
-        return d.chatLog(chat, id);
-      },
-      emit,
-    });
+    // Descriptors, not a spread: a getter of the shared deps (scopeAccess, set up once the linked folders' deps
+    // exist) is read at each turn, never frozen at the lane's creation.
+    lane.controller = new TurnController(Object.defineProperties({}, {
+      ...Object.getOwnPropertyDescriptors(d.turnDeps),
+      ...Object.getOwnPropertyDescriptors({
+        ensureRuntime: async () => {
+          if (lane.startFailed) {
+            lane.startFailed = false;
+            throw new Error("Couldn't get ready for this turn");
+          }
+          await migrated.catch(() => undefined);
+          await d.checkTurn();
+          // A sleep started just before this turn (the idle timer): the slot is busy until it ends.
+          await sleeps.get(id)?.catch(() => undefined);
+          return lane.slot.get();
+        },
+        chatLog: async (chat) => {
+          await migrated.catch(() => undefined);
+          return d.chatLog(chat, id);
+        },
+        emit,
+      } satisfies Partial<TurnDeps>),
+    }) as TurnDeps);
     lane.turns = gatedTurns(id, gate, lane.controller, {
       cap: "tasks",
       emit,
@@ -650,6 +654,16 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     /** The open workspace's history, if one is open. */
     async history(): Promise<History | null> {
       return (await workspace.peek()?.catch(() => null))?.history ?? null;
+    },
+    /** A tracked linked folder's history, once a turn of the open workspace opened it (hatches spec §3.4). */
+    async linkedHistory(realPath: string): Promise<History | null> {
+      const ws = await workspace.peek()?.catch(() => null);
+      return ws ? ws.linkedHistory(realPath) : null;
+    },
+    /** `runningPaths` in a tracked linked folder, relative to it (undo by paths over linked folders). */
+    async linkedRunningPaths(realPath: string): Promise<{ task: string; paths: ReadonlySet<string> }[]> {
+      const ws = await workspace.peek()?.catch(() => null);
+      return ws ? ws.linkedRunningPaths(realPath) : [];
     },
     /** Each running turn's task and the paths it touched (undo by paths, P2). */
     async runningPaths(): Promise<{ task: string; paths: ReadonlySet<string> }[]> {

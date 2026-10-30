@@ -300,7 +300,9 @@ export type ContextItemKind =
   | "data"
   | "material"
   | "pinned"
-  | "pinned-title";
+  | "pinned-title"
+  /** A board-mode task's linked folders (hatches Decision 6): its first message lists them. */
+  | "linked-folders";
 
 /** One part of what the app loaded into a task, with its approximate size. */
 export interface ContextItem {
@@ -465,6 +467,8 @@ export interface AppState {
   models?: ModelsView;
   /** The configured folder's backup status (null before a folder is chosen) and the synced places. */
   backup?: { status: SyncStatus | null; locations: SyncLocationView[] };
+  /** The hatches the harness declares (hatches spec). Absent: none (D0). */
+  hatches?: HatchesState;
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -545,7 +549,13 @@ export type ChatNotice = TaskNotice;
 export type UndoRefusal =
   | { reason: "running" | "uncommitted"; path: string }
   | { reason: "later"; path: string; by: "task" | "outside" }
-  | { reason: "too-far" | "nothing" };
+  | { reason: "too-far" | "nothing" }
+  /**
+   * Linked folders (hatches spec §3.4): some folders were restored, then another refused (a running turn wrote there
+   * meanwhile). `workFolder`: the work folder was restored; `restored`/`notRestored`: linked folders' keys; `cause`:
+   * why the first of `notRestored` refused (its path `<key>/…`).
+   */
+  | { reason: "partial"; workFolder: boolean; restored: string[]; notRestored: string[]; cause: Exclude<UndoRefusal, { reason: "partial" }> };
 
 /** The entry is the person's line or the agent's reply, not a notice the app added. */
 export const isTurnEntry = (e: Pick<ChatEntry, "notice">): boolean => e.notice === undefined;
@@ -784,6 +794,8 @@ export interface CurrentTaskView {
   phases?: { id: string; at: string; by: "agent" | "person" | "app" }[];
   phaseProposal?: { to: string; reason: string };
   timeBox?: TimeBoxView;
+  /** The task runs without its scope's engine config (hatches spec §5.3): not approved (or changed since), or refused. */
+  engineNotice?: "unapproved" | "refused";
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
@@ -855,8 +867,148 @@ export function canOpenFile(file: string): boolean {
   return dot > 0 && OPENABLE_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
 
-/** A scope as the window sees it (spec §3.4). */
-export type ScopeView = ScopeEntry;
+/** A scope as the window sees it (spec §3.4). Its linked folders come only through `scopes.linked` (signed ones). */
+export type ScopeView = Omit<ScopeEntry, "linked" | "engineApproval">;
+
+/** A scope's linked folder as the window sees it (hatches spec §3.2). */
+export interface LinkedView {
+  key: string;
+  label: string;
+  path: string;
+  mode: "read" | "write";
+  tracked: boolean;
+  gitChanged?: true;
+  /** The agent doesn't get this folder now, and why (the checks a turn runs): the person unlinks and links it again. */
+  dropped?: LinkDroppedView;
+}
+/** Why a stored link is left out of turns: a refusal of today's picker, or a folder moved, under a reference, or of a new mode. */
+export type LinkDroppedView = Exclude<LinkRefusalView, "one-only" | "too-many"> | "moved" | "mode-changed";
+/** Why a link was refused: a key of en.json `hatches.refused`. */
+export type LinkRefusalView =
+  | "engine-home" | "home" | "system" | "too-broad" | "protected" | "main-folder" | "other-scope-write" | "nested"
+  | "already-linked" | "not-git" | "not-folder" | "unsafe-name" | "reference" | "one-only" | "too-many";
+/** What the History panel shows of the open scope's linked folders (hatches spec §3.4). */
+export interface LinkedHistoryView {
+  /**
+   * Write folders the app's history doesn't cover: the panel says undo doesn't cover them, because they have their own
+   * git, or (`noGit`) they have none and the app's history doesn't track them (they lost it).
+   */
+  uncovered: { key: string; label: string; noGit?: true }[];
+  /** Per task id: what it changed in each tracked folder. */
+  tasks: Record<string, { key: string; label: string; changes: HistoryFileChange[] }[]>;
+}
+/** The hatches a harness declares (hatches spec). Absent from AppState without any (D0). */
+export interface HatchesState {
+  linkedFolders?: Record<string, { label: string; mode: "read" | "write"; history: "auto" | "own"; many: boolean }>;
+  /** The harness declares a backend (hatches spec §4). Absent without one (D0). */
+  backend?: true;
+  /** The harness declares `enginePresets` (hatches spec §5): scope settings show "Engine config". Absent without (D0). */
+  enginePresets?: true;
+}
+
+/** A hook or MCP server of a scope's engine config: it runs a command on the person's computer (spec §5.3). */
+export interface EngineRunsCommandView {
+  kind: "hook" | "server";
+  /** A hook's event (and matcher), a server's name as the engine sees it (`scope-<name>`). */
+  label: string;
+  command: string;
+  args: string[];
+  /** "" for the scope's own config, else the action whose layer it is. */
+  layer: string;
+  /** The file it comes from, relative to the scope's engine folder (`codex.toml` hooks run on Codex only). */
+  file: string;
+  /** It runs a package runner (`npx`, `uvx`) or the like: it may load code the approval doesn't cover. */
+  loadsOtherCode?: true;
+  /** A server's environment variables, names and values (absent when it sets none). */
+  env?: Record<string, string>;
+}
+/** A skill of a scope's engine config, with what its frontmatter asks for while it runs. */
+export interface EngineSkillView {
+  name: string;
+  description: string;
+  /** `allowed-tools`: tools it may use without asking while it runs. */
+  allowedTools: string[];
+  model?: string;
+  /** `context: fork`: it runs in a context of its own. */
+  fork?: true;
+  /** The other files in its folder (scripts, references), relative to it. */
+  files: string[];
+}
+/** What the scope settings' "Engine config" shows of a scope's engine folder (hatches spec §5.3). */
+export interface EngineConfigView {
+  scope: string;
+  base: "isolated" | "global";
+  /** Decision 14: the harness supports Codex ("On Codex, your own Codex config always applies"). */
+  codexLimit: boolean;
+  /** Decision 10: the active engine's id (`claude`, `codex`, `opencode`…); absent before one is chosen. */
+  engine?: string;
+  /** Shown first: hooks, then servers; the scope's own, then each action layer's. */
+  runsCommands: EngineRunsCommandView[];
+  instructions: { layer: string; text: string }[];
+  skills: EngineSkillView[];
+  /** `ignored`: the keys the app drops from the agent's file (`permissionMode`). */
+  agents: {
+    name: string;
+    description: string;
+    ignored: string[];
+    tools?: string[];
+    disallowedTools?: string[];
+    model?: string;
+    skills?: string[];
+    /** `project` or `local`. */
+    memory?: string;
+  }[];
+  /** codex.toml's keys, dotted, each with its value as JSON (its hooks are in `runsCommands`). */
+  codexKeys: { key: string; value: string }[];
+  /** Keys dropped rather than refused, each led by its file (`settings.json: defaultMode`). */
+  ignored: string[];
+  /** settings.json's permission rules per layer ("" the scope's own); only layers with any. */
+  permissions: { layer: string; allow: string[]; deny: string[]; ask: string[] }[];
+  /** Files outside the engine folder its commands name: they join the hash (absolute). */
+  scripts: string[];
+  /** The scripts among `scripts` that load other code (imports, a package runner): not covered by the approval. */
+  loadsOtherCode: string[];
+  /** A config with any can't be approved. */
+  refusals: { file: string; message: string }[];
+  /** What `approve` takes back: main computes it again and approves only when equal. */
+  hash: string;
+  /** The person approved exactly this (the app's signature holds). */
+  approved: boolean;
+  approvedAt?: string;
+  /** Approved before, but the folder no longer hashes to what was approved. */
+  changed?: true;
+}
+/** `changed`: the folder no longer hashes to what was shown; `refused`: it holds refusals. */
+export type EngineApproveResult = { ok: true; view: EngineConfigView } | { ok: false; reason: "changed" | "refused" };
+/** A scope's engine config (hatches spec §5.3). Only with `state.hatches.enginePresets`; without, every call rejects (D0). */
+export interface EngineConfigClient {
+  /** Null: the scope has no engine config. */
+  get(scope: string): Promise<EngineConfigView | null>;
+  /** `hash` is the view's: what the person saw. */
+  approve(scope: string, hash: string): Promise<EngineApproveResult>;
+  /**
+   * Revokes the scope's approval: new tasks start without its config, running ones drop it from their next turn, and
+   * an old approval pasted back no longer counts. Resolves to the view afterwards (`approved: false`); null when the
+   * scope has no engine config.
+   */
+  revoke(scope: string): Promise<EngineConfigView | null>;
+  /** A scope's engine config (or its approval) changed; null: any scope may have. Returns the unsubscribe. */
+  onChanged(listener: (scope: string | null) => void): () => void;
+}
+
+export type BackendState = "stopped" | "starting" | "running" | "failed";
+/** The harness's own backend (hatches spec §4). Harnesses without `backend`: every call rejects. */
+export interface BackendClient {
+  /** Rejects with the backend's error message, "The backend didn't answer in time" or "The backend isn't running". */
+  call(method: string, params?: unknown): Promise<unknown>;
+  /** Listens to one event the backend sends; returns the unsubscribe. */
+  on(event: string, listener: (data: unknown) => void): () => void;
+  /** Decision 1: a method, since values cross the bridge by copy. */
+  state(): Promise<BackendState>;
+  onState(listener: (s: BackendState) => void): () => void;
+  /** From `failed`: starts it again. */
+  restart(): Promise<void>;
+}
 
 /** The open scope and the registry, sent whenever either changes. */
 export interface ScopesView {
@@ -1246,6 +1398,16 @@ export interface HarnessClient {
     open(id: string | null): Promise<boolean>;
     current(): Promise<string | null>;
     onChange(listener: (view: ScopesView) => void): () => void;
+    /** Harnesses with `linkedFolders` only; the others reject. The scope's links the app signed, and Decision 15's flag. */
+    linked(scope: string): Promise<{ folders: LinkedView[]; unsupported: boolean }>;
+    /** Opens the system picker; nothing is linked without the person choosing it. Null: cancelled. */
+    linkFolder(scope: string, key: string): Promise<{ linked: LinkedView } | { refused: LinkRefusalView } | null>;
+    /** Never touches the folder itself. */
+    unlinkFolder(scope: string, key: string, path: string): Promise<void>;
+    /** After a folder gained or lost git (Decision 13): keep it tracked or leave it to its git. */
+    confirmGit(scope: string, key: string, path: string, tracked: boolean): Promise<void>;
+    /** Harnesses with `linkedFolders` only: the open scope's linked folders as the History panel shows them. */
+    linkedHistory(): Promise<LinkedHistoryView>;
   };
   /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. `settings` is read-only here: use `settings`. */
   data: {
@@ -1445,6 +1607,10 @@ export interface HarnessClient {
   tasks: TasksClient;
   /** Background jobs (parallel spec §9.1). Only with `state.jobs` (D0). */
   jobs: JobsClient;
+  /** The harness's backend (hatches spec §4). Only with `state.hatches.backend`; without, every call rejects (D0). */
+  backend: BackendClient;
+  /** A scope's engine config (hatches spec §5.3). Only with `state.hatches.enginePresets` (D0). */
+  engineConfig: EngineConfigClient;
 }
 
 /** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */

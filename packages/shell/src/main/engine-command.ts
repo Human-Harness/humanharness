@@ -45,14 +45,37 @@ const commonBinDirs = (home: string): string[] => [path.join(home, ".local/bin")
 export const knownBinDirs = (home: string, name: string): string[] =>
   name === "opencode" ? [...commonBinDirs(home), path.join(home, ".opencode/bin")] : commonBinDirs(home);
 
-export async function loginShellPath(d: CommandDeps): Promise<string> {
+/** The login shell's PATH, or null when it can't tell. */
+async function readLoginShellPath(d: CommandDeps): Promise<string | null> {
   try {
     const { stdout, code } = await d.run(d.shell, ["-ilc", 'printf "%s" "$PATH"']);
     if (code === 0 && stdout.trim()) return stdout.trim().split("\n").pop()!;
   } catch {
     // fall through
   }
-  return [...commonBinDirs(d.home), "/usr/bin", "/bin"].join(":");
+  return null;
+}
+
+const fallbackPath = (d: CommandDeps) => [...commonBinDirs(d.home), "/usr/bin", "/bin"].join(":");
+
+export async function loginShellPath(d: CommandDeps): Promise<string> {
+  return (await readLoginShellPath(d)) ?? fallbackPath(d);
+}
+
+/** Login PATHs read once per deps: only a successful read is kept, so a failed one is tried again next time. */
+const sharedPaths = new WeakMap<CommandDeps, string>();
+
+/**
+ * The login shell's PATH as the engines get it (`engineCommand`) and as the engine-config check looks programs up on
+ * it: one value, read once, so the two can't drift. A failed read gives the common folders and is retried next call.
+ */
+export async function engineSearchPath(d: CommandDeps): Promise<string> {
+  const known = sharedPaths.get(d);
+  if (known !== undefined) return known;
+  const read = await readLoginShellPath(d);
+  if (read === null) return fallbackPath(d);
+  sharedPaths.set(d, read);
+  return read;
 }
 
 export async function resolveBinary(name: string, searchPath: string, d: CommandDeps): Promise<string | null> {
@@ -64,12 +87,17 @@ export async function resolveBinary(name: string, searchPath: string, d: Command
   return null;
 }
 
-/** How the app starts an engine. Null when the CLI isn't installed. Never adds credentials. */
+/**
+ * How the app starts an engine. Null when the CLI isn't installed. Never adds credentials. `sharedPath` (a harness
+ * with `enginePresets`): the PATH is the one the engine-config check uses (`engineSearchPath`, read once); without it
+ * the login PATH is read fresh each time, as before (D0).
+ */
 export async function engineCommand(
   engine: EngineDef,
   d: CommandDeps,
+  o: { sharedPath?: boolean } = {},
 ): Promise<{ command: string[]; env: Record<string, string> } | null> {
-  const PATH = await loginShellPath(d);
+  const PATH = o.sharedPath ? await engineSearchPath(d) : await loginShellPath(d);
   const line = commandLine(engine);
   const pkg = line.find((part) => part.replace(/@[^@/]+$/, "") in BUNDLED_ADAPTERS);
   if (pkg) {

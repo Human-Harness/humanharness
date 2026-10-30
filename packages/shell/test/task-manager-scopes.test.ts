@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SavedNote } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import { type Note, type NoteMeta, buildNotesIndex } from "@humanharness/workspace";
@@ -23,7 +23,7 @@ const note = (slug: string, dir: string): Note => ({
 });
 
 /** A task manager over memory for a harness with scopes (or without, `scoped: false`). Notes are kept per scope; "flat" is the folder without scopes. */
-function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<string, Note[]>; script?: Event[][]; data?: (scope: string, action?: string) => string; material?: (scope: string) => Promise<string> } = {}) {
+function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<string, Note[]>; script?: Event[][]; data?: (scope: string, action?: string) => string; material?: (scope: string) => Promise<string>; linked?: (scope: string) => Promise<string> } = {}) {
   let state = opts.state ?? emptyTasks();
   const notes: Record<string, Note[]> = structuredClone(opts.notes ?? {});
   const script = [...(opts.script ?? [])];
@@ -62,6 +62,7 @@ function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<strin
     changed: () => {},
     ...(opts.data ? { dataContext: async (scope: string, action?: string) => opts.data!(scope, action) } : {}),
     ...(opts.material ? { materialContext: opts.material } : {}),
+    ...(opts.linked ? { linkedContext: opts.linked } : {}),
     now: () => new Date("2026-10-25T10:00:00.000Z"),
     newId: () => `t${++n}`,
   });
@@ -136,6 +137,39 @@ describe("TaskManager with scopes", () => {
       await t.manager.start("study");
       expect(t.turns[0].message).toBe(plain.turns[0].message);
     }
+  });
+
+  it("board mode: a new session's first message carries its scope's folders after the material, with a context item (hatches Decision 6)", async () => {
+    const material = async () => "## Material\n\nrows";
+    const plain = setup({ material });
+    await plain.manager.switchScope("fracciones");
+    await plain.manager.start("study");
+    const asked: string[] = [];
+    const section = "### Folders of this scope\n\n- `repos` (Repos, read and write): `/code/app`";
+    const t = setup({ material, linked: async (scope) => (asked.push(scope), scope === "fracciones" ? section : "") });
+    await t.manager.switchScope("fracciones");
+    await t.manager.start("study");
+    expect(asked).toEqual(["fracciones"]);
+    expect(t.turns[0].message).toBe(`${plain.turns[0].message.trimEnd()}\n\n${section}`);
+    const start = (await t.manager.contextRecord(t.state().current!.id))!.start;
+    expect(start.find((i) => i.kind === "linked-folders")).toEqual({ id: "linked", kind: "linked-folders", label: "Folders of this scope", tokens: expect.any(Number) });
+    const before = (await plain.manager.contextRecord(plain.state().current!.id))!.start;
+    expect(before.some((i) => i.kind === "linked-folders")).toBe(false);
+  });
+
+  it("an empty or failing folders section adds nothing to the first message nor to its start", async () => {
+    const plain = setup();
+    await plain.manager.switchScope("fracciones");
+    await plain.manager.start("study");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const linked of [async () => "", async () => Promise.reject(new Error("disk"))]) {
+      const t = setup({ linked });
+      await t.manager.switchScope("fracciones");
+      await t.manager.start("study");
+      expect(t.turns[0].message).toBe(plain.turns[0].message);
+      expect((await t.manager.contextRecord(t.state().current!.id))!.start).toEqual((await plain.manager.contextRecord(plain.state().current!.id))!.start);
+    }
+    err.mockRestore();
   });
 
   it("runs an app-wide action in _app while the chat stays the open scope's", async () => {

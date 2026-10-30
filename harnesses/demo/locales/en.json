@@ -14,5 +14,14 @@
   "openFailed": "I couldn't open {{path}}.",
   "reveal": "Show in Finder",
   "revealLabel": "Show {{path}} in Finder",
-  "revealFailed": "I couldn't show {{path}} in Finder."
+  "revealFailed": "I couldn't show {{path}} in Finder.",
+  "backend": {
+    "title": "Backend",
+    "echo": "Echo",
+    "stream": "Stream",
+    "echoed": "{{text}} (mock: {{mock}})",
+    "ticks": "Ticks",
+    "tick": "tick {{i}}",
+    "sent": "sent {{n}}"
+  }
 }

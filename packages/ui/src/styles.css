@@ -207,6 +207,10 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Always there for screen readers; while empty it takes no room (out of the flow, still in the tree). */
 .hh-backup-status { margin: 0; max-width: 460px; color: var(--hh-slate); font-size: 13px; overflow-wrap: anywhere; }
 .hh-backup-status:empty { position: absolute; }
+/* Hatches §4.3: the harness's backend gave up; it floats over whichever screen is open. */
+.hh-backend-card { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: grid; gap: 8px; max-width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-slate); font-size: 13px; overflow-wrap: anywhere; }
+.hh-backend-card p { margin: 0; }
+.hh-backend-card button { justify-self: start; }
 .hh-place:has(input:checked) { border-color: var(--hh-ink); font-weight: 600; }
 .hh-place:has(input:checked) .hh-caption { font-weight: 400; }
 .hh-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -553,6 +557,32 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
   display: flex;
   gap: 6px;
 }
+
+/* Scope settings (hatches spec §3.2): linked folders, one row each. */
+.hh-scope-settings h2 { margin: 0; font-size: 15px; }
+.hh-linked { display: grid; gap: 10px; }
+.hh-linked h3 { margin: 0; font-size: 13px; }
+.hh-linked-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hh-linked-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.hh-linked-text { display: grid; gap: 2px; min-width: 0; }
+.hh-linked-text code { font-size: 12px; overflow-wrap: anywhere; }
+.hh-engine { display: grid; gap: 10px; margin-top: 16px; }
+.hh-engine h3 { margin: 0; font-size: 13px; }
+.hh-engine h4 { margin: 0 0 4px; font-size: 12px; }
+.hh-engine p { margin: 0; }
+.hh-engine-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hh-engine-list li { display: grid; gap: 2px; min-width: 0; }
+.hh-engine code { font-size: 12px; overflow-wrap: anywhere; }
+.hh-engine-warn { font-size: 12px; }
+.hh-engine-refusal { color: var(--hh-warn); }
+.hh-engine-doc { border-left: 2px solid var(--hh-line); padding-left: 10px; }
+.hh-engine-source { margin: 4px 0 0; padding: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--hh-line); font-size: 12px; }
+.hh-engine-notice { margin: 4px 0; font-size: 12px; color: var(--hh-muted); }
+.hh-linked-git { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hh-linked-git p { margin: 0; }
+.hh-linked-add { display: grid; gap: 4px; justify-items: start; }
+.hh-history-uncovered { padding: 0 8px 6px; }
+.hh-history-linked { display: grid; gap: 4px; }
 
 /* Profiles (profiles spec §5): the switcher and the avatar. A stored title can be long: it never widens the bar. */
 .hh-profile-switcher { display: flex; align-items: center; gap: 8px; }

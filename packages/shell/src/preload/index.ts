@@ -30,6 +30,7 @@ import type {
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
+import { backendClient } from "./backend";
 import { askContext, contextListener } from "./context";
 import { documentWatcher } from "./document-watch";
 import { fileCommitListeners } from "./file-commits";
@@ -167,6 +168,12 @@ const client: HarnessClient = {
     open: (id) => ipcRenderer.invoke("hh:scopeOpen", id),
     current: () => ipcRenderer.invoke("hh:scopeCurrent"),
     onChange: (listener) => subscribe<ScopesView>("hh:scopes", listener),
+    // Harnesses with linked folders only (main registers these channels then, hatches D0). No path ever goes to link.
+    linked: (scope) => ipcRenderer.invoke("hh:scopeLinked", scope),
+    linkFolder: (scope, key) => ipcRenderer.invoke("hh:scopeLinkFolder", scope, key),
+    unlinkFolder: (scope, key, path) => ipcRenderer.invoke("hh:scopeUnlinkFolder", scope, key, path),
+    confirmGit: (scope, key, path, tracked) => ipcRenderer.invoke("hh:scopeConfirmGit", scope, key, path, tracked),
+    linkedHistory: () => ipcRenderer.invoke("hh:linkedHistory"),
   },
   data: {
     get: (collection, key, options) => ipcRenderer.invoke("hh:data", { op: "get", collection, ...(key !== undefined ? { key } : {}) }, options),
@@ -308,6 +315,16 @@ const client: HarnessClient = {
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
   // Language on demand (language spec): every answer is data, a rejected invoke included.
   language: languageClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
+  // The harness's backend (hatches spec §4.2): main registers its channels only with `backend` (D0).
+  backend: backendClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
+  // A scope's engine config (hatches spec §5.3): main registers these channels only with `enginePresets` (D0). The
+  // hash sent back is the one the view carried; main computes it again and approves only when equal.
+  engineConfig: {
+    get: (scope) => ipcRenderer.invoke("hh:engineConfig", scope),
+    approve: (scope, hash) => ipcRenderer.invoke("hh:engineApprove", scope, hash),
+    revoke: (scope) => ipcRenderer.invoke("hh:engineRevoke", scope),
+    onChanged: (listener) => subscribe<string | null>("hh:engineConfigChanged", listener),
+  },
 };
 
 contextBridge.exposeInMainWorld("hh", client);

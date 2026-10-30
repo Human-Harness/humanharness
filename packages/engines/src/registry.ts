@@ -7,6 +7,8 @@ import type { EngineDef } from "./types";
 export { AcpTransport } from "./acp/client";
 export type { TransportOptions } from "./acp/options";
 export { ClaudeCliTransport } from "./claude/transport";
+// A linked folder whose path no Claude permission rule can spell is refused when it is picked (hatches §3.2).
+export { ruleUnsafePath } from "./claude/transport";
 
 /** One line per engine. Codex, OpenCode and the engines listed only for their legal status run the ACP adapter. */
 export const ADAPTERS: Readonly<Record<string, EngineAdapter>> = {

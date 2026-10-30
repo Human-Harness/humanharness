@@ -92,6 +92,15 @@ export function parseDataPath(rel: string): { scope: string; collection: string 
   return m && isScopeDir(m[1]) && COLLECTION_NAME.test(m[2]) ? { scope: m[1], collection: m[2] } : null;
 }
 
+/** A scope's engine config (hatches spec §5.1), relative to the base. Tracked only with `enginePresets` (D0). */
+export const ENGINE_PREFIX = ".harness/engine/";
+
+/** The engine config folder of `scope`: a scope id, never `_app`. Throws otherwise: it names a folder. */
+export function engineConfigDir(base: string, scope: string): string {
+  if (!isScopeId(scope)) throw new Error(`Invalid engine config scope: "${String(scope).slice(0, 40)}"`);
+  return path.join(base, ".harness", "engine", scope);
+}
+
 /** The person's originals, visible and theirs (material spec §4): `material/<scope>/`. */
 export const MATERIAL_DIR = "material";
 

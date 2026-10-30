@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { type CommandDeps, cliCommand, engineCommand, knownBinDirs, loginShellPath, resolveBinary } from "../src/main/engine-command";
+import { type CommandDeps, cliCommand, engineCommand, engineSearchPath, knownBinDirs, loginShellPath, resolveBinary } from "../src/main/engine-command";
 
 function deps(overrides: Partial<CommandDeps> = {}): CommandDeps {
   return {
@@ -83,6 +83,29 @@ describe("engineCommand", () => {
       command: ["/App/Electron", "/app/node_modules/@agentclientprotocol/codex-acp/dist/index.js"],
       env: { PATH: "/usr/bin", ELECTRON_RUN_AS_NODE: "1" },
     });
+  });
+
+  it("without enginePresets reads the login PATH fresh every time (D0); with them, one shared PATH, a failed read retried", async () => {
+    let reads = 0;
+    let answer: { stdout: string; code: number } = { stdout: "/a:/usr/bin", code: 0 };
+    const d = deps({ run: async () => (reads++, answer), isExecutable: async (p) => p.endsWith("/claude") });
+    const claude = getEngine("claude");
+    // D0: each launch reads again and sees a changed PATH.
+    expect((await engineCommand(claude, d))!.env.PATH).toBe("/a:/usr/bin");
+    answer = { stdout: "/b:/usr/bin", code: 0 };
+    expect((await engineCommand(claude, d))!.env.PATH).toBe("/b:/usr/bin");
+    expect(reads).toBe(2);
+    // enginePresets: the first good read is the engines' PATH and the check's (engineSearchPath).
+    const s = deps({ run: async () => (reads++, answer), isExecutable: async (p) => p.endsWith("/claude") });
+    reads = 0;
+    answer = { stdout: "", code: 1 };
+    expect((await engineCommand(claude, s, { sharedPath: true }))!.env.PATH).toBe("/Users/me/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
+    answer = { stdout: "/c:/usr/bin", code: 0 };
+    expect((await engineCommand(claude, s, { sharedPath: true }))!.env.PATH).toBe("/c:/usr/bin");
+    answer = { stdout: "/d:/usr/bin", code: 0 };
+    expect((await engineCommand(claude, s, { sharedPath: true }))!.env.PATH).toBe("/c:/usr/bin");
+    expect(await engineSearchPath(s)).toBe("/c:/usr/bin");
+    expect(reads).toBe(2);
   });
 
   it("reports a missing Claude as null so the runtime says engine-not-installed", async () => {

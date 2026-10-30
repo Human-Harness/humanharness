@@ -1,4 +1,5 @@
 import type { TasksState, UndoRefusal } from "@humanharness/ui/client";
+import type { PartialRestore } from "./linked-restore";
 import type { RestoreByPaths } from "./restore-paths";
 
 /** A task id from the window: a string of 1..200 characters (the board then looks it up among its lanes, P1). */
@@ -15,7 +16,12 @@ export function restoreTaskArgs(taskId: unknown, includeShared: unknown): { id: 
 }
 
 /** What the window is told of a refused undo by paths: the reason and the file, never the other tasks' ids. */
-export function undoRefusalOf(r: Exclude<RestoreByPaths, { ok: true }>): UndoRefusal {
+export function undoRefusalOf(r: Exclude<RestoreByPaths, { ok: true }> | PartialRestore): UndoRefusal {
+  if (r.reason === "partial") return { reason: "partial", workFolder: r.workFolder, restored: r.restored, notRestored: r.notRestored, cause: refusalOf(r.refusal) };
+  return refusalOf(r);
+}
+
+function refusalOf(r: Exclude<RestoreByPaths, { ok: true }>): Exclude<UndoRefusal, { reason: "partial" }> {
   switch (r.reason) {
     case "running":
     case "uncommitted":

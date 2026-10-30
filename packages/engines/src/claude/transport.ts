@@ -4,8 +4,9 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
-import { type ActivityKind, type CommonOptions, EDIT_PATH_MAX, type Event, type Transport, fail } from "../contract";
+import { type ActivityKind, type CommonOptions, EDIT_PATH_MAX, type EnginePreset, type Event, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
 import { type ModelProfile, isCap, isEffort, isModelId } from "../models";
+import { absoluteSearchPath } from "../search-path";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
 /** Plumbing tools the user should never see as activity. */
@@ -21,9 +22,18 @@ const READ_TOOLS = ["Read", "Glob", "Grep", "TodoWrite"];
 /** Further built-in tools an MCP-only session never needs: subagents, listing, notebooks, skills, slash commands, web. */
 const MCP_ONLY_DENIED = [...READ_TOOLS, "Task", "Agent", "LS", "NotebookRead", "NotebookEdit", "Skill", "SlashCommand", "WebFetch", "WebSearch"];
 
-export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false): string[] {
+export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false, linked: LinkedAccess[] = []): string[] {
   const tools = mcpOnly ? [] : [...READ_TOOLS];
-  if (permissions.edit === "folder") tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
+  if (permissions.edit === "folder") {
+    tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
+    // A write linked folder (hatches spec §3.3): explicit allow rules next to `additionalDirectories`, in case
+    // acceptEdits does not cover additional directories. Its deny rules below still win.
+    for (const l of linked) {
+      if (l.mode !== "write") continue;
+      const dir = referenceRulePath(l.path);
+      tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
+    }
+  }
   if (permissions.web) tools.push("WebSearch", "WebFetch");
   if (permissions.exec) tools.push("Bash");
   for (const server of mcp) tools.push(`mcp__${server.name}`);
@@ -31,7 +41,7 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcp
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false): string[] {
+export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false, linked: LinkedAccess[] = []): string[] {
   const tools = ["AskUserQuestion", ...(mcpOnly ? MCP_ONLY_DENIED : [])];
   const deny = (...names: string[]) => tools.push(...names.filter((n) => !tools.includes(n)));
   if (permissions.edit === "none") deny("Edit", "Write", "MultiEdit", "NotebookEdit");
@@ -43,6 +53,13 @@ export function disallowedTools(permissions: Permissions, references: string[] =
   for (const ref of references) {
     const dir = referenceRulePath(ref);
     tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
+  }
+  // A linked folder (hatches spec §3.3): read-only like a reference; a write folder's own settings and git hooks are
+  // denied, as `.claude/**` is in the main folder.
+  for (const l of linked) {
+    const dir = referenceRulePath(l.path);
+    const subs = l.mode === "read" ? [""] : ["/.claude", "/.git"];
+    for (const sub of subs) tools.push(`Edit(/${dir}${sub}/**)`, `Write(/${dir}${sub}/**)`, `MultiEdit(/${dir}${sub}/**)`);
   }
   return tools;
 }
@@ -59,6 +76,19 @@ export function referenceRulePath(dir: string, platform: NodeJS.Platform = proce
     return drive ? `/${drive[1].toLowerCase()}${rest}` : rest;
   }
   return path.posix.resolve(dir).replace(/\/+$/, "");
+}
+
+/** Characters a permission rule list or its glob would read as syntax: the comma joins rules, the rest are glob or rule syntax. */
+const RULE_UNSAFE = /[,()*?[\]{}\x00-\x1f\x7f]/;
+
+/**
+ * Whether a folder can't be spelled safely in a permission rule (hatches spec §3.3): not absolute, or a name with a
+ * comma, `( ) * ? [ ] { }`, a control character, or (outside Windows) a backslash. Such a rule would split, match
+ * other folders or miss its own `.git`, so the picker refuses these folders and `claudeArgs` throws on one.
+ */
+export function ruleUnsafePath(p: string, platform: NodeJS.Platform = process.platform): boolean {
+  const abs = platform === "win32" ? path.win32.isAbsolute(p) : path.posix.isAbsolute(p);
+  return !abs || RULE_UNSAFE.test(p) || (platform !== "win32" && p.includes("\\"));
 }
 
 /**
@@ -89,39 +119,119 @@ export const ALL_BUILTIN_TOOLS = [
  * directories grant file access, not configuration").
  */
 export function referenceSettingsArgs(references: string[]): string[] {
-  if (references.length === 0) return [];
-  return ["--settings", JSON.stringify({ permissions: { additionalDirectories: references } })];
+  return settingsArgs(references);
+}
+
+/**
+ * The one `--settings` for the reference and linked folders and the scope's approved preset, or nothing when it would
+ * be empty (D0). Linked folders follow the references, so a turn without a scope gets exactly
+ * `referenceSettingsArgs`'s value; never `--add-dir` (hatches spec §3.5). The preset's hooks and allow/deny/ask rules
+ * join the same object (§5.2); the harness's `--disallowedTools` stays outside it and still wins.
+ */
+export function settingsArgs(references: string[], scope?: TurnScope): string[] {
+  const dirs = [...references, ...(scope?.linked ?? []).map((l) => l.path)];
+  const preset = scope?.engine;
+  const hooks = preset?.settings?.hooks;
+  const rules = presetRules(preset);
+  const permissions = { ...(dirs.length > 0 ? { additionalDirectories: dirs } : {}), ...rules };
+  const settings = {
+    ...(hooks ? { hooks } : {}),
+    ...(Object.keys(permissions).length > 0 ? { permissions } : {}),
+    // `global` drops --strict-mcp-config, so the CLI would also start the folder's `.mcp.json` servers, which nobody
+    // approved: these settings outrank the user and project sources and turn them off.
+    ...(preset?.base === "global" ? { enableAllProjectMcpServers: false, enabledMcpjsonServers: [] } : {}),
+  };
+  if (Object.keys(settings).length === 0) return [];
+  return ["--settings", JSON.stringify(settings)];
+}
+
+/**
+ * The preset's allow/deny/ask lists, non-empty ones only. An `mcp__` allow rule passes only when it names one of the
+ * preset's own servers: under the `global` base the CLI also loads the person's servers, which a preset must not
+ * approve. Deny and ask rules only narrow, so they pass as they are.
+ */
+function presetRules(preset: EnginePreset | undefined): { allow?: string[]; deny?: string[]; ask?: string[] } {
+  const p = preset?.settings?.permissions;
+  if (!p) return {};
+  const own = (preset?.servers ?? []).map((s) => `mcp__${s.name}`);
+  const allowed = (rule: string) => !rule.startsWith("mcp__") || own.some((n) => rule === n || rule.startsWith(`${n}__`));
+  const out: { allow?: string[]; deny?: string[]; ask?: string[] } = {};
+  const allow = (p.allow ?? []).filter(allowed);
+  if (allow.length > 0) out.allow = allow;
+  if (p.deny?.length) out.deny = [...p.deny];
+  if (p.ask?.length) out.ask = [...p.ask];
+  return out;
+}
+
+/** Under the `global` base the CLI reads the folder's `.mcp.json`: the agent may not write one. */
+const GLOBAL_DENIED = ["Edit(.mcp.json)", "Write(.mcp.json)", "MultiEdit(.mcp.json)", "NotebookEdit(.mcp.json)"];
+
+/** The CLI's environment: with a preset, its `PATH` keeps absolute entries outside `roots` only (`absoluteSearchPath`); without one, as given (D0). */
+function presetEnv(env: NodeJS.ProcessEnv, preset: boolean, roots: readonly string[]): NodeJS.ProcessEnv {
+  return preset ? { ...env, PATH: absoluteSearchPath(env.PATH ?? "", roots) } : env;
+}
+
+/**
+ * Checks a preset at the last boundary before the CLI: a known base, servers named `scope-<name>` that take no core
+ * server's name nor each other's, and absolute snapshot paths (nothing that reads as a flag).
+ */
+function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
+  if (preset.base !== "isolated" && preset.base !== "global") throw new Error(`Unknown engine preset base: ${JSON.stringify(preset.base)}`);
+  const core = new Set(mcp.map((s) => s.name));
+  const seen = new Set<string>();
+  for (const s of preset.servers) {
+    if (!/^scope-[a-z0-9][a-z0-9-]{0,39}$/.test(s.name) || core.has(s.name) || seen.has(s.name)) {
+      throw new Error(`Refusing an engine preset server name: ${JSON.stringify(s.name)}`);
+    }
+    seen.add(s.name);
+  }
+  for (const p of [preset.pluginDir, preset.agentsFile]) {
+    if (p !== undefined && (!path.isAbsolute(p) || p.startsWith("-"))) throw new Error(`Refusing an engine preset path: ${JSON.stringify(p)}`);
+  }
 }
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<CommonOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly"> & { profile?: ModelProfile },
+  o: Pick<CommonOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly"> & { profile?: ModelProfile; scope?: TurnScope },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
-  if (o.noTools && (o.mcp.length > 0 || (o.references ?? []).length > 0)) {
-    throw new Error("A no-tools session takes no MCP servers or reference folders");
+  const linked = o.scope?.linked ?? [];
+  if (o.noTools && (o.mcp.length > 0 || (o.references ?? []).length > 0 || linked.length > 0)) {
+    throw new Error("A no-tools session takes no MCP servers, reference or linked folders");
   }
+  if (o.mcpOnly && linked.length > 0) throw new Error("An MCP-only session takes no linked folders");
+  const engine = o.scope?.engine;
+  if (engine && (o.noTools || o.mcpOnly)) throw new Error("A no-tools or MCP-only session takes no engine preset");
+  if (engine) checkPreset(engine, o.mcp);
+  // The last boundary: the picker refuses these names, but a hand-edited scopes.json could still bring one here.
+  const unsafe = linked.find((l) => ruleUnsafePath(l.path));
+  if (unsafe) throw new Error(`Refusing a linked folder no permission rule can spell: ${JSON.stringify(unsafe.path)}`);
+  // The preset's servers follow the core's (hatches spec §5.2); checkPreset keeps their names apart.
   const mcpServers = Object.fromEntries(
-    o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
+    [...o.mcp, ...(engine?.servers ?? [])].map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
   // The non-noTools flags keep their old order: a session without `noTools` runs exactly as before (D0).
   const tools = o.noTools
     ? ["--tools", "", "--disallowedTools", ALL_BUILTIN_TOOLS.join(",")]
     : [
-        "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly).join(","),
-        "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly).join(","),
+        "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly, linked).join(","),
+        "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
       ];
   return [
     "-p",
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--setting-sources", "project",
+    // The `global` base lets the CLI load the person's own settings and servers (hatches spec §5.2).
+    "--setting-sources", engine?.base === "global" ? "user,project" : "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
     ...tools,
-    "--strict-mcp-config",
+    ...(engine?.base === "global" ? [] : ["--strict-mcp-config"]),
     "--mcp-config", JSON.stringify({ mcpServers }),
-    ...referenceSettingsArgs(o.references ?? []),
+    ...settingsArgs(o.references ?? [], o.scope),
+    // Skills and agents from the approved snapshot, never the live folder (hatches spec §5.2).
+    ...(engine?.pluginDir !== undefined ? ["--plugin-dir", engine.pluginDir] : []),
+    ...(engine?.agentsFile !== undefined ? ["--agents", engine.agentsFile] : []),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
     ...profileArgs(o.profile),
@@ -312,7 +422,7 @@ export class ClaudeCliTransport implements Transport {
     this.o.onSessionStarted(this.o.session);
   };
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile, scope?: TurnScope): Promise<void> {
     try {
       profileArgs(profile);
     } catch (err) {
@@ -323,18 +433,24 @@ export class ClaudeCliTransport implements Transport {
       return;
     }
     const wasResume = this.o.session.started;
-    let last = await this.attempt(message, emit, signal, profile);
+    let last = await this.attempt(message, emit, signal, profile, scope);
     if (wasResume && last.type === "done" && !last.ok && last.error?.detail && NO_CONVERSATION.test(last.error.detail) && !signal.aborted) {
       // The stored session is gone on the CLI side: continue the chat in a fresh one.
       this.o.session = { id: randomUUID(), started: false };
-      last = await this.attempt(message, emit, signal, profile);
+      last = await this.attempt(message, emit, signal, profile, scope);
       if (last.type === "done" && last.ok) this.markStarted();
     }
     emit(last);
   }
 
   /** Runs one process; resolves with the terminal event instead of emitting it. */
-  private attempt(message: string, rawEmit: (e: Event) => void, signal: AbortSignal, profile: ModelProfile | undefined): Promise<Event> {
+  private attempt(
+    message: string,
+    rawEmit: (e: Event) => void,
+    signal: AbortSignal,
+    profile: ModelProfile | undefined,
+    scope: TurnScope | undefined,
+  ): Promise<Event> {
     return new Promise((resolve) => {
       let finished = false;
       let killTimer: NodeJS.Timeout | undefined;
@@ -351,9 +467,9 @@ export class ClaudeCliTransport implements Transport {
       };
       const useGroup = process.platform !== "win32";
       const [binary, ...leading] = this.o.command;
-      const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile })], {
+      const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile, scope })], {
         cwd: this.o.folder,
-        env: { ...process.env, ...this.o.env },
+        env: presetEnv({ ...process.env, ...this.o.env }, scope?.engine !== undefined, [this.o.folder, ...(scope?.linked ?? []).map((l) => l.path)]),
         stdio: ["pipe", "pipe", "pipe"],
         detached: useGroup,
       });

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
-import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, fail } from "@humanharness/runtime";
+import { type EnginePreset, type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, type TurnScope, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
+import { withEngine } from "./scope-access";
 import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -78,6 +79,8 @@ export interface TurnOptions extends SendOptions {
    * on to the slot; the plain runtime's single slot never overlaps, so it is never called there.
    */
   onAttribution?: (a: TurnAttribution) => void;
+  /** The task's approved engine preset for this turn (hatches spec §5.2), checked by the task manager. Absent: none (D0). */
+  engine?: EnginePreset;
 }
 
 /** What a turn needs from the engine side: today's runtime, or one session slot (parallel spec §4). */
@@ -102,6 +105,11 @@ export interface TurnDeps {
   sessionExpired?: (engineId: string) => Promise<void>;
   /** The configured engine, read when the turn starts: the one `sessionExpired` is told about. */
   engineId?: () => Promise<string | undefined>;
+  /**
+   * The linked folders a turn of a task in `scope` reaches (hatches spec §3.3), read for each turn from the turn's own
+   * scope (L5). Undefined: none. Absent without linked folders (D0): the turn's options are today's.
+   */
+  scopeAccess?: (scope: string) => Promise<TurnScope | undefined>;
 }
 
 /** The task's own work, whose input blocks get ids (input-blocks spec §4): never the closing or checkpoint turn. */
@@ -170,7 +178,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution, engine } = options;
     const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = current;
     try {
@@ -258,6 +266,16 @@ export class TurnController {
       }
       if (current.cancelled) return await finish(fail("cancelled") as Done);
       if (!rt) return await finish(fail("engine-not-installed") as Done);
+      // The task's scope's folders, read now (an unlink reaches the next turn). One that can't be read: none, logged.
+      const folders =
+        scope !== undefined && this.deps.scopeAccess
+          ? await this.deps.scopeAccess(scope).catch((err: unknown) => {
+              console.error("Could not read the scope's folders", err);
+              return undefined;
+            })
+          : undefined;
+      const access = withEngine(folders, engine);
+      if (current.cancelled) return await finish(fail("cancelled") as Done);
 
       let finished: Promise<void> = Promise.resolve();
       current.running = rt.send(message, (raw) => {
@@ -279,7 +297,7 @@ export class TurnController {
             this.emit(forWindow(e));
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}), ...(onAttribution ? { onAttribution } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}), ...(onAttribution ? { onAttribution } : {}), ...(access ? { scope: access } : {}) });
       await current.running.done;
       await finished;
     } finally {

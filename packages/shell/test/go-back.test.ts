@@ -1,6 +1,6 @@
 import { createI18n } from "@humanharness/i18n";
 import type { FileRestorePrompt, HistoryTaskView } from "@humanharness/ui/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CANCELLED, GO_BACK_CHANNELS, type GoBackAsk, type GoBackDeps, askNatively, dialogSafe, goBackHandlers, goBackText } from "../src/main/go-back";
 
 const SHA = (c: string) => c.repeat(40);
@@ -239,6 +239,19 @@ describe("goBackHandlers (every go-back asks first)", () => {
     const no = deps(false);
     expect(await no.h["hh:restoreTask"]("win", "t2")).toEqual(CANCELLED);
     expect(no.done).toEqual([]);
+  });
+
+  it("hh:restoreTask with taskGroups (linked folders): the task and its later tasks come from them, not the panel's", async () => {
+    // t9 changed only a linked folder, after t2: the panel's groups never name it.
+    const linkedOnly = group("t9", "2026-10-28T11:59:00.000Z");
+    const taskGroups = vi.fn(async (_id: string) => [linkedOnly, ...groups]);
+    const yes = deps(true, { taskGroups });
+    expect(await yes.h["hh:restoreTask"]("win", "t2")).toEqual({ ok: true });
+    expect(yes.asks[0].ask).toEqual({ kind: "task", task: groups[1], later: [linkedOnly, groups[0]] });
+    expect(taskGroups).toHaveBeenCalledWith("t2");
+    // A task only in a linked history can be undone.
+    expect(await yes.h["hh:restoreTask"]("win", "t9")).toEqual({ ok: true });
+    expect(yes.done).toEqual(["task t2", "task t9"]);
   });
 
   it("hh:fileRestore: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {

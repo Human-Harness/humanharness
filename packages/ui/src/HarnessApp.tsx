@@ -8,6 +8,7 @@ import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
+import { BackendCard } from "./hatches/BackendCard";
 import { Home } from "./Home";
 import { Inbox } from "./parallel/Inbox";
 import { TaskStrip } from "./parallel/TaskStrip";
@@ -332,6 +333,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             language={client.language ? language : undefined}
           />
         )}
+        {/* Hatches §4.3: only a harness with a backend gets the card and its listener (D0). */}
+        {state.hatches?.backend && <BackendCard client={client} />}
       </div>
       {settings && (
         <SettingsSheet

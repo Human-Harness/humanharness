@@ -26,7 +26,7 @@ import {
   setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
-import { type Event, type Session, fail } from "@humanharness/runtime";
+import { type EnginePreset, type Event, type Session, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
   type ContextItem,
@@ -58,6 +58,7 @@ import {
 import { notesIndexParts } from "./notes-index";
 import { INDEX_NOTES_MAX, READS_MAX, START_ITEMS_MAX, type SeenRead, approxTokens, markCompacted, mergeReads, readsOf } from "./context-record";
 import { RoundNotStarted } from "./reviews";
+import type { EngineHost, TaskPreset } from "./engine-config/engine-host";
 import {
   CHECKPOINT_PROMPT,
   type ModeText,
@@ -148,6 +149,11 @@ export interface TaskDeps {
   folder?(): Promise<string | null>;
   /** The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0). */
   materialContext?(scope: string): Promise<string>;
+  /**
+   * Board mode's "Folders of this scope" for a task in `scope`, after the material (hatches Decision 6: AGENTS.md is
+   * shared by lanes in different scopes, so each task's first message names its own); "" for none. Absent: D0.
+   */
+  linkedContext?(scope: string): Promise<string>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
   endSession(): Promise<void>;
   /** Records the folder in the local history (a note was written), tagged with the task it belongs to. */
@@ -223,6 +229,11 @@ export interface TaskDeps {
   phaseMoved?(e: PhaseMoved): void;
   /** A task ended with its note saved (parallel spec §8 `afterTask`). Never awaited. Absent: nothing (D0). */
   taskClosed?(task: { id: string; action?: string; scope: string }): void;
+  /**
+   * The scope's approved engine preset for a new task, and again before each later turn of a task that started with
+   * one (hatches spec §5.2, §5.3, Decision 2). Only with `enginePresets` and scopes. Absent: none (D0).
+   */
+  enginePreset?: Pick<EngineHost, "presetFor" | "presetForTask" | "pinTag">;
 }
 
 /** What `phaseMoved` gets (sidekick spec §2a.2). */
@@ -302,6 +313,16 @@ export function needsCheckpoint(c: CurrentTask): boolean {
   return c.profile !== undefined && c.context !== undefined && c.checkpointed !== true && c.context.used >= CHECKPOINT_AT * c.profile.cap;
 }
 
+/**
+ * A new session's context with the scope's instructions first (hatches Decision 3): right after the brief, before the
+ * notes indexes, listed as their own item. No instructions: `ctx` as it is (D0).
+ */
+function withScopeInstructions(ctx: { text: string; items: ContextItem[] }, instructions: string): { text: string; items: ContextItem[] } {
+  if (!instructions) return ctx;
+  const item: ContextItem = { id: "scope-instructions", kind: "scope-instructions", label: "Scope instructions", tokens: approxTokens(instructions.length) };
+  return { text: [instructions, ctx.text].filter(Boolean).join("\n\n"), items: [item, ...ctx.items] };
+}
+
 /** The open task as the window sees it: no session, no prompt, just what the screen shows. `tier` only for a task with modes. */
 const currentView = (c: CurrentTask, tier?: Tier, timeBox?: TimeBoxView): CurrentTaskView => ({
   id: c.id,
@@ -321,6 +342,7 @@ const currentView = (c: CurrentTask, tier?: Tier, timeBox?: TimeBoxView): Curren
   ...(c.phases ? { phases: c.phases } : {}),
   ...(c.phaseProposal ? { phaseProposal: c.phaseProposal } : {}),
   ...(timeBox ? { timeBox } : {}),
+  ...(c.engineNotice ? { engineNotice: c.engineNotice } : {}),
 });
 
 /** How much of the last checkpoint's summary a mode switch carries (spec §10.1): `save_note`'s own limits. */
@@ -916,6 +938,37 @@ export class TaskManager {
     };
   }
 
+  /** A new task's engine preset in `scope` (hatches spec §5.2). Null without `enginePreset` or scopes (D0); a failure: none, with the notice. */
+  private async presetFor(scope: string, action: string | undefined): Promise<TaskPreset | null> {
+    if (!this.d.enginePreset || !this.d.scoped) return null;
+    return this.d.enginePreset.presetFor(scope, action).catch((err: unknown) => {
+      console.error("Could not read the scope's engine config; the task starts without it", err);
+      return { preset: null, instructions: "", notice: "unapproved" as const };
+    });
+  }
+
+  /**
+   * A task's pinned engine preset now (Decision 2), checked against the live folder: none (and the task's notice set)
+   * when it changed without a new approval. Null for a task that started without one, or without `enginePreset` (D0).
+   */
+  private async turnPreset(task: CurrentTask): Promise<TaskPreset | null> {
+    const host = this.d.enginePreset;
+    if (!host || task.engineHash === undefined) return null;
+    const got = await host.presetForTask(task).catch((err: unknown) => {
+      console.error("Could not read the scope's engine config; the turn runs without it", err);
+      return { preset: null, instructions: "", notice: "unapproved" as const };
+    });
+    const notice = got.preset ? undefined : (got.notice ?? "unapproved");
+    if (notice !== task.engineNotice) {
+      await this.update((s) => {
+        if (s.current?.id !== task.id) return s;
+        const { engineNotice: _old, ...rest } = s.current;
+        return { ...s, current: notice ? { ...rest, engineNotice: notice } : rest };
+      });
+    }
+    return got;
+  }
+
   /** What a scoped task's turns carry: its scope (usage, trailer) and the chat on screen. Nothing without scopes (D2). */
   private async scopeOptions(task: CurrentTask): Promise<{ scope?: string; chat?: string }> {
     if (!this.d.scoped) return {};
@@ -970,6 +1023,14 @@ export class TaskManager {
       });
       parts.push(material);
       if (material) items.push({ id: "material", kind: "material", label: "Material", tokens: approxTokens(material.length) });
+    }
+    if (this.d.linkedContext) {
+      const linked = await this.d.linkedContext(scope).catch((err: unknown) => {
+        console.error("Could not load the scope's folders for the task", err);
+        return "";
+      });
+      parts.push(linked);
+      if (linked) items.push({ id: "linked", kind: "linked-folders", label: "Folders of this scope", tokens: approxTokens(linked.length) });
     }
     return { text: parts.filter(Boolean).join("\n\n"), items };
   }
@@ -1566,7 +1627,9 @@ export class TaskManager {
         console.error("Could not read the phase's brief; the task resumes without it", err);
       }
     }
-    const { text: notesIndex, items } = await this.contextFor(scopeOfTask(c), c.action);
+    // A task pinned to an engine config gets its instructions back with it (Decision 2); none otherwise (D0).
+    const pinned = c.engineHash !== undefined ? await this.turnPreset(c) : null;
+    const { text: notesIndex, items } = withScopeInstructions(await this.contextFor(scopeOfTask(c), c.action), pinned?.instructions ?? "");
     const message = resumeMessage({
       language,
       notesIndex,
@@ -1637,7 +1700,8 @@ export class TaskManager {
     if (this.d.successor && this.begun) return this.d.successor((next) => next.op(() => next.begin(task, scope, language, message, display, floor, tier)));
     await this.endSession();
     await this.between();
-    const { text: context, items } = await this.contextFor(scope, task.action);
+    const preset = await this.presetFor(scope, task.action);
+    const { text: context, items } = withScopeInstructions(await this.contextFor(scope, task.action), preset?.instructions ?? "");
     const first = message(context);
     const briefLabel = task.review !== undefined ? "Review round" : task.action !== undefined ? "Task brief" : "Question";
     const start = await this.startItems(first, items, briefLabel);
@@ -1653,8 +1717,11 @@ export class TaskManager {
           : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
+    const id = this.newId();
+    // The pin's tag: a task keeps a hash its scope no longer approves only with it (tasks.json is agent-writable).
+    const engineTag = preset?.preset && preset.hash ? await this.d.enginePreset!.pinTag(scope, id, preset.hash).catch(() => null) : null;
     const current: CurrentTask = {
-      id: this.newId(),
+      id,
       ...task,
       status: "running",
       startedAt: this.now().toISOString(),
@@ -1663,6 +1730,8 @@ export class TaskManager {
       ...(this.d.scoped ? { scope } : {}),
       ...(below ? { belowMinTier: true as const } : {}),
       start,
+      ...(preset?.preset && preset.hash ? { engineHash: preset.hash, ...(engineTag ? { engineTag } : {}) } : {}),
+      ...(preset?.notice ? { engineNotice: preset.notice } : {}),
     };
     this.begun = true;
     // The language its first message was built in, which the task keeps; one task is open at a time, so none other stays.
@@ -1698,7 +1767,7 @@ export class TaskManager {
    * next profile down, which the task keeps (spec §5.3). The failed attempt is held from the chat and the
    * window only when there is a fallback; the retry doesn't log the person's message again.
    */
-  private async firstTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
+  private async firstTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile" | "engine">): Promise<Done> {
     const tried: string[] = [];
     let current = task;
     for (let attempt = 0; ; attempt++) {
@@ -1730,7 +1799,7 @@ export class TaskManager {
    * Runs one turn of `task`; a valid `save_note` in it becomes the task's note. Throws TurnNotStarted when
    * the turn was refused before it began (no `done` came).
    */
-  private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
+  private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile" | "engine">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number; compactedAt?: number } = { reads: [] };
     // Read paths become folder paths; without the folder, file names only (nothing is read from them).
     const given = this.d.folder ? await this.d.folder().catch(() => null) : null;
@@ -1755,6 +1824,8 @@ export class TaskManager {
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
+      // Checked before every turn (hatches E1, E2): the task's pinned config while the folder still holds approved bytes.
+      const engine = task.engineHash !== undefined ? (await this.turnPreset(task))?.preset : null;
       await this.d.turns.send(message, {
         phase: "run",
         // The task's mode (usage.jsonl); a switch's own `mode` in `options` wins. A task with none passes none (D0).
@@ -1766,6 +1837,7 @@ export class TaskManager {
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
+        ...(engine ? { engine } : {}),
         // Input blocks get ids only in the task's own turns (run, phase change, wrap-up), and only in a harness that has them.
         ...(this.hasInputs() && takesInputs(options.phase) ? { turn: task.turns } : {}),
         task: task.id,

@@ -1,7 +1,8 @@
+import { APP_INDEX_TOKENS } from "@humanharness/policies";
 import { APP_SCOPE, type Note, buildNotesIndex } from "@humanharness/workspace";
 
-/** How much the app-wide notes index may take in a scope's session (spec §3.3 "trimmed"). */
-export const APP_INDEX_TOKENS = 500;
+/** How much the app-wide notes index may take in a scope's session (spec §3.3 "trimmed"); `DefaultContextPolicy`'s, kept here for importers. */
+export { APP_INDEX_TOKENS };
 
 /** One notes index and the notes it was built from (the context panel counts them). */
 export interface NotesIndexPart {

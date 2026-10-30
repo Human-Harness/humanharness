@@ -26,6 +26,7 @@ import {
   setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
+import { CHECKPOINT_AT } from "@humanharness/policies";
 import { type EnginePreset, type Event, type Session, type ToolCallView, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
@@ -353,8 +354,8 @@ function indexItem(id: string, kind: "notes-index" | "app-notes-index", label: s
   };
 }
 
-/** Share of the task's cap at which the checkpoint runs (spec D4). */
-export const CHECKPOINT_AT = 0.8;
+/** Share of the task's cap at which the checkpoint runs (spec D4); `DefaultContextPolicy`'s, kept here for importers. */
+export { CHECKPOINT_AT };
 /** Claude doesn't report compactions: the context falling by more than this share means one happened. */
 const COMPACTED_DROP = 0.5;
 

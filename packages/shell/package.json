@@ -20,6 +20,7 @@
     "@humanharness/policies": "workspace:*",
     "@humanharness/protocol": "workspace:*",
     "@humanharness/runtime": "workspace:*",
+    "@humanharness/search": "workspace:*",
     "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
     "pdfjs-dist": "^6.4.299"

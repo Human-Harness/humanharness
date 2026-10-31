@@ -23,6 +23,7 @@ import {
 } from "electron";
 import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
+import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
 import {
   type BackendInit,
@@ -151,6 +152,9 @@ import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, te
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, manifestTier, nearestTier, offeredEffort, pinnedBudget } from "./models";
 import { ContextService } from "./context";
+import { searchHandlers } from "./search/ipc";
+import { workerBuild } from "./search/runner";
+import { SearchService } from "./search/service";
 import { contextHandlers } from "./context-ipc";
 import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
@@ -2351,6 +2355,8 @@ const restoreWith = (run: (history: History) => Promise<unknown>) => restores.ru
 function afterRestore(): void {
   void settingsCtl?.changed();
   void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+  // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
+  searchSvc.committed(null);
 }
 
 /**
@@ -2471,6 +2477,60 @@ const contextSvc = new ContextService({
   changed: (task) => void sendContext(task),
 });
 
+/** What search finds among the tasks, built when the palette opens (search spec §4.2): actions, the open task, past tasks. */
+async function searchMemory(): Promise<SearchDoc[]> {
+  const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
+  const view = await tasks.view();
+  const actions = actionDocs(
+    Object.entries(harness.actions).map(([id, a]) => ({
+      id,
+      label: a.label,
+      ...(a.description ? { description: a.description } : {}),
+      ...(a.tier ? { tier: a.tier } : {}),
+      ...(view.actions[id] ? { status: view.actions[id] } : {}),
+      scope: scopeOf(undefined),
+    })),
+  );
+  const current = view.current;
+  const label = (id: string | null | undefined) => (id && Object.hasOwn(harness.actions, id) ? harness.actions[id].label : undefined);
+  const open = current && label(current.action) ? [openTaskDoc({ id: current.id, title: label(current.action)!, scope: scopeOf(current.scope), at: 0 })] : [];
+  const history = await currentHistory();
+  const rows = history ? historyView(await history.tasks()) : [];
+  const past = pastTaskDocs(
+    rows.flatMap((r) => {
+      const title = r.noteTitle ?? label(r.actionId);
+      return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
+    }),
+  );
+  return [...actions, ...open, ...past];
+}
+
+/** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
+const searchSvc = new SearchService({
+  userData: () => app.getPath("userData"),
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  scoped,
+  openScope: () => tasks.currentScope(),
+  scopeTitles: async () => new Map((await scopesView()).list.map((s) => [s.id, s.title])),
+  references: async () => {
+    const c = await validConfig();
+    return c ? (await workReferences(c, baseOf(c))).map((r) => ({ id: r.id, label: r.label, path: r.path })) : [];
+  },
+  memory: () => searchMemory(),
+  extraDenied: async () => {
+    // Same rule as the history's ignore list: the engine's instructions file is the app's, not the person's.
+    const c = await validConfig();
+    const extra = c ? getEngine(c.engineId).instructionsFile?.path : undefined;
+    return extra ? [extra] : [];
+  },
+  status: (s) => sendToWindow("hh:searchStatus", s),
+  runner: workerBuild({ entry: path.join(here, "search-worker.js") }),
+  reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
+});
+
 /** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
 async function sendContext(task: string): Promise<void> {
   const got = await contextSvc.get(task).catch(() => null);
@@ -2482,6 +2542,8 @@ const commitAnnouncements = commitAnnouncer((paths) => {
   sendToWindow("hh:fileCommits", paths);
   // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
   engineIpc?.committed(paths);
+  // Search (D0): a no-op until the palette first opened; then the commit's paths are read again.
+  searchSvc.committed(paths);
 });
 const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
@@ -2842,6 +2904,7 @@ function registerIpc() {
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
   handleAll(fileHandlers(fileTimelines));
   handleAll(contextHandlers(contextSvc));
+  handleAll(searchHandlers(searchSvc));
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
   if (translation) handleAll(languageHandlers(translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
@@ -3176,6 +3239,10 @@ function registerIpc() {
     });
     if (!result.ok) return { ...result, ...(state ? { state } : {}) };
     dropDataStoresUnder(c.folder);
+    // Search's indexes are caches keyed by the base (plan deviation 2): the old ones go, the next ⌘K rebuilds.
+    // `c` is the config from before the move, so these are the old bases; the profile ids did not change.
+    const oldBases = people ? (await profileIds()).map((id) => profileDir(c.folder, id)) : [c.folder];
+    for (const b of oldBases) void searchSvc.discard(b).catch((err: unknown) => console.error("Could not drop the old search index", err));
     if (!state) throw new Error("Could not read the app state after the move");
     const { oldRemoved, historyMoved } = result.done;
     return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };
@@ -3604,6 +3671,8 @@ if (loaded) {
       switchTo: (target) => switches.run(target),
       trash: (p) => shell.trashItem(p),
       historyDir: (folder) => historyDir(app.getPath("userData"), folder),
+      // Profile ids are reused names: the search index is keyed by the folder's path, so a deleted one's must go.
+      forget: (folder) => searchSvc.discard(folder),
       changed: (state) => sendToWindow("hh:profiles", state),
       blocked: hold.profileChangeBlocked,
     });
@@ -3749,6 +3818,7 @@ if (primary) {
       // A cancelled or closed turn still writes its reply to the chat: wait for it.
       await flushTurns();
       await flushFileIndexes();
+      await searchSvc.flush().catch(() => undefined);
     })().finally(() => app.quit());
   });
 }

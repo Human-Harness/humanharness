@@ -9,6 +9,7 @@ import { fileCommitListeners } from "./file-commits";
 import { askFile, restoreFlow } from "./file-restore";
 import { invoke, subscribe } from "./ipc";
 import { languageClient } from "./language";
+import { searchClient } from "./search";
 
 /** Told of every mode switch, whoever called `chooseMode` (the window or the harness's own UI). */
 const modeSwitches = new Set<(s: ModeSwitch) => void>();
@@ -298,6 +299,8 @@ const client: HarnessClient = {
     exclude: (scope, note) => askContext(looseInvoke, "hh:contextExclude", scope, note),
     include: (scope, note) => askContext(looseInvoke, "hh:contextInclude", scope, note),
   },
+  // Global search (search spec §9): every answer is data; main builds nothing until the first query (D8).
+  search: searchClient(looseInvoke, subscribe),
   onTextSize: (listener) => subscribe("hh:textSize", listener),
   // Language on demand (language spec): every answer is data, a rejected invoke included.
   language: languageClient(looseInvoke, subscribe),

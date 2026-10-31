@@ -1527,3 +1527,84 @@ export type FileRestoreAnswer = { ok: true } | { ok: false; reason: FileRefusal 
 export type FileRestoreResult = "restored" | "cancelled" | { refused: FileRefusal };
 /** A whole-folder or task go-back (`restore`, `restoreTask`): done, or the person said no to main's confirmation. */
 export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
+
+/** Global search (search spec §3). Plan 1: tasks, notes and files; plan 2 adds settings, commands and data. */
+export type SearchKind = "task" | "note" | "file";
+
+/** A title or a line of context: plain runs, the first match `mark`ed (§5.3). Never HTML. */
+export type SearchMarked = { text: string; mark?: true }[];
+
+/**
+ * What Enter does with a result (§3). The window routes every kind itself, except `reveal`: main shows a reference
+ * folder's file in Finder when `hh:searchOpen` is told of it (the window never gets that file's absolute path).
+ */
+export type SearchTarget =
+  | { kind: "action"; action: string }
+  | { kind: "open-task"; task: string }
+  | { kind: "history"; task: string }
+  | { kind: "chat"; entry: string; scope: string; task?: string }
+  | { kind: "document"; path: string; anchor?: string }
+  | { kind: "timeline"; path: string }
+  | { kind: "reveal" };
+
+/** What a task row says besides its title (the window words it in the person's language). */
+export interface SearchMeta {
+  status?: "not-started" | "done" | "unsaved" | "unfinished" | "open" | "past";
+  tier?: string;
+  role?: "user" | "assistant";
+}
+
+export interface SearchHitView {
+  id: string;
+  kind: SearchKind;
+  title: SearchMarked;
+  /** The snippet around the match, else the path; empty for a task row (the window draws `meta`). */
+  context: SearchMarked;
+  meta?: SearchMeta;
+  /** A reference folder's label: the row says "<label> · read only". */
+  folder?: string;
+  /** Another scope's title (with "All scopes" on). */
+  scope?: string;
+  /** What ⌘Enter may name (§5.4): a path, a reference file's name, a note's or a task's title. Null: never named. */
+  hint: { kind: "path" | "name" | "note" | "task"; text: string } | null;
+  target: SearchTarget;
+}
+
+/** Staged readiness (D8): `names` while file names come in, `building` with "N of M" while texts do. */
+export interface SearchStatus {
+  state: "empty" | "names" | "building" | "ready";
+  done: number;
+  total: number;
+  /** The 50,000-file cap left some files out (§4.5). */
+  truncated?: true;
+}
+
+export interface SearchFilters {
+  /** One kind (a filter chip); absent: "All". */
+  kind?: SearchKind;
+  /** The "All scopes" toggle (D2); remembered by main. Absent: what main remembers. */
+  allScopes?: boolean;
+  /** The "Reference folders" toggle; absent: on. */
+  references?: boolean;
+}
+
+export interface SearchGroup {
+  kind: SearchKind;
+  /** Every match of this kind, beyond the rows shown. */
+  total: number;
+  hits: SearchHitView[];
+}
+
+/** `hh:search`'s answer (§9). An empty query answers the recents (§5.2) and no groups. */
+export type SearchAnswer =
+  | {
+      ok: true;
+      query: string;
+      groups: SearchGroup[];
+      counts: Record<SearchKind, number>;
+      recent: SearchHitView[];
+      partial: boolean;
+      status: SearchStatus;
+      allScopes: boolean;
+    }
+  | { ok: false; reason: "not-ready" | "failed" };

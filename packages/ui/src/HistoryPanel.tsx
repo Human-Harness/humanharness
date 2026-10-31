@@ -77,6 +77,7 @@ export function HistoryPanel({
   jobs = [],
   onOpenFile,
   linkedFolders,
+  openTask,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -98,6 +99,8 @@ export function HistoryPanel({
   jobs?: { id: string; label: string }[];
   /** A changed file was picked: its timeline opens (file-timeline spec §6.2). Absent: the paths stay plain text. */
   onOpenFile?: (path: string, kind: HistoryFileChange["kind"]) => void;
+  /** Search opened a past task (search spec §3): its row starts open and scrolls into view instead of the newest. */
+  openTask?: string;
   /**
    * The harness's declared linked folders (hatches spec §3.4): what undo covers in them shows too, and a partial undo
    * names them by label. Absent: none (D0).
@@ -159,8 +162,11 @@ export function HistoryPanel({
     client.historyTasks().then(
       (g) => {
         setGroups(g);
-        // The newest task starts open: it is what the person most likely wants to undo.
-        if (first && g[0]) setOpen(new Set([keyOf(g[0])]));
+        // The newest task starts open (what the person most likely wants to undo), or the one search asked for.
+        const wanted = openTask ? g.find((x) => x.taskId === openTask) : undefined;
+        const start = wanted ?? g[0];
+        if (first && start) setOpen(new Set([keyOf(start)]));
+        if (first && wanted) requestAnimationFrame(() => document.getElementById(`hh-history-${keyOf(wanted)}`)?.scrollIntoView?.({ block: "nearest" }));
       },
       () => setLoadFailed(true),
     );

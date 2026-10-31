@@ -97,6 +97,11 @@ import type {
   SidekickSettingsPatch,
   SidekickState,
   SidekickView,
+  SearchAnswer,
+  SearchClient,
+  SearchFilters,
+  SearchHitView,
+  SearchStatus,
   TaskContext,
   TaskTurnNotice,
   TasksClient,
@@ -902,6 +907,47 @@ export class FakeClient implements HarnessClient {
     exclude: async (...args) => (this.contextCalls.push({ op: "exclude", args }), this.contextAnswer),
     include: async (...args) => (this.contextCalls.push({ op: "include", args }), this.contextAnswer),
   };
+  /** What `search.query` answers, by query; anything else answers an empty ok. */
+  searchAnswers: Record<string, SearchAnswer> = {};
+  searchCalls: { query: string; filters?: SearchFilters }[] = [];
+  searchOpened: SearchHitView[] = [];
+  private searchOpeners = new Set<(query?: string) => void>();
+  private searchStatusListeners = new Set<(s: SearchStatus) => void>();
+  readonly search: SearchClient = {
+    query: async (query, filters) => {
+      this.searchCalls.push({ query, ...(filters ? { filters } : {}) });
+      return (
+        this.searchAnswers[query] ?? {
+          ok: true,
+          query,
+          groups: [],
+          counts: { task: 0, note: 0, file: 0 },
+          recent: [],
+          partial: false,
+          status: { state: "ready", done: 0, total: 0 },
+          allScopes: false,
+        }
+      );
+    },
+    opened: async (hit) => {
+      this.searchOpened.push(hit);
+      return { ok: true };
+    },
+    onStatus: (l) => {
+      this.searchStatusListeners.add(l);
+      return () => void this.searchStatusListeners.delete(l);
+    },
+    open: (query) => {
+      for (const l of this.searchOpeners) l(query);
+    },
+    onOpen: (l) => {
+      this.searchOpeners.add(l);
+      return () => void this.searchOpeners.delete(l);
+    },
+  };
+  searchStatusEmit(s: SearchStatus): void {
+    for (const l of this.searchStatusListeners) l(s);
+  }
   async openPath(file: string) {
     this.opened.push(file);
     return this.openResult;

@@ -19,6 +19,8 @@ import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
 import { SetupFlow } from "./SetupFlow";
+import type { SearchIntent } from "./search/intent";
+import { SearchHost } from "./search/SearchHost";
 import type { StartViewCopy } from "./StartView";
 
 export interface HarnessAppProps {
@@ -59,6 +61,16 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   /** Harnesses with jobs: the chat's start of a declared action, for Settings › Jobs' Start (null off the work screen). */
   const chatStart = useRef<((action: string, scope: string | null) => boolean) | null>(null);
+  /** The chat's handler for a search result or question (search spec §3); null while the chat isn't on screen. */
+  const searchRef = useRef<((intent: SearchIntent) => boolean) | null>(null);
+  /** A result picked away from the work screen: it runs once the chat is there. */
+  const pendingIntent = useRef<SearchIntent | null>(null);
+  useEffect(() => {
+    if (screen !== "work" || !pendingIntent.current || !searchRef.current) return;
+    const intent = pendingIntent.current;
+    pendingIntent.current = null;
+    searchRef.current(intent);
+  });
   /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
   const [openScope, setOpenScope] = useState<string | null>(null);
   const hasScopes = Boolean(state?.scopes);
@@ -263,6 +275,17 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const newTask = () => {
     client.tasks.focus(null).then(toStart, () => undefined);
   };
+  /** A result or a ⌘Enter question: Settings closes, the work screen shows, the chat does the rest. */
+  const searchIntent = (intent: SearchIntent) => {
+    setSettings(null);
+    if (screen === "work" && searchRef.current) {
+      searchRef.current(intent);
+      return;
+    }
+    if (!configured) return;
+    pendingIntent.current = intent;
+    setScreen("work");
+  };
   // D0: without `parallel` the key is today's, and nothing else is kept.
   const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
 
@@ -290,6 +313,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 : undefined
             }
             {...(state.jobs ? { startRef: chatStart } : {})}
+            searchRef={searchRef}
             {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
@@ -365,6 +389,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           language={client.language ? language : undefined}
         />
       )}
+      {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
+      <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} />
     </I18nextProvider>
   );
 }

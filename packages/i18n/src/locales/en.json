@@ -612,6 +612,8 @@
     }
   },
   "app": {
+    "name": "Human Harness",
+    "breadcrumb": "Breadcrumb",
     "loadError": "The app couldn't start. Close it and open it again."
   },
   "setupFlow": {

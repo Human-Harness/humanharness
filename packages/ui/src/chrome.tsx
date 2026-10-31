@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { RailEntry } from "./shell-nav";
 
@@ -11,14 +11,65 @@ function MockBadge() {
   );
 }
 
-/** The window's top bar: the drag region of the hiddenInset title bar, with room for the traffic lights. */
-export function TopBar({ title, mock, children }: { title?: ReactNode; mock?: boolean; children?: ReactNode }) {
+export interface Crumb {
+  label: string;
+  onClick?: () => void;
+}
+
+/**
+ * The window's top bar (UI refresh spec §4.1): the drag region of the hiddenInset title bar, 80px left for the traffic
+ * lights, then the logo, the breadcrumb, the centre slot (search) and the trailing controls. `title` is the bar before the
+ * breadcrumb: a heading shown only when there are no crumbs, kept until every screen passes crumbs.
+ */
+export function TopBar({
+  crumbs = [],
+  title,
+  logo,
+  mock,
+  center,
+  trailing,
+  children,
+}: {
+  crumbs?: Crumb[];
+  title?: ReactNode;
+  logo?: string;
+  mock?: boolean;
+  center?: ReactNode;
+  trailing?: ReactNode;
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
   return (
     <header className="hh-topbar">
-      {title !== undefined && <h1 className="hh-title">{title}</h1>}
+      {logo ? <img className="hh-topbar-logo" src={logo} alt={t("app.name")} /> : <HHLogo className="hh-topbar-logo" title={t("app.name")} />}
+      {crumbs.length > 0 ? (
+        <nav className="hh-crumbs" aria-label={t("app.breadcrumb")}>
+          {crumbs.map((c, i) => (
+            <Fragment key={i}>
+              {i > 0 && (
+                <span aria-hidden="true" className="hh-crumb-sep">
+                  /
+                </span>
+              )}
+              {i === crumbs.length - 1 ? (
+                <span aria-current="page" className="hh-crumb-here">
+                  {c.label}
+                </span>
+              ) : (
+                <button type="button" className="hh-crumb" onClick={c.onClick}>
+                  {c.label}
+                </button>
+              )}
+            </Fragment>
+          ))}
+        </nav>
+      ) : (
+        title !== undefined && <h1 className="hh-title">{title}</h1>
+      )}
       {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
       {mock && <MockBadge />}
-      <span className="hh-spacer" />
+      <span className="hh-spacer">{center}</span>
+      {trailing}
       {children}
     </header>
   );

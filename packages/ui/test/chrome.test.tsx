@@ -17,6 +17,24 @@ describe("chrome", () => {
     expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
   });
 
+  it("TopBar shows the logo, a breadcrumb whose last part is the current page, and trailing controls", async () => {
+    const onCrumb = vi.fn();
+    await renderIn("en", <TopBar crumbs={[{ label: "Demo", onClick: onCrumb }, { label: "The turn" }]} trailing={<button>Inbox</button>} />);
+    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+    fireEvent.click(within(nav).getByRole("button", { name: "Demo" }));
+    expect(onCrumb).toHaveBeenCalled();
+    expect(within(nav).getByText("The turn").getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("img", { name: "Human Harness" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
+  });
+
+  it("TopBar shows the harness logo instead of the HH tile, and its centre slot", async () => {
+    await renderIn("en", <TopBar logo="data:image/png;base64,AAA" crumbs={[{ label: "Demo" }]} center={<button>Search</button>} />);
+    expect(screen.getByRole("img", { name: "Human Harness" }).getAttribute("src")).toBe("data:image/png;base64,AAA");
+    expect(screen.getByRole("button", { name: "Search" }).closest(".hh-spacer")).toBeTruthy();
+    expect(screen.queryByRole("heading")).toBeNull();
+  });
+
   it("Segmented marks the chosen option and reports changes", () => {
     const onChange = vi.fn();
     render(<Segmented label="Appearance" value="system" onChange={onChange} options={[{ value: "system", label: "Automatic" }, { value: "dark", label: "Dark" }]} />);

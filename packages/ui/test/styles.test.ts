@@ -93,6 +93,11 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
   });
 
+  it("keeps 80px for the traffic lights before the logo (spec §4.1)", () => {
+    expect(css).toMatch(/^\.hh-topbar\s*{[^}]*padding:\s*0 20px 0 80px/m);
+    expect(css).toMatch(/^\.hh-topbar\s*{[^}]*background:\s*var\(--hh-rail\)/m);
+  });
+
   it("lets the top bar's selects open (the scope picker, the profile switcher) instead of dragging the window", () => {
     expect(css).toMatch(/\.hh-topbar button,[^{]*\.hh-topbar select[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
   });

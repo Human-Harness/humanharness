@@ -168,10 +168,16 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Top bar: the window's drag region (hiddenInset title bar), leaving room for the traffic lights. */
-.hh-topbar { height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; -webkit-app-region: drag; user-select: none; border-bottom: 1px solid var(--hh-line); }
+.hh-topbar { height: 64px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 20px 0 80px; background: var(--hh-rail); border-bottom: 1px solid var(--hh-line); -webkit-app-region: drag; user-select: none; }
 .hh-topbar button, .hh-topbar a, .hh-topbar input, .hh-topbar select { -webkit-app-region: no-drag; }
 .hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
+.hh-topbar-logo { width: 44px; height: 44px; border-radius: 12px; flex: none; }
+.hh-crumbs { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.hh-crumb { min-height: 32px; padding: 0 4px; border: 0; background: transparent; color: var(--hh-muted); }
+.hh-crumb-sep { color: var(--hh-faint); }
+.hh-crumb-here { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.hh-topbar .hh-spacer { display: flex; justify-content: center; }
 .hh-icon-button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--hh-muted); }
 .hh-icon-button:hover { background: var(--hh-surface-2); color: var(--hh-ink); }
 /* Icon rail (UI refresh spec §4.2): a column on the left, a row under the top bar on narrow windows. */

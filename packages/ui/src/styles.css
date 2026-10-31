@@ -353,7 +353,9 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-body { display: flex; min-height: 0; overflow: hidden; }
 .hh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* Positioned: a sent question's offsetTop is measured from here to pin it at the top while its answer grows. */
-.hh-chat { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px; display: grid; gap: 20px; align-content: start; }
+/* A size container: what it holds (the start view's topics) fits the card's width, not the window's. One column no
+   wider than the card, so nothing in it pushes the card sideways. */
+.hh-chat { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-content: start; container: hh-chat / inline-size; }
 /* An answer arriving: each word fades in, each block fades in and rises a little. */
 .hh-word { animation: hh-fade-in 0.28s ease-out both; }
 .hh-appear { animation: hh-rise-in 0.28s ease-out both; }
@@ -591,7 +593,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-start-path-head .hh-segmented { margin-left: auto; }
 .hh-start-head p { color: var(--hh-muted); line-height: 1.5; }
 .hh-start-notice { color: var(--hh-muted); background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
-.hh-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.hh-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .hh-topics > li { display: grid; }
 .hh-topic { height: auto; min-height: 104px; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 10px; padding: 16px 18px; border-radius: 14px; border-color: var(--hh-line); background: var(--hh-surface); text-align: left; }
 .hh-topic-next { border-color: var(--hh-cta); box-shadow: inset 0 0 0 1px var(--hh-cta); }
@@ -602,16 +604,29 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-topics-list .hh-topic-text { order: 1; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-topics-list .hh-topic-tags { order: 2; }
 .hh-topic.done .hh-topic-title { color: var(--hh-muted); }
-.hh-topic-head { width: 100%; display: flex; align-items: center; gap: 8px; }
+.hh-topic-head { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .hh-topic-num { color: var(--hh-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.hh-topic-tags { margin-left: auto; display: inline-flex; gap: 6px; }
-.hh-topic-title { font-size: 14px; font-weight: 600; }
+.hh-topic-tags { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.hh-topic-text { max-width: 100%; }
+/* The flow layout's chat card (between the path and the panels) is narrow: one topic per row, the tags under the
+   title, and less padding around the view; the chat's own padding already sets it off the card's edge. */
+@container hh-chat (max-width: 640px) {
+  .hh-start-view { padding: 4px 0; }
+  .hh-topics { grid-template-columns: minmax(0, 1fr); }
+  .hh-topic-head .hh-topic-tags { flex-basis: 100%; margin-left: 0; }
+  .hh-topics-list .hh-topic { flex-wrap: wrap; }
+  .hh-topics-list .hh-topic-text { flex-basis: 100%; white-space: normal; }
+  .hh-start-path-head { flex-wrap: wrap; }
+}
+.hh-topic-title { flex: 1 1 8em; min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
 .hh-topic-text { color: var(--hh-muted); line-height: 1.45; }
 .hh-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; background: var(--hh-surface-2); color: var(--hh-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
 .hh-badge.ok { padding: 0; background: transparent; color: var(--hh-ok); }
 .hh-faq { display: grid; gap: 8px; }
 .hh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-chip { height: 30px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 7px; background: var(--hh-surface); border: 1px solid var(--hh-line); font-size: 12.5px; }
+/* A long question wraps inside the chat card instead of running past its edge. */
+.hh-faq .hh-chip { max-width: 100%; height: auto; min-height: 30px; padding: 5px 9px; text-align: left; }
 .hh-choices { display: grid; gap: 9px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-rail); }
 .hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }

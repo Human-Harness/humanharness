@@ -141,6 +141,21 @@ describe("styles", () => {
   });
 });
 
+describe("start view in the chat column", () => {
+  it("fits a narrow chat card: the chat is a size container and the topics never overflow it", () => {
+    // The flow layout puts the chat in a ~500 px card between the path and the panels.
+    expect(css).toMatch(/^\.hh-chat\s*{[^}]*container:\s*hh-chat\s*\/\s*inline-size/m);
+    expect(css).toMatch(/^\.hh-chat\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/m);
+    expect(css).toMatch(/^\.hh-topics\s*{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(200px,\s*100%\),\s*1fr\)\)/m);
+    expect(css).toMatch(/^\.hh-topic-head\s*{[^}]*flex-wrap:\s*wrap/m);
+    const narrow = css.match(/@container hh-chat \(max-width:\s*(\d+)px\)\s*{([\s\S]*?)\n}/);
+    expect(narrow).not.toBeNull();
+    expect(Number(narrow![1])).toBeGreaterThanOrEqual(560);
+    expect(narrow![2]).toMatch(/\.hh-topics\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    expect(narrow![2]).toMatch(/\.hh-start-view\s*{[^}]*padding:/);
+  });
+});
+
 describe("annotate marks", () => {
   it("the highlight under a gap keeps ink readable in light and dark", () => {
     for (const block of [light, dark]) expect(ratio(token(block, "ink"), token(block, "highlight"))).toBeGreaterThanOrEqual(7);

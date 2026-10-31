@@ -1358,6 +1358,13 @@ export function ChatView({
     ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "", ...(chat.live.tools ? { tools: chat.live.tools } : {}) }
     : null;
   const showStart = flow && since === null && !chat.live;
+  // The start view reads from its top (its first topics), not from the end the conversation sticks to; sending
+  // anything sticks to the end again.
+  useLayoutEffect(() => {
+    if (!showStart) return;
+    stick.current = false;
+    if (chatRef.current) chatRef.current.scrollTop = 0;
+  }, [showStart]);
   // The cards on screen, checked once per change of the list, when the window gets focus back, and when the reader
   // finds a document gone: a moved or deleted document's card is struck through.
   const cardKey = useMemo(

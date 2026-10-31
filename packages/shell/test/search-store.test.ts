@@ -18,6 +18,18 @@ afterEach(() => {
 const snap = (o: Partial<Snapshot> = {}): Snapshot => ({ index: '{"x":1}', files: { "folder/a.md": { size: 1, mtimeMs: 2, how: "text" } }, chats: {}, memory: ["action:a"], truncated: false, ...o });
 
 describe("IndexStore (§4.1)", () => {
+  it("discard waits for a prefs write under way, and nothing written after it brings the folder back", async () => {
+    const store = new IndexStore(searchDir(userData, "/w/a"));
+    const writing = store.savePrefs({ recent: ["a"], allScopes: true });
+    await store.discard();
+    await writing;
+    expect(fs.existsSync(store.dir)).toBe(false);
+    await store.savePrefs({ recent: ["b"], allScopes: false });
+    store.schedule(() => snap());
+    await store.flush();
+    expect(fs.existsSync(store.dir)).toBe(false);
+  });
+
   it("lives under <userData>/search, one folder per base", () => {
     expect(path.dirname(searchDir(userData, "/w/a"))).toBe(path.join(userData, "search"));
     expect(searchDir(userData, "/w/a")).not.toBe(searchDir(userData, "/w/b"));

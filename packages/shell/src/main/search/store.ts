@@ -49,6 +49,8 @@ export class IndexStore {
   private pending: (() => Snapshot) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private writing: Promise<void> = Promise.resolve();
+  /** Once discarded nothing is written again (a caller still holding this store would bring the folder back). */
+  private discarded = false;
 
   constructor(
     readonly dir: string,
@@ -70,6 +72,7 @@ export class IndexStore {
 
   /** Saves what `get` gives in at most 5 s; later calls before then only replace `get`. */
   schedule(get: () => Snapshot): void {
+    if (this.discarded) return;
     this.pending = get;
     if (this.timer) return;
     this.timer = setTimeout(() => {
@@ -101,6 +104,7 @@ export class IndexStore {
 
   /** The folder moved or the index is dropped: nothing pending is written, and the folder goes. */
   async discard(): Promise<void> {
+    this.discarded = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.pending = null;
@@ -121,7 +125,12 @@ export class IndexStore {
     return { recent: [], allScopes: false };
   }
 
+  /** In line with the snapshot's writes, so `discard` waits for it; it still rejects when the write fails. */
   savePrefs(p: SearchPrefs): Promise<void> {
-    return writeAtomic(path.join(this.dir, "prefs.json"), JSON.stringify({ recent: p.recent.slice(0, MAX_RECENT), allScopes: p.allScopes }));
+    const write = this.writing.then(() =>
+      this.discarded ? undefined : writeAtomic(path.join(this.dir, "prefs.json"), JSON.stringify({ recent: p.recent.slice(0, MAX_RECENT), allScopes: p.allScopes })),
+    );
+    this.writing = write.catch(() => undefined);
+    return write;
   }
 }

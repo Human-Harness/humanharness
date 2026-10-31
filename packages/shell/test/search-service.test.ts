@@ -206,6 +206,23 @@ describe("SearchService (§4, §5)", () => {
     expect(titles(await svc.query("alpha", {}))).toEqual(["a.md"]);
   });
 
+  it("a loaded snapshot reconciles on its first search, also when the palette opens with a query", async () => {
+    put("a.md", "alpha");
+    const one = service();
+    await one.svc.query("", {});
+    await one.svc.whenIdle();
+    await one.svc.flush();
+    put("b.md", "alpha bravo");
+    const two = service();
+    expect(titles(await two.svc.query("alpha", {}))).toEqual(["a.md"]);
+    await two.svc.whenIdle();
+    expect(two.runner).toHaveBeenCalledTimes(1);
+    expect(titles(await two.svc.query("bravo", {}))).toEqual(["b.md"]);
+    await two.svc.query("alpha", {});
+    await two.svc.whenIdle();
+    expect(two.runner).toHaveBeenCalledTimes(1);
+  });
+
   it("says when the file cap left files out", async () => {
     for (const p of ["a", "b", "c"]) put(p, "plan");
     const { svc } = service({ limits: { files: 2, textBytes: 1024 * 1024, totalText: 1e9 } });
@@ -315,6 +332,20 @@ describe("SearchService (§4, §5)", () => {
     await svc.query("", {});
     await svc.whenIdle();
     await svc.discard(base);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(fs.existsSync(searchDir(userData, base))).toBe(false);
+  });
+
+  it("discard while the base still loads: the load settles first, and nothing brings the folder back", async () => {
+    put("a.md", "alpha");
+    const { svc } = service();
+    const asked = svc.query("", { allScopes: true });
+    // The base is known and the snapshot is being read (file reads take more than a few microtasks).
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    await svc.discard(base);
+    await asked;
+    await svc.whenIdle();
+    await svc.flush();
     await new Promise((r) => setTimeout(r, 50));
     expect(fs.existsSync(searchDir(userData, base))).toBe(false);
   });

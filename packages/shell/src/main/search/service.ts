@@ -334,9 +334,10 @@ export class SearchService {
     const open = scoped ? await this.d.openScope() : null;
     const empty = !q.trim();
     if (empty || this.now() - live.memoryAt > MEMORY_FRESH_MS) await this.refreshMemory(live);
+    // On open (§4.1), and on a loaded snapshot's first search whatever it asks (the palette may open with a query).
+    if (empty || live.reconciledAt === 0) this.maybeReconcile(live);
     const base = { ok: true as const, query: q, groups: [] as SearchGroup[], counts: EMPTY_COUNTS(), recent: [] as SearchHitView[], partial: false, allScopes };
     if (empty) {
-      this.maybeReconcile(live);
       const stored = prefs.recent.flatMap((id) => {
         const s = live.index.stored(id);
         return s ? [{ ...s, score: 0, terms: [] }] : [];
@@ -399,6 +400,8 @@ export class SearchService {
 
   /** The folder moved (plan deviation 2): the old base's index goes; the next ⌘K rebuilds. */
   async discard(base: string): Promise<void> {
+    // A load under way for this base settles first: it would set the live index after this and save into the folder.
+    if (this.opening?.base === base) await this.opening.live.catch(() => null);
     const live = this.live?.base === base ? this.live : null;
     if (live) {
       live.building?.stop();

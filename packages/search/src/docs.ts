@@ -1,5 +1,6 @@
 // The documents per kind (search spec §3, §9).
 import { splitFrontMatter } from "@humanharness/harness-sdk/documents";
+import { MAX_TEXT_BYTES } from "./limits";
 import { secretShaped, withoutSecretLines } from "./secrets";
 import type { DataRow, DataSource, SearchDoc } from "./types";
 
@@ -181,20 +182,27 @@ export interface RecordSearch {
 
 /**
  * The records of one collection as rows (D4): the declared title (else the key), the declared text fields joined by
- * lines without token-shaped ones (§8.2), and when each changed (data-meta, by key text). No usable key: skipped.
+ * lines without token-shaped ones (§8.2) and capped as a file's text is (§4.5), and when each changed (data-meta, by
+ * key text). Skipped: a record with no usable key, a token-shaped key (it would be the id and maybe the title), and a
+ * key whose text an earlier record already has (`1` and `"1"` are one document id: the first record wins). Whatever
+ * finds a row again by its key (a snippet) matches on `recordKeyText` too.
  */
 export function recordRows(records: readonly Record<string, unknown>[], c: RecordSearch, changedAt: Record<string, string> = {}): DataRow[] {
   const textFields = c.search.text === undefined ? [] : typeof c.search.text === "string" ? [c.search.text] : [...c.search.text];
   const out: DataRow[] = [];
+  const seen = new Set<string>();
   for (const r of c.single ? records.slice(0, 1) : records) {
     const raw = c.single ? null : r[c.key ?? ""];
     const key = c.single ? null : typeof raw === "string" || typeof raw === "number" ? raw : undefined;
     if (key === undefined) continue;
+    const keyText = recordKeyText(key);
+    if (seen.has(keyText) || secretShaped(keyText)) continue;
     const named = fieldText(r[c.search.title]).trim();
-    const title = named && !secretShaped(named) ? cut(named) : recordKeyText(key);
+    const title = named && !secretShaped(named) ? cut(named) : keyText;
     if (!title) continue;
-    const text = withoutSecretLines(textFields.map((f) => fieldText(r[f])).filter(Boolean).join("\n"));
-    out.push({ key, title, text, at: Date.parse(changedAt[recordKeyText(key)] ?? "") || 0 });
+    seen.add(keyText);
+    const text = withoutSecretLines(textFields.map((f) => fieldText(r[f])).filter(Boolean).join("\n")).slice(0, MAX_TEXT_BYTES);
+    out.push({ key, title, text, at: Date.parse(changedAt[keyText] ?? "") || 0 });
   }
   return out;
 }

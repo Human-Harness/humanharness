@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type DataSource, INDEX_KINDS, KINDS, LiveIndex, dataDocs, recordRows } from "../src";
+import { type DataSource, INDEX_KINDS, KINDS, LiveIndex, MAX_TEXT_BYTES, dataDocs, recordRows } from "../src";
 
 const people = { key: "id", single: false, search: { title: "name", text: ["bio", "tags"] } };
 const src = (o: Partial<DataSource> = {}): DataSource => ({ id: "harness:_app/people", owner: "harness", collection: "people", folder: "_app", stamp: "1:2", ...o });
@@ -49,6 +49,28 @@ describe("data records (search spec D4)", () => {
     const [hit] = index.search("physics").hits;
     expect(hit).toMatchObject({ id: "data:harness:_app/people#a", kind: "data", title: "Ana", data: { collection: "people", key: "a", folder: "_app" } });
     expect(index.stored(hit.id)).not.toHaveProperty("text");
-    expect(index.toJSON()).not.toContain("Physics teacher");
+    expect(JSON.stringify(index.stored(hit.id))).not.toMatch(/physics|teacher/i);
+  });
+
+  it("a token-shaped key is never indexed: not as the title, the key or the id (§8.2)", () => {
+    const token = `ghp_${"a1B2".repeat(9)}`;
+    const rows = recordRows([{ id: token, name: "" }, { id: token, name: "Ana" }, { id: "b", name: "Bea" }], people);
+    expect(rows.map((r) => r.key)).toEqual(["b"]);
+    expect(JSON.stringify(dataDocs(src(), rows, false))).not.toContain("ghp_");
+  });
+
+  it("caps a record's text at the per-file limit", () => {
+    const [r] = recordRows([{ id: "a", name: "Ana", bio: "x".repeat(MAX_TEXT_BYTES + 10) }], people);
+    expect(r.text.length).toBe(MAX_TEXT_BYTES);
+  });
+
+  it("one row per key text: the first record wins over a later 1 vs \"1\" or a repeated key", () => {
+    const rows = recordRows([{ id: 1, name: "One" }, { id: "1", name: "Uno" }, { id: "a", name: "Ana" }, { id: "a", name: "Ann" }], people);
+    expect(rows.map((r) => [r.key, r.title])).toEqual([
+      [1, "One"],
+      ["a", "Ana"],
+    ]);
+    const ids = dataDocs(src(), rows, false).map((d) => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

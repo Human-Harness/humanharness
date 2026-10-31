@@ -22,7 +22,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: Partial<Pick<TransportOptions, "minAdapterVersion" | "references" | "onModels" | "profileMethod" | "engineEnv" | "sessionMode" | "onLinkedUnsupported" | "mcpOnly">> = {},
+  extra: Partial<Pick<TransportOptions, "minAdapterVersion" | "references" | "onModels" | "profileMethod" | "engineEnv" | "sessionMode" | "onLinkedUnsupported" | "mcpOnly" | "lastContextUsed">> = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -1611,5 +1611,45 @@ describe("ACP with an engine preset (spec §5.2)", () => {
     expect(log().filter((l) => l.method === "env").map((l) => l.params.CODEX_CONFIG)).toEqual([null, null]);
     expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
     expect(started).toHaveLength(2);
+  });
+});
+
+describe("AcpTransport infers compactions from the context (replaceable parts §7.2)", () => {
+  const usageAt = (used: number) => ({ update: { sessionUpdate: "usage_update", used, size: 200_000 } });
+  const seen = (events: Event[]) => events.filter((e) => e.type === "compaction" || e.type === "context");
+
+  it("the context falling below half emits one compaction per turn, before its context event", async () => {
+    const { transport: t } = setup({ turns: [[usageAt(100_000)], [usageAt(40_000), usageAt(10_000)], [usageAt(60_000)]] });
+    expect(seen(await run(t, "one"))).toEqual([{ type: "context", used: 100_000, size: 200_000 }]);
+    expect(seen(await run(t, "two"))).toEqual([
+      { type: "compaction" },
+      { type: "context", used: 40_000, size: 200_000 },
+      { type: "context", used: 10_000, size: 200_000 },
+    ]);
+    expect(seen(await run(t, "three"))).toEqual([{ type: "context", used: 60_000, size: 200_000 }]);
+  });
+
+  it("never adds a second compaction to a turn whose engine reported one, before or after the drop", async () => {
+    const reported = { update: { sessionUpdate: "compaction_update", compactionId: "k1", status: "completed" } };
+    const { transport: t } = setup({ turns: [[usageAt(100_000)], [reported, usageAt(40_000)], [usageAt(100_000)], [usageAt(30_000), reported]] });
+    await run(t, "one");
+    expect(seen(await run(t, "two"))).toEqual([{ type: "compaction" }, { type: "context", used: 40_000, size: 200_000 }]);
+    await run(t, "three");
+    expect(seen(await run(t, "four"))).toEqual([{ type: "compaction" }, { type: "context", used: 30_000, size: 200_000 }]);
+  });
+
+  it("a new session starts the comparison afresh", async () => {
+    const { transport: t } = setup({ closeSession: true, turns: [[usageAt(100_000)], [usageAt(40_000)]] });
+    await run(t, "one");
+    await t.endSession();
+    expect(seen(await run(t, "two"))).toEqual([{ type: "context", used: 40_000, size: 200_000 }]);
+  });
+
+  it("a loaded session compares its first turn with the seed; a new one ignores it", async () => {
+    const { transport: loaded } = setup({ loadSession: true, turns: [[usageAt(40_000)]] }, { id: "saved", started: true }, { lastContextUsed: 100_000 });
+    expect(seen(await run(loaded))).toEqual([{ type: "compaction" }, { type: "context", used: 40_000, size: 200_000 }]);
+    await loaded.close();
+    const { transport: fresh } = setup({ turns: [[usageAt(40_000)]] }, undefined, { lastContextUsed: 100_000 });
+    expect(seen(await run(fresh))).toEqual([{ type: "context", used: 40_000, size: 200_000 }]);
   });
 });

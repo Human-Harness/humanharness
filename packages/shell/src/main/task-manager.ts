@@ -26,6 +26,7 @@ import {
   setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
+import { APP_INDEX_TOKENS, CHECKPOINT_AT, type Continuity, type ContinuityEvent, type ContextPolicy, DefaultContextPolicy, type StartPart, type TurnState, contextPolicy } from "@humanharness/policies";
 import { type EnginePreset, type Event, type Session, type ToolCallView, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
@@ -37,6 +38,7 @@ import {
   type ModeResult,
   type NoteView,
   type PhaseResult,
+  type PolicyIds,
   type TaskStatus,
   type TaskTurnNotice,
   type TaskView,
@@ -90,6 +92,7 @@ import {
   TIME_BOX_MINUTES_MAX,
   type TasksFile,
   type TimeBoxState,
+  cleanTaskPolicies,
   interrupted,
   keptQuestion,
   scopeOfTask,
@@ -159,8 +162,13 @@ export interface TaskDeps {
   contextChanged?(taskId: string): void;
   /** The folder the agent works in, to turn read paths into folder paths (context-panel spec §3.2). Absent: file names only. */
   folder?(): Promise<string | null>;
-  /** The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0). */
-  materialContext?(scope: string): Promise<string>;
+  /**
+   * The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0).
+   * `budgetTokens`: the context policy's budget for the index (replaceable-parts §7.1); absent, the manifest's.
+   */
+  materialContext?(scope: string, budgetTokens?: number): Promise<string>;
+  /** The manifest's material `budget.indexTokens`, for the context policy's start plan (replaceable-parts §7.1). Absent without material. */
+  readonly materialIndexTokens?: number;
   /**
    * Board mode's "Folders of this scope" for a task in `scope`, after the material (hatches Decision 6: AGENTS.md is
    * shared by lanes in different scopes, so each task's first message names its own); "" for none. Absent: D0.
@@ -181,11 +189,20 @@ export interface TaskDeps {
    * The model profile a new task runs on, resolved once when it starts (resources spec §5). `floor`: a mode's `minTier`
    * the new task must reach (task-modes spec §5.3), passed only when there is one. `tier`: a core review task's tier
    * (review spec §11.3) or a plugin action's (plugins spec §5.3, a prepared task), passed only for one: it replaces the
-   * manifest tier. Absent: the engine's defaults.
+   * manifest tier. Absent: the engine's defaults. `policies`: the task's non-default policy ids (replaceable-parts §8),
+   * passed only when it has some; absent: the defaults.
    */
-  profileFor?(action: string | undefined, floor?: Tier, tier?: Tier): Promise<ModelProfile>;
-  /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
-  fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
+  profileFor?(action: string | undefined, floor?: Tier, tier?: Tier, policies?: PolicyIds): Promise<ModelProfile>;
+  /**
+   * The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). `policies`:
+   * as for `profileFor`, passed only when the task has some.
+   */
+  fallbackFor?(profile: ModelProfile, tried: string[], policies?: PolicyIds): Promise<ModelProfile | null>;
+  /**
+   * The policy ids a new task starts with (replaceable-parts §8, from config.json), read once at its start: the task
+   * keeps them to its end, resumed or not. Absent or `{}`: the defaults (D0).
+   */
+  policies?(): Promise<PolicyIds>;
   /**
    * A stored profile (tasks.json) fitted again to what its engine offers now, before a resumed task runs
    * on it: an effort the engine stopped offering never reaches argv or CODEX_CONFIG. Absent: used as stored.
@@ -319,6 +336,11 @@ export interface PersonContext {
 /** The error the caller sees: the turn's own reason when it never started. */
 const unwrap = (err: unknown) => (err instanceof TurnNotStarted ? err.reason : err);
 
+/** A policy answer this code does not handle: a compile error while the union grows, a throw if one slips through. */
+function unhandled(how: never): never {
+  throw new Error(`Unhandled context policy answer: ${String(how)}`);
+}
+
 const noteView = (n: Note): NoteView => ({
   slug: n.slug,
   title: n.title,
@@ -342,24 +364,17 @@ function indexItem(id: string, kind: "notes-index" | "app-notes-index", label: s
   };
 }
 
-/** Share of the task's cap at which the checkpoint runs (spec D4). */
-export const CHECKPOINT_AT = 0.8;
-/** Claude doesn't report compactions: the context falling by more than this share means one happened. */
-const COMPACTED_DROP = 0.5;
+/** Share of the task's cap at which the checkpoint runs (spec D4); `DefaultContextPolicy`'s, kept here for importers. */
+export { CHECKPOINT_AT };
 
-/** The context reached 80% of the task's cap and no checkpoint ran since the last compaction (spec §6). */
-export function needsCheckpoint(c: CurrentTask): boolean {
-  return c.profile !== undefined && c.context !== undefined && c.checkpointed !== true && c.context.used >= CHECKPOINT_AT * c.profile.cap;
+/** Where the task's context stands before a follow-up turn, for its context policy (replaceable-parts §7.1). */
+function turnState(c: CurrentTask): TurnState {
+  return { used: c.context?.used, cap: c.profile?.cap, checkpointed: c.checkpointed === true };
 }
 
-/**
- * A new session's context with the scope's instructions first (hatches Decision 3): right after the brief, before the
- * notes indexes, listed as their own item. No instructions: `ctx` as it is (D0).
- */
-function withScopeInstructions(ctx: { text: string; items: ContextItem[] }, instructions: string): { text: string; items: ContextItem[] } {
-  if (!instructions) return ctx;
-  const item: ContextItem = { id: "scope-instructions", kind: "scope-instructions", label: "Scope instructions", tokens: approxTokens(instructions.length) };
-  return { text: [instructions, ctx.text].filter(Boolean).join("\n\n"), items: [item, ...ctx.items] };
+/** The context reached 80% of the task's cap and no checkpoint ran since the last compaction (spec §6): `DefaultContextPolicy`'s call, kept for importers. */
+export function needsCheckpoint(c: CurrentTask): boolean {
+  return DefaultContextPolicy.beforeFollowUp(turnState(c)) === "checkpoint";
 }
 
 /** The open task as the window sees it: no session, no prompt, just what the screen shows. `tier` only for a task with modes. */
@@ -451,6 +466,21 @@ export class TaskManager {
     this.newId = d.newId ?? randomUUID;
     this.minute = d.minuteMs ?? MINUTE_MS;
     this.timers = d.timer ?? { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
+  }
+
+  /** The task's context policy: its id is fixed when the task starts (replaceable-parts §8); none is the default. */
+  private contextPolicyOf(c: CurrentTask): ContextPolicy {
+    return contextPolicy(c.policies?.context);
+  }
+
+  /** How the work goes on after `event` (replaceable-parts §7.1): the task's context policy decides; no task, the default. */
+  private continuity(c: CurrentTask | undefined, event: ContinuityEvent): Continuity {
+    return (c ? this.contextPolicyOf(c) : DefaultContextPolicy).continuity(event);
+  }
+
+  /** The task's context policy asks for a checkpoint before the next follow-up. */
+  private needsCheckpoint(c: CurrentTask): boolean {
+    return this.contextPolicyOf(c).beforeFollowUp(turnState(c)) === "checkpoint";
   }
 
   /** A task operation or a turn is under way. */
@@ -845,8 +875,15 @@ export class TaskManager {
     return this.queue(() =>
       this.update((s) => {
         if (!s.current) return s;
-        const { session: _session, context: _context, checkpointed: _checkpointed, ...rest } = s.current;
-        return { ...s, current: { ...rest, resume: true } };
+        const how = this.continuity(s.current, "move");
+        switch (how) {
+          case "new-session-from-notes": {
+            const { session: _session, context: _context, checkpointed: _checkpointed, ...rest } = s.current;
+            return { ...s, current: { ...rest, resume: true } };
+          }
+          default:
+            return unhandled(how);
+        }
       }),
     );
   }
@@ -1017,66 +1054,117 @@ export class TaskManager {
   }
 
   /**
-   * A new session's context (spec §3.3, §4.4): the scope's notes index; in a scope, the app-wide one, trimmed; the data
-   * tables; the person's pins (context-panel spec §4.2); the material. Without scopes, data, pins or material, exactly
-   * the notes index as before (D2, D0). `items` say what each part is (context-panel spec §3.1).
+   * A new session's context (spec §3.3, §4.4): the parts of the task's context policy's start plan, in its order
+   * (replaceable-parts §7.1, D3: each part is built here and by the hooks, the policy only decides). The default plan:
+   * the scope's instructions (hatches Decision 3: right after the brief, their own item); the scope's notes index; in a
+   * scope, the app-wide one, trimmed; the data tables; the pre-step results; the person's pins (context-panel spec §4.2);
+   * the material; the scope's folders. Without scopes, instructions, data, pins or material, exactly the notes index as
+   * before (D2, D0). A part the plan leaves out is not built: its hook is not called. `items` say what each part is
+   * (context-panel spec §3.1).
    */
-  private async contextFor(scope: string, action: string | undefined, prepared?: { text: string; items: ContextItem[] }): Promise<{ text: string; items: ContextItem[] }> {
-    const person = this.d.personContext
-      ? await this.d.personContext(scope).catch((err: unknown) => {
-          console.error("Could not load the pins and exclusions for the task", err);
-          return null;
-        })
-      : null;
-    const items: ContextItem[] = [];
+  private async contextFor(
+    scope: string,
+    action: string | undefined,
+    policy: ContextPolicy,
+    extra: { prepared?: { text: string; items: ContextItem[] }; instructions?: string } = {},
+  ): Promise<{ text: string; items: ContextItem[] }> {
+    const plan = policy.start({
+      scoped: !!this.d.scoped,
+      ...(action !== undefined ? { action } : {}),
+      ...(this.d.materialIndexTokens !== undefined ? { materialIndexTokens: this.d.materialIndexTokens } : {}),
+    }).parts;
+    const has = (part: StartPart) => plan.some((p) => p.part === part);
+    const budget = (part: StartPart) => plan.find((p) => p.part === part)?.budgetTokens;
+    const person =
+      this.d.personContext && (has("notes") || has("app-notes") || has("pins"))
+        ? await this.d.personContext(scope).catch((err: unknown) => {
+            console.error("Could not load the pins and exclusions for the task", err);
+            return null;
+          })
+        : null;
     // Both indexes leave the excluded notes out (context-panel spec §4.3); nothing excluded: the options as before (D0).
     // Built as a job run's first message builds them (notes-index.ts).
-    const notes = await notesIndexParts((s) => this.d.notes(s), !!this.d.scoped, scope, person?.excluded);
-    const parts = [notes.own.index];
-    if (notes.own.index) items.push(indexItem("notes", "notes-index", "Notes", notes.own.index, notes.own.notes, person?.excluded));
-    if (notes.app) {
-      parts.push(notes.app.index);
-      if (notes.app.index) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", notes.app.index, notes.app.notes, person?.excluded));
-    }
-    if (this.d.dataContext) {
-      const data = await this.d.dataContext(scope, action).catch((err: unknown) => {
-        console.error("Could not load the data for the task", err);
-        return "";
-      });
-      if (typeof data === "string") {
-        parts.push(data);
-        if (data) items.push({ id: "data", kind: "data", label: "Data", tokens: approxTokens(data.length) });
-      } else {
-        for (const p of data) {
-          parts.push(p.text);
-          items.push({ id: `data:${p.collection}`, kind: "data", label: `Data · ${p.collection} (${p.rows} rows)`, tokens: approxTokens(p.text.length), count: p.rows });
+    const notes =
+      has("notes") || has("app-notes")
+        ? await notesIndexParts((s) => this.d.notes(s), !!this.d.scoped, scope, person?.excluded, has("app-notes") ? (budget("app-notes") ?? APP_INDEX_TOKENS) : null, has("notes"))
+        : null;
+    const parts: string[] = [];
+    const items: ContextItem[] = [];
+    const built = new Set<StartPart>();
+    for (const { part, budgetTokens } of plan) {
+      if (built.has(part)) continue;
+      built.add(part);
+      switch (part) {
+        case "instructions": {
+          const instructions = extra.instructions ?? "";
+          parts.push(instructions);
+          if (instructions) items.push({ id: "scope-instructions", kind: "scope-instructions", label: "Scope instructions", tokens: approxTokens(instructions.length) });
+          break;
+        }
+        case "notes":
+          if (notes) {
+            parts.push(notes.own.index);
+            if (notes.own.index) items.push(indexItem("notes", "notes-index", "Notes", notes.own.index, notes.own.notes, person?.excluded));
+          }
+          break;
+        case "app-notes":
+          if (notes?.app) {
+            parts.push(notes.app.index);
+            if (notes.app.index) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", notes.app.index, notes.app.notes, person?.excluded));
+          }
+          break;
+        case "data": {
+          if (!this.d.dataContext) break;
+          const data = await this.d.dataContext(scope, action).catch((err: unknown) => {
+            console.error("Could not load the data for the task", err);
+            return "";
+          });
+          if (typeof data === "string") {
+            parts.push(data);
+            if (data) items.push({ id: "data", kind: "data", label: "Data", tokens: approxTokens(data.length) });
+          } else {
+            for (const p of data) {
+              parts.push(p.text);
+              items.push({ id: `data:${p.collection}`, kind: "data", label: `Data · ${p.collection} (${p.rows} rows)`, tokens: approxTokens(p.text.length), count: p.rows });
+            }
+          }
+          break;
+        }
+        // A new task's pre-step results (tools spec §6). None otherwise (D0).
+        case "prepared":
+          if (extra.prepared) {
+            parts.push(extra.prepared.text);
+            items.push(...extra.prepared.items);
+          }
+          break;
+        case "pins":
+          if (person?.pinned) {
+            parts.push(person.pinned);
+            items.push(...person.items);
+          }
+          break;
+        case "material": {
+          if (!this.d.materialContext) break;
+          // Only a budget the plan names is passed: none, the hook's own (the manifest's).
+          const material = await (budgetTokens !== undefined ? this.d.materialContext(scope, budgetTokens) : this.d.materialContext(scope)).catch((err: unknown) => {
+            console.error("Could not load the material for the task", err);
+            return "";
+          });
+          parts.push(material);
+          if (material) items.push({ id: "material", kind: "material", label: "Material", tokens: approxTokens(material.length) });
+          break;
+        }
+        case "linked": {
+          if (!this.d.linkedContext) break;
+          const linked = await this.d.linkedContext(scope).catch((err: unknown) => {
+            console.error("Could not load the scope's folders for the task", err);
+            return "";
+          });
+          parts.push(linked);
+          if (linked) items.push({ id: "linked", kind: "linked-folders", label: "Folders of this scope", tokens: approxTokens(linked.length) });
+          break;
         }
       }
-    }
-    // A new task's pre-step results (tools spec §6), after the data and before the pins. None otherwise (D0).
-    if (prepared) {
-      parts.push(prepared.text);
-      items.push(...prepared.items);
-    }
-    if (person?.pinned) {
-      parts.push(person.pinned);
-      items.push(...person.items);
-    }
-    if (this.d.materialContext) {
-      const material = await this.d.materialContext(scope).catch((err: unknown) => {
-        console.error("Could not load the material for the task", err);
-        return "";
-      });
-      parts.push(material);
-      if (material) items.push({ id: "material", kind: "material", label: "Material", tokens: approxTokens(material.length) });
-    }
-    if (this.d.linkedContext) {
-      const linked = await this.d.linkedContext(scope).catch((err: unknown) => {
-        console.error("Could not load the scope's folders for the task", err);
-        return "";
-      });
-      parts.push(linked);
-      if (linked) items.push({ id: "linked", kind: "linked-folders", label: "Folders of this scope", tokens: approxTokens(linked.length) });
     }
     return { text: parts.filter(Boolean).join("\n\n"), items };
   }
@@ -1342,7 +1430,7 @@ export class TaskManager {
     }
     take({ ok: true, switched: "turn" });
     return this.endsInWindow(async () => {
-      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      if (this.needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       const language = await this.languageOf(c.id);
       // Read again: a checkpoint just taken here saved the note this line carries.
       const after = (await this.d.store.load()).current;
@@ -1392,7 +1480,7 @@ export class TaskManager {
     take({ ok: true });
     this.tellTurn({ task: c.id, kind: "context", path: file });
     return this.endsInWindow(async () => {
-      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      if (this.needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       // Lines kept for the task's next message go with it (review spec §5.4); a lost session resumes as askNow does.
       const said = await this.withNotices(c, contextAddPrompt(file));
       const message = c.resume ? await this.resumeMessageFor(c, said) : said;
@@ -1505,7 +1593,7 @@ export class TaskManager {
   private async askNow(text: string, display?: string): Promise<void> {
     const c = await this.storedCurrent();
     if (c?.status === "waiting") {
-      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      if (this.needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       // After the session was lost a new one starts, told what the task is and what the notes hold; the
       // chat still shows what was typed. Lines kept for this message (review spec §5.4) go before it, unshown.
       const said = await this.withNotices(c, text);
@@ -1571,7 +1659,7 @@ export class TaskManager {
     }
     const parsed = parseAnswer(block, raw);
     if (!parsed.ok) return refuse("invalid", parsed.errors);
-    if (needsCheckpoint(c)) {
+    if (this.needsCheckpoint(c)) {
       if (!(await this.checkpoint(c))) return refuse("stopped");
       await this.setStatus(c.id, "waiting");
     }
@@ -1644,7 +1732,14 @@ export class TaskManager {
 
   /** The first message of a resumed task's new session (its old session ends first). */
   private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
-    await this.endSession();
+    const how = this.continuity(c, "resume");
+    switch (how) {
+      case "new-session-from-notes":
+        await this.endSession();
+        break;
+      default:
+        unhandled(how);
+    }
     const language = await this.languageOf(c.id);
     let brief: string | undefined;
     try {
@@ -1675,7 +1770,8 @@ export class TaskManager {
     }
     // A task pinned to an engine config gets its instructions back with it (Decision 2); none otherwise (D0).
     const pinned = c.engineHash !== undefined ? await this.turnPreset(c) : null;
-    const { text: notesIndex, items } = withScopeInstructions(await this.contextFor(scopeOfTask(c), c.action), pinned?.instructions ?? "");
+    // The plan of the task's own context policy, fixed when it began (replaceable-parts §8).
+    const { text: notesIndex, items } = await this.contextFor(scopeOfTask(c), c.action, this.contextPolicyOf(c), { instructions: pinned?.instructions ?? "" });
     const message = resumeMessage({
       language,
       notesIndex,
@@ -1761,10 +1857,13 @@ export class TaskManager {
       if (prepared.failed !== undefined) return this.refusedStart(prepared.failed);
     }
     const preset = await this.presetFor(scope, task.action);
-    const { text: context, items } = withScopeInstructions(
-      await this.contextFor(scope, task.action, prepared && (prepared.text || prepared.items.length > 0) ? prepared : undefined),
-      preset?.instructions ?? "",
-    );
+    // The policy ids are read once here and kept to the task's end (replaceable-parts §8); only non-default ones are kept,
+    // and passed only when there are some. Read before the first message: its context policy plans it (§7.1).
+    const policies = this.d.policies ? cleanTaskPolicies(await this.d.policies()) : undefined;
+    const { text: context, items } = await this.contextFor(scope, task.action, contextPolicy(policies?.context), {
+      ...(prepared && (prepared.text || prepared.items.length > 0) ? { prepared } : {}),
+      instructions: preset?.instructions ?? "",
+    });
     const first = message(context);
     const briefLabel = task.review !== undefined ? "Review round" : task.action !== undefined ? "Task brief" : "Question";
     const start = await this.startItems(first, items, briefLabel);
@@ -1773,11 +1872,13 @@ export class TaskManager {
     // a tier only from a review task or a plugin action (plugins §5.3). Only the defined arguments are passed: callers
     // compare the call's arguments.
     const profile =
-      tier !== undefined
-        ? await this.d.profileFor?.(task.action, floor, tier)
-        : floor !== undefined
-          ? await this.d.profileFor?.(task.action, floor)
-          : await this.d.profileFor?.(task.action);
+      policies !== undefined
+        ? await this.d.profileFor?.(task.action, floor, tier, policies)
+        : tier !== undefined
+          ? await this.d.profileFor?.(task.action, floor, tier)
+          : floor !== undefined
+            ? await this.d.profileFor?.(task.action, floor)
+            : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
     // The pin's tag: a task keeps a hash its scope no longer approves only with it (tasks.json is agent-writable).
@@ -1789,6 +1890,7 @@ export class TaskManager {
       startedAt: this.now().toISOString(),
       turns: 0,
       ...(profile ? { profile } : {}),
+      ...(policies ? { policies } : {}),
       ...(this.d.scoped ? { scope } : {}),
       ...(below ? { belowMinTier: true as const } : {}),
       start,
@@ -1838,7 +1940,12 @@ export class TaskManager {
     const tried: string[] = [];
     let current = task;
     for (let attempt = 0; ; attempt++) {
-      const fallback = current.profile && this.d.fallbackFor ? await this.d.fallbackFor(current.profile, tried) : null;
+      const fallback =
+        current.profile && this.d.fallbackFor
+          ? current.policies
+            ? await this.d.fallbackFor(current.profile, tried, current.policies)
+            : await this.d.fallbackFor(current.profile, tried)
+          : null;
       // Checked again with no await before the retry: a Stop while the session ended or the profile was saved.
       if (attempt > 0 && this.cancelRequested) {
         this.stopped();
@@ -1901,6 +2008,8 @@ export class TaskManager {
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
         // A plugin's prepared task: its turn commits carry `Plugin: <id>` too. None otherwise (D0).
         ...(task.plugin ? { plugin: task.plugin } : {}),
+        // The task's policy ids (usage.jsonl). A task with none passes none (D0).
+        ...(task.policies ? { policies: task.policies } : {}),
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
@@ -2093,7 +2202,7 @@ export class TaskManager {
       this.tellTurn({ task: c.id, kind: "phase", phase: to.id, by, ...(back ? { back: true as const } : {}) });
       const before = (await this.d.store.load()).current;
       if (before?.id !== c.id) return this.stopped();
-      if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
+      if (this.needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
     }
     const at = this.now().toISOString();
     let moved = false;
@@ -2344,7 +2453,7 @@ export class TaskManager {
       this.tellTurn({ task: c.id, kind: "wrap-up" });
       const before = (await this.d.store.load()).current;
       if (before?.id !== c.id) return this.stopped();
-      if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
+      if (this.needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
       const now = (await this.d.store.load()).current;
       if (now?.id !== c.id) return this.stopped();
       await this.setStatus(c.id, "running");
@@ -2471,14 +2580,13 @@ export class TaskManager {
   }
 
   /**
-   * Keeps the context in use after a turn. A compaction (reported, or `used` falling by more than half)
+   * Keeps the context in use after a turn. A compaction the engine's adapter reported (replaceable parts §7.2)
    * allows a new checkpoint and is logged (spec §6).
    */
   private async track(id: string, seen: { used?: number; size?: number; compacted?: boolean }): Promise<void> {
     const before = (await this.d.store.load()).current;
     if (before?.id !== id) return;
-    const prev = before.context?.used;
-    const compacted = seen.compacted === true || (prev !== undefined && seen.used !== undefined && seen.used < prev * COMPACTED_DROP);
+    const compacted = seen.compacted === true;
     const context = seen.used !== undefined ? { used: seen.used, ...(seen.size !== undefined ? { size: seen.size } : {}) } : undefined;
     await this.update((s) => {
       if (s.current?.id !== id) return s;
@@ -2531,17 +2639,28 @@ export class TaskManager {
     this.begun = true;
     this.taskLanguages.delete(id);
     let closed: CurrentTask | undefined;
+    let ended: CurrentTask | undefined;
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;
+      ended = c;
       if (outcome === "done") closed = c;
       if (outcome !== "done") return interrupted(s, outcome);
       if (!c.action) return { ...s, current: null };
       return { ...withStatus(s, scopeOfTask(c), c.action, "done"), current: null };
     });
     if (closed) this.taskClosed(closed);
-    await this.endSession();
-    await this.between();
+    // No task ended here (another one is open, or none): the default policy answers.
+    const how = this.continuity(ended, "task-end");
+    switch (how) {
+      case "new-session-from-notes":
+        // The session ends; the next task's first turn starts a new one from the notes.
+        await this.endSession();
+        await this.between();
+        break;
+      default:
+        unhandled(how);
+    }
   }
 
   private async saveNote(task: CurrentTask, note: SavedNote, final = true): Promise<void> {

@@ -977,3 +977,24 @@ describe("Sidekick in board mode: only the focused task (sidekick spec §4.2, §
     ]);
   });
 });
+
+describe("a lane's reopened slot gets its last context (replaceable parts §7.2)", () => {
+  it("a stored session resumes with the context its last turn left; a new one gets none", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const id = t.turns[0].slot;
+    expect(t.slots.get(id)!.options).not.toHaveProperty("lastContextUsed");
+    t.slots.get(id)!.options.onSession?.({ id: "s1", started: true });
+    t.turns[0].end([{ type: "context", used: 50_000 }, ok]);
+    await a;
+    // The workspace closed this lane's slot: the next turn opens a new one on the stored session.
+    t.h.lane(id)!.slot.clear();
+    const follow = t.h.board.ask("More");
+    await until(() => t.turns.length === 2);
+    expect(t.slots.get(id)!.options).toMatchObject({ session: { id: "s1", started: true }, lastContextUsed: 50_000 });
+    t.turns[1].end();
+    await follow;
+  });
+});

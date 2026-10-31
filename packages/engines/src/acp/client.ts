@@ -6,6 +6,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
+import { ContextDrop } from "../context-drop";
 import { type ActivityKind, EDIT_PATH_MAX, type EnginePreset, type Event, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
 import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "../models";
 import { absoluteSearchPath } from "../search-path";
@@ -480,6 +481,8 @@ export class AcpTransport implements Transport {
   private reportedModel: string | undefined;
   /** A compaction was already reported in this turn. */
   private sawCompaction = false;
+  /** OpenCode reports no compaction: the context falling by more than half means one happened (spec §7.2). */
+  private readonly drop: ContextDrop;
   /** config-option: what the agent offers now and the effort it runs (from session/new|load, set_config_option and config_option_update). */
   private offer: { models: string[]; efforts: string[]; effortId?: string; effort?: string } | undefined;
   /** config-option: the model the app set on the open session (undefined: OpenCode's default). */
@@ -501,6 +504,7 @@ export class AcpTransport implements Transport {
   private readonly policy: PermissionPolicy;
 
   constructor(private readonly o: TransportOptions) {
+    this.drop = new ContextDrop(o.session.started ? o.lastContextUsed : undefined);
     this.policy = {
       folder: o.folder,
       permissions: o.permissions,
@@ -668,6 +672,7 @@ export class AcpTransport implements Transport {
       };
       this.sessionId = created.sessionId;
       this.costBaseline = 0;
+      this.drop.reset();
       this.reportModels(created.configOptions);
       this.sessionModel(created.configOptions, created.models?.currentModelId);
       this.o.session = { id: created.sessionId, started: true };
@@ -872,6 +877,7 @@ export class AcpTransport implements Transport {
       case "usage_update":
         // One context event per update: consumers keep the last one.
         if (typeof u.used === "number" && Number.isFinite(u.used)) {
+          if (this.drop.next(u.used)) this.compacted(emit);
           emit({ type: "context", used: u.used, ...(typeof u.size === "number" ? { size: u.size } : {}) });
         }
         return;
@@ -1028,6 +1034,7 @@ export class AcpTransport implements Transport {
     // The next session starts on the default model: a profile without one must not restart the process.
     this.appliedModel = undefined;
     this.o.session = { id: randomUUID(), started: false };
+    this.drop.reset();
     if (!sessionId || !this.conn) return;
     if (!this.closable) {
       await this.close();

@@ -301,9 +301,17 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     lane.slot = memoise<SessionSlot>(async () => {
       const ws = await workspace.get();
       if (!ws) return null;
-      const stored = (await file.load()).lanes?.find((t) => t.id === id)?.session;
+      const saved = (await file.load()).lanes?.find((t) => t.id === id);
+      const stored = saved?.session;
       lane.known = stored?.started ? stored.id : null;
-      return ws.openSlot({ key: id, ...(stored ? { session: stored } : {}), onSession: (s) => sessionStarted(lane, s) });
+      // A resumed session's last context, so the engine's adapter can tell a compaction from its first turn (§7.2).
+      const used = stored?.started ? saved?.context?.used : undefined;
+      return ws.openSlot({
+        key: id,
+        ...(stored ? { session: stored } : {}),
+        ...(used !== undefined ? { lastContextUsed: used } : {}),
+        onSession: (s) => sessionStarted(lane, s),
+      });
     });
     // Descriptors, not a spread: a getter of the shared deps (scopeAccess, set up once the linked folders' deps
     // exist) is read at each turn, never frozen at the lane's creation.

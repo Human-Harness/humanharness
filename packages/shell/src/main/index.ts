@@ -24,6 +24,7 @@ import {
 import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
+import { type PickInput, modelPolicy } from "@humanharness/policies";
 import {
   type BackendInit,
   DEFAULT_LANGUAGE,
@@ -149,7 +150,7 @@ import { cliCommand, engineCommand, engineSearchPath, loginShellPath, resolveBin
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, pinnedBudget, resolveProfile, tierSpec } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, manifestTier, nearestTier, offeredEffort, pinnedBudget } from "./models";
 import { ContextService } from "./context";
 import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
 import { searchHandlers } from "./search/ipc";
@@ -179,6 +180,7 @@ import {
   compactionRecord,
   dayTokens,
   measuredMaterialCosts,
+  policyMeta,
   profileMeta,
   profilesUsage,
   recentUsage,
@@ -585,7 +587,19 @@ async function modelsView(): Promise<ModelsView> {
  */
 async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Promise<ModelProfile> {
   const engine = offered().find((e) => e.id === p.engine);
-  return engine ? fitEffort(p, engineOffer(engine, saved ?? (await savedOffer(p.engine))).efforts) : p;
+  return engine ? offeredEffort(p, engine, saved ?? (await savedOffer(p.engine))) : p;
+}
+
+/**
+ * The profile `input` runs on, picked by the model policy `policyId` (spec §6; config.json's, cleaned when read).
+ * The offer is what the engine was saved offering: a model off its saved list (Codex) falls back before the turn,
+ * then the effort is fitted as `supportedEffort` does (none for an engine this build doesn't offer: an empty list
+ * fits nothing).
+ */
+async function pickProfile(policyId: string | undefined, input: Omit<PickInput, "offer">): Promise<ModelProfile> {
+  const saved = await savedOffer(input.engine);
+  const engine = offered().find((e) => e.id === input.engine);
+  return modelPolicy(policyId).pick({ ...input, offer: { models: saved.models ?? [], efforts: engine ? engineOffer(engine, saved).efforts : [] } });
 }
 
 /** The folder's backup status and the synced places, each with the harness's folder name inside. Paths only (backup.ts). */
@@ -1368,14 +1382,19 @@ const taskDeps: TaskDeps = {
   get materialContext() {
     const m = harness.material;
     if (!m) return undefined;
-    return async (scope: string) => {
+    // `budgetTokens`: the task's context policy's (replaceable-parts §7.1); absent (a job run), the manifest's.
+    return async (scope: string, budgetTokens?: number) => {
       const c = await validConfig();
       if (!c || scope === APP_SCOPE || !isScopeId(scope)) return "";
       const store = materialStore(baseOf(c), scope);
       const rows = await store.indexRows();
       if (rows.length === 0) return "";
-      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
+      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: budgetTokens ?? m.budget.indexTokens });
     };
+  },
+  // The manifest's material index budget, which the default context policy's start plan passes back (replaceable-parts §7.1).
+  get materialIndexTokens() {
+    return harness.material?.budget.indexTokens;
   },
   // The scope's approved engine preset for each task (hatches spec §5.2). A getter: undefined without enginePresets (D0).
   get enginePreset() {
@@ -1483,20 +1502,22 @@ const taskDeps: TaskDeps = {
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
-  profileFor: async (action, floor, tier) => {
+  // The ids a new task starts with (replaceable-parts §8): config.json's, already cleaned by ConfigStore.load().
+  policies: async () => (await config.load()).policies ?? {},
+  // `policies`: the task's own ids, fixed when it started; none passed runs the defaults (never config.json's now).
+  profileFor: async (action, floor, tier, policies) => {
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
     // `tier`: a plugin action's prepared task (plugins spec §5.3) or a core review task (review spec §11.3); otherwise
     // the action's, or the free questions'.
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
-    const profile = resolveProfile({ engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
-    const saved = await savedOffer(engine);
-    return supportedEffort(firstOffered(profile, models, saved.models), saved);
+    return pickProfile(policies?.model, { engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
   },
-  fallbackFor: async (profile, tried) => {
-    const next = nextFallback(profile, cleanModels((await config.load()).models), tried);
+  fallbackFor: async (profile, tried, policies) => {
+    const c = await config.load();
+    const next = modelPolicy(policies?.model).fallback(profile, cleanModels(c.models), tried);
     return next ? supportedEffort(next) : null;
   },
   fitProfile: (profile) => supportedEffort(profile),
@@ -1510,6 +1531,7 @@ const taskDeps: TaskDeps = {
         ...(task.mode ? { mode: task.mode } : {}),
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
         ...(task.profile ? profileMeta(task.profile) : {}),
+        ...policyMeta(task.policies),
       }),
     );
   },
@@ -1586,10 +1608,10 @@ const materialStageDeps: MaterialStageDeps = {
   engine: getEngine,
   command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),
   profile: async (engine, job) => {
-    const models = cleanModels((await config.load()).models);
-    const saved = await savedOffer(engine.id);
+    const c = await config.load();
+    const models = cleanModels(c.models);
     const manifestTier = harness.material ? stageTier(harness.material, job.stage) : undefined;
-    return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: materialStageKey(job.stage), manifestTier, models }), models, saved.models), saved);
+    return pickProfile(c.policies?.model, { engine: engine.id, action: materialStageKey(job.stage), manifestTier, models });
   },
   run: (o) => runSystemTask({ ...o, launcher: electronLauncher(process.execPath), entry: path.join(here, "material-server.js") }),
   log: (base, record) => new UsageLog(base).append(record),
@@ -1676,12 +1698,9 @@ function buildTranslation(): TranslationService {
       if (!engine) return null;
       const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
       if (!cmd) return null;
-      const models = cleanModels((await config.load()).models);
-      const saved = await savedOffer(engine.id);
-      const profile = await supportedEffort(
-        firstOffered(resolveProfile({ engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models }), models, saved.models),
-        saved,
-      );
+      const c = await config.load();
+      const models = cleanModels(c.models);
+      const profile = await pickProfile(c.policies?.model, { engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models });
       const launcher = electronLauncher(process.execPath);
       // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
       // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
@@ -1909,7 +1928,8 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
     },
     gate,
     base: currentBase,
-    taskDeps,
+    // A job is not a task (replaceable-parts §8 fixes ids per task): its picks read config.json's ids, as material does.
+    taskDeps: { ...taskDeps, profileFor: async (a, f, t) => taskDeps.profileFor!(a, f, t, (await config.load()).policies) },
     scoped,
     scopes: async () => {
       const c = await validConfig();
@@ -3375,10 +3395,9 @@ if (loaded) {
     // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens; a
     // sidekick's own tier (or the routing turn's light one) uses that tier's model instead.
     profile: async (engine, tier) => {
-      const models = cleanModels((await config.load()).models);
-      const saved = await savedOffer(engine.id);
-      const p = tier ? { engine: engine.id, tier, ...tierSpec(engine.id, tier, models) } : resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models });
-      return supportedEffort(firstOffered(p, models, saved.models), saved);
+      const c = await config.load();
+      const models = cleanModels(c.models);
+      return pickProfile(c.policies?.model, tier ? { engine: engine.id, tier, models } : { engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models });
     },
     // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in the Sidekick session.
     workDir: (base, id = "sidekick") => sidekickWorkDir(app.getPath("userData"), base, id),

@@ -156,6 +156,24 @@ describe("TaskStore: the current task, field by field", () => {
     expect((await store.load()).current).toEqual({ id: "t1", status: "waiting", startedAt: "", turns: 1 });
   });
 
+  it("keeps a task's policy ids by shape, not by registry; drops malformed ones (replaceable-parts §8)", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    const base = { id: "t1", status: "waiting" as const, startedAt: "", turns: 1 };
+    await store.save({ version: 1, current: { ...base, policies: { model: "eco" } }, actions: {} });
+    expect((await store.load()).current).toEqual({ ...base, policies: { model: "eco" } });
+    await store.save({ version: 1, current: { ...base, policies: { model: "eco", context: "lean-2" } }, actions: {} });
+    expect((await store.load()).current).toEqual({ ...base, policies: { model: "eco", context: "lean-2" } });
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: { ...base, policies: { model: "Bad!", context: 3 } }, actions: {} }));
+    expect((await store.load()).current).toEqual(base);
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: { ...base, policies: { model: "eco", context: "x".repeat(33) } }, actions: {} }));
+    expect((await store.load()).current).toEqual({ ...base, policies: { model: "eco" } });
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: { ...base, policies: "eco" }, actions: {} }));
+    expect((await store.load()).current).toEqual(base);
+    await store.save({ version: 1, current: base, actions: {} });
+    expect((await store.load()).current).not.toHaveProperty("policies");
+  });
+
   it("after an engine change: no task carries over, statuses stay, the engine is forgotten", async () => {
     const folder = tmp();
     const store = new TaskStore(folder);

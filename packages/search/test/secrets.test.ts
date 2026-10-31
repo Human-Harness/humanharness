@@ -131,6 +131,13 @@ describe("withoutSecretLines (notes and chats, §8.2)", () => {
     expect(withoutSecretLines("a\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\nmore")).toBe("a");
   });
 
+  it("leaves a wrapped base64 PEM out, through its last base64 line", () => {
+    const pem = ["tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lH", "  OXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRQzdWSlRVdDlVczhjS2pNekVm", "  WVd4c2IzY2dkR2hsSUhkcGJtUT0="].join("\n");
+    expect(withoutSecretLines(`a\n${pem}\nname: web\n`)).toBe("a\nname: web\n");
+    expect(withoutSecretLines(`a\n${pem}\n\nb`)).toBe("a\n\nb");
+    expect(withoutSecretLines(`a\n${pem}`)).toBe("a");
+  });
+
   it("keeps a public key", () => {
     const text = "a\n-----BEGIN PUBLIC KEY-----\nMFkw\n-----END PUBLIC KEY-----\nb";
     expect(withoutSecretLines(text)).toBe(text);

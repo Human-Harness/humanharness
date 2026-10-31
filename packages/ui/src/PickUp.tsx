@@ -50,7 +50,7 @@ export function PickUp({ items, onOpen }: { items: PickUpItem[]; onOpen: (id: st
           <button key={i.id} className="hh-pickup-card" onClick={() => onOpen(i.id)}>
             <Tag tone={i.tone}>{i.status}</Tag>
             <span className="hh-pickup-title">{i.title}</span>
-            <span className="hh-caption">{i.where}</span>
+            {i.where && <span className="hh-caption">{i.where}</span>}
           </button>
         ))}
       </div>

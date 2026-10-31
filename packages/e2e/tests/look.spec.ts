@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -35,10 +36,30 @@ for (const theme of ["light", "dark"] as const) {
 for (const theme of ["light", "dark"] as const) {
   test(`look: the demo's Home in ${theme}`, async () => {
     const s = makeSandbox(`look-home-${theme}`);
+    // A first run leaves a task in History, so Home has something to pick up.
+    const first = await launchMock(s);
+    await first.page.getByRole("button", { name: "Start Demo" }).click();
+    await first.page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
+    await expect(first.page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
+    // Following the path to its end saves the topic's note, which leaves a task in History.
+    await first.page.getByPlaceholder("Ask about this topic…").fill("¿Y los permisos?");
+    await first.page.getByRole("button", { name: "Send" }).click();
+    await expect(first.page.getByRole("main").getByText(/no está grabada en esta prueba/)).toBeVisible();
+    await expect(first.page.getByRole("button", { name: "Profundizar en las acciones" })).toHaveCount(2);
+    await first.page.getByRole("button", { name: "Profundizar en las acciones" }).last().click();
+    await expect(first.page.getByRole("main").getByText(/Cada acción trae su brief/)).toBeVisible();
+    await expect(first.page.getByRole("button", { name: "Seguir el recorrido →" })).toHaveCount(3);
+    await first.page.getByRole("button", { name: "Seguir el recorrido →" }).last().click();
+    await expect(first.page.getByRole("main").getByText(/Los motores se detectan en cada inicio/)).toBeVisible();
+    await expect.poll(() => fs.existsSync(path.join(s.folder, ".harness", "notes", "manifest.md"))).toBe(true);
+    await first.page.waitForTimeout(1500);
+    await first.app.close();
     const { app, page } = await launchMock(s);
     try {
+      await page.setViewportSize({ width: 1100, height: 720 });
       await page.emulateMedia({ colorScheme: theme });
       await expect(page.getByRole("button", { name: "Start Demo" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Pick up where you left" })).toBeVisible();
       await page.screenshot({ path: path.join(lookDir, `home-${theme}.png`) });
     } finally {
       await closeAndClean(app, s);

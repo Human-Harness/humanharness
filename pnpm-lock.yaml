@@ -418,6 +418,18 @@ importers:
         specifier: workspace:*
         version: link:../fake-agent
 
+  packages/search:
+    dependencies:
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
+      ignore:
+        specifier: ^5.3.2
+        version: 5.3.2
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
+
   packages/shell:
     dependencies:
       '@agentclientprotocol/codex-acp':

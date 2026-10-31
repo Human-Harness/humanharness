@@ -64,6 +64,17 @@
     "done": "Done",
     "sections": "Settings sections",
     "tabs": { "general": "General", "setup": "Setup", "engine": "Engine", "models": "Models", "usage": "Usage" },
+    "line": {
+      "general": "How the app looks and where it keeps your work. Changes apply right away.",
+      "harness": "{{name}}'s own steps and options. A change applies from the next task you start.",
+      "engine": "{{name}} works with an AI plan you already have, using your own account.",
+      "models": "Choose how much power each task uses. More power gives better answers but uses more of your plan. Changes apply from the next task.",
+      "sidekick": "Reads your prompt before it goes out and suggests a clearer one.",
+      "plugins": "Plugins bring information from outside into this app. Each one shows what it may reach before it runs.",
+      "connections": "Keys this app uses to reach your services. They are stored encrypted on this computer and never shown again.",
+      "jobs": "Work the app does on its own, on a schedule or when you ask. A change applies from the next run.",
+      "usage": "How much of your AI plan this app uses, and how far it goes for each topic."
+    },
     "language": "Language",
     "languageHint": "The AI always thinks in English and writes to you in this language.",
     "appearance": "Appearance",
@@ -393,7 +404,6 @@
   },
   "models": {
     "tasks": "Tasks",
-    "tasksIntro": "Choose how much power each task uses. More power gives better answers but uses more of your plan. Changes apply from the next task.",
     "engineNow": "Engine: {{engine}}",
     "questions": "Free question",
     "questionsHint": "What you write outside a topic.",
@@ -1207,7 +1217,6 @@
       "gone": "This item can't be opened any more"
     },
     "tab": "Plugins",
-    "intro": "Plugins bring information from outside into this app. Each one shows what it may reach before it runs.",
     "empty": "No plugins yet.",
     "add": "Add from folder…",
     "failed": "Something went wrong",
@@ -1463,7 +1472,6 @@
   },
   "connections": {
     "tab": "Connections",
-    "intro": "Keys this app uses to reach your services. They are stored encrypted on this computer and never shown again.",
     "set": "Set",
     "notSet": "Not set",
     "paste": "Paste the key",

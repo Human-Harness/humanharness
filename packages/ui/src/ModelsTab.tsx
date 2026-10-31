@@ -4,6 +4,7 @@ import type { Tier } from "@humanharness/harness-sdk";
 import { Segmented } from "./chrome";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
+import { SectionHead } from "./settings-parts";
 
 // Local copies: the UI imports nothing from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
@@ -152,6 +153,7 @@ export function ModelsTab({
 
   return (
     <div className="hh-tab">
+      <SectionHead title={t("settings.tabs.models")} line={t("settings.line.models")} />
       <div className="hh-model-head">
         <Segmented
           label={t("settings.tabs.models")}
@@ -176,7 +178,6 @@ export function ModelsTab({
           <h3 id={tasksId} className="hh-sr-only">
             {t("models.tasks")}
           </h3>
-          <p className="hh-caption">{t("models.tasksIntro")}</p>
           <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
           <PinnedBudget
             value={models.pinnedTokens ?? view.pinnedTokens}

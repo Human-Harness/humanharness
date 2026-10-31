@@ -8,6 +8,7 @@ import { PresetOffer } from "./PresetOffer";
 import { ScopeSidekicks } from "./ScopeSidekicks";
 import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
+import { SectionHead } from "../settings-parts";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
@@ -97,6 +98,8 @@ export function SidekickTab({
   const parseCap = (v: Cap): SidekickSettings["cap"] => (v === "none" ? "none" : v === "50000" ? 50_000 : 20_000);
   return (
     <div className="hh-tab">
+      {/* "Sidekicks" once there are two or more, as the tab says it (spec §8). */}
+      <SectionHead title={(state.sidekicks?.length ?? 1) > 1 ? t("sidekick.list.title") : t("sidekick.tab")} line={t("settings.line.sidekick")} />
       <div className="hh-rows">
         <div className="hh-row hh-row-wrap" data-setting="sidekick.on">
           <label className="hh-row-label" htmlFor={`${onHint}-on`}>

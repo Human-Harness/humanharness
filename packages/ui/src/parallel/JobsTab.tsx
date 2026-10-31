@@ -5,6 +5,7 @@ import { useLatestConfig } from "../latest-config";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
+import { SectionHead } from "../settings-parts";
 
 /** The lowest daily cap the field takes: less would pause a periodic job after its first run. */
 export const DAILY_CAP_MIN = 1000;
@@ -133,6 +134,7 @@ export function JobsTab({
 
   return (
     <div className="hh-tab" data-setting="jobs.jobs">
+      <SectionHead title={t("parallel.jobsTab")} line={t("settings.line.jobs")} />
       {state.jobs!.jobs.map((job) => (
         <JobGroup key={job.id} job={job} entry={settings[job.id] ?? {}} onOn={(on) => setOn(job.id, on)} onCap={(cap) => setCap(job.id, cap)}>
           {(labelId) => {

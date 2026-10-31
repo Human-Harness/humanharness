@@ -19,6 +19,7 @@ import { PluginsTab } from "./plugins/PluginsTab";
 import { usePluginsView } from "./plugins/usePlugins";
 import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
+import { SectionHead } from "./settings-parts";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
@@ -234,6 +235,7 @@ export function SettingsPage({
             {tab === "usage" && configured && <UsageTab client={client} state={state} />}
             {tab === "harness" && configured && (
               <>
+                <SectionHead title={tabLabel(t, state, "harness")} line={t("settings.line.harness", { name: state.harness.name })} />
                 {state.setup && (
                   <SetupStepsList
                     client={client}
@@ -382,6 +384,7 @@ function GeneralTab({
 
   return (
     <div className="hh-tab">
+      <SectionHead title={t("settings.tabs.general")} line={t("settings.line.general")} />
       <div className="hh-rows">
         <LanguageRow state={state} language={language} />
         <div className="hh-row" data-setting="general.appearance">

@@ -7,6 +7,7 @@ import { shownTitle, useProfiles } from "./ProfileSwitcher";
 import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
 import { shownLanguage } from "./language";
+import { SectionHead } from "./settings-parts";
 
 const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
 
@@ -31,6 +32,7 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
 
   return (
     <div className="hh-tab">
+      <SectionHead title={t("settings.tabs.usage")} line={t("settings.line.usage")} />
       <h3 data-setting="usage.plan">{t("usage.planTitle")}</h3>
       <PlanSection engine={engine} limits={limits} reported={Boolean(usage?.limits)} />
       <h3 id={tableTitle} data-setting="usage.actions">{t("usage.actionsTitle")}</h3>

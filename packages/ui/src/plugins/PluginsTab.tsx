@@ -5,6 +5,7 @@ import { shownLanguage } from "../language";
 import { Plain, PermissionReview } from "./PermissionReview";
 import { PluginDetail, when } from "./PluginDetail";
 import { usePluginsRescan } from "./usePlugins";
+import { SectionHead } from "../settings-parts";
 
 /** A review's `from`: the row whose switch asked for it (focus goes back there); none for Add from folder. */
 type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?: string; from?: string } | { kind: "detail"; id: string };
@@ -136,7 +137,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
 
   return (
     <div className="hh-tab" data-setting="plugins.plugins">
-      <p className="hh-caption">{t("plugins.intro")}</p>
+      <SectionHead title={t("plugins.tab")} line={t("settings.line.plugins")} />
       {view.plugins.length === 0 ? (
         <p className="hh-pl-empty">{t("plugins.empty")}</p>
       ) : (

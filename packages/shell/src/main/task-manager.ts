@@ -37,6 +37,7 @@ import {
   type ModeResult,
   type NoteView,
   type PhaseResult,
+  type PolicyIds,
   type TaskStatus,
   type TaskTurnNotice,
   type TaskView,
@@ -90,6 +91,7 @@ import {
   TIME_BOX_MINUTES_MAX,
   type TasksFile,
   type TimeBoxState,
+  cleanTaskPolicies,
   interrupted,
   keptQuestion,
   scopeOfTask,
@@ -181,11 +183,20 @@ export interface TaskDeps {
    * The model profile a new task runs on, resolved once when it starts (resources spec §5). `floor`: a mode's `minTier`
    * the new task must reach (task-modes spec §5.3), passed only when there is one. `tier`: a core review task's tier
    * (review spec §11.3) or a plugin action's (plugins spec §5.3, a prepared task), passed only for one: it replaces the
-   * manifest tier. Absent: the engine's defaults.
+   * manifest tier. Absent: the engine's defaults. `policies`: the task's non-default policy ids (replaceable-parts §8),
+   * passed only when it has some; absent: the defaults.
    */
-  profileFor?(action: string | undefined, floor?: Tier, tier?: Tier): Promise<ModelProfile>;
-  /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
-  fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
+  profileFor?(action: string | undefined, floor?: Tier, tier?: Tier, policies?: PolicyIds): Promise<ModelProfile>;
+  /**
+   * The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). `policies`:
+   * as for `profileFor`, passed only when the task has some.
+   */
+  fallbackFor?(profile: ModelProfile, tried: string[], policies?: PolicyIds): Promise<ModelProfile | null>;
+  /**
+   * The policy ids a new task starts with (replaceable-parts §8, from config.json), read once at its start: the task
+   * keeps them to its end, resumed or not. Absent or `{}`: the defaults (D0).
+   */
+  policies?(): Promise<PolicyIds>;
   /**
    * A stored profile (tasks.json) fitted again to what its engine offers now, before a resumed task runs
    * on it: an effort the engine stopped offering never reaches argv or CODEX_CONFIG. Absent: used as stored.
@@ -1772,12 +1783,17 @@ export class TaskManager {
     // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3),
     // a tier only from a review task or a plugin action (plugins §5.3). Only the defined arguments are passed: callers
     // compare the call's arguments.
+    // The policy ids are read once here and kept to the task's end (replaceable-parts §8); only non-default ones are kept,
+    // and passed only when there are some.
+    const policies = this.d.policies ? cleanTaskPolicies(await this.d.policies()) : undefined;
     const profile =
-      tier !== undefined
-        ? await this.d.profileFor?.(task.action, floor, tier)
-        : floor !== undefined
-          ? await this.d.profileFor?.(task.action, floor)
-          : await this.d.profileFor?.(task.action);
+      policies !== undefined
+        ? await this.d.profileFor?.(task.action, floor, tier, policies)
+        : tier !== undefined
+          ? await this.d.profileFor?.(task.action, floor, tier)
+          : floor !== undefined
+            ? await this.d.profileFor?.(task.action, floor)
+            : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
     // The pin's tag: a task keeps a hash its scope no longer approves only with it (tasks.json is agent-writable).
@@ -1789,6 +1805,7 @@ export class TaskManager {
       startedAt: this.now().toISOString(),
       turns: 0,
       ...(profile ? { profile } : {}),
+      ...(policies ? { policies } : {}),
       ...(this.d.scoped ? { scope } : {}),
       ...(below ? { belowMinTier: true as const } : {}),
       start,
@@ -1838,7 +1855,12 @@ export class TaskManager {
     const tried: string[] = [];
     let current = task;
     for (let attempt = 0; ; attempt++) {
-      const fallback = current.profile && this.d.fallbackFor ? await this.d.fallbackFor(current.profile, tried) : null;
+      const fallback =
+        current.profile && this.d.fallbackFor
+          ? current.policies
+            ? await this.d.fallbackFor(current.profile, tried, current.policies)
+            : await this.d.fallbackFor(current.profile, tried)
+          : null;
       // Checked again with no await before the retry: a Stop while the session ended or the profile was saved.
       if (attempt > 0 && this.cancelRequested) {
         this.stopped();
@@ -1901,6 +1923,8 @@ export class TaskManager {
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
         // A plugin's prepared task: its turn commits carry `Plugin: <id>` too. None otherwise (D0).
         ...(task.plugin ? { plugin: task.plugin } : {}),
+        // The task's policy ids (usage.jsonl). A task with none passes none (D0).
+        ...(task.policies ? { policies: task.policies } : {}),
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),

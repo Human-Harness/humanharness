@@ -41,6 +41,9 @@ export interface UsageMeta extends ProfileFields {
   phase?: TurnKind;
   /** A job run's job id (parallel spec §10, Decision 2). */
   job?: string;
+  /** The task's model and context policy ids (replaceable-parts §8). Absent: the default ran. */
+  modelPolicy?: string;
+  contextPolicy?: string;
 }
 
 /** A Sidekick usage line's moment (sidekick spec §8); `place:<id>` is a harness place's turn (§2a.5). */
@@ -59,6 +62,9 @@ export interface UsageRecord extends ProfileFields {
   /** The task's phase while the turn ran (task-phases spec §6). Absent without phases. */
   taskPhase?: string;
   phase?: TurnKind;
+  /** The task's model and context policy ids (replaceable-parts §8). Absent: the default ran. */
+  modelPolicy?: string;
+  contextPolicy?: string;
   /** Material lines only: the stage, and the source it ran for (none for the scope's sheet and links). */
   stage?: string;
   source?: string;
@@ -157,6 +163,8 @@ function metaFields(meta: UsageMeta): Partial<UsageRecord> {
     ...(meta.phase ? { phase: meta.phase } : {}),
     ...(meta.phase === "checkpoint" ? { kind: "checkpoint" as const } : {}),
     ...(meta.job ? { job: meta.job } : {}),
+    ...(meta.modelPolicy ? { modelPolicy: meta.modelPolicy } : {}),
+    ...(meta.contextPolicy ? { contextPolicy: meta.contextPolicy } : {}),
     ...(meta.tier ? { tier: meta.tier } : {}),
     ...(meta.model ? { model: meta.model } : {}),
     ...(meta.effort ? { effort: meta.effort } : {}),

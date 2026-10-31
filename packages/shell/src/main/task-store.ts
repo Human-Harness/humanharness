@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
 import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID, refusedShape } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
-import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, TaskStatus } from "@humanharness/protocol";
+import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, PolicyIds, TaskStatus } from "@humanharness/protocol";
 import { MAIN_SCOPE, isCanonicalPath, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
 import { INDEX_NOTES_MAX, LABEL_MAX, READS_MAX, START_ITEMS_MAX } from "./context-record";
 import { withTasksFile } from "./lane-store";
@@ -55,6 +55,11 @@ export interface CurrentTask {
   noteSaved?: boolean;
   /** The model, effort and cap the task runs on, resolved when it started (resources spec §5). */
   profile?: ModelProfile;
+  /**
+   * The policy ids the task started with, kept to its end (replaceable-parts §8). Only non-default ids; absent: the
+   * defaults (a task saved before the spec, or started without any).
+   */
+  policies?: PolicyIds;
   /** Context in use by the task's session after its last turn, and the window when the engine said. */
   context?: { used: number; size?: number };
   /** A checkpoint ran since the last compaction (spec §6). */
@@ -268,11 +273,26 @@ function cleanRead(raw: unknown): ContextRead | null {
 const cleanList = <T>(raw: unknown, clean: (v: unknown) => T | null, max: number): T[] | undefined =>
   Array.isArray(raw) ? raw.map(clean).filter((v): v is T => v !== null).slice(0, max) : undefined;
 
+/** A policy id's shape; the registry isn't asked here: an unknown id runs the default when it is picked. */
+const POLICY_ID = /^[a-z][a-z0-9-]{0,31}$/;
+
+/**
+ * A task's policy ids (replaceable-parts §8), cleaned by shape only (tasks.json is agent-writable). The default id and
+ * anything malformed are dropped; undefined when nothing is left.
+ */
+export function cleanTaskPolicies(v: unknown): PolicyIds | undefined {
+  if (!isObject(v)) return undefined;
+  const keep = (id: unknown): id is string => typeof id === "string" && POLICY_ID.test(id) && id !== "default";
+  const out: PolicyIds = { ...(keep(v.model) ? { model: v.model } : {}), ...(keep(v.context) ? { context: v.context } : {}) };
+  return out.model !== undefined || out.context !== undefined ? out : undefined;
+}
+
 /** Built field by field: nothing from the file reaches the engine unchecked. */
 function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
   const session = cleanSession(c.session);
   const profile = cleanProfile(c.profile);
+  const policies = cleanTaskPolicies(c.policies);
   const pending = cleanPending(c.pendingInput, c.id);
   const tokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
   const ctx = isObject(c.context) && tokens(c.context.used) ? { used: c.context.used, ...(tokens(c.context.size) ? { size: c.context.size } : {}) } : undefined;
@@ -314,6 +334,7 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     turns: typeof c.turns === "number" && Number.isFinite(c.turns) ? c.turns : 0,
     ...(typeof c.noteSaved === "boolean" ? { noteSaved: c.noteSaved } : {}),
     ...(profile ? { profile } : {}),
+    ...(policies ? { policies } : {}),
     ...(ctx ? { context: ctx } : {}),
     ...(typeof c.checkpointed === "boolean" ? { checkpointed: c.checkpointed } : {}),
     ...(typeof c.checkpointNote === "boolean" ? { checkpointNote: c.checkpointNote } : {}),

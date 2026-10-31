@@ -162,6 +162,50 @@ describe("SearchService (§4, §5)", () => {
     expect(titles(await two.svc.query("alpha", {}))).toEqual(["keep.md"]);
   });
 
+  it("a build that fails leaves the status ready again, and each failure doubles the wait before the next reconcile", async () => {
+    put("a.md", "alpha");
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let fail = false;
+    const runner = vi.fn<SearchServiceDeps["runner"]>((job, onMessage) => {
+      if (!fail) return inProcessBuild()(job, onMessage);
+      // Like a worker that ran out of memory: some batches, then no "done".
+      onMessage({ type: "docs", docs: [], done: 0, total: 1 });
+      return { done: Promise.resolve(false), stop: () => {} };
+    });
+    const { svc, statuses, tick } = service({ runner });
+    await svc.query("", {});
+    await svc.whenIdle();
+    fail = true;
+    const calls = () => runner.mock.calls.length;
+    const reopen = async (ms: number) => {
+      tick(ms);
+      await svc.query("", {});
+      await svc.whenIdle();
+    };
+    await reopen(60_000);
+    expect(calls()).toBe(2);
+    expect(statuses.at(-1)).toEqual({ state: "ready", done: 1, total: 1 });
+    expect(ok(await svc.query("", {})).status.state).toBe("ready");
+    expect(error).toHaveBeenCalled();
+    // One failure: 120 s.
+    await reopen(60_000);
+    expect(calls()).toBe(2);
+    await reopen(60_000);
+    expect(calls()).toBe(3);
+    // Two: 240 s.
+    await reopen(180_000);
+    expect(calls()).toBe(3);
+    await reopen(60_000);
+    expect(calls()).toBe(4);
+    // A build that finishes resets it.
+    fail = false;
+    await reopen(480_000);
+    expect(calls()).toBe(5);
+    await reopen(60_000);
+    expect(calls()).toBe(6);
+    expect(titles(await svc.query("alpha", {}))).toEqual(["a.md"]);
+  });
+
   it("says when the file cap left files out", async () => {
     for (const p of ["a", "b", "c"]) put(p, "plan");
     const { svc } = service({ limits: { files: 2, textBytes: 1024 * 1024, totalText: 1e9 } });

@@ -28,6 +28,8 @@ import { IndexStore, type Snapshot, searchDir } from "./store";
 import { hitView } from "./views";
 
 export const RECONCILE_EVERY_MS = 60_000;
+/** After whole builds that failed in a row the wait doubles each time, up to this (a folder that always runs out of memory). */
+export const MAX_RECONCILE_WAIT_MS = 30 * 60_000;
 /** While typing, the tasks built in memory are rebuilt at most this often (on open they always are). */
 export const MEMORY_FRESH_MS = 5_000;
 export const PER_GROUP = 5;
@@ -74,6 +76,8 @@ interface Live {
   memoryAt: number;
   truncated: boolean;
   reconciledAt: number;
+  /** Whole builds that failed in a row (not stopped): the next reconcile waits longer. */
+  failures: number;
   building: { stop(): void; done: Promise<boolean> } | null;
   again: "full" | Set<string> | null;
 }
@@ -151,6 +155,7 @@ export class SearchService {
       memoryAt: 0,
       truncated: index && snap ? snap.truncated : false,
       reconciledAt: 0,
+      failures: 0,
       building: null,
       again: null,
     };
@@ -241,16 +246,27 @@ export class SearchService {
         handle?.stop();
       },
     };
-    void done.then(() => {
+    void done.then((ok) => {
       if (live.building?.done === done) live.building = null;
+      if (what === "full" && !stopped && this.live === live) live.failures = ok ? 0 : live.failures + 1;
+      if (!ok && !stopped && this.live === live) {
+        // The index keeps what it has; the status leaves "building" (D8 has no failed state), from the files last known.
+        const n = Object.keys(live.files).length;
+        this.setStatus(live, { state: "ready", done: n, total: n, ...(live.truncated ? { truncated: true as const } : {}) });
+        console.error("Could not finish the search index build; the next reconcile waits", `${this.reconcileWait(live) / 1000} s`);
+      }
       const next = live.again;
       live.again = null;
       if (next && this.live === live && !stopped) this.startBuild(live, next);
     });
   }
 
+  private reconcileWait(live: Live): number {
+    return Math.min(RECONCILE_EVERY_MS * 2 ** live.failures, MAX_RECONCILE_WAIT_MS);
+  }
+
   private maybeReconcile(live: Live): void {
-    if (!live.building && this.now() - live.reconciledAt >= RECONCILE_EVERY_MS) this.startBuild(live, "full");
+    if (!live.building && this.now() - live.reconciledAt >= this.reconcileWait(live)) this.startBuild(live, "full");
   }
 
   /** Swaps the tasks built in memory (§4.2). Not saved on its own: the next build's save carries them. */

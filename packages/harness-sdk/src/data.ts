@@ -44,6 +44,21 @@ const contextSchema = z.union([
   }),
 ]);
 
+/**
+ * Global search (search spec D4): a collection opts in by naming its searched fields. The core indexes them; no code
+ * runs to answer a search. `text`: one field or up to five.
+ */
+export const collectionSearchSchema = z.strictObject({
+  title: z.string().min(1),
+  text: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(5)]).optional(),
+});
+export type CollectionSearch = z.output<typeof collectionSearchSchema>;
+
+/** The fields a collection's `search` names: the title first, then the text fields. */
+export function searchFields(s: { title: string; text?: string | readonly string[] }): string[] {
+  return [s.title, ...(s.text === undefined ? [] : typeof s.text === "string" ? [s.text] : s.text)];
+}
+
 export const collectionSchema = z
   .object({
     /** One file per scope; false: one app-wide file. */
@@ -57,6 +72,8 @@ export const collectionSchema = z
     /** What goes into a task's first message; false: nothing. */
     context: contextSchema.default(false),
     rules: z.custom<DataRules>((f) => typeof f === "function", { message: "Expected a function" }).optional(),
+    /** Global search (search spec D4): absent, the collection is never searched. */
+    search: collectionSearchSchema.optional(),
   })
   .superRefine((c, ctx) => {
     const shape = c.schema instanceof z.ZodObject ? c.schema.shape : {};
@@ -71,6 +88,9 @@ export const collectionSchema = z
     }
     if (c.context !== false && Array.isArray(c.context.fields)) {
       for (const f of c.context.fields) if (!Object.hasOwn(shape, f)) ctx.addIssue({ code: "custom", path: ["context", "fields"], message: `"${f}" is not a field of the schema` });
+    }
+    if (c.search) {
+      for (const f of searchFields(c.search)) if (!Object.hasOwn(shape, f)) ctx.addIssue({ code: "custom", path: ["search"], message: `"${f}" is not a field of the schema` });
     }
   });
 

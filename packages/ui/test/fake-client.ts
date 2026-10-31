@@ -913,6 +913,7 @@ export class FakeClient implements HarnessClient {
   searchOpened: SearchHitView[] = [];
   private searchOpeners = new Set<(query?: string) => void>();
   private searchStatusListeners = new Set<(s: SearchStatus) => void>();
+  private searchRecords = new Map<string, (key: string | number | null, scope: string) => void>();
   readonly search: SearchClient = {
     query: async (query, filters) => {
       this.searchCalls.push({ query, ...(filters ? { filters } : {}) });
@@ -944,6 +945,19 @@ export class FakeClient implements HarnessClient {
       this.searchOpeners.add(l);
       return () => void this.searchOpeners.delete(l);
     },
+    onOpenRecord: (collection, l) => {
+      this.searchRecords.set(collection, l);
+      return () => {
+        if (this.searchRecords.get(collection) === l) this.searchRecords.delete(collection);
+      };
+    },
+    openRecord: (collection, key, scope) => {
+      const l = this.searchRecords.get(collection);
+      if (!l) return false;
+      l(key, scope);
+      return true;
+    },
+    handlesRecord: (collection) => this.searchRecords.has(collection),
   };
   searchStatusEmit(s: SearchStatus): void {
     for (const l of this.searchStatusListeners) l(s);

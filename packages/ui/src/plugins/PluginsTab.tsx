@@ -106,13 +106,13 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
 
   if (!view) {
     return loadFailed ? (
-      <div className="hh-tab">
+      <div className="hh-tab" data-setting="plugins.plugins">
         <p className="hh-field-error" role="alert">
           {failed}
         </p>
       </div>
     ) : (
-      <div className="hh-tab" aria-busy="true" />
+      <div className="hh-tab" data-setting="plugins.plugins" aria-busy="true" />
     );
   }
 
@@ -135,7 +135,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
   }
 
   return (
-    <div className="hh-tab">
+    <div className="hh-tab" data-setting="plugins.plugins">
       <p className="hh-caption">{t("plugins.intro")}</p>
       {view.plugins.length === 0 ? (
         <p className="hh-pl-empty">{t("plugins.empty")}</p>

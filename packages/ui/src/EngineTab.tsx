@@ -122,7 +122,7 @@ export function EngineTab({
 
   return (
     <div className="hh-tab">
-      <div className="hh-tiles" role="group" aria-label={t("engine.tilesLabel")}>
+      <div className="hh-tiles" role="group" aria-label={t("engine.tilesLabel")} data-setting="engine.engine">
         {state.engines.map((e) => {
           const s = statuses[e.id];
           const label =

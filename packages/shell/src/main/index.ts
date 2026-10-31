@@ -152,6 +152,7 @@ import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, te
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, manifestTier, nearestTier, offeredEffort, pinnedBudget } from "./models";
 import { ContextService } from "./context";
+import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
 import { searchHandlers } from "./search/ipc";
 import { workerBuild } from "./search/runner";
 import { SearchService } from "./search/service";
@@ -446,6 +447,8 @@ let taskAttention: TaskAttention | null = null;
 const notifications = new Set<Notification>();
 /** The plugins inbox's badge as last sent: board mode's Dock badge adds it. */
 let pluginBadge = 0;
+/** The plugins that run, with their versions (`runningPlugins`): search reads their collections again when it changes. */
+let pluginsOn = "";
 /** The job × scopes whose last run needs the person (part 3): the Dock badge adds them. 0 without jobs (D0). */
 let jobBadge = 0;
 /**
@@ -855,6 +858,8 @@ function dataStoreFor(base: string): DataStore {
       store,
       off: store.onChange((change) => {
         sendToWindow("hh:dataChange", change);
+        // Search (D0): a no-op until the palette first opened; then a searchable collection is read again.
+        if (searchableCollection(dataCollections(harness), change.collection)) searchSvc.dataChanged();
         if (change.collection === SETTINGS_COLLECTION) void settingsCtl?.changed();
         // Profiles: the registry copies the record's name and colour (spec §4), whoever wrote it. Never rejects.
         if (change.collection === PROFILE_COLLECTION) void profilesCtl?.sync(path.resolve(base));
@@ -2505,6 +2510,16 @@ async function searchMemory(): Promise<SearchDoc[]> {
   return [...actions, ...open, ...past];
 }
 
+/** Global search's collections (search spec D4): the harness's, then each running plugin's, of the live index's base only. */
+const searchDataDeps = searchData({
+  current: () => currentBase(),
+  collections: () => dataCollections(harness),
+  scoped,
+  scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
+  store: (base) => dataStoreFor(base),
+  plugins: () => pluginsCtl ?? null,
+});
+
 /** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
 const searchSvc = new SearchService({
   userData: () => app.getPath("userData"),
@@ -2529,6 +2544,9 @@ const searchSvc = new SearchService({
   status: (s) => sendToWindow("hh:searchStatus", s),
   runner: workerBuild({ entry: path.join(here, "search-worker.js") }),
   reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
+  data: searchDataDeps,
+  // A burst of writes (an import, a plugin run) is one refresh.
+  dataDelayMs: 500,
 });
 
 /** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
@@ -3528,7 +3546,14 @@ if (loaded) {
       ...(app.isPackaged
         ? {}
         : { watch: (dir: string, onChange: (name: string | null) => void) => watchPluginFolder(dir, onChange, (err) => pluginLog(`Stopped watching ${dir}`, err)) }),
-      changed: (view) => sendToWindow("hh:plugins", view),
+      changed: (view) => {
+        sendToWindow("hh:plugins", view);
+        // A plugin on, off, added or removed: its searchable records come or go (search spec §7). D0 inside. Any
+        // other change (a sync time, an error) leaves them as they are.
+        const on = runningPlugins(view);
+        if (on !== pluginsOn) searchSvc.dataChanged();
+        pluginsOn = on;
+      },
       attentionChanged: (view) => {
         sendToWindow("hh:attention", view);
         pluginBadge = view.badge;
@@ -3536,7 +3561,10 @@ if (loaded) {
       },
       surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),
       panelsNeeded: () => pluginPanels.needed(),
-      dataChanged: (plugin, collections) => sendToWindow("hh:pluginData", { plugin, collections }),
+      dataChanged: (plugin, collections) => {
+        sendToWindow("hh:pluginData", { plugin, collections });
+        searchSvc.dataChanged();
+      },
       log: pluginLog,
     });
   }

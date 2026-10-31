@@ -71,7 +71,8 @@ export type RuleId =
   | "tool-uses"
   | "tool-steps"
   | "tool-fixture"
-  | "mock-step";
+  | "mock-step"
+  | "search-data";
 
 export interface Finding {
   rule: RuleId;
@@ -132,6 +133,7 @@ export async function checkHarness(
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
   findings.push(...settingsFindings(harness));
+  findings.push(...(await searchFindings(harness)));
   findings.push(...sidekickFindings(harness));
   findings.push(...documentKindsFindings(harness));
   findings.push(...(await setupFindings(harness)));
@@ -433,6 +435,89 @@ async function sourceFiles(dir: string): Promise<string[]> {
     .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
     .map((e) => path.join(e.parentPath, e.name))
     .sort();
+}
+
+/** The view files the harness ui build resolves (Vite's default extensions, minus .json). */
+const VIEW_FILE = /\.(tsx?|mts|jsx?|mjs)$/;
+
+/** The view files under `dir`, or `dir` itself when it is one: no links, no node_modules. */
+async function viewFiles(dir: string): Promise<string[]> {
+  const stat = await fs.lstat(dir).catch(() => null);
+  if (stat?.isFile()) return VIEW_FILE.test(dir) ? [dir] : [];
+  if (!stat?.isDirectory()) return [];
+  const files: string[] = [];
+  const walk = async (d: string): Promise<void> => {
+    for (const e of await fs.readdir(d, { withFileTypes: true }).catch(() => [])) {
+      const child = path.join(d, e.name);
+      if (e.isDirectory() && e.name !== "node_modules") await walk(child);
+      else if (e.isFile() && VIEW_FILE.test(e.name)) files.push(child);
+    }
+  };
+  await walk(dir);
+  return files.sort();
+}
+
+/** `text` with its line and block comments blanked; a quote's text stays (a URL's // is no comment). */
+function stripComments(text: string): string {
+  let out = "";
+  let quote: string | null = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      out += c;
+      if (c === "\\") out += text[++i] ?? "";
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out += c;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      const close = text.indexOf("*/", i + 2);
+      i = close === -1 ? text.length : close + 1;
+      out += " ";
+    } else out += c;
+  }
+  return out;
+}
+
+/** `t("…")`'s quoted key: a translation key, not data a view shows. */
+const T_KEY = /\bt\(\s*(["'`])(?:\\.|(?!\1)[^\\])*\1/g;
+/** `onOpenRecord(` whose first argument is no plain literal (a variable, an expression): it may open any collection. */
+const OPENS_ANY = /onOpenRecord\(\s*(?!["']|`[^`$]*`|\))/;
+
+/**
+ * Global search (search spec D4, §7; plan deviation 8): a searchable collection should be one the person sees, and
+ * its records should open somewhere. Warnings, and a heuristic over the view sources: the manifest can't say what a
+ * view shows.
+ */
+async function searchFindings(h: LoadedHarness): Promise<Finding[]> {
+  const names = Object.entries(h.data ?? {})
+    .filter(([, c]) => c.search)
+    .map(([name]) => name);
+  if (names.length === 0) return [];
+  const ui = h.ui ?? "ui";
+  let uiPath: string;
+  try {
+    uiPath = resolveInHarness(h, ui);
+  } catch {
+    // A schema error already (i18nFindings): no view to read.
+    return [];
+  }
+  const manifest = path.join(h.root, MANIFEST);
+  const files = (await viewFiles(uiPath)).filter((f) => f !== manifest);
+  const all = (await Promise.all(files.map(async (f) => stripComments((await read(f)) ?? "").replace(T_KEY, "")))).join("\n");
+  const opensAny = OPENS_ANY.test(all);
+  const folder = `${ui.replace(/\/+$/, "")}/`;
+  const out: Finding[] = [];
+  for (const name of names) {
+    const quoted = new RegExp(`["'\`]${escapeRegExp(name)}["'\`]`);
+    const opens = new RegExp(`onOpenRecord\\(\\s*["'\`]${escapeRegExp(name)}["'\`]`);
+    if (!quoted.test(all)) out.push(warning("search-data", `"${name}" is searchable but no file in ${folder} shows it: search would find records the person can't see. Show it in a view, or drop its search.`, MANIFEST));
+    else if (!opensAny && !opens.test(all)) out.push(warning("search-data", `"${name}" is searchable but no view calls client.search.onOpenRecord("${name}", …): its records would only say where they are shown.`, MANIFEST));
+  }
+  return out;
 }
 
 async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {

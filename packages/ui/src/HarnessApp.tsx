@@ -6,7 +6,7 @@ import { ProfileSwitcher } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
+import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { Home } from "./Home";
@@ -38,12 +38,17 @@ export interface HarnessAppProps {
   materialPanel?: ComponentType<MaterialPanelProps>;
 }
 
+/** How long the line for an action search couldn't run stays. */
+const SEARCH_NOTICE_MS = 4000;
+
 export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView, setupSteps = {}, materialPanel }: HarnessAppProps) {
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
   const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
   const [settings, setSettings] = useState<SettingsTab | null>(null);
+  /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
+  const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
   /** Background check of the configured engine (spec §9 "every start"). */
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [checkFailed, setCheckFailed] = useState(false);
@@ -63,6 +68,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const chatStart = useRef<((action: string, scope: string | null) => boolean) | null>(null);
   /** The chat's handler for a search result or question (search spec §3); null while the chat isn't on screen. */
   const searchRef = useRef<((intent: SearchIntent) => boolean) | null>(null);
+  /** The chat's state for the palette's actions (search spec §6); null while the chat isn't on screen. */
+  const searchContextRef = useRef<(() => ChatSearchContext) | null>(null);
+  /** An action picked from search that couldn't run (it no longer applied, or main refused it): a short line says so. */
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!searchNotice) return;
+    const timer = setTimeout(() => setSearchNotice(null), SEARCH_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [searchNotice]);
   /** A result picked away from the work screen: it runs once the chat is there. */
   const pendingIntent = useRef<SearchIntent | null>(null);
   useEffect(() => {
@@ -257,6 +271,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   const closeSettings = () => {
     setSettings(null);
+    setSettingsFocus(null);
     checkEngine();
   };
   // Leaving the setup flow either way: whatever it saved gets checked again.
@@ -277,9 +292,36 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   /** A result or a ⌘Enter question: Settings closes, the work screen shows, the chat does the rest. */
   const searchIntent = (intent: SearchIntent) => {
+    setSearchNotice(null);
+    // A setting opens Settings at its field (§6), over whatever is on screen; Settings may already be open.
+    if (intent.kind === "setting") {
+      setSettingsFocus((f) => ({ id: intent.field, n: (f?.n ?? 0) + 1 }));
+      setSettings(intent.tab);
+      return;
+    }
+    // Settings' tabs and scopes are the app's, not the chat's: they run on any screen.
+    if (intent.kind === "command" && intent.command === "open-settings" && intent.arg) {
+      setSettingsFocus(null);
+      setSettings(intent.arg as SettingsTab);
+      return;
+    }
+    if (intent.kind === "command" && intent.command === "switch-scope" && intent.arg) {
+      setSettings(null);
+      setSettingsFocus(null);
+      // The row was read before a turn started: the picker's own rule (no switch while a turn runs) still holds.
+      if (screen === "work" && searchContextRef.current?.().turnRunning) {
+        setSearchNotice(i18n.t("search.notNow"));
+        return;
+      }
+      // Main may still refuse it (a turn held, a restore): said as the scope picker says it.
+      client.scopes.open(intent.arg).catch(() => setSearchNotice(i18n.t("scopes.failed")));
+      return;
+    }
     setSettings(null);
+    setSettingsFocus(null);
     if (screen === "work" && searchRef.current) {
-      searchRef.current(intent);
+      // An action that no longer applies says so; a result that opens nothing stays quiet (§3).
+      if (!searchRef.current(intent) && intent.kind === "command") setSearchNotice(i18n.t("search.notNow"));
       return;
     }
     if (!configured) return;
@@ -314,6 +356,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             }
             {...(state.jobs ? { startRef: chatStart } : {})}
             searchRef={searchRef}
+            searchContextRef={searchContextRef}
             {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
@@ -368,12 +411,16 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           client={client}
           state={state}
           tab={settings}
-          onTab={setSettings}
+          onTab={(tab) => {
+            setSettingsFocus(null);
+            setSettings(tab);
+          }}
           onChange={setState}
           onClose={closeSettings}
           onSetup={(step?: string) => {
             const back = settings;
             setSettings(null);
+            setSettingsFocus(null);
             openSetup(step ? { step, only: true, back } : {});
           }}
           move={move}
@@ -387,10 +434,16 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
               }
             : {})}
           language={client.language ? language : undefined}
+          {...(settingsFocus ? { focus: settingsFocus } : {})}
         />
       )}
+      {searchNotice && (
+        <p className="hh-search-notice" role="alert">
+          {searchNotice}
+        </p>
+      )}
       {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
-      <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} />
+      <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />
     </I18nextProvider>
   );
 }

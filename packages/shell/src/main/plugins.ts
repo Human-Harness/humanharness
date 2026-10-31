@@ -19,6 +19,7 @@ import {
   pluginsAccepted,
   preparedTitle,
   sameSetting,
+  searchableLine,
   settingsSentences,
   settingsValues,
   settingsView,
@@ -44,10 +45,24 @@ import type {
   PluginTestResult,
   PreparedTaskView,
 } from "@humanharness/protocol";
-import { type AttentionInput, type AttentionItem, type AttentionOrigin, AttentionStore, type AttentionTarget, type DataContextPart, DataError } from "@humanharness/workspace";
+import { type DataRow, type DataSource, recordRows } from "@humanharness/search";
+import {
+  APP_SCOPE,
+  type AttentionInput,
+  type AttentionItem,
+  type AttentionOrigin,
+  AttentionStore,
+  type AttentionTarget,
+  type DataContextPart,
+  DataError,
+  collectionName,
+  pluginDataDir,
+  scopeDir,
+} from "@humanharness/workspace";
 import { BROKER_LIMITS, type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";
 import { PluginData } from "./plugin-data";
+import { sourceStamp } from "./search/stamp";
 import type { runFile } from "./plugin-exec";
 import { type PluginEntry, type PluginPointers, distFolderOf, loadPlugins, readDist } from "./plugin-load";
 import { CrashPolicy, PluginScheduler } from "./plugin-scheduler";
@@ -852,7 +867,7 @@ export class PluginsController {
       version: e.manifest.version,
       folder: e.folder,
       distHash: e.distHash ?? "",
-      lines: permissionLines(e.manifest.permissions),
+      lines: [...permissionLines(e.manifest.permissions), ...[searchableLine(e.manifest)].filter((l) => l !== null)],
       // A key is shown by its label, as in the review's lines.
       ...(added && added.length > 0 ? { added: added.map((a) => (a.kind === "secret" ? { ...a, value: e.manifest.permissions.secrets.find((x) => x.id === a.value)?.label ?? a.value } : a)) } : {}),
     };
@@ -1241,6 +1256,70 @@ export class PluginsController {
   panelHost(id: string): { dist: string; panels: string[] } | null {
     const r = typeof id === "string" && !this.detached ? this.running.get(id) : undefined;
     return r && !r.stopped ? { dist: r.entry.dist, panels: r.panels.map((p) => p.id) } : null;
+  }
+
+  /**
+   * Global search (search spec D4): each running plugin's searchable collections. The stamp follows the collection file
+   * and its meta file, the declaration (`sourceStamp`), and the panel a record opens in (the declared one, else the first).
+   * A read-only peek: it never asks for the base (which would stop the plugins of a base that changed), it reads the
+   * context the plugins run in. With `base`: null unless they run in that base (keep what the index has).
+   */
+  async searchSources(): Promise<DataSource[]>;
+  async searchSources(base: string): Promise<DataSource[] | null>;
+  async searchSources(base?: string): Promise<DataSource[] | null> {
+    if (!this.active) return [];
+    const c = this.searchCtx(base);
+    if (!c) return base === undefined ? [] : null;
+    const out: DataSource[] = [];
+    for (const r of this.running.values()) {
+      if (r.stopped) continue;
+      const m = r.entry.manifest;
+      for (const [name, col] of Object.entries(m.data)) {
+        if (!col.search) continue;
+        const panel = col.search.panel ?? m.panels[0]?.id;
+        const dir = pluginDataDir(c.base, m.id);
+        const file = `${collectionName(name)}.json`;
+        // As the plugin's DataStore lays them out (`dir`): the records, then `.meta/` with when each changed. Its name is
+        // in each document ("From <name>"): a rename builds them again.
+        const stamp = await sourceStamp(
+          [path.join(dir, scopeDir(APP_SCOPE), file), path.join(dir, ".meta", scopeDir(APP_SCOPE), file)],
+          { ...(col.key ? { key: col.key } : {}), single: col.single, search: col.search },
+          m.name,
+        );
+        out.push({
+          id: `plugin:${m.id}/${name}`,
+          owner: "plugin",
+          plugin: m.id,
+          pluginName: m.name,
+          ...(panel ? { panel } : {}),
+          collection: name,
+          folder: APP_SCOPE,
+          stamp: `${stamp}:${panel ?? ""}`,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * A running plugin's searchable collection as search rows (`recordRows`: the §8.2 checks, the caps); anything else:
+   * none. With `base`: null unless the plugins run in that base.
+   */
+  async searchRows(plugin: string, collection: string): Promise<DataRow[]>;
+  async searchRows(plugin: string, collection: string, base: string): Promise<DataRow[] | null>;
+  async searchRows(plugin: string, collection: string, base?: string): Promise<DataRow[] | null> {
+    if (base !== undefined && !this.searchCtx(base)) return null;
+    const r = typeof plugin === "string" && !this.detached ? this.running.get(plugin) : undefined;
+    const col = r && !r.stopped && Object.hasOwn(r.entry.manifest.data, collection) ? r.entry.manifest.data[collection] : undefined;
+    if (!r || !col?.search) return [];
+    const [records, changed] = await Promise.all([r.data.readAll(collection), r.data.changedAt(collection)]);
+    return recordRows(records, { ...(col.key ? { key: col.key } : {}), single: col.single, search: col.search }, changed);
+  }
+
+  /** Search's peek at the context the plugins run in (`base`: only that one); never sets it, never detaches. */
+  private searchCtx(base?: string): BaseCtx | null {
+    const c = this.detached ? null : this.ctx;
+    return c && (base === undefined || c.base === base) ? c : null;
   }
 
   /** The dev watcher's (Task 9): the plugin's frames remount. */

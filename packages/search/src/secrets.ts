@@ -43,6 +43,11 @@ const PATTERNS: readonly RegExp[] = [
 /** The first line of a private-key block; its label names the END line that closes it. */
 const BLOCK_BEGIN = /-----BEGIN ([A-Z ]*PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----/;
 
+/** A line that ends in a base64 PEM run: wrapped, the block goes on in the lines below. */
+const BASE64_PEM_OPEN = new RegExp(`${B}LS0tLS1CRUdJTi[A-Za-z0-9+/=]{40,}\\s*$`);
+/** A wrapped base64 block's next line (maybe indented, as in YAML). */
+const BASE64_LINE = /^\s*[A-Za-z0-9+/=]+\s*$/;
+
 const hit = (text: string) => PATTERNS.some((p) => p.test(text));
 
 /** A file whose indexable text holds a token-shaped string is indexed by name only. */
@@ -52,16 +57,22 @@ export function secretShaped(text: string): boolean {
 
 /**
  * Notes and chats: the lines with a token-shaped string are left out, the rest is indexed. A private-key block is
- * left out whole, from its BEGIN line through the matching END line (to the end of the text when there is none).
+ * left out whole, from its BEGIN line through the matching END line (to the end of the text when there is none). A
+ * base64 PEM that runs to the end of its line is left out with the base64 lines below it, up to a blank line or one
+ * base64 can't hold.
  */
 export function withoutSecretLines(text: string): string {
   const out: string[] = [];
   let end: string | null = null;
+  let base64 = false;
   for (const line of text.split("\n")) {
     if (end !== null) {
       if (line.includes(end)) end = null;
       continue;
     }
+    if (base64 && BASE64_LINE.test(line)) continue;
+    base64 = BASE64_PEM_OPEN.test(line);
+    if (base64) continue;
     const begin = BLOCK_BEGIN.exec(line);
     if (begin) {
       const close = `-----END ${begin[1]}-----`;

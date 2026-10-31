@@ -1,8 +1,8 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchKind, SearchMarked, SearchStatus } from "../client";
+import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchIndexKind, SearchMarked, SearchRowKind, SearchStatus } from "../client";
 import { questionText } from "./ask";
-import { type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
+import { type LocalRows, type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
 
 const QUERY_DELAY_MS = 80;
 const MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
@@ -35,7 +35,7 @@ function trapTab(e: KeyboardEvent, root: HTMLElement | null): void {
   }
 }
 
-function HitRow({ id, hit, active, onPick, onHover }: { id: string; hit: SearchHitView; active: boolean; onPick: () => void; onHover: () => void }) {
+function HitRow({ id, hit, tag, active, onPick, onHover }: { id: string; hit: SearchHitView; tag: string | null; active: boolean; onPick: () => void; onHover: () => void }) {
   const { t } = useTranslation();
   const meta = hit.meta
     ? [hit.meta.role ? t(`search.role.${hit.meta.role}`) : null, hit.meta.status ? t(`search.status.${hit.meta.status}`) : null, hit.meta.tier ?? null].filter(Boolean).join(" · ")
@@ -45,13 +45,26 @@ function HitRow({ id, hit, active, onPick, onHover }: { id: string; hit: SearchH
     <div id={id} role="option" aria-selected={active} className={active ? "hh-search-row hh-search-row-active" : "hh-search-row"} onMouseDown={(e) => e.preventDefault()} onMouseMove={onHover} onClick={onPick}>
       <span className={`hh-search-icon hh-search-icon-${hit.kind}`} aria-hidden="true" />
       <span className="hh-search-text">
+        {/* Titles and contexts come from files, records and manifests: each is isolated, so a direction mark in one
+            never turns the row around (B12). */}
         <span className="hh-search-row-title">
-          <Marked parts={hit.title} />
+          <bdi>
+            <Marked parts={hit.title} />
+          </bdi>
         </span>
-        <span className="hh-search-row-context">{hit.context.length > 0 ? <Marked parts={hit.context} /> : meta}</span>
+        <span className="hh-search-row-context">
+          {hit.context.length > 0 ? (
+            <bdi>
+              <Marked parts={hit.context} />
+            </bdi>
+          ) : (
+            meta
+          )}
+        </span>
       </span>
       {hit.folder !== undefined && <span className="hh-search-tag">{t("search.readOnly", { folder: hit.folder })}</span>}
       {hit.scope !== undefined && <span className="hh-search-tag">{hit.scope}</span>}
+      {tag !== null && <span className="hh-search-tag">{tag}</span>}
     </div>
   );
 }
@@ -65,16 +78,23 @@ export interface SearchPaletteProps {
   scopesPlural?: string;
   /** A harness with reference folders: their toggle shows, on by default. */
   references: boolean;
+  /** The harness's name, for a record no view opens: "Shown in <harness>". */
+  harnessName?: string;
+  /** The window's own rows for a query (§6): Settings and Actions. Absent: none (plan 1's palette). */
+  local?: (query: string) => LocalRows;
   onClose: () => void;
   onPick: (hit: SearchHitView) => void;
   onAsk: (text: string) => void;
 }
 
+const INDEX_KINDS: readonly SearchRowKind[] = ["task", "note", "file", "data"];
+const isIndexKind = (k: SearchRowKind): k is SearchIndexKind => INDEX_KINDS.includes(k);
+
 /** The ⌘K palette (search spec §5): a modal dialog with a combobox over a grouped listbox. Asks main; sends nothing. */
-export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, onClose, onPick, onAsk }: SearchPaletteProps) {
+export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, harnessName, local, onClose, onPick, onAsk }: SearchPaletteProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(initialQuery);
-  const [kind, setKind] = useState<SearchKind | null>(null);
+  const [kind, setKind] = useState<SearchRowKind | null>(null);
   /** Null until the person flips it: main's remembered value shows meanwhile. */
   const [allScopes, setAllScopes] = useState<boolean | null>(null);
   const [refs, setRefs] = useState(true);
@@ -109,7 +129,7 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
     const n = ++asked.current;
     const byIndex = movedAsked.current !== moved;
     movedAsked.current = moved;
-    const filters: SearchFilters = { ...(kind ? { kind } : {}), ...(allScopes !== null ? { allScopes } : {}), ...(refs ? {} : { references: false }) };
+    const filters: SearchFilters = { ...(kind && isIndexKind(kind) ? { kind } : {}), ...(allScopes !== null ? { allScopes } : {}), ...(refs ? {} : { references: false }) };
     const timer = setTimeout(
       () => {
         void client.search.query(query, filters).then((a) => {
@@ -124,9 +144,13 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
     return () => clearTimeout(timer);
   }, [client, query, kind, allScopes, refs, moved]);
 
-  const sections = sectionsOf(answer);
+  // Built for the query main answered, not the one being typed: the groups, the chips and their counts describe one query.
+  // Main not ready or failing: for the typed one (no chips then), so Settings and Actions still work; nothing before
+  // main's first answer. Only main's answer crosses the bridge; these rows stay in the window (plan deviation 1).
+  const localRows = local && answer ? local(answer.ok ? answer.query : query) : undefined;
+  const sections = sectionsOf(answer, localRows, kind);
   const rows = rowsOf(sections);
-  const chips = chipsOf(answer);
+  const chips = chipsOf(answer, localRows);
   const shownAll = allScopes ?? (answer?.ok ? answer.allScopes : false);
   const optionId = (i: number) => `${ids}-o${i}`;
   const typed = query.trim() !== "";
@@ -175,6 +199,11 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
           ? t("search.none", { query: query.trim() })
           : t("search.empty", { mod: MOD });
   const sectionLabel = (key: Section["key"]) => (key === "recent" ? t("search.recent") : t(`search.kind.${key}`));
+  /** A record no view opens says where it lives (§3 Data); a plugin's says which plugin. */
+  const tagOf = (hit: SearchHitView): string | null => {
+    if (hit.target.kind === "record" && harnessName !== undefined && !client.search.handlesRecord(hit.target.collection)) return t("search.shownIn", { name: harnessName });
+    return hit.plugin !== undefined ? t("search.fromPlugin", { plugin: hit.plugin }) : null;
+  };
   let index = 0;
 
   return (
@@ -233,7 +262,7 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
               </div>
               {s.hits.map((hit) => {
                 const i = index++;
-                return <HitRow key={hit.id} id={optionId(i)} hit={hit} active={i === active} onPick={() => onPick(hit)} onHover={() => setActive(i)} />;
+                return <HitRow key={hit.id} id={optionId(i)} hit={hit} tag={tagOf(hit)} active={i === active} onPick={() => onPick(hit)} onHover={() => setActive(i)} />;
               })}
             </div>
           ))}

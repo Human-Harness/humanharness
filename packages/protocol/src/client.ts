@@ -46,6 +46,15 @@ export interface SearchClient {
   open(query?: string): void;
   /** Every `open`, whoever called it: the window's palette listens. */
   onOpen(listener: (query?: string) => void): () => void;
+  /**
+   * A harness view opens its own records (§3 Data): `listener` gets the record's key (null for a `single` collection)
+   * and the scope folder. The newest listener for a collection answers; when it unsubscribes, the one still registered under it answers again. Answers the unsubscribe.
+   */
+  onOpenRecord(collection: string, listener: (key: string | number | null, scope: string) => void): () => void;
+  /** The window hands a picked record to the view listening for `collection`; false when none does. */
+  openRecord(collection: string, key: string | number | null, scope: string): boolean;
+  /** A view listens for `collection` now. */
+  handlesRecord(collection: string): boolean;
 }
 
 /** A scope's engine config (hatches spec §5.3). Only with `state.hatches.enginePresets`; without, every call rejects (D0). */

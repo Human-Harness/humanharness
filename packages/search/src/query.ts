@@ -38,6 +38,7 @@ function toHit(r: SearchResult): SearchHit {
     ...(typeof r.action === "string" ? { action: r.action } : {}),
     ...(typeof r.task === "string" ? { task: r.task } : {}),
     ...(r.meta ? { meta: r.meta } : {}),
+    ...(r.data ? { data: r.data } : {}),
     score: r.score,
     terms: r.terms,
   };

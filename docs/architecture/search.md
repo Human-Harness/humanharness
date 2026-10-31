@@ -1,8 +1,9 @@
 # Global search
 
 The ⌘K palette (Ctrl+K off macOS; spec: `docs/superpowers/specs/2026-10-30-global-search-design.md`, plan:
-`docs/superpowers/plans/2026-10-30-global-search-1.md`). Plan 1 finds tasks, notes and files (the person's folder and
-the reference folders) with a local, deterministic `minisearch` index. No tokens, ever: nothing reaches the engine
+`docs/superpowers/plans/2026-10-30-global-search-1.md` and `2026-10-31-global-search-2.md`). Plan 1 finds tasks, notes
+and files (the person's folder and the reference folders) with a local, deterministic `minisearch` index; plan 2 adds
+Settings, Actions and the records of collections that opt in (see "Plan 2" below). No tokens, ever: nothing reaches the engine
 unless the person sends a ⌘Enter question, and that text holds titles and paths only.
 
 ## Shape
@@ -92,7 +93,7 @@ each part without trailing dots and spaces (what macOS and Windows open), and a 
 denied:
 
 - Any path with a `.git`, `.claude` or `.aws` part; under `.harness/` everything except `notes/`, `reviews/` and
-  `chats/` (`data/` is plan 2's opt-in, plan deviation 15); the generated `AGENTS.md` and the engine's instructions
+  `chats/` (`data/` is never walked: searchable collections come through the stores, see "Plan 2"); the generated `AGENTS.md` and the engine's instructions
   file; the app's temp files (`*.tmp`).
 - Secret-shaped names, at any depth, not even indexed by name: `.env`, `.env.*`, any name ending `.env`, `*.pem`,
   `*.key`, `*.p12`, `*.pfx`, `*.keystore`, `*.jks`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `.npmrc`, `.pypirc`,
@@ -143,3 +144,87 @@ would be flaky under the suite's load (plan deviation 19).
 ## Plan 1 deviations
 
 See the plan's "Deviations from the spec" (`docs/superpowers/plans/2026-10-30-global-search-1.md`).
+
+## Plan 2: settings, actions and data
+
+- **Settings and Actions are the window's.** `SEARCHABLE_SETTINGS` and `searchCommands`
+  (`packages/protocol/src/search-local.ts`) list them; `packages/ui/src/search/local.ts` builds the rows each time the
+  palette asks, matched by word prefix (`localScore`: 2 when every typed word starts a word of the label, 1 when of the
+  label, the tab's name or a keyword; accents and case folded), best score first, ties in the table's order. The
+  marked label is NFC-composed first, so a decomposed accent doesn't split its word. `SearchPalette`'s `local` merges
+  them with main's answer: groups in §3's order (Tasks, Notes, Files, Settings, Actions, Data; 5 rows per group, 50 with
+  a chip), their chips and counts, ⌘1–7. The rows are built for the query main answered, so groups and chips describe
+  one query; while main isn't ready or fails they are built for the typed query (no chips then), so Settings and
+  Actions still work. Main's `hh:search` never sees them; they never join the recents, and they carry no ⌘Enter hint.
+  Tab helpers both read (`visibleTabs`, `tabLabel`) live in `packages/ui/src/settings-tabs.ts`, so search loads no
+  Settings component.
+- **A setting opens Settings at its field.** Each searchable row carries a literal `data-setting="<tab>.<field>"`
+  (harness fields `harness:<name>`; an advanced one opens with "More settings" expanded). Rows need their `needs`
+  (configured, folder, backup, parallel, profiles) and a visible tab; harness fields show once configured. Picking one
+  gives focus back to what had it before search (Settings returns it there on close), then `focusSetting`
+  (`packages/ui/src/search/focus-setting.ts`) focuses the row's first usable control (else the row, with a `tabindex`
+  removed on blur), scrolls it into view and flashes it for 2 s (a second flash restarts its own timer). A tab still
+  loading is waited for, 2 s at most; past that nothing is focused. A second search while Settings is open re-runs only
+  the focus: the tabs stay mounted, so unsent drafts and errors stay. The registry test
+  (`packages/ui/test/search-settings-registry.test.tsx`) reads the literal `data-setting`s and renders each tab in its
+  needed state, so a row and the registry can't disagree.
+- **Actions** are the ones available now, built when the palette asks from the chat's `ChatSearchContext`
+  (`searchContextRef`, set by `ChatView`; none away from the chat) and only once the app is configured: New question
+  (no task open; it focuses the composer and keeps an unsent draft), History and "what's clear
+  so far" (not the slim window), "what the AI takes into account" (also a task open), the next part (the task waits
+  for the person and nothing else is under way; the row names the part's id), Stop (a turn, a close or a checkpoint runs), each visible
+  Settings tab, each scope that isn't open or archived (no turn running). With nothing typed they show after the
+  recents. Each one is checked again when picked: one that no longer applies (the task moved on to another part, a turn
+  started before a scope switch) does nothing and the window shows "That can't be done right now." for 4 s; a scope
+  switch main refuses says what the scope picker says. None sends what the person typed; the next part does what the
+  stepper's button does: the task moves on and the part's own turn starts.
+- **Data records.** A collection opts in with `search: { title, text? }` (`text`: one field or up to five; a strict
+  object, so an unknown setting is refused). Harness: zod field names (`collectionSchema`); plugin: JSON schema property
+  names and an optional `panel`, which must be a declared panel (`pluginManifestSchema`; `pluginCollections` drops
+  `panel` before the data model's check). Main lists the sources (`searchData` in
+  `packages/shell/src/main/search/data-sources.ts`): `harness:<folder>/<collection>` (an app-wide collection in `_app`,
+  a scoped one in each scope that isn't archived, `main` without scopes) and `plugin:<plugin>/<collection>` for each
+  running plugin (`PluginsController.searchSources`). Each source's stamp (`sourceStamp`, `stamp.ts`) is the size and
+  mtime of its records file and of its meta file (a store writes the records, then when each changed) plus a hash of
+  its declaration (key, `single`, `search`; `declarationStamp`), and for a plugin a hash of its name (each row says
+  "From <plugin>") and the panel a record opens in; a source is read again only when its stamp changed. `recordRows` (`packages/search/src/docs.ts`) turns records into rows: the
+  title field (else the key, also when the title is token-shaped), the text fields joined by lines without token-shaped
+  ones (a wrapped base64 PEM is left out with its continuation lines) and capped at a file's 1 MB; a record whose key is
+  token-shaped is skipped, and so is a key whose text an earlier record already has (`1` and `"1"`: the first wins).
+  Documents `data:<source>#<key>` keep no text; a snippet reads the collection again, once per answer, and finds the row
+  by the same key text. Their scope: `main` without scopes, else the harness folder, `_app` for app-wide and plugin
+  ones. `files.json` keeps `data: { <source>: { stamp, ids } }`; a loaded snapshot keeps only the data documents it
+  lists. At most 20,000 data documents (`MAX_DATA_DOCS`): a source cut short stores `cut:<room>:<stamp>` and is read
+  again only once its room or its stamp changes.
+- **One base only.** `sources(base)` and `rows(source, base)` take the live index's base. When it isn't the active base
+  any more (a profile switched during the reads; checked before and after them), the config is invalid, or the plugin
+  list failed, they answer null and the index keeps what it has: no index ever takes another base's records. The
+  plugin side peeks at the context its plugins run in and never asks for the base (which would detach them). A source
+  whose read fails keeps its documents while they fit, is logged once per stamp, and is tried again after 10 s, then
+  twice as long each time up to 30 minutes; a failing source list is logged once until it works again.
+- **What opens a record.** A harness record goes to the view listening with
+  `client.search.onOpenRecord(collection, (key, scope) => …)`: one stack per collection in the preload, the newest
+  listener answers and when it unsubscribes the one under it answers again. None listening: the row's tag says "Shown
+  in <harness>" and Enter only closes search. A plugin record opens the plugin's panel (the declared `panel`, else the
+  first) with its key as the panel's focus, only while the plugin still shows that panel (picked away from the work
+  screen, the chat holds it until its first plugin surface read is back, then opens it or drops it); every plugin row
+  is tagged "From <plugin>", and a plugin without panels has target `none` (Enter only closes search). A pick still
+  records the recent. Titles and contexts are each wrapped in `<bdi>`.
+- **Reindex triggers.** The palette opening and at most every 5 s while typing (a query waits only for the pass in
+  progress, not for the ones a burst keeps asking for), a `DataStore` write to a searchable collection, a plugin run's
+  writes, a plugin turned on, off, added, removed or updated (the running set with versions changed;
+  `runningPlugins`), a commit with a path under `.harness/data/` and a restore. `SearchService.dataChanged()` collects
+  the changes of 500 ms (`dataDelayMs`, from the first one, not pushed back) into one refresh; one refresh runs at a
+  time and one asked for meanwhile runs once after it. All are no-ops until search was opened (D0); a quit drops a
+  waiting burst.
+- **Checks.** `check` warns `search-data`, once per searchable collection: no view file under the `ui` folder (`.ts`,
+  `.tsx`, `.mts`, `.js`, `.jsx`, `.mjs`; no links, no `node_modules`; comments and `t("…")` keys don't count) quotes
+  the collection's name, or none calls `onOpenRecord("<collection>", …)` (a call whose first argument isn't a literal
+  counts for every collection). A heuristic: the manifest can't say what a view shows. Skipped when the `ui` path is
+  already a schema error. `plugin check` warns `search-panel` per searchable collection of a plugin with no panel. The
+  permission review shows "Searchable: <collection> (<fields>); …", each name isolated; it isn't a permission, so a
+  plugin that asks for nothing still says "It asks for nothing beyond its own data." above it.
+
+## Plan 2 deviations
+
+See the plan's "Deviations from the spec" (`docs/superpowers/plans/2026-10-31-global-search-2.md`).

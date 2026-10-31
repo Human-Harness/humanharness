@@ -1,4 +1,4 @@
-import { useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
 import { Segmented } from "./chrome";
@@ -109,11 +109,26 @@ function useModels(client: HarnessClient, state: AppState, onChange: (s: AppStat
  * Settings › Modelos (resources spec §7): how much model each task uses and what each level runs on, per
  * engine. Saved in config.json; a change applies to the next task, never to the running one.
  */
-export function ModelsTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {
+export function ModelsTab({
+  client,
+  state,
+  onChange,
+  focus,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  onChange: (s: AppState) => void;
+  /** Search's Models row (§6): the part it shows; `n` changes on each search, the tab staying as it is otherwise. */
+  focus?: { part: "tasks" | "levels"; n: number };
+}) {
   const { t } = useTranslation();
   const tasksId = useId();
   const [models, update, saveFailed] = useModels(client, state, onChange);
-  const [part, setPart] = useState<"tasks" | "levels">("tasks");
+  const [part, setPart] = useState<"tasks" | "levels">(focus?.part ?? "tasks");
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (focus) setPart(focus.part);
+  }, [focusN]);
   const view = state.models;
   if (!view) return null;
   const engine = state.config.engineId ?? state.engines[0]?.id ?? "";
@@ -156,7 +171,7 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
       )}
       {part === "levels" && <LevelsSection state={state} view={view} models={models} rows={rows} update={update} />}
       {part === "tasks" && (
-        <section aria-labelledby={tasksId}>
+        <section aria-labelledby={tasksId} data-setting="models.tasks">
           {/* The switch above already says it: the heading only names the region. */}
           <h3 id={tasksId} className="hh-sr-only">
             {t("models.tasks")}
@@ -243,7 +258,7 @@ function LevelsSection({
   /** The tasks on `tier`: their own setting, else the recommendation (a custom task uses no level). */
   const users = (tier: Tier) => rows.filter(({ key }) => (models.tasks?.[key] ?? view.recommended[key] ?? "standard") === tier).map((r) => r.label);
   return (
-    <section aria-labelledby={headingId}>
+    <section aria-labelledby={headingId} data-setting="models.levels">
       <h3 id={headingId} className="hh-sr-only">
         {t("models.levels")}
       </h3>

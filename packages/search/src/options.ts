@@ -8,7 +8,7 @@ export const INDEX_VERSION = 1;
 export const fold = (term: string): string => term.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
 
 /** Only what a row shows and what opening it needs; never the text (§4.1). */
-export const STORE_FIELDS = ["kind", "scope", "title", "path", "at", "root", "chat", "action", "task", "meta"] as const;
+export const STORE_FIELDS = ["kind", "scope", "title", "path", "at", "root", "chat", "action", "task", "meta", "data"] as const;
 
 /** §5.3: title ×3, path or name ×2, text ×1. */
 export const FIELD_BOOST = { title: 3, path: 2, text: 1 };

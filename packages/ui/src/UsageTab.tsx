@@ -31,9 +31,9 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
 
   return (
     <div className="hh-tab">
-      <h3>{t("usage.planTitle")}</h3>
+      <h3 data-setting="usage.plan">{t("usage.planTitle")}</h3>
       <PlanSection engine={engine} limits={limits} reported={Boolean(usage?.limits)} />
-      <h3 id={tableTitle}>{t("usage.actionsTitle")}</h3>
+      <h3 id={tableTitle} data-setting="usage.actions">{t("usage.actionsTitle")}</h3>
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
       {/* Material spec §11: what processing the person's material used (only once a stage has run). */}
       {usage?.material !== undefined && <p className="hh-caption">{t("usage.material", { tokens: usage.material.toLocaleString(shownLanguage(i18n)) })}</p>}

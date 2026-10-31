@@ -1354,7 +1354,9 @@ export interface PluginsView {
   plugins: PluginRow[];
 }
 /** One line of the permission review, as plain data the UI words (never markup, B12). */
-export type PluginLine = { kind: "hosts"; hosts: string[] } | { kind: "exec"; command: string; readOnly: boolean; wide: boolean } | { kind: "secrets"; labels: string[] } | { kind: "tasks" };
+export type PluginLine = { kind: "hosts"; hosts: string[] } | { kind: "exec"; command: string; readOnly: boolean; wide: boolean } | { kind: "secrets"; labels: string[] } | { kind: "tasks" }
+  /** Global search (search spec §7): what the core indexes of this plugin's data; shown with the permissions. */
+  | { kind: "searchable"; collections: { name: string; fields: string[] }[] };
 export interface PluginReview {
   id: string;
   name: string;
@@ -1530,6 +1532,14 @@ export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
 
 /** Global search (search spec §3). Plan 1: tasks, notes and files; plan 2 adds settings, commands and data. */
 export type SearchKind = "task" | "note" | "file";
+/** Every kind the index answers: plan 1's, and opt-in data records (D4). */
+export type SearchIndexKind = SearchKind | "data";
+/** Every kind a result row can be: the index's, and Settings and Actions, which the window builds (§4.2). */
+export type SearchRowKind = SearchIndexKind | "setting" | "command";
+/** The Settings tabs a setting row opens. */
+export type SearchSettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "connections" | "jobs" | "usage";
+/** The app's commands (§6 "Actions"). */
+export type SearchCommandId = "new-question" | "open-history" | "open-notes" | "open-context" | "open-settings" | "switch-scope" | "next-part" | "stop-turn";
 
 /** A title or a line of context: plain runs, the first match `mark`ed (§5.3). Never HTML. */
 export type SearchMarked = { text: string; mark?: true }[];
@@ -1545,7 +1555,17 @@ export type SearchTarget =
   | { kind: "chat"; entry: string; scope: string; task?: string }
   | { kind: "document"; path: string; anchor?: string }
   | { kind: "timeline"; path: string }
-  | { kind: "reveal" };
+  | { kind: "reveal" }
+  /** A harness record: the view listening with `client.search.onOpenRecord` opens it; `key` null for a `single` collection. */
+  | { kind: "record"; collection: string; key: string | number | null; scope: string }
+  /** A plugin record: the plugin's panel, with the record's key as `focus`. */
+  | { kind: "panel"; plugin: string; panel: string; focus: string }
+  /** Settings at that tab, the field focused (§6). */
+  | { kind: "setting"; tab: SearchSettingsTab; field: string }
+  /** One of the app's commands; `arg`: the tab, the scope or the part. */
+  | { kind: "command"; command: SearchCommandId; arg?: string }
+  /** Nothing opens it (a plugin record whose plugin has no panel). */
+  | { kind: "none" };
 
 /** What a task row says besides its title (the window words it in the person's language). */
 export interface SearchMeta {
@@ -1556,7 +1576,7 @@ export interface SearchMeta {
 
 export interface SearchHitView {
   id: string;
-  kind: SearchKind;
+  kind: SearchRowKind;
   title: SearchMarked;
   /** The snippet around the match, else the path; empty for a task row (the window draws `meta`). */
   context: SearchMarked;
@@ -1565,6 +1585,8 @@ export interface SearchHitView {
   folder?: string;
   /** Another scope's title (with "All scopes" on). */
   scope?: string;
+  /** A plugin record: the plugin's name (the row says "From <plugin>"). */
+  plugin?: string;
   /** What ⌘Enter may name (§5.4): a path, a reference file's name, a note's or a task's title. Null: never named. */
   hint: { kind: "path" | "name" | "note" | "task"; text: string } | null;
   target: SearchTarget;
@@ -1581,7 +1603,7 @@ export interface SearchStatus {
 
 export interface SearchFilters {
   /** One kind (a filter chip); absent: "All". */
-  kind?: SearchKind;
+  kind?: SearchIndexKind;
   /** The "All scopes" toggle (D2); remembered by main. Absent: what main remembers. */
   allScopes?: boolean;
   /** The "Reference folders" toggle; absent: on. */
@@ -1589,7 +1611,7 @@ export interface SearchFilters {
 }
 
 export interface SearchGroup {
-  kind: SearchKind;
+  kind: SearchIndexKind;
   /** Every match of this kind, beyond the rows shown. */
   total: number;
   hits: SearchHitView[];
@@ -1601,7 +1623,7 @@ export type SearchAnswer =
       ok: true;
       query: string;
       groups: SearchGroup[];
-      counts: Record<SearchKind, number>;
+      counts: Record<SearchKind, number> & { data?: number };
       recent: SearchHitView[];
       partial: boolean;
       status: SearchStatus;

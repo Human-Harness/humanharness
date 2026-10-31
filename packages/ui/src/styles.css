@@ -1096,6 +1096,23 @@ input.hh-search-input {
 .hh-search-where {
   margin-left: auto;
 }
+/* An action from search that couldn't run says so for a moment, over the screen (§6). */
+.hh-search-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 8px 14px;
+  background: var(--hh-surface);
+  color: var(--hh-ink);
+  border: 1px solid var(--hh-line-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--hh-backdrop);
+  font-size: 0.875rem;
+}
 /* A chat entry opened from search is highlighted for 2 s (§3). */
 .hh-search-flash {
   background: var(--hh-highlight);

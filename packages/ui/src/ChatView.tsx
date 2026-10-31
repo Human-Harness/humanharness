@@ -11,6 +11,7 @@ import { GearIcon, SidekickToggle, TopBar } from "./chrome";
 import {
   type AppState,
   type ChatEntry,
+  type ChatSearchContext,
   type ChoiceOption,
   type DocumentCard,
   type EngineProblem,
@@ -21,6 +22,7 @@ import {
   type ReaderPrefs,
   type RespondResult,
   type ReviewSummary,
+  type SearchCommandId,
   type SendOptions,
   type SidekickCard,
   type SidekickReview,
@@ -109,6 +111,7 @@ export function ChatView({
   inboxBar,
   startRef,
   searchRef,
+  searchContextRef,
   taskStrip,
   draftKeep,
   openScope = null,
@@ -142,6 +145,8 @@ export function ChatView({
   startRef?: { current: ((action: string, scope: string | null) => boolean) | null };
   /** Set by the chat: runs a search result or question (search spec §3); false when it can't here. */
   searchRef?: { current: ((intent: SearchIntent) => boolean) | null };
+  /** Set by the chat: what it says about itself for the palette's actions (search spec §6); null once this view is gone. */
+  searchContextRef?: { current: (() => ChatSearchContext) | null };
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
@@ -283,7 +288,8 @@ export function ChatView({
   // The Attention inbox (plugins spec §6): only when main sends `state.plugins`, never in slim mode (D0).
   const attention = useAttention(client, state.plugins !== undefined && !slim);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
-  const surface = usePluginSurface(client, state.plugins !== undefined && !slim);
+  const pluginsOn = state.plugins !== undefined && !slim;
+  const surface = usePluginSurface(client, pluginsOn);
   /** The panel last opened, and its plugin's dev reload count then: a reloaded frame doesn't get the old focus again. */
   const [panelTarget, setPanelTarget] = useState<(PanelTarget & { reloadAt: number }) | null>(null);
   const surfaceNow = useRef(surface);
@@ -974,6 +980,71 @@ export function ChatView({
       startRef.current = null;
     };
   });
+  /** The task's next part, while it waits and nothing runs (the stepper's own guards). */
+  const nextPartOf = (): { id: string; label: string } | null => {
+    const task = tasks.current;
+    if (!task || task.status !== "waiting" || blocked() || pending || phasing) return null;
+    const i = taskPhases.findIndex((p) => p.id === task.phase);
+    const next = i >= 0 ? taskPhases[i + 1] : undefined;
+    return next ? { id: next.id, label: next.label } : null;
+  };
+  /**
+   * An action from search (§6); false when it no longer applies (the palette's row was read earlier). One side panel at
+   * a time (the History button's own steps). Nothing the person typed is sent; the next part starts its own turn, as the
+   * stepper's button does.
+   */
+  const runCommand = (command: SearchCommandId, arg?: string): boolean => {
+    switch (command) {
+      case "new-question":
+        // Focus on the composer, with whatever the person had typed still there (an unsent draft is kept, never
+        // cleared): the question is theirs to write and send.
+        if (tasks.current) return false;
+        closeReader();
+        setTimelineFile(null);
+        setShowHistory(false);
+        setNotesPanel(null);
+        setContextOpen(false);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return true;
+      case "open-history":
+        if (slim) return false;
+        closeReader();
+        setContextOpen(false);
+        setNotesPanel(null);
+        setTimelineFile(null);
+        setHistoryTask(undefined);
+        setShowHistory(true);
+        return true;
+      case "open-notes":
+        if (slim) return false;
+        closeReader();
+        setContextOpen(false);
+        setTimelineFile(null);
+        setShowHistory(false);
+        setNotesPanel({});
+        return true;
+      case "open-context":
+        // The open task's context: with no task the panel has nothing to show (and would stay open for the next one).
+        if (slim || !tasks.current) return false;
+        openContext();
+        return true;
+      case "next-part": {
+        // Only the part the row named: once the task moved on, the next part is another one.
+        const next = nextPartOf();
+        if (!next || next.id !== arg) return false;
+        pickPhase(next.id);
+        return true;
+      }
+      case "stop-turn":
+        if (!chat.live && !closing && !checkpoint) return false;
+        void client.cancel();
+        return true;
+      case "open-settings":
+      case "switch-scope":
+        // HarnessApp's.
+        return false;
+    }
+  };
   /** A search result or question (search spec §3, §5.4); false when it can't run here. */
   const runSearchIntent = (intent: SearchIntent): boolean => {
     switch (intent.kind) {
@@ -1019,13 +1090,42 @@ export function ChatView({
         setDraft(intent.text);
         requestAnimationFrame(() => inputRef.current?.focus());
         return true;
+      case "record":
+        // The harness view's own handler (client.search.onOpenRecord); none listening: nothing opens (§3).
+        return client.search.openRecord(intent.collection, intent.key, intent.scope);
+      case "panel":
+        // Picked before the first surface read came back (from Home): it waits for that read, then opens or drops.
+        if (surface === null && pluginsOn) {
+          pendingPanel.current = intent;
+          return true;
+        }
+        // A row read before its plugin stopped (or dropped the panel) opens nothing, now or when the panel comes back.
+        if (!surfaceCtx || !surfaceCtx.surface.panels.some((p) => p.plugin === intent.plugin && p.id === intent.panel)) return false;
+        openPanel(intent.plugin, intent.panel, intent.focus);
+        return true;
+      case "setting":
+        // HarnessApp opens Settings itself; never reaches here.
+        return false;
+      case "command":
+        return runCommand(intent.command, intent.arg);
     }
   };
+  /** A plugin record's panel picked while the surface was still loading; checked once, when it has loaded. */
+  const pendingPanel = useRef<Extract<SearchIntent, { kind: "panel" }> | null>(null);
+  useEffect(() => {
+    const intent = pendingPanel.current;
+    if (!intent || surface === null) return;
+    pendingPanel.current = null;
+    if (surface.panels.some((p) => p.plugin === intent.plugin && p.id === intent.panel)) openPanel(intent.plugin, intent.panel, intent.focus);
+  }, [surface, openPanel]);
   useLayoutEffect(() => {
-    if (!searchRef) return;
-    searchRef.current = runSearchIntent;
+    if (searchContextRef) {
+      searchContextRef.current = () => ({ taskOpen: Boolean(tasks.current), turnRunning: Boolean(chat.live) || closing || checkpoint, nextPart: nextPartOf(), panels: !slim });
+    }
+    if (searchRef) searchRef.current = runSearchIntent;
     return () => {
-      searchRef.current = null;
+      if (searchRef) searchRef.current = null;
+      if (searchContextRef) searchContextRef.current = null;
     };
   });
   const resume = (note: NoteView) => {

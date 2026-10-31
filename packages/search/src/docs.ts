@@ -1,7 +1,8 @@
 // The documents per kind (search spec §3, §9).
 import { splitFrontMatter } from "@humanharness/harness-sdk/documents";
-import { withoutSecretLines } from "./secrets";
-import type { SearchDoc } from "./types";
+import { MAX_TEXT_BYTES } from "./limits";
+import { secretShaped, withoutSecretLines } from "./secrets";
+import type { DataRow, DataSource, SearchDoc } from "./types";
 
 export const APP_SCOPE = "_app";
 export const MAIN_SCOPE = "main";
@@ -157,3 +158,89 @@ export const openTaskDoc = (t: TaskInput): SearchDoc => ({ id: `open:${t.id}`, k
 
 export const pastTaskDocs = (list: readonly TaskInput[]): SearchDoc[] =>
   list.map((t) => ({ id: `past:${t.id}`, kind: "task", scope: t.scope, title: t.title, path: "", text: "", at: t.at, task: t.id, meta: { status: "past" } }));
+
+/** A record's key as text: `""` for the one record of a `single` collection (data-meta's key for it). */
+export const recordKeyText = (key: string | number | null): string => (key === null ? "" : String(key));
+export const dataDocId = (source: string, key: string | number | null): string => `data:${source}#${recordKeyText(key)}`;
+/** At most this many records across every searchable collection: main's memory stays bounded (plan deviation 5). */
+export const MAX_DATA_DOCS = 20_000;
+
+/** A field's value as searchable text: strings, numbers, booleans and lists of them; anything else is skipped. */
+export function fieldText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string" || typeof x === "number").join(", ");
+  return "";
+}
+
+/** What `recordRows` needs of a collection: its key (or `single`) and its `search`. */
+export interface RecordSearch {
+  key?: string;
+  single: boolean;
+  search: { title: string; text?: string | readonly string[] };
+}
+
+/**
+ * A short hash of what decides a collection's rows besides its records (its key, `single`, its `search`), for a
+ * source's stamp: a declaration that changes reads the records again. FNV-1a, so it runs anywhere (main, the worker).
+ */
+export function declarationStamp(c: RecordSearch): string {
+  const text = JSON.stringify([c.key ?? null, c.single, c.search]);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * The records of one collection as rows (D4): the declared title (else the key), the declared text fields joined by
+ * lines without token-shaped ones (§8.2) and capped as a file's text is (§4.5), and when each changed (data-meta, by
+ * key text). Skipped: a record with no usable key, a token-shaped key (it would be the id and maybe the title), and a
+ * key whose text an earlier record already has (`1` and `"1"` are one document id: the first record wins). Whatever
+ * finds a row again by its key (a snippet) matches on `recordKeyText` too.
+ */
+export function recordRows(records: readonly Record<string, unknown>[], c: RecordSearch, changedAt: Record<string, string> = {}): DataRow[] {
+  const textFields = c.search.text === undefined ? [] : typeof c.search.text === "string" ? [c.search.text] : [...c.search.text];
+  const out: DataRow[] = [];
+  const seen = new Set<string>();
+  for (const r of c.single ? records.slice(0, 1) : records) {
+    const raw = c.single ? null : r[c.key ?? ""];
+    const key = c.single ? null : typeof raw === "string" || typeof raw === "number" ? raw : undefined;
+    if (key === undefined) continue;
+    const keyText = recordKeyText(key);
+    if (seen.has(keyText) || secretShaped(keyText)) continue;
+    const named = fieldText(r[c.search.title]).trim();
+    const title = named && !secretShaped(named) ? cut(named) : keyText;
+    if (!title) continue;
+    seen.add(keyText);
+    const text = withoutSecretLines(textFields.map((f) => fieldText(r[f])).filter(Boolean).join("\n")).slice(0, MAX_TEXT_BYTES);
+    out.push({ key, title, text, at: Date.parse(changedAt[keyText] ?? "") || 0 });
+  }
+  return out;
+}
+
+/** One `data` document per row. Its scope (§7): `main` without scopes; else a scoped harness folder, or `_app`. */
+export function dataDocs(s: DataSource, rows: readonly DataRow[], scoped: boolean): SearchDoc[] {
+  const scope = !scoped ? MAIN_SCOPE : s.owner === "harness" && s.folder !== APP_SCOPE ? s.folder : APP_SCOPE;
+  return rows.map((r) => ({
+    id: dataDocId(s.id, r.key),
+    kind: "data",
+    scope,
+    title: r.title,
+    path: "",
+    text: r.text,
+    at: r.at,
+    data: {
+      source: s.id,
+      owner: s.owner,
+      ...(s.plugin ? { plugin: s.plugin } : {}),
+      ...(s.pluginName ? { pluginName: s.pluginName } : {}),
+      ...(s.panel ? { panel: s.panel } : {}),
+      collection: s.collection,
+      folder: s.folder,
+      key: r.key,
+    },
+  }));
+}

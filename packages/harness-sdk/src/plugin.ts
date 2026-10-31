@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { type Collection, COLLECTION_NAME, collectionSchema } from "./data";
+import { type Collection, COLLECTION_NAME, collectionSchema, searchFields } from "./data";
+import type { PermissionLine } from "./plugin-permissions";
 import { type HarnessSettings, SETTING_NAME, settingsSchema } from "./settings";
 
 /** The core plugin contract version (plugins spec §3.2): a plugin built for another one can't be added. */
@@ -228,6 +229,10 @@ const pluginCollectionSchema = z.strictObject({
   /** The agent reads it through the `data` server while the plugin is on; never writes it (§3.2). */
   agent: z.enum(["read", "none"]),
   context: z.union([z.literal(false), z.strictObject({ fields: z.union([z.literal("all"), z.array(text).min(1)]), tokens: z.number().int().min(50).max(4000) })]).default(false),
+  /** Global search (search spec D4, §7): the fields the core indexes, and the panel a record opens in (default: the first). */
+  search: z
+    .strictObject({ title: text, text: z.union([text, z.array(text).min(1).max(5)]).optional(), panel: z.string().regex(PLUGIN_LOCAL_ID).optional() })
+    .optional(),
 });
 
 /** An `exec` pattern: a bare command and its argument tokens, `*` only last, no secret (Decision 9). */
@@ -313,6 +318,15 @@ export const pluginManifestSchema = z
     unique(m.actions, ["actions"], ctx);
     unique(m.permissions.secrets, ["permissions", "secrets"], ctx);
     if (Object.keys(m.data).length > 10) ctx.addIssue({ code: "custom", path: ["data"], message: "At most 10 collections" });
+    for (const [name, c] of Object.entries(m.data)) {
+      if (!c.search) continue;
+      const props = typeof c.schema.properties === "object" && c.schema.properties !== null ? (c.schema.properties as Record<string, unknown>) : {};
+      for (const f of searchFields(c.search)) {
+        if (!Object.hasOwn(props, f)) ctx.addIssue({ code: "custom", path: ["data", name, "search"], message: `"${f}" is not a field of the schema` });
+      }
+      const panel = c.search.panel;
+      if (panel !== undefined && !m.panels.some((p) => p.id === panel)) ctx.addIssue({ code: "custom", path: ["data", name, "search", "panel"], message: `"${panel}" is not a declared panel` });
+    }
     if (m.actions.length > 0 && !m.permissions.tasks) ctx.addIssue({ code: "custom", path: ["actions"], message: "Actions need permissions.tasks: true" });
   });
 
@@ -326,7 +340,19 @@ export function parsePluginManifest(raw: unknown): PluginManifest {
 
 /** The plugin's collections in the harness data model (data.md), app-wide; throws on a key the model refuses. */
 export function pluginCollections(m: PluginManifest): Record<string, Collection> {
-  return Object.fromEntries(Object.entries(m.data).map(([name, c]) => [name, collectionSchema.parse({ ...c, schema: jsonSchemaToZod(c.schema) })]));
+  return Object.fromEntries(
+    Object.entries(m.data).map(([name, { search, ...c }]) => {
+      // The panel a record opens in is the plugin's business, not the data model's (whose `search` is strict).
+      const { panel: _panel, ...fields } = search ?? { title: "" };
+      return [name, collectionSchema.parse({ ...c, ...(search ? { search: fields } : {}), schema: jsonSchemaToZod(c.schema) })];
+    }),
+  );
+}
+
+/** The review's "Searchable:" line (search spec §7); null when no collection opts in. */
+export function searchableLine(m: PluginManifest): Extract<PermissionLine, { kind: "searchable" }> | null {
+  const collections = Object.entries(m.data).flatMap(([name, c]) => (c.search ? [{ name, fields: searchFields(c.search) }] : []));
+  return collections.length > 0 ? { kind: "searchable", collections } : null;
 }
 
 /** The plugin's settings in the harness settings model, checked by it (Decision 4); undefined without settings. */

@@ -56,6 +56,11 @@ export class PluginData {
     return (await this.store.readAll(collection, APP_SCOPE)).records;
   }
 
+  /** When each record last changed (data-meta, by key text), for search's recency. */
+  changedAt(collection: string): Promise<Record<string, string>> {
+    return this.store.changedAt(collection, APP_SCOPE);
+  }
+
   put(collection: string, record: DataRecord): Promise<void> {
     return this.serialize(async () => {
       const c = this.store.collection(collection);

@@ -30,6 +30,8 @@ const app = readFileSync(join(SRC, "styles.css"), "utf8");
 const panel = readFileSync(join(SRC, "plugin-ui/tokens.css"), "utf8");
 const appLight = tokens(block(app, ":root"));
 const appDark = tokens(block(app, "@media (prefers-color-scheme: dark)"));
+/** Pre-refresh names the panel keeps as aliases for one release; the app no longer has them. */
+const ALIASES = ["--hh-paper", "--hh-sheet", "--hh-segment", "--hh-slate"];
 
 describe("plugin-ui tokens (Decision 4)", () => {
   it("the app's own blocks hold tokens to compare with", () => {
@@ -45,15 +47,24 @@ describe("plugin-ui tokens (Decision 4)", () => {
   ])("every token under %s has the app's value", (marker, expected) => {
     const got = tokens(block(panel, marker));
     expect(got.size).toBeGreaterThan(20);
-    for (const [name, value] of got) expect([name, value]).toEqual([name, expected.get(name)]);
+    for (const [name, value] of got) if (!ALIASES.includes(name)) expect([name, value]).toEqual([name, expected.get(name)]);
   });
 
   it("carries every colour the app has, light and dark", () => {
-    const colours = (m: Map<string, string>) => [...m.keys()].filter((k) => k !== "--hh-font" && k !== "--hh-display");
+    const colours = (m: Map<string, string>) =>
+      [...m.keys()].filter((k) => k !== "--hh-font" && k !== "--hh-display" && !ALIASES.includes(k));
     expect(colours(tokens(block(panel, ":root")))).toEqual(colours(appLight));
     expect(colours(tokens(block(panel, '[data-theme="light"]')))).toEqual(colours(appLight));
     expect([...tokens(block(panel, "@media (prefers-color-scheme: dark)")).keys()]).toEqual([...appDark.keys()]);
     expect([...tokens(block(panel, '[data-theme="dark"]')).keys()]).toEqual([...appDark.keys()]);
+  });
+
+  it("keeps the pre-refresh names as aliases for published plugins (one release)", () => {
+    const light = tokens(block(panel, ":root"));
+    expect(light.get("--hh-paper")).toBe("var(--hh-bg)");
+    expect(light.get("--hh-sheet")).toBe("var(--hh-rail)");
+    expect(light.get("--hh-segment")).toBe("var(--hh-surface-2)");
+    expect(light.get("--hh-slate")).toBe("var(--hh-muted)");
   });
 
   it("the app's theme is set on :root only, so html/body follow it and nothing else can set it", () => {

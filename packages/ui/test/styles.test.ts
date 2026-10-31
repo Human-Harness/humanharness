@@ -54,6 +54,11 @@ describe("design tokens", () => {
     }
   });
 
+  it("keeps highlight equal to active in light and dark", () => {
+    // highlight is a hex copy of active, not var(--hh-active), because token() reads hex values only.
+    for (const block of [light, dark]) expect(token(block, "highlight")).toBe(token(block, "active"));
+  });
+
   it("drops the renamed tokens (paper, sheet, segment, slate)", () => {
     for (const old of ["paper", "sheet", "segment", "slate"]) expect(css).not.toMatch(new RegExp(`--hh-${old}:`));
   });

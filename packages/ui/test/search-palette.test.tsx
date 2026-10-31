@@ -137,4 +137,16 @@ describe("SearchPalette (§5)", () => {
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Reference folders" }));
     await waitFor(() => expect(client.searchCalls.at(-1)?.filters).toEqual({ allScopes: true, references: false }));
   });
+
+  it("asks again when the index moves on, so what a build adds while it is open shows without typing (D8)", async () => {
+    const { client, dialog, input } = await show();
+    client.searchAnswers.context = answer("context", { groups: [CONTEXT.ok ? CONTEXT.groups[0] : { kind: "task", total: 0, hits: [] }], counts: { task: 1, note: 0, file: 0 }, status: { state: "names", done: 0, total: 2 } });
+    await typeIn(dialog, input, "context");
+    const list = within(dialog).getByRole("listbox", { name: "Results" });
+    expect(within(list).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Tasks"]);
+    client.searchAnswers.context = CONTEXT;
+    client.searchStatusEmit({ state: "ready", done: 2, total: 2 });
+    await waitFor(() => expect(within(list).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Tasks", "Notes", "Files"]));
+    expect(client.searchCalls.at(-1)).toEqual({ query: "context", filters: {} });
+  });
 });

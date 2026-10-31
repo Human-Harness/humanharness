@@ -81,32 +81,48 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
   const [answer, setAnswer] = useState<SearchAnswer | null>(null);
   const [status, setStatus] = useState<SearchStatus | null>(null);
   const [active, setActive] = useState(0);
+  /** Bumped when a pushed status moves the index to another state: the answer shown may lack what the build added. */
+  const [moved, setMoved] = useState(0);
+  const pushed = useRef<SearchStatus["state"] | null>(null);
   const asked = useRef(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const ids = useId();
 
-  useEffect(() => client.search.onStatus(setStatus), [client]);
+  useEffect(
+    () =>
+      client.search.onStatus((s) => {
+        setStatus(s);
+        // Names, then contents, then ready (D8): each step asks again; the progress counts in between don't.
+        if (s.state !== pushed.current) setMoved((m) => m + 1);
+        pushed.current = s.state;
+      }),
+    [client],
+  );
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-  // Every change asks again (typing after a short pause); only the latest answer is kept.
+  // Every change asks again (typing after a short pause); only the latest answer is kept. The index moving on asks
+  // again too, keeping the active row (nothing the person did changed).
+  const movedAsked = useRef(moved);
   useEffect(() => {
     const n = ++asked.current;
+    const byIndex = movedAsked.current !== moved;
+    movedAsked.current = moved;
     const filters: SearchFilters = { ...(kind ? { kind } : {}), ...(allScopes !== null ? { allScopes } : {}), ...(refs ? {} : { references: false }) };
     const timer = setTimeout(
       () => {
         void client.search.query(query, filters).then((a) => {
           if (n !== asked.current) return;
           setAnswer(a);
-          setActive(0);
+          if (!byIndex) setActive(0);
           if (a.ok) setStatus(a.status);
         });
       },
       query.trim() ? QUERY_DELAY_MS : 0,
     );
     return () => clearTimeout(timer);
-  }, [client, query, kind, allScopes, refs]);
+  }, [client, query, kind, allScopes, refs, moved]);
 
   const sections = sectionsOf(answer);
   const rows = rowsOf(sections);

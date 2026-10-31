@@ -4,9 +4,10 @@ import { InboxIcon, Tag } from "../chrome";
 import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
+import { taskGroups } from "./board";
 import { useJobs } from "./useJobs";
 
-export const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
+export { WORKING } from "./board";
 
 /** Waiting for the person: tasks waiting for them, and needs-you job results (a job turned off, as the Dock badge, waits for no one). */
 export function waitingCount(tasks: TasksState | null, jobs: readonly JobSummary[] = []): number {
@@ -51,6 +52,69 @@ export function InboxPill({
   );
 }
 
+/** The scopes' titles by id, read once on mount; empty for a harness without scopes (it asks nothing). */
+export function useScopeTitles(client: HarnessClient, enabled: boolean): Record<string, string> {
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    client.scopes.list().then(
+      (list) => {
+        if (live) setTitles(Object.fromEntries(list.map((s) => [s.id, s.title])));
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, enabled]);
+  return titles;
+}
+
+/** A time today alone; another day with its weekday. */
+export function jobTime(iso: string, language: string): string {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
+  return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString(language, { weekday: "long" })} ${time}`;
+}
+
+export const JOB_STATUS = { ok: "parallel.statusOk", "needs-you": "parallel.statusNeedsYou", failed: "parallel.statusFailed" } as const;
+
+/** A needs-you result's action, when the harness declares it (the summary is the agent's; its action is checked here too). */
+export function startableAction(state: AppState, j: JobSummary): string | null {
+  const action = j.last?.status === "needs-you" ? j.last.action : undefined;
+  return action !== undefined && Object.hasOwn(state.actions, action) ? action : null;
+}
+
+/** The queues' pause (out of quota, a folder move), with Resume when quota is what stopped them. */
+export function QueuePause({ client, tasks }: { client: HarnessClient; tasks: TasksState | null }) {
+  const { t, i18n } = useTranslation();
+  const language = shownLanguage(i18n);
+  /** The reset's time, with its weekday when it is not today (a weekly window can reset days later). */
+  const untilText = (at: number): string => {
+    const reset = new Date(at);
+    const time = reset.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
+    if (reset.toDateString() === new Date().toDateString()) return t("parallel.outOfQuotaUntil", { time });
+    return t("parallel.outOfQuotaUntilDay", { day: reset.toLocaleDateString(language, { weekday: "long" }), time });
+  };
+  const paused = tasks?.paused;
+  const resetsAt = paused?.resetsAt ? Date.parse(paused.resetsAt) : NaN;
+  const pauseText = !paused
+    ? null
+    : paused.reason === "folder-move"
+      ? t("parallel.pausedMove")
+      : Number.isNaN(resetsAt)
+        ? t("parallel.outOfQuota")
+        : untilText(resetsAt);
+  if (!pauseText) return null;
+  return (
+    <p className="hh-tk-paused" role="status">
+      <span>{pauseText}</span>
+      {paused?.reason === "out-of-quota" && <button onClick={() => void client.tasks.resumeQueues().catch(() => undefined)}>{t("parallel.resume")}</button>}
+    </p>
+  );
+}
+
 /**
  * The core inbox of open tasks (parallel spec §9.2): the top bar's Inbox pill with the waiting count, opening four sections.
  * It reads only `client.tasks` (never the attention items' `read` flag, which the plugins inbox shares). A row asks
@@ -77,41 +141,14 @@ export function Inbox({
   /** Starts a needs-you job's action; false when it couldn't start (the list stays open and says so). */
   onStartAction?: (action: string, scope: string | null) => boolean;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [scopeTitles, setScopeTitles] = useState<Record<string, string>>({});
-  /** Why the last Start or Run now in the Jobs section didn't go through. */
-  const [jobProblem, setJobProblem] = useState<string | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
-  /** A focus is on its way to main: a second click asks nothing more. */
-  const focusing = useRef(false);
   const id = useId();
-  const language = shownLanguage(i18n);
-
-  const all = tasks?.tasks ?? [];
-  // Main lists the tasks oldest first.
-  const waiting = all.filter((s) => s.state === "waiting").reverse();
-  const working = all.filter((s) => WORKING.includes(s.state));
-  const queued = all.filter((s) => s.state === "queued");
   const jobs = useJobs(client, Boolean(state.jobs));
   const count = waitingCount(tasks, jobs);
-
-  const hasScopes = Boolean(state.scopes);
-  useEffect(() => {
-    if (!open || !hasScopes) return;
-    let live = true;
-    client.scopes.list().then(
-      (list) => {
-        if (live) setScopeTitles(Object.fromEntries(list.map((s) => [s.id, s.title])));
-      },
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [client, open, hasScopes]);
 
   useLayoutEffect(() => {
     if (open) (dialog.current?.querySelector<HTMLButtonElement>("button.hh-tk-row") ?? dialog.current)?.focus();
@@ -137,13 +174,87 @@ export function Inbox({
   const onBlur = (e: FocusEvent) => {
     if (open && e.relatedTarget instanceof Node && !wrap.current?.contains(e.relatedTarget)) setOpen(false);
   };
+
+  return (
+    <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
+      <InboxPill
+        tasks={tasks}
+        jobs={jobs}
+        buttonRef={button}
+        expanded={open}
+        {...(open ? { controls: `${id}-list` } : {})}
+        onOpen={() => (open ? close() : setOpen(true))}
+      />
+      <span className="hh-sr-only" aria-live="polite">
+        {count > 0 ? t("parallel.waitingCount", { count }) : ""}
+      </span>
+      {open && (
+        <div id={`${id}-list`} ref={dialog} className="hh-pl-popover" role="dialog" aria-label={t("parallel.inbox")} tabIndex={-1}>
+          <InboxList
+            client={client}
+            state={state}
+            tasks={tasks}
+            jobs={jobs}
+            onFocused={(taskId) => {
+              setOpen(false);
+              if (taskId === null) onStartView?.();
+            }}
+            onStarted={close}
+            {...(onRefill ? { onRefill } : {})}
+            {...(onStartAction ? { onStartAction } : {})}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Inbox's four sections (parallel spec §9.2), the drop-down's and the Inbox screen's List: the queues' pause,
+ * Waiting for you, Working, Queued, Jobs, and "New task". A row asks main to focus its task; `onFocused` hears once main
+ * took it (null: the start view). "Start" on a needs-you job tells `onStarted` once the chat took it.
+ */
+export function InboxList({
+  client,
+  state,
+  tasks,
+  jobs,
+  onFocused,
+  onStarted,
+  onRefill,
+  onStartAction,
+  newTask = true,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  tasks: TasksState | null;
+  jobs: readonly JobSummary[];
+  onFocused?: (taskId: string | null) => void;
+  onStarted?: () => void;
+  /** A cancelled queued message of the focused task: its text goes back in the box (Decision 7). */
+  onRefill?: (text: string) => void;
+  /** Starts a needs-you job's action; false when it couldn't start (the list stays and says so). */
+  onStartAction?: (action: string, scope: string | null) => boolean;
+  /** Its own "New task" button (the Inbox screen has one in its header). */
+  newTask?: boolean;
+}) {
+  const { t, i18n } = useTranslation();
+  /** Why the last Start or Run now in the Jobs section didn't go through. */
+  const [jobProblem, setJobProblem] = useState<string | null>(null);
+  /** A focus is on its way to main: a second click asks nothing more. */
+  const focusing = useRef(false);
+  const id = useId();
+  const language = shownLanguage(i18n);
+  const hasScopes = Boolean(state.scopes);
+  const scopeTitles = useScopeTitles(client, hasScopes);
+  const { waiting, working, queued } = taskGroups(tasks?.tasks ?? []);
+
   const focus = async (taskId: string | null) => {
     if (focusing.current) return;
     focusing.current = true;
     try {
       await client.tasks.focus(taskId);
-      setOpen(false);
-      if (taskId === null) onStartView?.();
+      onFocused?.(taskId);
     } catch {
       // Main refused (the task has just ended): the list stays, and its next change drops the row.
     } finally {
@@ -204,18 +315,7 @@ export function Inbox({
       </li>
     );
   };
-  /** A time today alone; another day with its weekday. */
-  const when = (iso: string): string => {
-    const at = new Date(iso);
-    const time = at.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
-    return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString(language, { weekday: "long" })} ${time}`;
-  };
-  const STATUS = { ok: "parallel.statusOk", "needs-you": "parallel.statusNeedsYou", failed: "parallel.statusFailed" } as const;
-  /** A needs-you result's action, when the harness declares it (the summary is the agent's; its action is checked here too). */
-  const startable = (j: JobSummary): string | null => {
-    const action = j.last?.status === "needs-you" ? j.last.action : undefined;
-    return action !== undefined && Object.hasOwn(state.actions, action) ? action : null;
-  };
+  const when = (iso: string) => jobTime(iso, language);
   const runNow = (j: JobSummary) => {
     setJobProblem(null);
     void client.jobs.run(j.id, ...(j.scope !== null ? [j.scope] : [])).then(
@@ -228,7 +328,7 @@ export function Inbox({
   const jobRow = (j: JobSummary, index: number) => {
     const labelId = `${id}-job-${index}`;
     const scope = j.scope !== null && hasScopes && Object.hasOwn(scopeTitles, j.scope) ? scopeTitles[j.scope] : null;
-    const action = startable(j);
+    const action = startableAction(state, j);
     return (
       <li key={`${j.id}:${j.scope ?? "-"}`} className="hh-tk-item">
         <div className="hh-tk-row">
@@ -237,7 +337,7 @@ export function Inbox({
           </span>
           <span className="hh-tk-meta">
             {scope && <span dir="auto">{scope}</span>}
-            {j.running ? <span>{t("parallel.jobRunning")}</span> : j.last && <span>{t(STATUS[j.last.status])}</span>}
+            {j.running ? <span>{t("parallel.jobRunning")}</span> : j.last && <span>{t(JOB_STATUS[j.last.status])}</span>}
             {j.last && <span>{t("parallel.lastRun", { time: when(j.last.at) })}</span>}
             {j.paused === "daily-cap" && <span>{t("parallel.pausedTomorrow")}</span>}
             {j.paused === "off" && <span>{t("parallel.jobOff")}</span>}
@@ -257,7 +357,7 @@ export function Inbox({
             onClick={() => {
               setJobProblem(null);
               if (onStartAction?.(action, j.scope) === false) setJobProblem(t("parallel.startFailed"));
-              else close();
+              else onStarted?.();
             }}
           >
             {t("parallel.start")}
@@ -278,59 +378,22 @@ export function Inbox({
     </section>
   );
 
-  /** The reset's time, with its weekday when it is not today (a weekly window can reset days later). */
-  const untilText = (at: number): string => {
-    const reset = new Date(at);
-    const time = reset.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
-    if (reset.toDateString() === new Date().toDateString()) return t("parallel.outOfQuotaUntil", { time });
-    return t("parallel.outOfQuotaUntilDay", { day: reset.toLocaleDateString(language, { weekday: "long" }), time });
-  };
-  const paused = tasks?.paused;
-  const resetsAt = paused?.resetsAt ? Date.parse(paused.resetsAt) : NaN;
-  const pauseText = !paused
-    ? null
-    : paused.reason === "folder-move"
-      ? t("parallel.pausedMove")
-      : Number.isNaN(resetsAt)
-        ? t("parallel.outOfQuota")
-        : untilText(resetsAt);
-
   return (
-    <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
-      <InboxPill
-        tasks={tasks}
-        jobs={jobs}
-        buttonRef={button}
-        expanded={open}
-        {...(open ? { controls: `${id}-list` } : {})}
-        onOpen={() => (open ? close() : setOpen(true))}
-      />
-      <span className="hh-sr-only" aria-live="polite">
-        {count > 0 ? t("parallel.waitingCount", { count }) : ""}
-      </span>
-      {open && (
-        <div id={`${id}-list`} ref={dialog} className="hh-pl-popover" role="dialog" aria-label={t("parallel.inbox")} tabIndex={-1}>
-          {pauseText && (
-            <p className="hh-tk-paused" role="status">
-              <span>{pauseText}</span>
-              {paused?.reason === "out-of-quota" && (
-                <button onClick={() => void client.tasks.resumeQueues().catch(() => undefined)}>{t("parallel.resume")}</button>
-              )}
-            </p>
-          )}
-          {section("waiting", t("parallel.waitingTitle"), waiting, t("parallel.none"))}
-          {section("working", t("parallel.workingTitle"), working, t("parallel.none"))}
-          {section("queued", t("parallel.queuedTitle"), queued, t("parallel.none"))}
-          <section className="hh-tk-section" aria-labelledby={`${id}-jobs`}>
-            <h3 id={`${id}-jobs`}>{t("parallel.jobsTitle")}</h3>
-            {jobs.length === 0 ? <p className="hh-tk-empty">{t("parallel.noJobs")}</p> : <ul className="hh-tk-list">{jobs.map(jobRow)}</ul>}
-            {jobProblem && <p role="alert">{jobProblem}</p>}
-          </section>
-          <button className="hh-tk-new" onClick={() => void focus(null)}>
-            {t("parallel.newTask")}
-          </button>
-        </div>
+    <>
+      <QueuePause client={client} tasks={tasks} />
+      {section("waiting", t("parallel.waitingTitle"), waiting, t("parallel.none"))}
+      {section("working", t("parallel.workingTitle"), working, t("parallel.none"))}
+      {section("queued", t("parallel.queuedTitle"), queued, t("parallel.none"))}
+      <section className="hh-tk-section" aria-labelledby={`${id}-jobs`}>
+        <h3 id={`${id}-jobs`}>{t("parallel.jobsTitle")}</h3>
+        {jobs.length === 0 ? <p className="hh-tk-empty">{t("parallel.noJobs")}</p> : <ul className="hh-tk-list">{jobs.map(jobRow)}</ul>}
+        {jobProblem && <p role="alert">{jobProblem}</p>}
+      </section>
+      {newTask && (
+        <button className="hh-tk-new" onClick={() => void focus(null)}>
+          {t("parallel.newTask")}
+        </button>
       )}
-    </div>
+    </>
   );
 }

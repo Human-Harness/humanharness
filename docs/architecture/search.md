@@ -24,30 +24,41 @@ unless the person sends a ⌘Enter question, and that text holds titles and path
   result opens (`intent.ts`), `SearchPalette.tsx` and `SearchHost.tsx` (the ⌘K binding, a capturing `keydown` on
   `window`, so only the main window has it). `HarnessApp` mounts the host; `ChatView` runs the intents through
   `searchRef` (the reader at an anchor, the file timeline, the History panel at a task, a chat entry, a composer draft,
-  starting an action). The palette's CSS is the `hh-search-` block at the end of `styles.css`.
+  starting an action). The palette's CSS is the `hh-search-` block at the end of `styles.css`. Every key the palette
+  handles (Escape, Tab, the arrows, Enter, ⌘Enter, ⌘1–7) stops there, so a modal under it (the Settings sheet's
+  document listener traps Tab) never sees it.
 
 ## Lifecycle
 
 - **Lazy (D0, D8).** `SearchService` creates nothing in its constructor. The first `hh:search` resolves the base and
-  opens its live index: a saved snapshot is loaded (and reconciled on that open), or a first build starts. Until then
+  opens its live index: a saved snapshot is loaded (and reconciled on its first search, whatever that asks), or a first
+  build starts. Until then
   there is no `<userData>/search/`, no worker and no index in memory, and `committed()` (called by the existing commit
   announcer and after a restore) returns at once. Nothing is loaded at startup (plan deviation 4).
 - **One index per base.** The folder is `<userData>/search/<sha256(base)[0..16]>/`; with profiles the base is the
   profile's own folder, so each profile has its own index and none crosses (plan deviation 2). A base change (a profile
   switch) closes the live index, flushing it, and opens the new base's. A folder move discards the old bases' indexes;
-  the next ⌘K rebuilds.
+  the next ⌘K rebuilds. Deleting a profile discards its folder's index, and so does creating one (profile ids are
+  reused names: a new "Tomás" never loads a deleted one's). A discard lets a load under way for that base settle
+  first, and a discarded store writes nothing again (the prefs go through the same write chain as the snapshot).
 - **The snapshot.** `index.json` (the `MiniSearch` JSON; stored fields only, never the text), `files.json` (the index
   version, per-file size, mtime and how it was indexed, the chats' offsets and ids, the in-memory docs' ids, the
   truncated flag) and `prefs.json` (the recents and the "All scopes" toggle, plan deviation 3). Each is written
   atomically (temp file, rename) with mode 0600 in a 0700 folder, at most every 5 s while changes come in and once more
-  on quit. A missing, broken or other-version snapshot is rebuilt.
+  on quit. A missing, broken or other-version snapshot is rebuilt. A loaded snapshot drops any document its
+  `files.json` doesn't account for (a known file, a chat entry, a task built in memory): a build cut short by a quit or
+  a crashed worker saved its batches, but files and chats only take a build's state on `done`.
 - **The build.** One at a time; what comes in meanwhile runs right after (a full reconcile absorbs a commit's paths).
   A first build posts every name first (`names`, so files are found by name within about a second), then texts in
   batches of 200 (`building`, "N of M"), then the chats, then `done`. A reconcile reads only what is new or changed
-  by size and mtime, and removes what is gone. Chats are read incrementally from the stored byte offset (an archived or
-  shorter file starts over; `archive/` is never read; plan deviation 5).
+  by size and mtime, and removes what is gone. Chats are read incrementally from the stored byte offset; a shorter file,
+  or another file at the same path (`ChatMeta.identity`: dev, inode and birth time; `ChatLog.archive` renames the
+  conversation away), starts over, and so does a chat stored without an identity (an older snapshot, once). `archive/`
+  is never read (plan deviation 5). A build that fails (not one stopped) puts the status back to `ready` from the files
+  last known and is logged; each whole build that fails in a row doubles the wait before the next reconcile (60 s, up
+  to 30 minutes), and one that finishes resets it.
 - **Updates.** Each commit's paths (`committed(paths)`), a restore (`committed(null)`: the whole reconcile), and every
-  ⌘K at most once per 60 s. The tasks (the manifest's actions with their status, the open task, past tasks) are built
+  ⌘K at most once per 60 s (longer after failed builds). The tasks (the manifest's actions with their status, the open task, past tasks) are built
   in main and swapped into the same index when the palette opens and at most every 5 s while typing (plan deviation 6).
 - **Compaction.** `minisearch`'s automatic vacuum is off: it walks the term tree in batches with a pause between them,
   and a build's batch applied in that pause changed the tree under the walk (it threw in main). `LiveIndex.compact()`
@@ -92,8 +103,9 @@ denied:
 
 The walk (`walk.ts`) adds its own fail-closed checks:
 
-- `rootAllowed`: a root is walked only when its real path is neither the home folder nor a dot-folder in it or inside
-  one (`~/.claude`, `~/.codex`, `~/.ssh`, `~/.config/opencode`…), also when the root is a link to one. The folder and
+- `rootAllowed`: a root is walked only when its real path is neither the home folder, a folder that holds it (`/`,
+  `/Users`), nor a dot-folder in it or inside one (`~/.claude`, `~/.codex`, `~/.ssh`, `~/.config/opencode`…), also
+  when the root is a link to one. The real path it checked is what the file and chat reads then use. The folder and
   the references are checked before they get there; this is the walk's own check (a commit's paths under such a root
   all count as missing).
 - `isIgnored`: a path the `ignore` package refuses (it throws) counts as ignored.

@@ -29,7 +29,7 @@ async function openFirst(client: FakeClient, query: string) {
   await within(dialog).findByRole("group", { name: "Settings" });
   fireEvent.keyDown(within(dialog).getByRole("combobox"), { key: "Enter" });
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull());
-  return screen.findByRole("dialog", { name: "Settings" });
+  return screen.findByRole("main", { name: "Settings" });
 }
 
 describe("a second search while Settings is open keeps the tab as it was (§6)", () => {

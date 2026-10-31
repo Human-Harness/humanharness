@@ -1,8 +1,8 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { EngineIcon, Segmented } from "./chrome";
+import { EngineIcon, Segmented, Tag, TopBar } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
 import { EngineTab } from "./EngineTab";
@@ -16,10 +16,12 @@ import { useLatestConfig } from "./latest-config";
 import { ModelsTab } from "./ModelsTab";
 import { JobsTab } from "./parallel/JobsTab";
 import { PluginsTab } from "./plugins/PluginsTab";
+import { usePluginsView } from "./plugins/usePlugins";
 import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
+import { SectionHead, SettingsCard } from "./settings-parts";
 import { SetupStepsList } from "./SetupStepsList";
-import { SidekickTab } from "./sidekick/SidekickTab";
+import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
@@ -30,8 +32,11 @@ const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
-/** The Settings sheet (spec 2026-10-11 "Settings sheet"): attached under the top bar, dimmed backdrop. */
-export function SettingsSheet({
+/**
+ * Settings as a page (UI refresh spec §5.5): in place of the screen (which stays mounted, hidden), its own top bar
+ * with the breadcrumb and Done, the section list on the left and the section on the right.
+ */
+export function SettingsPage({
   client,
   state,
   tab,
@@ -55,13 +60,13 @@ export function SettingsSheet({
    * at a harness step when one is given (the Setup list's Do it again / Do it now).
    */
   onSetup: (step?: string) => void;
-  /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
+  /** The app's folder move (HarnessApp), so a move outlives the page; without it the page keeps its own. */
   move?: FolderMove;
   /** Settings › Jobs' Start on a needs-you run: the action starts in the chat on screen; false when it couldn't. */
   onStartAction?: (action: string, scope: string | null) => boolean;
   /** Language on demand (plan 5b); absent (no `client.language`): the read-only Language row (D0). */
   language?: LanguageControl;
-  /** Search opened the sheet at this field (§6); `n` changes on each search. */
+  /** Search opened the page at this field (§6); `n` changes on each search. */
   focus?: { id: string; n: number };
 }) {
   const { t } = useTranslation();
@@ -77,14 +82,21 @@ export function SettingsSheet({
   // only when it declares jobs (parallel D0).
   const tabs = visibleTabs(state);
   const configured = isConfigured(state.config);
-  // The tab reads "Sidekicks" once there are two or more (spec §8); its id stays "sidekick".
+  // The tab reads as the section's title (spec §8); its id stays "sidekick".
   const sidekick = useSidekick(client, state.sidekick !== undefined);
-  const sidekickTab = (sidekick?.sidekicks?.length ?? 1) > 1 ? t("sidekick.list.title") : t("sidekick.tab");
+  const sidekickTab = t(sidekickTitleKey(sidekick?.sidekicks));
+  // A section that needs the person carries an orange count (§5.5): Plugins, for those waiting for a review or turned
+  // off after crashes. Read only when the harness takes plugins (D0); the tab itself still rescans when it opens.
+  const plugins = usePluginsView(client, tabs.includes("plugins"));
+  const attention: Partial<Record<SettingsTab, number>> = {
+    plugins: plugins?.plugins.filter((p) => p.status === "review" || p.status === "crashed").length ?? 0,
+  };
+  const titleId = useId();
   const doneRef = useRef<HTMLButtonElement>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  /** An install, update, sign-in or sign-out is running: the sheet stays open (it shows how it goes). */
+  /** An install, update, sign-in or sign-out is running: the page stays open (it shows how it goes). */
   const [running, setRunning] = useState<RunningSetup | null>(null);
   const runningRef = useRef(false);
   runningRef.current = running !== null;
@@ -100,7 +112,7 @@ export function SettingsSheet({
         setRunning(o.kind === "start" ? { engineId: o.engineId, step: o.step } : null);
       }
     });
-    // A step may already be running (started before this sheet opened, e.g. before a reload).
+    // A step may already be running (started before this page opened, e.g. before a reload).
     client.getSetup().then(
       (r) => {
         if (!heard && r) setRunning({ engineId: r.engineId, step: r.step });
@@ -120,34 +132,40 @@ export function SettingsSheet({
     // Only when a step starts (or is found running); the tab is read as it is then.
   }, [isRunning]);
 
-  /** Arrow keys (and Home/End) move between tabs, as in any tab list. */
+  /** Arrow keys (and Home/End) move between tabs, as in any tab list; the list is vertical, so Up/Down too. */
   const onTabKey = (e: ReactKeyboardEvent<HTMLButtonElement>, id: SettingsTab) => {
     const i = tabs.indexOf(id);
-    const next =
-      e.key === "ArrowRight" ? tabs[(i + 1) % tabs.length] : e.key === "ArrowLeft" ? tabs[(i - 1 + tabs.length) % tabs.length] : e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : null;
+    const forward = e.key === "ArrowRight" || e.key === "ArrowDown";
+    const back = e.key === "ArrowLeft" || e.key === "ArrowUp";
+    const next = forward ? tabs[(i + 1) % tabs.length] : back ? tabs[(i - 1 + tabs.length) % tabs.length] : e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : null;
     if (!next) return;
     e.preventDefault();
     onTab(next);
     document.getElementById(tabId(next))?.focus();
   };
 
-  useEffect(() => {
-    // Whatever opened the sheet (the gear, the engine pill) gets focus back when it closes.
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // Whatever opened the page (the gear, the engine pill) gets focus back when it closes. Read before the browser moves
+  // focus off the screen the page hides; given back once that screen shows again (a passive cleanup runs after it).
+  const openerRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     doneRef.current?.focus();
+  }, []);
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const sheet = sheetRef.current;
-      if (!sheet) return;
+      const page = pageRef.current;
+      if (!page) return;
       if (e.key === "Escape" && !runningRef.current) {
         // Handled: focus mode's window listener leaves this Escape alone.
         e.preventDefault();
         onCloseRef.current();
       }
-      if (e.key === "Tab") trapTab(sheet, e);
+      if (e.key === "Tab") trapTab(page, e);
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      const opener = openerRef.current;
       if (opener?.isConnected) opener.focus();
     };
   }, []);
@@ -161,21 +179,28 @@ export function SettingsSheet({
   }, [focusN, tab]);
 
   return (
-    <div
-      className="hh-sheet-backdrop"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
-      <div ref={sheetRef} className="hh-sheet" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
-        <div className="hh-sheet-head">
-          <div className="hh-segmented" role="tablist" aria-label={t("settings.title")}>
+    <main ref={pageRef} className="hh-settings-page" aria-labelledby={titleId}>
+      <TopBar
+        crumbs={[{ label: state.harness.name, onClick: close }, { label: t("settings.title"), onClick: () => onTab("general") }, { label: tabLabel(t, state, tab, sidekickTab) }]}
+        {...(state.harness.logo ? { logo: state.harness.logo } : {})}
+        mock={state.mock}
+        trailing={
+          <button ref={doneRef} className="hh-cta" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
+            {t("settings.done")}
+          </button>
+        }
+      />
+      <div className="hh-settings-body">
+        <nav className="hh-settings-nav" aria-label={t("settings.sections")}>
+          <h1 id={titleId}>{t("settings.title")}</h1>
+          <div className="hh-settings-tabs" role="tablist" aria-label={t("settings.title")} aria-orientation="vertical">
             {tabs.map((id) => (
               <button
                 key={id}
                 id={tabId(id)}
                 type="button"
                 role="tab"
+                className="hh-settings-navitem"
                 aria-selected={tab === id}
                 aria-controls={panelId}
                 tabIndex={tab === id ? 0 : -1}
@@ -183,54 +208,49 @@ export function SettingsSheet({
                 onKeyDown={(e) => onTabKey(e, id)}
               >
                 {tabLabel(t, state, id, sidekickTab)}
+                {attention[id] ? <Tag tone="orange">{attention[id]}</Tag> : null}
               </button>
             ))}
           </div>
-          <button
-            ref={doneRef}
-            className="hh-primary"
-            disabled={running !== null}
-            aria-describedby={running ? runningId : undefined}
-            onClick={close}
-          >
-            {t("settings.done")}
-          </button>
-        </div>
-        {running && (
-          <div className="hh-sheet-running">
-            <p id={runningId} role="status">
-              {t(`settings.running.${running.step}`, { engine: state.engines.find((e) => e.id === running.engineId)?.name ?? running.engineId })}{" "}
-              {t("settings.runningWait")}
-            </p>
-            <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
-          </div>
-        )}
-        <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
-          {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
-          {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
-          {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
-          {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} {...(focus && focus.id.startsWith("models.") ? { focus: { part: focus.id === "models.levels" ? ("levels" as const) : ("tasks" as const), n: focus.n } } : {})} />}
-          {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
-          {tab === "plugins" && configured && <PluginsTab client={client} />}
-          {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
-          {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
-          {tab === "usage" && configured && <UsageTab client={client} state={state} />}
-          {tab === "harness" && configured && (
-            <>
-              {state.setup && (
-                <SetupStepsList
-                  client={client}
-                  steps={state.setup}
-                  onRun={(id) => onSetup(id)}
-                  onConnections={state.connections ? () => onTab("connections") : undefined}
-                />
-              )}
-              {state.settings && <HarnessSettingsTab client={client} view={state.settings} {...(focus ? { focus } : {})} />}
-            </>
+        </nav>
+        <div className="hh-settings-main">
+          {running && (
+            <div className="hh-settings-running">
+              <p id={runningId} role="status">
+                {t(`settings.running.${running.step}`, { engine: state.engines.find((e) => e.id === running.engineId)?.name ?? running.engineId })}{" "}
+                {t("settings.runningWait")}
+              </p>
+              <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
+            </div>
           )}
+          <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
+            {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
+            {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
+            {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
+            {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} {...(focus && focus.id.startsWith("models.") ? { focus: { part: focus.id === "models.levels" ? ("levels" as const) : ("tasks" as const), n: focus.n } } : {})} />}
+            {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
+            {tab === "plugins" && configured && <PluginsTab client={client} />}
+            {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
+            {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
+            {tab === "usage" && configured && <UsageTab client={client} state={state} />}
+            {tab === "harness" && configured && (
+              <>
+                <SectionHead title={tabLabel(t, state, "harness")} line={t("settings.line.harness", { name: state.harness.name })} />
+                {state.setup && (
+                  <SetupStepsList
+                    client={client}
+                    steps={state.setup}
+                    onRun={(id) => onSetup(id)}
+                    onConnections={state.connections ? () => onTab("connections") : undefined}
+                  />
+                )}
+                {state.settings && <HarnessSettingsTab client={client} view={state.settings} {...(focus ? { focus } : {})} />}
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -364,6 +384,8 @@ function GeneralTab({
 
   return (
     <div className="hh-tab">
+      <SectionHead title={t("settings.tabs.general")} line={t("settings.line.general")} />
+      <SettingsCard>
       <div className="hh-rows">
         <LanguageRow state={state} language={language} />
         <div className="hh-row" data-setting="general.appearance">
@@ -414,11 +436,12 @@ function GeneralTab({
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
+      </SettingsCard>
       {state.parallel && <ParallelSection state={state} save={saveOrFail} />}
       {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
-      <h3>{t("settings.about")}</h3>
+      <SettingsCard title={t("settings.about")}>
       <div className="hh-rows">
         <div className="hh-row">
           <span className="hh-display">{state.harness.name}</span>
@@ -433,6 +456,7 @@ function GeneralTab({
           )}
         </div>
       </div>
+      </SettingsCard>
     </div>
   );
 }
@@ -483,7 +507,7 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
   );
   return (
     <>
-      <h3>{t("parallel.parallelSection")}</h3>
+      <SettingsCard title={t("parallel.parallelSection")}>
       <div className="hh-rows">
         <div className="hh-row" data-setting="general.tasksAtOnce">
           {cap("tasks", t("parallel.tasksAtOnce"))}
@@ -502,6 +526,7 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
           </label>
         </div>
       </div>
+      </SettingsCard>
       {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
     </>
   );
@@ -514,7 +539,7 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
   return (
     <div className="hh-tab hh-not-configured">
       <EngineIcon size={40} />
-      <h3>{t("setupFlow.notConfiguredTitle")}</h3>
+      <h2>{t("setupFlow.notConfiguredTitle")}</h2>
       <p>{t("setupFlow.notConfiguredText")}</p>
       {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
       <button className="hh-primary" onClick={() => onSetup()}>

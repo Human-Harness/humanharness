@@ -4,7 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, LanguageState } from "../src/client";
 import type { LanguageControl } from "../src/language-control";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { ownName, systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -27,7 +27,7 @@ function Sheet({
 }) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
-  return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} language={language} />;
+  return <SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} language={language} />;
 }
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -37,7 +37,7 @@ describe("SettingsSheet", () => {
     const client = new FakeClient(ready);
     const onClose = vi.fn();
     await renderIn("en", <Sheet client={client} onClose={onClose} />);
-    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const dialog = screen.getByRole("main", { name: "Settings" });
     expect(within(dialog).getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
     expect(screen.getByRole("tab", { name: "Engine" }).getAttribute("aria-selected")).toBe("true");
@@ -86,7 +86,7 @@ describe("SettingsSheet", () => {
 
   it("keeps Tab inside the sheet", async () => {
     await renderIn("en", <Sheet client={new FakeClient(ready)} />);
-    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const dialog = screen.getByRole("main", { name: "Settings" });
     const focusable = [...dialog.querySelectorAll<HTMLElement>("button, a[href], input, textarea, select")];
     const [first, last] = [focusable[0], focusable.at(-1)!];
     last.focus();
@@ -119,12 +119,12 @@ describe("SettingsSheet", () => {
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
     const onClose = vi.fn();
-    const { container } = await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
+    await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
     await screen.findByText(/Finish signing in using your browser/);
     act(() => client.emitSetup({ kind: "url", url: "https://claude.ai/oauth/authorize?x=1" }));
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    fireEvent.click(container.querySelector(".hh-sheet-backdrop")!);
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("button", { name: "Demo" }));
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -385,7 +385,7 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Language" }), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Language" })).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
   });
 
   it("a running translation shows its progress and Cancel; Change… waits", async () => {
@@ -461,5 +461,70 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
     await renderSettings({});
     expect(screen.queryByRole("button", { name: "Change…" })).toBeNull();
     expect(screen.getByText("The AI always thinks in English and writes to you in this language.")).toBeTruthy();
+  });
+});
+
+describe("SettingsPage (UI refresh spec §5.5)", () => {
+  const renderSettings = (opts: { tab: SettingsTab; onClose?: () => void; pluginsNeedingReview?: number }) => {
+    const client = new FakeClient(ready);
+    client.state.models = {
+      recommended: { questions: "standard" },
+      defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
+      offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] } },
+      pinnedTokens: 3000,
+    };
+    if (opts.pluginsNeedingReview !== undefined) {
+      client.state.plugins = { local: true };
+      const row = (id: string, status: "on" | "review" | "crashed") => ({ id, name: id, version: "1.0.0", origin: "local" as const, status });
+      client.pluginsView = { local: true, plugins: [row("on-one", "on"), ...Array.from({ length: opts.pluginsNeedingReview }, (_, i) => row(`p${i}`, i % 2 ? "crashed" : "review"))] };
+    }
+    return renderIn("en", <Sheet client={client} initialTab={opts.tab} onClose={opts.onClose} />);
+  };
+
+  it("is a full page: breadcrumb Demo / Settings / Models, a section list, and Done", async () => {
+    await renderSettings({ tab: "models" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumbs).getByText("Demo")).toBeTruthy();
+    expect(within(crumbs).getByText("Settings")).toBeTruthy();
+    expect(within(crumbs).getByText("Models").getAttribute("aria-current")).toBe("page");
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    expect(within(nav).getByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+    expect(within(nav).getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Done" }).className).toContain("hh-cta");
+  });
+
+  it("Done, Escape and the harness's crumb go back to where the person was; the Settings crumb opens General", async () => {
+    const onClose = vi.fn();
+    await renderSettings({ tab: "models", onClose });
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    fireEvent.click(within(crumbs).getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(within(crumbs).getByRole("button", { name: "Demo" }));
+    expect(onClose).toHaveBeenCalledTimes(3);
+  });
+
+  it("a section that needs attention carries an orange count", async () => {
+    await renderSettings({ tab: "general", pluginsNeedingReview: 2 });
+    const plugins = await screen.findByRole("tab", { name: /Plugins/ });
+    expect((await within(plugins).findByText("2")).className).toContain("hh-tag-orange");
+    // No count when nothing needs the person.
+    cleanup();
+    await renderSettings({ tab: "general", pluginsNeedingReview: 0 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByRole("tab", { name: "Plugins" }).querySelector(".hh-tag")).toBeNull();
+  });
+
+  it("ArrowDown and ArrowUp move along the section list", async () => {
+    await renderSettings({ tab: "general" });
+    const general = screen.getByRole("tab", { name: "General" });
+    general.focus();
+    fireEvent.keyDown(general, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Engine" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "General" }));
   });
 });

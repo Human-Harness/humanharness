@@ -251,17 +251,61 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-setup-done-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); }
 .hh-setup-done-mark svg { width: 24px; height: 24px; }
 
-/* Settings sheet, attached under the top bar */
-/* Wraps Home or the work screen without changing its layout (it is made inert under the sheet). */
+/* Settings as a page (UI refresh spec §5.5): in place of the screen, which stays mounted under it, hidden. */
+/* Wraps Home or the work screen without changing its layout (hidden, and inert, while Settings shows). */
 .hh-screen { display: contents; }
+.hh-screen[hidden] { display: none; }
 /* Test-mode badge: in the top bar flow, after the title. */
 .hh-mock-badge { flex: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--hh-warn); background: var(--hh-surface); color: var(--hh-warn); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.hh-sheet-backdrop { position: fixed; inset: 52px 0 0 0; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; }
-.hh-sheet { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 24px); box-sizing: border-box; overflow-y: auto; background: var(--hh-rail); border: 1px solid var(--hh-line-strong); border-top: none; border-radius: 0 0 12px 12px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: 0 12px 32px rgba(25, 30, 36, 0.18); }
-.hh-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-settings-page { display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; }
+.hh-settings-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; }
+.hh-settings-nav { display: grid; align-content: start; gap: 2px; padding: 24px 14px; background: var(--hh-rail); border-right: 1px solid var(--hh-line); overflow-y: auto; }
+.hh-settings-nav h1 { margin: 0; font-size: 20px; font-weight: 600; padding: 0 10px 10px; }
+.hh-settings-tabs { display: grid; gap: 2px; }
+.hh-settings-navitem { justify-content: space-between; min-height: 40px; border: 0; background: transparent; border-radius: 10px; }
+.hh-settings-navitem[aria-selected="true"] { background: var(--hh-active); color: var(--hh-active-ink); font-weight: 600; }
+.hh-settings-main { overflow-y: auto; padding: 28px 32px 48px; display: grid; align-content: start; gap: 16px; }
+.hh-settings-main > * { max-width: 860px; }
+@media (max-width: 760px) { .hh-settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .hh-settings-nav { border-right: 0; border-bottom: 1px solid var(--hh-line); padding: 12px 14px; } .hh-settings-tabs { grid-auto-flow: column; overflow-x: auto; } .hh-settings-main { padding: 20px 16px 40px; } }
+/* A section's head and its cards of rows (UI refresh spec §5.5). */
+.hh-section-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+.hh-section-head > div { flex: 1 1 320px; display: grid; gap: 4px; }
+.hh-section-head h2 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
+.hh-section-head .hh-caption { font-size: 13px; }
+.hh-settings-card { padding: 18px 20px; display: grid; gap: 4px; margin-bottom: 16px; }
+.hh-settings-card-head { display: flex; align-items: center; gap: 8px; }
+.hh-settings-card-head h3 { margin: 0; font-size: 15.5px; font-weight: 600; }
+.hh-setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 52px; padding: 8px 0; border-top: 1px solid var(--hh-line); }
+.hh-settings-card-head + .hh-setting-row, .hh-settings-card > .hh-setting-row:first-child { border-top: 0; }
+.hh-setting-text { flex: 1 1 240px; display: grid; gap: 2px; }
+/* Rows and lists of the older tabs, inside a card: the card is their frame. */
+.hh-settings-card > .hh-rows { border: 0; border-radius: 0; background: transparent; }
+.hh-settings-card > .hh-rows > .hh-row { padding-left: 0; padding-right: 0; }
+.hh-settings-card > .hh-rows:first-child > .hh-row:first-child { border-top: 0; }
+.hh-settings-card > h3 { margin: 0 0 4px; font-size: 15.5px; font-weight: 600; }
+.hh-settings-card-head + .hh-rows > .hh-row:first-child { border-top: 0; }
+.hh-switch { width: 20px; height: 20px; accent-color: var(--hh-t-green-ink); }
+.hh-danger { color: var(--hh-t-red-ink); }
+/* Three numbers on top of a section (Sidekick). */
+.hh-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.hh-stat { padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.hh-stat-label { color: var(--hh-muted); font-size: 12.5px; }
+.hh-stat-value { font-size: 20px; font-weight: 600; }
+.hh-stats .hh-stat-action { margin: 0; }
+@media (max-width: 760px) { .hh-stats { grid-template-columns: minmax(0, 1fr); } }
+/* A list with the selected item's detail beside it (Plugins). */
+.hh-master-detail { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .hh-master-detail { grid-template-columns: minmax(0, 1fr); } }
+/* A bar of how much is used; the fill is its <i>. */
+.hh-progress { display: block; height: 6px; border-radius: 3px; background: var(--hh-surface-2); overflow: hidden; }
+.hh-progress > i { display: block; height: 100%; background: var(--hh-t-blue-ink); }
+.hh-progress.warn > i { background: var(--hh-warn); }
+/* A key's letter tile and name (Connections). */
+.hh-secret > .hh-row-label { flex: 1 1 160px; color: var(--hh-ink); font-weight: 500; }
+.hh-letter-tile { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--hh-surface-2); color: var(--hh-muted); font-weight: 600; }
 .hh-manual ol { margin: 0 0 8px; padding-left: 20px; }
-.hh-sheet-running { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.hh-sheet-running p { margin: 0; color: var(--hh-muted); }
+.hh-settings-running { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-settings-running p { margin: 0; color: var(--hh-muted); }
 .hh-tab { display: grid; gap: 12px; }
 .hh-rows { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; }
 .hh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--hh-line); }
@@ -275,10 +319,11 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-text-sizes button[aria-pressed="true"] { border-color: var(--hh-ink); box-shadow: inset 0 0 0 1px var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
 .hh-text-size-sample { font-weight: 600; line-height: 1; color: var(--hh-ink); }
 /* Settings › Uso: plan windows with a bar, and the topic table in the look of .hh-rows. */
-.hh-usage-window > :first-child { flex: 1; }
+.hh-usage-windows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.hh-usage-window { padding: 16px 18px; display: grid; gap: 8px; align-content: start; }
+.hh-usage-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
 .hh-usage-bar { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: var(--hh-line); overflow: hidden; flex-shrink: 0; }
 .hh-usage-bar > span { display: block; height: 100%; background: var(--hh-muted); }
-.hh-usage-bar.warn > span { background: var(--hh-warn); }
 .hh-usage-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; }
 .hh-usage-table th, .hh-usage-table td { padding: 10px 12px; text-align: left; vertical-align: middle; border-top: 1px solid var(--hh-line); }
 .hh-usage-table thead th { border-top: none; color: var(--hh-muted); font-size: 12px; font-weight: 400; }
@@ -308,7 +353,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-tile svg { color: var(--hh-muted); }
 /* Motor, Modelos and Uso before setup: one empty state that leads to the setup flow. */
 .hh-not-configured { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; text-align: center; color: var(--hh-muted); }
-.hh-not-configured h3 { margin: 0; color: var(--hh-ink); }
+.hh-not-configured h2 { margin: 0; color: var(--hh-ink); }
 .hh-not-configured p { margin: 0 0 8px; max-width: 36ch; }
 .hh-tile.more { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hh-line-strong); color: var(--hh-muted); background: transparent; }
 .hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
@@ -318,8 +363,10 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .hh-model-head h3 { margin: 0; }
 .hh-model-task { flex-wrap: wrap; }
-.hh-model-name { display: grid; gap: 2px; min-width: 0; flex: 1 1 160px; }
-.hh-model-task > .hh-caption, .hh-model-editor { flex-basis: 100%; }
+.hh-model-task > .hh-caption, .hh-model-task > .hh-model-note, .hh-model-editor { flex-basis: 100%; }
+.hh-model-note { margin: 0; display: flex; align-items: center; gap: 8px; }
+.hh-model-changed { color: var(--hh-t-orange-ink); font-size: 13px; }
+.hh-model-note .hh-pill { height: 30px; padding: 0 12px; }
 .hh-model-editor { display: grid; gap: 8px; justify-items: start; }
 .hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .hh-model-fields label { color: var(--hh-muted); }
@@ -724,6 +771,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 }
 
 /* Scope settings (hatches spec §3.2): linked folders, one row each. */
+.hh-scope-dialog-backdrop { position: fixed; inset: 0; z-index: 20; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; padding-top: 52px; }
+.hh-scope-dialog { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 76px); box-sizing: border-box; overflow-y: auto; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: var(--hh-shadow); }
+.hh-scope-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hh-scope-settings h2 { margin: 0; font-size: 15px; }
 .hh-linked { display: grid; gap: 10px; }
 .hh-linked h3 { margin: 0; font-size: 13px; }
@@ -897,6 +947,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-tag { margin-left: 8px; padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 6px; font-size: 0.75rem; }
 .hh-pl-error-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .hh-pl-review, .hh-pl-detail { min-width: 0; overflow-wrap: anywhere; }
+.hh-pl-detail.hh-card { padding: 18px 20px; }
+.hh-master-list { min-width: 0; }
+.hh-pl-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .hh-pl-review h3:focus, .hh-pl-detail h3:focus { outline: none; }
 .hh-pl-perms, .hh-pl-added ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .hh-pl-added { padding: 8px 12px; border: 1px solid var(--hh-warn); border-radius: 10px; }

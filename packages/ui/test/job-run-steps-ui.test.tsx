@@ -5,7 +5,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { AppState, JobSummary, ToolCallView } from "../src/client";
-import { SettingsSheet } from "../src/SettingsSheet";
+import { SettingsPage } from "../src/SettingsPage";
 import { JobRunSteps } from "../src/tools/JobRunSteps";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -66,7 +66,7 @@ async function openInbox(c: FakeClient) {
 
 function Sheet({ c }: { c: FakeClient }) {
   const [state, setState] = useState<AppState>(c.state);
-  return <SettingsSheet client={c} state={state} tab="jobs" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} onStartAction={() => true} />;
+  return <SettingsPage client={c} state={state} tab="jobs" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} onStartAction={() => true} />;
 }
 
 describe("a job run's steps (tools spec §8.2)", () => {

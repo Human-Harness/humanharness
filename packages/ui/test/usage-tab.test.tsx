@@ -3,7 +3,7 @@ import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, EngineOption } from "../src/client";
-import { SettingsSheet } from "../src/SettingsSheet";
+import { SettingsPage } from "../src/SettingsPage";
 import { UsageTab } from "../src/UsageTab";
 import { compactTokens, formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
@@ -13,7 +13,7 @@ afterEach(cleanup);
 
 function Sheet({ client }: { client: FakeClient }) {
   const [state, setState] = useState<AppState>(client.state);
-  return <SettingsSheet client={client} state={state} tab="usage" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return <SettingsPage client={client} state={state} tab="usage" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
 }
 
 const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();
@@ -136,6 +136,25 @@ describe("Settings › Uso with an engine that reports limits", () => {
     expect(link.getAttribute("href")).toBe("https://claude.com/pricing");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("tags a window past 80% as Close to your limit", async () => {
+    const client = claude();
+    client.usage = {
+      limits: [
+        { kind: "five_hour", utilization: 0.85, resetsAt: in2h() },
+        { kind: "seven_day", utilization: 0.1, resetsAt: new Date(Date.now() + 3 * 86400_000).toISOString() },
+      ],
+      estimates: {},
+      tokens: {},
+      primary: "five_hour",
+    };
+    await renderIn("en", <Sheet client={client} />);
+    const near = (await screen.findByText("85% used")).closest(".hh-usage-window") as HTMLElement;
+    expect(within(near).getByText("Close to your limit").className).toContain("hh-tag-orange");
+    expect(near.querySelector(".hh-progress > i")).toBeTruthy();
+    const week = screen.getByText("10% used").closest(".hh-usage-window") as HTMLElement;
+    expect(within(week).queryByText("Close to your limit")).toBeNull();
   });
 
   it("near the limit: a topic that won't fit whole says so", async () => {

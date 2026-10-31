@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SidekickView } from "../src/client";
-import { SettingsSheet } from "../src/SettingsSheet";
+import { SettingsPage } from "../src/SettingsPage";
 import { SidekickList } from "../src/sidekick/SidekickList";
 import { SidekickTab } from "../src/sidekick/SidekickTab";
 import { FakeClient } from "./fake-client";
@@ -257,8 +257,8 @@ describe("Settings › Sidekicks in the tab", () => {
     const c = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     c.sidekickState = { ...SK_ON, sidekicks: [{ id: "sidekick", name: "Sidekick", mark: "spark" }] };
     const state = { ...c.state, sidekick: SK_ON.info };
-    await renderIn("en", <SettingsSheet client={c} state={state} tab="sidekick" onTab={() => undefined} onChange={() => undefined} onClose={() => undefined} onSetup={() => undefined} />);
-    const dialog = screen.getByRole("dialog");
+    await renderIn("en", <SettingsPage client={c} state={state} tab="sidekick" onTab={() => undefined} onChange={() => undefined} onClose={() => undefined} onSetup={() => undefined} />);
+    const dialog = screen.getByRole("main", { name: "Settings" });
     expect(await within(dialog).findByRole("tab", { name: "Sidekick" })).toBeTruthy();
     c.emitSidekick({ ...SK_ON, sidekicks: [{ id: "sidekick", name: "Sidekick", mark: "spark" }, { id: "rulo", name: "Rulo", mark: "🦊" }] });
     expect(await within(dialog).findByRole("tab", { name: "Sidekicks" })).toBeTruthy();

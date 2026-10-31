@@ -4,7 +4,7 @@ import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ConnectionsView, SetupStepView } from "../src/client";
 import { ConnectStep } from "../src/connections/ConnectStep";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -29,7 +29,7 @@ function client(withSecrets = true) {
 function Sheet({ c, tab: first = "connections" }: { c: FakeClient; tab?: SettingsTab }) {
   const [state, setState] = useState<AppState>(c.state);
   const [tab, setTab] = useState<SettingsTab>(first);
-  return <SettingsSheet client={c} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return <SettingsPage client={c} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
 }
 
 /** One declared key's row, by its label. */
@@ -124,6 +124,16 @@ describe("Settings › Connections (tools spec §9)", () => {
     await waitFor(() => expect(within(row("Jira API token")).getByText("Not set")).toBeTruthy());
     await waitFor(() => expect(document.activeElement).toBe(field("Jira API token")));
     expect(row("Jira API token").contains(document.activeElement)).toBe(true);
+  });
+
+  it("an unset key shows a password field and Save", async () => {
+    const c = client();
+    await renderIn("en", <Sheet c={c} />);
+    const gh = await screen.findByRole("group", { name: "GitHub token" });
+    expect(field("GitHub token").type).toBe("password");
+    expect(within(gh).getByRole("button", { name: "Save" }).className).toContain("hh-cta");
+    expect(within(gh).getByText("Not set").className).toContain("hh-tag-orange");
+    expect(within(row("Jira API token")).getByText("Set").className).toContain("hh-tag-green");
   });
 
   it("the field is described by the key's state and its help", async () => {

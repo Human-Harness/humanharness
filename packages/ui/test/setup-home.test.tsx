@@ -89,7 +89,7 @@ describe("Home with setup steps (setup-steps spec §4)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Do it now" }));
     fireEvent.click(await screen.findByRole("button", { name: "All good" }));
     await waitFor(() => expect(screen.getByRole("tab", { name: "Setup" }).getAttribute("aria-selected")).toBe("true"));
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
   });
 
   it("D0: a harness without setup steps never asks for them", async () => {

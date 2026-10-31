@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Tag } from "../chrome";
 import type { ConnectionResult, ConnectionView } from "../client";
 
 /**
@@ -55,13 +56,18 @@ export function SecretField({
     void onSave(v);
   };
   return (
-    <div className="hh-row hh-row-wrap" role="group" aria-labelledby={`${id}-label`}>
+    <div className="hh-row hh-row-wrap hh-secret" role="group" aria-labelledby={`${id}-label`}>
+      {/* The key's first letter, as a tile: decoration only, the label names it. */}
+      <span className="hh-letter-tile" aria-hidden="true">
+        {[...connection.label.trim()][0]?.toUpperCase() ?? "?"}
+      </span>
       <span className="hh-row-label" id={`${id}-label`}>
         <bdi dir="auto">{connection.label}</bdi>
       </span>
-      <span className="hh-caption" id={`${id}-state`}>
+      {/* The id is what the field is described by. */}
+      <Tag tone={connection.set ? "green" : "orange"} id={`${id}-state`}>
         {connection.set ? t("connections.set") : t("connections.notSet")}
-      </span>
+      </Tag>
       <form className="hh-pl-key-form" onSubmit={submit}>
         <input
           ref={input}
@@ -74,7 +80,7 @@ export function SecretField({
           aria-describedby={connection.help ? `${id}-state ${id}-help` : `${id}-state`}
           onChange={(e) => setValue(e.target.value)}
         />
-        <button type="submit" disabled={value.trim() === ""}>
+        <button type="submit" className={connection.set ? undefined : "hh-cta"} disabled={value.trim() === ""}>
           {connection.set ? t("connections.replace") : t("connections.save")}
         </button>
         {connection.set && (

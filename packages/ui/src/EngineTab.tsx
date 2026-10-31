@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { EngineIcon } from "./chrome";
+import { EngineIcon, Tag } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
 import { EngineOnboarding, LegalInEnglish, useLegalLang } from "./EngineOnboarding";
+import { SectionHead, SettingsCard } from "./settings-parts";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
 export function errorDetail(err: unknown): string {
@@ -122,6 +123,8 @@ export function EngineTab({
 
   return (
     <div className="hh-tab">
+      {/* The setup flow's engine step has its own frame: the head is the Settings section's. */}
+      {!setup && <SectionHead title={t("settings.tabs.engine")} line={t("settings.line.engine", { name: state.harness.name })} />}
       <div className="hh-tiles" role="group" aria-label={t("engine.tilesLabel")} data-setting="engine.engine">
         {state.engines.map((e) => {
           const s = statuses[e.id];
@@ -179,6 +182,8 @@ export function EngineTab({
               {t("engine.use", { engine: engine.name })}
             </button>
           )}
+          {/* The engine shown, as a card: "In use" when it is the one tasks run on. */}
+          <SettingsCard title={engine.name} actions={!setup && selected === current && <Tag tone="green">{t("engine.current")}</Tag>}>
           {engine.mock ? (
             // The test engine: nothing to sign out of, no plan, no provider to disclose.
             <div className="hh-rows">
@@ -235,6 +240,7 @@ export function EngineTab({
               <LegalInEnglish />
             </>
           )}
+          </SettingsCard>
         </>
       )}
       {failed && (

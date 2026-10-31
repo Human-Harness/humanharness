@@ -5,7 +5,7 @@ import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { SEARCHABLE_SETTINGS } from "@humanharness/protocol";
 import type { AppState, ModelsView, SearchSettingsTab } from "../src/client";
-import { SettingsSheet } from "../src/SettingsSheet";
+import { SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 import { SK_ON } from "./sidekick-fixtures";
@@ -32,7 +32,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
   it("General renders its rows for the state given (folder set, no parallel, no profiles)", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     const state = client.state;
-    await renderIn("en", <SettingsSheet client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    await renderIn("en", <SettingsPage client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
     await waitFor(() => expect(shown()).toContain("general.appearance"));
     expect(shown().sort()).toEqual(["general.appearance", "general.folder", "general.language", "general.textSize", ...(state.backup?.status ? ["general.backup"] : [])].sort());
   });
@@ -41,7 +41,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
     client.sidekickState = SK_ON;
-    await renderIn("en", <SettingsSheet client={client} state={client.state} tab="sidekick" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    await renderIn("en", <SettingsPage client={client} state={client.state} tab="sidekick" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
     await waitFor(() => expect(shown()).toContain("sidekick.on"));
     expect(shown().sort()).toEqual(SEARCHABLE_SETTINGS.filter((s) => s.tab === "sidekick").map((s) => s.id).sort());
   });
@@ -57,7 +57,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
   async function rowsOf(tab: SearchSettingsTab, setup: (c: FakeClient, state: AppState) => void) {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     setup(client, client.state);
-    await renderIn("en", <SettingsSheet client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    await renderIn("en", <SettingsPage client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
     return client;
   }
 

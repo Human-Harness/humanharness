@@ -8,6 +8,7 @@ import { PresetOffer } from "./PresetOffer";
 import { ScopeSidekicks } from "./ScopeSidekicks";
 import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
+import { SectionHead, SettingRow, SettingsCard } from "../settings-parts";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
@@ -46,6 +47,11 @@ function useOpenScope(client: HarnessClient, enabled: boolean): { id: string; la
  * harness's presets (while any is not adopted, spec §2a.7), the sidekicks, the sidekicks in the open scope (harnesses
  * with scopes, Decision 8), and what they learned. Each change saves at once.
  */
+/** The section's and the tab's title (spec §8): "Sidekicks" once there are two or more, else "Sidekick". */
+export function sidekickTitleKey(sidekicks: readonly unknown[] | undefined): "sidekick.list.title" | "sidekick.tab" {
+  return (sidekicks?.length ?? 1) > 1 ? "sidekick.list.title" : "sidekick.tab";
+}
+
 export function SidekickTab({
   client,
   onModels,
@@ -93,88 +99,117 @@ export function SidekickTab({
     { value: "50000", label: t("sidekick.settings.cap50") },
     { value: "none", label: t("sidekick.settings.capNone") },
   ];
+  const tokens = state.week.toLocaleString(shownLanguage(i18n));
   const parseWait = (v: Wait): SidekickSettings["wait"] => (v === "always" ? "always" : v === "10" ? 10 : 6);
   const parseCap = (v: Cap): SidekickSettings["cap"] => (v === "none" ? "none" : v === "50000" ? 50_000 : 20_000);
   return (
     <div className="hh-tab">
-      <div className="hh-rows">
-        <div className="hh-row hh-row-wrap" data-setting="sidekick.on">
-          <label className="hh-row-label" htmlFor={`${onHint}-on`}>
-            {t("sidekick.settings.on")}
-          </label>
-          <input id={`${onHint}-on`} type="checkbox" checked={s.on} aria-describedby={onHint} onChange={(e) => save({ on: e.target.checked })} />
-          <p className="hh-caption hh-row-note" id={onHint}>
-            {t("sidekick.settings.onHint")}
-          </p>
+      <SectionHead
+        title={t(sidekickTitleKey(state.sidekicks))}
+        line={t("settings.line.sidekick")}
+        lineId={onHint}
+        aside={
+          <div className="hh-sk-main" data-setting="sidekick.on">
+            <input
+              className="hh-switch"
+              type="checkbox"
+              checked={s.on}
+              aria-label={t("sidekick.settings.on")}
+              aria-describedby={onHint}
+              onChange={(e) => save({ on: e.target.checked })}
+            />
+          </div>
+        }
+      />
+      <div className="hh-stats">
+        <div className="hh-card hh-stat">
+          <span className="hh-sr-only">{t("sidekick.settings.week", { tokens })}</span>
+          <span className="hh-stat-label" aria-hidden="true">
+            {t("sidekick.settings.statWeek")}
+          </span>
+          <span className="hh-stat-value" aria-hidden="true">
+            {t("sidekick.settings.statTokens", { tokens })}
+          </span>
+        </div>
+        <div className="hh-card hh-stat">
+          {state.used.of > 0 && <span className="hh-sr-only">{t("sidekick.settings.usedShare", state.used)}</span>}
+          <span className="hh-stat-label" aria-hidden={state.used.of > 0 ? "true" : undefined}>
+            {t("sidekick.settings.statUsed")}
+          </span>
+          <span className="hh-stat-value" aria-hidden={state.used.of > 0 ? "true" : undefined}>
+            {state.used.of > 0 ? t("sidekick.settings.statUsedValue", state.used) : t("sidekick.settings.statUsedNone")}
+          </span>
+        </div>
+        <div className="hh-card hh-stat" data-setting="sidekick.tier">
+          <span className="hh-stat-label">{t("sidekick.settings.tier")}</span>
+          <span className="hh-stat-value">{t(`sidekick.tiers.${state.tier}`, { defaultValue: state.tier })}</span>
+          {/* Off: it can't be changed, as the rows below (spec §8). */}
+          <fieldset className="hh-sk-fieldset hh-stat-action" disabled={!s.on}>
+            <button type="button" className="hh-link" onClick={onModels}>
+              {t("sidekick.settings.changeTier")}
+            </button>
+          </fieldset>
         </div>
       </div>
       {/* Off: the rest stays visible but can't be changed (spec §8). */}
       <fieldset className="hh-sk-fieldset" disabled={!s.on}>
-        <div className="hh-rows">
-          <div className="hh-row hh-row-wrap" data-setting="sidekick.preSend">
-            <label className="hh-row-label" htmlFor={`${preSendHint}-on`}>
-              {t("sidekick.settings.preSend")}
-            </label>
+        <SettingsCard>
+          <SettingRow
+            data-setting="sidekick.preSend"
+            label={t("sidekick.settings.preSend")}
+            labelFor={`${preSendHint}-on`}
+            hint={t("sidekick.settings.preSendHint")}
+            hintId={preSendHint}
+          >
             <input
               id={`${preSendHint}-on`}
+              className="hh-switch"
               type="checkbox"
               checked={s.preSend}
               aria-describedby={preSendHint}
               onChange={(e) => save({ preSend: e.target.checked })}
             />
-            <p className="hh-caption hh-row-note" id={preSendHint}>
-              {t("sidekick.settings.preSendHint")}
-            </p>
-          </div>
-          <div className="hh-row hh-row-wrap" data-setting="sidekick.afterReply">
-            <label className="hh-row-label" htmlFor={`${afterHint}-on`}>
-              {t("sidekick.settings.afterReply")}
-            </label>
+          </SettingRow>
+          <SettingRow
+            data-setting="sidekick.afterReply"
+            label={t("sidekick.settings.afterReply")}
+            labelFor={`${afterHint}-on`}
+            hint={t("sidekick.settings.afterReplyHint")}
+            hintId={afterHint}
+          >
             <input
               id={`${afterHint}-on`}
+              className="hh-switch"
               type="checkbox"
               checked={s.afterReply}
               aria-describedby={afterHint}
               onChange={(e) => save({ afterReply: e.target.checked })}
             />
-            <p className="hh-caption hh-row-note" id={afterHint}>
-              {t("sidekick.settings.afterReplyHint")}
-            </p>
-          </div>
-          <div className="hh-row hh-row-wrap" data-setting="sidekick.headsUps">
-            <label className="hh-row-label" htmlFor={`${headsUpHint}-on`}>
-              {t("sidekick.settings.headsUps")}
-            </label>
+          </SettingRow>
+          <SettingRow
+            data-setting="sidekick.headsUps"
+            label={t("sidekick.settings.headsUps")}
+            labelFor={`${headsUpHint}-on`}
+            hint={t("sidekick.settings.headsUpsHint")}
+            hintId={headsUpHint}
+          >
             <input
               id={`${headsUpHint}-on`}
+              className="hh-switch"
               type="checkbox"
               checked={s.headsUps}
               aria-describedby={headsUpHint}
               onChange={(e) => save({ headsUps: e.target.checked })}
             />
-            <p className="hh-caption hh-row-note" id={headsUpHint}>
-              {t("sidekick.settings.headsUpsHint")}
-            </p>
-          </div>
-          <div className="hh-row" data-setting="sidekick.wait">
-            <span className="hh-row-label">{t("sidekick.settings.wait")}</span>
+          </SettingRow>
+          <SettingRow data-setting="sidekick.wait" label={t("sidekick.settings.wait")}>
             <Segmented label={t("sidekick.settings.wait")} options={waits} value={String(s.wait) as Wait} onChange={(v) => save({ wait: parseWait(v) })} />
-          </div>
-          <div className="hh-row" data-setting="sidekick.tier">
-            <span className="hh-row-label">{t("sidekick.settings.tier")}</span>
-            <span>{t(`sidekick.tiers.${state.tier}`, { defaultValue: state.tier })}</span>
-            <button type="button" className="hh-link" onClick={onModels}>
-              {t("sidekick.settings.changeTier")}
-            </button>
-          </div>
-          <div className="hh-row" data-setting="sidekick.cap">
-            <span className="hh-row-label">{t("sidekick.settings.cap")}</span>
+          </SettingRow>
+          <SettingRow data-setting="sidekick.cap" label={t("sidekick.settings.cap")}>
             <Segmented label={t("sidekick.settings.cap")} options={caps} value={String(s.cap) as Cap} onChange={(v) => save({ cap: parseCap(v) })} />
-          </div>
-        </div>
+          </SettingRow>
+        </SettingsCard>
       </fieldset>
-      <p className="hh-caption">{t("sidekick.settings.week", { tokens: state.week.toLocaleString(shownLanguage(i18n)) })}</p>
-      {state.used.of > 0 && <p className="hh-caption">{t("sidekick.settings.usedShare", state.used)}</p>}
       {muted.length > 0 && (
         <section aria-labelledby={mutedHead}>
           <h3 id={mutedHead}>{t("sidekick.settings.muted")}</h3>

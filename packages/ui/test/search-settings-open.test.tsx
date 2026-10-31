@@ -32,7 +32,7 @@ async function openFirst(client: FakeClient, query: string) {
   await within(dialog).findByRole("group", { name: "Settings" });
   fireEvent.keyDown(within(dialog).getByRole("combobox"), { key: "Enter" });
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull());
-  return screen.findByRole("dialog", { name: "Settings" });
+  return screen.findByRole("main", { name: "Settings" });
 }
 
 describe("a setting from search opens Settings at the field (§6)", () => {
@@ -45,7 +45,7 @@ describe("a setting from search opens Settings at the field (§6)", () => {
     const group = await within(dialog).findByRole("group", { name: "Settings" });
     expect(within(group).getByRole("option").textContent).toContain("Appearance");
     fireEvent.keyDown(within(dialog).getByRole("combobox"), { key: "Enter" });
-    const sheet = await screen.findByRole("dialog", { name: "Settings" });
+    const sheet = await screen.findByRole("main", { name: "Settings" });
     expect(within(sheet).getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     const row = sheet.querySelector<HTMLElement>('[data-setting="general.appearance"]')!;
     await waitFor(() => expect(row.contains(document.activeElement)).toBe(true));
@@ -103,10 +103,10 @@ describe("a setting from search opens Settings at the field (§6)", () => {
     const sheet = await openFirst(client, "appear");
     await waitFor(() => expect(sheet.querySelector('[data-setting="general.appearance"]')!.contains(document.activeElement)).toBe(true));
     fireEvent.click(within(sheet).getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());
     expect(document.activeElement).toBe(start);
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const again = await screen.findByRole("dialog", { name: "Settings" });
+    const again = await screen.findByRole("main", { name: "Settings" });
     await new Promise((r) => setTimeout(r, 50));
     expect(document.activeElement).toBe(within(again).getByRole("button", { name: "Done" }));
     expect(again.querySelector(".hh-search-flash")).toBeNull();

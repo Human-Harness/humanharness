@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, PluginDetail as Detail, PluginResult, PluginRow, PluginTestResult, PluginWorkHours, SettingFieldView } from "../client";
-import { groups, SettingRow } from "../HarnessSettingsTab";
+import { groups, HarnessFieldRow } from "../HarnessSettingsTab";
 import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
 
@@ -102,7 +102,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   const valueOf = (f: SettingFieldView) => (detail && Object.hasOwn(detail.values, f.name) ? detail.values[f.name] : f.default);
 
   return (
-    <section className="hh-tab hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
+    <section className="hh-tab hh-card hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
       <div>
         <button type="button" className="hh-link" onClick={onBack}>
           ← {t("plugins.detail.back")}
@@ -142,7 +142,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
                   )}
                   <div className="hh-rows">
                     {g.fields.map((f) => (
-                      <SettingRow
+                      <HarnessFieldRow
                         key={f.name}
                         field={f}
                         value={valueOf(f)}
@@ -312,7 +312,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
                   </div>
                 </div>
               ) : (
-                <button type="button" onClick={() => setConfirm(true)}>
+                <button type="button" className="hh-danger" onClick={() => setConfirm(true)}>
                   {t("plugins.remove.button")}
                 </button>
               )}

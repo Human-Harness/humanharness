@@ -64,6 +64,19 @@ describe("Settings › Sidekick (spec §8)", () => {
   });
 });
 
+describe("Settings › Sidekick, look (UI refresh)", () => {
+  it("puts the main switch in the head and three stats on top", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = SK_ON;
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    const main = await screen.findByRole("checkbox", { name: "Sidekick" });
+    expect(main.closest(".hh-section-head")).toBeTruthy();
+    const stats = document.querySelector(".hh-stats")!;
+    expect(stats.querySelectorAll(".hh-card")).toHaveLength(3);
+    for (const label of ["This week", "Suggestions used", "Model"]) expect(stats.contains(screen.getByText(label))).toBe(true);
+  });
+});
+
 describe("Settings › Sidekick, learning (spec §6.3, §8)", () => {
   it("N of M used, and muted kinds with Undo", async () => {
     const c = new FakeClient({ language: "en" });

@@ -20,7 +20,7 @@ import { shownLanguage, systemLanguage } from "./language";
 import { type LanguageControl, useLanguage } from "./language-control";
 import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
-import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
+import { type SettingsTab, SettingsPage } from "./SettingsPage";
 import { SetupFlow } from "./SetupFlow";
 import { type RailEntry, railEntries } from "./shell-nav";
 import type { SearchIntent } from "./search/intent";
@@ -164,12 +164,14 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const tasksState = useTasks(client, Boolean(state?.parallel));
   /** Board mode: the chat remounts on each change of the task shown (`epoch`); only a message put back outlives it. */
   const { epoch, toStart } = useFocusEpoch(tasksState);
-  /** Main moved the focus to another task (a notification click): that task's chat shows, even over the Inbox screen. */
+  /** Main moved the focus to another task (a notification click): that task's chat shows, even over the Inbox screen or Settings. */
   const shownEpoch = useRef(epoch);
   useEffect(() => {
     if (shownEpoch.current === epoch) return;
     shownEpoch.current = epoch;
     setView((v) => (v.kind === "inbox" ? { kind: "chat" } : v));
+    setSettings(null);
+    setSettingsFocus(null);
   }, [epoch]);
   /** Leaving the Inbox screen for the chat: a focus lost with the board goes to the rail's Tasks, not the page. */
   const wasInbox = useRef(false);
@@ -408,8 +410,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   return (
     <I18nextProvider i18n={i18n}>
-      {/* Under the open Settings sheet, the whole screen (top bar included) can't be reached. */}
-      <div className="hh-screen" inert={settings !== null}>
+      {/* Settings is a page in place of the screen (UI refresh spec §5.5): the screen stays mounted (the chat's draft,
+          panels and start path), hidden and inert, top bar included. */}
+      <div className="hh-screen" hidden={settings !== null} inert={settings !== null}>
         {screen === "work" && configured ? (
           <div className="hh-shell">
             <TopBar
@@ -544,7 +547,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
         {state.hatches?.backend && <BackendCard client={client} />}
       </div>
       {settings && (
-        <SettingsSheet
+        <SettingsPage
           client={client}
           state={state}
           tab={settings}

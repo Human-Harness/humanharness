@@ -502,6 +502,17 @@ describe("the Inbox screen's focus and its way back to the chat (UI refresh spec
     expect(screen.getByRole("textbox")).toBeTruthy();
   });
 
+  it("main focusing another task while Settings is open closes Settings and shows the chat", async () => {
+    const caps = { tasks: 2, jobs: 1 };
+    const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("b", "waiting")], caps });
+    await open(c);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
+    act(() => c.tasks.set({ tasks: [summary("a", "running"), summary("b", "waiting", { focused: true })], caps }));
+    await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
   it("a cancelled message of the focused task shows the chat with its text back in the box", async () => {
     const c = client(parallel(), { tasks: [summary("c", "queued", { focused: true })], caps: { tasks: 1, jobs: 1 } });
     c.tasks.cancelQueued.mockResolvedValueOnce("the queued text");

@@ -6,7 +6,7 @@ import { BackupNotice, needsBackupNotice } from "../src/BackupNotice";
 import { HarnessApp } from "../src/HarnessApp";
 import type { AppState, MoveError } from "../src/client";
 import { Home } from "../src/Home";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -291,7 +291,7 @@ describe("A move in progress, across views", () => {
     };
     render(<HarnessApp client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const sheet = screen.getByRole("dialog");
+    const sheet = screen.getByRole("main", { name: "Settings" });
     fireEvent.click(within(sheet).getByRole("button", { name: "Move to Google Drive" }));
     await waitFor(() => expect(within(sheet).getByRole("status").textContent).toBe("Moving your folder… Don't close the app."));
     // Another tab and back: the move is still shown.
@@ -299,7 +299,7 @@ describe("A move in progress, across views", () => {
     fireEvent.click(within(sheet).getByRole("tab", { name: "General" }));
     expect(within(sheet).getByRole("status").textContent).toBe("Moving your folder… Don't close the app.");
     fireEvent.click(within(sheet).getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());
     expect(screen.getByRole("status").textContent).toBe("Moving your folder… Don't close the app.");
     expect((screen.getByRole("button", { name: "Move to Google Drive" }) as HTMLButtonElement).disabled).toBe(true);
     finish();
@@ -311,7 +311,7 @@ describe("Settings › General backup row", () => {
   function Sheet({ client }: { client: FakeClient }) {
     const [state, setState] = useState<AppState>(client.state);
     const [tab, setTab] = useState<SettingsTab>("general");
-    return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={vi.fn()} onSetup={vi.fn()} />;
+    return <SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={vi.fn()} onSetup={vi.fn()} />;
   }
 
   it("shows the status and the notice, and brings a dismissed notice back", async () => {

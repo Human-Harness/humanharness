@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionResult, ConnectionsView, HarnessClient } from "../client";
 import { SecretField } from "./SecretField";
+import { SectionHead, SettingsCard } from "../settings-parts";
 
 export interface Connections {
   /** null until the first answer. */
@@ -100,9 +101,10 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
   };
   return (
     <div className="hh-tab" data-setting="connections.connections">
-      <p className="hh-caption">{t("connections.intro")}</p>
+      <SectionHead title={t("connections.tab")} line={t("settings.line.connections")} />
       {unavailable && <p role="alert">{t("connections.unavailable")}</p>}
       {view && !unavailable && (
+        <SettingsCard>
         <div className="hh-rows">
           {view.connections.map((c) => (
             <SecretField
@@ -114,6 +116,7 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
             />
           ))}
         </div>
+        </SettingsCard>
       )}
       {error && (
         <p key={refusals} className="hh-field-error" role="alert">

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState } from "../src/client";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -28,7 +28,7 @@ function family() {
 function Sheet({ client, tab: first }: { client: FakeClient; tab: SettingsTab }) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(first);
-  return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return <SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
 }
 
 describe("Settings › General › People (profiles spec §5)", () => {

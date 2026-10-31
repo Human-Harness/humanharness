@@ -6,7 +6,7 @@ import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
 
-const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
+export const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
 
 /** Waiting for the person: tasks waiting for them, and needs-you job results (a job turned off, as the Dock badge, waits for no one). */
 export function waitingCount(tasks: TasksState | null, jobs: readonly JobSummary[] = []): number {

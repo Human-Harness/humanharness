@@ -105,7 +105,7 @@ test("Settings › Connections shows it set, and Delete makes it Not set", async
   expect(await page.content()).not.toContain(TOKEN);
 
   await key.getByRole("button", { name: "Delete" }).click();
-  await expect(key.getByText("Not set", { exact: true })).toBeVisible();
+  await expect(key.getByText("Not set · paste the key to use it", { exact: true })).toBeVisible();
   await expect(key.getByRole("button", { name: "Delete" })).toHaveCount(0);
   await expect.poll(() => fs.existsSync(keyFile())).toBe(false);
 });

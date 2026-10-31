@@ -191,7 +191,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     c.jobs.set([{ id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: true }]);
     await waitFor(() => expect(within(group("Sync inbox")).queryByRole("button", { name: "Run now" })).toBeNull());
     c.jobs.set([{ id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: false, paused: "off" }]);
-    await within(group("Sync inbox")).findByText("Turned off");
+    await within(group("Sync inbox")).findByText("Turned off · turn it on to run it again");
     expect(within(group("Sync inbox")).queryByRole("button", { name: "Run now" })).toBeNull();
   });
 

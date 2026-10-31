@@ -86,7 +86,7 @@ export function HistoryPanel({
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
   actions: Record<string, ActionOption>;
-  /** The open task's id: its row says it is in progress. */
+  /** The open task's id: its row says it is open now. */
   currentTask?: string;
   onClose: () => void;
   /** Called after a restore succeeded, before the panel closes. */

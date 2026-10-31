@@ -35,7 +35,8 @@ export type PluginRule =
   | "sync-heavy"
   | "host-local"
   | "http-url"
-  | "brand";
+  | "brand"
+  | "search-panel";
 
 export interface PluginFinding {
   rule: PluginRule;
@@ -116,6 +117,15 @@ async function readManifest(dir: string, findings: PluginFinding[]): Promise<Plu
   }
   if (m.api !== PLUGIN_API) findings.push(error("api-version", `plugin.json's api is ${m.api}; this core runs plugins of api ${PLUGIN_API}.`, PLUGIN_JSON));
   return m;
+}
+
+/** Global search (search spec §7): a searchable collection's records open in a panel; without one, nowhere. */
+export function searchFindings(m: PluginManifest): PluginFinding[] {
+  const names = Object.entries(m.data)
+    .filter(([, c]) => c.search)
+    .map(([name]) => name);
+  if (names.length === 0 || m.panels.length > 0) return [];
+  return [warning("search-panel", `${names.map((n) => `"${n}"`).join(", ")} ${names.length === 1 ? "is" : "are"} searchable but the plugin has no panel: a found record would open nowhere. Add a panel, or drop search.`, PLUGIN_JSON)];
 }
 
 function manifestFindings(m: PluginManifest): PluginFinding[] {
@@ -298,6 +308,7 @@ export async function checkPlugin(dir: string, o: { harness?: string; build?: bo
   const m = await readManifest(root, findings);
   if (!m) return { manifest: null, findings };
   findings.push(...manifestFindings(m));
+  findings.push(...searchFindings(m));
   if (harness) findings.push(...slotFindings(harness, m));
   findings.push(...(await sourceFindings(root, m)));
   findings.push(...(await fixtureFindings(root, m)));

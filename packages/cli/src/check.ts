@@ -71,7 +71,8 @@ export type RuleId =
   | "tool-uses"
   | "tool-steps"
   | "tool-fixture"
-  | "mock-step";
+  | "mock-step"
+  | "search-data";
 
 export interface Finding {
   rule: RuleId;
@@ -132,6 +133,7 @@ export async function checkHarness(
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
   findings.push(...settingsFindings(harness));
+  findings.push(...(await searchFindings(harness)));
   findings.push(...sidekickFindings(harness));
   findings.push(...documentKindsFindings(harness));
   findings.push(...(await setupFindings(harness)));
@@ -433,6 +435,33 @@ async function sourceFiles(dir: string): Promise<string[]> {
     .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
     .map((e) => path.join(e.parentPath, e.name))
     .sort();
+}
+
+/**
+ * Global search (search spec D4, §7; plan deviation 8): a searchable collection should be one the person sees, and
+ * its records should open somewhere. Warnings: the manifest can't say what a view shows.
+ */
+async function searchFindings(h: LoadedHarness): Promise<Finding[]> {
+  const names = Object.entries(h.data ?? {})
+    .filter(([, c]) => c.search)
+    .map(([name]) => name);
+  if (names.length === 0) return [];
+  let uiPath: string | null = null;
+  try {
+    uiPath = resolveInHarness(h, h.ui ?? "ui");
+  } catch {
+    // reported by i18nFindings
+  }
+  const out: Finding[] = [];
+  const texts = uiPath === null ? [] : await Promise.all((await sourceFiles(uiPath)).map(async (f) => (await read(f)) ?? ""));
+  const all = texts.join("\n");
+  for (const name of names) {
+    const quoted = new RegExp(`["'\`]${escapeRegExp(name)}["'\`]`);
+    const opens = new RegExp(`onOpenRecord\\(\\s*["'\`]${escapeRegExp(name)}["'\`]`);
+    if (!quoted.test(all)) out.push(warning("search-data", `"${name}" is searchable but no file in ui/ shows it: search would find records the person can't see. Show it in a view, or drop its search.`, MANIFEST));
+    else if (!opens.test(all)) out.push(warning("search-data", `"${name}" is searchable but no view calls client.search.onOpenRecord("${name}", …): its records would only say where they are shown.`, MANIFEST));
+  }
+  return out;
 }
 
 async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {

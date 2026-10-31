@@ -153,3 +153,14 @@ describe("PhaseStepper", () => {
     expect((screen.getByRole("button", { name: "Close" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe("PhaseStepper as tags (UI refresh spec §5.1)", () => {
+  it("draws done phases green, the current one orange, the rest as chips", async () => {
+    const s = stepper(task());
+    await renderIn("en", <PhaseStepper {...s.props} />);
+    expect(screen.getByRole("button", { name: "Warm-up" }).className).toContain("hh-tag-green");
+    expect(screen.getByRole("button", { name: "Main block" }).className).toContain("hh-tag-orange");
+    expect(screen.getByRole("button", { name: "Close" }).className).toContain("hh-chip");
+  });
+});
+

@@ -69,6 +69,41 @@ describe("flow mode", () => {
     expect(screen.getByPlaceholderText("Or ask something…")).toBeTruthy();
   });
 
+  it("shows the start view from its top, also when coming back to the topics", async () => {
+    // A tall conversation: sticking to the bottom would hide the first topics.
+    // The DOM has no layout: the chat gets a height on HTMLElement, shadowing the DOM's own getter, until the end.
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get() { return (this as HTMLElement).classList.contains("hh-chat") ? 900 : 0; } });
+    try {
+      const client = flowClient();
+      client.state.path = ["manifest"];
+      await startWork(client);
+      fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+      const chat = document.querySelector(".hh-chat") as HTMLElement;
+      tasks(client, { current: t1("running") });
+      answer(client, "It declares everything.");
+      tasks(client, { current: null, actions: { manifest: "done" } });
+      chat.scrollTop = 500;
+      fireEvent.click(screen.getByRole("button", { name: "See the topics" }));
+      await startRegion();
+      expect(chat.scrollTop).toBe(0);
+    } finally {
+      delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
+  });
+
+  it("opens the start view at its top, not scrolled to its end", async () => {
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get() { return (this as HTMLElement).classList.contains("hh-chat") ? 900 : 0; } });
+    try {
+      const client = flowClient();
+      client.chat = [{ id: "old", role: "user", text: "an older topic", blocks: [], activities: [], at: "t", task: "t0" }];
+      await startWork(client);
+      await startRegion();
+      expect((document.querySelector(".hh-chat") as HTMLElement).scrollTop).toBe(0);
+    } finally {
+      delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
+  });
+
   it("starts a topic: sends its label with the action and shows only that task", async () => {
     const client = flowClient();
     client.chat = [{ id: "old", role: "user", text: "an older topic", blocks: [], activities: [], at: "t", task: "t0" }];

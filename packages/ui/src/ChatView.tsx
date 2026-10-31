@@ -67,6 +67,7 @@ import { useSidekick } from "./sidekick/useSidekick";
 import type { SearchIntent } from "./search/intent";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, isToolLine, reduceChat } from "./state";
+import { TaskHeader } from "./TaskHeader";
 import { UsageMeter } from "./UsageMeter";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 
@@ -118,6 +119,8 @@ export function ChatView({
   searchRef,
   searchContextRef,
   taskStrip,
+  onNewTask,
+  title,
   draftKeep,
   openScope = null,
   notesRequest,
@@ -157,6 +160,10 @@ export function ChatView({
   searchContextRef?: { current: (() => ChatSearchContext) | null };
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
+  /** Board mode: the task header's New task (parallel spec §9.1); absent, the header has none (D0). */
+  onNewTask?: () => void;
+  /** The task header's title (the breadcrumb's screen); absent, the open task's label, else the start view's title. */
+  title?: string;
   /**
    * Board mode: this view remounts on every change of task shown, and the box starts empty as always, except for a
    * message the inbox put back (Decision 7): that text, and what is typed after it, goes to the next view once. Absent:
@@ -1351,6 +1358,13 @@ export function ChatView({
     ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "", ...(chat.live.tools ? { tools: chat.live.tools } : {}) }
     : null;
   const showStart = flow && since === null && !chat.live;
+  // The start view reads from its top (its first topics), not from the end the conversation sticks to; sending
+  // anything sticks to the end again.
+  useLayoutEffect(() => {
+    if (!showStart) return;
+    stick.current = false;
+    if (chatRef.current) chatRef.current.scrollTop = 0;
+  }, [showStart]);
   // The cards on screen, checked once per change of the list, when the window gets focus back, and when the reader
   // finds a document gone: a moved or deleted document's card is struck through.
   const cardKey = useMemo(
@@ -1600,38 +1614,40 @@ export function ChatView({
   return (
     <DocumentContext.Provider value={documentHost}>
       <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
-        {/* The task header's place (UI refresh spec §5.1): what left the top bar, until Task 10 draws the header. */}
         {!slim && (
-          <div className="hh-task-header">
-            {scopeBar?.(blocked())}
-            {/* Without actions there is no flow side: the meter, and so the context panel's button, sits here. */}
-            {!flow && tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} />}
-            <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
-            {surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
-            <span className="hh-spacer" />
-            {sidekick && (
-              <SidekickToggle
-                on={sidekick.settings.on}
-                label={t(sidekick.settings.on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
-                onToggle={() => {
-                  const on = !sidekick.settings.on;
-                  void client.sidekick.set(on ? { on, introSeen: true } : { on }).catch(() => undefined);
-                  setSkOpen(on);
-                }}
-              />
-            )}
-            <button
-              onClick={() => {
-                // One panel at a time: Escape closes the one on screen.
-                setNotesPanel(null);
-                setTimelineFile(null);
-                setContextOpen(false);
-                setShowHistory(true);
-              }}
-            >
-              {t("history.title")}
-            </button>
-          </div>
+          <TaskHeader
+            title={title ?? taskLabel ?? (startView?.title ? t(startView.title, { ns: "harness" }) : t("rail.tasks"))}
+            leading={scopeBar?.(blocked())}
+            meters={
+              <>
+                {/* The context panel's one button. In flow mode the flow side draws the ring, so the pill is text only. */}
+                {tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} pill ring={!flow} />}
+                <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+              </>
+            }
+            sidekick={
+              sidekick && (
+                <SidekickToggle
+                  on={sidekick.settings.on}
+                  label={t(sidekick.settings.on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
+                  onToggle={() => {
+                    const on = !sidekick.settings.on;
+                    void client.sidekick.set(on ? { on, introSeen: true } : { on }).catch(() => undefined);
+                    setSkOpen(on);
+                  }}
+                />
+              )
+            }
+            chips={surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
+            onHistory={() => {
+              // One panel at a time: Escape closes the one on screen.
+              setNotesPanel(null);
+              setTimelineFile(null);
+              setContextOpen(false);
+              setShowHistory(true);
+            }}
+            {...(onNewTask ? { onNewTask } : {})}
+          />
         )}
         <div
           className={`hh-body${(reader || contextOpen) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
@@ -1650,7 +1666,6 @@ export function ChatView({
               }}
               material={material}
               {...(pluginsSection ? { plugins: pluginsSection } : {})}
-              {...(tasks.current ? { onContext: openContext } : {})}
             />
           )}
           {/* Without actions there is no flow side panel: the material panel (and the Plugins section) get one of their own. */}
@@ -1693,7 +1708,7 @@ export function ChatView({
                 onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
               />
             )}
-            <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
+            <section className="hh-chat hh-card hh-conversation" aria-label={t("chat.conversation")} ref={chatRef} onScroll={onScroll}>
               {loadFailed && (
                 <p className="hh-error" role="alert">
                   {t("chat.loadError")}
@@ -1711,6 +1726,7 @@ export function ChatView({
               )}
               {showStart && !slim && (
                 <StartView
+                  key={state.harness.id}
                   state={state}
                   tasks={tasks}
                   copy={startView}
@@ -1992,7 +2008,10 @@ export function ChatView({
                         {t("sidekick.composer.review")}
                       </button>
                     )}
-                    <button type="submit">{t("chat.send")}</button>
+                    <span className="hh-caption hh-composer-send-hint">{t("chat.enterToSend")}</span>
+                    <button type="submit" className="hh-cta">
+                      {t("chat.send")}
+                    </button>
                   </>
                 )}
               </form>

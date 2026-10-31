@@ -106,9 +106,9 @@ async function focusTask(page: Page, label: string) {
 }
 /** The start view's topic `label`. */
 const topic = (page: Page, label: string) => page.getByRole("region", { name: "Where do we start?" }).getByRole("button", { name: new RegExp(label) });
-/** "New task" in the strip over the chat: the start view. */
+/** "New task" in the task header: the start view. */
 async function newTask(page: Page) {
-  await page.getByRole("group", { name: "Task on screen" }).getByRole("button", { name: "New task" }).click();
+  await page.locator("header.hh-task-head").getByRole("button", { name: "New task" }).click();
   await expect(page.getByRole("region", { name: "Where do we start?" })).toBeVisible();
 }
 const userLines = (page: Page) => page.getByRole("main").locator('[data-role="user"]');

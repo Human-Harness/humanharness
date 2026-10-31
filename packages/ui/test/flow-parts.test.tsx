@@ -75,6 +75,44 @@ describe("FlowSide", () => {
   });
 });
 
+describe("FlowSide in the soft-cards look (UI refresh spec §5.1)", () => {
+  it("marks done steps with a green Done tag and the current one with an orange Now tag, and counts them", async () => {
+    const s = state();
+    s.actions.blocks = { label: "Blocks", cost: "medium" };
+    s.path = ["manifest", "engines", "turn", "blocks"];
+    const tasks: TaskView = { current: { id: "t1", action: "turn", status: "waiting" }, actions: { manifest: "done", engines: "done" }, notes: [] };
+    await renderIn("en", <FlowSide state={s} tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    const steps = screen.getByRole("list", { name: "Guided path" });
+    expect(screen.getByText("2 / 4")).toBeTruthy();
+    expect(within(within(steps).getByRole("button", { name: /A turn/ })).getByText("Now").className).toContain("hh-tag-orange");
+    expect(within(within(steps).getByRole("button", { name: /Engines/ })).getByText("Done").className).toContain("hh-tag-green");
+    expect(within(within(steps).getByRole("button", { name: /Blocks/ })).queryByText(/Now|Done/)).toBeNull();
+    // aria-current says "Now" to screen readers: the current step keeps its plain name.
+    expect(within(steps).getByRole("button", { name: "A turn" }).getAttribute("aria-current")).toBe("step");
+  });
+
+  it("idle, the step the path suggests is Up next, not Now: nothing is under way", async () => {
+    await renderIn("en", <FlowSide state={state()} tasks={idle({ manifest: "done" })} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    const engines = within(screen.getByRole("list", { name: "Guided path" })).getByRole("button", { name: "Engines" });
+    expect(engines.getAttribute("aria-current")).toBe("step");
+    expect(within(engines).getByText("Up next").className).toContain("hh-tag-orange");
+    expect(within(engines).queryByText("Now")).toBeNull();
+    // A free question runs: still nothing on the path is under way.
+    cleanup();
+    await renderIn("en", <FlowSide state={state()} tasks={{ ...idle({ manifest: "done" }), current: { id: "q", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    expect(screen.queryByText("Now")).toBeNull();
+  });
+});
+
+describe("ContextMeter as a text pill (UI refresh spec §5.1, flow mode)", () => {
+  it("without its ring it is still the panel's button with the readout, and adds no second meter", async () => {
+    await renderIn("en", <ContextMeter used={84_000} cap={200_000} onOpen={() => {}} pill ring={false} />);
+    const pill = screen.getByRole("button", { name: "What the AI takes into account", description: "Context in use: 42%, 84,000 of 200,000 tokens" });
+    expect(pill.textContent).toContain("Context 42%");
+    expect(screen.queryByRole("meter")).toBeNull();
+  });
+});
+
 describe("ContextMeter", () => {
   it("renders nothing without a cap and keeps its percent within 0..100", async () => {
     const { unmount } = await renderIn("en", <ContextMeter used={10} cap={0} />);

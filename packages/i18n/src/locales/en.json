@@ -1,6 +1,22 @@
 {
   "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
   "inbox": { "title": "Inbox", "pill": "Inbox, {{count}} waiting" },
+  "task": { "header": { "new": "New task" } },
+  "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },
+  "start": {
+    "view": {
+      "label": "View",
+      "cards": "Cards",
+      "list": "List",
+      "path": "Guided path",
+      "topics": "Topics",
+      "done": "{{done}} / {{total}} done",
+      "askNow": "Or ask straight away",
+      "upNext": "Up next",
+      "toDo": "To do",
+      "doneTag": "Done"
+    }
+  },
   "home": {
     "start": "Start {{name}}",
     "settings": "Settings",
@@ -256,6 +272,8 @@
   "chat": {
     "placeholder": "Write a message…",
     "send": "Send",
+    "enterToSend": "⏎ to send",
+    "conversation": "Conversation",
     "stop": "Stop",
     "working": "Working…",
     "showDetail": "Show details",
@@ -277,6 +295,8 @@
     "startIntro": "Pick a topic, or ask a question below.",
     "faq": "Frequent questions",
     "seen": "Done",
+    "now": "Now",
+    "count": "{{done}} / {{total}}",
     "nextUp": "Next on the path",
     "unfinished": "Unfinished",
     "unsaved": "No summary",
@@ -1068,6 +1088,7 @@
   },
   "context": {
     "title": "What the AI takes into account",
+    "pill": "Context {{pct}}%",
     "open": "What the AI takes into account",
     "close": "Close",
     "noTask": "No task is open.",

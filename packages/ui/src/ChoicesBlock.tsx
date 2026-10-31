@@ -37,7 +37,8 @@ export function ChoicesBlock({ data, choose, active }: { data: unknown; choose: 
             key={i}
             type="button"
             aria-pressed={picked === i}
-            className={o.next ? "hh-choice next" : "hh-choice"}
+            // The option that moves along the path is the recommended one (UI refresh spec §5.1): options carry no kind.
+            className={o.next ? "hh-choice next hh-choice-recommended" : "hh-choice"}
             disabled={!active || picked !== null}
             onClick={() => {
               // Marked only once sent: a pick waiting for the go-ahead (or refused) leaves every option usable.

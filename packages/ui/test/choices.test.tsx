@@ -54,6 +54,15 @@ describe("ChoicesBlock", () => {
   });
 });
 
+describe("ChoicesBlock in the soft-cards look (UI refresh spec §5.1)", () => {
+  it("outlines the option that moves along the path as the recommended one, and only that one", async () => {
+    await renderIn("en", <ChoicesBlock data={data} choose={() => true} active />);
+    expect(screen.getByRole("button", { name: "Next topic →" }).className).toContain("hh-choice-recommended");
+    expect(screen.getByRole("button", { name: "Go deeper" }).className).not.toContain("hh-choice-recommended");
+    expect(screen.getByRole("button", { name: "Compare" }).className).not.toContain("hh-choice-recommended");
+  });
+});
+
 describe("readOptions", () => {
   it("keeps only well-formed fields", () => {
     expect(readOptions({ options: [{ label: "A", followUp: "", action: 3, next: "yes" }, { label: "B", action: "turn", next: true }] })).toEqual([

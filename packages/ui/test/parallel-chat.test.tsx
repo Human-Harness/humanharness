@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { HarnessClient, ParallelInfo, TaskSummary, TasksState } from "../src/client";
+import { TaskStrip } from "../src/parallel/TaskStrip";
 import { FakeClient } from "./fake-client";
+import { renderIn } from "./render";
 
 afterEach(cleanup);
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -100,7 +102,9 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     expect(within(strip).getByText("Task a")).toBeTruthy();
     expect(within(strip).getByText("Drafting")).toBeTruthy();
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    fireEvent.click(within(strip).getByRole("button", { name: "New task" }));
+    // New task lives in the task header only (UI refresh spec §5.1).
+    expect(within(strip).queryByRole("button", { name: "New task" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("heading", { level: 1 }).closest("header")!).getByRole("button", { name: "New task" }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith(null));
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
   });
@@ -137,5 +141,34 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     act(() => c.tasks.set(tasksOf("b", "a", "b")));
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
     expect(box().value).toBe("Draft the intro");
+  });
+});
+
+describe("task tabs (UI refresh spec §5.1)", () => {
+  it("TaskStrip is a tab per open task; a waiting one carries a dot named for screen readers", async () => {
+    const onFocus = vi.fn();
+    const c = client(true);
+    const tasks: TasksState = {
+      tasks: [summary("a", { label: "The turn", focused: true, state: "running" }), summary("b", { label: "Engines", state: "waiting" })],
+      caps: { tasks: 2, jobs: 1 },
+    };
+    await renderIn("en", <TaskStrip state={c.state} tasks={tasks} onFocus={onFocus} />);
+    const tabs = screen.getByRole("tablist", { name: "Open tasks" });
+    expect(within(tabs).getByRole("tab", { name: "The turn" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }).getAttribute("aria-selected")).toBe("false");
+    fireEvent.click(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }));
+    expect(onFocus).toHaveBeenCalledWith("b");
+    // The tab on screen asks nothing.
+    fireEvent.click(within(tabs).getByRole("tab", { name: "The turn" }));
+    expect(onFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it("a tab click in the app asks main to focus that task, and the chat follows main", async () => {
+    const c = client(true, tasksOf("a", "a", "b"));
+    const load = vi.spyOn(c, "loadChat");
+    await open(c);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(await screen.findByRole("tablist", { name: "Open tasks" })).getByRole("tab", { name: "Task b, waiting for you" }));
+    await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith("b"));
   });
 });

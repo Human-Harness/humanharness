@@ -190,8 +190,13 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-shell > .hh-rail { width: 76px; }
 .hh-shell-main { min-width: 0; min-height: 0; display: flex; }
 .hh-shell-main > .hh-app { flex: 1; min-width: 0; height: 100%; grid-template-rows: auto minmax(0, 1fr); }
-/* What left the top bar, above the chat until the task header is drawn (spec §5.1): compact, so the reader keeps its height. */
-.hh-task-header { box-sizing: border-box; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 20px; border-bottom: 1px solid var(--hh-line); }
+/* The task header (spec §5.1): what left the top bar, next to the work it is about. */
+.hh-task-head { box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; padding: 12px 20px; border-bottom: 1px solid var(--hh-line); }
+.hh-task-head-text { display: grid; gap: 2px; margin-right: auto; min-width: 0; }
+.hh-task-title { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.5px; overflow-wrap: anywhere; }
+.hh-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-line-strong); }
+[aria-pressed="true"] > .hh-dot, .hh-sk-toggle[data-on="true"] > .hh-dot { background: var(--hh-t-green-ink); }
+.hh-task-head .hh-ctxp-meter.hh-pill { height: 40px; padding: 0 14px; border: 1px solid var(--hh-line); border-radius: 11px; background: var(--hh-surface); }
 /* The top bar's profile avatar (spec §4.1): the switcher opens under it. */
 .hh-avatar-menu { position: relative; display: flex; }
 .hh-avatar.hh-avatar-button { width: 40px; height: 40px; padding: 0; border: 0; font-size: 15px; }
@@ -790,8 +795,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-bg); }
 .hh-sk-rail button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .hh-sk-rail .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
-.hh-sk-toggle .hh-sk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--hh-ink); margin-right: 6px; }
-.hh-sk-toggle[data-on="true"] .hh-sk-dot { background: var(--hh-ink); }
 .hh-sk-composer-hint { color: var(--hh-muted); font-size: 0.85rem; margin: 4px 0 0; }
 /* The composer field over its underline backdrop: same box metrics as `.hh-composer textarea` (1px border + 8px padding). */
 .hh-sk-flagged { position: relative; flex: 1; display: flex; border-radius: 8px; background: var(--hh-surface); }

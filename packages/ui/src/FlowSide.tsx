@@ -8,7 +8,8 @@ import { shownLanguage } from "./language";
  * A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). With
  * `onOpen`, a button that opens the context panel (context-panel spec §5.1).
  */
-export function ContextMeter({ used, cap, onOpen }: { used: number; cap: number; onOpen?: () => void }) {
+/** `pill`: the task header's "Context n%" pill (UI refresh spec §5.1); without it, the ring alone (the flow side). */
+export function ContextMeter({ used, cap, onOpen, pill }: { used: number; cap: number; onOpen?: () => void; pill?: boolean }) {
   const { t, i18n } = useTranslation();
   const readoutId = useId();
   if (!(cap > 0)) return null;
@@ -34,8 +35,9 @@ export function ContextMeter({ used, cap, onOpen }: { used: number; cap: number;
   if (!onOpen) return ring;
   // A button's content is presentational: the meter's readout reaches screen readers as the button's description.
   return (
-    <button type="button" className="hh-ctxp-meter" aria-label={t("context.open")} aria-describedby={readoutId} onClick={onOpen}>
+    <button type="button" className={pill ? "hh-ctxp-meter hh-pill" : "hh-ctxp-meter"} aria-label={t("context.open")} aria-describedby={readoutId} onClick={onOpen}>
       {ring}
+      {pill && t("context.pill", { pct })}
       <span id={readoutId} className="hh-sr-only">
         {t("models.contextReadout", { pct, used: fmt(used), cap: fmt(cap) })}
       </span>

@@ -1,6 +1,7 @@
 {
   "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
   "inbox": { "title": "Inbox", "pill": "Inbox, {{count}} waiting" },
+  "task": { "header": { "new": "New task", "topic": "Topic {{n}} of {{total}} · started {{ago}}" } },
   "home": {
     "start": "Start {{name}}",
     "settings": "Settings",
@@ -1068,6 +1069,7 @@
   },
   "context": {
     "title": "What the AI takes into account",
+    "pill": "Context {{pct}}%",
     "open": "What the AI takes into account",
     "close": "Close",
     "noTask": "No task is open.",

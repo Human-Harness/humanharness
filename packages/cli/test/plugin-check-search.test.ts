@@ -22,4 +22,22 @@ describe("plugin check: search-panel (search spec §7)", () => {
   it("is quiet with a panel", () => {
     expect(searchFindings(manifest([{ id: "main", title: "Main" }]))).toEqual([]);
   });
+
+  it("warns once per searchable collection", () => {
+    const m = parsePluginManifest({
+      id: "mini",
+      name: "Mini",
+      version: "0.1.0",
+      api: 1,
+      harness: "*",
+      permissions: {},
+      data: {
+        items: { key: "id", agent: "read", schema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } }, required: ["id"] }, search: { title: "title" } },
+        notes: { key: "id", agent: "read", schema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } }, required: ["id"] }, search: { title: "title" } },
+      },
+      panels: [],
+    });
+    const found = searchFindings(m);
+    expect(found.map((f) => f.message)).toEqual([expect.stringContaining('"items"'), expect.stringContaining('"notes"')]);
+  });
 });

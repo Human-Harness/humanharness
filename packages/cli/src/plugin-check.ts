@@ -124,8 +124,9 @@ export function searchFindings(m: PluginManifest): PluginFinding[] {
   const names = Object.entries(m.data)
     .filter(([, c]) => c.search)
     .map(([name]) => name);
-  if (names.length === 0 || m.panels.length > 0) return [];
-  return [warning("search-panel", `${names.map((n) => `"${n}"`).join(", ")} ${names.length === 1 ? "is" : "are"} searchable but the plugin has no panel: a found record would open nowhere. Add a panel, or drop search.`, PLUGIN_JSON)];
+  if (m.panels.length > 0) return [];
+  // One per collection, as the harness check's search-data.
+  return names.map((n) => warning("search-panel", `"${n}" is searchable but the plugin has no panel: its records would open nowhere. Add a panel, or drop its search.`, PLUGIN_JSON));
 }
 
 function manifestFindings(m: PluginManifest): PluginFinding[] {

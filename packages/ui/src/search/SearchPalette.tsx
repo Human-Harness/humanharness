@@ -115,27 +115,35 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
   const optionId = (i: number) => `${ids}-o${i}`;
   const typed = query.trim() !== "";
 
+  // Every key handled here stops here: a modal under the palette (the Settings sheet's document listener traps Tab)
+  // never sees it. React's own listener sits below the document, so stopping the synthetic event is enough.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       onClose();
-    } else if (e.key === "Tab") trapTab(e, dialogRef.current);
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    } else if (e.key === "Tab") {
+      e.stopPropagation();
+      trapTab(e, dialogRef.current);
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
+      e.stopPropagation();
       setActive((i) => step(i, e.key === "ArrowDown" ? 1 : -1, rows.length));
     } else if (e.key === "Enter" && isMod(e)) {
       e.preventDefault();
+      e.stopPropagation();
       const text = questionText(query, rows, t);
       if (text) onAsk(text);
     } else if (e.key === "Enter" && e.target === inputRef.current) {
       // Enter on a chip or a toggle presses it; only the input's Enter opens the active row.
       e.preventDefault();
+      e.stopPropagation();
       if (rows[active]) onPick(rows[active]);
     } else if (isMod(e) && /^[1-7]$/.test(e.key)) {
       const chip = chips[Number(e.key) - 1];
       if (chip) {
         e.preventDefault();
+        e.stopPropagation();
         setKind(chip.kind);
       }
     }

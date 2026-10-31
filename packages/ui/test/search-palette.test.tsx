@@ -101,6 +101,26 @@ describe("SearchPalette (§5)", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("the keys it handles stay in the palette: a modal under it (the Settings sheet's document listener) never sees them", async () => {
+    const heard: string[] = [];
+    const sheet = (e: KeyboardEvent) => heard.push(e.key);
+    document.addEventListener("keydown", sheet);
+    try {
+      const { dialog, input, onPick } = await show();
+      await typeIn(dialog, input, "context");
+      for (const key of ["Tab", "ArrowDown", "ArrowUp", "Enter"]) fireEvent.keyDown(input, { key });
+      fireEvent.keyDown(input, { key: "Enter", ...MOD });
+      fireEvent.keyDown(input, { key: "2", ...MOD });
+      expect(onPick).toHaveBeenCalled();
+      expect(heard).toEqual([]);
+      // What the palette doesn't handle still reaches the page.
+      fireEvent.keyDown(input, { key: "a" });
+      expect(heard).toEqual(["a"]);
+    } finally {
+      document.removeEventListener("keydown", sheet);
+    }
+  });
+
   it("says when search isn't ready, and when nothing matched", async () => {
     const { client, dialog, input } = await show();
     client.searchAnswers.x = { ok: false, reason: "not-ready" };

@@ -150,9 +150,12 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   /** A row's action took its button away: focus goes to its section's heading (or "Add…" when the section goes too). */
   const focusOn = (el: { current: HTMLElement | null }) => () => (el.current ?? addRef.current)?.focus();
 
+  // The drawer's header (UI refresh spec §5.7), on a panel that stays docked beside the chat like the reader.
   const head = (
-    <div className="hh-ctxp-head">
-      <h2>{t("context.title")}</h2>
+    <div className="hh-drawer-head hh-ctxp-head">
+      <div className="hh-drawer-titles">
+        <h2>{t("context.title")}</h2>
+      </div>
       {onClose && (
         <button type="button" className="hh-icon-button" aria-label={t("context.close")} onClick={onClose}>
           <CloseIcon />

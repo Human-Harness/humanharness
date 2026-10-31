@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CloseIcon } from "./chrome";
 import type { HarnessClient, TimelineEntry } from "./client";
+import { Drawer } from "./Drawer";
 import { EntryDiff } from "./EntryDiff";
 import { FileTimeline } from "./FileTimeline";
 import { trapTab } from "./focus";
@@ -14,22 +14,18 @@ import { trapTab } from "./focus";
 export function FileTimelinePanel({ client, path, busy = false, onClose }: { client: HarnessClient; path: string; busy?: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const [picked, setPicked] = useState<TimelineEntry | null>(null);
-  const panel = useRef<HTMLElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  /** What had focus when the panel opened: it gets focus back when the panel closes. */
-  const opener = useRef<HTMLElement | null>(null);
+  const body = useRef<HTMLDivElement>(null);
+  /** What had focus when the panel opened (read before the drawer takes focus): it gets focus back when the panel closes. */
+  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   /** The entry button that opened the diff: it gets focus back once the list shows again. */
   const from = useRef<HTMLElement | null>(null);
   const refocus = useRef(false);
   useEffect(() => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeRef.current?.focus();
-  }, []);
-  useEffect(() => {
     if (picked || !refocus.current) return;
     refocus.current = false;
     const back = from.current;
-    (back?.isConnected ? back : closeRef.current)?.focus();
+    // Without the entry, the drawer's Close.
+    (back?.isConnected ? back : body.current?.closest<HTMLElement>("[role=dialog]")?.querySelector<HTMLElement>(".hh-drawer-head button"))?.focus();
   }, [picked]);
   const close = () => {
     const back = opener.current;
@@ -46,31 +42,27 @@ export function FileTimelinePanel({ client, path, busy = false, onClose }: { cli
   };
   const title = t("timeline.panelTitle", { file: path });
   return (
-    <aside
-      ref={panel}
-      className="hh-timeline-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
+    <Drawer
+      title={title}
+      wide
+      focusClose
+      onClose={close}
       onKeyDown={(e) => {
-        if (e.key === "Tab" && panel.current) trapTab(panel.current, e.nativeEvent);
-        // Handled here, it is marked: focus mode's window listener does not also leave.
-        if (e.key !== "Escape" || e.defaultPrevented) return;
+        if (e.key === "Tab") trapTab(e.currentTarget, e.nativeEvent);
+        // In a diff, Escape goes back to the list; the drawer closes on the next one. Marked handled, so neither the
+        // drawer nor focus mode's window listener also acts on it.
+        if (e.key !== "Escape" || e.defaultPrevented || !picked) return;
         e.preventDefault();
-        if (picked) leaveDiff();
-        else close();
+        e.stopPropagation();
+        leaveDiff();
       }}
     >
-      <header className="hh-timeline-panel-head">
-        <h2>{title}</h2>
-        <button ref={closeRef} type="button" className="hh-icon-button" aria-label={t("timeline.close")} onClick={close}>
-          <CloseIcon />
-        </button>
-      </header>
-      {picked && <EntryDiff client={client} path={path} entry={picked} busy={busy} backLabel={t("timeline.backToList")} onBack={leaveDiff} />}
-      <div hidden={picked !== null}>
-        <FileTimeline client={client} path={path} selected={picked?.to} onPick={pick} />
+      <div ref={body} className="hh-timeline-panel">
+        {picked && <EntryDiff client={client} path={path} entry={picked} busy={busy} backLabel={t("timeline.backToList")} onBack={leaveDiff} />}
+        <div hidden={picked !== null}>
+          <FileTimeline client={client} path={path} selected={picked?.to} onPick={pick} />
+        </div>
       </div>
-    </aside>
+    </Drawer>
   );
 }

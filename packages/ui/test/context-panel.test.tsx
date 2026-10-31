@@ -249,3 +249,13 @@ describe("ContextPanel (context-panel spec §5.1)", () => {
     expect(await screen.findByText("No task is open.")).toBeTruthy();
   });
 });
+
+describe("the context panel's frame (UI refresh spec §5.7)", () => {
+  it("wears the drawer's header but stays docked beside the chat: a region, not a modal", async () => {
+    const { panel } = await show();
+    expect(panel.getAttribute("aria-modal")).toBeNull();
+    const head = panel.querySelector(".hh-drawer-head");
+    expect(head?.querySelector("h2")?.textContent).toBe("What the AI takes into account");
+    expect(within(head as HTMLElement).getByRole("button", { name: "Close" })).toBeTruthy();
+  });
+});

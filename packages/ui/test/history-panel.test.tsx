@@ -444,3 +444,36 @@ describe("context changes in the history (context-panel spec §4.2)", () => {
     expect(entryLabel("Context: pinned docs/conv.md")).toEqual({ key: "history.entry.context", values: { change: "pinned docs/conv.md" } });
   });
 });
+
+describe("the History drawer (UI refresh spec §5.7)", () => {
+  it("is a drawer with the go-back subtitle and an All / Tasks / Outside a task filter", async () => {
+    await open();
+    await screen.findByRole("button", { name: /Plan the week/ });
+    const drawer = screen.getByRole("dialog", { name: "History" });
+    expect(drawer.classList.contains("hh-drawer")).toBe(true);
+    expect(within(drawer).getByText("Go back to any point: your files return to how they were then.")).toBeTruthy();
+    const filter = within(drawer).getByRole("group", { name: "Which turns to show" });
+    expect(within(filter).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(filter).getByRole("button", { name: "Outside tasks" }));
+    expect(screen.queryByRole("button", { name: /Plan the week/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /A question/ })).toBeNull();
+    expect(screen.getByText("No changes").className).toContain("hh-tag-gray");
+    fireEvent.click(within(filter).getByRole("button", { name: "Tasks" }));
+    expect(screen.getByRole("button", { name: /Plan the week/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Outside a task.*0 files changed/ })).toBeNull();
+    fireEvent.click(within(filter).getByRole("button", { name: "All" }));
+    expect(screen.getByRole("button", { name: /Outside a task.*0 files changed/ })).toBeTruthy();
+  });
+
+  it("makes each task a card with its status tags, and gives each point a dot, green where the AI finished", async () => {
+    await open({ currentTask: "t2" });
+    const row = await screen.findByRole("button", { name: /Plan the week/ });
+    expect(row.closest("li")?.classList.contains("hh-card")).toBe(true);
+    expect(screen.getByText("In progress").className).toContain("hh-tag-blue");
+    expect(screen.getByText("Note saved").className).toContain("hh-tag-green");
+    const points = screen.getByRole("list", { name: "Points in this task" });
+    const dots = [...points.querySelectorAll(".hh-history-dot")];
+    expect(dots).toHaveLength(3);
+    expect(dots.map((d) => d.classList.contains("green"))).toEqual([false, true, false]);
+  });
+});

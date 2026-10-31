@@ -102,3 +102,28 @@ describe("NotesPanel", () => {
     expect((screen.getByRole("button", { name: "Pick this topic up again" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe("the Notes drawer (UI refresh spec §5.7)", () => {
+  it("titles itself What's clear so far, counts topics, and gives each note a card, its key points and two actions", async () => {
+    await renderIn("en", <NotesPanel notes={notes} disabled={false} onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
+    const panel = screen.getByRole("dialog", { name: "What's clear so far" });
+    expect(panel.classList.contains("hh-drawer")).toBe(true);
+    expect(within(panel).getByText("2 topics summarized")).toBeTruthy();
+    expect(within(panel).getByText("2 key points").className).toContain("hh-tag-blue");
+    expect(within(panel).getByText("1 key point").className).toContain("hh-tag-blue");
+    expect(within(panel).getByText("2 key points").closest("li")?.classList.contains("hh-card")).toBe(true);
+    // The line saying what notes are for comes first, where they are kept last.
+    const why = within(panel).getByText("The next question starts from your summaries instead of re-reading the code.");
+    const where = within(panel).getByText(/is summarized in \.harness\/notes\//);
+    const cards = panel.querySelector(".hh-note-cards")!;
+    expect(why.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(where.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Pick this topic up again" }).classList.contains("hh-pill")).toBe(true);
+    expect(within(panel).getByRole("button", { name: "Open the file" }).classList.contains("hh-pill")).toBe(true);
+  });
+
+  it("says one topic in the singular", async () => {
+    await renderIn("en", <NotesPanel notes={notes.slice(0, 1)} disabled={false} onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
+    expect(screen.getByText("1 topic summarized")).toBeTruthy();
+  });
+});

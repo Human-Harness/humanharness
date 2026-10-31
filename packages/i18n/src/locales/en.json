@@ -517,12 +517,13 @@
   },
   "notes": {
     "title": "What's clear so far",
-    "close": "Close",
     "resume": "Pick this topic up again",
     "open": "Open the file",
     "openFailed": "I couldn't open that file.",
     "keyPoints_one": "{{count}} key point",
     "keyPoints_other": "{{count}} key points",
+    "count_one": "{{count}} topic summarized",
+    "count_other": "{{count}} topics summarized",
     "empty": "No summaries yet. Each topic you close leaves one here.",
     "savings": "The next question starts from your summaries instead of re-reading the code.",
     "footer": "Each topic you finish is summarized in .harness/notes/ inside your folder, so it stays when you change engines or come back another day.",
@@ -543,6 +544,13 @@
     "appScope": "App-wide",
     "title": "History",
     "intro": "Go back to any point: your files return to how they were then.",
+    "filter": {
+      "label": "Which turns to show",
+      "all": "All",
+      "tasks": "Tasks",
+      "outside": "Outside tasks"
+    },
+    "noChanges": "No changes",
     "restore": "Go back here",
     "emptyTitle": "Nothing to go back to yet",
     "empty": "Each time the AI changes your files, a point shows here so you can undo it.",
@@ -552,7 +560,6 @@
     "noteSaved": "Note saved",
     "inProgress": "In progress",
     "points": "Points in this task",
-    "close": "Close",
     "confirmFolderTitle": "Go back the whole folder to this point?",
     "confirmFolder": "Files changed after it will be undone.",
     "restored": "I went back to that point. Files changed after it were undone.",
@@ -1102,8 +1109,7 @@
       "unsafe": "I couldn't write the file safely, so nothing changed.",
       "other": "I couldn't go back to that version. Try again in a moment."
     },
-    "panelTitle": "History of {{file}}",
-    "close": "Close"
+    "panelTitle": "History of {{file}}"
   },
   "goBack": {
     "yes": "Go back",

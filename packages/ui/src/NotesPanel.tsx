@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Tag } from "./chrome";
 import type { NoteView } from "./client";
+import { Drawer } from "./Drawer";
 import { shownLanguage } from "./language";
 
 /** "What's clear so far": the notes of `.harness/notes/`, one opened at a time. */
@@ -24,9 +26,8 @@ export function NotesPanel({
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState<string | undefined>(expanded ?? notes[0]?.slug);
   const [failed, setFailed] = useState(false);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  /** What had focus when the panel opened: it gets focus back when the panel closes. */
-  const opener = useRef<HTMLElement | null>(null);
+  /** What had focus when the panel opened (read before the drawer takes focus): it gets focus back when the panel closes. */
+  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   // Reads only refs, so the Escape listener added on the first render can call it.
@@ -36,8 +37,7 @@ export function NotesPanel({
     if (back?.isConnected) back.focus();
   };
   useEffect(() => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeRef.current?.focus();
+    // The drawer hears an Escape inside it; this one hears it anywhere else (focus left on the page).
     const onKey = (e: KeyboardEvent) => {
       // A dialog above it (the pre-flight question) handled this Escape itself. Handling it here marks it too, so
       // focus mode's window listener does not also leave.
@@ -66,63 +66,58 @@ export function NotesPanel({
   };
 
   return (
-    <aside className="hh-notes" role="dialog" aria-modal="true" aria-labelledby="hh-notes-title">
-      <header>
-        <h2 id="hh-notes-title">{t("notes.title")}</h2>
-        <button ref={closeRef} type="button" onClick={close}>
-          {t("notes.close")}
-        </button>
-      </header>
-      {failed && (
-        <p role="alert" className="hh-warn">
-          {t("notes.openFailed")}
-        </p>
-      )}
-      {notes.length === 0 ? (
-        <p className="hh-caption">{t("notes.empty")}</p>
-      ) : (
-        <ul className="hh-rows hh-note-cards">
-          {notes.map((n) => {
-            const isOpen = n.slug === open;
-            return (
-              <li key={n.slug} className={isOpen ? "hh-note open" : "hh-note"}>
-                {/* The same button in both states, so focus stays on it when the note opens or closes. */}
-                <button type="button" className="hh-note-toggle" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? undefined : n.slug)}>
-                  <span className="hh-note-head">
-                    <strong>{n.title}</strong>
-                    <time className="hh-caption">{when(n.date)}</time>
-                  </span>
-                  {!isOpen && (
-                    <span className="hh-caption">
-                      {t("notes.keyPoints", { count: n.summary.length })} · <code>{n.path}</code>
+    <Drawer title={t("notes.title")} subtitle={notes.length > 0 ? t("notes.count", { count: notes.length }) : undefined} focusClose onClose={close}>
+      <div className="hh-notes">
+        <p className="hh-notes-savings">{t("notes.savings")}</p>
+        {failed && (
+          <p role="alert" className="hh-warn">
+            {t("notes.openFailed")}
+          </p>
+        )}
+        {notes.length === 0 ? (
+          <p className="hh-caption">{t("notes.empty")}</p>
+        ) : (
+          <ul className="hh-note-cards">
+            {notes.map((n) => {
+              const isOpen = n.slug === open;
+              return (
+                <li key={n.slug} className={isOpen ? "hh-card hh-note open" : "hh-card hh-note"}>
+                  {/* The same button in both states, so focus stays on it when the note opens or closes. */}
+                  <button type="button" className="hh-note-toggle" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? undefined : n.slug)}>
+                    <span className="hh-note-head">
+                      <strong>{n.title}</strong>
+                      <time className="hh-caption">{when(n.date)}</time>
                     </span>
+                    <span className="hh-note-meta">
+                      <Tag tone="blue">{t("notes.keyPoints", { count: n.summary.length })}</Tag>
+                      {!isOpen && <code className="hh-caption">{n.path}</code>}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <>
+                      <ul>
+                        {n.summary.map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                      <code className="hh-caption">{n.path}</code>
+                      <div className="hh-note-actions">
+                        <button type="button" className="hh-pill" disabled={disabled} onClick={() => onResume(n)}>
+                          {t("notes.resume")}
+                        </button>
+                        <button type="button" className="hh-pill" onClick={() => openFile(n.path)}>
+                          {t("notes.open")}
+                        </button>
+                      </div>
+                    </>
                   )}
-                </button>
-                {isOpen && (
-                  <>
-                    <ul>
-                      {n.summary.map((s, i) => (
-                        <li key={i}>{s}</li>
-                      ))}
-                    </ul>
-                    <code className="hh-caption">{n.path}</code>
-                    <div className="hh-note-actions">
-                      <button type="button" disabled={disabled} onClick={() => onResume(n)}>
-                        {t("notes.resume")}
-                      </button>
-                      <button type="button" onClick={() => openFile(n.path)}>
-                        {t("notes.open")}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <p className="hh-notes-savings">{t("notes.savings")}</p>
-      <p className="hh-caption">{t("notes.footer")}</p>
-    </aside>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="hh-caption">{t("notes.footer")}</p>
+      </div>
+    </Drawer>
   );
 }

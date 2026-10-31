@@ -33,16 +33,23 @@ async function readIgnore(dir: string): Promise<string | null> {
   return fs.readFile(file, "utf8").catch(() => null);
 }
 
+/** `dir` is the home folder or holds it (/, /Users): walking it would reach the dot-folders. Without case. */
+function holdsHome(dir: string, home: string): boolean {
+  const rel = path.relative(path.resolve(dir).toLowerCase(), path.resolve(home).toLowerCase());
+  return rel === "" || (rel.split(path.sep)[0] !== ".." && !path.isAbsolute(rel));
+}
+
 /**
- * Whether `root` may be walked at all: never the home folder, nor a dot-folder in it or inside one (~/.claude,
- * ~/.codex, ~/.ssh, ~/.config/opencode, ~/.local/share/opencode...), also when `root` is a link to one (§8.1).
- * The folder and the references are checked before they get here; this is the walk's own fail-closed check.
+ * `root`'s real path when it may be walked at all; null otherwise: never the home folder or a folder holding it, nor a
+ * dot-folder in it or inside one (~/.claude, ~/.codex, ~/.ssh, ~/.config/opencode, ~/.local/share/opencode...), also
+ * when `root` is a link to one (§8.1). The folder and the references are checked before they get here; this is the
+ * walk's own fail-closed check. The reads that follow use this real path, never one resolved again.
  */
-async function rootAllowed(root: string, home: string = os.homedir()): Promise<boolean> {
+async function rootAllowed(root: string, home: string = os.homedir()): Promise<string | null> {
   const real = await fs.realpath(root).catch(() => null);
-  if (!real) return false;
+  if (!real) return null;
   const realHome = await fs.realpath(home).catch(() => home);
-  return !homeOrDotFolder(real, realHome);
+  return homeOrDotFolder(real, realHome) || holdsHome(real, realHome) ? null : real;
 }
 
 /** `ignore` throws on a path it doesn't take (`./x`, `/x`); such a path counts as ignored (fail closed). */
@@ -54,10 +61,11 @@ function isIgnored(ig: GitIgnore, rel: string, isDir: boolean): boolean {
   }
 }
 
-/** Every file under `root` that may be indexed, in name order, without following any link. */
-export async function walkRoot(root: string, o: WalkOptions): Promise<{ entries: WalkEntry[]; truncated: boolean }> {
+/** Every file under `root` that may be indexed, in name order, without following any link. `real`: as checked; null when refused. */
+export async function walkRoot(root: string, o: WalkOptions): Promise<{ entries: WalkEntry[]; truncated: boolean; real: string | null }> {
   const entries: WalkEntry[] = [];
-  if (!(await rootAllowed(root, o.home))) return { entries, truncated: false };
+  const real = await rootAllowed(root, o.home);
+  if (!real) return { entries, truncated: false, real };
   const ig = new GitIgnore();
   const rootIgnore = await readIgnore(root);
   if (rootIgnore !== null) ig.add("", rootIgnore);
@@ -99,15 +107,20 @@ export async function walkRoot(root: string, o: WalkOptions): Promise<{ entries:
     }
   };
   await walk("");
-  return { entries, truncated };
+  return { entries, truncated, real };
 }
 
 /**
  * A commit's paths (relative to `root`): those still there and allowed come back as entries, the rest as `missing`
  * (their documents leave the index). Each folder's `.gitignore` above a path is read once.
  */
-export async function statPaths(root: string, rels: readonly string[], o: { extraDenied?: readonly string[]; home?: string }): Promise<{ entries: WalkEntry[]; missing: string[] }> {
-  if (!(await rootAllowed(root, o.home))) return { entries: [], missing: [...rels] };
+export async function statPaths(
+  root: string,
+  rels: readonly string[],
+  o: { extraDenied?: readonly string[]; home?: string },
+): Promise<{ entries: WalkEntry[]; missing: string[]; real: string | null }> {
+  const real = await rootAllowed(root, o.home);
+  if (!real) return { entries: [], missing: [...rels], real };
   const ig = new GitIgnore();
   const rootIgnore = await readIgnore(root);
   if (rootIgnore !== null) ig.add("", rootIgnore);
@@ -136,5 +149,5 @@ export async function statPaths(root: string, rels: readonly string[], o: { extr
     }
     entries.push({ rel, size: st.isFile() ? st.size : 0, mtimeMs: st.mtimeMs, link: st.isSymbolicLink() });
   }
-  return { entries, missing };
+  return { entries, missing, real };
 }

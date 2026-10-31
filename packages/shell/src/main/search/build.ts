@@ -86,14 +86,19 @@ async function chatFiles(base: string): Promise<string[]> {
   return out.sort();
 }
 
-async function indexChats(base: string, known: Record<string, ChatMeta>, post: (m: BuildMessage) => void, progress: { done: number; total: number }): Promise<Record<string, ChatMeta>> {
+async function indexChats(
+  base: string,
+  realBase: string | null,
+  known: Record<string, ChatMeta>,
+  post: (m: BuildMessage) => void,
+  progress: { done: number; total: number },
+): Promise<Record<string, ChatMeta>> {
   const out: Record<string, ChatMeta> = {};
   const files = await chatFiles(base);
   const gone = Object.keys(known)
     .filter((f) => !files.includes(f))
     .flatMap((f) => known[f].ids);
   if (gone.length) post({ type: "removed", ids: gone });
-  const realBase = await fs.realpath(base).catch(() => null);
   if (!realBase) return out;
   for (const rel of files) {
     const prev = known[rel];
@@ -114,8 +119,11 @@ export async function build(job: BuildJob, post: (m: BuildMessage) => void): Pro
   const removed: string[] = [];
   let truncated: boolean | undefined;
   const folder = job.roots[0];
+  // Each root's real path as the walk checked it (rootAllowed): the reads below stay inside that one.
+  const realRoots = new Map<string, string | null>();
   if (job.only) {
-    const { entries, missing } = await statPaths(folder.path, job.only, { extraDenied: job.extraDenied ?? [] });
+    const { entries, missing, real } = await statPaths(folder.path, job.only, { extraDenied: job.extraDenied ?? [] });
+    realRoots.set(folder.key, real);
     for (const e of entries) seen.push({ root: folder, e });
     for (const rel of missing) {
       const key = fileKey(folder.key, rel);
@@ -133,6 +141,7 @@ export async function build(job: BuildJob, post: (m: BuildMessage) => void): Pro
       }
       const isFolder = root.key === FOLDER_ROOT;
       const w = await walkRoot(root.path, { max: left, extraDenied: isFolder ? (job.extraDenied ?? []) : [], skipDirs: isFolder ? [CHATS_DIR.slice(0, -1)] : [] });
+      realRoots.set(root.key, w.real);
       truncated ||= w.truncated;
       left -= w.entries.length;
       for (const e of w.entries) {
@@ -165,8 +174,6 @@ export async function build(job: BuildJob, post: (m: BuildMessage) => void): Pro
   const candidates = changed.filter(({ e }) => !e.link && e.size <= limits.textBytes).map(({ root, e }) => ({ key: fileKey(root.key, e.rel), size: e.size }));
   const over = overTextBudget(candidates, Math.max(0, limits.totalText - kept));
 
-  const realRoots = new Map<string, string | null>();
-  for (const root of job.roots) realRoots.set(root.key, await fs.realpath(root.path).catch(() => null));
   let done = 0;
   let batch: SearchDoc[] = [];
   const unsafe: string[] = [];
@@ -190,6 +197,6 @@ export async function build(job: BuildJob, post: (m: BuildMessage) => void): Pro
   flush();
   if (unsafe.length) post({ type: "removed", ids: unsafe });
 
-  const chats = job.only ? { ...job.chats } : await indexChats(folder.path, job.chats, post, { done, total: changed.length });
+  const chats = job.only ? { ...job.chats } : await indexChats(folder.path, realRoots.get(folder.key) ?? null, job.chats, post, { done, total: changed.length });
   post({ type: "done", files, chats, ...(truncated === undefined ? {} : { truncated }) });
 }

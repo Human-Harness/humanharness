@@ -115,4 +115,23 @@ describe("walkRoot, fail closed", () => {
     expect((await statPaths(path.join(home, ".claude"), ["settings.json"], { home })).entries).toEqual([]);
     expect((await walkRoot(path.join(home, "work"), { max: 1000, home })).entries.map((e) => e.rel)).toEqual(["a.md"]);
   });
+  it("never walks a folder that holds the home folder (/, /Users), nor a link to one", async () => {
+    const home = path.join(root, "Users", "me");
+    put("Users/me/.claude/settings.json", "SECRET");
+    put("Users/shared.md");
+    fs.symlinkSync(path.join(root, "Users"), path.join(outside, "users-link"));
+    for (const r of [root, path.join(root, "Users"), path.join(outside, "users-link")]) {
+      expect((await walkRoot(r, { max: 1000, home })).entries).toEqual([]);
+      expect((await statPaths(r, ["shared.md"], { home })).entries).toEqual([]);
+    }
+  });
+
+  it("gives back the real path it checked, for the reads that follow", async () => {
+    put("a.md");
+    fs.symlinkSync(root, path.join(outside, "root-link"));
+    const w = await walkRoot(path.join(outside, "root-link"), { max: 1000, home: path.join(outside, "home") });
+    expect(w.real).toBe(fs.realpathSync(root));
+    expect((await statPaths(root, ["a.md"], { home: path.join(outside, "home") })).real).toBe(fs.realpathSync(root));
+    expect((await walkRoot(path.join(outside, "missing"), { max: 1000 })).real).toBeNull();
+  });
 });

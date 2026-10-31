@@ -174,6 +174,10 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-spacer { flex: 1; }
 .hh-icon-button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--hh-muted); }
 .hh-icon-button:hover { background: var(--hh-surface-2); color: var(--hh-ink); }
+/* Icon rail (UI refresh spec §4.2): a column on the left, a row under the top bar on narrow windows. */
+.hh-rail { flex: 0 0 76px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0; background: var(--hh-rail); border-right: 1px solid var(--hh-line); }
+.hh-rail-item[aria-current="page"] { background: var(--hh-active); color: var(--hh-active-ink); }
+@media (max-width: 760px) { .hh-rail { flex-direction: row; flex-basis: auto; padding: 10px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--hh-line); } .hh-rail .hh-spacer { display: none; } }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-surface-2); }
 .hh-segmented button { height: 24px; border: none; background: transparent; border-radius: 5px; }
 .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: 0 1px 2px rgba(25, 30, 36, 0.15); }

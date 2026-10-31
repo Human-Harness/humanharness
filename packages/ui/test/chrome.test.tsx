@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CheckIcon, EngineIcon, GearIcon, HHLogo, LockIcon, NoteIcon, Segmented, Tag, TopBar } from "../src/chrome";
+import { CheckIcon, EngineIcon, GearIcon, HHLogo, LockIcon, NoteIcon, Rail, Segmented, Tag, TopBar } from "../src/chrome";
+import { renderIn } from "./render";
 
 afterEach(cleanup);
 
@@ -67,5 +68,15 @@ describe("chrome", () => {
   it("Tag colours a state by its meaning", () => {
     render(<Tag tone="orange">Waiting for you</Tag>);
     expect(screen.getByText("Waiting for you").className).toBe("hh-tag hh-tag-orange");
+  });
+
+  it("Rail labels each entry, marks the current one and reports picks", async () => {
+    const onPick = vi.fn();
+    await renderIn("en", <Rail entries={["home", "tasks", "inbox", "settings"]} current="tasks" onPick={onPick} />);
+    const nav = screen.getByRole("navigation", { name: "App" });
+    expect(within(nav).getByRole("button", { name: "Tasks" }).getAttribute("aria-current")).toBe("page");
+    expect(within(nav).getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBeNull();
+    fireEvent.click(within(nav).getByRole("button", { name: "Inbox" }));
+    expect(onPick).toHaveBeenCalledWith("inbox");
   });
 });

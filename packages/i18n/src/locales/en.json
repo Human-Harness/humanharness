@@ -1,4 +1,5 @@
 {
+  "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
   "home": {
     "start": "Start {{name}}",
     "settings": "Settings",

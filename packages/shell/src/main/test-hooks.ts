@@ -27,6 +27,8 @@ export interface TestHooks {
   pluginFixtures?: boolean;
   /** Keys are stored with a reversible test crypto, never the Keychain (HH_TEST_FAKE_SECRETS=1: e2e; tools S6). */
   fakeSecrets?: boolean;
+  /** The window opens inactive (no focus steal) and the Dock icon is hidden (HH_TEST_BACKGROUND=1: e2e runs in the background). */
+  background?: boolean;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -34,7 +36,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /**
  * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR,
  * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1"), HH_TEST_MINUTE_MS (a time-box minute in ms), HH_PLUGIN_DIRS (absolute
- * plugin folders, `path.delimiter`-separated), HH_TEST_PLUGIN_RUN_LIMIT_MS, HH_PLUGIN_FIXTURES ("1"), HH_TEST_FAKE_SECRETS ("1") and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
+ * plugin folders, `path.delimiter`-separated), HH_TEST_PLUGIN_RUN_LIMIT_MS, HH_PLUGIN_FIXTURES ("1"), HH_TEST_FAKE_SECRETS ("1"), HH_TEST_BACKGROUND ("1") and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
  * can be passed this way.
  */
 export function readTestHooks(env: Record<string, string | undefined>, packaged: boolean): TestHooks {
@@ -56,6 +58,7 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   if (env.HH_TEST_PLUGIN_RUN_LIMIT_MS && Number.isInteger(runLimit) && runLimit >= 100 && runLimit <= 600_000) hooks.pluginRunLimitMs = runLimit;
   if (env.HH_PLUGIN_FIXTURES === "1") hooks.pluginFixtures = true;
   if (env.HH_TEST_FAKE_SECRETS === "1") hooks.fakeSecrets = true;
+  if (env.HH_TEST_BACKGROUND === "1") hooks.background = true;
   let raw: unknown;
   try {
     raw = env.HH_TEST_ENGINES ? JSON.parse(env.HH_TEST_ENGINES) : undefined;

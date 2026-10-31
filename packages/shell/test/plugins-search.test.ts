@@ -75,4 +75,18 @@ describe("PluginsController search (search spec D4, §7)", () => {
     const [other] = await (await running({ data: { items: { ...ITEMS, search: { title: "body", text: "title" } } } })).ctl.searchSources();
     expect(other.stamp).not.toBe(plain.stamp);
   });
+
+  it("search only peeks at the base the plugins run in: another base gives null and never stops them", async () => {
+    const t = await running({});
+    await t.store.put("items", { key: "a", title: "Groceries", body: "milk" });
+    t.setBase(`${t.base}-other`);
+    expect(await t.ctl.searchSources(`${t.base}-other`)).toBeNull();
+    expect(await t.ctl.searchRows("notes", "items", `${t.base}-other`)).toBeNull();
+    expect((await t.ctl.searchSources(t.base))?.map((s) => s.id)).toEqual(["plugin:notes/items"]);
+    expect(await t.ctl.searchSources()).toHaveLength(1);
+    expect(await t.ctl.searchRows("notes", "items", t.base)).toEqual([{ key: "a", title: "Groceries", text: "milk", at: expect.any(Number) }]);
+    // Still running: a detach (what asking for the base does once it changed) would stop it and serve nothing.
+    expect(t.ctl.panelHost("notes")).not.toBeNull();
+  });
 });
+

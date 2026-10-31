@@ -1261,10 +1261,15 @@ export class PluginsController {
   /**
    * Global search (search spec D4): each running plugin's searchable collections. The stamp follows the collection file
    * and its meta file, the declaration (`sourceStamp`), and the panel a record opens in (the declared one, else the first).
+   * A read-only peek: it never asks for the base (which would stop the plugins of a base that changed), it reads the
+   * context the plugins run in. With `base`: null unless they run in that base (keep what the index has).
    */
-  async searchSources(): Promise<DataSource[]> {
-    const c = await this.base();
-    if (!c) return [];
+  async searchSources(): Promise<DataSource[]>;
+  async searchSources(base: string): Promise<DataSource[] | null>;
+  async searchSources(base?: string): Promise<DataSource[] | null> {
+    if (!this.active) return [];
+    const c = this.searchCtx(base);
+    if (!c) return base === undefined ? [] : null;
     const out: DataSource[] = [];
     for (const r of this.running.values()) {
       if (r.stopped) continue;
@@ -1295,13 +1300,25 @@ export class PluginsController {
     return out;
   }
 
-  /** A running plugin's searchable collection as search rows (`recordRows`: the §8.2 checks, the caps); anything else: none. */
-  async searchRows(plugin: string, collection: string): Promise<DataRow[]> {
+  /**
+   * A running plugin's searchable collection as search rows (`recordRows`: the §8.2 checks, the caps); anything else:
+   * none. With `base`: null unless the plugins run in that base.
+   */
+  async searchRows(plugin: string, collection: string): Promise<DataRow[]>;
+  async searchRows(plugin: string, collection: string, base: string): Promise<DataRow[] | null>;
+  async searchRows(plugin: string, collection: string, base?: string): Promise<DataRow[] | null> {
+    if (base !== undefined && !this.searchCtx(base)) return null;
     const r = typeof plugin === "string" && !this.detached ? this.running.get(plugin) : undefined;
     const col = r && !r.stopped && Object.hasOwn(r.entry.manifest.data, collection) ? r.entry.manifest.data[collection] : undefined;
     if (!r || !col?.search) return [];
     const [records, changed] = await Promise.all([r.data.readAll(collection), r.data.changedAt(collection)]);
     return recordRows(records, { ...(col.key ? { key: col.key } : {}), single: col.single, search: col.search }, changed);
+  }
+
+  /** Search's peek at the context the plugins run in (`base`: only that one); never sets it, never detaches. */
+  private searchCtx(base?: string): BaseCtx | null {
+    const c = this.detached ? null : this.ctx;
+    return c && (base === undefined || c.base === base) ? c : null;
   }
 
   /** The dev watcher's (Task 9): the plugin's frames remount. */

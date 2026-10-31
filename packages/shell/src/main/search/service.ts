@@ -55,11 +55,13 @@ export interface SearchReference {
 
 /**
  * Searchable collections (D4), read through main's stores. `rows` gives a collection's records as `recordRows` maps
- * them (key checked, text capped, one row per key). Absent (tests of plan 1): no data documents.
+ * them (key checked, text capped, one row per key). Absent (tests of plan 1): no data documents. Both read `base`
+ * only, the live index's: null (that base isn't the active one any more, or the list is unknown now) keeps what the
+ * index has, so no index ever takes another base's records.
  */
 export interface SearchDataDeps {
-  sources(): Promise<DataSource[]>;
-  rows(source: DataSource): Promise<DataRow[]>;
+  sources(base: string): Promise<DataSource[] | null>;
+  rows(source: DataSource, base: string): Promise<DataRow[] | null>;
 }
 
 export interface SearchServiceDeps {
@@ -82,6 +84,8 @@ export interface SearchServiceDeps {
   data?: SearchDataDeps;
   /** Tests: the cap on data documents (MAX_DATA_DOCS). */
   maxDataDocs?: number;
+  /** A burst of `dataChanged` within this wait is one refresh, at its end; absent: none (each one refreshes). */
+  dataDelayMs?: number;
   now?: () => number;
   storeDelayMs?: number;
   limits?: BuildLimits;
@@ -110,6 +114,8 @@ interface Live {
   dataAgain: boolean;
   /** Sources whose last read failed: at which stamp, when, and how long until the next try. */
   dataFailed: Map<string, { stamp: string; at: number; wait: number }>;
+  /** The list of sources failed last time: logged once until it works again. */
+  sourcesFailed: boolean;
 }
 
 /** A source cut short by the cap: its stamp with the room it had, so the same room and stamp read nothing again. */
@@ -146,6 +152,9 @@ export class SearchService {
   private opening: { base: string; live: Promise<Live> } | null = null;
   /** A base being swapped out, its store still flushing: a discard of that base goes to this store. */
   private closing: { base: string; store: IndexStore } | null = null;
+
+  /** A burst of data changes waiting for `dataDelayMs` to pass; `done` settles once it ran or was dropped. */
+  private dataTimer: { timer: ReturnType<typeof setTimeout>; done: Promise<void>; fire: () => void } | null = null;
 
   constructor(private readonly d: SearchServiceDeps) {}
 
@@ -200,6 +209,7 @@ export class SearchService {
       dataPass: null,
       dataAgain: false,
       dataFailed: new Map(),
+      sourcesFailed: false,
     };
     this.live = live;
     if (index) {
@@ -382,13 +392,15 @@ export class SearchService {
    */
   private async syncData(live: Live): Promise<void> {
     const data = this.d.data!;
-    const sources = await data.sources().catch((err: unknown) => {
-      console.error("Could not list the searchable collections", err instanceof Error ? err.message : "unknown error");
+    const sources = await data.sources(live.base).catch((err: unknown) => {
+      if (!live.sourcesFailed) console.error("Could not list the searchable collections", err instanceof Error ? err.message : "unknown error");
+      live.sourcesFailed = true;
       return null;
     });
     if (this.live !== live) return;
     live.dataAt = this.now();
     if (!sources) return;
+    live.sourcesFailed = false;
     const scoped = this.d.scoped();
     const next: Record<string, DataMeta> = {};
     let room = this.d.maxDataDocs ?? MAX_DATA_DOCS;
@@ -411,7 +423,7 @@ export class SearchService {
       const rows =
         again && this.now() - again.at < again.wait
           ? null
-          : await data.rows(s).catch((err: unknown) => {
+          : await data.rows(s, live.base).catch((err: unknown) => {
               if (!again) console.error("Could not read a searchable collection", err instanceof Error ? err.message : "unknown error");
               live.dataFailed.set(s.id, { stamp: s.stamp, at: this.now(), wait: again ? Math.min(again.wait * 2, MAX_RECONCILE_WAIT_MS) : DATA_RETRY_MS });
               return null;
@@ -460,7 +472,7 @@ export class SearchService {
       const { source, key, ...rest } = hit.data;
       let rows = rowsOf.get(source);
       if (!rows) {
-        rows = data.rows({ ...rest, id: source, stamp: "" }).catch(() => null);
+        rows = data.rows({ ...rest, id: source, stamp: "" }, live.base).catch(() => null);
         rowsOf.set(source, rows);
       }
       const row = (await rows)?.find((r) => recordKeyText(r.key) === recordKeyText(key));
@@ -566,11 +578,37 @@ export class SearchService {
     if (paths === null || paths.some((p) => p.replaceAll("\\", "/").startsWith(".harness/data/"))) this.dataChanged();
   }
 
-  /** A searchable collection changed (a write, a plugin run, a plugin on or off). Nothing until search was opened (D0). */
+  /**
+   * A searchable collection changed (a write, a plugin run, a plugin on or off). Nothing until search was opened (D0).
+   * With `dataDelayMs`, the changes until it passes are one refresh at its end (not pushed back by each new one).
+   */
   dataChanged(): void {
-    const live = this.live;
-    if (!live || !this.d.data) return;
-    void this.refreshData(live);
+    if (!this.live || !this.d.data) return;
+    const delay = this.d.dataDelayMs ?? 0;
+    if (delay <= 0) {
+      void this.refreshData(this.live);
+      return;
+    }
+    if (this.dataTimer) return;
+    let fire!: () => void;
+    const done = new Promise<void>((resolve) => (fire = resolve));
+    const timer = setTimeout(() => {
+      this.dataTimer = null;
+      // The index live now: one swapped in meanwhile is the one to refresh (refreshData reads only its own base).
+      if (this.live) void this.refreshData(this.live);
+      fire();
+    }, delay);
+    timer.unref?.();
+    this.dataTimer = { timer, done, fire };
+  }
+
+  /** A burst still waiting is dropped (a quit, a discarded index): the next load reads the stamps again anyway. */
+  private dropDataTimer(): void {
+    const t = this.dataTimer;
+    if (!t) return;
+    this.dataTimer = null;
+    clearTimeout(t.timer);
+    t.fire();
   }
 
   /** Settles once no build and no data refresh runs (tests, and a measured build). */
@@ -578,7 +616,9 @@ export class SearchService {
     for (let i = 0; i < 100; i++) {
       const b = this.live?.building;
       const r = this.live?.dataRun;
-      if (!b && !r) return;
+      const w = this.dataTimer?.done;
+      if (!b && !r && !w) return;
+      if (w) await w;
       if (b) await b.done;
       if (r) await r;
       await new Promise((resolve) => setImmediate(resolve));
@@ -587,6 +627,7 @@ export class SearchService {
 
   /** On quit (§4.1 "once more on quit"): the build stops, the snapshot is written. */
   async flush(): Promise<void> {
+    this.dropDataTimer();
     const live = this.live;
     if (!live) return;
     live.building?.stop();

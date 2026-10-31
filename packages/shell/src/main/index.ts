@@ -23,7 +23,7 @@ import {
 } from "electron";
 import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { type DataRow, type DataSource, type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
+import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import {
   type BackendInit,
   DEFAULT_LANGUAGE,
@@ -151,7 +151,7 @@ import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, te
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, pinnedBudget, resolveProfile, tierSpec } from "./models";
 import { ContextService } from "./context";
-import { harnessRows, harnessSources } from "./search/data-sources";
+import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
 import { searchHandlers } from "./search/ipc";
 import { workerBuild } from "./search/runner";
 import { SearchService } from "./search/service";
@@ -445,6 +445,8 @@ let taskAttention: TaskAttention | null = null;
 const notifications = new Set<Notification>();
 /** The plugins inbox's badge as last sent: board mode's Dock badge adds it. */
 let pluginBadge = 0;
+/** The plugins that run, with their versions (`runningPlugins`): search reads their collections again when it changes. */
+let pluginsOn = "";
 /** The job × scopes whose last run needs the person (part 3): the Dock badge adds them. 0 without jobs (D0). */
 let jobBadge = 0;
 /**
@@ -843,7 +845,7 @@ function dataStoreFor(base: string): DataStore {
       off: store.onChange((change) => {
         sendToWindow("hh:dataChange", change);
         // Search (D0): a no-op until the palette first opened; then a searchable collection is read again.
-        searchSvc.dataChanged();
+        if (searchableCollection(dataCollections(harness), change.collection)) searchSvc.dataChanged();
         if (change.collection === SETTINGS_COLLECTION) void settingsCtl?.changed();
         // Profiles: the registry copies the record's name and colour (spec §4), whoever wrote it. Never rejects.
         if (change.collection === PROFILE_COLLECTION) void profilesCtl?.sync(path.resolve(base));
@@ -2488,26 +2490,15 @@ async function searchMemory(): Promise<SearchDoc[]> {
   return [...actions, ...open, ...past];
 }
 
-/** Global search's collections (search spec D4): the harness's, then each running plugin's. */
-async function searchDataSources(): Promise<DataSource[]> {
-  const c = await validConfig();
-  if (!c) return [];
-  const base = baseOf(c);
-  const own = await harnessSources({
-    base,
-    collections: dataCollections(harness),
-    scoped: scoped(),
-    scopes: async () => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
-  });
-  const plugins = (await pluginsCtl?.searchSources().catch(() => [])) ?? [];
-  return [...own, ...plugins];
-}
-
-async function searchDataRows(s: DataSource): Promise<DataRow[]> {
-  if (s.owner === "plugin") return s.plugin && pluginsCtl ? pluginsCtl.searchRows(s.plugin, s.collection) : [];
-  const c = await validConfig();
-  return c ? harnessRows(dataStoreFor(baseOf(c)), dataCollections(harness), s) : [];
-}
+/** Global search's collections (search spec D4): the harness's, then each running plugin's, of the live index's base only. */
+const searchDataDeps = searchData({
+  current: () => currentBase(),
+  collections: () => dataCollections(harness),
+  scoped,
+  scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
+  store: (base) => dataStoreFor(base),
+  plugins: () => pluginsCtl ?? null,
+});
 
 /** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
 const searchSvc = new SearchService({
@@ -2533,7 +2524,9 @@ const searchSvc = new SearchService({
   status: (s) => sendToWindow("hh:searchStatus", s),
   runner: workerBuild({ entry: path.join(here, "search-worker.js") }),
   reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
-  data: { sources: () => searchDataSources(), rows: (s) => searchDataRows(s) },
+  data: searchDataDeps,
+  // A burst of writes (an import, a plugin run) is one refresh.
+  dataDelayMs: 500,
 });
 
 /** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
@@ -3536,8 +3529,11 @@ if (loaded) {
         : { watch: (dir: string, onChange: (name: string | null) => void) => watchPluginFolder(dir, onChange, (err) => pluginLog(`Stopped watching ${dir}`, err)) }),
       changed: (view) => {
         sendToWindow("hh:plugins", view);
-        // A plugin on, off, added or removed: its searchable records come or go (search spec §7). D0 inside.
-        searchSvc.dataChanged();
+        // A plugin on, off, added or removed: its searchable records come or go (search spec §7). D0 inside. Any
+        // other change (a sync time, an error) leaves them as they are.
+        const on = runningPlugins(view);
+        if (on !== pluginsOn) searchSvc.dataChanged();
+        pluginsOn = on;
       },
       attentionChanged: (view) => {
         sendToWindow("hh:attention", view);

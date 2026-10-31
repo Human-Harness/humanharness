@@ -17,27 +17,53 @@ const ratio = (a: string, b: string) => {
 };
 
 describe("design tokens", () => {
-  it("uses the spec's light palette", () => {
-    expect(["paper", "sheet", "surface", "ink", "slate", "muted", "line-strong", "line", "segment", "ok", "warn"].map((n) => token(light, n))).toEqual([
-      "#f4f4f1", "#fbfbfa", "#ffffff", "#191e24", "#3f4852", "#5b636c", "#cfcfcb", "#e1e1dd", "#e7e7e3", "#2e6b4f", "#9a4a12",
-    ]);
+  const LIGHT: Record<string, string> = {
+    bg: "#f3f3f1", rail: "#fbfbfa", column: "#f8f8f6", surface: "#ffffff", "surface-2": "#f2f2ef",
+    line: "#e7e7e3", "line-strong": "#d9d9d4", ink: "#1b1c1e", muted: "#62656b", faint: "#8a8d93",
+    cta: "#fbd38d", "cta-ink": "#3b2a06", "cta-hover": "#f8c76e", active: "#fde6b3", "active-ink": "#7a4f00",
+    logo: "#1b1c1e", "logo-ink": "#ffffff",
+    "t-green": "#dff2e5", "t-green-ink": "#1d6e3f", "t-orange": "#fdebd7", "t-orange-ink": "#a94f08",
+    "t-blue": "#e4ecfd", "t-blue-ink": "#2d55c4", "t-violet": "#ece6fb", "t-violet-ink": "#5f3dba",
+    "t-red": "#fbe4e1", "t-red-ink": "#a3321f",
+  };
+  const DARK: Record<string, string> = {
+    bg: "#121315", rail: "#16171a", column: "#17181b", surface: "#1e2024", "surface-2": "#26292e",
+    line: "#2a2d32", "line-strong": "#383c42", ink: "#eceef0", muted: "#a3a8ae", faint: "#80858c",
+    cta: "#f3c56a", "cta-ink": "#2a1d02", "cta-hover": "#f7d184", active: "#3a2e14", "active-ink": "#f3c56a",
+    logo: "#eceef0", "logo-ink": "#121315",
+    "t-green": "#17311f", "t-green-ink": "#8bd8a8", "t-orange": "#3a2715", "t-orange-ink": "#f4b47e",
+    "t-blue": "#1c2944", "t-blue-ink": "#a3beff", "t-violet": "#29223f", "t-violet-ink": "#c6b4ff",
+    "t-red": "#3b1d19", "t-red-ink": "#f3a497",
+  };
+  const TAGS = ["green", "orange", "blue", "violet", "red"];
+
+  it("uses the UI refresh palette in light and dark (spec §3.1)", () => {
+    for (const [name, hex] of Object.entries(LIGHT)) expect(token(light, name), name).toBe(hex);
+    for (const [name, hex] of Object.entries(DARK)) expect(token(dark, name), name).toBe(hex);
   });
 
-  it("keeps text readable in light and dark: muted, ok and warn ≥ 4.5:1, ink ≥ 7:1", () => {
+  it("keeps text readable: ink ≥ 7:1 and muted ≥ 4.5:1 on every ground, each tag ink ≥ 4.5:1 on its fill", () => {
     for (const block of [light, dark]) {
-      for (const bg of ["paper", "sheet", "surface"]) {
-        for (const fg of ["muted", "ok", "warn", "slate"]) expect(ratio(token(block, fg), token(block, bg))).toBeGreaterThanOrEqual(4.5);
-        expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(7);
+      for (const bg of ["bg", "rail", "column", "surface", "surface-2"]) {
+        expect(ratio(token(block, "ink"), token(block, bg)), `ink on ${bg}`).toBeGreaterThanOrEqual(7);
+        expect(ratio(token(block, "muted"), token(block, bg)), `muted on ${bg}`).toBeGreaterThanOrEqual(4.5);
       }
-      expect(ratio(token(block, "on-ink"), token(block, "ink"))).toBeGreaterThanOrEqual(7);
+      for (const t of TAGS) expect(ratio(token(block, `t-${t}-ink`), token(block, `t-${t}`)), t).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(token(block, "cta-ink"), token(block, "cta"))).toBeGreaterThanOrEqual(7);
+      expect(ratio(token(block, "active-ink"), token(block, "active"))).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it("drops the renamed tokens (paper, sheet, segment, slate)", () => {
+    for (const old of ["paper", "sheet", "segment", "slate"]) expect(css).not.toMatch(new RegExp(`--hh-${old}:`));
   });
 
   it("defines the diff tokens in light and dark, and keeps the timeline's chips readable (file-timeline spec §6.1)", () => {
     for (const block of [light, dark]) {
       for (const n of ["diff-ins", "diff-del", "diff-bar-ins", "diff-bar-del"]) expect(token(block, n)).toMatch(/^#/);
-      expect(ratio(token(block, "ok"), token(block, "diff-ins"))).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(token(block, "t-green-ink"), token(block, "diff-ins"))).toBeGreaterThanOrEqual(4.5);
       for (const bg of ["review-question", "review-done"]) expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(4.5);
+      for (const bg of ["review-question", "review-done", "review-comment", "callout-note", "callout-tip", "callout-warning", "callout-summary", "callout-decision", "callout-question"]) expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(4.5);
     }
   });
 });

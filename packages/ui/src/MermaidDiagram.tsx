@@ -8,12 +8,12 @@ function themeVariables(): Record<string, string> {
   const v = (name: string) => s.getPropertyValue(name).trim();
   const vars: Record<string, string> = {
     background: v("--hh-surface"),
-    primaryColor: v("--hh-sheet"),
+    primaryColor: v("--hh-rail"),
     primaryTextColor: v("--hh-ink"),
-    primaryBorderColor: v("--hh-slate"),
-    secondaryColor: v("--hh-segment"),
-    tertiaryColor: v("--hh-paper"),
-    lineColor: v("--hh-slate"),
+    primaryBorderColor: v("--hh-muted"),
+    secondaryColor: v("--hh-surface-2"),
+    tertiaryColor: v("--hh-bg"),
+    lineColor: v("--hh-muted"),
     textColor: v("--hh-ink"),
     fontFamily: v("--hh-font"),
   };

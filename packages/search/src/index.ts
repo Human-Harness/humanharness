@@ -7,3 +7,5 @@ export * from "./secrets";
 export * from "./docs";
 export * from "./anchor";
 export * from "./snippet";
+export * from "./query";
+export * from "./live-index";

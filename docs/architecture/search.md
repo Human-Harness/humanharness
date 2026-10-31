@@ -40,7 +40,9 @@ unless the person sends a ⌘Enter question, and that text holds titles and path
   switch) closes the live index, flushing it, and opens the new base's. A folder move discards the old bases' indexes;
   the next ⌘K rebuilds. Deleting a profile discards its folder's index, and so does creating one (profile ids are
   reused names: a new "Tomás" never loads a deleted one's). A discard lets a load under way for that base settle
-  first, and a discarded store writes nothing again (the prefs go through the same write chain as the snapshot).
+  first, and a discarded store writes nothing again (the prefs go through the same write chain as the snapshot). The
+  prefs are read from disk once and then served from memory, each change made on the latest copy, so a change queued
+  behind a long snapshot write is never lost to a stale read; a query that flips "All scopes" doesn't wait for the disk.
 - **The snapshot.** `index.json` (the `MiniSearch` JSON; stored fields only, never the text), `files.json` (the index
   version, per-file size, mtime and how it was indexed, the chats' offsets and ids, the in-memory docs' ids, the
   truncated flag) and `prefs.json` (the recents and the "All scopes" toggle, plan deviation 3). Each is written

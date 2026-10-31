@@ -51,6 +51,7 @@ export class IndexStore {
   private writing: Promise<void> = Promise.resolve();
   /** Once discarded nothing is written again (a caller still holding this store would bring the folder back). */
   private discarded = false;
+  private cachedPrefs: SearchPrefs | null = null;
 
   constructor(
     readonly dir: string,
@@ -112,7 +113,23 @@ export class IndexStore {
     await fs.rm(this.dir, { recursive: true, force: true });
   }
 
+  /** From memory once read or saved: a write queued behind a long snapshot write must not leave a stale copy on disk to read. */
   async prefs(): Promise<SearchPrefs> {
+    if (!this.cachedPrefs) {
+      const read = await this.readPrefs();
+      // A save meanwhile is newer than what the disk had.
+      this.cachedPrefs ??= read;
+    }
+    return { recent: [...this.cachedPrefs.recent], allScopes: this.cachedPrefs.allScopes };
+  }
+
+  /** Reads and changes them with nothing in between, so two changes close together both stay. */
+  async updatePrefs(change: (p: SearchPrefs) => SearchPrefs): Promise<void> {
+    await this.prefs();
+    return this.savePrefs(change(this.cachedPrefs ?? { recent: [], allScopes: false }));
+  }
+
+  private async readPrefs(): Promise<SearchPrefs> {
     try {
       const v: unknown = JSON.parse(await fs.readFile(path.join(this.dir, "prefs.json"), "utf8"));
       if (isObject(v)) {
@@ -125,11 +142,11 @@ export class IndexStore {
     return { recent: [], allScopes: false };
   }
 
-  /** In line with the snapshot's writes, so `discard` waits for it; it still rejects when the write fails. */
+  /** Served from memory at once; on disk in line with the snapshot's writes, so `discard` waits for it; it still rejects when the write fails. */
   savePrefs(p: SearchPrefs): Promise<void> {
-    const write = this.writing.then(() =>
-      this.discarded ? undefined : writeAtomic(path.join(this.dir, "prefs.json"), JSON.stringify({ recent: p.recent.slice(0, MAX_RECENT), allScopes: p.allScopes })),
-    );
+    const next = { recent: p.recent.slice(0, MAX_RECENT), allScopes: p.allScopes };
+    this.cachedPrefs = next;
+    const write = this.writing.then(() => (this.discarded ? undefined : writeAtomic(path.join(this.dir, "prefs.json"), JSON.stringify(next))));
     this.writing = write.catch(() => undefined);
     return write;
   }

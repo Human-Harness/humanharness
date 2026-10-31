@@ -328,7 +328,8 @@ export class SearchService {
     let allScopes = prefs.allScopes;
     if (typeof filters.allScopes === "boolean" && filters.allScopes !== allScopes) {
       allScopes = filters.allScopes;
-      await live.store.savePrefs({ ...prefs, allScopes });
+      // Remembered at once; the answer doesn't wait for the disk (it may be behind a long snapshot write).
+      void live.store.updatePrefs((p) => ({ ...p, allScopes })).catch((err: unknown) => console.error("Could not save the search prefs", err instanceof Error ? err.message : "unknown error"));
     }
     const scoped = this.d.scoped();
     const open = scoped ? await this.d.openScope() : null;
@@ -363,8 +364,7 @@ export class SearchService {
     const live = await this.ensure();
     const stored = live?.index.stored(id);
     if (!live || !stored) return { ok: false };
-    const prefs = await live.store.prefs();
-    await live.store.savePrefs({ ...prefs, recent: [id, ...prefs.recent.filter((r) => r !== id)].slice(0, MAX_RECENT) });
+    await live.store.updatePrefs((p) => ({ ...p, recent: [id, ...p.recent.filter((r) => r !== id)].slice(0, MAX_RECENT) }));
     if (stored.kind === "file" && isRefRoot(stored.root) && !isMarkdown(stored.path)) {
       const ref = (await this.d.references()).find((r) => refRoot(r.id) === stored.root);
       if (!ref) return { ok: false };

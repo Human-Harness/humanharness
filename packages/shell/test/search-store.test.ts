@@ -80,6 +80,16 @@ describe("IndexStore (§4.1)", () => {
     await store.discard();
     expect(fs.existsSync(store.dir)).toBe(false);
   });
+  it("serves the prefs last saved while a snapshot write is still under way (no stale read-modify-write)", async () => {
+    const store = new IndexStore(searchDir(userData, "/w/a"));
+    store.schedule(() => snap({ index: "x".repeat(5_000_000) }));
+    const flushing = store.flush();
+    const saving = store.savePrefs({ recent: ["note:a"], allScopes: true });
+    expect(await store.prefs()).toEqual({ recent: ["note:a"], allScopes: true });
+    await Promise.all([flushing, saving]);
+    expect(await new IndexStore(store.dir).prefs()).toEqual({ recent: ["note:a"], allScopes: true });
+  });
+
   it("the snapshot on disk never holds a skipped secret file's text, nor a note's token line (§8.2)", async () => {
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-search-store-folder-"));
     try {

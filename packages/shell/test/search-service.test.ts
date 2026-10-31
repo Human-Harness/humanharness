@@ -284,6 +284,18 @@ describe("SearchService (§4, §5)", () => {
     expect(await svc.opened({ id: "nope" })).toEqual({ ok: false });
   });
 
+  it("two results opened one right after the other both stay among the recents", async () => {
+    put("a.md", "alpha");
+    put("b.md", "bravo");
+    const { svc } = service();
+    await svc.query("", {});
+    await svc.whenIdle();
+    const a = ok(await svc.query("alpha", {})).groups[0].hits[0];
+    const b = ok(await svc.query("bravo", {})).groups[0].hits[0];
+    await Promise.all([svc.opened(a), svc.opened(b)]);
+    expect(ok(await svc.query("", {})).recent.map((h) => h.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
   it("a reference folder's file: read only, named by its name, shown in Finder by main", async () => {
     const ref = path.join(tmp, "Ref");
     put("spec.pdf.txt", "budget", ref);

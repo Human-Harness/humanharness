@@ -186,8 +186,8 @@ See the plan's "Deviations from the spec" (`docs/superpowers/plans/2026-10-30-gl
   a scoped one in each scope that isn't archived, `main` without scopes) and `plugin:<plugin>/<collection>` for each
   running plugin (`PluginsController.searchSources`). Each source's stamp (`sourceStamp`, `stamp.ts`) is the size and
   mtime of its records file and of its meta file (a store writes the records, then when each changed) plus a hash of
-  its declaration (key, `single`, `search`; `declarationStamp`), and for a plugin the panel a record opens in; a source
-  is read again only when its stamp changed. `recordRows` (`packages/search/src/docs.ts`) turns records into rows: the
+  its declaration (key, `single`, `search`; `declarationStamp`), and for a plugin a hash of its name (each row says
+  "From <plugin>") and the panel a record opens in; a source is read again only when its stamp changed. `recordRows` (`packages/search/src/docs.ts`) turns records into rows: the
   title field (else the key, also when the title is token-shaped), the text fields joined by lines without token-shaped
   ones (a wrapped base64 PEM is left out with its continuation lines) and capped at a file's 1 MB; a record whose key is
   token-shaped is skipped, and so is a key whose text an earlier record already has (`1` and `"1"`: the first wins).
@@ -206,9 +206,10 @@ See the plan's "Deviations from the spec" (`docs/superpowers/plans/2026-10-30-gl
   `client.search.onOpenRecord(collection, (key, scope) => …)`: one stack per collection in the preload, the newest
   listener answers and when it unsubscribes the one under it answers again. None listening: the row's tag says "Shown
   in <harness>" and Enter only closes search. A plugin record opens the plugin's panel (the declared `panel`, else the
-  first) with its key as the panel's focus, only while the plugin still shows that panel; every plugin row is tagged
-  "From <plugin>", and a plugin without panels has target `none` (Enter only closes search). A pick still records the
-  recent. Titles and contexts are each wrapped in `<bdi>`.
+  first) with its key as the panel's focus, only while the plugin still shows that panel (picked away from the work
+  screen, the chat holds it until its first plugin surface read is back, then opens it or drops it); every plugin row
+  is tagged "From <plugin>", and a plugin without panels has target `none` (Enter only closes search). A pick still
+  records the recent. Titles and contexts are each wrapped in `<bdi>`.
 - **Reindex triggers.** The palette opening and at most every 5 s while typing (a query waits only for the pass in
   progress, not for the ones a burst keeps asking for), a `DataStore` write to a searchable collection, a plugin run's
   writes, a plugin turned on, off, added, removed or updated (the running set with versions changed;

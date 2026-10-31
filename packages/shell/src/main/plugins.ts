@@ -1279,12 +1279,13 @@ export class PluginsController {
         const panel = col.search.panel ?? m.panels[0]?.id;
         const dir = pluginDataDir(c.base, m.id);
         const file = `${collectionName(name)}.json`;
-        // As the plugin's DataStore lays them out (`dir`): the records, then `.meta/` with when each changed.
-        const stamp = await sourceStamp([path.join(dir, scopeDir(APP_SCOPE), file), path.join(dir, ".meta", scopeDir(APP_SCOPE), file)], {
-          ...(col.key ? { key: col.key } : {}),
-          single: col.single,
-          search: col.search,
-        });
+        // As the plugin's DataStore lays them out (`dir`): the records, then `.meta/` with when each changed. Its name is
+        // in each document ("From <name>"): a rename builds them again.
+        const stamp = await sourceStamp(
+          [path.join(dir, scopeDir(APP_SCOPE), file), path.join(dir, ".meta", scopeDir(APP_SCOPE), file)],
+          { ...(col.key ? { key: col.key } : {}), single: col.single, search: col.search },
+          m.name,
+        );
         out.push({
           id: `plugin:${m.id}/${name}`,
           owner: "plugin",

@@ -76,6 +76,13 @@ describe("PluginsController search (search spec D4, §7)", () => {
     expect(other.stamp).not.toBe(plain.stamp);
   });
 
+  it("the stamp follows the plugin's name: a renamed plugin's rows say the new name", async () => {
+    const [before] = await (await running({})).ctl.searchSources();
+    const [after] = await (await running({ name: "Notebook" })).ctl.searchSources();
+    expect(after.pluginName).toBe("Notebook");
+    expect(after.stamp).not.toBe(before.stamp);
+  });
+
   it("search only peeks at the base the plugins run in: another base gives null and never stops them", async () => {
     const t = await running({});
     await t.store.put("items", { key: "a", title: "Groceries", body: "milk" });

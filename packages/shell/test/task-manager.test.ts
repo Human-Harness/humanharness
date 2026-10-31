@@ -901,11 +901,11 @@ describe("TaskManager context and checkpoints", () => {
     expect(statuses.at(-1)).toBe("waiting");
   });
 
-  it("a reported compaction, or the context falling by more than half, allows the next checkpoint and is logged", async () => {
+  it("a reported compaction allows the next checkpoint and is logged", async () => {
     const compacted: string[] = [];
     const t = setup({
       profile: standard,
-      script: [[ctx(170_000), ok], [ok], [{ type: "compaction" }, ctx(30_000), ok], [ctx(165_000), ok], [ok], [ctx(60_000), ok]],
+      script: [[ctx(170_000), ok], [ok], [{ type: "compaction" }, ctx(30_000), ok], [ctx(165_000), ok], [ok], [{ type: "compaction" }, ctx(60_000), ok]],
       recordCompaction: (task) => void compacted.push(task.id),
     });
     await t.manager.start("manifest");
@@ -915,6 +915,23 @@ describe("TaskManager context and checkpoints", () => {
     expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "run", "checkpoint", "run"]);
     expect(compacted).toEqual(["t1", "t1"]);
     expect(t.state().current?.context).toEqual({ used: 60_000 });
+  });
+
+  it("the context falling with no reported compaction records none: detecting one is the adapter's job (replaceable parts §7.2)", async () => {
+    const compacted: string[] = [];
+    const t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [ok], [ctx(30_000), ok], [ctx(165_000), ok], [ok]],
+      recordCompaction: (task) => void compacted.push(task.id),
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("one");
+    await t.manager.ask("two");
+    await t.manager.ask("three");
+    // The checkpoint ran once and the drop didn't allow another.
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "run", "run"]);
+    expect(compacted).toEqual([]);
+    expect(t.state().current?.context).toEqual({ used: 165_000 });
   });
 
   it("a checkpoint note doesn't skip the closing turn, and the topic ends done even if closing brings none", async () => {

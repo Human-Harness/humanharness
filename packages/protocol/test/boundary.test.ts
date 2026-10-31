@@ -131,9 +131,7 @@ const TASK_MANAGER = path.join(packages, "shell/src/main/task-manager.ts");
 /** The context numbers a ContextPolicy owns now (replaceable-parts §7.3): task-manager.ts may re-export them, never define them. */
 const POLICY_CONSTANTS = ["CHECKPOINT_AT", "APP_INDEX_TOKENS", "COMPACTED_DROP"];
 /** Named exceptions, each with why. A stale one fails below. */
-const CONSTANT_EXCEPTIONS: Record<string, string> = {
-  COMPACTED_DROP: "plan 4 Task 4 on hold: compaction detection moves to the adapters after Marco decides",
-};
+const CONSTANT_EXCEPTIONS: Record<string, string> = {};
 /** A `const`/`let`/`var` of `name`, or `name` given a number (`name = 0.8`, `name: 0.8`). A re-export or an import is neither. */
 const defines = (text: string, name: string) => new RegExp(`\\b(?:const|let|var)\\s+${name}\\b|\\b${name}\\s*[:=]\\s*[-\\d.]`).test(text);
 /** A numeric literal multiplied, divided or compared with a `cap` (`0.8 * c.cap`, `cap * 0.8`, `cap > 1000`, `1000 <= cap`). */

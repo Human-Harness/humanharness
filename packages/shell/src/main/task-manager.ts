@@ -366,8 +366,6 @@ function indexItem(id: string, kind: "notes-index" | "app-notes-index", label: s
 
 /** Share of the task's cap at which the checkpoint runs (spec D4); `DefaultContextPolicy`'s, kept here for importers. */
 export { CHECKPOINT_AT };
-/** Claude doesn't report compactions: the context falling by more than this share means one happened. */
-const COMPACTED_DROP = 0.5;
 
 /** Where the task's context stands before a follow-up turn, for its context policy (replaceable-parts §7.1). */
 function turnState(c: CurrentTask): TurnState {
@@ -2582,14 +2580,13 @@ export class TaskManager {
   }
 
   /**
-   * Keeps the context in use after a turn. A compaction (reported, or `used` falling by more than half)
+   * Keeps the context in use after a turn. A compaction the engine's adapter reported (replaceable parts §7.2)
    * allows a new checkpoint and is logged (spec §6).
    */
   private async track(id: string, seen: { used?: number; size?: number; compacted?: boolean }): Promise<void> {
     const before = (await this.d.store.load()).current;
     if (before?.id !== id) return;
-    const prev = before.context?.used;
-    const compacted = seen.compacted === true || (prev !== undefined && seen.used !== undefined && seen.used < prev * COMPACTED_DROP);
+    const compacted = seen.compacted === true;
     const context = seen.used !== undefined ? { used: seen.used, ...(seen.size !== undefined ? { size: seen.size } : {}) } : undefined;
     await this.update((s) => {
       if (s.current?.id !== id) return s;

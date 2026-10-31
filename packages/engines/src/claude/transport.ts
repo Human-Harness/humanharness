@@ -4,6 +4,7 @@ import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
+import { ContextDrop } from "../context-drop";
 import { type ActivityKind, type CommonOptions, EDIT_PATH_MAX, type EnginePreset, type Event, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
 import { type ModelProfile, isCap, isEffort, isModelId } from "../models";
 import { absoluteSearchPath } from "../search-path";
@@ -419,7 +420,12 @@ export class StreamJsonReader {
 
 /** Runs one `claude -p` process per turn, resuming the session by id. */
 export class ClaudeCliTransport implements Transport {
-  constructor(private readonly o: CommonOptions) {}
+  /** Claude doesn't report compactions: the context falling by more than half means one happened (spec §7.2). */
+  private readonly drop: ContextDrop;
+
+  constructor(private readonly o: CommonOptions) {
+    this.drop = new ContextDrop(o.session.started ? o.lastContextUsed : undefined);
+  }
 
   private markStarted = (): void => {
     if (this.o.session.started) return;
@@ -438,10 +444,12 @@ export class ClaudeCliTransport implements Transport {
       return;
     }
     const wasResume = this.o.session.started;
+    if (!wasResume) this.drop.reset();
     let last = await this.attempt(message, emit, signal, profile, scope);
     if (wasResume && last.type === "done" && !last.ok && last.error?.detail && NO_CONVERSATION.test(last.error.detail) && !signal.aborted) {
       // The stored session is gone on the CLI side: continue the chat in a fresh one.
       this.o.session = { id: randomUUID(), started: false };
+      this.drop.reset();
       last = await this.attempt(message, emit, signal, profile, scope);
       if (last.type === "done" && last.ok) this.markStarted();
     }
@@ -461,7 +469,9 @@ export class ClaudeCliTransport implements Transport {
       let killTimer: NodeJS.Timeout | undefined;
       let graceTimer: NodeJS.Timeout | undefined;
       const emit = (e: Event) => {
-        if (!finished) rawEmit(e);
+        if (finished) return;
+        if (e.type === "context" && this.drop.next(e.used)) rawEmit({ type: "compaction" });
+        rawEmit(e);
       };
       const finish = (e: Event) => {
         if (finished) return;
@@ -549,6 +559,7 @@ export class ClaudeCliTransport implements Transport {
   /** Claude keeps the old session on its side; the app never resumes it. The next turn uses a new `--session-id`. */
   async endSession(): Promise<void> {
     this.o.session = { id: randomUUID(), started: false };
+    this.drop.reset();
   }
 
   async close(): Promise<void> {}

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type ChatMeta, type FileMeta, INDEX_VERSION } from "@humanharness/search";
+import { type ChatMeta, type DataMeta, type FileMeta, INDEX_VERSION } from "@humanharness/search";
 
 /** §4.1: written at most every 5 s while changes come in, and once more on quit. */
 export const SAVE_EVERY_MS = 5_000;
@@ -20,6 +20,8 @@ export interface Snapshot {
   /** The ids of the documents built in memory (actions, tasks), so a later run can take them out. */
   memory: string[];
   truncated: boolean;
+  /** Each searchable collection's stamp and documents (D4); absent in a snapshot made before any was indexed. */
+  data?: Record<string, DataMeta>;
 }
 
 /** Per profile (plan deviation 3): the last results opened (ids only) and the "All scopes" toggle. */
@@ -32,6 +34,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 const isFileMeta = (v: unknown) => isObject(v) && typeof v.size === "number" && typeof v.mtimeMs === "number" && typeof v.how === "string";
 const isChatMeta = (v: unknown) =>
   isObject(v) && typeof v.size === "number" && Array.isArray(v.ids) && v.ids.every((i) => typeof i === "string") && (v.identity === undefined || typeof v.identity === "string");
+const isDataMeta = (v: unknown) => isObject(v) && typeof v.stamp === "string" && Array.isArray(v.ids) && v.ids.every((i) => typeof i === "string");
 
 async function writeAtomic(file: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -64,8 +67,16 @@ export class IndexStore {
       const meta: unknown = JSON.parse(await fs.readFile(path.join(this.dir, "files.json"), "utf8"));
       if (!isObject(meta) || meta.version !== INDEX_VERSION || !isObject(meta.files) || !isObject(meta.chats) || !Array.isArray(meta.memory)) return null;
       if (!Object.values(meta.files).every(isFileMeta) || !Object.values(meta.chats).every(isChatMeta) || !meta.memory.every((m) => typeof m === "string")) return null;
+      if (meta.data !== undefined && (!isObject(meta.data) || !Object.values(meta.data).every(isDataMeta))) return null;
       const index = await fs.readFile(path.join(this.dir, "index.json"), "utf8");
-      return { index, files: meta.files as Record<string, FileMeta>, chats: meta.chats as Record<string, ChatMeta>, memory: meta.memory as string[], truncated: meta.truncated === true };
+      return {
+        index,
+        files: meta.files as Record<string, FileMeta>,
+        chats: meta.chats as Record<string, ChatMeta>,
+        memory: meta.memory as string[],
+        truncated: meta.truncated === true,
+        ...(isObject(meta.data) ? { data: meta.data as Record<string, DataMeta> } : {}),
+      };
     } catch {
       return null;
     }
@@ -97,7 +108,7 @@ export class IndexStore {
         const s = get();
         // The index first: files.json behind it only makes the next reconcile read a few files again.
         await writeAtomic(path.join(this.dir, "index.json"), s.index);
-        await writeAtomic(path.join(this.dir, "files.json"), JSON.stringify({ version: INDEX_VERSION, files: s.files, chats: s.chats, memory: s.memory, truncated: s.truncated }));
+        await writeAtomic(path.join(this.dir, "files.json"), JSON.stringify({ version: INDEX_VERSION, files: s.files, chats: s.chats, memory: s.memory, truncated: s.truncated, ...(s.data ? { data: s.data } : {}) }));
       })
       .catch((err: unknown) => console.error("Could not save the search index", err instanceof Error ? err.message : "unknown error"));
     return this.writing;

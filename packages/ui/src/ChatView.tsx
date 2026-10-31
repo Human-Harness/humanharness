@@ -1026,6 +1026,12 @@ export function ChatView({
         if (!surfaceCtx) return false;
         openPanel(intent.plugin, intent.panel, intent.focus);
         return true;
+      case "setting":
+        // HarnessApp opens Settings itself; never reaches here.
+        return false;
+      case "command":
+        // No palette offers commands yet (the window's rows come with their table).
+        return false;
     }
   };
   useLayoutEffect(() => {

@@ -1462,7 +1462,7 @@
     "results": "Results",
     "filters": "Filters",
     "all": "All",
-    "kind": { "task": "Tasks", "note": "Notes", "file": "Files", "data": "Data" },
+    "kind": { "task": "Tasks", "note": "Notes", "file": "Files", "data": "Data", "setting": "Settings", "command": "Actions" },
     "recent": "Recent",
     "allScopes": "All {{plural}}",
     "references": "Reference folders",

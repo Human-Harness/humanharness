@@ -2,7 +2,7 @@ import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchIndexKind, SearchMarked, SearchRowKind, SearchStatus } from "../client";
 import { questionText } from "./ask";
-import { type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
+import { type LocalRows, type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
 
 const QUERY_DELAY_MS = 80;
 const MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
@@ -68,6 +68,8 @@ export interface SearchPaletteProps {
   references: boolean;
   /** The harness's name, for a record no view opens: "Shown in <harness>". */
   harnessName?: string;
+  /** The window's own rows for a query (§6): Settings and Actions. Absent: none (plan 1's palette). */
+  local?: (query: string) => LocalRows;
   onClose: () => void;
   onPick: (hit: SearchHitView) => void;
   onAsk: (text: string) => void;
@@ -77,7 +79,7 @@ const INDEX_KINDS: readonly SearchRowKind[] = ["task", "note", "file", "data"];
 const isIndexKind = (k: SearchRowKind): k is SearchIndexKind => INDEX_KINDS.includes(k);
 
 /** The ⌘K palette (search spec §5): a modal dialog with a combobox over a grouped listbox. Asks main; sends nothing. */
-export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, harnessName, onClose, onPick, onAsk }: SearchPaletteProps) {
+export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, harnessName, local, onClose, onPick, onAsk }: SearchPaletteProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(initialQuery);
   const [kind, setKind] = useState<SearchRowKind | null>(null);
@@ -130,9 +132,12 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
     return () => clearTimeout(timer);
   }, [client, query, kind, allScopes, refs, moved]);
 
-  const sections = sectionsOf(answer);
+  // Built for the query main answered, not the one being typed: the groups, the chips and their counts describe one query.
+  // Only main's answer crosses the bridge; these rows stay in the window (plan deviation 1).
+  const localRows = local && answer?.ok ? local(answer.query) : undefined;
+  const sections = sectionsOf(answer, localRows, kind);
   const rows = rowsOf(sections);
-  const chips = chipsOf(answer);
+  const chips = chipsOf(answer, localRows);
   const shownAll = allScopes ?? (answer?.ok ? answer.allScopes : false);
   const optionId = (i: number) => `${ids}-o${i}`;
   const typed = query.trim() !== "";

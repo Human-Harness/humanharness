@@ -1526,8 +1526,12 @@ export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
 export type SearchKind = "task" | "note" | "file";
 /** Every kind the index answers: plan 1's, and opt-in data records (D4). */
 export type SearchIndexKind = SearchKind | "data";
-/** Every kind a result row can be. */
-export type SearchRowKind = SearchIndexKind;
+/** Every kind a result row can be: the index's, and Settings and Actions, which the window builds (§4.2). */
+export type SearchRowKind = SearchIndexKind | "setting" | "command";
+/** The Settings tabs a setting row opens. */
+export type SearchSettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "connections" | "jobs" | "usage";
+/** The app's commands (§6 "Actions"). */
+export type SearchCommandId = "new-question" | "open-history" | "open-notes" | "open-context" | "open-settings" | "switch-scope" | "next-part" | "stop-turn";
 
 /** A title or a line of context: plain runs, the first match `mark`ed (§5.3). Never HTML. */
 export type SearchMarked = { text: string; mark?: true }[];
@@ -1548,6 +1552,10 @@ export type SearchTarget =
   | { kind: "record"; collection: string; key: string | number | null; scope: string }
   /** A plugin record: the plugin's panel, with the record's key as `focus`. */
   | { kind: "panel"; plugin: string; panel: string; focus: string }
+  /** Settings at that tab, the field focused (§6). */
+  | { kind: "setting"; tab: SearchSettingsTab; field: string }
+  /** One of the app's commands; `arg`: the tab, the scope or the part. */
+  | { kind: "command"; command: SearchCommandId; arg?: string }
   /** Nothing opens it (a plugin record whose plugin has no panel). */
   | { kind: "none" };
 

@@ -5,11 +5,37 @@ export interface Section {
   hits: SearchHitView[];
 }
 
-/** §5.2: nothing typed shows the recents; otherwise the groups in the order main sends them (§3). */
-export function sectionsOf(a: SearchAnswer | null): Section[] {
+/** The window's own rows for the query they were built for (§6). */
+export interface LocalRows {
+  query: string;
+  setting: SearchHitView[];
+  command: SearchHitView[];
+}
+
+/** §3's order: Tasks, Notes, Files, Settings, Actions, Data. */
+export const SEARCH_ROW_KINDS: readonly SearchRowKind[] = ["task", "note", "file", "setting", "command", "data"];
+const LOCAL_PER_GROUP = 5;
+const LOCAL_PER_KIND = 50;
+const isLocal = (k: SearchRowKind): k is "setting" | "command" => k === "setting" || k === "command";
+
+/**
+ * §5.2: nothing typed shows the recents (and, with local rows, the available actions after them); otherwise the groups
+ * in §3's order, main's and the window's merged. `kind`: the chip pressed.
+ */
+export function sectionsOf(a: SearchAnswer | null, local?: LocalRows, kind: SearchRowKind | null = null): Section[] {
   if (!a?.ok) return [];
-  if (!a.query.trim()) return a.recent.length > 0 ? [{ key: "recent", hits: a.recent }] : [];
-  return a.groups.map((g) => ({ key: g.kind, hits: g.hits }));
+  if (!local) {
+    if (!a.query.trim()) return a.recent.length > 0 ? [{ key: "recent", hits: a.recent }] : [];
+    return a.groups.map((g) => ({ key: g.kind, hits: g.hits }));
+  }
+  if (!local.query.trim()) {
+    return [...(a.recent.length > 0 ? [{ key: "recent" as const, hits: a.recent }] : []), ...(local.command.length > 0 ? [{ key: "command" as const, hits: local.command }] : [])];
+  }
+  const fromMain = new Map<SearchRowKind, SearchHitView[]>(a.groups.map((g) => [g.kind, g.hits]));
+  const cap = kind ? LOCAL_PER_KIND : LOCAL_PER_GROUP;
+  return SEARCH_ROW_KINDS.filter((k) => !kind || k === kind)
+    .map((k) => ({ key: k, hits: isLocal(k) ? local[k].slice(0, cap) : (fromMain.get(k) ?? []) }))
+    .filter((s) => s.hits.length > 0);
 }
 
 /** ↑↓ move across groups: one flat list of rows. */
@@ -21,12 +47,14 @@ export interface Chip {
   count: number;
 }
 
-export function chipsOf(a: SearchAnswer | null): Chip[] {
+/** Main counts every match of a kind, beyond the rows it sends; a local kind counts every row that matched, likewise. */
+export function chipsOf(a: SearchAnswer | null, local?: LocalRows): Chip[] {
   if (!a?.ok || !a.query.trim()) return [];
-  const count = (k: SearchRowKind) => (k === "data" ? (a.counts.data ?? 0) : a.counts[k]);
-  const all = SEARCH_INDEX_KINDS.reduce((n, k) => n + count(k), 0);
+  const count = (k: SearchRowKind) => (isLocal(k) ? (local?.query.trim() ? local[k].length : 0) : k === "data" ? (a.counts.data ?? 0) : a.counts[k]);
+  const kinds = local ? SEARCH_ROW_KINDS : SEARCH_INDEX_KINDS;
+  const all = kinds.reduce((n, k) => n + count(k), 0);
   if (all === 0) return [];
-  return [{ kind: null, count: all }, ...SEARCH_INDEX_KINDS.filter((k) => count(k) > 0).map((k) => ({ kind: k, count: count(k) }))];
+  return [{ kind: null, count: all }, ...kinds.filter((k) => count(k) > 0).map((k) => ({ kind: k, count: count(k) }))];
 }
 
 export const step = (i: number, delta: number, length: number): number => (length === 0 ? 0 : Math.min(length - 1, Math.max(0, i + delta)));

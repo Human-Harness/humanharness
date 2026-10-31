@@ -161,6 +161,11 @@ export interface CommonOptions {
    * it must come with no MCP servers and no reference folders. ACP sessions get no MCP servers and the read-only mode.
    */
   noTools?: boolean;
+  /**
+   * The context in use after the stored session's last turn, when `session` is one to resume (replaceable parts §7.2):
+   * an adapter that infers compactions compares the first turn with it. Absent: nothing to compare with.
+   */
+  lastContextUsed?: number;
   /** The CLI to run: [binary, ...leading args]. */
   command: string[];
   /** Extra environment for the CLI (tests and dev only; never credentials). */

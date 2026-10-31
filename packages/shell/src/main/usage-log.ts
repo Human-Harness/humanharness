@@ -1,11 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { usageFile } from "@humanharness/workspace";
+import { DEFAULT_POLICY, contextPolicy, modelPolicy } from "@humanharness/policies";
 import type { Effort, ModelProfile } from "@humanharness/engines";
 import type { Tier } from "@humanharness/harness-sdk";
 import { MEASURED_MIN, type MeasuredCosts } from "@humanharness/material/light";
 import type { LimitWindow } from "@humanharness/runtime";
-import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/protocol";
+import type { ChatEntry, PolicyIds, TurnUsage, UsageSummary } from "@humanharness/protocol";
 
 /** The task's profile (plan 4a's `humanharness run` calibrates tiers from these) and what the engine said it ran. */
 interface ProfileFields {
@@ -44,6 +45,16 @@ export interface UsageMeta extends ProfileFields {
   /** The task's model and context policy ids (replaceable-parts §8). Absent: the default ran. */
   modelPolicy?: string;
   contextPolicy?: string;
+}
+
+/**
+ * The usage fields for a task's policy ids (replaceable-parts §8): the id of the policy that actually ran, and only
+ * when it is not the default. An id no policy is registered under ran the default, so it names nothing.
+ */
+export function policyMeta(policies: PolicyIds | undefined): Pick<UsageMeta, "modelPolicy" | "contextPolicy"> {
+  const model = modelPolicy(policies?.model).id;
+  const context = contextPolicy(policies?.context).id;
+  return { ...(model !== DEFAULT_POLICY ? { modelPolicy: model } : {}), ...(context !== DEFAULT_POLICY ? { contextPolicy: context } : {}) };
 }
 
 /** A Sidekick usage line's moment (sidekick spec §8); `place:<id>` is a harness place's turn (§2a.5). */

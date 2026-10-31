@@ -126,3 +126,35 @@ describe("package arrows and policies' purity (replaceable parts §3, §8)", () 
     expect(files.filter((f) => TRANSPORT_KIND.test(code(f))).map((f) => path.relative(packages, f))).toEqual([]);
   });
 });
+
+const TASK_MANAGER = path.join(packages, "shell/src/main/task-manager.ts");
+/** The context numbers a ContextPolicy owns now (replaceable-parts §7.3): task-manager.ts may re-export them, never define them. */
+const POLICY_CONSTANTS = ["CHECKPOINT_AT", "APP_INDEX_TOKENS", "COMPACTED_DROP"];
+/** Named exceptions, each with why. A stale one fails below. */
+const CONSTANT_EXCEPTIONS: Record<string, string> = {};
+/** A `const`/`let`/`var` of `name`, or `name` given a number (`name = 0.8`, `name: 0.8`). A re-export or an import is neither. */
+const defines = (text: string, name: string) => new RegExp(`\\b(?:const|let|var)\\s+${name}\\b|\\b${name}\\s*[:=]\\s*[-\\d.]`).test(text);
+/** A numeric literal multiplied, divided or compared with a `cap` (`0.8 * c.cap`, `cap * 0.8`, `cap > 1000`, `1000 <= cap`). */
+const CAP_LITERAL = [
+  /\b\d[\d_]*(?:\.\d+)?\s*[*/]\s*[\w$.?]*\bcap\b/,
+  /\bcap\b\s*[*/]\s*\(?\s*\d/,
+  /\bcap\b\s*(?:[<>]=?|[!=]==?)\s*\d/,
+  /\b\d[\d_]*(?:\.\d+)?\s*(?:[<>]=?|[!=]==?)\s*[\w$.?]*\bcap\b/,
+];
+
+describe("the task manager holds no context thresholds (replaceable parts §7.3)", () => {
+  it("task-manager.ts defines none of the policy's constants (re-exports allowed, named exceptions aside)", () => {
+    const text = code(TASK_MANAGER);
+    expect(POLICY_CONSTANTS.filter((n) => !(n in CONSTANT_EXCEPTIONS) && defines(text, n))).toEqual([]);
+  });
+
+  it("every named constant exception is still defined there (remove it once fixed)", () => {
+    const text = code(TASK_MANAGER);
+    expect(Object.keys(CONSTANT_EXCEPTIONS).filter((n) => !defines(text, n))).toEqual([]);
+  });
+
+  it("task-manager.ts multiplies or compares no numeric literal with a cap", () => {
+    const lines = code(TASK_MANAGER).split("\n");
+    expect(lines.filter((l) => CAP_LITERAL.some((r) => r.test(l))).map((l) => l.trim())).toEqual([]);
+  });
+});

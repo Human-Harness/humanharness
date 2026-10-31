@@ -37,6 +37,8 @@ export interface SlotOptions {
   key: string;
   /** The engine session to continue. Default: a new one. */
   session?: Session;
+  /** The context in use after `session`'s last turn, for an engine that infers compactions (`CommonOptions.lastContextUsed`). */
+  lastContextUsed?: number;
   /** Called when the slot's engine starts a session. */
   onSession?: (session: Session) => void;
   /**
@@ -324,6 +326,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     const transportOptions: CommonOptions = {
       folder: stepFolder ?? folder,
       session,
+      ...(o.lastContextUsed !== undefined ? { lastContextUsed: o.lastContextUsed } : {}),
       mcp: [
         // The engine hands its own env to MCP servers: a task slot clears HH_JOB so an outer one can't make it a job.
         // Only with jobs declared: without them the spec is today's (D0).

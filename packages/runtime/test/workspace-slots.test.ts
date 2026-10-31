@@ -270,3 +270,14 @@ describe("job slots (Decision 11, T5)", () => {
     expect(disallowed).not.toContain("Edit");
   });
 });
+
+describe("a slot's seed for compactions (replaceable parts §7.2)", () => {
+  it("lastContextUsed reaches the transport: a loaded session's first turn compares with it", async () => {
+    const usage = (used: number) => ({ update: { sessionUpdate: "usage_update", used, size: 200_000 } });
+    const { ws } = await acpWorkspace({ loadSession: true, turns: [[usage(40_000), { stop: "end_turn" }]] });
+    const slot = await ws.openSlot({ key: "t1", session: { id: "old-1", started: true }, lastContextUsed: 100_000 });
+    const events: Event[] = [];
+    await slot.send("one", (e) => events.push(e)).done;
+    expect(events.filter((e) => e.type === "compaction" || e.type === "context")).toEqual([{ type: "compaction" }, { type: "context", used: 40_000, size: 200_000 }]);
+  });
+});

@@ -908,3 +908,53 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
     expect(args()).not.toContain("--settings");
   });
 });
+
+describe("ClaudeCliTransport reports compactions (replaceable parts §7.2)", () => {
+  /** A turn whose last API call used `used` tokens of context. */
+  const turnAt = (used: number): ClaudeScript => ({
+    steps: [
+      { line: { type: "assistant", parent_tool_use_id: null, session_id: "s", message: { content: [], usage: { input_tokens: used, output_tokens: 5 } } } },
+      claudeResultLine(true, "", "s"),
+    ],
+  });
+  /** A transport whose script the test swaps before each turn. */
+  function scripted(extra: Partial<TransportOptions> = {}, session: Session = { id: "22222222-2222-2222-2222-222222222222", started: false }) {
+    const folder = fs.mkdtempSync(path.join(root, "c-"));
+    const env: Record<string, string> = {};
+    const transport = new ClaudeCliTransport({ folder, session, mcp: [], permissions, command: fakeClaudeCommand(), env, onSessionStarted: () => {}, ...extra });
+    const turn = async (used: number) => {
+      env.HH_FAKE_SCRIPT = writeScript(root, turnAt(used));
+      return (await run(transport)).filter((e) => e.type === "compaction" || e.type === "context");
+    };
+    return { transport, turn };
+  }
+
+  it("in one session, the context falling below half emits a compaction right before the context event", async () => {
+    const { turn } = scripted();
+    expect(await turn(100_000)).toEqual([{ type: "context", used: 100_000 }]);
+    expect(await turn(40_000)).toEqual([{ type: "compaction" }, { type: "context", used: 40_000 }]);
+  });
+
+  it("a fall to more than half emits none", async () => {
+    const { turn } = scripted();
+    await turn(100_000);
+    expect(await turn(60_000)).toEqual([{ type: "context", used: 60_000 }]);
+  });
+
+  it("a resumed session compares its first turn with the seed", async () => {
+    const { turn } = scripted({ lastContextUsed: 100_000 }, { id: "22222222-2222-2222-2222-222222222222", started: true });
+    expect(await turn(40_000)).toEqual([{ type: "compaction" }, { type: "context", used: 40_000 }]);
+  });
+
+  it("a new session starts the comparison afresh", async () => {
+    const { transport, turn } = scripted();
+    await turn(100_000);
+    await transport.endSession();
+    expect(await turn(40_000)).toEqual([{ type: "context", used: 40_000 }]);
+  });
+
+  it("a session that starts new ignores the seed", async () => {
+    const { turn } = scripted({ lastContextUsed: 100_000 });
+    expect(await turn(40_000)).toEqual([{ type: "context", used: 40_000 }]);
+  });
+});

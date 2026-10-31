@@ -65,7 +65,7 @@ describe("Settings › Connections (tools spec §9)", () => {
     expect(within(jira).getByRole("button", { name: "Replace" })).toBeTruthy();
     expect(within(jira).getByRole("button", { name: "Delete" })).toBeTruthy();
     const gh = row("GitHub token");
-    expect(within(gh).getByText("Not set")).toBeTruthy();
+    expect(within(gh).getByText("Not set · paste the key to use it")).toBeTruthy();
     expect(within(gh).getByRole("button", { name: "Save" })).toBeTruthy();
     expect(within(gh).queryByRole("button", { name: "Delete" })).toBeNull();
     // Manifest order.
@@ -121,7 +121,7 @@ describe("Settings › Connections (tools spec §9)", () => {
     const del = within(row("Jira API token")).getByRole("button", { name: "Delete" });
     del.focus();
     fireEvent.click(del);
-    await waitFor(() => expect(within(row("Jira API token")).getByText("Not set")).toBeTruthy());
+    await waitFor(() => expect(within(row("Jira API token")).getByText("Not set · paste the key to use it")).toBeTruthy());
     await waitFor(() => expect(document.activeElement).toBe(field("Jira API token")));
     expect(row("Jira API token").contains(document.activeElement)).toBe(true);
   });
@@ -132,7 +132,7 @@ describe("Settings › Connections (tools spec §9)", () => {
     const gh = await screen.findByRole("group", { name: "GitHub token" });
     expect(field("GitHub token").type).toBe("password");
     expect(within(gh).getByRole("button", { name: "Save" }).className).toContain("hh-cta");
-    expect(within(gh).getByText("Not set").className).toContain("hh-tag-orange");
+    expect(within(gh).getByText("Not set · paste the key to use it").className).toContain("hh-tag-orange");
     expect(within(row("Jira API token")).getByText("Set").className).toContain("hh-tag-green");
   });
 
@@ -146,7 +146,7 @@ describe("Settings › Connections (tools spec §9)", () => {
         .split(" ")
         .map((id) => document.getElementById(id)?.textContent);
     expect(describedBy("Jira API token")).toEqual(["Set", "From id.atlassian.com › Security"]);
-    expect(describedBy("GitHub token")).toEqual(["Not set"]);
+    expect(describedBy("GitHub token")).toEqual(["Not set · paste the key to use it"]);
   });
 
   it("the same refusal twice is a new alert each time", async () => {
@@ -171,11 +171,11 @@ describe("Settings › Connections (tools spec §9)", () => {
     fireEvent.change(field("GitHub token"), { target: { value: "short" } });
     fireEvent.click(within(row("GitHub token")).getByRole("button", { name: "Save" }));
     expect((await screen.findByRole("alert")).textContent).toBe("A key is at least 8 characters");
-    expect(within(row("GitHub token")).getByText("Not set")).toBeTruthy();
+    expect(within(row("GitHub token")).getByText("Not set · paste the key to use it")).toBeTruthy();
     expect(field("GitHub token").value).toBe("");
 
     fireEvent.click(within(row("Jira API token")).getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(within(row("Jira API token")).getByText("Not set")).toBeTruthy());
+    await waitFor(() => expect(within(row("Jira API token")).getByText("Not set · paste the key to use it")).toBeTruthy());
     expect(c.connectionsCalls).toEqual([
       ["set", "gh"],
       ["delete", "jira"],

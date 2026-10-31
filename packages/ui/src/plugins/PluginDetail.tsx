@@ -190,6 +190,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
                   <KeyRow
                     key={s.id}
                     secret={s}
+                    plugin={row.name}
                     error={err(`key:${s.id}`)}
                     onSave={(value) => change(`key:${s.id}`, () => client.plugins.setSecret(row.id, s.id, value))}
                     onDelete={() => void change(`key:${s.id}`, () => client.plugins.deleteSecret(row.id, s.id))}
@@ -341,11 +342,14 @@ function ConfirmYes({ label, onClick }: { label: string; onClick: () => void }) 
  */
 function KeyRow({
   secret,
+  plugin,
   error,
   onSave,
   onDelete,
 }: {
   secret: Detail["secrets"][number];
+  /** The plugin's name: a missing key says what it's for. */
+  plugin: string;
   error: string | undefined;
   onSave: (value: string) => Promise<boolean>;
   onDelete: () => void;
@@ -370,7 +374,7 @@ function KeyRow({
       <span className="hh-row-label" id={`${id}-label`} dir="auto">
         {secret.label}
       </span>
-      <span className="hh-caption">{secret.stored ? t("plugins.keys.stored") : t("plugins.keys.notStored")}</span>
+      <span className="hh-caption">{secret.stored ? t("plugins.keys.stored") : t("plugins.keys.notStored", { plugin })}</span>
       {editing ? (
         <form className="hh-pl-key-form" onSubmit={submit}>
           <input

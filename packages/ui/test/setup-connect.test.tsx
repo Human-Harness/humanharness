@@ -60,7 +60,7 @@ describe("the connect step (tools spec §9)", () => {
     ]);
     expect(within(row("Jira API token")).getByText("From id.atlassian.com › Security")).toBeTruthy();
     expect((within(row("GitHub token")).getByLabelText("GitHub token") as HTMLInputElement).type).toBe("password");
-    expect(within(row("Jira API token")).getByText("Not set")).toBeTruthy();
+    expect(within(row("Jira API token")).getByText("Not set · paste the key to use it")).toBeTruthy();
     expect(next().disabled).toBe(true);
     expect(screen.getByText("Paste each key to go on.")).toBeTruthy();
 

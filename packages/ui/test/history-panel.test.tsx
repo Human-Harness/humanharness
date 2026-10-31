@@ -225,14 +225,14 @@ describe("HistoryPanel", () => {
 
   it("tags the open task's row as in progress, and only that one", async () => {
     await open({ currentTask: "t1" });
-    expect(await screen.findByRole("button", { name: /A question.*In progress/ })).toBeTruthy();
-    expect(screen.getAllByText("In progress")).toHaveLength(1);
+    expect(await screen.findByRole("button", { name: /A question.*Working/ })).toBeTruthy();
+    expect(screen.getAllByText("Working")).toHaveLength(1);
   });
 
   it("tags no row without an open task", async () => {
     await open();
     await screen.findByRole("button", { name: /Plan the week/ });
-    expect(screen.queryByText("In progress")).toBeNull();
+    expect(screen.queryByText("Working")).toBeNull();
   });
 
   it("explains an empty history", async () => {
@@ -474,7 +474,7 @@ describe("the History drawer (UI refresh spec §5.7)", () => {
     await open({ currentTask: "t2" });
     const row = await screen.findByRole("button", { name: /Plan the week/ });
     expect(row.closest("li")?.classList.contains("hh-card")).toBe(true);
-    expect(screen.getByText("In progress").className).toContain("hh-tag-blue");
+    expect(screen.getByText("Working").className).toContain("hh-tag-blue");
     expect(screen.getByText("Note saved").className).toContain("hh-tag-green");
     const points = screen.getByRole("list", { name: "Points in this task" });
     const dots = [...points.querySelectorAll(".hh-history-dot")];

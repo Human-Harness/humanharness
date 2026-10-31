@@ -56,6 +56,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [pluginsRequest, setPluginsRequest] = useState(0);
   /** The chat has a running plugin with a panel in its Plugins section: the rail shows Plugins (spec §4.2). */
   const [pluginPanels, setPluginPanels] = useState(false);
+  /** The open task's label as the chat reports it: the breadcrumb's fallback without `parallel` (no task list). */
+  const [chatTaskLabel, setChatTaskLabel] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
   const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
@@ -360,9 +362,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
   }).filter((e) => e !== "inbox" && e !== "jobs");
-  /** The breadcrumb's screen (spec §4.1): the focused task, else the start view's title, else Tasks. */
+  /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
   const focusedTask = tasksState?.tasks.find((s) => s.focused);
-  const screenTitle = focusedTask?.label ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
+  const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
   const railCurrent: RailEntry = view.kind === "inbox" ? (view.column === "jobs" ? "jobs" : "inbox") : "tasks";
   const pick = (e: RailEntry) => {
     if (e === "home") return setScreen("home");
@@ -426,6 +428,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 notesRequest={notesRequest}
                 pluginsRequest={pluginsRequest}
                 onPluginPanels={setPluginPanels}
+                onTaskLabel={setChatTaskLabel}
                 onFixEngine={() => setSettings("engine")}
                 onSidekickSettings={() => setSettings("sidekick")}
                 onTurnOk={checkEngine}

@@ -41,9 +41,12 @@ export function TopBar({
   const { t } = useTranslation();
   return (
     <header className="hh-topbar">
-      {logo ? <img className="hh-topbar-logo" src={logo} alt={t("app.name")} /> : <HHLogo className="hh-topbar-logo" title={t("app.name")} />}
+      {/* The harness's own logo is decorative: its name is the first crumb. Only the HH tile is announced. */}
+      {logo ? <img className="hh-topbar-logo" src={logo} alt="" /> : <HHLogo className="hh-topbar-logo" title={t("app.name")} />}
       {crumbs.length > 0 ? (
         <nav className="hh-crumbs" aria-label={t("app.breadcrumb")}>
+          {/* Labels come from the manifest and the task (untrusted): dir="auto" isolates each, so RTL text or bidi
+              controls in one can't reorder the others. */}
           {crumbs.map((c, i) => (
             <Fragment key={i}>
               {i > 0 && (
@@ -52,11 +55,11 @@ export function TopBar({
                 </span>
               )}
               {i === crumbs.length - 1 ? (
-                <span aria-current="page" className="hh-crumb-here">
+                <span aria-current="page" className="hh-crumb-here" dir="auto">
                   {c.label}
                 </span>
               ) : (
-                <button type="button" className="hh-crumb" onClick={c.onClick}>
+                <button type="button" className="hh-crumb" dir="auto" onClick={c.onClick}>
                   {c.label}
                 </button>
               )}

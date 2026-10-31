@@ -123,6 +123,7 @@ export function ChatView({
   notesRequest,
   pluginsRequest,
   onPluginPanels,
+  onTaskLabel,
   onSidekickSettings,
   onFixEngine,
   onTurnOk,
@@ -170,6 +171,8 @@ export function ChatView({
   pluginsRequest?: number;
   /** Told whether a running plugin has a panel in the Plugins section (the rail's Plugins entry), and false when gone. */
   onPluginPanels?: (has: boolean) => void;
+  /** The open task's label, null with none (and on unmount): the top bar's breadcrumb names it. */
+  onTaskLabel?: (label: string | null) => void;
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
@@ -1574,13 +1577,25 @@ export function ChatView({
     if (first) openPanel(first.plugin, first.id);
   }, [pluginsRequest, openPanel]);
 
-  const isBlocked = blocked();
   const blockedTo = useRef(onBlocked);
   blockedTo.current = onBlocked;
+  const blockedSent = useRef<boolean | null>(null);
+  // Read after every commit, not in render: `busy` is a ref that an earlier effect clears when the turn ends (no redraw).
   useEffect(() => {
-    blockedTo.current?.(isBlocked);
-  }, [isBlocked]);
+    const now = blocked();
+    if (now === blockedSent.current) return;
+    blockedSent.current = now;
+    blockedTo.current?.(now);
+  });
   useEffect(() => () => blockedTo.current?.(false), []);
+  /** The open task's name for the breadcrumb (a harness without `parallel` has no task list to read it from). */
+  const taskLabel = tasks.current ? (tasks.current.action ? labelOf(tasks.current.action) : t("history.question")) : null;
+  const taskLabelTo = useRef(onTaskLabel);
+  taskLabelTo.current = onTaskLabel;
+  useEffect(() => {
+    taskLabelTo.current?.(taskLabel);
+  }, [taskLabel]);
+  useEffect(() => () => taskLabelTo.current?.(null), []);
 
   return (
     <DocumentContext.Provider value={documentHost}>

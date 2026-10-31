@@ -30,9 +30,28 @@ describe("chrome", () => {
 
   it("TopBar shows the harness logo instead of the HH tile, and its centre slot", async () => {
     await renderIn("en", <TopBar logo="data:image/png;base64,AAA" crumbs={[{ label: "Demo" }]} center={<button>Search</button>} />);
-    expect(screen.getByRole("img", { name: "Human Harness" }).getAttribute("src")).toBe("data:image/png;base64,AAA");
+    // The harness's own logo is decorative (its name is the first crumb): it is not announced as Human Harness.
+    const logo = document.querySelector("header img.hh-topbar-logo")!;
+    expect(logo.getAttribute("src")).toBe("data:image/png;base64,AAA");
+    expect(logo.getAttribute("alt")).toBe("");
+    expect(screen.queryByRole("img", { name: "Human Harness" })).toBeNull();
     expect(screen.getByRole("button", { name: "Search" }).closest(".hh-spacer")).toBeTruthy();
     expect(screen.queryByRole("heading")).toBeNull();
+  });
+
+  it("TopBar isolates each crumb's text: an RTL name or bidi controls don't reorder the bar", async () => {
+    const rlo = "Evil\u202Etxt.exe";
+    await renderIn("en", <TopBar crumbs={[{ label: "مرحبا", onClick: () => {} }, { label: rlo }]} />);
+    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+    // dir="auto" isolates each label (unicode-bidi: isolate), as <bdi> would, on the crumb itself.
+    const rtl = within(nav).getByText("مرحبا");
+    expect(rtl.tagName).toBe("BUTTON");
+    expect(rtl.getAttribute("dir")).toBe("auto");
+    const controls = within(nav).getByText(rlo);
+    expect(controls.getAttribute("aria-current")).toBe("page");
+    expect(controls.getAttribute("dir")).toBe("auto");
+    // The separators stay outside the isolation: every crumb is its own island.
+    for (const sep of nav.querySelectorAll(".hh-crumb-sep")) expect(sep.getAttribute("dir")).toBeNull();
   });
 
   it("Segmented marks the chosen option and reports changes", () => {

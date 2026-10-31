@@ -5,7 +5,7 @@ import { PROFILE_COLLECTION as SDK_COLLECTION, PROFILE_COLORS } from "@humanharn
 import { HarnessApp } from "../src";
 import { Home } from "../src/Home";
 import { AVATAR_COLORS, PROFILE_COLLECTION } from "../src/profiles";
-import { Avatar, ProfileSwitcher } from "../src/ProfileSwitcher";
+import { Avatar, ProfileAvatar, ProfileSwitcher } from "../src/ProfileSwitcher";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -142,7 +142,7 @@ describe("the switcher on the work screen's top bar", () => {
     await waitFor(() => expect(plain.disabled).toBe(false));
     fireEvent.click(plain);
     await screen.findByRole("button", { name: "Home" });
-    expect(screen.queryByRole("button", { name: /^Add / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Profile:/ })).toBeNull();
   });
 });
 
@@ -160,5 +160,34 @@ describe("Avatar", () => {
       ["S", "coral"],
       ["Ñ", null],
     ]);
+  });
+});
+
+describe("ProfileAvatar", () => {
+  it("closes its popover when focus leaves it, not when focus moves inside it", async () => {
+    const client = family();
+    await renderIn(
+      "en",
+      <>
+        <ProfileAvatar client={client} state={client.state} onSwitched={() => {}} onAdd={() => {}} />
+        <button>Elsewhere</button>
+      </>,
+    );
+    const avatar = await screen.findByRole("button", { name: "Profile: Sofi" });
+    fireEvent.click(avatar);
+    const select = await screen.findByRole("combobox", { name: "Choose student" });
+    fireEvent.blur(avatar, { relatedTarget: select });
+    expect(screen.getByRole("dialog", { name: "Choose student" })).toBeTruthy();
+    fireEvent.blur(select, { relatedTarget: screen.getByRole("button", { name: "Elsewhere" }) });
+    expect(screen.queryByRole("dialog", { name: "Choose student" })).toBeNull();
+    expect(avatar.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("draws the initial and colour by Avatar's rule", async () => {
+    const client = family("tomas", [{ id: "tomas", title: " ñandú", color: "#ff0000", createdAt: "2026-10-27T10:00:00.000Z", archived: false }]);
+    await renderIn("en", <ProfileAvatar client={client} state={client.state} onSwitched={() => {}} onAdd={() => {}} />);
+    const avatar = await screen.findByRole("button", { name: /^Profile:/ });
+    expect(avatar.textContent).toBe("Ñ");
+    expect(avatar.getAttribute("data-color")).toBeNull();
   });
 });

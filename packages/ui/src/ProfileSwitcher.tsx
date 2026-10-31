@@ -1,14 +1,19 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type FocusEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, ProfileResult, ProfileView, ProfilesState } from "./client";
 import { AVATAR_COLORS } from "./profiles";
 
+/** An avatar's letter: the title's first character (a whole code point), upper-cased. */
+const initialOf = (title: string): string => [...title.trim()][0]?.toUpperCase() ?? "";
+
+/** An avatar's colour: only one we draw; anything else is neutral. */
+const knownColor = (color: string | undefined): string | undefined => (color && (AVATAR_COLORS as readonly string[]).includes(color) ? color : undefined);
+
 /** A profile's avatar (spec D7): the title's first letter on its colour; neutral when the colour is not one we draw. */
 export function Avatar({ profile }: { profile: Pick<ProfileView, "title" | "color"> }) {
-  const color = profile.color && (AVATAR_COLORS as readonly string[]).includes(profile.color) ? profile.color : undefined;
   return (
-    <span className="hh-avatar" data-color={color} aria-hidden="true">
-      {[...profile.title.trim()][0]?.toUpperCase() ?? ""}
+    <span className="hh-avatar" data-color={knownColor(profile.color)} aria-hidden="true">
+      {initialOf(profile.title)}
     </span>
   );
 }
@@ -140,15 +145,18 @@ export function ProfileAvatar({
   if (!state.profiles || !profiles) return null;
   const label = state.profiles.label;
   const active = profiles.list.find((p) => p.id === profiles.active && !p.archived);
-  const color = active?.color && (AVATAR_COLORS as readonly string[]).includes(active.color) ? active.color : undefined;
+  const color = knownColor(active?.color);
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || !open) return;
     e.preventDefault();
     setOpen(false);
     button.current?.focus();
   };
+  const onBlur = (e: FocusEvent) => {
+    if (open && e.relatedTarget instanceof Node && !wrap.current?.contains(e.relatedTarget)) setOpen(false);
+  };
   return (
-    <div className="hh-avatar-menu" ref={wrap} onKeyDown={onKeyDown}>
+    <div className="hh-avatar-menu" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
       <button
         ref={button}
         type="button"
@@ -160,7 +168,7 @@ export function ProfileAvatar({
         aria-controls={open ? `${id}-switcher` : undefined}
         onClick={() => setOpen((o) => !o)}
       >
-        {active ? ([...active.title.trim()][0]?.toUpperCase() ?? "") : ""}
+        {active ? initialOf(active.title) : ""}
       </button>
       {open && (
         <div id={`${id}-switcher`} className="hh-pl-popover hh-avatar-popover" role="dialog" aria-label={t("profiles.pick", { label })}>

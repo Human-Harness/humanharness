@@ -252,4 +252,16 @@ describe("SearchService (§4, §5)", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(fs.existsSync(searchDir(userData, base))).toBe(false);
   });
+
+  it("a finished build leaves no replaced documents' terms behind in the saved index", async () => {
+    for (let i = 0; i < 30; i++) put(`docs/f${i}.md`, `# File ${i}\n\nwords${i} of file ${i}`);
+    const { svc } = service();
+    await svc.query("", {});
+    await svc.whenIdle();
+    await svc.flush();
+    const saved = JSON.parse(fs.readFileSync(path.join(searchDir(userData, base), "index.json"), "utf8")) as { documentCount: number; dirtCount: number };
+    expect(saved.documentCount).toBeGreaterThanOrEqual(30);
+    expect(saved.dirtCount).toBe(0);
+    expect(titles(await svc.query("words29", {}))[0]).toBe("f29.md");
+  });
 });

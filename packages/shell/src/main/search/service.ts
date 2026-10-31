@@ -168,6 +168,8 @@ export class SearchService {
       live.files = m.files;
       live.chats = m.chats;
       if (m.truncated !== undefined) live.truncated = m.truncated;
+      // The build's replaced and removed documents leave the tree now, in one go, before the save (LiveIndex.compact).
+      live.index.compact();
       const n = Object.keys(m.files).length;
       this.setStatus(live, { state: "ready", done: n, total: n, ...(live.truncated ? { truncated: true as const } : {}) });
       this.save(live);
@@ -236,6 +238,7 @@ export class SearchService {
     const ids = new Set(docs.map((doc) => doc.id));
     live.index.remove([...live.memory].filter((id) => !ids.has(id)));
     live.index.upsert(docs);
+    live.index.compact();
     live.memory = ids;
     live.memoryAt = this.now();
   }

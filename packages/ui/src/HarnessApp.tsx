@@ -164,12 +164,14 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const tasksState = useTasks(client, Boolean(state?.parallel));
   /** Board mode: the chat remounts on each change of the task shown (`epoch`); only a message put back outlives it. */
   const { epoch, toStart } = useFocusEpoch(tasksState);
-  /** Main moved the focus to another task (a notification click): that task's chat shows, even over the Inbox screen. */
+  /** Main moved the focus to another task (a notification click): that task's chat shows, even over the Inbox screen or Settings. */
   const shownEpoch = useRef(epoch);
   useEffect(() => {
     if (shownEpoch.current === epoch) return;
     shownEpoch.current = epoch;
     setView((v) => (v.kind === "inbox" ? { kind: "chat" } : v));
+    setSettings(null);
+    setSettingsFocus(null);
   }, [epoch]);
   /** Leaving the Inbox screen for the chat: a focus lost with the board goes to the rail's Tasks, not the page. */
   const wasInbox = useRef(false);

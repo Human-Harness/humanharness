@@ -799,7 +799,6 @@
     },
     "settings": {
       "on": "Sidekick",
-      "onHint": "Reads your prompt before it goes out and suggests a clearer one.",
       "preSend": "Before you send",
       "preSendHint": "Review prompts before they go out.",
       "afterReply": "After the reply",

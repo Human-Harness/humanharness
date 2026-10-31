@@ -47,6 +47,11 @@ function useOpenScope(client: HarnessClient, enabled: boolean): { id: string; la
  * harness's presets (while any is not adopted, spec §2a.7), the sidekicks, the sidekicks in the open scope (harnesses
  * with scopes, Decision 8), and what they learned. Each change saves at once.
  */
+/** The section's and the tab's title (spec §8): "Sidekicks" once there are two or more, else "Sidekick". */
+export function sidekickTitleKey(sidekicks: readonly unknown[] | undefined): "sidekick.list.title" | "sidekick.tab" {
+  return (sidekicks?.length ?? 1) > 1 ? "sidekick.list.title" : "sidekick.tab";
+}
+
 export function SidekickTab({
   client,
   onModels,
@@ -99,9 +104,8 @@ export function SidekickTab({
   const parseCap = (v: Cap): SidekickSettings["cap"] => (v === "none" ? "none" : v === "50000" ? 50_000 : 20_000);
   return (
     <div className="hh-tab">
-      {/* "Sidekicks" once there are two or more, as the tab says it (spec §8). */}
       <SectionHead
-        title={(state.sidekicks?.length ?? 1) > 1 ? t("sidekick.list.title") : t("sidekick.tab")}
+        title={t(sidekickTitleKey(state.sidekicks))}
         line={t("settings.line.sidekick")}
         lineId={onHint}
         aside={

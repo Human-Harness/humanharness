@@ -8,10 +8,10 @@ import { usePluginsRescan } from "./usePlugins";
 import { Tag, type TagTone } from "../chrome";
 import { SectionHead } from "../settings-parts";
 
-/** A review's `from`: the row whose switch asked for it (focus goes back there); none for Add from folder. */
 /** Each state's tag colour (UI refresh spec): on green, needs review orange, off after crashes and errors red. */
 const STATUS_TONE: Record<PluginRow["status"], TagTone> = { on: "green", off: "gray", review: "orange", crashed: "red", error: "red" };
 
+/** A review's `from`: the row whose switch asked for it (focus goes back there); none for Add from folder. */
 type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?: string; from?: string } | { kind: "detail"; id: string };
 
 /**
@@ -109,20 +109,30 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     (to ?? addButton.current)?.focus();
   }, [screen]);
 
+  // The section's heading shows in every state (loading, failed, review), so the levels below never skip one.
+  const head = <SectionHead title={t("plugins.tab")} line={t("settings.line.plugins")} />;
   if (!view) {
     return loadFailed ? (
       <div className="hh-tab" data-setting="plugins.plugins">
+        {head}
         <p className="hh-field-error" role="alert">
           {failed}
         </p>
       </div>
     ) : (
-      <div className="hh-tab" data-setting="plugins.plugins" aria-busy="true" />
+      <div className="hh-tab" data-setting="plugins.plugins" aria-busy="true">
+        {head}
+      </div>
     );
   }
 
   if (screen.kind === "review") {
-    return <PermissionReview review={screen.review} busy={busy} error={reviewError} onTurnOn={() => void turnOn(screen)} onCancel={() => toList(screen.from)} />;
+    return (
+      <div className="hh-tab" data-setting="plugins.plugins">
+        {head}
+        <PermissionReview review={screen.review} busy={busy} error={reviewError} onTurnOn={() => void turnOn(screen)} onCancel={() => toList(screen.from)} />
+      </div>
+    );
   }
   // A detail sits beside the list, which stays as it is (gone, removed here or elsewhere: the list alone).
   const open = screen.kind === "detail" ? view.plugins.find((p) => p.id === screen.id) : undefined;
@@ -179,7 +189,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
 
   return (
     <div className="hh-tab" data-setting="plugins.plugins">
-      <SectionHead title={t("plugins.tab")} line={t("settings.line.plugins")} />
+      {head}
       {open ? (
         <div className="hh-master-detail">
           <div className="hh-master-list">{list}</div>

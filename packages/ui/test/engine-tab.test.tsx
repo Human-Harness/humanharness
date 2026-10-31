@@ -133,7 +133,7 @@ describe("EngineTab", () => {
     expect(client.setupRuns).toEqual([{ engineId: "claude", step: "logout" }]);
   });
 
-  it("shows the engine in use as a card and the others with what they need and the next step", async () => {
+  it("shows the engine in use as a card tagged In use; another engine's card has no such tag", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     addCodex(client);
     await renderIn("en", <Tab client={client} />);

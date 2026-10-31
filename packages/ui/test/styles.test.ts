@@ -187,3 +187,13 @@ describe("profile avatars", () => {
     }
   });
 });
+
+describe("the scope settings dialog", () => {
+  it("has a rule for each class it draws its backdrop, sheet and head with", () => {
+    const tsx = readFileSync(resolve(__dirname, "../src/hatches/ScopeSettings.tsx"), "utf8");
+    for (const name of ["hh-scope-dialog-backdrop", "hh-scope-dialog", "hh-scope-dialog-head"]) {
+      expect(tsx).toMatch(new RegExp(`className="[^"]*\\b${name}(?![\\w-])`));
+      expect(css).toMatch(new RegExp(`\\.${name}\\s*\\{`));
+    }
+  });
+});

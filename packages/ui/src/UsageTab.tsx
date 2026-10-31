@@ -118,9 +118,9 @@ function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limi
   );
 }
 
-function Bar({ share, warn }: { share: number; warn?: boolean }) {
+function Bar({ share }: { share: number }) {
   return (
-    <span className={warn ? "hh-usage-bar warn" : "hh-usage-bar"} aria-hidden="true">
+    <span className="hh-usage-bar" aria-hidden="true">
       <span style={{ width: `${percent(share)}%` }} />
     </span>
   );

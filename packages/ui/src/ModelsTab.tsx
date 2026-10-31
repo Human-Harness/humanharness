@@ -133,7 +133,13 @@ export function ModelsTab({
     if (focus) setPart(focus.part);
   }, [focusN]);
   const view = state.models;
-  if (!view) return null;
+  // No models view from main yet: the section's heading alone, so the page never skips a level.
+  if (!view)
+    return (
+      <div className="hh-tab">
+        <SectionHead title={t("settings.tabs.models")} line={t("settings.line.models")} />
+      </div>
+    );
   const engine = state.config.engineId ?? state.engines[0]?.id ?? "";
   const engineName = state.engines.find((e) => e.id === engine)?.name ?? engine;
   const tierSpec = (tier: Tier): ModelSpec => models.tiers?.[engine]?.[tier] ?? view.defaults[engine]?.[tier] ?? FALLBACK_SPEC;

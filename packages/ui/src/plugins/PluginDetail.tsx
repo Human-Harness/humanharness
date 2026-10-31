@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, PluginDetail as Detail, PluginResult, PluginRow, PluginTestResult, PluginWorkHours, SettingFieldView } from "../client";
-import { groups, SettingRow } from "../HarnessSettingsTab";
+import { groups, HarnessFieldRow } from "../HarnessSettingsTab";
 import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
 
@@ -142,7 +142,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
                   )}
                   <div className="hh-rows">
                     {g.fields.map((f) => (
-                      <SettingRow
+                      <HarnessFieldRow
                         key={f.name}
                         field={f}
                         value={valueOf(f)}

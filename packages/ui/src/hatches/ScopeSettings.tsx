@@ -62,13 +62,13 @@ export function ScopeSettings({
   const linked = state.hatches?.linkedFolders;
   return createPortal(
     <div
-      className="hh-sheet-backdrop"
+      className="hh-scope-dialog-backdrop"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div ref={sheetRef} className="hh-sheet hh-scope-settings" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className="hh-sheet-head">
+      <div ref={sheetRef} className="hh-scope-dialog hh-scope-settings" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="hh-scope-dialog-head">
           <h2 id={titleId}>{t("hatches.scopeSettings", { scope: title })}</h2>
           <button ref={doneRef} className="hh-primary" onClick={onClose}>
             {t("settings.done")}

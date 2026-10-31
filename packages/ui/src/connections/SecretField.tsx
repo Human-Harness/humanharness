@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Tag } from "../chrome";
 import type { ConnectionResult, ConnectionView } from "../client";
 
 /**
@@ -63,10 +64,10 @@ export function SecretField({
       <span className="hh-row-label" id={`${id}-label`}>
         <bdi dir="auto">{connection.label}</bdi>
       </span>
-      {/* A tag in the look of chrome's Tag, with the id the field is described by. */}
-      <span className={connection.set ? "hh-tag hh-tag-green" : "hh-tag hh-tag-orange"} id={`${id}-state`}>
+      {/* The id is what the field is described by. */}
+      <Tag tone={connection.set ? "green" : "orange"} id={`${id}-state`}>
         {connection.set ? t("connections.set") : t("connections.notSet")}
-      </span>
+      </Tag>
       <form className="hh-pl-key-form" onSubmit={submit}>
         <input
           ref={input}

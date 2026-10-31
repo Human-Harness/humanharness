@@ -324,7 +324,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-usage-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
 .hh-usage-bar { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: var(--hh-line); overflow: hidden; flex-shrink: 0; }
 .hh-usage-bar > span { display: block; height: 100%; background: var(--hh-muted); }
-.hh-usage-bar.warn > span { background: var(--hh-warn); }
 .hh-usage-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; }
 .hh-usage-table th, .hh-usage-table td { padding: 10px 12px; text-align: left; vertical-align: middle; border-top: 1px solid var(--hh-line); }
 .hh-usage-table thead th { border-top: none; color: var(--hh-muted); font-size: 12px; font-weight: 400; }
@@ -354,7 +353,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-tile svg { color: var(--hh-muted); }
 /* Motor, Modelos and Uso before setup: one empty state that leads to the setup flow. */
 .hh-not-configured { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; text-align: center; color: var(--hh-muted); }
-.hh-not-configured h3 { margin: 0; color: var(--hh-ink); }
+.hh-not-configured h2 { margin: 0; color: var(--hh-ink); }
 .hh-not-configured p { margin: 0 0 8px; max-width: 36ch; }
 .hh-tile.more { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hh-line-strong); color: var(--hh-muted); background: transparent; }
 .hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
@@ -364,7 +363,6 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .hh-model-head h3 { margin: 0; }
 .hh-model-task { flex-wrap: wrap; }
-.hh-model-name { display: grid; gap: 2px; min-width: 0; flex: 1 1 160px; }
 .hh-model-task > .hh-caption, .hh-model-task > .hh-model-note, .hh-model-editor { flex-basis: 100%; }
 .hh-model-note { margin: 0; display: flex; align-items: center; gap: 8px; }
 .hh-model-changed { color: var(--hh-t-orange-ink); font-size: 13px; }
@@ -773,6 +771,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 }
 
 /* Scope settings (hatches spec §3.2): linked folders, one row each. */
+.hh-scope-dialog-backdrop { position: fixed; inset: 0; z-index: 20; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; padding-top: 52px; }
+.hh-scope-dialog { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 76px); box-sizing: border-box; overflow-y: auto; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: var(--hh-shadow); }
+.hh-scope-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hh-scope-settings h2 { margin: 0; font-size: 15px; }
 .hh-linked { display: grid; gap: 10px; }
 .hh-linked h3 { margin: 0; font-size: 13px; }

@@ -118,7 +118,7 @@ export function HarnessSettingsTab({
   const valueOf = (f: SettingFieldView) => (Object.hasOwn(state.values, f.name) ? state.values[f.name] : f.default);
   const changed = view.fields.some((f) => !same(valueOf(f), f.default));
   const row = (f: SettingFieldView) => (
-    <SettingRow
+    <HarnessFieldRow
       key={f.name}
       setting={`harness:${f.name}`}
       field={f}
@@ -177,7 +177,7 @@ export function HarnessSettingsTab({
 }
 
 /** One setting with the core's control (also drawn by a plugin's detail, whose labels are the plugin's: bidi-isolated). */
-export function SettingRow({
+export function HarnessFieldRow({
   setting,
   field,
   value,

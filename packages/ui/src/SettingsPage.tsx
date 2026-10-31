@@ -21,7 +21,7 @@ import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
 import { SectionHead, SettingsCard } from "./settings-parts";
 import { SetupStepsList } from "./SetupStepsList";
-import { SidekickTab } from "./sidekick/SidekickTab";
+import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
@@ -82,9 +82,9 @@ export function SettingsPage({
   // only when it declares jobs (parallel D0).
   const tabs = visibleTabs(state);
   const configured = isConfigured(state.config);
-  // The tab reads "Sidekicks" once there are two or more (spec §8); its id stays "sidekick".
+  // The tab reads as the section's title (spec §8); its id stays "sidekick".
   const sidekick = useSidekick(client, state.sidekick !== undefined);
-  const sidekickTab = (sidekick?.sidekicks?.length ?? 1) > 1 ? t("sidekick.list.title") : t("sidekick.tab");
+  const sidekickTab = t(sidekickTitleKey(sidekick?.sidekicks));
   // A section that needs the person carries an orange count (§5.5): Plugins, for those waiting for a review or turned
   // off after crashes. Read only when the harness takes plugins (D0); the tab itself still rescans when it opens.
   const plugins = usePluginsView(client, tabs.includes("plugins"));
@@ -539,7 +539,7 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
   return (
     <div className="hh-tab hh-not-configured">
       <EngineIcon size={40} />
-      <h3>{t("setupFlow.notConfiguredTitle")}</h3>
+      <h2>{t("setupFlow.notConfiguredTitle")}</h2>
       <p>{t("setupFlow.notConfiguredText")}</p>
       {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
       <button className="hh-primary" onClick={() => onSetup()}>

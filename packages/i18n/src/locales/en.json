@@ -19,6 +19,7 @@
   },
   "home": {
     "start": "Start {{name}}",
+    "pickUp": "Pick up where you left",
     "settings": "Settings",
     "connected": "Connected",
     "notConnected": "Not connected",

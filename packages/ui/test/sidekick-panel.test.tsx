@@ -363,3 +363,20 @@ describe("SidekickMark", () => {
     expect(container.textContent).toContain("--hh-x;background:url(x)");
   });
 });
+
+describe("cards in the soft-cards look (UI refresh spec §5.1)", () => {
+  it("opens each card with its tag: Before you send orange, Next prompt blue, Worth knowing violet", async () => {
+    const after: SidekickCard = { id: "a1", moment: "after", kind: "next", speaker: SK_ON.info, prompt: "Outline", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", after: { next: "Add a source", lesson: "Sources first." } };
+    await panel({ ...SK_ON, status: "suggestion", card: CARD, cards: [after] });
+    expect(screen.getByText("Before you send").className).toContain("hh-tag-orange");
+    expect(screen.getByText("Next prompt").className).toContain("hh-tag-blue");
+    expect(screen.getByText("Worth knowing").className).toContain("hh-tag-violet");
+    expect(screen.getByRole("heading", { name: "Before you send" })).toBeTruthy();
+  });
+
+  it("names Sidekick's state in a green tag while it is on, and its actions are pills", async () => {
+    await panel({ ...SK_ON, status: "suggestion", card: CARD });
+    expect(screen.getByText("Has a suggestion").className).toContain("hh-tag-green");
+    expect(screen.getByRole("button", { name: "Send anyway" }).className).toContain("hh-pill");
+  });
+});

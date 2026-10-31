@@ -1613,8 +1613,8 @@ export function ChatView({
             leading={scopeBar?.(blocked())}
             meters={
               <>
-                {/* Without actions there is no flow side: the meter, and so the context panel's button, sits here. */}
-                {!flow && tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} pill />}
+                {/* The context panel's one button. In flow mode the flow side draws the ring, so the pill is text only. */}
+                {tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} pill ring={!flow} />}
                 <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
               </>
             }
@@ -1659,7 +1659,6 @@ export function ChatView({
               }}
               material={material}
               {...(pluginsSection ? { plugins: pluginsSection } : {})}
-              {...(tasks.current ? { onContext: openContext } : {})}
             />
           )}
           {/* Without actions there is no flow side panel: the material panel (and the Plugins section) get one of their own. */}
@@ -1702,7 +1701,7 @@ export function ChatView({
                 onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
               />
             )}
-            <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
+            <section className="hh-chat hh-card hh-conversation" aria-label={t("chat.conversation")} ref={chatRef} onScroll={onScroll}>
               {loadFailed && (
                 <p className="hh-error" role="alert">
                   {t("chat.loadError")}
@@ -2001,7 +2000,10 @@ export function ChatView({
                         {t("sidekick.composer.review")}
                       </button>
                     )}
-                    <button type="submit">{t("chat.send")}</button>
+                    <span className="hh-caption hh-composer-send-hint">{t("chat.enterToSend")}</span>
+                    <button type="submit" className="hh-cta">
+                      {t("chat.send")}
+                    </button>
                   </>
                 )}
               </form>

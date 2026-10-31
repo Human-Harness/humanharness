@@ -1,6 +1,6 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "../chrome";
+import { Segmented, Tag } from "../chrome";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../client";
 import { shownLanguage } from "../language";
 import { SidekickMark } from "./mark";
@@ -94,7 +94,14 @@ export function SidekickPanel(p: SidekickPanelProps) {
       <header className="hh-sk-head">
         <SidekickMark off={!s.settings.on} mark={s.info.mark} />
         <h2 className="hh-sk-name">{s.info.name}</h2>
-        <span className="hh-sk-status">{status}</span>
+        {/* On, the state is a green tag (UI refresh spec §5.1); past its cap, orange. */}
+        {s.settings.on ? (
+          <span className="hh-sk-status">
+            <Tag tone={s.status === "capped" ? "orange" : "green"}>{status}</Tag>
+          </span>
+        ) : (
+          <span className="hh-sk-status">{status}</span>
+        )}
         <span className="hh-spacer" />
         <button type="button" className="hh-sk-collapse" aria-label={t("sidekick.collapse")} onClick={p.onCollapse}>
           ›
@@ -202,7 +209,9 @@ function Card({ card, speaker, onSendSuggested, onEdit, onSendAnyway, onMute }: 
   return (
     <section className="hh-sk-card" aria-label={t("sidekick.card.title")}>
       <Speaker who={speaker} />
-      <h3>{t("sidekick.card.title")}</h3>
+      <h3>
+        <Tag tone="orange">{t("sidekick.card.title")}</Tag>
+      </h3>
       <ul className="hh-sk-issues">
         {card.issues.length > 0
           ? card.issues.map((issue, i) => <li key={i}>{issue.text}</li>)
@@ -220,10 +229,10 @@ function Card({ card, speaker, onSendSuggested, onEdit, onSendAnyway, onMute }: 
         {card.rewrite && (
           <>
             <button type="button" className="hh-primary" onClick={() => onSendSuggested(card)}>{t("sidekick.card.sendSuggested")}</button>
-            <button type="button" onClick={() => onEdit(card)}>{t("sidekick.card.edit")}</button>
+            <button type="button" className="hh-pill" onClick={() => onEdit(card)}>{t("sidekick.card.edit")}</button>
           </>
         )}
-        <button type="button" onClick={() => onSendAnyway(card)}>{t("sidekick.card.sendAnyway")}</button>
+        <button type="button" className="hh-pill" onClick={() => onSendAnyway(card)}>{t("sidekick.card.sendAnyway")}</button>
       </div>
       {card.why && <p className="hh-caption">{t("sidekick.why", { used: card.why.used, of: card.why.of, kind })}</p>}
       <button type="button" className="hh-link" onClick={() => onMute(card.id)}>
@@ -253,13 +262,17 @@ function AfterCard({ card, speaker, onPutInComposer, onDismiss }: { card: Sideki
       )}
       {next && (
         <>
-          <h4>{t("sidekick.after.next")}</h4>
+          <h4>
+            <Tag tone="blue">{t("sidekick.after.next")}</Tag>
+          </h4>
           <p>{next}</p>
         </>
       )}
       {a.lesson && (
         <>
-          <h4>{t("sidekick.after.lesson")}</h4>
+          <h4>
+            <Tag tone="violet">{t("sidekick.after.lesson")}</Tag>
+          </h4>
           <p>{a.lesson}</p>
         </>
       )}
@@ -276,7 +289,7 @@ function AfterCard({ card, speaker, onPutInComposer, onDismiss }: { card: Sideki
             {t("sidekick.card.putInComposer")}
           </button>
         )}
-        <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
       </div>
     </section>
   );
@@ -322,7 +335,7 @@ function HeadsUpCard({ card, headsUp, speaker, onSaveDecision, onFinishTask, onD
             {t("sidekick.headsUp.finishTask")}
           </button>
         )}
-        <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
       </div>
       {/* No message back: the plain line, never "…decision: " with nothing after it. */}
       {failed !== null && <p role="alert">{failed ? t("sidekick.headsUp.saveFailed", { message: failed }) : t("sidekick.headsUp.saveFailedPlain")}</p>}
@@ -344,7 +357,7 @@ function GuardCard({ card, guard, speaker, onDismiss }: { card: SidekickCard; gu
         ))}
       </ul>
       <div className="hh-sk-actions">
-        <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
       </div>
     </section>
   );
@@ -359,7 +372,7 @@ function DailyCard({ card, speaker, onDismiss }: { card: SidekickCard; speaker: 
       <h3>{t("sidekick.daily.title")}</h3>
       <p className="hh-sk-daily">{card.text}</p>
       <div className="hh-sk-actions">
-        <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
       </div>
     </section>
   );

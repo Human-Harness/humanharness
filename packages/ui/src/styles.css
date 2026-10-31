@@ -652,6 +652,30 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-note-toggle { width: 100%; height: auto; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; border: none; background: transparent; text-align: left; }
 .hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }
+/* Flow mode in the soft-cards look (UI refresh spec §5.1): flow side, choices, conversation, composer, side column. */
+.hh-flow-side { width: 290px; padding: 28px 18px 28px 26px; gap: 26px; background: var(--hh-rail); }
+.hh-flow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
+.hh-flow-head .hh-flow-heading { margin: 0; }
+.hh-steps button.hh-flow-step { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border-radius: 12px; border: 1px solid transparent; background: transparent; color: var(--hh-ink); }
+.hh-steps button.hh-flow-step[aria-current="step"] { background: var(--hh-surface); border-color: var(--hh-line); font-weight: 600; }
+.hh-flow-label { min-width: 0; overflow-wrap: anywhere; }
+.hh-flow-step .hh-tag { margin-left: auto; }
+.hh-step-mark.hh-flow-mark { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-size: 12.5px; }
+.hh-flow-step.is-done .hh-flow-mark { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
+.hh-flow-step[aria-current="step"] .hh-flow-mark { background: var(--hh-cta); color: var(--hh-cta-ink); }
+.hh-choices .hh-choice-list { display: grid; gap: 8px; }
+.hh-choices .hh-choice { width: 100%; min-height: 52px; justify-content: flex-start; gap: 12px; padding: 10px 14px; border-radius: 12px; text-align: left; }
+/* The recommended option is outlined in amber, not filled: a fill means it was picked. */
+.hh-choices .hh-choice.next:not([aria-pressed="true"]) { background: var(--hh-surface); color: var(--hh-ink); }
+.hh-choices .hh-choice-recommended:not([aria-pressed="true"]), .hh-choices .hh-choice-recommended:hover:not(:disabled):not([aria-pressed="true"]) { border-color: var(--hh-cta); box-shadow: inset 0 0 0 1px var(--hh-cta); }
+.hh-chat.hh-conversation { margin: 16px 20px 12px; box-shadow: var(--hh-shadow); }
+.hh-composer { margin: 0 20px 16px; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 12px 12px 18px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; box-shadow: var(--hh-shadow); }
+.hh-composer > textarea, .hh-composer > .hh-sk-flagged { flex: 1 1 100%; }
+.hh-composer textarea { border-color: transparent; padding: 4px 0; }
+.hh-composer-send-hint { color: var(--hh-muted); font-size: 12.5px; }
+.hh-composer button.hh-cta[type="submit"] { height: 44px; background: var(--hh-cta); color: var(--hh-cta-ink); }
+.hh-composer button.hh-cta[type="submit"]:hover:not(:disabled) { background: var(--hh-cta-hover); }
+.hh-side { width: auto; flex: 1 1 280px; max-width: 320px; padding: 24px 22px; background: var(--hh-rail); }
 @media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } .hh-chat { padding: 20px 16px; } }
 
 .hh-scope-picker {
@@ -780,6 +804,12 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-import button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .hh-sk-personality { white-space: pre-wrap; }
 .hh-sk-list { margin-bottom: 20px; }
+/* Sidekick in the soft-cards look (UI refresh spec §5.1): the side column's ground, cards that open with their tag, pill actions. */
+.hh-sk-panel { width: 320px; background: var(--hh-rail); }
+.hh-sk-body { display: grid; gap: 12px; align-content: start; }
+.hh-sk-card { border-radius: 14px; padding: 14px; }
+.hh-sk-card h3 .hh-tag, .hh-sk-card h4 .hh-tag { text-transform: none; letter-spacing: 0; }
+.hh-sk-actions .hh-pill { height: 34px; }
 .hh-sk-list h3 { margin: 0 0 4px; font-size: 0.95rem; }
 .hh-sk-list-rows { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .hh-sk-list-row { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }

@@ -76,6 +76,17 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     expect(screen.queryByRole("region", { name: PANEL })).toBeNull();
   });
 
+  it("in flow mode the task header's Context pill is the panel's one button; the flow side keeps the ring (UI refresh spec §5.1)", async () => {
+    await openApp();
+    const pill = await screen.findByRole("button", { name: PANEL });
+    expect(pill.closest(".hh-task-head")).toBeTruthy();
+    expect(pill.textContent).toContain("Context 20%");
+    // One meter on screen, the flow side's ring: the pill reads it out as text.
+    const meters = screen.getAllByRole("meter", { name: "Context in use" });
+    expect(meters).toHaveLength(1);
+    expect(meters[0].closest(".hh-flow-side")).toBeTruthy();
+  });
+
   it("without actions the meter sits in the top bar", async () => {
     await openApp(false);
     expect(screen.queryByRole("region", { name: PANEL })).toBeNull();

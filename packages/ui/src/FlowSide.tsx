@@ -1,6 +1,6 @@
 import { type ReactNode, useId } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
+import { CheckIcon, LockIcon, NoteIcon, Tag } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
 import { shownLanguage } from "./language";
 
@@ -8,8 +8,11 @@ import { shownLanguage } from "./language";
  * A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). With
  * `onOpen`, a button that opens the context panel (context-panel spec §5.1).
  */
-/** `pill`: the task header's "Context n%" pill (UI refresh spec §5.1); without it, the ring alone (the flow side). */
-export function ContextMeter({ used, cap, onOpen, pill }: { used: number; cap: number; onOpen?: () => void; pill?: boolean }) {
+/**
+ * `pill`: the task header's "Context n%" pill (UI refresh spec §5.1); without it, the ring alone (the flow side).
+ * `ring={false}`: the pill as text only, for flow mode, where the flow side already draws the ring.
+ */
+export function ContextMeter({ used, cap, onOpen, pill, ring: withRing = true }: { used: number; cap: number; onOpen?: () => void; pill?: boolean; ring?: boolean }) {
   const { t, i18n } = useTranslation();
   const readoutId = useId();
   if (!(cap > 0)) return null;
@@ -36,7 +39,7 @@ export function ContextMeter({ used, cap, onOpen, pill }: { used: number; cap: n
   // A button's content is presentational: the meter's readout reaches screen readers as the button's description.
   return (
     <button type="button" className={pill ? "hh-ctxp-meter hh-pill" : "hh-ctxp-meter"} aria-label={t("context.open")} aria-describedby={readoutId} onClick={onOpen}>
-      {ring}
+      {(withRing || !pill) && ring}
       {pill && t("context.pill", { pct })}
       <span id={readoutId} className="hh-sr-only">
         {t("models.contextReadout", { pct, used: fmt(used), cap: fmt(cap) })}
@@ -74,6 +77,7 @@ export function FlowSide({
   const path = (state.path ?? []).filter((id) => state.actions[id]);
   // The step on screen: the running task's, or (idle) the one the path suggests next.
   const current = tasks.current ? tasks.current.action : (nextInPath(path, undefined, tasks.actions) ?? undefined);
+  const doneCount = path.filter((id) => tasks.actions[id] === "done" && id !== current).length;
   return (
     <nav className="hh-flow-side" aria-label={t("flow.path")}>
       {tasks.current && !tasks.current.action && tasks.current.context && (
@@ -84,9 +88,13 @@ export function FlowSide({
       )}
       {path.length > 0 && (
         <section>
-          <h2 id={pathId} className="hh-flow-heading">
-            {t("flow.path")}
-          </h2>
+          {/* The count stays out of the heading: the heading names the list. */}
+          <div className="hh-flow-head">
+            <h2 id={pathId} className="hh-flow-heading">
+              {t("flow.path")}
+            </h2>
+            <span className="hh-caption">{t("flow.count", { done: doneCount, total: path.length })}</span>
+          </div>
           <ol className="hh-steps" aria-labelledby={pathId}>
             {path.map((id, i) => {
               const here = id === current;
@@ -95,15 +103,22 @@ export function FlowSide({
                 <li key={id}>
                   <button
                     type="button"
+                    className={done ? "hh-flow-step is-done" : "hh-flow-step"}
                     aria-current={here ? "step" : undefined}
                     disabled={disabled || (here && tasks.current !== null)}
                     onClick={() => onStart(id)}
                   >
-                    <span className={done ? "hh-step-mark done" : "hh-step-mark"} aria-hidden="true">
+                    <span className={done ? "hh-step-mark hh-flow-mark done" : "hh-step-mark hh-flow-mark"} aria-hidden="true">
                       {done ? <CheckIcon /> : i + 1}
                     </span>
-                    {state.actions[id].label}
-                    {done && <span className="hh-sr-only"> {t("flow.seen")}</span>}
+                    <span className="hh-flow-label">{state.actions[id].label}</span>{" "}
+                    {done && <Tag tone="green">{t("flow.seen")}</Tag>}
+                    {/* aria-current already says it to screen readers: the tag keeps the step's name as it was. */}
+                    {here && (
+                      <span className="hh-tag hh-tag-orange" aria-hidden="true">
+                        {t("flow.now")}
+                      </span>
+                    )}
                   </button>
                   {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} onOpen={onContext} />}
                 </li>

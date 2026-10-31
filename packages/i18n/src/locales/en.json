@@ -258,6 +258,8 @@
   "chat": {
     "placeholder": "Write a message…",
     "send": "Send",
+    "enterToSend": "⏎ to send",
+    "conversation": "Conversation",
     "stop": "Stop",
     "working": "Working…",
     "showDetail": "Show details",
@@ -279,6 +281,8 @@
     "startIntro": "Pick a topic, or ask a question below.",
     "faq": "Frequent questions",
     "seen": "Done",
+    "now": "Now",
+    "count": "{{done}} / {{total}}",
     "nextUp": "Next on the path",
     "unfinished": "Unfinished",
     "unsaved": "No summary",

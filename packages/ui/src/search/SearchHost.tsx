@@ -72,7 +72,7 @@ export function SearchHost({ client, state, openScope, onIntent }: { client: Har
   const pick = (hit: SearchHitView) => {
     void client.search.opened(hit);
     leave();
-    if (hit.target.kind !== "reveal") onIntent(hit.target);
+    if (hit.target.kind !== "reveal" && hit.target.kind !== "none") onIntent(hit.target);
   };
   return (
     <SearchPalette
@@ -82,6 +82,7 @@ export function SearchHost({ client, state, openScope, onIntent }: { client: Har
       where={where}
       {...(state.scopes ? { scopesPlural: state.scopes.plural } : {})}
       references={(state.references?.length ?? 0) > 0}
+      harnessName={state.harness.name}
       onClose={close}
       onPick={pick}
       onAsk={(text) => {

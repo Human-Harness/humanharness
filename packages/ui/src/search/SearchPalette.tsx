@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchKind, SearchMarked, SearchStatus } from "../client";
+import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchIndexKind, SearchMarked, SearchRowKind, SearchStatus } from "../client";
 import { questionText } from "./ask";
 import { type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
 
@@ -35,7 +35,7 @@ function trapTab(e: KeyboardEvent, root: HTMLElement | null): void {
   }
 }
 
-function HitRow({ id, hit, active, onPick, onHover }: { id: string; hit: SearchHitView; active: boolean; onPick: () => void; onHover: () => void }) {
+function HitRow({ id, hit, tag, active, onPick, onHover }: { id: string; hit: SearchHitView; tag: string | null; active: boolean; onPick: () => void; onHover: () => void }) {
   const { t } = useTranslation();
   const meta = hit.meta
     ? [hit.meta.role ? t(`search.role.${hit.meta.role}`) : null, hit.meta.status ? t(`search.status.${hit.meta.status}`) : null, hit.meta.tier ?? null].filter(Boolean).join(" · ")
@@ -52,6 +52,7 @@ function HitRow({ id, hit, active, onPick, onHover }: { id: string; hit: SearchH
       </span>
       {hit.folder !== undefined && <span className="hh-search-tag">{t("search.readOnly", { folder: hit.folder })}</span>}
       {hit.scope !== undefined && <span className="hh-search-tag">{hit.scope}</span>}
+      {tag !== null && <span className="hh-search-tag">{tag}</span>}
     </div>
   );
 }
@@ -65,16 +66,21 @@ export interface SearchPaletteProps {
   scopesPlural?: string;
   /** A harness with reference folders: their toggle shows, on by default. */
   references: boolean;
+  /** The harness's name, for a record no view opens: "Shown in <harness>". */
+  harnessName?: string;
   onClose: () => void;
   onPick: (hit: SearchHitView) => void;
   onAsk: (text: string) => void;
 }
 
+const INDEX_KINDS: readonly SearchRowKind[] = ["task", "note", "file", "data"];
+const isIndexKind = (k: SearchRowKind): k is SearchIndexKind => INDEX_KINDS.includes(k);
+
 /** The ⌘K palette (search spec §5): a modal dialog with a combobox over a grouped listbox. Asks main; sends nothing. */
-export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, onClose, onPick, onAsk }: SearchPaletteProps) {
+export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, harnessName, onClose, onPick, onAsk }: SearchPaletteProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(initialQuery);
-  const [kind, setKind] = useState<SearchKind | null>(null);
+  const [kind, setKind] = useState<SearchRowKind | null>(null);
   /** Null until the person flips it: main's remembered value shows meanwhile. */
   const [allScopes, setAllScopes] = useState<boolean | null>(null);
   const [refs, setRefs] = useState(true);
@@ -109,7 +115,7 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
     const n = ++asked.current;
     const byIndex = movedAsked.current !== moved;
     movedAsked.current = moved;
-    const filters: SearchFilters = { ...(kind ? { kind } : {}), ...(allScopes !== null ? { allScopes } : {}), ...(refs ? {} : { references: false }) };
+    const filters: SearchFilters = { ...(kind && isIndexKind(kind) ? { kind } : {}), ...(allScopes !== null ? { allScopes } : {}), ...(refs ? {} : { references: false }) };
     const timer = setTimeout(
       () => {
         void client.search.query(query, filters).then((a) => {
@@ -175,6 +181,11 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
           ? t("search.none", { query: query.trim() })
           : t("search.empty", { mod: MOD });
   const sectionLabel = (key: Section["key"]) => (key === "recent" ? t("search.recent") : t(`search.kind.${key}`));
+  /** A record no view opens says where it lives (§3 Data); a plugin's says which plugin. */
+  const tagOf = (hit: SearchHitView): string | null => {
+    if (hit.target.kind === "record" && harnessName !== undefined && !client.search.handlesRecord(hit.target.collection)) return t("search.shownIn", { name: harnessName });
+    return hit.plugin !== undefined ? t("search.fromPlugin", { plugin: hit.plugin }) : null;
+  };
   let index = 0;
 
   return (
@@ -233,7 +244,7 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
               </div>
               {s.hits.map((hit) => {
                 const i = index++;
-                return <HitRow key={hit.id} id={optionId(i)} hit={hit} active={i === active} onPick={() => onPick(hit)} onHover={() => setActive(i)} />;
+                return <HitRow key={hit.id} id={optionId(i)} hit={hit} tag={tagOf(hit)} active={i === active} onPick={() => onPick(hit)} onHover={() => setActive(i)} />;
               })}
             </div>
           ))}

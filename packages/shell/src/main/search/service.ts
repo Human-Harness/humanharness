@@ -1,6 +1,6 @@
 // Global search in main (search spec §4, §5, §9): lazy (D8), one live index per base, the worker's batches applied here.
 import path from "node:path";
-import type { SearchAnswer, SearchFilters, SearchGroup, SearchHitView, SearchKind, SearchMarked, SearchStatus } from "@humanharness/protocol";
+import type { SearchAnswer, SearchFilters, SearchGroup, SearchHitView, SearchIndexKind, SearchMarked, SearchStatus } from "@humanharness/protocol";
 import {
   APP_SCOPE,
   type ChatMeta,
@@ -82,7 +82,7 @@ interface Live {
   again: "full" | Set<string> | null;
 }
 
-const EMPTY_COUNTS = (): Record<SearchKind, number> => ({ task: 0, note: 0, file: 0 });
+const EMPTY_COUNTS = (): Record<SearchIndexKind, number> => ({ task: 0, note: 0, file: 0, data: 0 });
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**

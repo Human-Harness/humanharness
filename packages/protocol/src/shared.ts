@@ -1,6 +1,6 @@
 // Pure helpers and constants both the core and the window use (replaceable parts §5): no I/O.
 import type { TimelineAuthor } from "@humanharness/workspace";
-import type { ActionStatus, AnswerPart, AppConfig, ChatEntry, ConfiguredApp, HistoryTaskView, ReaderPrefs, SearchKind, TextSize } from "./views";
+import type { ActionStatus, AnswerPart, AppConfig, ChatEntry, ConfiguredApp, HistoryTaskView, ReaderPrefs, SearchIndexKind, SearchKind, TextSize } from "./views";
 
 /** Settings › General › Text size: the whole window is zoomed by this factor (chrome, chat and the harness's blocks alike). */
 export const TEXT_SIZES = { normal: 1, large: 1.15, larger: 1.3, largest: 1.5 } as const;
@@ -117,3 +117,6 @@ export function laterTasks(groups: HistoryTaskView[], own: string | null, after:
 
 /** Search's kinds in the order the palette groups them (search spec §3). */
 export const SEARCH_KINDS: readonly SearchKind[] = ["task", "note", "file"];
+
+/** Every kind main's index answers, in the palette's order (search spec §3). */
+export const SEARCH_INDEX_KINDS: readonly SearchIndexKind[] = ["task", "note", "file", "data"];

@@ -1,7 +1,7 @@
-import { SEARCH_KINDS, type SearchAnswer, type SearchHitView, type SearchKind } from "../client";
+import { SEARCH_INDEX_KINDS, type SearchAnswer, type SearchHitView, type SearchRowKind } from "../client";
 
 export interface Section {
-  key: SearchKind | "recent";
+  key: SearchRowKind | "recent";
   hits: SearchHitView[];
 }
 
@@ -17,15 +17,16 @@ export const rowsOf = (sections: readonly Section[]): SearchHitView[] => section
 
 /** §5.5: "All · N", then one chip per kind that has results. `kind` null: All. */
 export interface Chip {
-  kind: SearchKind | null;
+  kind: SearchRowKind | null;
   count: number;
 }
 
 export function chipsOf(a: SearchAnswer | null): Chip[] {
   if (!a?.ok || !a.query.trim()) return [];
-  const all = SEARCH_KINDS.reduce((n, k) => n + a.counts[k], 0);
+  const count = (k: SearchRowKind) => (k === "data" ? (a.counts.data ?? 0) : a.counts[k]);
+  const all = SEARCH_INDEX_KINDS.reduce((n, k) => n + count(k), 0);
   if (all === 0) return [];
-  return [{ kind: null, count: all }, ...SEARCH_KINDS.filter((k) => a.counts[k] > 0).map((k) => ({ kind: k, count: a.counts[k] }))];
+  return [{ kind: null, count: all }, ...SEARCH_INDEX_KINDS.filter((k) => count(k) > 0).map((k) => ({ kind: k, count: count(k) }))];
 }
 
 export const step = (i: number, delta: number, length: number): number => (length === 0 ? 0 : Math.min(length - 1, Math.max(0, i + delta)));

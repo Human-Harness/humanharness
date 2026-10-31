@@ -1,5 +1,5 @@
 import type { SearchFilters } from "@humanharness/protocol";
-import { SEARCH_KINDS } from "@humanharness/protocol";
+import { SEARCH_INDEX_KINDS } from "@humanharness/protocol";
 import type { InvokeChannel } from "@humanharness/protocol/channels";
 import { MAX_QUERY_CHARS } from "@humanharness/search";
 import type { SearchService } from "./service";
@@ -12,7 +12,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** Only the known fields of the right kind; the rest is dropped (renderer input is untrusted). */
 function cleanFilters(v: unknown): SearchFilters {
   if (!isObject(v)) return {};
-  const kind = SEARCH_KINDS.find((k) => k === v.kind);
+  const kind = SEARCH_INDEX_KINDS.find((k) => k === v.kind);
   return {
     ...(kind ? { kind } : {}),
     ...(typeof v.allScopes === "boolean" ? { allScopes: v.allScopes } : {}),

@@ -1019,6 +1019,13 @@ export function ChatView({
         setDraft(intent.text);
         requestAnimationFrame(() => inputRef.current?.focus());
         return true;
+      case "record":
+        // The harness view's own handler (client.search.onOpenRecord); none listening: nothing opens (§3).
+        return client.search.openRecord(intent.collection, intent.key, intent.scope);
+      case "panel":
+        if (!surfaceCtx) return false;
+        openPanel(intent.plugin, intent.panel, intent.focus);
+        return true;
     }
   };
   useLayoutEffect(() => {

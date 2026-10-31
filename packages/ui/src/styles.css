@@ -59,10 +59,10 @@
   --hh-diff-del: #fbe3e3;
   --hh-diff-bar-ins: #2e8a5c;
   --hh-diff-bar-del: #b3402f;
-  --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --hh-font: "DM Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --hh-display: var(--hh-font);
   font-family: var(--hh-font);
-  font-size: 13px;
+  font-size: 14px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {

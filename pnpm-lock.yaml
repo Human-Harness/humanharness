@@ -447,6 +447,9 @@ importers:
       '@agentclientprotocol/codex-acp':
         specifier: 2.2.2
         version: 2.2.2
+      '@fontsource/dm-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@humanharness/blocks':
         specifier: workspace:*
         version: link:../blocks
@@ -484,9 +487,6 @@ importers:
         specifier: ^6.4.299
         version: 6.4.299
     devDependencies:
-      '@fontsource/lexend':
-        specifier: 5.3.0
-        version: 5.3.0
       '@humanharness/fake-agent':
         specifier: workspace:*
         version: link:../fake-agent
@@ -1055,8 +1055,8 @@ packages:
   '@fast-csv/parse@4.3.6':
     resolution: {integrity: sha512-uRsLYksqpbDmWaSmzvJcuApSEe38+6NQZBUsuAyMZKqHxH0g1wcJgsKUvN3WC8tewaqFjBMMGrkHmC+T7k8LvA==}
 
-  '@fontsource/lexend@5.3.0':
-    resolution: {integrity: sha512-4igbsooynC6xwfagkAW6eo9JMrw8ALFGkWn1YChYmYchufMJSPgWihD+cy5ruX5YX/gDk/gllcl1Oj7q6KUZmw==}
+  '@fontsource/dm-sans@5.3.0':
+    resolution: {integrity: sha512-lYJtMXXO28q1z+yz+z8XKd0s4hXaa9QdkETzkyD760sidCv5heI86weYA0sx0Nc4pAMAQTUuyf4gO44cYKKS9g==}
 
   '@hono/node-server@2.1.4':
     resolution: {integrity: sha512-2g1qeHl4BduwDn6L8nkAvDrPUWPMlkQ//a5NhP/zIyaXKMjZNRV+cG9Csu+BiJFf6+68pqzjf4Hi5sJGKHuS1g==}
@@ -4111,7 +4111,7 @@ snapshots:
       lodash.isundefined: 3.0.1
       lodash.uniq: 4.5.0
 
-  '@fontsource/lexend@5.3.0': {}
+  '@fontsource/dm-sans@5.3.0': {}
 
   '@hono/node-server@2.1.4(hono@4.13.13)':
     dependencies:

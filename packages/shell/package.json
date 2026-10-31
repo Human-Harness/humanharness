@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "2.2.2",
+    "@fontsource/dm-sans": "^5.3.0",
     "@humanharness/blocks": "workspace:*",
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
@@ -26,7 +27,6 @@
     "pdfjs-dist": "^6.4.299"
   },
   "devDependencies": {
-    "@fontsource/lexend": "5.3.0",
     "@humanharness/fake-agent": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

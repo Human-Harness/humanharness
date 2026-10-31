@@ -59,8 +59,8 @@
   --hh-diff-del: #fbe3e3;
   --hh-diff-bar-ins: #2e8a5c;
   --hh-diff-bar-del: #b3402f;
-  --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --hh-font: "DM Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --hh-display: var(--hh-font);
   /* Pre-refresh names, kept one release for published plugins (UI refresh spec §3.1). */
   --hh-paper: var(--hh-bg);
   --hh-sheet: var(--hh-rail);

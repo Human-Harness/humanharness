@@ -56,7 +56,9 @@ async function openInbox(c: FakeClient) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  fireEvent.click(await screen.findByRole("button", { name: /^Inbox/ }));
+  // The top bar's pill ("Inbox, N waiting"; the rail's Inbox is named "Inbox" too), then the Inbox screen's List.
+  fireEvent.click(await screen.findByRole("button", { name: /^Inbox, / }));
+  fireEvent.click(screen.getByRole("button", { name: "List" }));
   const section = screen.getByRole("heading", { name: "Jobs" }).closest("section")!;
   await waitFor(() => expect(within(section).getAllByRole("listitem")).toHaveLength(2));
   return section as HTMLElement;

@@ -359,15 +359,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
   /**
    * The rail (spec §4.2): an entry only for a feature the harness has (D0). Notes come from declared actions' topics.
-   * Inbox and Jobs wait for the Inbox screen (spec §5.4, Part 5): until then they would lead nowhere, and the inbox stays
-   * the top bar's button.
+   * Inbox and Jobs open the Inbox screen (§5.4): a harness whose manifest turns the core inbox off (`inbox: false`) has
+   * neither, as it has no top-bar pill.
    */
   const entries = railEntries({
-    parallel: Boolean(state.parallel),
+    parallel: Boolean(state.parallel?.inbox),
     jobs: Boolean(state.jobs?.jobs.length),
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
-  }).filter((e) => e !== "inbox" && e !== "jobs");
+  });
   /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
   const focusedTask = tasksState?.tasks.find((s) => s.focused);
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
@@ -395,14 +395,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
               trailing={
                 <>
                   {state.parallel?.inbox && view.kind !== "inbox" && (
-                    <Inbox
-                      client={client}
-                      state={state}
-                      tasks={tasksState}
-                      onRefill={(text) => shellRef.current?.refill(text)}
-                      onStartView={toStart}
-                      onStartAction={(action, scope) => shellRef.current?.start(action, scope) ?? false}
-                    />
+                    <Inbox client={client} state={state} tasks={tasksState} onOpen={() => setView({ kind: "inbox" })} />
                   )}
                   {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={(plugin, panel, focus) => shellRef.current?.openPanel(plugin, panel, focus)} />}
                   {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}

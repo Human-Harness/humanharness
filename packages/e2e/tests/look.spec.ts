@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { closeAndClean, launchMock, makeSandbox } from "./helpers";
+import type { ClaudeScript } from "@humanharness/fake-agent";
+import { closeAndClean, launch, launchMock, makeSandbox, shellDir } from "./helpers";
 
 // Screenshots of the refreshed screens, one run per theme (UI refresh spec §9). No pixel assertions: the
 // reviewer compares them with the mockups by eye. They land in packages/e2e/test-results/look/ (gitignored).
@@ -66,3 +68,48 @@ for (const theme of ["light", "dark"] as const) {
     }
   });
 }
+
+test.describe("look: the Inbox board", () => {
+  // The demo has no parallel tasks: the parallel fixture's own build, as parallel.spec builds it.
+  const fixture = path.resolve(here, "../../fake-agent/fixtures/parallel-harness");
+  const outDir = path.join(shellDir, "out", "look-parallel");
+  /** `slow`: write-a works 5 s, so write-b can finish (and wait for the person) meanwhile. */
+  const slow = (JSON.parse(fs.readFileSync(path.join(fixture, "fake-script.json"), "utf8")).scenarios as { slow: ClaudeScript }).slow;
+
+  test.beforeAll(() => {
+    // electron-vite directly: `humanharness dev --build` would first run `check`, which a test fixture has no HARNESS.md for.
+    test.setTimeout(300_000);
+    const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: outDir };
+    delete env.ELECTRON_RUN_AS_NODE;
+    execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
+  });
+  test.afterAll(() => {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`look: the Inbox board in ${theme}`, async () => {
+      const s = makeSandbox(`look-inbox-${theme}`);
+      const { app, page } = await launch(s, { claude: slow }, path.join(outDir, "main", "index.js"));
+      try {
+        await page.setViewportSize({ width: 1100, height: 720 });
+        await page.emulateMedia({ colorScheme: theme });
+        await page.getByRole("button", { name: "Start Parallel" }).click();
+        const topic = (label: string) => page.getByRole("region", { name: "Where do we start?" }).getByRole("button", { name: new RegExp(label) });
+        // One task working, one waiting for the person.
+        await topic("Write A").click();
+        await expect(page.getByRole("main").locator('[data-role="user"]')).toHaveCount(1);
+        await page.locator("header.hh-task-head").getByRole("button", { name: "New task" }).click();
+        await topic("Write B").click();
+        await expect(page.getByRole("main").getByText("Wrote b.")).toBeVisible();
+        await page.getByRole("button", { name: /^Inbox, \d+ waiting$/ }).click();
+        const board = page.getByRole("region", { name: "Inbox", exact: true });
+        await expect(board.getByRole("region", { name: /^Waiting for you \d+$/ }).getByRole("button", { name: /^Write B/ })).toBeVisible();
+        await expect(board.getByRole("region", { name: /^Working \d+$/ }).getByRole("button", { name: /^Write A/ })).toBeVisible();
+        await page.screenshot({ path: path.join(lookDir, `inbox-${theme}.png`) });
+      } finally {
+        await closeAndClean(app, s);
+      }
+    });
+  }
+});

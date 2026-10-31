@@ -12,7 +12,7 @@ const RESULT_TONE: Record<NonNullable<JobSummary["last"]>["status"], TagTone> = 
 const TIER_TONE = { light: "green", standard: "blue", deep: "violet" } as const;
 
 /**
- * The Inbox screen (UI refresh spec §5.4, rail › Inbox): the open tasks and the jobs as a board, or as the drop-down's
+ * The Inbox screen (UI refresh spec §5.4, rail › Inbox): the open tasks and the jobs as a board, or as the list's
  * four sections (List). Its data and actions are the list's: a task card asks main to focus its task and `onOpened`
  * hears once main took it (the chat follows main's tasks change); a job card has its one action, Run now, Open for a
  * needs-you result's action, or Resume for a paused job (Settings › Jobs, where its on/off and cap are). A job is
@@ -226,10 +226,10 @@ export function InboxBoard({
   const conflicts = all.filter((s) => s.conflict && s.conflict.length > 0);
 
   return (
-    <div className="hh-inbox-screen">
+    <section className="hh-inbox-screen" aria-labelledby={`${id}-title`}>
       <header className="hh-inbox-head">
         <div className="hh-inbox-head-text">
-          <h1>{t("inbox.title")}</h1>
+          <h1 id={`${id}-title`}>{t("inbox.title")}</h1>
           <p className="hh-caption">{summary}</p>
         </div>
         <Segmented
@@ -287,6 +287,6 @@ export function InboxBoard({
           </div>
         </>
       )}
-    </div>
+    </section>
   );
 }

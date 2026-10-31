@@ -89,15 +89,22 @@ async function commits(s: Sandbox): Promise<Commit[]> {
 const turnOf = (id: string, action: string) => (c: Commit) => c.message.startsWith(`Turn: # Task: ${action}`) && c.message.endsWith(`\n\nTask: ${id}\nAction: ${action}`);
 
 const inboxButton = (page: Page) => page.getByRole("button", { name: /^Inbox, \d+ waiting$/ });
-/** Opens the inbox (unless it is open) and returns it. */
+/** Opens the Inbox screen through the top bar's pill (unless it is open) and returns it: the board (UI refresh spec §5.4). */
 async function openInbox(page: Page) {
-  const dialog = page.getByRole("dialog", { name: "Inbox" });
-  if (!(await dialog.isVisible())) await inboxButton(page).click();
-  await expect(dialog).toBeVisible();
-  return dialog;
+  const board = page.getByRole("region", { name: "Inbox", exact: true });
+  if (!(await board.isVisible())) await inboxButton(page).click();
+  await expect(board).toBeVisible();
+  return board;
 }
-const section = (page: Page, title: "Waiting for you" | "Working" | "Queued") => page.getByRole("dialog", { name: "Inbox" }).getByRole("region", { name: title });
-/** Opens the inbox and focuses the open task labelled `label`. */
+/** Back to the chat from the Inbox screen (which has no pill): the rail's Tasks. */
+async function closeInbox(page: Page) {
+  await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("region", { name: "Inbox", exact: true })).toBeHidden();
+}
+/** A board column: its region is named by its title and count. */
+const section = (page: Page, title: "Waiting for you" | "Working" | "Queued") =>
+  page.getByRole("region", { name: "Inbox", exact: true }).getByRole("region", { name: new RegExp(`^${title} \\d+$`) });
+/** Opens the Inbox screen and focuses the open task labelled `label` by its card. */
 async function focusTask(page: Page, label: string) {
   const dialog = await openInbox(page);
   await dialog.getByRole("button", { name: new RegExp(`^${label}`) }).click();
@@ -150,16 +157,18 @@ test("two tasks run at once, the inbox follows them, and undoing one leaves the 
     await expect.poll(() => laneOf(s.folder, "write-a")?.status).toBe("running");
     await openInbox(page);
     await expect(section(page, "Working").getByRole("button", { name: /^Write A/ })).toBeVisible();
-    await page.getByRole("dialog", { name: "Inbox" }).getByRole("button", { name: "New task" }).click();
+    await page.getByRole("region", { name: "Inbox", exact: true }).getByRole("button", { name: "New task" }).click();
     await topic(page, "Write B").click();
     await expect(page.getByRole("main").getByText("Wrote b.")).toBeVisible();
     // The second has finished while the first still works: both ran at once.
     await openInbox(page);
     await expect(section(page, "Waiting for you").getByRole("button", { name: /^Write B/ })).toBeVisible();
     await expect(section(page, "Working").getByRole("button", { name: /^Write A/ })).toBeVisible();
+    await closeInbox(page);
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 1 waiting");
     // Then both wait.
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 2 waiting", { timeout: 30_000 });
+    await openInbox(page);
     await expect(section(page, "Waiting for you").getByRole("button")).toHaveCount(2);
     await expect(section(page, "Working").getByRole("button")).toHaveCount(0);
     await expect.poll(() => lanes(s.folder).map((l) => l.status)).toEqual(["waiting", "waiting"]);
@@ -180,7 +189,7 @@ test("two tasks run at once, the inbox follows them, and undoing one leaves the 
 
     // Undo the second task, whose turn was saved first: its file goes; the first task's later turn changed another
     // file, so it is neither undone nor counted, and its file and task stay.
-    await page.keyboard.press("Escape");
+    await closeInbox(page);
     await page.getByRole("button", { name: "History", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "History" });
     const rowB = panel.locator("li", { has: page.getByRole("button", { name: /^Write B.*1 file changed/ }) });
@@ -253,7 +262,7 @@ test("a task started from an open one runs in its own lane, with its own chat", 
     await openInbox(page);
     await expect(section(page, "Waiting for you").getByRole("button")).toHaveCount(1);
     await expect(section(page, "Waiting for you").getByRole("button", { name: /^Write B/ })).toBeVisible();
-    await page.keyboard.press("Escape");
+    await closeInbox(page);
 
     // Each task's chat file holds its own turns only.
     const textsOf = (id: string) => chatOf(s, id).map((e) => e.text);
@@ -292,8 +301,8 @@ test("two tasks that change the same file are both told", async () => {
     await expect(page.getByRole("main").getByText(/Working on/)).toHaveCount(0);
     // Both tasks are marked in the inbox, and each chat, opened again, says which other task changed the file.
     await openInbox(page);
-    await expect(page.getByRole("dialog", { name: "Inbox" }).getByText("Another task changed the same files")).toHaveCount(2);
-    await page.keyboard.press("Escape");
+    await expect(page.getByRole("region", { name: "Inbox", exact: true }).getByText("Another task changed the same files")).toHaveCount(2);
+    await closeInbox(page);
     await focusTask(page, "both one");
     await expect(page.getByRole("main").getByText("This task and “both two” both changed spec.md.")).toBeVisible();
     await focusTask(page, "both two");
@@ -317,9 +326,11 @@ test("at one task at a time, the second waits in the queue and the commits are t
     await expect(section(page, "Queued").getByRole("button", { name: /^Write B/ })).toBeVisible();
     await expect(section(page, "Working").getByRole("button", { name: /^Write A/ })).toBeVisible();
     expect(exists(s.folder, "b.md")).toBe(false);
+    await closeInbox(page);
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 2 waiting", { timeout: 30_000 });
+    await openInbox(page);
     await expect(section(page, "Queued").getByRole("button")).toHaveCount(0);
-    await page.keyboard.press("Escape");
+    await closeInbox(page);
     await expect(page.getByRole("main").getByText("Wrote b.")).toBeVisible();
 
     // One turn at a time: each commit as the plain app makes it, no Shared: commit and no shared trailer.

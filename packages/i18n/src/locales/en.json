@@ -1303,7 +1303,6 @@
     "conflictEnded": "A task that has ended also changed {{path}}.",
     "pathsMore": "{{paths}} and {{count}} more",
     "waitingBody": "Waiting for you",
-    "inbox": "Inbox",
     "waitingTitle": "Waiting for you",
     "workingTitle": "Working",
     "queuedTitle": "Queued",

@@ -43,16 +43,23 @@ async function messages(s: Sandbox): Promise<string[]> {
 }
 
 const inboxButton = (page: Page) => page.getByRole("button", { name: /^Inbox, \d+ waiting$/ });
+/** Opens the Inbox screen through the top bar's pill (unless it is open), as its List: the four sections (UI refresh spec §5.4). */
 async function openInbox(page: Page) {
-  const dialog = page.getByRole("dialog", { name: "Inbox" });
-  if (!(await dialog.isVisible())) await inboxButton(page).click();
-  await expect(dialog).toBeVisible();
-  return dialog;
+  const screen = page.getByRole("region", { name: "Inbox", exact: true });
+  if (!(await screen.isVisible())) await inboxButton(page).click();
+  await expect(screen).toBeVisible();
+  await screen.getByRole("button", { name: "List", exact: true }).click();
+  return screen;
+}
+/** Back to the chat from the Inbox screen (which has no pill): the rail's Tasks. */
+async function closeInbox(page: Page) {
+  await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("region", { name: "Inbox", exact: true })).toBeHidden();
 }
 /** Job `label`'s row in the inbox's Jobs section. */
 const jobRow = (page: Page, label: string): Locator =>
   page
-    .getByRole("dialog", { name: "Inbox" })
+    .getByRole("region", { name: "Inbox", exact: true })
     .getByRole("region", { name: "Jobs" })
     .getByRole("listitem")
     .filter({ has: page.getByText(label, { exact: true }) });
@@ -127,11 +134,13 @@ test("a needs-you result shows in the inbox, counts as waiting and starts its ac
     const row = jobRow(page, "Check");
     await expect(row).toContainText("Needs you");
     await expect(row).toContainText("2 tickets without AC");
+    await closeInbox(page);
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 1 waiting");
+    await openInbox(page);
 
     // "Start" opens a Write A task, as its topic would.
     await row.getByRole("button", { name: "Start" }).click();
-    await expect(page.getByRole("dialog", { name: "Inbox" })).toBeHidden();
+    await expect(page.getByRole("region", { name: "Inbox", exact: true })).toBeHidden();
     await expect(page.getByRole("main").getByText("Wrote a.")).toBeVisible();
     expect(fs.readFileSync(path.join(s.folder, "a.md"), "utf8")).toBe("a\n");
     const lanes = (JSON.parse(fs.readFileSync(path.join(s.folder, ".harness", "tasks.json"), "utf8")) as { lanes: { action?: string }[] }).lanes;
@@ -155,6 +164,7 @@ test("a job that tries to ask fails without asking, and one with no result fails
     // The asker's choices reached no one: no card anywhere, nothing waits for the person.
     await expect(page.getByRole("button", { name: "Tickets 1-3" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "All of them" })).toHaveCount(0);
+    await closeInbox(page);
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 0 waiting");
     // And opened no task: the tasks file (if any) has no lane.
     const tasksFile = path.join(s.folder, ".harness", "tasks.json");

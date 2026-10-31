@@ -1,4 +1,4 @@
-import { type FocusEvent, type KeyboardEvent, type Ref, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { InboxIcon, Tag } from "../chrome";
 import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
@@ -16,35 +16,13 @@ export function waitingCount(tasks: TasksState | null, jobs: readonly JobSummary
 }
 
 /**
- * The top bar's Inbox pill (UI refresh spec §4.1): the waiting count on an orange tag. It opens the Inbox; until the
- * Inbox screen is drawn (spec §5.4) that is the list `Inbox` shows under it.
+ * The top bar's Inbox pill (UI refresh spec §4.1): the waiting count on an orange tag. It opens the Inbox screen (§5.4).
  */
-export function InboxPill({
-  tasks,
-  jobs,
-  onOpen,
-  buttonRef,
-  expanded,
-  controls,
-}: {
-  tasks: TasksState | null;
-  jobs?: readonly JobSummary[];
-  onOpen: () => void;
-  buttonRef?: Ref<HTMLButtonElement>;
-  /** Opening a list under it: whether it is open, and its id. */
-  expanded?: boolean;
-  controls?: string;
-}) {
+export function InboxPill({ tasks, jobs, onOpen }: { tasks: TasksState | null; jobs?: readonly JobSummary[]; onOpen: () => void }) {
   const { t } = useTranslation();
   const count = waitingCount(tasks, jobs);
   return (
-    <button
-      ref={buttonRef}
-      className="hh-pill"
-      aria-label={t("inbox.pill", { count })}
-      {...(expanded !== undefined ? { "aria-haspopup": "dialog" as const, "aria-expanded": expanded, "aria-controls": controls } : {})}
-      onClick={onOpen}
-    >
+    <button className="hh-pill" aria-label={t("inbox.pill", { count })} onClick={onOpen}>
       <InboxIcon />
       {t("inbox.title")}
       {count > 0 && <Tag tone="orange">{count}</Tag>}
@@ -116,101 +94,27 @@ export function QueuePause({ client, tasks }: { client: HarnessClient; tasks: Ta
 }
 
 /**
- * The core inbox of open tasks (parallel spec §9.2): the top bar's Inbox pill with the waiting count, opening four sections.
- * It reads only `client.tasks` (never the attention items' `read` flag, which the plugins inbox shares). A row asks
- * main to focus its task and closes the list; the chat follows main's tasks change, never the click ("New task" excepted:
- * the start view is no task, so `onStartView` tells the app once main took it). Its Jobs section lists `client.jobs`
- * (part 3): each job × scope's last result, "Run now" for manual jobs and "Start" for a needs-you result's action.
+ * The core inbox of open tasks in the top bar (parallel spec §9.2, UI refresh spec §4.1): the Inbox pill with the
+ * waiting count (tasks waiting for the person and needs-you job results) and a polite live region that says it as it
+ * changes. It reads only `client.tasks` and `client.jobs` (never the attention items' `read` flag, which the plugins
+ * inbox shares); the pill opens the Inbox screen (`InboxBoard`), where the list's rows and actions are.
  */
-export function Inbox({
-  client,
-  state,
-  tasks,
-  onRefill,
-  onStartView,
-  onStartAction,
-}: {
-  client: HarnessClient;
-  state: AppState;
-  tasks: TasksState | null;
-  /** A cancelled queued message of the focused task: its text goes back in the box (Decision 7). */
-  onRefill?: (text: string) => void;
-  /** "New task" went through: main shows the start view, and the chat on screen must follow (it has no task change to see). */
-  onStartView?: () => void;
-  /** "Start" on a needs-you job row: the action starts through the chat's own start path, in the row's scope. */
-  /** Starts a needs-you job's action; false when it couldn't start (the list stays open and says so). */
-  onStartAction?: (action: string, scope: string | null) => boolean;
-}) {
+export function Inbox({ client, state, tasks, onOpen }: { client: HarnessClient; state: AppState; tasks: TasksState | null; onOpen: () => void }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const wrap = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const dialog = useRef<HTMLDivElement>(null);
-  const id = useId();
   const jobs = useJobs(client, Boolean(state.jobs));
   const count = waitingCount(tasks, jobs);
-
-  useLayoutEffect(() => {
-    if (open) (dialog.current?.querySelector<HTMLButtonElement>("button.hh-tk-row") ?? dialog.current)?.focus();
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (e.target instanceof Node && !wrap.current?.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const close = () => {
-    setOpen(false);
-    button.current?.focus();
-  };
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || !open) return;
-    e.preventDefault();
-    close();
-  };
-  const onBlur = (e: FocusEvent) => {
-    if (open && e.relatedTarget instanceof Node && !wrap.current?.contains(e.relatedTarget)) setOpen(false);
-  };
-
   return (
-    <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
-      <InboxPill
-        tasks={tasks}
-        jobs={jobs}
-        buttonRef={button}
-        expanded={open}
-        {...(open ? { controls: `${id}-list` } : {})}
-        onOpen={() => (open ? close() : setOpen(true))}
-      />
+    <div className="hh-pl-inbox">
+      <InboxPill tasks={tasks} jobs={jobs} onOpen={onOpen} />
       <span className="hh-sr-only" aria-live="polite">
         {count > 0 ? t("parallel.waitingCount", { count }) : ""}
       </span>
-      {open && (
-        <div id={`${id}-list`} ref={dialog} className="hh-pl-popover" role="dialog" aria-label={t("parallel.inbox")} tabIndex={-1}>
-          <InboxList
-            client={client}
-            state={state}
-            tasks={tasks}
-            jobs={jobs}
-            onFocused={(taskId) => {
-              setOpen(false);
-              if (taskId === null) onStartView?.();
-            }}
-            onStarted={close}
-            {...(onRefill ? { onRefill } : {})}
-            {...(onStartAction ? { onStartAction } : {})}
-          />
-        </div>
-      )}
     </div>
   );
 }
 
 /**
- * The Inbox's four sections (parallel spec §9.2), the drop-down's and the Inbox screen's List: the queues' pause,
+ * The Inbox's four sections (parallel spec §9.2), the Inbox screen's List: the queues' pause,
  * Waiting for you, Working, Queued, Jobs, and "New task". A row asks main to focus its task; `onFocused` hears once main
  * took it (null: the start view). "Start" on a needs-you job tells `onStarted` once the chat took it.
  */

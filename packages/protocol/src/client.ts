@@ -475,6 +475,8 @@ export interface HarnessClient {
   material: MaterialClient;
   /** What the agent takes into account (context-panel spec §5.2). */
   context: ContextClient;
+  /** Global search (search spec §9). Nothing is built until the first `query` (D8). */
+  search: SearchClient;
   /** Language on demand (plan 5b). Absent in a client that predates it: the Language row stays read-only (D0). */
   language?: LanguageClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */

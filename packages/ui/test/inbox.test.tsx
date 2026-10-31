@@ -45,7 +45,19 @@ async function open(c: FakeClient) {
 }
 /** `client.tasks`'s methods: the getter answers a new view each time, the methods sit on its prototype. */
 const api = (c: FakeClient) => Object.getPrototypeOf(c.tasks) as FakeClient["tasks"];
-const inbox = () => screen.findByRole("button", { name: /^Inbox/ });
+/** The top bar's Inbox pill ("Inbox, N waiting"): the rail's Inbox entry is named "Inbox" too. */
+const inbox = () => screen.findByRole("button", { name: /^Inbox, / });
+/** The Inbox screen, as the pill opens it (UI refresh spec §5.4). */
+const inboxScreen = () => screen.getByRole("region", { name: "Inbox" });
+/** Opens the Inbox screen through `pill` (default: the top bar's) and switches it to List: the four sections. */
+async function openList(pill?: HTMLElement) {
+  fireEvent.click(pill ?? (await inbox()));
+  fireEvent.click(within(inboxScreen()).getByRole("button", { name: "List" }));
+  // The screen reads the jobs as it opens: let that answer land.
+  await act(async () => {});
+}
+/** Back to the chat from the Inbox screen: the rail's Tasks. */
+const toChat = () => fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "Tasks" }));
 
 describe("Inbox (parallel spec §9.2)", () => {
   it("D0: without state.parallel there is no button and no task call", async () => {
@@ -72,15 +84,15 @@ describe("Inbox (parallel spec §9.2)", () => {
     });
     await open(c);
     const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
-    fireEvent.click(button);
-    const dialog = screen.getByRole("dialog", { name: "Inbox" });
+    await openList(button);
+    const dialog = inboxScreen();
     for (const name of ["Waiting for you", "Working", "Queued", "Jobs"]) expect(within(dialog).getByRole("heading", { name })).toBeTruthy();
     expect(within(dialog).getByText("No jobs")).toBeTruthy();
     expect(within(dialog).getByText("Has a question")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: /Task a/ }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith("a"));
-    // Focused: the list closes (the chat follows main's tasks change, never this click).
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Inbox" })).toBeNull());
+    // Focused: the Inbox screen gives way to the chat (it follows main's tasks change, never this click).
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
   });
 
   it("a pushed change updates the count without a refetch", async () => {
@@ -105,7 +117,7 @@ describe("Inbox (parallel spec §9.2)", () => {
     });
     c.state.actions = { intro: { label: "Intro", cost: "light", phases: [{ id: "draft", label: "Drafting" }] } };
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     const waiting = screen.getByRole("heading", { name: "Waiting for you" }).closest("section")!;
     const rows = within(waiting).getAllByRole("button").map((b) => b.textContent);
     expect(rows[0]).toContain("Task new");
@@ -120,8 +132,8 @@ describe("Inbox (parallel spec §9.2)", () => {
   it("New task focuses the start view", async () => {
     const c = client(parallel(), { tasks: [summary("a", "running", { focused: true })], caps: { tasks: 2, jobs: 1 } });
     await open(c);
-    fireEvent.click(await inbox());
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Inbox" })).getByRole("button", { name: "New task" }));
+    await openList();
+    fireEvent.click(within(inboxScreen()).getByRole("button", { name: "New task" }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith(null));
   });
 
@@ -132,7 +144,7 @@ describe("Inbox (parallel spec §9.2)", () => {
       paused: { reason: "out-of-quota", resetsAt: "2026-10-28T15:00:00Z" },
     });
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(c.tasks.cancelQueued).toHaveBeenCalledWith("c"));
     expect(screen.getByText(/^Out of quota until /)).toBeTruthy();
@@ -143,7 +155,7 @@ describe("Inbox (parallel spec §9.2)", () => {
   it("a pause with no reset time still offers Resume; a folder move's pause offers none", async () => {
     const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 }, paused: { reason: "out-of-quota" } });
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     expect(screen.getByText("Out of quota")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
     act(() => c.tasks.set({ tasks: [], caps: { tasks: 2, jobs: 1 }, paused: { reason: "folder-move" } }));
@@ -155,8 +167,10 @@ describe("Inbox (parallel spec §9.2)", () => {
     const c = client(parallel(), { tasks: [summary("c", "queued", { focused: true })], caps: { tasks: 1, jobs: 1 } });
     c.tasks.cancelQueued.mockResolvedValueOnce("the queued text");
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(c.tasks.cancelQueued).toHaveBeenCalledWith("c"));
+    toChat();
     await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("the queued text"));
   });
 
@@ -164,18 +178,19 @@ describe("Inbox (parallel spec §9.2)", () => {
     const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("c", "queued")], caps: { tasks: 1, jobs: 1 } });
     c.tasks.cancelQueued.mockResolvedValueOnce("someone else's text");
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(c.tasks.cancelQueued).toHaveBeenCalledWith("c"));
     // The refill runs in the reply's `.then`: let it settle before checking the box stayed empty.
     await act(async () => {});
+    toChat();
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
   });
 
   it("a queued row's Cancel is described by its task's label", async () => {
     const c = client(parallel(), { tasks: [summary("c", "queued"), summary("d", "queued")], caps: { tasks: 1, jobs: 1 } });
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     const cancels = screen.getAllByRole("button", { name: "Cancel" });
     const described = cancels.map((b) => {
       const ref = b.getAttribute("aria-describedby");
@@ -202,7 +217,7 @@ describe("Inbox (parallel spec §9.2)", () => {
       vi.setSystemTime(new Date(2026, 9, 28, 10, 0));
       const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 }, paused: { reason: "out-of-quota", resetsAt: resetsAt.toISOString() } });
       await open(c);
-      fireEvent.click(await inbox());
+      await openList();
       return screen.getByText(/^Out of quota until /).textContent;
     };
 
@@ -213,16 +228,6 @@ describe("Inbox (parallel spec §9.2)", () => {
     it("another day: the weekday too", async () => {
       expect(await pausedUntil(new Date(2026, 9, 29, 9, 30))).toBe("Out of quota until Thursday 9:30 AM");
     });
-  });
-
-  it("Escape closes the list and gives focus back to the button", async () => {
-    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
-    await open(c);
-    const button = await inbox();
-    fireEvent.click(button);
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "Inbox" }), { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Inbox" })).toBeNull();
-    expect(document.activeElement).toBe(button);
   });
 });
 
@@ -247,7 +252,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     const list = vi.spyOn(c.jobs, "list");
     const sub = vi.spyOn(c.jobs, "onChange");
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     expect(within(jobsSection()).getByText("No jobs")).toBeTruthy();
     expect(list).not.toHaveBeenCalled();
     expect(sub).not.toHaveBeenCalled();
@@ -257,7 +262,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     const c = jobsClient();
     await open(c);
     // One waiting task and one job that needs the person.
-    fireEvent.click(await screen.findByRole("button", { name: "Inbox, 2 waiting" }));
+    await openList(await screen.findByRole("button", { name: "Inbox, 2 waiting" }));
     const section = jobsSection();
     const items = within(section).getAllByRole("listitem");
     expect(items).toHaveLength(2);
@@ -280,7 +285,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     ]);
     await open(c);
     // Only the waiting task.
-    fireEvent.click(await screen.findByRole("button", { name: "Inbox, 1 waiting" }));
+    await openList(await screen.findByRole("button", { name: "Inbox, 1 waiting" }));
     expect(within(jobsSection()).getAllByRole("listitem")[0].textContent).toContain("Two conflicts need you");
   });
 
@@ -290,7 +295,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
       { id: "digest", label: "Digest", scope: null, next: "2026-10-28T10:00:00Z", manual: false, running: false },
     ]);
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     const section = jobsSection();
     expect(within(section).getAllByRole("listitem")[1].textContent).toContain("Next run");
     const runs = within(section).getAllByRole("button", { name: /Run now/ });
@@ -302,7 +307,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
   it("a running job offers no Run now", async () => {
     const c = jobsClient([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: true }]);
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     expect(within(jobsSection()).queryByRole("button", { name: /Run now/ })).toBeNull();
   });
 
@@ -311,11 +316,11 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
       { id: "sync", label: "Sync inbox", scope: "physics", last: { status: "needs-you", summary: "Look", at, action: "implement" }, manual: false, running: false },
     ]);
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
     await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
     expect(c.sent.at(-1)).toBe("Implement");
-    expect(screen.queryByRole("dialog", { name: "Inbox" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
   });
 
   it("Start in a scoped harness with no scope open uses the row's scope instead of asking for one", async () => {
@@ -324,7 +329,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     ]);
     c.state.scopes = { label: "topic", plural: "topics" };
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
     await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
   });
@@ -336,11 +341,11 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     ]);
     c.state.scopes = { label: "topic", plural: "topics" };
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     const sent = c.sent.length;
     fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
     expect(await within(jobsSection()).findByRole("alert")).toHaveProperty("textContent", "Couldn't start it now.");
-    expect(screen.getByRole("dialog", { name: "Inbox" })).toBeTruthy();
+    expect(inboxScreen()).toBeTruthy();
     expect(c.sent.length).toBe(sent);
   });
 
@@ -348,7 +353,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     const c = jobsClient([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }]);
     c.jobs.run.mockResolvedValueOnce(false);
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     fireEvent.click(within(jobsSection()).getByRole("button", { name: /Run now/ }));
     expect(await within(jobsSection()).findByRole("alert")).toHaveProperty("textContent", "Couldn't run it now.");
     c.jobs.run.mockRejectedValueOnce(new Error("No jobs"));
@@ -363,7 +368,7 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
       { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "Fine", at, action: "implement" }, manual: false, running: false },
     ]);
     await open(c);
-    fireEvent.click(await inbox());
+    await openList();
     expect(within(jobsSection()).queryByRole("button", { name: /Start/ })).toBeNull();
   });
 
@@ -396,5 +401,129 @@ describe("Inbox pill (UI refresh spec §4.1)", () => {
     const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
     expect(button.closest("header.hh-topbar")).not.toBeNull();
     expect(button.className).toContain("hh-pill");
+  });
+
+  it("opens the Inbox screen, not a drop-down; the screen has no pill (spec §4.1, §5.4)", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
+    expect(button.hasAttribute("aria-haspopup")).toBe(false);
+    fireEvent.click(button);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const board = inboxScreen();
+    expect(within(board).getByRole("heading", { level: 1, name: "Inbox" })).toBeTruthy();
+    expect(within(board).getByRole("button", { name: "Board" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: /^Inbox, / })).toBeNull();
+    const rail = screen.getByRole("navigation", { name: "App" });
+    expect(within(rail).getByRole("button", { name: "Inbox" }).getAttribute("aria-current")).toBe("page");
+  });
+});
+
+describe("the rail's Inbox and Jobs (UI refresh spec §4.2)", () => {
+  const rail = () => screen.getByRole("navigation", { name: "App" });
+
+  it("Inbox opens the Inbox screen; Tasks goes back to the chat", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    expect(within(rail()).queryByRole("button", { name: "Jobs" })).toBeNull(); // no declared jobs
+    fireEvent.click(within(rail()).getByRole("button", { name: "Inbox" }));
+    expect(within(inboxScreen()).getByRole("button", { name: /^Task a/ })).toBeTruthy();
+    fireEvent.click(within(rail()).getByRole("button", { name: "Tasks" }));
+    expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    expect(await inbox()).toBeTruthy();
+  });
+
+  it("Jobs opens the Inbox screen on its Jobs column", async () => {
+    const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 } });
+    c.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
+    c.jobsList = [{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }];
+    await open(c);
+    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
+    expect(within(rail()).getByRole("button", { name: "Jobs" }).getAttribute("aria-current")).toBe("page");
+    const column = document.activeElement?.closest("section");
+    expect(column?.getAttribute("aria-labelledby")).toContain("jobs");
+    expect(inboxScreen().contains(column!)).toBe(true);
+  });
+
+  it("D0: no Inbox nor Jobs without parallel, nor when the manifest turns the inbox off", async () => {
+    const plain = client();
+    plain.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
+    await open(plain);
+    for (const name of ["Inbox", "Jobs"]) expect(within(rail()).queryByRole("button", { name })).toBeNull();
+    cleanup();
+    const off = client(parallel({ inbox: false }));
+    off.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
+    await open(off);
+    for (const name of ["Inbox", "Jobs"]) expect(within(rail()).queryByRole("button", { name })).toBeNull();
+  });
+});
+
+describe("the Inbox screen's focus and its way back to the chat (UI refresh spec §5.4)", () => {
+  const rail = () => screen.getByRole("navigation", { name: "App" });
+  const tasksButton = () => within(rail()).getByRole("button", { name: "Tasks" });
+
+  it("opening it puts the focus on its title", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    expect(document.activeElement).toBe(within(inboxScreen()).getByRole("heading", { level: 1, name: "Inbox" }));
+  });
+
+  it("Escape goes back to the chat and the focus to the rail's Tasks", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    fireEvent.keyDown(within(inboxScreen()).getByRole("button", { name: "List" }), { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    expect(document.activeElement).toBe(tasksButton());
+    expect(await inbox()).toBeTruthy();
+  });
+
+  it("a card opened leaves the focus on the rail's Tasks, not the page", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    const card = within(inboxScreen()).getByRole("button", { name: /^Task a/ });
+    card.focus();
+    fireEvent.click(card);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
+    expect(document.activeElement).toBe(tasksButton());
+  });
+
+  it("main focusing another task (a notification click) shows the chat", async () => {
+    const caps = { tasks: 2, jobs: 1 };
+    const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("b", "waiting")], caps });
+    await open(c);
+    fireEvent.click(await inbox());
+    act(() => c.tasks.set({ tasks: [summary("a", "running"), summary("b", "waiting", { focused: true })], caps }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
+  it("a cancelled message of the focused task shows the chat with its text back in the box", async () => {
+    const c = client(parallel(), { tasks: [summary("c", "queued", { focused: true })], caps: { tasks: 1, jobs: 1 } });
+    c.tasks.cancelQueued.mockResolvedValueOnce("the queued text");
+    await open(c);
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
+    await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("the queued text"));
+  });
+
+  it("Jobs while List is chosen shows the board on its Jobs column; Jobs again moves the focus back there", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    c.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
+    c.jobsList = [{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }];
+    await open(c);
+    await openList();
+    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
+    expect(within(inboxScreen()).getByRole("button", { name: "Board" }).getAttribute("aria-pressed")).toBe("true");
+    const column = () => document.activeElement?.closest("section")?.getAttribute("aria-labelledby") ?? "";
+    expect(column()).toContain("jobs");
+    within(inboxScreen()).getByRole("button", { name: "Board" }).focus();
+    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
+    expect(column()).toContain("jobs");
   });
 });

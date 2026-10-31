@@ -935,6 +935,7 @@
   },
   "reader": {
     "title": "Document",
+    "subtitle": "Document · {{path}}",
     "cards": "Documents from this answer",
     "new": "New",
     "updated": "Updated",

@@ -131,7 +131,7 @@ export function HarnessSettingsTab({
   );
   const drawGroups = (fields: SettingFieldView[]) =>
     groups(view, fields).map((g) => (
-      <section key={g.id ?? ""} className="hh-settings-group">
+      <section key={g.id ?? ""} className="hh-settings-group hh-card hh-settings-card">
         {g.label && <h3>{g.label}</h3>}
         <div className="hh-rows">{g.fields.map(row)}</div>
       </section>

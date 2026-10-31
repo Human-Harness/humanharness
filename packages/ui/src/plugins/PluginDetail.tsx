@@ -102,7 +102,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   const valueOf = (f: SettingFieldView) => (detail && Object.hasOwn(detail.values, f.name) ? detail.values[f.name] : f.default);
 
   return (
-    <section className="hh-tab hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
+    <section className="hh-tab hh-card hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
       <div>
         <button type="button" className="hh-link" onClick={onBack}>
           ← {t("plugins.detail.back")}
@@ -312,7 +312,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
                   </div>
                 </div>
               ) : (
-                <button type="button" onClick={() => setConfirm(true)}>
+                <button type="button" className="hh-danger" onClick={() => setConfirm(true)}>
                   {t("plugins.remove.button")}
                 </button>
               )}

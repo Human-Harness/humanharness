@@ -1,13 +1,15 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
-import { Segmented } from "./chrome";
+import { Segmented, Tag, type TagTone } from "./chrome";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
-import { SectionHead } from "./settings-parts";
+import { SectionHead, SettingRow, SettingsCard } from "./settings-parts";
 
 // Local copies: the UI imports nothing from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
+/** Each level's tag colour (UI refresh spec: light green, standard blue, deep violet). */
+const TIER_TONE: Record<Tier, TagTone> = { light: "green", standard: "blue", deep: "violet" };
 const CAPS: readonly number[] = [100_000, 200_000, 400_000, 1_000_000];
 /** The engines package's `PINNED_OPTIONS`. */
 const PINNED: readonly number[] = [1000, 3000, 6000, 12_000];
@@ -174,18 +176,18 @@ export function ModelsTab({
       {part === "levels" && <LevelsSection state={state} view={view} models={models} rows={rows} update={update} />}
       {part === "tasks" && (
         <section aria-labelledby={tasksId} data-setting="models.tasks">
-          {/* The switch above already says it: the heading only names the region. */}
-          <h3 id={tasksId} className="hh-sr-only">
-            {t("models.tasks")}
-          </h3>
-          <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
-          <PinnedBudget
-            value={models.pinnedTokens ?? view.pinnedTokens}
-            suggested={view.pinnedTokens}
-            onChange={(n) =>
-              update(({ pinnedTokens: _, ...rest }) => (n === view.pinnedTokens ? rest : { ...rest, pinnedTokens: n }))
-            }
-          />
+          <SettingsCard title={t("models.tasks")} headingId={tasksId}>
+            <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
+          </SettingsCard>
+          <SettingsCard>
+            <PinnedBudget
+              value={models.pinnedTokens ?? view.pinnedTokens}
+              suggested={view.pinnedTokens}
+              onChange={(n) =>
+                update(({ pinnedTokens: _, ...rest }) => (n === view.pinnedTokens ? rest : { ...rest, pinnedTokens: n }))
+              }
+            />
+          </SettingsCard>
         </section>
       )}
     </div>
@@ -210,7 +212,7 @@ function TaskList({
   update: (change: (models: ModelsConfig) => ModelsConfig) => void;
 }) {
   return (
-    <div className="hh-rows">
+    <>
       {rows.map(({ key, label, description }) => {
         const choice = models.tasks?.[key];
         const recommended = view.recommended[key] ?? "standard";
@@ -232,7 +234,7 @@ function TaskList({
           />
         );
       })}
-    </div>
+    </>
   );
 }
 
@@ -260,23 +262,28 @@ function LevelsSection({
   const users = (tier: Tier) => rows.filter(({ key }) => (models.tasks?.[key] ?? view.recommended[key] ?? "standard") === tier).map((r) => r.label);
   return (
     <section aria-labelledby={headingId} data-setting="models.levels">
-      <h3 id={headingId} className="hh-sr-only">
-        {t("models.levels")}
-      </h3>
-      {state.engines.length > 1 && (
-        <div className="hh-model-engine">
-          <span className="hh-row-label">{t("models.engine")}</span>
-          <Segmented label={t("models.engine")} value={engine} onChange={setEngine} options={state.engines.map((e) => ({ value: e.id, label: e.name }))} />
-        </div>
-      )}
+      <SettingsCard
+        title={t("models.levels")}
+        headingId={headingId}
+        actions={
+          state.engines.length > 1 && (
+            <div className="hh-model-engine">
+              <span className="hh-row-label">{t("models.engine")}</span>
+              <Segmented label={t("models.engine")} value={engine} onChange={setEngine} options={state.engines.map((e) => ({ value: e.id, label: e.name }))} />
+            </div>
+          )
+        }
+      >
       <p className="hh-caption">{t("models.levelsIntro", { engine: name })}</p>
       <div className="hh-model-cards">
         {TIERS.map((tier) => {
           const label = t(`models.tier.${tier}`);
           const used = users(tier);
           return (
-            <section key={tier} className="hh-rows hh-model-card" aria-label={label}>
-              <h4>{label}</h4>
+            <section key={tier} className="hh-model-card" aria-label={label}>
+              <h4>
+                <Tag tone={TIER_TONE[tier]}>{label}</Tag>
+              </h4>
               <p className="hh-caption">{t(`models.tierHint.${tier}`)}</p>
               <SpecFields spec={tierSpec(tier)} offer={offer} onChange={(spec) => update((m) => withTier(m, engine, tier, spec))} />
               <p className="hh-caption">{t("models.usedBy")}</p>
@@ -294,9 +301,12 @@ function LevelsSection({
         })}
       </div>
       <p className="hh-caption">{t("models.fallbackHint")}</p>
-      <button type="button" onClick={() => update((m) => withTier(m, engine, null))}>
-        {t("models.restoreAll")}
-      </button>
+      <div>
+        <button type="button" className="hh-pill" onClick={() => update((m) => withTier(m, engine, null))}>
+          {t("models.restoreAll")}
+        </button>
+      </div>
+      </SettingsCard>
     </section>
   );
 }
@@ -329,11 +339,7 @@ function TaskRow({
   const value: Choice = choice === undefined ? recommended : typeof choice === "string" ? choice : "custom";
   const options = (["light", "standard", "deep", "custom"] as const).map((v) => ({ value: v as Choice, label: t(`models.tier.${v}`) }));
   return (
-    <div className="hh-row hh-model-task">
-      <span className="hh-model-name">
-        <span className="hh-row-label">{label}</span>
-        {description && <span className="hh-caption">{description}</span>}
-      </span>
+    <SettingRow className="hh-model-task" label={label} hint={description}>
       <Segmented
         label={label}
         value={value}
@@ -352,9 +358,9 @@ function TaskRow({
         </p>
       )}
       {value !== "custom" && value !== recommended && (
-        <p className="hh-caption">
-          {t("models.changed", { tier: t(`models.tier.${recommended}`) })}{" "}
-          <button type="button" className="hh-link" onClick={onRestore}>
+        <p className="hh-model-note">
+          <span className="hh-model-changed">{t("models.changed", { tier: t(`models.tier.${recommended}`) })}</span>{" "}
+          <button type="button" className="hh-pill" onClick={onRestore}>
             {t("models.restore")}
           </button>
         </p>
@@ -374,7 +380,7 @@ function TaskRow({
           </button>
         </div>
       )}
-    </div>
+    </SettingRow>
   );
 }
 

@@ -138,6 +138,25 @@ describe("Settings › Uso with an engine that reports limits", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  it("tags a window past 80% as Close to your limit", async () => {
+    const client = claude();
+    client.usage = {
+      limits: [
+        { kind: "five_hour", utilization: 0.85, resetsAt: in2h() },
+        { kind: "seven_day", utilization: 0.1, resetsAt: new Date(Date.now() + 3 * 86400_000).toISOString() },
+      ],
+      estimates: {},
+      tokens: {},
+      primary: "five_hour",
+    };
+    await renderIn("en", <Sheet client={client} />);
+    const near = (await screen.findByText("85% used")).closest(".hh-usage-window") as HTMLElement;
+    expect(within(near).getByText("Close to your limit").className).toContain("hh-tag-orange");
+    expect(near.querySelector(".hh-progress > i")).toBeTruthy();
+    const week = screen.getByText("10% used").closest(".hh-usage-window") as HTMLElement;
+    expect(within(week).queryByText("Close to your limit")).toBeNull();
+  });
+
   it("near the limit: a topic that won't fit whole says so", async () => {
     const client = claude();
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.95, resetsAt: in2h() }], estimates: { research: 0.08 }, tokens: {}, primary: "five_hour" };

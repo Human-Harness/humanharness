@@ -195,7 +195,7 @@ function JobGroup({
     if (cap !== saved) void onCap(cap);
   };
   return (
-    <section aria-labelledby={labelId}>
+    <section aria-labelledby={labelId} className="hh-card hh-settings-card">
       <h3 id={labelId} dir="auto">
         {job.label}
       </h3>

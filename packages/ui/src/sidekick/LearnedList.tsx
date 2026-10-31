@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Tag } from "../chrome";
 import type { HarnessClient, SidekickLearned } from "../client";
 
 type Level = SidekickLearned["level"];
@@ -88,6 +89,11 @@ export function LearnedList({ client }: { client: HarnessClient }) {
                 />
               ) : (
                 <>
+                  {i.kind && (
+                    <>
+                      <Tag tone="blue">{t(`sidekick.kinds.${i.kind}`, { defaultValue: i.kind })}</Tag>{" "}
+                    </>
+                  )}
                   <span id={`${ids}-${i.id}`}>{i.text}</span>
                   {i.source === "person" && <span className="hh-caption"> · {t("sidekick.learned.yours")}</span>}{" "}
                   <button

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { type ReactElement, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -131,6 +131,20 @@ describe("EngineTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Sign in to Claude" });
     expect(client.setupRuns).toEqual([{ engineId: "claude", step: "logout" }]);
+  });
+
+  it("shows the engine in use as a card and the others with what they need and the next step", async () => {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    addCodex(client);
+    await renderIn("en", <Tab client={client} />);
+    const ready = await screen.findByText("Claude is ready ✓");
+    const card = ready.closest(".hh-settings-card") as HTMLElement;
+    expect(within(card).getByRole("heading", { name: "Claude" })).toBeTruthy();
+    expect(within(card).getByText("In use").className).toContain("hh-tag-green");
+    fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await screen.findByRole("button", { name: "Use Codex" });
+    const other = screen.getByRole("heading", { name: "Codex" }).closest(".hh-settings-card") as HTMLElement;
+    expect(within(other).queryByText("In use")).toBeNull();
   });
 
   it("switches to another ready engine and shows the coming-soon tile", async () => {

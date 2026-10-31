@@ -126,6 +126,16 @@ describe("Settings › Connections (tools spec §9)", () => {
     expect(row("Jira API token").contains(document.activeElement)).toBe(true);
   });
 
+  it("an unset key shows a password field and Save", async () => {
+    const c = client();
+    await renderIn("en", <Sheet c={c} />);
+    const gh = await screen.findByRole("group", { name: "GitHub token" });
+    expect(field("GitHub token").type).toBe("password");
+    expect(within(gh).getByRole("button", { name: "Save" }).className).toContain("hh-cta");
+    expect(within(gh).getByText("Not set").className).toContain("hh-tag-orange");
+    expect(within(row("Jira API token")).getByText("Set").className).toContain("hh-tag-green");
+  });
+
   it("the field is described by the key's state and its help", async () => {
     const c = client();
     await renderIn("en", <Sheet c={c} />);

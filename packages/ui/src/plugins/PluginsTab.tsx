@@ -5,9 +5,13 @@ import { shownLanguage } from "../language";
 import { Plain, PermissionReview } from "./PermissionReview";
 import { PluginDetail, when } from "./PluginDetail";
 import { usePluginsRescan } from "./usePlugins";
+import { Tag, type TagTone } from "../chrome";
 import { SectionHead } from "../settings-parts";
 
 /** A review's `from`: the row whose switch asked for it (focus goes back there); none for Add from folder. */
+/** Each state's tag colour (UI refresh spec): on green, needs review orange, off after crashes and errors red. */
+const STATUS_TONE: Record<PluginRow["status"], TagTone> = { on: "green", off: "gray", review: "orange", crashed: "red", error: "red" };
+
 type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?: string; from?: string } | { kind: "detail"; id: string };
 
 /**
@@ -120,25 +124,11 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
   if (screen.kind === "review") {
     return <PermissionReview review={screen.review} busy={busy} error={reviewError} onTurnOn={() => void turnOn(screen)} onCancel={() => toList(screen.from)} />;
   }
-  if (screen.kind === "detail") {
-    const row = view.plugins.find((p) => p.id === screen.id);
-    // Gone (removed here or elsewhere): back to the list.
-    if (row) {
-      return (
-        <PluginDetail
-          client={client}
-          row={row}
-          onBack={() => toList(row.id)}
-          onRemoved={() => toList()}
-        />
-      );
-    }
-  }
+  // A detail sits beside the list, which stays as it is (gone, removed here or elsewhere: the list alone).
+  const open = screen.kind === "detail" ? view.plugins.find((p) => p.id === screen.id) : undefined;
 
-  return (
-    <div className="hh-tab" data-setting="plugins.plugins">
-      <SectionHead title={t("plugins.tab")} line={t("settings.line.plugins")} />
-      {view.plugins.length === 0 ? (
+  const list =
+      view.plugins.length === 0 ? (
         <p className="hh-pl-empty">{t("plugins.empty")}</p>
       ) : (
         <ul className="hh-rows hh-pl-list">
@@ -160,12 +150,12 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
                   )}
                 </span>
                 <span className="hh-pl-status">
-                  {p.status === "error" ? (
+                  <Tag tone={STATUS_TONE[p.status]}>{t(`plugins.status.${p.status}`)}</Tag>
+                  {p.status === "error" && (
                     <>
-                      {t("plugins.status.error")} <Plain>{p.error ?? failed}</Plain>
+                      {" "}
+                      <Plain>{p.error ?? failed}</Plain>
                     </>
-                  ) : (
-                    t(`plugins.status.${p.status}`)
                   )}
                   {p.updated && <span className="hh-pl-tag">{t("plugins.updated")}</span>}
                   {p.lastSync && <span className="hh-caption"> · {t("plugins.lastSync", { time: when(p.lastSync, language) })}</span>}
@@ -185,6 +175,18 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
             </li>
           ))}
         </ul>
+      );
+
+  return (
+    <div className="hh-tab" data-setting="plugins.plugins">
+      <SectionHead title={t("plugins.tab")} line={t("settings.line.plugins")} />
+      {open ? (
+        <div className="hh-master-detail">
+          <div className="hh-master-list">{list}</div>
+          <PluginDetail key={open.id} client={client} row={open} onBack={() => toList(open.id)} onRemoved={() => toList()} />
+        </div>
+      ) : (
+        list
       )}
       {view.local && (
         <div>

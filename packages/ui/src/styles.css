@@ -276,8 +276,33 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-settings-card-head { display: flex; align-items: center; gap: 8px; }
 .hh-settings-card-head h3 { margin: 0; font-size: 15.5px; font-weight: 600; }
 .hh-setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 52px; padding: 8px 0; border-top: 1px solid var(--hh-line); }
-.hh-setting-row:first-of-type { border-top: 0; }
+.hh-settings-card-head + .hh-setting-row, .hh-settings-card > .hh-setting-row:first-child { border-top: 0; }
 .hh-setting-text { flex: 1 1 240px; display: grid; gap: 2px; }
+/* Rows and lists of the older tabs, inside a card: the card is their frame. */
+.hh-settings-card > .hh-rows { border: 0; border-radius: 0; background: transparent; }
+.hh-settings-card > .hh-rows > .hh-row { padding-left: 0; padding-right: 0; }
+.hh-settings-card > .hh-rows:first-child > .hh-row:first-child { border-top: 0; }
+.hh-settings-card > h3 { margin: 0 0 4px; font-size: 15.5px; font-weight: 600; }
+.hh-settings-card-head + .hh-rows > .hh-row:first-child { border-top: 0; }
+.hh-switch { width: 20px; height: 20px; accent-color: var(--hh-t-green-ink); }
+.hh-danger { color: var(--hh-t-red-ink); }
+/* Three numbers on top of a section (Sidekick). */
+.hh-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.hh-stat { padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.hh-stat-label { color: var(--hh-muted); font-size: 12.5px; }
+.hh-stat-value { font-size: 20px; font-weight: 600; }
+.hh-stats .hh-stat-action { margin: 0; }
+@media (max-width: 760px) { .hh-stats { grid-template-columns: minmax(0, 1fr); } }
+/* A list with the selected item's detail beside it (Plugins). */
+.hh-master-detail { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .hh-master-detail { grid-template-columns: minmax(0, 1fr); } }
+/* A bar of how much is used; the fill is its <i>. */
+.hh-progress { display: block; height: 6px; border-radius: 3px; background: var(--hh-surface-2); overflow: hidden; }
+.hh-progress > i { display: block; height: 100%; background: var(--hh-t-blue-ink); }
+.hh-progress.warn > i { background: var(--hh-warn); }
+/* A key's letter tile and name (Connections). */
+.hh-secret > .hh-row-label { flex: 1 1 160px; color: var(--hh-ink); font-weight: 500; }
+.hh-letter-tile { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--hh-surface-2); color: var(--hh-muted); font-weight: 600; }
 .hh-manual ol { margin: 0 0 8px; padding-left: 20px; }
 .hh-settings-running { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hh-settings-running p { margin: 0; color: var(--hh-muted); }
@@ -294,7 +319,9 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-text-sizes button[aria-pressed="true"] { border-color: var(--hh-ink); box-shadow: inset 0 0 0 1px var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
 .hh-text-size-sample { font-weight: 600; line-height: 1; color: var(--hh-ink); }
 /* Settings › Uso: plan windows with a bar, and the topic table in the look of .hh-rows. */
-.hh-usage-window > :first-child { flex: 1; }
+.hh-usage-windows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.hh-usage-window { padding: 16px 18px; display: grid; gap: 8px; align-content: start; }
+.hh-usage-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
 .hh-usage-bar { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: var(--hh-line); overflow: hidden; flex-shrink: 0; }
 .hh-usage-bar > span { display: block; height: 100%; background: var(--hh-muted); }
 .hh-usage-bar.warn > span { background: var(--hh-warn); }
@@ -338,7 +365,10 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-head h3 { margin: 0; }
 .hh-model-task { flex-wrap: wrap; }
 .hh-model-name { display: grid; gap: 2px; min-width: 0; flex: 1 1 160px; }
-.hh-model-task > .hh-caption, .hh-model-editor { flex-basis: 100%; }
+.hh-model-task > .hh-caption, .hh-model-task > .hh-model-note, .hh-model-editor { flex-basis: 100%; }
+.hh-model-note { margin: 0; display: flex; align-items: center; gap: 8px; }
+.hh-model-changed { color: var(--hh-t-orange-ink); font-size: 13px; }
+.hh-model-note .hh-pill { height: 30px; padding: 0 12px; }
 .hh-model-editor { display: grid; gap: 8px; justify-items: start; }
 .hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .hh-model-fields label { color: var(--hh-muted); }
@@ -916,6 +946,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-tag { margin-left: 8px; padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 6px; font-size: 0.75rem; }
 .hh-pl-error-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .hh-pl-review, .hh-pl-detail { min-width: 0; overflow-wrap: anywhere; }
+.hh-pl-detail.hh-card { padding: 18px 20px; }
+.hh-master-list { min-width: 0; }
+.hh-pl-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .hh-pl-review h3:focus, .hh-pl-detail h3:focus { outline: none; }
 .hh-pl-perms, .hh-pl-added ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .hh-pl-added { padding: 8px 12px; border: 1px solid var(--hh-warn); border-radius: 10px; }

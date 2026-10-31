@@ -93,6 +93,12 @@ describe("ModelsTab › Tasks", () => {
     expect(saved(c)).toEqual({});
   });
 
+  it("shows Changed · recommended in orange with Restore on a changed task", async () => {
+    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: "deep" } })} />);
+    expect(screen.getByText("Changed · recommended: Standard").className).toBe("hh-model-changed");
+    expect(within(tasksRegion()).getByRole("button", { name: "Restore" })).toBeTruthy();
+  });
+
   it("makes a task custom from its level's settings, edits it and goes back to the recommendation", async () => {
     const c = modelsClient();
     await renderIn("en", <Tab client={c} />);

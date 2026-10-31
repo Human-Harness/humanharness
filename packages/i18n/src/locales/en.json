@@ -818,6 +818,11 @@
       "capNone": "No cap",
       "week": "This week: {{tokens}} tokens",
       "usedShare": "{{used}} of {{of}} suggestions used this week",
+      "statWeek": "This week",
+      "statTokens": "{{tokens}} tokens",
+      "statUsed": "Suggestions used",
+      "statUsedValue": "{{used}} of {{of}}",
+      "statUsedNone": "None yet this week",
       "muted": "Not flagged",
       "unmute": "Flag “{{kind}}” again",
       "failed": "Could not save: {{message}}"

@@ -7,6 +7,7 @@ import { shownTitle, useProfiles } from "./ProfileSwitcher";
 import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
 import { shownLanguage } from "./language";
+import { Tag, type TagTone } from "./chrome";
 import { SectionHead } from "./settings-parts";
 
 const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
@@ -78,6 +79,9 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
   );
 }
 
+/** A topic's cost hint as a tag: low use green, medium blue, high orange. */
+const COST_TONE: Record<"light" | "medium" | "heavy", TagTone> = { light: "green", medium: "blue", heavy: "orange" };
+
 const windowName = (t: TFunction, kind: string): string => t(`usage.${kind}`, { defaultValue: t("usage.limit") });
 
 /** `reported`: the engine has sent windows before, even if they have all reset since. */
@@ -90,14 +94,20 @@ function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limi
   if (!limits?.length) return <p className="hh-caption">{t(reported ? "usage.renewed" : "usage.notYet", { engine: engine.name })}</p>;
   return (
     <>
-      <div className="hh-rows">
+      {/* One card per window: its name, how much is used, a bar, and when it renews. */}
+      <div className="hh-usage-windows">
         {limits.map((w) => {
           const warn = w.utilization >= WARN_AT;
           return (
-            <div key={w.kind} className="hh-row hh-usage-window">
-              <span>{windowName(t, w.kind)}</span>
+            <div key={w.kind} className="hh-card hh-usage-window">
+              <div className="hh-usage-window-head">
+                <span>{windowName(t, w.kind)}</span>
+                {warn && <Tag tone="orange">{t("usage.near")}</Tag>}
+              </div>
               <span className={warn ? "hh-warn" : undefined}>{t("usage.used", { percent: percent(w.utilization) })}</span>
-              <Bar share={w.utilization} warn={warn} />
+              <span className={warn ? "hh-progress warn" : "hh-progress"} aria-hidden="true">
+                <i style={{ width: `${percent(w.utilization)}%` }} />
+              </span>
               <span className="hh-caption">{t("usage.renews", { time: formatReset(w.resetsAt, shownLanguage(i18n)) })}</span>
             </div>
           );
@@ -143,9 +153,14 @@ function TopicTable({
    */
   const hint = (key: string) => {
     const cost = state.actions[key]?.cost;
-    const text = cost ? t(`usage.hint.${cost}`) : "—";
+    const text = cost ? <Tag tone={COST_TONE[cost]}>{t(`usage.hint.${cost}`)}</Tag> : "—";
     if (!reportsLimits) return text;
-    return `${text} · ${t(usage.tokens[key] !== undefined ? "usage.notMeasured" : "usage.afterUse")}`;
+    return (
+      <>
+        {text}
+        {` · ${t(usage.tokens[key] !== undefined ? "usage.notMeasured" : "usage.afterUse")}`}
+      </>
+    );
   };
   const fits = (estimate: number) => {
     if (near) {

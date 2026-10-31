@@ -19,7 +19,7 @@ import { PluginsTab } from "./plugins/PluginsTab";
 import { usePluginsView } from "./plugins/usePlugins";
 import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
-import { SectionHead } from "./settings-parts";
+import { SectionHead, SettingsCard } from "./settings-parts";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
@@ -385,6 +385,7 @@ function GeneralTab({
   return (
     <div className="hh-tab">
       <SectionHead title={t("settings.tabs.general")} line={t("settings.line.general")} />
+      <SettingsCard>
       <div className="hh-rows">
         <LanguageRow state={state} language={language} />
         <div className="hh-row" data-setting="general.appearance">
@@ -435,11 +436,12 @@ function GeneralTab({
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
+      </SettingsCard>
       {state.parallel && <ParallelSection state={state} save={saveOrFail} />}
       {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
-      <h3>{t("settings.about")}</h3>
+      <SettingsCard title={t("settings.about")}>
       <div className="hh-rows">
         <div className="hh-row">
           <span className="hh-display">{state.harness.name}</span>
@@ -454,6 +456,7 @@ function GeneralTab({
           )}
         </div>
       </div>
+      </SettingsCard>
     </div>
   );
 }
@@ -504,7 +507,7 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
   );
   return (
     <>
-      <h3>{t("parallel.parallelSection")}</h3>
+      <SettingsCard title={t("parallel.parallelSection")}>
       <div className="hh-rows">
         <div className="hh-row" data-setting="general.tasksAtOnce">
           {cap("tasks", t("parallel.tasksAtOnce"))}
@@ -523,6 +526,7 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
           </label>
         </div>
       </div>
+      </SettingsCard>
       {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
     </>
   );

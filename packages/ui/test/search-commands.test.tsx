@@ -100,7 +100,7 @@ describe("the order of the window's rows", () => {
   it("Actions: a label match before a keyword match, the table's order between equals; no match is left out", async () => {
     const client = new FakeClient(ready2);
     const i18n = await createI18n("en");
-    const chat = { taskOpen: false, turnRunning: false, nextPart: null, panels: true };
+    const chat = { taskOpen: true, turnRunning: false, nextPart: null, panels: true };
     // "open" starts every "Open …" label (2) and is a keyword of "Switch to …" (1).
     const rows = commandRows(i18n.t, client.state, "open", chat, [{ id: "maths", title: "Maths", createdAt: "c", archived: false }], null);
     const titles = rows.map(titleOf);
@@ -114,7 +114,8 @@ describe("the order of the window's rows", () => {
     const client = new FakeClient(ready2);
     const i18n = await createI18n("en");
     const rows = commandRows(i18n.t, client.state, "  ", { taskOpen: false, turnRunning: false, nextPart: null, panels: true }, [], null);
-    expect(rows.map((r) => r.id).slice(0, 4)).toEqual(["command:new-question", "command:open-history", "command:open-notes", "command:open-context"]);
+    expect(rows.map((r) => r.id).slice(0, 3)).toEqual(["command:new-question", "command:open-history", "command:open-notes"]);
+    expect(rows.map((r) => r.id)).not.toContain("command:open-context");
     expect(rows.every((r) => r.id.startsWith("command:"))).toBe(true);
   });
 

@@ -113,7 +113,8 @@ export interface SearchCommand {
 
 /**
  * The commands available now (§6 `when`), in this order. A tab's or a scope's name is `vars` the window fills. None of
- * them sends anything: a new question only focuses the composer, a scope switch only opens the scope (plan deviation 14).
+ * them sends what the person typed: a new question only focuses the composer, a scope switch only opens the scope (plan
+ * deviation 14). The next part does what the stepper's button does: the task moves on and the part's own turn starts.
  */
 export function searchCommands(s: SearchCommandState): SearchCommand[] {
   const out: SearchCommand[] = [];
@@ -122,7 +123,8 @@ export function searchCommands(s: SearchCommandState): SearchCommand[] {
   if (c?.panels) {
     out.push({ command: "open-history", label: "search.command.openHistory", keywords: ["past", "tasks"] });
     out.push({ command: "open-notes", label: "search.command.openNotes", keywords: ["clear so far"] });
-    out.push({ command: "open-context", label: "search.command.openContext", keywords: ["tokens", "window"] });
+    // What the AI takes into account is the open task's: no task, nothing to show.
+    if (c.taskOpen) out.push({ command: "open-context", label: "search.command.openContext", keywords: ["tokens", "window"] });
   }
   if (c?.nextPart) out.push({ command: "next-part", arg: c.nextPart.id, label: "search.command.nextPart", vars: { part: c.nextPart.label }, keywords: ["phase", "step"] });
   if (c?.turnRunning) out.push({ command: "stop-turn", label: "search.command.stopTurn", keywords: ["cancel", "halt"] });

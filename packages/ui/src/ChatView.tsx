@@ -987,11 +987,16 @@ export function ChatView({
     const next = i >= 0 ? taskPhases[i + 1] : undefined;
     return next ? { id: next.id, label: next.label } : null;
   };
-  /** An action from search (§6). One side panel at a time (the History button's own steps); nothing is ever sent. */
-  const runCommand = (command: SearchCommandId): boolean => {
+  /**
+   * An action from search (§6); false when it no longer applies (the palette's row was read earlier). One side panel at
+   * a time (the History button's own steps). Nothing the person typed is sent; the next part starts its own turn, as the
+   * stepper's button does.
+   */
+  const runCommand = (command: SearchCommandId, arg?: string): boolean => {
     switch (command) {
       case "new-question":
-        // The composer, empty of nothing the person typed: the question is theirs to write and send.
+        // Focus on the composer, with whatever the person had typed still there (an unsent draft is kept, never
+        // cleared): the question is theirs to write and send.
         if (tasks.current) return false;
         closeReader();
         setTimelineFile(null);
@@ -1018,12 +1023,14 @@ export function ChatView({
         setNotesPanel({});
         return true;
       case "open-context":
-        if (slim) return false;
+        // The open task's context: with no task the panel has nothing to show (and would stay open for the next one).
+        if (slim || !tasks.current) return false;
         openContext();
         return true;
       case "next-part": {
+        // Only the part the row named: once the task moved on, the next part is another one.
         const next = nextPartOf();
-        if (!next) return false;
+        if (!next || next.id !== arg) return false;
         pickPhase(next.id);
         return true;
       }
@@ -1094,7 +1101,7 @@ export function ChatView({
         // HarnessApp opens Settings itself; never reaches here.
         return false;
       case "command":
-        return runCommand(intent.command);
+        return runCommand(intent.command, intent.arg);
     }
   };
   useLayoutEffect(() => {

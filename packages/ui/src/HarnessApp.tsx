@@ -38,6 +38,9 @@ export interface HarnessAppProps {
   materialPanel?: ComponentType<MaterialPanelProps>;
 }
 
+/** How long the line for an action search couldn't run stays. */
+const SEARCH_NOTICE_MS = 4000;
+
 export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView, setupSteps = {}, materialPanel }: HarnessAppProps) {
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
@@ -67,6 +70,13 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const searchRef = useRef<((intent: SearchIntent) => boolean) | null>(null);
   /** The chat's state for the palette's actions (search spec §6); null while the chat isn't on screen. */
   const searchContextRef = useRef<(() => ChatSearchContext) | null>(null);
+  /** An action picked from search that couldn't run (it no longer applied, or main refused it): a short line says so. */
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!searchNotice) return;
+    const timer = setTimeout(() => setSearchNotice(null), SEARCH_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [searchNotice]);
   /** A result picked away from the work screen: it runs once the chat is there. */
   const pendingIntent = useRef<SearchIntent | null>(null);
   useEffect(() => {
@@ -282,6 +292,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   /** A result or a ⌘Enter question: Settings closes, the work screen shows, the chat does the rest. */
   const searchIntent = (intent: SearchIntent) => {
+    setSearchNotice(null);
     // A setting opens Settings at its field (§6), over whatever is on screen; Settings may already be open.
     if (intent.kind === "setting") {
       setSettingsFocus((f) => ({ id: intent.field, n: (f?.n ?? 0) + 1 }));
@@ -297,13 +308,20 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     if (intent.kind === "command" && intent.command === "switch-scope" && intent.arg) {
       setSettings(null);
       setSettingsFocus(null);
-      void client.scopes.open(intent.arg).catch(() => undefined);
+      // The row was read before a turn started: the picker's own rule (no switch while a turn runs) still holds.
+      if (screen === "work" && searchContextRef.current?.().turnRunning) {
+        setSearchNotice(i18n.t("search.notNow"));
+        return;
+      }
+      // Main may still refuse it (a turn held, a restore): said as the scope picker says it.
+      client.scopes.open(intent.arg).catch(() => setSearchNotice(i18n.t("scopes.failed")));
       return;
     }
     setSettings(null);
     setSettingsFocus(null);
     if (screen === "work" && searchRef.current) {
-      searchRef.current(intent);
+      // An action that no longer applies says so; a result that opens nothing stays quiet (§3).
+      if (!searchRef.current(intent) && intent.kind === "command") setSearchNotice(i18n.t("search.notNow"));
       return;
     }
     if (!configured) return;
@@ -418,6 +436,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           language={client.language ? language : undefined}
           {...(settingsFocus ? { focus: settingsFocus } : {})}
         />
+      )}
+      {searchNotice && (
+        <p className="hh-search-notice" role="alert">
+          {searchNotice}
+        </p>
       )}
       {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
       <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />

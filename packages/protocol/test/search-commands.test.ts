@@ -9,8 +9,13 @@ describe("the commands available now (search spec §6, plan deviation 14)", () =
     expect(ids(base)).toEqual(["open-settings:general", "open-settings:engine"]);
   });
 
-  it("in the chat with no task: a new question and the panels; no stop, no next part", () => {
-    expect(ids({ ...base, chat: { taskOpen: false, turnRunning: false, nextPart: null, panels: true } })).toEqual(["new-question", "open-history", "open-notes", "open-context", "open-settings:general", "open-settings:engine"]);
+  it("in the chat with no task: a new question and the panels but the task's context; no stop, no next part", () => {
+    expect(ids({ ...base, chat: { taskOpen: false, turnRunning: false, nextPart: null, panels: true } })).toEqual(["new-question", "open-history", "open-notes", "open-settings:general", "open-settings:engine"]);
+  });
+
+  it("what the AI takes into account: only with a task open, and never in the slim window", () => {
+    expect(ids({ ...base, chat: { taskOpen: true, turnRunning: false, nextPart: null, panels: true } })).toContain("open-context");
+    expect(ids({ ...base, chat: { taskOpen: true, turnRunning: false, nextPart: null, panels: false } })).not.toContain("open-context");
   });
 
   it("a task open and a turn running: Stop; the next part when the task waits; never New question", () => {

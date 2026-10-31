@@ -1476,6 +1476,7 @@
     "truncated": "Some files aren't searched: the folder is too large",
     "notReady": "Search works once the app is set up.",
     "failed": "Search didn't work this time. Try again.",
+    "notNow": "That can't be done right now.",
     "readOnly": "{{folder}} · read only",
     "shownIn": "Shown in {{name}}",
     "fromPlugin": "From {{plugin}}",

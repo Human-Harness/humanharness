@@ -115,6 +115,15 @@ describe("styles", () => {
   it("gives the clipped Start button a focus ring drawn inside it", () => {
     expect(css).toMatch(/\.hh-start:focus-visible\s*\{[^}]*outline-offset:\s*-\d/);
   });
+
+  it("has the soft-cards controls: amber CTA, tags by meaning, no chamfer (spec §3.2–3.3)", () => {
+    expect(css).toMatch(/^\.hh-primary,\s*\.hh-cta\s*{[^}]*background:\s*var\(--hh-cta\)[^}]*color:\s*var\(--hh-cta-ink\)/m);
+    expect(css).not.toMatch(/clip-path:\s*polygon/);
+    for (const t of ["green", "orange", "blue", "violet", "red"])
+      expect(css).toMatch(new RegExp(`^\\.hh-tag-${t}\\s*{\\s*background:\\s*var\\(--hh-t-${t}\\);\\s*color:\\s*var\\(--hh-t-${t}-ink\\)`, "m"));
+    expect(css).toMatch(/^\.hh-tag-gray\s*{\s*background:\s*var\(--hh-surface-2\);\s*color:\s*var\(--hh-muted\)/m);
+    expect(css).toMatch(/^\.hh-card\s*{[^}]*border-radius:\s*14px/m);
+  });
 });
 
 describe("annotate marks", () => {

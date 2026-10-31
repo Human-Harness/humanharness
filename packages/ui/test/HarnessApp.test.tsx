@@ -455,8 +455,8 @@ describe("HarnessApp", () => {
     render(<HarnessApp client={new FakeClient({ language: "en" })} />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Set up Demo" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(screen.getByRole("main", { name: "Settings" })).getByRole("button", { name: "Set up Demo" }));
+    expect(screen.queryByRole("main", { name: "Settings" })).toBeNull();
     await screen.findByRole("heading", { name: "Where should we keep your work?" });
   });
 
@@ -743,7 +743,7 @@ describe("HarnessApp", () => {
     const gear = await screen.findByRole("button", { name: "Settings" });
     expect(gear.closest("[inert]")).toBeNull();
     fireEvent.click(gear);
-    await screen.findByRole("dialog", { name: "Settings" });
+    await screen.findByRole("main", { name: "Settings" });
     expect(document.querySelector(".hh-topbar")!.closest("[inert]")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(document.querySelector(".hh-topbar")!.closest("[inert]")).toBeNull();

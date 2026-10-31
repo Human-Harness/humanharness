@@ -15,7 +15,7 @@ test("⌘K: a setting opens Settings at the field; an action runs; nothing typed
     await page.keyboard.type("appearance");
     await expect(dialog.getByRole("group", { name: "Settings" })).toBeVisible();
     await page.keyboard.press("Enter");
-    const sheet = page.getByRole("dialog", { name: "Settings" });
+    const sheet = page.getByRole("main", { name: "Settings" });
     await expect(sheet.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
     await expect(sheet.locator('[data-setting="general.appearance"] :focus')).toHaveCount(1);
     await page.keyboard.press("Escape");

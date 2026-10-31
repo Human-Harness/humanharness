@@ -4,7 +4,7 @@ import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ConnectionsView, SetupStepView } from "../src/client";
 import { ConnectStep } from "../src/connections/ConnectStep";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -29,7 +29,7 @@ function client(withSecrets = true) {
 function Sheet({ c, tab: first = "connections" }: { c: FakeClient; tab?: SettingsTab }) {
   const [state, setState] = useState<AppState>(c.state);
   const [tab, setTab] = useState<SettingsTab>(first);
-  return <SettingsSheet client={c} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return <SettingsPage client={c} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
 }
 
 /** One declared key's row, by its label. */

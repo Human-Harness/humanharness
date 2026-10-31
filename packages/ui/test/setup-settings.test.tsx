@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SettingsView, SetupStepView } from "../src/client";
-import { SettingsSheet } from "../src/SettingsSheet";
+import { SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -19,7 +19,7 @@ async function sheet(client: FakeClient) {
   const onSetup = vi.fn();
   await renderIn(
     "en",
-    <SettingsSheet client={client} state={client.state} tab="harness" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />,
+    <SettingsPage client={client} state={client.state} tab="harness" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />,
   );
   return onSetup;
 }

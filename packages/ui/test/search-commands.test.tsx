@@ -48,7 +48,7 @@ describe("actions in the palette (search spec §6; plan 1 deviation 9)", () => {
       return o;
     });
     fireEvent.click(row);
-    const sheet = await screen.findByRole("dialog", { name: "Settings" });
+    const sheet = await screen.findByRole("main", { name: "Settings" });
     expect(within(sheet).getByRole("tab", { name: "Engine" }).getAttribute("aria-selected")).toBe("true");
   });
 

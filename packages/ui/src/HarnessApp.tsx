@@ -20,7 +20,7 @@ import { shownLanguage, systemLanguage } from "./language";
 import { type LanguageControl, useLanguage } from "./language-control";
 import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
-import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
+import { type SettingsTab, SettingsPage } from "./SettingsPage";
 import { SetupFlow } from "./SetupFlow";
 import { type RailEntry, railEntries } from "./shell-nav";
 import type { SearchIntent } from "./search/intent";
@@ -408,8 +408,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   return (
     <I18nextProvider i18n={i18n}>
-      {/* Under the open Settings sheet, the whole screen (top bar included) can't be reached. */}
-      <div className="hh-screen" inert={settings !== null}>
+      {/* Settings is a page in place of the screen (UI refresh spec §5.5): the screen stays mounted (the chat's draft,
+          panels and start path), hidden and inert, top bar included. */}
+      <div className="hh-screen" hidden={settings !== null} inert={settings !== null}>
         {screen === "work" && configured ? (
           <div className="hh-shell">
             <TopBar
@@ -544,7 +545,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
         {state.hatches?.backend && <BackendCard client={client} />}
       </div>
       {settings && (
-        <SettingsSheet
+        <SettingsPage
           client={client}
           state={state}
           tab={settings}

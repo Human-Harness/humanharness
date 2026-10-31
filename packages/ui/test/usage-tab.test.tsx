@@ -3,7 +3,7 @@ import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, EngineOption } from "../src/client";
-import { SettingsSheet } from "../src/SettingsSheet";
+import { SettingsPage } from "../src/SettingsPage";
 import { UsageTab } from "../src/UsageTab";
 import { compactTokens, formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
@@ -13,7 +13,7 @@ afterEach(cleanup);
 
 function Sheet({ client }: { client: FakeClient }) {
   const [state, setState] = useState<AppState>(client.state);
-  return <SettingsSheet client={client} state={state} tab="usage" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return <SettingsPage client={client} state={state} tab="usage" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
 }
 
 const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();

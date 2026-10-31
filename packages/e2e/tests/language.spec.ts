@@ -127,7 +127,7 @@ test("a cancelled run switches nothing, and a started run answers the Home offer
     await expect(page.getByText(/^Translating… \d+ of \d+$/)).toBeVisible();
     // A started run saves the offer as answered, in the file and in the window.
     await expect.poll(() => savedConfig(s).languageOffered).toBe(true);
-    await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("main", { name: "Settings" }).getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByText("The translation stopped. What it finished is kept.")).toBeVisible({ timeout: 30_000 });
     expect(savedConfig(s).language).toBe("es");
     expect(await page.evaluate(() => document.documentElement.lang)).not.toBe("es");

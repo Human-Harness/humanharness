@@ -4,7 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { AppState, JobSummary } from "../src/client";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -35,7 +35,7 @@ function Sheet({ c, tab: first = "jobs", onStartAction }: { c: FakeClient; tab?:
   const [state, setState] = useState<AppState>(c.state);
   const [tab, setTab] = useState<SettingsTab>(first);
   return (
-    <SettingsSheet
+    <SettingsPage
       client={c}
       state={state}
       tab={tab}
@@ -247,7 +247,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     fireEvent.click(await within(group("Sync inbox")).findByRole("button", { name: "Start" }));
     await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
     expect(c.sent.at(-1)).toBe("Implement");
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("main", { name: "Settings" })).toBeNull();
   });
 });
 

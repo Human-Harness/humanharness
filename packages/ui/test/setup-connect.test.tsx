@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, SetupStepView } from "../src/client";
-import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { SetupFlow } from "../src/SetupFlow";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -205,7 +205,7 @@ describe("the connect step (tools spec §9)", () => {
     const onSetup = vi.fn();
     function Sheet() {
       const [tab, setTab] = useState<SettingsTab>("harness");
-      return <SettingsSheet client={c} state={c.state} tab={tab} onTab={setTab} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />;
+      return <SettingsPage client={c} state={c.state} tab={tab} onTab={setTab} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />;
     }
     await renderIn("en", <Sheet />);
     const item = screen.getByRole("listitem", { name: "Connect your tools" });

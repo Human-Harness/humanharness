@@ -106,9 +106,11 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-profile-switcher \[role="alert"\]\s*{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
   });
 
-  it("uses the system font for UI text and Lexend for display text, with no network fonts", () => {
-    expect(css).toMatch(/--hh-font:\s*-apple-system/);
-    expect(css).toMatch(/--hh-display:\s*"Lexend"/);
+  it("uses DM Sans for text and display, 14px base, with no network fonts (spec §3.2)", () => {
+    expect(css).toMatch(/--hh-font:\s*"DM Sans",/);
+    expect(css).toMatch(/--hh-display:\s*var\(--hh-font\)/);
+    expect(css).toMatch(/:root\s*{[^}]*font-size:\s*14px/);
+    expect(css).not.toMatch(/Lexend/);
     expect(css).not.toMatch(/url\(\s*["']?https?:/);
     expect(css).not.toMatch(/@import/);
   });

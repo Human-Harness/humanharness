@@ -40,7 +40,7 @@ unless the person sends a ⌘Enter question, and that text holds titles and path
   switch) closes the live index, flushing it, and opens the new base's. A folder move discards the old bases' indexes;
   the next ⌘K rebuilds. Deleting a profile discards its folder's index, and so does creating one (profile ids are
   reused names: a new "Tomás" never loads a deleted one's). A discard lets a load under way for that base settle
-  first, and a discarded store writes nothing again (the prefs go through the same write chain as the snapshot). The
+  first, reaches the store a base switch is still flushing, and a discarded store writes nothing again (the prefs go through the same write chain as the snapshot). The
   prefs are read from disk once and then served from memory, each change made on the latest copy, so a change queued
   behind a long snapshot write is never lost to a stale read; a query that flips "All scopes" doesn't wait for the disk.
 - **The snapshot.** `index.json` (the `MiniSearch` JSON; stored fields only, never the text), `files.json` (the index
@@ -50,7 +50,7 @@ unless the person sends a ⌘Enter question, and that text holds titles and path
   on quit. A missing, broken or other-version snapshot is rebuilt. A loaded snapshot drops any document its
   `files.json` doesn't account for (a known file, a chat entry, a task built in memory): a build cut short by a quit or
   a crashed worker saved its batches, but files and chats only take a build's state on `done`.
-- **The build.** One at a time; what comes in meanwhile runs right after (a full reconcile absorbs a commit's paths).
+- **The build.** One at a time, and only on the live index (a query still holding one swapped out or discarded starts none); what comes in meanwhile runs right after (a full reconcile absorbs a commit's paths).
   A first build posts every name first (`names`, so files are found by name within about a second), then texts in
   batches of 200 (`building`, "N of M"), then the chats, then `done`. A reconcile reads only what is new or changed
   by size and mtime, and removes what is gone. Chats are read incrementally from the stored byte offset; a shorter file,

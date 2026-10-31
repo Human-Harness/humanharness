@@ -110,6 +110,8 @@ function accounted(index: LiveIndex | null, snap: Snapshot): LiveIndex | null {
 export class SearchService {
   private live: Live | null = null;
   private opening: { base: string; live: Promise<Live> } | null = null;
+  /** A base being swapped out, its store still flushing: a discard of that base goes to this store. */
+  private closing: { base: string; store: IndexStore } | null = null;
 
   constructor(private readonly d: SearchServiceDeps) {}
 
@@ -170,8 +172,15 @@ export class SearchService {
   private async close(): Promise<void> {
     const live = this.live;
     this.live = null;
-    live?.building?.stop();
-    await live?.store.flush();
+    if (!live) return;
+    live.building?.stop();
+    const closing = { base: live.base, store: live.store };
+    this.closing = closing;
+    try {
+      await live.store.flush();
+    } finally {
+      if (this.closing === closing) this.closing = null;
+    }
   }
 
   private setStatus(live: Live, s: SearchStatus): void {
@@ -220,6 +229,8 @@ export class SearchService {
 
   /** One build at a time; what comes in meanwhile runs right after (a full reconcile absorbs a commit's paths). */
   private startBuild(live: Live, what: "full" | Set<string>): void {
+    // A caller still holding an index swapped out or discarded meanwhile: nothing would take the build's batches.
+    if (this.live !== live) return;
     if (live.building) {
       live.again = what === "full" || live.again === "full" ? "full" : new Set([...(live.again ?? []), ...what]);
       return;
@@ -407,7 +418,9 @@ export class SearchService {
       live.building?.stop();
       this.live = null;
     }
-    // The live store's own discard, so a save it still has scheduled is dropped instead of bringing the folder back.
-    await (live?.store ?? new IndexStore(searchDir(this.d.userData(), base))).discard();
+    // The live store's own discard (or the one a base switch is still flushing), so a save it still has scheduled is
+    // dropped instead of bringing the folder back.
+    const closing = this.closing?.base === base ? this.closing.store : null;
+    await (live?.store ?? closing ?? new IndexStore(searchDir(this.d.userData(), base))).discard();
   }
 }

@@ -6,7 +6,7 @@ import type { SearchAnswer, SearchStatus } from "@humanharness/protocol";
 import { type SearchDoc, actionDocs } from "@humanharness/search";
 import { inProcessBuild } from "../src/main/search/runner";
 import { SearchService, type SearchServiceDeps } from "../src/main/search/service";
-import { searchDir } from "../src/main/search/store";
+import { IndexStore, searchDir } from "../src/main/search/store";
 
 let tmp: string;
 let base: string;
@@ -359,6 +359,55 @@ describe("SearchService (§4, §5)", () => {
     await svc.whenIdle();
     await svc.flush();
     await new Promise((r) => setTimeout(r, 50));
+    expect(fs.existsSync(searchDir(userData, base))).toBe(false);
+  });
+
+  it("discard while a base switch still flushes that base: the flush doesn't bring the folder back", async () => {
+    const other = path.join(tmp, "Other");
+    put("a.md", "alpha");
+    fs.mkdirSync(other, { recursive: true });
+    let current = base;
+    const { svc } = service({ base: async () => current, storeDelayMs: 60_000 });
+    await svc.query("", {});
+    await svc.whenIdle();
+    const flush = IndexStore.prototype.flush;
+    let first = true;
+    const spy = vi.spyOn(IndexStore.prototype, "flush").mockImplementation(async function (this: IndexStore) {
+      // The folder moves while the switch's flush is under way (the discard comes in over IPC).
+      if (first) {
+        first = false;
+        await svc.discard(base);
+      }
+      return flush.call(this);
+    });
+    try {
+      current = other;
+      await svc.query("", {});
+      await svc.whenIdle();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(fs.existsSync(searchDir(userData, base))).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a query still holding a base discarded meanwhile starts no build on it", async () => {
+    put("a.md", "alpha");
+    const one = service();
+    await one.svc.query("", {});
+    await one.svc.whenIdle();
+    await one.svc.flush();
+    const holder: { svc?: SearchService } = {};
+    const two = service({
+      memory: async () => {
+        await holder.svc!.discard(base);
+        return [];
+      },
+    });
+    holder.svc = two.svc;
+    await two.svc.query("alpha", {});
+    await two.svc.whenIdle();
+    expect(two.runner).not.toHaveBeenCalled();
     expect(fs.existsSync(searchDir(userData, base))).toBe(false);
   });
 

@@ -11,6 +11,7 @@ It is for the developer only. The window shows a "Test mode (no AI)" badge (`moc
 `dev --mock` (`packages/cli/src/dev.ts`, `mock-session.ts`) checks the harness first, then sets this env for the shell:
 
 - `HH_TEST_MOCK=1`, `HH_TEST_MINUTE_MS=1000` (a time-box minute is a second), `HH_TEST_USER_DATA`, `HH_TEST_SHARED_DIR` and `HH_TEST_SUGGESTED_FOLDER`.
+- Not set by `dev --mock`, only by the e2e: `HH_TEST_BACKGROUND=1` (`readTestHooks`; ignored in a packaged app): the window opens with `showInactive()` after `ready-to-show` (no focus steal, `backgroundThrottling: false`) and, on macOS, the Dock icon is hidden. The e2e helpers (`launch`, `launchMock`) set it by default; `HH_E2E_FOREGROUND=1` in the environment of `pnpm e2e` turns it off so you can watch a run (it is read by the helpers, not by the app).
 - `HH_TEST_ENGINES`, one entry for `claude`: the command is `fake-claude` and its env holds only `HH_FAKE_MOCK_DIR` (the `mock/` folder) and `HH_FAKE_MOCK_STATE` (a file, see below).
 
 The shell reads them through `readTestHooks` (`packages/shell/src/main/test-hooks.ts`), the same path the end-to-end tests use. A packaged app returns no hooks. Engine envs keep only `HH_FAKE_*` variables.

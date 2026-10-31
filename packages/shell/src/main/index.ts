@@ -3277,8 +3277,17 @@ async function createWindow() {
     // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the 52 px top bar.
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
-    webPreferences: { preload: path.join(here, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
+    // Test background mode (HH_TEST_BACKGROUND, development builds only): shown without taking focus, and kept
+    // rendering at full speed although nobody looks at it.
+    ...(hooks.background ? { show: false } : {}),
+    webPreferences: {
+      preload: path.join(here, "../preload/index.mjs"),
+      contextIsolation: true,
+      sandbox: false,
+      ...(hooks.background ? { backgroundThrottling: false } : {}),
+    },
   });
+  if (hooks.background) win.once("ready-to-show", () => win.showInactive());
   window = win;
   // Read now: once closed, the window's webContents can no longer be asked.
   const contentsId = win.webContents.id;
@@ -3723,13 +3732,15 @@ if (primary) {
   });
 
   app.whenReady().then(async () => {
+    // Test background mode: no Dock icon, so the run never shows up beside the person's own apps.
+    if (hooks.background && process.platform === "darwin") app.dock?.hide();
     // Development builds: the harness's logo in the Dock, else Human Harness's (packages/shell/resources).
     if (process.platform === "darwin" && !app.isPackaged) {
       const icon = devDockIcon(
         [() => (harness.logo ? resolveInHarness(harness, harness.logo) : undefined), () => path.join(shellResources, "hh-logo.png")],
         (file) => nativeImage.createFromPath(file),
       );
-      if (icon) app.dock?.setIcon(icon);
+      if (icon && !hooks.background) app.dock?.setIcon(icon);
     }
     config = new ConfigStore(app.getPath("userData"));
     jobSettings = (await config.load()).jobs;

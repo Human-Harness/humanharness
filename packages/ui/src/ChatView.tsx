@@ -288,7 +288,8 @@ export function ChatView({
   // The Attention inbox (plugins spec §6): only when main sends `state.plugins`, never in slim mode (D0).
   const attention = useAttention(client, state.plugins !== undefined && !slim);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
-  const surface = usePluginSurface(client, state.plugins !== undefined && !slim);
+  const pluginsOn = state.plugins !== undefined && !slim;
+  const surface = usePluginSurface(client, pluginsOn);
   /** The panel last opened, and its plugin's dev reload count then: a reloaded frame doesn't get the old focus again. */
   const [panelTarget, setPanelTarget] = useState<(PanelTarget & { reloadAt: number }) | null>(null);
   const surfaceNow = useRef(surface);
@@ -1093,6 +1094,11 @@ export function ChatView({
         // The harness view's own handler (client.search.onOpenRecord); none listening: nothing opens (§3).
         return client.search.openRecord(intent.collection, intent.key, intent.scope);
       case "panel":
+        // Picked before the first surface read came back (from Home): it waits for that read, then opens or drops.
+        if (surface === null && pluginsOn) {
+          pendingPanel.current = intent;
+          return true;
+        }
         // A row read before its plugin stopped (or dropped the panel) opens nothing, now or when the panel comes back.
         if (!surfaceCtx || !surfaceCtx.surface.panels.some((p) => p.plugin === intent.plugin && p.id === intent.panel)) return false;
         openPanel(intent.plugin, intent.panel, intent.focus);
@@ -1104,6 +1110,14 @@ export function ChatView({
         return runCommand(intent.command, intent.arg);
     }
   };
+  /** A plugin record's panel picked while the surface was still loading; checked once, when it has loaded. */
+  const pendingPanel = useRef<Extract<SearchIntent, { kind: "panel" }> | null>(null);
+  useEffect(() => {
+    const intent = pendingPanel.current;
+    if (!intent || surface === null) return;
+    pendingPanel.current = null;
+    if (surface.panels.some((p) => p.plugin === intent.plugin && p.id === intent.panel)) openPanel(intent.plugin, intent.panel, intent.focus);
+  }, [surface, openPanel]);
   useLayoutEffect(() => {
     if (searchContextRef) {
       searchContextRef.current = () => ({ taskOpen: Boolean(tasks.current), turnRunning: Boolean(chat.live) || closing || checkpoint, nextPart: nextPartOf(), panels: !slim });

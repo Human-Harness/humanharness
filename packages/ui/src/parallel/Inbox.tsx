@@ -1,5 +1,6 @@
-import { type FocusEvent, type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type FocusEvent, type KeyboardEvent, type Ref, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { InboxIcon, Tag } from "../chrome";
 import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
@@ -7,8 +8,51 @@ import { useJobs } from "./useJobs";
 
 const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
 
+/** Waiting for the person: tasks waiting for them, and needs-you job results (a job turned off, as the Dock badge, waits for no one). */
+export function waitingCount(tasks: TasksState | null, jobs: readonly JobSummary[] = []): number {
+  const waiting = (tasks?.tasks ?? []).filter((s) => s.state === "waiting").length;
+  return waiting + jobs.filter((j) => j.last?.status === "needs-you" && j.paused !== "off").length;
+}
+
 /**
- * The core inbox of open tasks (parallel spec §9.2): a top-bar button with the waiting count, opening four sections.
+ * The top bar's Inbox pill (UI refresh spec §4.1): the waiting count on an orange tag. It opens the Inbox; until the
+ * Inbox screen is drawn (spec §5.4) that is the list `Inbox` shows under it.
+ */
+export function InboxPill({
+  tasks,
+  jobs,
+  onOpen,
+  buttonRef,
+  expanded,
+  controls,
+}: {
+  tasks: TasksState | null;
+  jobs?: readonly JobSummary[];
+  onOpen: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
+  /** Opening a list under it: whether it is open, and its id. */
+  expanded?: boolean;
+  controls?: string;
+}) {
+  const { t } = useTranslation();
+  const count = waitingCount(tasks, jobs);
+  return (
+    <button
+      ref={buttonRef}
+      className="hh-pill"
+      aria-label={t("inbox.pill", { count })}
+      {...(expanded !== undefined ? { "aria-haspopup": "dialog" as const, "aria-expanded": expanded, "aria-controls": controls } : {})}
+      onClick={onOpen}
+    >
+      <InboxIcon />
+      {t("inbox.title")}
+      {count > 0 && <Tag tone="orange">{count}</Tag>}
+    </button>
+  );
+}
+
+/**
+ * The core inbox of open tasks (parallel spec §9.2): the top bar's Inbox pill with the waiting count, opening four sections.
  * It reads only `client.tasks` (never the attention items' `read` flag, which the plugins inbox shares). A row asks
  * main to focus its task and closes the list; the chat follows main's tasks change, never the click ("New task" excepted:
  * the start view is no task, so `onStartView` tells the app once main took it). Its Jobs section lists `client.jobs`
@@ -52,9 +96,7 @@ export function Inbox({
   const working = all.filter((s) => WORKING.includes(s.state));
   const queued = all.filter((s) => s.state === "queued");
   const jobs = useJobs(client, Boolean(state.jobs));
-  // As the Dock badge counts them: a job turned off in Settings › Jobs waits for no one.
-  const needsYou = jobs.filter((j) => j.last?.status === "needs-you" && j.paused !== "off");
-  const count = waiting.length + needsYou.length;
+  const count = waitingCount(tasks, jobs);
 
   const hasScopes = Boolean(state.scopes);
   useEffect(() => {
@@ -255,22 +297,14 @@ export function Inbox({
 
   return (
     <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
-      <button
-        ref={button}
-        className="hh-tk-button"
-        aria-label={t("parallel.inboxButton", { count })}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? `${id}-list` : undefined}
-        onClick={() => (open ? close() : setOpen(true))}
-      >
-        {t("parallel.inbox")}
-        {count > 0 && (
-          <span className="hh-tk-badge" aria-hidden="true">
-            {count}
-          </span>
-        )}
-      </button>
+      <InboxPill
+        tasks={tasks}
+        jobs={jobs}
+        buttonRef={button}
+        expanded={open}
+        {...(open ? { controls: `${id}-list` } : {})}
+        onOpen={() => (open ? close() : setOpen(true))}
+      />
       <span className="hh-sr-only" aria-live="polite">
         {count > 0 ? t("parallel.waitingCount", { count }) : ""}
       </span>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, ProfileResult, ProfileView, ProfilesState } from "./client";
 import { AVATAR_COLORS } from "./profiles";
@@ -101,6 +101,71 @@ export function ProfileSwitcher({
         <p role="alert" title={error}>
           {error}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The top bar's profile avatar (UI refresh spec §4.1): the active profile's initial on its colour, opening the
+ * switcher under it. Shown only in a harness with profiles (Q2).
+ */
+export function ProfileAvatar({
+  client,
+  state,
+  onSwitched,
+  onAdd,
+  disabled = false,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  onSwitched: (state: AppState) => void;
+  onAdd: () => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const profiles = useProfiles(client, state.profiles !== undefined);
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (e.target instanceof Node && !wrap.current?.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  if (!state.profiles || !profiles) return null;
+  const label = state.profiles.label;
+  const active = profiles.list.find((p) => p.id === profiles.active && !p.archived);
+  const color = active?.color && (AVATAR_COLORS as readonly string[]).includes(active.color) ? active.color : undefined;
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !open) return;
+    e.preventDefault();
+    setOpen(false);
+    button.current?.focus();
+  };
+  return (
+    <div className="hh-avatar-menu" ref={wrap} onKeyDown={onKeyDown}>
+      <button
+        ref={button}
+        type="button"
+        className="hh-avatar hh-avatar-button"
+        data-color={color}
+        aria-label={active ? t("profiles.avatar", { name: shownTitle(active.title) }) : t("profiles.pick", { label })}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? `${id}-switcher` : undefined}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {active ? ([...active.title.trim()][0]?.toUpperCase() ?? "") : ""}
+      </button>
+      {open && (
+        <div id={`${id}-switcher`} className="hh-pl-popover hh-avatar-popover" role="dialog" aria-label={t("profiles.pick", { label })}>
+          <ProfileSwitcher client={client} state={state} onSwitched={onSwitched} onAdd={onAdd} disabled={disabled} />
+        </div>
       )}
     </div>
   );

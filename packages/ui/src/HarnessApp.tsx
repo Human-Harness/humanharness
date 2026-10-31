@@ -2,14 +2,16 @@ import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, use
 import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
-import { ProfileSwitcher } from "./ProfileSwitcher";
+import { ProfileAvatar } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
-import { ChatView, type SendFn } from "./ChatView";
+import { ChatView, type SendFn, type ShellBridge } from "./ChatView";
 import { Rail, TopBar } from "./chrome";
 import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { Home } from "./Home";
+import { AttentionInbox } from "./plugins/AttentionInbox";
+import { useAttention } from "./plugins/usePlugins";
 import { Inbox } from "./parallel/Inbox";
 import { TaskStrip } from "./parallel/TaskStrip";
 import { useFocusEpoch, useTasks } from "./parallel/useTasks";
@@ -78,6 +80,13 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const searchRef = useRef<((intent: SearchIntent) => boolean) | null>(null);
   /** The chat's state for the palette's actions (search spec §6); null while the chat isn't on screen. */
   const searchContextRef = useRef<(() => ChatSearchContext) | null>(null);
+  /** The chat on screen, for the top bar (it lives outside the chat): the Inbox's refill and start, the bell's panels. */
+  const shellRef = useRef<ShellBridge | null>(null);
+  /**
+   * A turn runs or a task closes in the chat: the profile switcher waits. Only the avatar follows it (the app doesn't
+   * redraw on each turn: the search palette's rows stay the ones the person saw).
+   */
+  const chatBlocked = useRef<Blocked>({ now: false, listener: null });
   /** An action picked from search that couldn't run (it no longer applied, or main refused it): a short line says so. */
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
   useEffect(() => {
@@ -150,6 +159,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const tasksState = useTasks(client, Boolean(state?.parallel));
   /** Board mode: the chat remounts on each change of the task shown (`epoch`); only a message put back outlives it. */
   const { epoch, toStart } = useFocusEpoch(tasksState);
+  /** The plugins' attention inbox, the top bar's bell (plugins spec §6): only with `state.plugins`, on the work screen (D0). */
+  const attention = useAttention(client, state?.plugins !== undefined && screen === "work");
   const draftKeep = useRef<string | null>(null);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
@@ -349,6 +360,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
   }).filter((e) => e !== "inbox" && e !== "jobs");
+  /** The breadcrumb's screen (spec §4.1): the focused task, else the start view's title, else Tasks. */
+  const focusedTask = tasksState?.tasks.find((s) => s.focused);
+  const screenTitle = focusedTask?.label ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
   const railCurrent: RailEntry = view.kind === "inbox" ? (view.column === "jobs" ? "jobs" : "inbox") : "tasks";
   const pick = (e: RailEntry) => {
     if (e === "home") return setScreen("home");
@@ -365,6 +379,27 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       <div className="hh-screen" inert={settings !== null}>
         {screen === "work" && configured ? (
           <div className="hh-shell">
+            <TopBar
+              crumbs={[{ label: state.harness.name, onClick: () => setScreen("home") }, { label: screenTitle }]}
+              {...(state.harness.logo ? { logo: state.harness.logo } : {})}
+              mock={state.mock}
+              trailing={
+                <>
+                  {state.parallel?.inbox && view.kind !== "inbox" && (
+                    <Inbox
+                      client={client}
+                      state={state}
+                      tasks={tasksState}
+                      onRefill={(text) => shellRef.current?.refill(text)}
+                      onStartView={toStart}
+                      onStartAction={(action, scope) => shellRef.current?.start(action, scope) ?? false}
+                    />
+                  )}
+                  {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={(plugin, panel, focus) => shellRef.current?.openPanel(plugin, panel, focus)} />}
+                  {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
+                </>
+              }
+            />
             <Rail entries={entries} current={railCurrent} onPick={pick} />
             <div className="hh-shell-main">
               <ChatView
@@ -377,14 +412,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 startView={startView}
                 openScope={openScope}
                 materialPanel={materialPanel}
-                profileBar={
-                  state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
-                }
-                inboxBar={
-                  state.parallel?.inbox
-                    ? (refill, start) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} onStartAction={start} />
-                    : undefined
-                }
+                shellRef={shellRef}
+                onBlocked={(b) => {
+                  chatBlocked.current.now = b;
+                  chatBlocked.current.listener?.(b);
+                }}
                 {...(state.jobs ? { startRef: chatStart } : {})}
                 searchRef={searchRef}
                 searchContextRef={searchContextRef}
@@ -480,4 +512,23 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />
     </I18nextProvider>
   );
+}
+
+/** Whether the chat on screen is busy, and who follows it. */
+interface Blocked {
+  now: boolean;
+  listener: ((blocked: boolean) => void) | null;
+}
+
+/** The top bar's avatar, disabled while the chat is busy (it alone redraws when that changes). */
+function TopBarAvatar({ blocked, ...props }: Omit<Parameters<typeof ProfileAvatar>[0], "disabled"> & { blocked: Blocked }) {
+  const [disabled, setDisabled] = useState(blocked.now);
+  useEffect(() => {
+    blocked.listener = setDisabled;
+    setDisabled(blocked.now);
+    return () => {
+      blocked.listener = null;
+    };
+  }, [blocked]);
+  return <ProfileAvatar {...props} disabled={disabled} />;
 }

@@ -254,6 +254,16 @@ export function BellIcon() {
   );
 }
 
+/** The Inbox: a line tray, as the rail draws it. */
+export function InboxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 13l2.5-7h11L20 13v6H4z" />
+      <path d="M4 13h5l1 2h4l1-2h5" />
+    </svg>
+  );
+}
+
 const RAIL_ICONS: Record<RailEntry, ReactNode> = {
   home: <path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" />,
   tasks: <><path d="M5 5h14v10H9l-4 4z" /><path d="M9 9h6" /></>,

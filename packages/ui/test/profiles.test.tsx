@@ -126,6 +126,8 @@ describe("the switcher on the work screen's top bar", () => {
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
     await screen.findByRole("button", { name: "Home" });
+    // The switcher opens from the top bar's avatar (UI refresh spec §4.1).
+    fireEvent.click(await screen.findByRole("button", { name: "Profile: Sofi" }));
     const select = (await screen.findByRole("combobox", { name: "Choose student" })) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "tomas" } });
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose student" }) as HTMLSelectElement).value).toBe("tomas"));

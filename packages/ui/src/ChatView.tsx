@@ -7,7 +7,7 @@ import { findAnswer } from "./annotate";
 import { cleanDocumentCards } from "./card-shape";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { CitationContext, type CitationResolver } from "./citations";
-import { GearIcon, SidekickToggle, TopBar } from "./chrome";
+import { SidekickToggle } from "./chrome";
 import {
   type AppState,
   type ChatEntry,
@@ -52,12 +52,10 @@ import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
-import { AttentionInbox } from "./plugins/AttentionInbox";
 import { PluginChips } from "./plugins/PluginChips";
 import { PluginsSection } from "./plugins/PluginsSection";
 import { PreparedTask } from "./plugins/PreparedTask";
 import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, reloadOf, usePluginSurface } from "./plugins/surface";
-import { useAttention } from "./plugins/usePlugins";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
 import { FirstOpenOffer } from "./sidekick/PresetOffer";
@@ -79,6 +77,13 @@ const isReply = (e: ChatEntry): boolean => isTurnEntry(e) && !isToolLine(e);
 const NO_TASKS: TaskView = { current: null, actions: {}, notes: [] };
 
 export type SendFn = (text: string, options?: SendOptions) => boolean;
+
+/** What the shell's top bar asks of the chat on screen (see `shellRef`). */
+export interface ShellBridge {
+  refill: (text: string) => void;
+  start: (action: string, scope: string | null) => boolean;
+  openPanel: (plugin: string, panel: string, focus?: string) => void;
+}
 
 /** A heavy action waiting for the user's go-ahead: a message to send, or a picked option. */
 type Pending = { action: string; check: Preflight } & (
@@ -107,16 +112,14 @@ export function ChatView({
   startView,
   engineProblem,
   scopeBar,
-  profileBar,
-  inboxBar,
+  shellRef,
+  onBlocked,
   startRef,
   searchRef,
   searchContextRef,
   taskStrip,
   draftKeep,
   openScope = null,
-  onHome,
-  onSettings,
   notesRequest,
   pluginsRequest,
   onPluginPanels,
@@ -135,15 +138,16 @@ export function ChatView({
   startView?: StartViewCopy;
   /** What the background check found wrong with the engine, if anything. */
   engineProblem?: EngineProblem | null;
-  /** Harnesses with scopes: the picker shown first in the top bar (disabled while a turn runs or a task closes). */
+  /** Harnesses with scopes: the picker shown first above the chat (disabled while a turn runs or a task closes). */
   scopeBar?: (disabled: boolean) => ReactNode;
-  /** Harnesses with profiles: the switcher in the top bar, disabled while a turn runs. */
-  profileBar?: (disabled: boolean) => ReactNode;
   /**
-   * A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box; `start`
-   * starts a declared action as the start view does (a needs-you job's "Start", part 3).
+   * Set by the chat for the shell's top bar (UI refresh spec §4.1), which lives outside it: the Inbox's `refill` puts
+   * text back in the box and `start` starts a declared action as the start view does (parallel spec §9.2, part 3); the
+   * bell's `openPanel` opens a plugin panel. Null once this view is gone.
    */
-  inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => boolean) => ReactNode;
+  shellRef?: { current: ShellBridge | null };
+  /** Told whether a turn runs or a task closes (the top bar's profile switcher is disabled meanwhile). */
+  onBlocked?: (blocked: boolean) => void;
   /** A harness with jobs: gets the same `start`, for Settings › Jobs' Start (part 3); null once this view is gone. */
   startRef?: { current: ((action: string, scope: string | null) => boolean) | null };
   /** Set by the chat: runs a search result or question (search spec §3); false when it can't here. */
@@ -160,8 +164,6 @@ export function ChatView({
   draftKeep?: { current: string | null };
   /** Harnesses with scopes: the open scope (its chat is the one on screen). */
   openScope?: string | null;
-  onHome?: () => void;
-  onSettings?: () => void;
   /** The rail's Notes (UI refresh spec §4.2): each new number opens the Notes drawer. */
   notesRequest?: number;
   /** The rail's Plugins: each new number brings the Plugins section's first panel into view. */
@@ -294,8 +296,6 @@ export function ChatView({
   const [skRefresh, setSkRefresh] = useState(0);
   const skEnabled = state.sidekick !== undefined && !slim;
   const sidekick = useSidekick(client, skEnabled, skRefresh);
-  // The Attention inbox (plugins spec §6): only when main sends `state.plugins`, never in slim mode (D0).
-  const attention = useAttention(client, state.plugins !== undefined && !slim);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
   const pluginsOn = state.plugins !== undefined && !slim;
   const surface = usePluginSurface(client, pluginsOn);
@@ -989,6 +989,13 @@ export function ChatView({
       startRef.current = null;
     };
   });
+  useLayoutEffect(() => {
+    if (!shellRef) return;
+    shellRef.current = { refill: refillDraft, start: startFromInbox, openPanel };
+    return () => {
+      shellRef.current = null;
+    };
+  });
   /** The task's next part, while it waits and nothing runs (the stepper's own guards). */
   const nextPartOf = (): { id: string; label: string } | null => {
     const task = tasks.current;
@@ -1567,18 +1574,26 @@ export function ChatView({
     if (first) openPanel(first.plugin, first.id);
   }, [pluginsRequest, openPanel]);
 
+  const isBlocked = blocked();
+  const blockedTo = useRef(onBlocked);
+  blockedTo.current = onBlocked;
+  useEffect(() => {
+    blockedTo.current?.(isBlocked);
+  }, [isBlocked]);
+  useEffect(() => () => blockedTo.current?.(false), []);
+
   return (
     <DocumentContext.Provider value={documentHost}>
       <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
+        {/* The task header's place (UI refresh spec §5.1): what left the top bar, until Task 10 draws the header. */}
         {!slim && (
-          <TopBar title={state.harness.name} mock={state.mock}>
-            {profileBar?.(blocked())}
+          <div className="hh-task-header">
             {scopeBar?.(blocked())}
             {/* Without actions there is no flow side: the meter, and so the context panel's button, sits here. */}
             {!flow && tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} />}
             <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
             {surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
-            {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
+            <span className="hh-spacer" />
             {sidekick && (
               <SidekickToggle
                 on={sidekick.settings.on}
@@ -1590,8 +1605,6 @@ export function ChatView({
                 }}
               />
             )}
-            {inboxBar?.(refillDraft, startFromInbox)}
-            {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={openPanel} />}
             <button
               onClick={() => {
                 // One panel at a time: Escape closes the one on screen.
@@ -1603,12 +1616,7 @@ export function ChatView({
             >
               {t("history.title")}
             </button>
-            {onSettings && (
-              <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
-                <GearIcon />
-              </button>
-            )}
-          </TopBar>
+          </div>
         )}
         <div
           className={`hh-body${(reader || contextOpen) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}

@@ -800,6 +800,34 @@ describe("HarnessApp", () => {
     expect(within(rail).queryByRole("button", { name: "Inbox" })).toBeNull(); // no parallel: D0
   });
 
+  it("leaves only logo, breadcrumb, Inbox, bell and avatar in the top bar (spec §4.1)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const bar = (await screen.findByRole("navigation", { name: "Breadcrumb" })).closest("header")!;
+    for (const gone of ["History", "Settings", "Home"]) expect(within(bar).queryByRole("button", { name: gone })).toBeNull();
+    // Spans the window above the rail: the rail is not inside it, and both are the shell's children.
+    expect(bar.parentElement?.className).toBe("hh-shell");
+    expect(within(bar).getByRole("button", { name: "Demo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
+  });
+
+  it("the top bar's avatar opens the profile switcher; D0: no avatar without profiles (spec §4.1, Q2)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const bar = (await screen.findByRole("navigation", { name: "Breadcrumb" })).closest("header")!;
+    expect(within(bar).queryByRole("button", { name: /^Profile/ })).toBeNull();
+    cleanup();
+    const client = new FakeClient({ ...ready, profile: "sofi" });
+    client.state = { ...client.state, profiles: { label: "student", form: { fields: [] } } };
+    client.profileList = [{ id: "sofi", title: "Sofi", color: "coral", createdAt: "2026-10-27T10:00:00.000Z", archived: false }];
+    await startWork(<HarnessApp client={client} />);
+    const avatar = await screen.findByRole("button", { name: "Profile: Sofi" });
+    expect(avatar.closest("header.hh-topbar")).not.toBeNull();
+    expect(avatar.textContent).toBe("S");
+    expect(avatar.getAttribute("data-color")).toBe("coral");
+    expect(screen.queryByRole("button", { name: "Add student" })).toBeNull();
+    fireEvent.click(avatar);
+    expect(await screen.findByRole("button", { name: "Add student" })).toBeTruthy();
+  });
+
   it("Rail › Home goes to Home and Rail › Settings opens Settings", async () => {
     await startWork(<HarnessApp client={new FakeClient(ready)} />);
     const rail = await screen.findByRole("navigation", { name: "App" });

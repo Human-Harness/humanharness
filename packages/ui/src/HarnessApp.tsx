@@ -44,6 +44,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [failed, setFailed] = useState(false);
   const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
   const [settings, setSettings] = useState<SettingsTab | null>(null);
+  /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
+  const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
   /** Background check of the configured engine (spec §9 "every start"). */
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [checkFailed, setCheckFailed] = useState(false);
@@ -257,6 +259,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   const closeSettings = () => {
     setSettings(null);
+    setSettingsFocus(null);
     checkEngine();
   };
   // Leaving the setup flow either way: whatever it saved gets checked again.
@@ -277,7 +280,14 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   /** A result or a ⌘Enter question: Settings closes, the work screen shows, the chat does the rest. */
   const searchIntent = (intent: SearchIntent) => {
+    // A setting opens Settings at its field (§6), over whatever is on screen; Settings may already be open.
+    if (intent.kind === "setting") {
+      setSettingsFocus((f) => ({ id: intent.field, n: (f?.n ?? 0) + 1 }));
+      setSettings(intent.tab);
+      return;
+    }
     setSettings(null);
+    setSettingsFocus(null);
     if (screen === "work" && searchRef.current) {
       searchRef.current(intent);
       return;
@@ -368,12 +378,16 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           client={client}
           state={state}
           tab={settings}
-          onTab={setSettings}
+          onTab={(tab) => {
+            setSettingsFocus(null);
+            setSettings(tab);
+          }}
           onChange={setState}
           onClose={closeSettings}
           onSetup={(step?: string) => {
             const back = settings;
             setSettings(null);
+            setSettingsFocus(null);
             openSetup(step ? { step, only: true, back } : {});
           }}
           move={move}
@@ -387,6 +401,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
               }
             : {})}
           language={client.language ? language : undefined}
+          {...(settingsFocus ? { focus: settingsFocus } : {})}
         />
       )}
       {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}

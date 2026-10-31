@@ -26,7 +26,7 @@ export function ProfilesSection({ client, state, onChange }: { client: HarnessCl
     );
   };
   return (
-    <section aria-labelledby={headingId}>
+    <section aria-labelledby={headingId} data-setting="general.profiles">
       <h3 id={headingId}>{t("profiles.sectionTitle")}</h3>
       <ul className="hh-rows" aria-labelledby={headingId}>
         {people.list.map((p) => {

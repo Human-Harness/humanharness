@@ -109,11 +109,22 @@ function useModels(client: HarnessClient, state: AppState, onChange: (s: AppStat
  * Settings › Modelos (resources spec §7): how much model each task uses and what each level runs on, per
  * engine. Saved in config.json; a change applies to the next task, never to the running one.
  */
-export function ModelsTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {
+export function ModelsTab({
+  client,
+  state,
+  onChange,
+  initialPart,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  onChange: (s: AppState) => void;
+  /** The part it opens on (search's Models › Levels row, §6). */
+  initialPart?: "tasks" | "levels";
+}) {
   const { t } = useTranslation();
   const tasksId = useId();
   const [models, update, saveFailed] = useModels(client, state, onChange);
-  const [part, setPart] = useState<"tasks" | "levels">("tasks");
+  const [part, setPart] = useState<"tasks" | "levels">(initialPart ?? "tasks");
   const view = state.models;
   if (!view) return null;
   const engine = state.config.engineId ?? state.engines[0]?.id ?? "";
@@ -156,7 +167,7 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
       )}
       {part === "levels" && <LevelsSection state={state} view={view} models={models} rows={rows} update={update} />}
       {part === "tasks" && (
-        <section aria-labelledby={tasksId}>
+        <section aria-labelledby={tasksId} data-setting="models.tasks">
           {/* The switch above already says it: the heading only names the region. */}
           <h3 id={tasksId} className="hh-sr-only">
             {t("models.tasks")}
@@ -243,7 +254,7 @@ function LevelsSection({
   /** The tasks on `tier`: their own setting, else the recommendation (a custom task uses no level). */
   const users = (tier: Tier) => rows.filter(({ key }) => (models.tasks?.[key] ?? view.recommended[key] ?? "standard") === tier).map((r) => r.label);
   return (
-    <section aria-labelledby={headingId}>
+    <section aria-labelledby={headingId} data-setting="models.levels">
       <h3 id={headingId} className="hh-sr-only">
         {t("models.levels")}
       </h3>

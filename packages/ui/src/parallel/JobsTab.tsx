@@ -132,7 +132,7 @@ export function JobsTab({
   };
 
   return (
-    <div className="hh-tab">
+    <div className="hh-tab" data-setting="jobs.jobs">
       {state.jobs!.jobs.map((job) => (
         <JobGroup key={job.id} job={job} entry={settings[job.id] ?? {}} onOn={(on) => setOn(job.id, on)} onCap={(cap) => setCap(job.id, cap)}>
           {(labelId) => {

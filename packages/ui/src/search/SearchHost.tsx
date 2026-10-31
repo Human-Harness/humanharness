@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, SearchHitView } from "../client";
 import type { SearchIntent } from "./intent";
+import { settingRows } from "./local";
 import { SearchPalette, isMod } from "./SearchPalette";
 
 /**
@@ -70,8 +71,12 @@ export function SearchHost({ client, state, openScope, onIntent }: { client: Har
     opener.current = null;
   };
   const pick = (hit: SearchHitView) => {
-    void client.search.opened(hit);
+    // The window's own rows (Settings, Actions) aren't in main's index and never reach it (§6).
+    if (hit.kind !== "setting" && hit.kind !== "command") void client.search.opened(hit);
+    // Settings keeps what had focus before search, to give it back when it closes (as after the gear).
+    const back = opener.current;
     leave();
+    if (hit.kind === "setting" && back?.isConnected) back.focus();
     if (hit.target.kind !== "reveal" && hit.target.kind !== "none") onIntent(hit.target);
   };
   return (
@@ -83,6 +88,7 @@ export function SearchHost({ client, state, openScope, onIntent }: { client: Har
       {...(state.scopes ? { scopesPlural: state.scopes.plural } : {})}
       references={(state.references?.length ?? 0) > 0}
       harnessName={state.harness.name}
+      local={(query) => ({ query, setting: settingRows(t, state, query), command: [] })}
       onClose={close}
       onPick={pick}
       onAsk={(text) => {

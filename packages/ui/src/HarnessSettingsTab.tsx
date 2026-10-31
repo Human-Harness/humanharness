@@ -26,14 +26,23 @@ const RESET = "";
  * Settings › the harness's own tab (harness-settings spec §4): the core's controls, each change saved at once through
  * the data store. While a task is open, changes the agent reads wait for the next task (D4) and are marked "Pending".
  */
-export function HarnessSettingsTab({ client, view }: { client: HarnessClient; view: SettingsView }) {
+export function HarnessSettingsTab({
+  client,
+  view,
+  focus,
+}: {
+  client: HarnessClient;
+  view: SettingsView;
+  /** Search opened Settings at this field (`harness:<name>`, §6): an advanced one opens with More settings expanded. */
+  focus?: string;
+}) {
   const { t } = useTranslation();
   const moreId = useId();
   const resetErrorId = useId();
   const [state, setState] = useState<SettingsState | null>(null);
   const [taskOpen, setTaskOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(() => view.fields.some((f) => f.advanced && `harness:${f.name}` === focus));
 
   useEffect(() => {
     let live = true;
@@ -103,6 +112,7 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
   const row = (f: SettingFieldView) => (
     <SettingRow
       key={f.name}
+      setting={`harness:${f.name}`}
       field={f}
       value={valueOf(f)}
       error={Object.hasOwn(errors, f.name) ? errors[f.name] : undefined}
@@ -160,6 +170,7 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
 
 /** One setting with the core's control (also drawn by a plugin's detail, whose labels are the plugin's: bidi-isolated). */
 export function SettingRow({
+  setting,
   field,
   value,
   error,
@@ -167,6 +178,8 @@ export function SettingRow({
   onSave,
   onDrop,
 }: {
+  /** The row's `data-setting` (search, §6); a plugin's detail passes none. */
+  setting?: string;
   field: SettingFieldView;
   value: unknown;
   error: string | undefined;
@@ -201,7 +214,7 @@ export function SettingRow({
     control = <DraftInput id={id} field={field} value={value} aria={aria} onSave={onSave} onDrop={onDrop} />;
   }
   return (
-    <div className="hh-row hh-row-wrap">
+    <div className="hh-row hh-row-wrap" {...(setting ? { "data-setting": setting } : {})}>
       {field.control === "segmented" ? (
         <span className="hh-row-label" dir="auto">
           {field.label}

@@ -1,9 +1,10 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
-import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
+import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, type SearchSettingsTab, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
 import { EngineTab } from "./EngineTab";
 import { trapTab } from "./focus";
@@ -17,12 +18,13 @@ import { ModelsTab } from "./ModelsTab";
 import { JobsTab } from "./parallel/JobsTab";
 import { PluginsTab } from "./plugins/PluginsTab";
 import { ProfilesSection } from "./ProfilesSection";
+import { focusSetting } from "./search/focus-setting";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab } from "./sidekick/SidekickTab";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "harness" | "engine" | "models" | "sidekick" | "plugins" | "connections" | "jobs" | "usage";
+export type SettingsTab = SearchSettingsTab;
 /**
  * `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4); Sidekick
  * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7); Connections after Plugins (tools spec §9);
@@ -32,6 +34,24 @@ const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
+
+/** The tabs this state shows (the sheet's own list, and search's: a row of a hidden tab isn't offered). */
+export function visibleTabs(state: AppState): SettingsTab[] {
+  return TABS.filter(
+    (id) =>
+      (id !== "models" || state.models !== undefined) &&
+      (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
+      (id !== "sidekick" || state.sidekick !== undefined) &&
+      (id !== "plugins" || state.plugins !== undefined) &&
+      (id !== "connections" || state.connections !== undefined) &&
+      (id !== "jobs" || state.jobs !== undefined),
+  );
+}
+
+/** A tab's name as its button says it ("Sidekicks" with several: the button passes its own `sidekick`). */
+export function tabLabel(t: TFunction, state: AppState, id: SettingsTab, sidekick = t("sidekick.tab")): string {
+  return id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekick : id === "plugins" ? t("plugins.tab") : id === "connections" ? t("connections.tab") : id === "jobs" ? t("parallel.jobsTab") : t(`settings.tabs.${id}`);
+}
 
 /** The Settings sheet (spec 2026-10-11 "Settings sheet"): attached under the top bar, dimmed backdrop. */
 export function SettingsSheet({
@@ -45,6 +65,7 @@ export function SettingsSheet({
   move: shared,
   onStartAction,
   language,
+  focus,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -63,6 +84,8 @@ export function SettingsSheet({
   onStartAction?: (action: string, scope: string | null) => boolean;
   /** Language on demand (plan 5b); absent (no `client.language`): the read-only Language row (D0). */
   language?: LanguageControl;
+  /** Search opened the sheet at this field (§6); `n` changes on each search. */
+  focus?: { id: string; n: number };
 }) {
   const { t } = useTranslation();
   const own = useFolderMove(client, onChange);
@@ -75,15 +98,7 @@ export function SettingsSheet({
   // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0);
   // Plugins only when the harness takes them (plugins D0); Connections only when it declares secrets (tools D0); Jobs
   // only when it declares jobs (parallel D0).
-  const tabs = TABS.filter(
-    (id) =>
-      (id !== "models" || state.models !== undefined) &&
-      (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
-      (id !== "sidekick" || state.sidekick !== undefined) &&
-      (id !== "plugins" || state.plugins !== undefined) &&
-      (id !== "connections" || state.connections !== undefined) &&
-      (id !== "jobs" || state.jobs !== undefined),
-  );
+  const tabs = visibleTabs(state);
   const configured = isConfigured(state.config);
   // The tab reads "Sidekicks" once there are two or more (spec §8); its id stays "sidekick".
   const sidekick = useSidekick(client, state.sidekick !== undefined);
@@ -160,6 +175,14 @@ export function SettingsSheet({
     };
   }, []);
 
+  // Search (§6): the field gets focus once its tab rendered; a new search focus (`n`) runs it again.
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (!focus) return;
+    const panel = document.getElementById(panelId);
+    return panel ? focusSetting(panel, focus.id) : undefined;
+  }, [focusN, tab]);
+
   return (
     <div
       className="hh-sheet-backdrop"
@@ -182,7 +205,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekickTab : id === "plugins" ? t("plugins.tab") : id === "connections" ? t("connections.tab") : id === "jobs" ? t("parallel.jobsTab") : t(`settings.tabs.${id}`)}
+                {tabLabel(t, state, id, sidekickTab)}
               </button>
             ))}
           </div>
@@ -209,7 +232,7 @@ export function SettingsSheet({
           {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
           {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
-          {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
+          {tab === "models" && configured && <ModelsTab key={focus?.n} client={client} state={state} onChange={onChange} {...(focus?.id === "models.levels" ? { initialPart: "levels" as const } : {})} />}
           {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
           {tab === "plugins" && configured && <PluginsTab client={client} />}
           {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
@@ -225,7 +248,7 @@ export function SettingsSheet({
                   onConnections={state.connections ? () => onTab("connections") : undefined}
                 />
               )}
-              {state.settings && <HarnessSettingsTab client={client} view={state.settings} />}
+              {state.settings && <HarnessSettingsTab key={focus?.n} client={client} view={state.settings} {...(focus ? { focus: focus.id } : {})} />}
             </>
           )}
         </div>
@@ -263,7 +286,7 @@ function LanguageRow({ state, language }: { state: AppState; language?: Language
   };
   return (
     <>
-      <div className="hh-row hh-row-wrap">
+      <div className="hh-row hh-row-wrap" data-setting="general.language">
         <span className="hh-row-label">{t("settings.language")}</span>
         <span className="hh-langrow-name">
           <span lang={lang}>{ownName(lang)}</span>
@@ -366,11 +389,11 @@ function GeneralTab({
     <div className="hh-tab">
       <div className="hh-rows">
         <LanguageRow state={state} language={language} />
-        <div className="hh-row">
+        <div className="hh-row" data-setting="general.appearance">
           <span className="hh-row-label">{t("settings.appearance")}</span>
           <Segmented label={t("settings.appearance")} value={state.config.appearance ?? "system"} onChange={(appearance) => void save({ appearance })} options={appearances} />
         </div>
-        <div className="hh-row hh-row-wrap">
+        <div className="hh-row hh-row-wrap" data-setting="general.textSize">
           <span className="hh-row-label" id={sizeId}>
             {t("settings.textSize")}
           </span>
@@ -389,7 +412,7 @@ function GeneralTab({
           </p>
         </div>
         {state.config.folder && (
-          <div className="hh-row">
+          <div className="hh-row" data-setting="general.folder">
             <span className="hh-row-label">{t("settings.folder")}</span>
             <code>{state.config.folder}</code>
             <button onClick={() => void client.revealFolder()}>{t("settings.reveal")}</button>
@@ -406,7 +429,7 @@ function GeneralTab({
           </div>
         )}
         {state.config.folder && backupText && (
-          <div className="hh-row">
+          <div className="hh-row" data-setting="general.backup">
             <span className="hh-row-label">{t("backup.title")}</span>
             <span>{backupText}</span>
             {dismissed && <button onClick={() => void save({ backupDismissed: false })}>{t("backup.showAgain")}</button>}
@@ -460,8 +483,9 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
   const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
   // The other cap may still be on its way to main: each save builds on the last one asked for, not on `state`.
   const latest = useLatestConfig(state.config.parallel);
-  const cap = (key: "tasks" | "jobs", label: string) => (
-    <div className="hh-row">
+  // Rows: data-setting="general.tasksAtOnce", data-setting="general.jobsAtOnce".
+  const cap = (key: "tasks" | "jobs", label: string, setting: string) => (
+    <div className="hh-row" data-setting={setting}>
       <label className="hh-row-label" htmlFor={`${id}-${key}`}>
         {label}
       </label>
@@ -484,14 +508,14 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
     <>
       <h3>{t("parallel.parallelSection")}</h3>
       <div className="hh-rows">
-        {cap("tasks", t("parallel.tasksAtOnce"))}
-        {cap("jobs", t("parallel.jobsAtOnce"))}
+        {cap("tasks", t("parallel.tasksAtOnce"), "general.tasksAtOnce")}
+        {cap("jobs", t("parallel.jobsAtOnce"), "general.jobsAtOnce")}
         {held && (
           <p className="hh-caption hh-row-note" id={`${id}-held`}>
             {t("parallel.engineHeld", { engine })}
           </p>
         )}
-        <div className="hh-row">
+        <div className="hh-row" data-setting="general.notifyWaiting">
           <label>
             <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => said(save({ notifyWaiting: e.target.checked }))} /> {t("parallel.notifyWaiting")}
           </label>

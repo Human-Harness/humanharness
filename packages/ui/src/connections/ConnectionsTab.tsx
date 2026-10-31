@@ -99,7 +99,7 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
     return result;
   };
   return (
-    <div className="hh-tab">
+    <div className="hh-tab" data-setting="connections.connections">
       <p className="hh-caption">{t("connections.intro")}</p>
       {unavailable && <p role="alert">{t("connections.unavailable")}</p>}
       {view && !unavailable && (

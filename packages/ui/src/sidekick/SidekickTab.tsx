@@ -98,7 +98,7 @@ export function SidekickTab({
   return (
     <div className="hh-tab">
       <div className="hh-rows">
-        <div className="hh-row hh-row-wrap">
+        <div className="hh-row hh-row-wrap" data-setting="sidekick.on">
           <label className="hh-row-label" htmlFor={`${onHint}-on`}>
             {t("sidekick.settings.on")}
           </label>
@@ -111,7 +111,7 @@ export function SidekickTab({
       {/* Off: the rest stays visible but can't be changed (spec §8). */}
       <fieldset className="hh-sk-fieldset" disabled={!s.on}>
         <div className="hh-rows">
-          <div className="hh-row hh-row-wrap">
+          <div className="hh-row hh-row-wrap" data-setting="sidekick.preSend">
             <label className="hh-row-label" htmlFor={`${preSendHint}-on`}>
               {t("sidekick.settings.preSend")}
             </label>
@@ -126,7 +126,7 @@ export function SidekickTab({
               {t("sidekick.settings.preSendHint")}
             </p>
           </div>
-          <div className="hh-row hh-row-wrap">
+          <div className="hh-row hh-row-wrap" data-setting="sidekick.afterReply">
             <label className="hh-row-label" htmlFor={`${afterHint}-on`}>
               {t("sidekick.settings.afterReply")}
             </label>
@@ -141,7 +141,7 @@ export function SidekickTab({
               {t("sidekick.settings.afterReplyHint")}
             </p>
           </div>
-          <div className="hh-row hh-row-wrap">
+          <div className="hh-row hh-row-wrap" data-setting="sidekick.headsUps">
             <label className="hh-row-label" htmlFor={`${headsUpHint}-on`}>
               {t("sidekick.settings.headsUps")}
             </label>
@@ -156,18 +156,18 @@ export function SidekickTab({
               {t("sidekick.settings.headsUpsHint")}
             </p>
           </div>
-          <div className="hh-row">
+          <div className="hh-row" data-setting="sidekick.wait">
             <span className="hh-row-label">{t("sidekick.settings.wait")}</span>
             <Segmented label={t("sidekick.settings.wait")} options={waits} value={String(s.wait) as Wait} onChange={(v) => save({ wait: parseWait(v) })} />
           </div>
-          <div className="hh-row">
+          <div className="hh-row" data-setting="sidekick.tier">
             <span className="hh-row-label">{t("sidekick.settings.tier")}</span>
             <span>{t(`sidekick.tiers.${state.tier}`, { defaultValue: state.tier })}</span>
             <button type="button" className="hh-link" onClick={onModels}>
               {t("sidekick.settings.changeTier")}
             </button>
           </div>
-          <div className="hh-row">
+          <div className="hh-row" data-setting="sidekick.cap">
             <span className="hh-row-label">{t("sidekick.settings.cap")}</span>
             <Segmented label={t("sidekick.settings.cap")} options={caps} value={String(s.cap) as Cap} onChange={(v) => save({ cap: parseCap(v) })} />
           </div>

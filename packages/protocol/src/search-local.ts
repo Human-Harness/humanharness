@@ -1,5 +1,5 @@
 // Settings and actions in ⌘K (search spec §6): matched in the window, never stored (§4.2, plan deviations 1–2).
-import type { SearchMarked } from "./views";
+import type { SearchMarked, SearchSettingsTab } from "./views";
 
 /** Case and accents folded, as `packages/search` folds the index (`fold`). */
 export const foldText = (s: string): string => s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
@@ -31,3 +31,52 @@ export function markLocal(label: string, query: string): SearchMarked {
   if (at < label.length) out.push({ text: label.slice(at) });
   return out;
 }
+
+/** What a setting row needs to be on screen (the tab's own conditions are `visibleTabs`'). */
+export type SettingNeed = "configured" | "folder" | "backup" | "parallel" | "profiles";
+
+export interface SearchableSetting {
+  /** `<tab>.<field>`: the row's `data-setting`. */
+  id: string;
+  tab: SearchSettingsTab;
+  /** An i18n key: the row's label as Settings shows it. */
+  label: string;
+  /** Other words that find it, in English (plan deviation 2). Never a word starting "guide" or "old" (plan 1's tests). */
+  keywords?: readonly string[];
+  needs?: readonly SettingNeed[];
+}
+
+/**
+ * Every Settings row search opens (§6; plan deviation 12). A registry test keeps it and the tabs in step. Only labels
+ * and keywords become row text: no row ever shows a setting's value (a connection's token, a key).
+ */
+export const SEARCHABLE_SETTINGS: readonly SearchableSetting[] = [
+  { id: "general.language", tab: "general", label: "settings.language", keywords: ["translate", "locale"] },
+  { id: "general.appearance", tab: "general", label: "settings.appearance", keywords: ["theme", "dark", "light", "mode"] },
+  { id: "general.textSize", tab: "general", label: "settings.textSize", keywords: ["font", "zoom", "bigger", "smaller"] },
+  { id: "general.folder", tab: "general", label: "settings.folder", keywords: ["move", "location", "finder"], needs: ["folder"] },
+  { id: "general.backup", tab: "general", label: "backup.title", keywords: ["sync", "icloud", "dropbox"], needs: ["folder", "backup"] },
+  { id: "general.tasksAtOnce", tab: "general", label: "parallel.tasksAtOnce", keywords: ["parallel"], needs: ["parallel"] },
+  { id: "general.jobsAtOnce", tab: "general", label: "parallel.jobsAtOnce", keywords: ["parallel"], needs: ["parallel"] },
+  { id: "general.notifyWaiting", tab: "general", label: "parallel.notifyWaiting", keywords: ["notification", "alert"], needs: ["parallel"] },
+  { id: "general.profiles", tab: "general", label: "profiles.sectionTitle", keywords: ["profiles", "people", "users"], needs: ["profiles"] },
+  { id: "engine.engine", tab: "engine", label: "engine.tilesLabel", keywords: ["engine", "provider", "claude", "codex", "gemini", "sign in"], needs: ["configured"] },
+  { id: "models.tasks", tab: "models", label: "models.tasks", keywords: ["models", "tier", "pinned", "budget"], needs: ["configured"] },
+  { id: "models.levels", tab: "models", label: "models.levels", keywords: ["models", "light", "standard", "deep"], needs: ["configured"] },
+  { id: "sidekick.on", tab: "sidekick", label: "sidekick.settings.on", keywords: ["coach"], needs: ["configured"] },
+  { id: "sidekick.preSend", tab: "sidekick", label: "sidekick.settings.preSend", keywords: ["sidekick"], needs: ["configured"] },
+  { id: "sidekick.afterReply", tab: "sidekick", label: "sidekick.settings.afterReply", keywords: ["sidekick"], needs: ["configured"] },
+  { id: "sidekick.headsUps", tab: "sidekick", label: "sidekick.settings.headsUps", keywords: ["sidekick"], needs: ["configured"] },
+  { id: "sidekick.wait", tab: "sidekick", label: "sidekick.settings.wait", keywords: ["sidekick", "seconds"], needs: ["configured"] },
+  { id: "sidekick.tier", tab: "sidekick", label: "sidekick.settings.tier", keywords: ["sidekick", "tier"], needs: ["configured"] },
+  { id: "sidekick.cap", tab: "sidekick", label: "sidekick.settings.cap", keywords: ["sidekick", "tokens", "limit"], needs: ["configured"] },
+  { id: "plugins.plugins", tab: "plugins", label: "plugins.tab", keywords: ["extensions", "turn on"], needs: ["configured"] },
+  { id: "connections.connections", tab: "connections", label: "connections.tab", keywords: ["keys", "tokens", "secrets"], needs: ["configured"] },
+  { id: "jobs.jobs", tab: "jobs", label: "parallel.jobsTab", keywords: ["schedule", "background"], needs: ["configured"] },
+  { id: "usage.plan", tab: "usage", label: "usage.planTitle", keywords: ["usage", "limits", "plan"], needs: ["configured"] },
+  { id: "usage.actions", tab: "usage", label: "usage.actionsTitle", keywords: ["usage", "tokens", "cost"], needs: ["configured"] },
+];
+
+/** The window's state a setting's `needs` read. */
+export type SettingState = Record<SettingNeed, boolean>;
+export const settingAvailable = (s: SearchableSetting, state: SettingState): boolean => (s.needs ?? []).every((n) => state[n]);

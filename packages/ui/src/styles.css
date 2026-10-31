@@ -211,9 +211,9 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Home */
 .hh-home { height: 100vh; display: grid; grid-template-rows: 52px 1fr auto; }
 .hh-home .hh-topbar { border-bottom: none; }
-.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 0 16px; }
-.hh-home-logo { width: 112px; height: 112px; object-fit: contain; }
-.hh-home-name { font-family: var(--hh-display); font-weight: 600; font-size: 34px; }
+.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; width: 100%; max-width: 760px; box-sizing: border-box; margin: 0 auto; text-align: center; padding: 40px 16px 32px; }
+.hh-home-logo { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--hh-shadow); object-fit: contain; }
+.hh-home-name { font-family: var(--hh-display); font-weight: 600; font-size: 40px; letter-spacing: -1px; }
 .hh-home-tagline { color: var(--hh-muted); font-size: 15px; margin-bottom: 8px; }
 /* Not ready yet (spec 3f §1): what is missing, above "Set up <name>". */
 .hh-missing { display: grid; gap: 8px; min-width: min(320px, 100%); max-width: 460px; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-muted); text-align: left; }
@@ -224,7 +224,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-pill img { width: 18px; height: 18px; }
 .hh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hh-muted); }
 .hh-dot.ok { background: var(--hh-ok-dot); }
-.hh-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 20px; color: var(--hh-muted); font-size: 12px; }
+.hh-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 20px; color: var(--hh-muted); font-size: 12px; background: var(--hh-rail); border-top: 1px solid var(--hh-line); }
 /* Long paths keep their end (the folder's own name) visible: the ellipsis goes at the start. */
 .hh-footer-path { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .hh-wordmark { font-family: var(--hh-display); font-weight: 500; color: var(--hh-muted); }
@@ -1271,6 +1271,8 @@ input.hh-search-input {
   background: var(--hh-highlight);
   transition: background 0.4s;
 }
+.hh-missing, .hh-langoffer, .hh-backup-notice { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
+.hh-pickup { width: 100%; display: grid; gap: 12px; }
 .hh-pickup-head { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .hh-pickup-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
 .hh-pickup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }

@@ -8,15 +8,20 @@ import {
   type AppState,
   type EngineStatus,
   type HarnessClient,
+  type HistoryTaskView,
   type LanguageState,
   type LimitWindow,
   type SetupStepsState,
   engineProblem,
   isConfigured,
+  timeAgo,
 } from "./client";
 import { LanguageChooser } from "./LanguageChooser";
 import type { LanguageControl } from "./language-control";
-import { ownName, systemLanguage } from "./language";
+import { ownName, shownLanguage, systemLanguage } from "./language";
+import { PickUp, pickUpItems } from "./PickUp";
+import { useTasks } from "./parallel/useTasks";
+import type { SearchIntent } from "./search/intent";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
@@ -77,6 +82,7 @@ export function Home({
   move,
   onAddProfile,
   language,
+  onOpen,
 }: {
   state: AppState;
   client: HarnessClient;
@@ -101,8 +107,10 @@ export function Home({
   onAddProfile?: () => void;
   /** Language on demand (plan 5b): the offer card. Absent without `client.language` (D0: no card). */
   language?: LanguageControl;
+  /** "Pick up where you left": a task's card was clicked (an open task, or History at that task). Absent: the work screen. */
+  onOpen?: (intent: SearchIntent) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const missingId = useId();
   const name = state.harness.name;
   const engine = state.engines.find((e) => e.id === state.config.engineId);
@@ -122,6 +130,59 @@ export function Home({
   const stepLabel = (id: string) => state.setup?.find((s) => s.id === id)?.label ?? id;
   const engineName = engine?.name ?? state.config.engineId ?? "";
   const missingStep = checkFailed ? "check-failed" : status ? engineProblem(status) : null;
+
+  // Pick up where you left (UI refresh spec §5.2): the open tasks of a harness with `parallel`, else History's latest tasks.
+  const parallel = Boolean(state.parallel);
+  const openTasks = useTasks(client, parallel && ready);
+  const [past, setPast] = useState<HistoryTaskView[] | null>(null);
+  useEffect(() => {
+    if (!ready || parallel) return;
+    let live = true;
+    client.historyTasks().then(
+      (groups) => live && setPast(groups),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, ready, parallel]);
+  const lang = shownLanguage(i18n);
+  const pickUp = ready ? pickUpHome() : [];
+  function pickUpHome() {
+    const taskState = { running: "working", closing: "working", waiting: "waiting", checkpoint: "waiting", queued: "queued" } as const;
+    const open = (openTasks?.tasks ?? []).map((x) => ({ id: x.id, title: x.label, state: taskState[x.state], updatedAt: Date.parse(x.startedAt) || 0 }));
+    const history = (past ?? []).flatMap((g) =>
+      g.taskId === null
+        ? []
+        : [
+            {
+              id: g.taskId,
+              title: g.noteTitle ?? (g.actionId && Object.hasOwn(state.actions, g.actionId) ? state.actions[g.actionId].label : g.actionId === null ? t("history.question") : t("history.task")),
+              outcome: g.noteTitle ? ("noteSaved" as const) : ("inProgress" as const),
+              endedAt: Date.parse(g.date) || 0,
+            },
+          ],
+    );
+    const items = pickUpItems({ open, history });
+    return items.map((i) => {
+      const task = openTasks?.tasks.find((x) => x.id === i.id);
+      if (task) {
+        const ago = timeAgo(task.startedAt, lang);
+        return { ...i, status: t(`home.status.${i.status}`), where: [task.phase, ago].filter(Boolean).join(" · ") };
+      }
+      const group = past?.find((g) => g.taskId === i.id);
+      const ago = group ? timeAgo(group.date, lang) : "";
+      return { ...i, status: t(`home.status.${i.status}`), where: i.status === "noteSaved" ? t("home.noteSavedAgo", { ago }) : ago };
+    });
+  }
+  const openPickUp = (id: string) => {
+    const isOpen = openTasks?.tasks.some((x) => x.id === id) === true;
+    if (onOpen) onOpen(isOpen ? { kind: "open-task", task: id } : { kind: "history", task: id });
+    else {
+      if (isOpen) void client.tasks.focus(id).catch(() => undefined);
+      onStart();
+    }
+  };
 
   // The language offer (spec §3, §10): asked for only when there is a non-English suggestion (an engine check runs).
   const offerId = useId();
@@ -253,6 +314,7 @@ export function Home({
         ) : (
           <p className="hh-caption">{t("home.noEngine")}</p>
         )}
+        {ready && <PickUp items={pickUp} onOpen={openPickUp} />}
         <BackupNotice client={client} state={state} onChange={onChange} move={move} />
       </main>
       {language && choosing && (

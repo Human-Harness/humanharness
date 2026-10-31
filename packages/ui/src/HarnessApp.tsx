@@ -475,6 +475,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             move={move}
             onAddProfile={addProfile}
             language={client.language ? language : undefined}
+            onOpen={searchIntent}
           />
         )}
         {/* Hatches §4.3: only a harness with a backend gets the card and its listener (D0). */}

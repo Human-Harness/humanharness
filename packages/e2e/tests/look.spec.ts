@@ -31,3 +31,17 @@ for (const theme of ["light", "dark"] as const) {
     }
   });
 }
+
+for (const theme of ["light", "dark"] as const) {
+  test(`look: the demo's Home in ${theme}`, async () => {
+    const s = makeSandbox(`look-home-${theme}`);
+    const { app, page } = await launchMock(s);
+    try {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.getByRole("button", { name: "Start Demo" })).toBeVisible();
+      await page.screenshot({ path: path.join(lookDir, `home-${theme}.png`) });
+    } finally {
+      await closeAndClean(app, s);
+    }
+  });
+}

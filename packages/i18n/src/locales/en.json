@@ -20,6 +20,8 @@
   "home": {
     "start": "Start {{name}}",
     "pickUp": "Pick up where you left",
+    "noteSavedAgo": "Note saved · {{ago}}",
+    "status": { "waiting": "Waiting for you", "working": "Working", "queued": "Queued", "noteSaved": "Done", "inProgress": "Recent" },
     "settings": "Settings",
     "connected": "Connected",
     "notConnected": "Not connected",

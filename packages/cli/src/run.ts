@@ -35,6 +35,7 @@ import {
   settingsSentences,
   settingsValues,
 } from "@humanharness/harness-sdk";
+import { DefaultModelPolicy } from "@humanharness/policies";
 import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
@@ -51,10 +52,8 @@ import {
   hasAcceptedNotice,
   memoise,
   nearestTier,
-  nextFallback,
   pinnedBudget,
   pinnedContext,
-  resolveProfile,
   resolveReferences,
   saveAnswerRecords,
   sharedConfigDir,
@@ -440,14 +439,14 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     // A refused start's line is the run's own error (below), not the window's card.
     emit: (e) => (toolsRun?.failed !== undefined && e.type === "done" && !e.ok && e.error.code === "prepare-failed" ? undefined : view.event(e)),
     profileFor: async (id, floor) =>
-      resolveProfile({
+      DefaultModelPolicy.pick({
         engine: engine.id,
         action: id,
         manifestTier: id === undefined ? harness.questions?.tier : id === o.action && o.tier ? o.tier : harness.actions[id]?.tier,
         models: {},
         ...(floor ? { floor } : {}),
       }),
-    fallbackFor: async (profile, tried) => nextFallback(profile, {}, tried),
+    fallbackFor: async (profile, tried) => DefaultModelPolicy.fallback(profile, {}, tried),
     // As the app wires them; undefined without modes (task-modes D0).
     ...(hasModes(harness)
       ? {

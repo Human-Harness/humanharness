@@ -17,6 +17,7 @@
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
     "@humanharness/material": "workspace:*",
+    "@humanharness/policies": "workspace:*",
     "@humanharness/protocol": "workspace:*",
     "@humanharness/runtime": "workspace:*",
     "@humanharness/search": "workspace:*",

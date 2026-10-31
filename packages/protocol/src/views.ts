@@ -82,6 +82,14 @@ export interface AppConfig {
   notifyWaiting?: boolean;
   /** Settings › Jobs, by job id: turned off, and the person's daily token cap (over the manifest's). Cleaned when read. */
   jobs?: Record<string, JobSettings>;
+  /** Which model and context policies run (replaceable-parts spec §8). No UI (D4). Cleaned when read; absent: the defaults. */
+  policies?: PolicyIds;
+}
+
+/** The policy ids config.json names (replaceable-parts spec §8). Absent: `"default"`. */
+export interface PolicyIds {
+  model?: string;
+  context?: string;
 }
 
 /** One job's Settings › Jobs entry (parallel spec §8). Absent fields: on, the manifest's cap. */

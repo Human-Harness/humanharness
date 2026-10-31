@@ -12,10 +12,10 @@ import {
   type TurnScope,
   fail,
 } from "@humanharness/runtime";
-import type { ChatEntry, SendOptions } from "@humanharness/protocol";
+import type { ChatEntry, PolicyIds, SendOptions } from "@humanharness/protocol";
 import { TurnRecorder } from "./chat-log";
 import { withEngine } from "./scope-access";
-import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
+import { type TurnKind, type UsageMeta, policyMeta, profileMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -80,6 +80,8 @@ export interface TurnOptions extends SendOptions {
   taskPhase?: string;
   /** The plugin whose prepared task this is: the history trailer records it (plugins spec §5.3). */
   plugin?: string;
+  /** The task's non-default policy ids: usage.jsonl records them (replaceable-parts §8). Absent: the defaults. */
+  policies?: PolicyIds;
   /** The task enters this phase: the chat's user entry is a separator line naming it, never the brief (spec §4.4). */
   phaseChange?: string;
   /** The time box's wrap-up: the chat's user entry is a system line saying the time is almost up (spec §5). */
@@ -209,7 +211,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution, engine } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution, engine, policies } = options;
     const current: CurrentTurn = { cancelled: false, running: null, ...(task ? { task } : {}) };
     this.turn = current;
     try {
@@ -252,6 +254,7 @@ export class TurnController {
         ...(phase ? { phase } : {}),
         ...(profile ? profileMeta(profile) : {}),
         ...(reportedModel ? { reportedModel } : {}),
+        ...policyMeta(policies),
       });
       // A held attempt keeps its events until its model answers: one that fails shows nothing.
       let pending: Event[] | null = holdModelError ? [] : null;

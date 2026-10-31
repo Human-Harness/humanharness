@@ -63,6 +63,16 @@ describe("usageRecord", () => {
       usage,
     });
   });
+
+  it("records the task's policy ids only when it has them (replaceable-parts §8)", () => {
+    const usage = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 };
+    const withIds = usageRecord({ ...entry, usage }, "claude", { modelPolicy: "eco", contextPolicy: "lean" });
+    expect(withIds).toMatchObject({ modelPolicy: "eco", contextPolicy: "lean" });
+    const without = usageRecord({ ...entry, usage }, "claude", { task: "t1" });
+    expect(without).not.toHaveProperty("modelPolicy");
+    expect(without).not.toHaveProperty("contextPolicy");
+    expect(compactionRecord("claude", { task: "t1", modelPolicy: "eco" }, "t")).toEqual({ at: "t", engine: "claude", task: "t1", modelPolicy: "eco", kind: "compaction", ok: true });
+  });
 });
 
 describe("usageRecord first snapshot", () => {

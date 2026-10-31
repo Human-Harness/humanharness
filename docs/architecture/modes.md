@@ -59,7 +59,7 @@ A task's tier is `nearestTier(profile)` (`models.ts`): its own tier, or for a cu
 A switch to a mode whose `minTier` is above it is refused with `tier` until the person answers the question ("<mode> asks for more power", an `alertdialog`), sent again as `choice.belowTier`:
 
 - "Continue with the current model" (`continue`): the switch turn runs and the task records `belowMinTier: true`. A later switch to a mode that fits clears it.
-- "Start a new task with <mode>" (`new-task`, `switched: "new-task"`): the task closes with its normal closing turn (which saves the note the new task starts from; the spec's separate checkpoint would only repeat it), and a new task of the same action, in the same scope, starts in that mode with `resolveProfile`'s `floor` set to the mode's `minTier`. The floor raises a lower tier and never lowers a higher one; a custom profile stays as the person set it and, when it still counts below, the new task records `belowMinTier`. The new task opens under its action's label, with no "Switched to" line.
+- "Start a new task with <mode>" (`new-task`, `switched: "new-task"`): the task closes with its normal closing turn (which saves the note the new task starts from; the spec's separate checkpoint would only repeat it), and a new task of the same action, in the same scope, starts in that mode with `resolveProfile`'s `floor` (the policy's `PickInput.floor`) set to the mode's `minTier`. The floor raises a lower tier and never lowers a higher one; a custom profile stays as the person set it and, when it still counts below, the new task records `belowMinTier`. The new task opens under its action's label, with no "Switched to" line.
 - "Not now" (Escape): nothing is sent.
 
 The window has `CurrentTaskView.tier` (only for a task whose action has modes) to ask before calling; the main process checks again and refuses with `tier` when the window was stale.
@@ -114,6 +114,6 @@ An action with phases may narrow the modes part by part (spec §7; `docs/archite
 ## Where to look
 
 - `packages/harness-sdk/src/modes.ts`, `index.ts` (schema, checks, `tierBelow`), `core-blocks.ts` (`recommend_mode`), `settings.ts` (mode settings).
-- `packages/shell/src/main/task-manager.ts` (`startNow`, `chooseMode`, `modeNow`, `modesOnEntry` for phases), `task-prompts.ts`, `task-store.ts`, `models.ts` (`nearestTier`, the floor), `mode-ipc.ts`.
+- `packages/shell/src/main/task-manager.ts` (`startNow`, `chooseMode`, `modeNow`, `modesOnEntry` for phases), `task-prompts.ts`, `task-store.ts`, `models.ts` (`nearestTier`; the floor is `resolveProfile`'s, in `packages/policies/src/model.ts`), `mode-ipc.ts`.
 - `packages/ui/src/RecommendModeBlock.tsx`, `ModeList.tsx`, `modes.ts`, `ChatView.tsx`.
 - `packages/cli/src/run.ts`, `terminal.ts`, `check.ts`.

@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { JOB_ID, canonicalLanguage } from "@humanharness/harness-sdk";
-import { type AppConfig, cleanReaderPrefs, isTextSize } from "@humanharness/protocol";
+import { DEFAULT_POLICY, isContextPolicyId, isModelPolicyId } from "@humanharness/policies";
+import { type AppConfig, type PolicyIds, cleanReaderPrefs, isTextSize } from "@humanharness/protocol";
 import { isProfileId } from "@humanharness/workspace";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
@@ -44,6 +45,27 @@ export function cleanJobs(v: unknown, declared?: (id: string) => boolean): AppCo
   return out;
 }
 
+const warnedPolicies = new Set<string>();
+/**
+ * `config.json` → `policies` (replaceable-parts §8): a known non-default id is kept; an unknown one runs the default
+ * and is logged once per id. Undefined when nothing but defaults remains.
+ */
+export function cleanPolicies(v: unknown, warn: (line: string) => void = console.warn): PolicyIds | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const out: PolicyIds = {};
+  for (const [kind, known] of [["model", isModelPolicyId], ["context", isContextPolicyId]] as const) {
+    const id = o[kind];
+    if (id === undefined || id === DEFAULT_POLICY) continue;
+    if (known(id)) out[kind] = id;
+    else if (!warnedPolicies.has(`${kind}:${String(id)}`)) {
+      warnedPolicies.add(`${kind}:${String(id)}`);
+      warn(`config.json: unknown ${kind} policy ${JSON.stringify(id)}; running "${DEFAULT_POLICY}"`);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Per-app settings in Electron's userData folder. The folder is fixed once chosen (spec §7). */
 export class ConfigStore {
   private readonly file: string;
@@ -59,10 +81,11 @@ export class ConfigStore {
       if (!saved || typeof saved !== "object") return saved;
       // Like a bad entry under models: a hand-edited backupDismissed, languageOffered, textSize, language or reader of the
       // wrong kind is dropped (the reader only its bad fields), never a reason to treat the whole config as invalid.
-      const { backupDismissed, languageOffered, textSize, language, profile, reader, parallel, notifyWaiting, jobs, ...rest } = saved;
+      const { backupDismissed, languageOffered, textSize, language, profile, reader, parallel, notifyWaiting, jobs, policies, ...rest } = saved;
       const readerPrefs = cleanReaderPrefs(reader);
       const caps = cleanParallel(parallel);
       const jobSettings = cleanJobs(jobs);
+      const policyIds = cleanPolicies(policies);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
@@ -74,6 +97,7 @@ export class ConfigStore {
         ...(typeof notifyWaiting === "boolean" ? { notifyWaiting } : {}),
         ...(jobSettings && Object.keys(jobSettings).length > 0 ? { jobs: jobSettings } : {}),
         ...(readerPrefs ? { reader: readerPrefs } : {}),
+        ...(policyIds ? { policies: policyIds } : {}),
       };
     } catch {
       return {};

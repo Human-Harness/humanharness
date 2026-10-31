@@ -126,6 +126,45 @@ describe("walkRoot, fail closed", () => {
     }
   });
 
+  it("walks the real path it checked: a root link swapped after the check doesn't list the new target", async () => {
+    put("a.md");
+    put("sub/b.md");
+    fs.mkdirSync(path.join(outside, "other", "sub"), { recursive: true });
+    fs.writeFileSync(path.join(outside, "other", "secret.md"), "OTHER");
+    fs.writeFileSync(path.join(outside, "other", "sub", "b.md"), "OTHER");
+    fs.writeFileSync(path.join(outside, "other", "sub", "hidden.md"), "OTHER");
+    const link = path.join(outside, "root-link");
+    const realpath = fs.promises.realpath;
+    const swapAfterCheck = () =>
+      vi.spyOn(fs.promises, "realpath").mockImplementation(async (p, ...rest) => {
+        const real = await realpath(p, ...(rest as []));
+        if (p === link) {
+          fs.rmSync(link);
+          fs.symlinkSync(path.join(outside, "other"), link);
+        }
+        return real;
+      });
+    const home = path.join(outside, "home");
+    fs.symlinkSync(root, link);
+    let spy = swapAfterCheck();
+    try {
+      const w = await walkRoot(link, { max: 1000, home });
+      expect(w.entries.map((e) => e.rel).sort()).toEqual(["a.md", "sub/b.md"]);
+    } finally {
+      spy.mockRestore();
+    }
+    fs.rmSync(link);
+    fs.symlinkSync(root, link);
+    spy = swapAfterCheck();
+    try {
+      const st = await statPaths(link, ["a.md", "secret.md", "sub/hidden.md"], { home });
+      expect(st.entries.map((e) => e.rel)).toEqual(["a.md"]);
+      expect(st.missing.sort()).toEqual(["secret.md", "sub/hidden.md"]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("gives back the real path it checked, for the reads that follow", async () => {
     put("a.md");
     fs.symlinkSync(root, path.join(outside, "root-link"));

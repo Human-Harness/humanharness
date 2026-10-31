@@ -107,7 +107,9 @@ The walk (`walk.ts`) adds its own fail-closed checks:
 
 - `rootAllowed`: a root is walked only when its real path is neither the home folder, a folder that holds it (`/`,
   `/Users`), nor a dot-folder in it or inside one (`~/.claude`, `~/.codex`, `~/.ssh`, `~/.config/opencode`…), also
-  when the root is a link to one. The real path it checked is what the file and chat reads then use. The folder and
+  when the root is a link to one. The real path it checked is what the walk itself (each `.gitignore`, folder listing and `lstat`) and the file and
+  chat reads then use, so a root link swapped after the check lists nothing of its new target; paths stay relative to
+  the root. The folder and
   the references are checked before they get there; this is the walk's own check (a commit's paths under such a root
   all count as missing).
 - `isIgnored`: a path the `ignore` package refuses (it throws) counts as ignored.

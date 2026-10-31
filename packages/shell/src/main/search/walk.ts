@@ -61,19 +61,23 @@ function isIgnored(ig: GitIgnore, rel: string, isDir: boolean): boolean {
   }
 }
 
-/** Every file under `root` that may be indexed, in name order, without following any link. `real`: as checked; null when refused. */
+/**
+ * Every file under `root` that may be indexed, in name order, without following any link; `rel` is relative to `root`.
+ * `real`: as checked, and what is walked; null when refused.
+ */
 export async function walkRoot(root: string, o: WalkOptions): Promise<{ entries: WalkEntry[]; truncated: boolean; real: string | null }> {
   const entries: WalkEntry[] = [];
   const real = await rootAllowed(root, o.home);
   if (!real) return { entries, truncated: false, real };
   const ig = new GitIgnore();
-  const rootIgnore = await readIgnore(root);
+  // From here on `real`, never `root` again: a link swapped after the check would point the reads elsewhere.
+  const rootIgnore = await readIgnore(real);
   if (rootIgnore !== null) ig.add("", rootIgnore);
   // The root's own .gitignore decides, not whether any was loaded: a nested one alone keeps the defaults (§8.1).
   const defaults = rootIgnore === null;
   let truncated = false;
   const walk = async (dirRel: string): Promise<void> => {
-    const abs = dirRel ? path.join(root, dirRel) : root;
+    const abs = dirRel ? path.join(real, dirRel) : real;
     if (dirRel) {
       const nested = await readIgnore(abs);
       if (nested !== null) ig.add(dirRel, nested);
@@ -122,7 +126,8 @@ export async function statPaths(
   const real = await rootAllowed(root, o.home);
   if (!real) return { entries: [], missing: [...rels], real };
   const ig = new GitIgnore();
-  const rootIgnore = await readIgnore(root);
+  // From here on `real`, never `root` again: a link swapped after the check would point the reads elsewhere.
+  const rootIgnore = await readIgnore(real);
   if (rootIgnore !== null) ig.add("", rootIgnore);
   const defaults = rootIgnore === null;
   const loaded = new Set<string>([""]);
@@ -136,13 +141,13 @@ export async function statPaths(
       const dir = parts.slice(0, i).join("/");
       if (!loaded.has(dir)) {
         loaded.add(dir);
-        const text = await readIgnore(path.join(root, dir));
+        const text = await readIgnore(path.join(real, dir));
         if (text !== null) ig.add(dir, text);
       }
       skip = (defaults && DEFAULT_IGNORED_DIRS.includes(parts[i - 1])) || isIgnored(ig, dir, true);
     }
     if (!skip) skip = (defaults && DEFAULT_IGNORED_DIRS.includes(parts[parts.length - 1])) || isIgnored(ig, rel, false);
-    const st = skip ? null : await fs.lstat(path.join(root, rel)).catch(() => null);
+    const st = skip ? null : await fs.lstat(path.join(real, rel)).catch(() => null);
     if (!st || !(st.isFile() || st.isSymbolicLink())) {
       missing.push(rel);
       continue;

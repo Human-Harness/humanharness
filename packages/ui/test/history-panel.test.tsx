@@ -397,6 +397,14 @@ describe("HistoryPanel", () => {
     expect(entryLabel("Note: A title")).toEqual({ key: "history.entry.note", values: { title: "A title" } });
     expect(entryLabel("Stopped: hi")).toEqual({ key: "history.entry.stopped" });
   });
+
+  it("opens at the task search asked for (search spec §3)", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    const g = (taskId: string, date: string) => ({ taskId, actionId: null, start: null, end: `e-${taskId}`, date, changes: [], entries: [{ sha: `e-${taskId}`, message: "Turn: hi", date }] });
+    client.historyGroups = [g("t2", "2026-10-10T12:00:00.000Z"), g("t1", "2026-10-09T12:00:00.000Z")];
+    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} openTask="t1" />);
+    await waitFor(() => expect(screen.getAllByRole("button", { expanded: true }).map((b) => b.getAttribute("aria-controls"))).toEqual(["hh-history-t1"]));
+  });
 });
 
 describe("changed files open their timeline (file-timeline spec §6.2)", () => {

@@ -64,6 +64,7 @@ import { SidekickPanel, SidekickRail, waitingCards } from "./sidekick/SidekickPa
 import { useNarrow } from "./sidekick/useNarrow";
 import { EngineNotice } from "./hatches/EngineNotice";
 import { useSidekick } from "./sidekick/useSidekick";
+import type { SearchIntent } from "./search/intent";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, isToolLine, reduceChat } from "./state";
 import { UsageMeter } from "./UsageMeter";
@@ -107,6 +108,7 @@ export function ChatView({
   profileBar,
   inboxBar,
   startRef,
+  searchRef,
   taskStrip,
   draftKeep,
   openScope = null,
@@ -138,6 +140,8 @@ export function ChatView({
   inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => boolean) => ReactNode;
   /** A harness with jobs: gets the same `start`, for Settings › Jobs' Start (part 3); null once this view is gone. */
   startRef?: { current: ((action: string, scope: string | null) => boolean) | null };
+  /** Set by the chat: runs a search result or question (search spec §3); false when it can't here. */
+  searchRef?: { current: ((intent: SearchIntent) => boolean) | null };
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
@@ -183,6 +187,8 @@ export function ChatView({
     setDraft((d) => (d.trim() ? `${d}\n${text}` : text));
   }, []);
   const [showHistory, setShowHistory] = useState(false);
+  /** The past task search asked the History panel to open at (search spec §3). */
+  const [historyTask, setHistoryTask] = useState<string | undefined>(undefined);
   /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
@@ -966,6 +972,60 @@ export function ChatView({
     startRef.current = startFromInbox;
     return () => {
       startRef.current = null;
+    };
+  });
+  /** A search result or question (search spec §3, §5.4); false when it can't run here. */
+  const runSearchIntent = (intent: SearchIntent): boolean => {
+    switch (intent.kind) {
+      case "action":
+        if (!Object.hasOwn(state.actions, intent.action)) return false;
+        startTopic(intent.action);
+        return true;
+      case "open-task":
+        if (state.parallel) void client.tasks.focus(intent.task).catch(() => undefined);
+        inputRef.current?.focus();
+        return true;
+      case "history":
+        if (slim) return false;
+        closeReader();
+        setContextOpen(false);
+        setNotesPanel(null);
+        setTimelineFile(null);
+        setHistoryTask(intent.task);
+        setShowHistory(true);
+        return true;
+      case "chat": {
+        // On screen: scroll there and highlight it for 2 s. Otherwise its task's row in History (plan deviation 11).
+        const el = [...document.querySelectorAll<HTMLElement>("[data-entry]")].find((e) => e.dataset.entry === intent.entry);
+        if (el) {
+          el.scrollIntoView?.({ block: "center" });
+          el.classList.add("hh-search-flash");
+          setTimeout(() => el.classList.remove("hh-search-flash"), 2000);
+          return true;
+        }
+        return intent.task ? runSearchIntent({ kind: "history", task: intent.task }) : false;
+      }
+      case "document":
+        if (slim) return false;
+        showReader({ path: intent.path, ...(intent.anchor ? { anchor: intent.anchor } : {}) });
+        return true;
+      case "timeline":
+        if (slim) return false;
+        closeReader();
+        setTimelineFile(intent.path);
+        return true;
+      case "draft":
+        // D3: the text waits in the composer; nothing is sent until the person sends it.
+        setDraft(intent.text);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return true;
+    }
+  };
+  useLayoutEffect(() => {
+    if (!searchRef) return;
+    searchRef.current = runSearchIntent;
+    return () => {
+      searchRef.current = null;
     };
   });
   const resume = (note: NoteView) => {
@@ -1908,14 +1968,19 @@ export function ChatView({
         </div>
         {showHistory && (
           <HistoryPanel
+            key={historyTask ?? "history"}
             client={client}
             actions={state.actions}
+            {...(historyTask ? { openTask: historyTask } : {})}
             currentTask={tasks.current?.id}
             {...(state.parallel || state.jobs ? { undoByFiles: true } : {})}
             {...(state.jobs ? { jobs: state.jobs.jobs } : {})}
             {...(state.hatches?.linkedFolders ? { linkedFolders: state.hatches.linkedFolders } : {})}
             disabled={Boolean(chat.live) || closing || checkpoint}
-            onClose={() => setShowHistory(false)}
+            onClose={() => {
+              setShowHistory(false);
+              setHistoryTask(undefined);
+            }}
             onRestored={(kind) => {
               setSkRefresh((n) => n + 1);
               const text = t(kind === "task" ? "history.restoredTask" : "history.restored");

@@ -8,18 +8,32 @@ import {
   type AppState,
   type EngineStatus,
   type HarnessClient,
+  type HistoryTaskView,
   type LanguageState,
   type LimitWindow,
   type SetupStepsState,
   engineProblem,
   isConfigured,
+  timeAgo,
 } from "./client";
 import { LanguageChooser } from "./LanguageChooser";
 import type { LanguageControl } from "./language-control";
-import { ownName, systemLanguage } from "./language";
+import { ownName, shownLanguage, systemLanguage } from "./language";
+import { PickUp, pickUpItems } from "./PickUp";
+import { useTasks } from "./parallel/useTasks";
+import type { SearchIntent } from "./search/intent";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
+
+/** The Start button's arrow (UI refresh spec §5.2). */
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
 
 /** English and its variants (en-GB) show the bundled English: nothing to offer (D0). */
 const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
@@ -77,6 +91,7 @@ export function Home({
   move,
   onAddProfile,
   language,
+  onOpen,
 }: {
   state: AppState;
   client: HarnessClient;
@@ -101,9 +116,12 @@ export function Home({
   onAddProfile?: () => void;
   /** Language on demand (plan 5b): the offer card. Absent without `client.language` (D0: no card). */
   language?: LanguageControl;
+  /** "Pick up where you left": a task's card was clicked (an open task, or History at that task). Absent: the work screen. */
+  onOpen?: (intent: SearchIntent) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const missingId = useId();
+  const engineHintId = useId();
   const name = state.harness.name;
   const engine = state.engines.find((e) => e.id === state.config.engineId);
   const connected = checkFailed ? false : status ? engineProblem(status) === null : null;
@@ -122,6 +140,62 @@ export function Home({
   const stepLabel = (id: string) => state.setup?.find((s) => s.id === id)?.label ?? id;
   const engineName = engine?.name ?? state.config.engineId ?? "";
   const missingStep = checkFailed ? "check-failed" : status ? engineProblem(status) : null;
+
+  // Pick up where you left (UI refresh spec §5.2): the open tasks of a harness with `parallel`, else History's latest tasks.
+  const parallel = Boolean(state.parallel);
+  const openTasks = useTasks(client, parallel && ready);
+  const [past, setPast] = useState<HistoryTaskView[] | null>(null);
+  useEffect(() => {
+    if (!ready || parallel) return;
+    let live = true;
+    client.historyTasks().then(
+      (groups) => live && setPast(groups),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, ready, parallel]);
+  const lang = shownLanguage(i18n);
+  const pickUp = ready ? pickUpHome() : [];
+  function pickUpHome() {
+    const taskState = { running: "working", closing: "working", waiting: "waiting", checkpoint: "waiting", queued: "queued" } as const;
+    const open = (openTasks?.tasks ?? []).map((x) => ({ id: x.id, title: x.label, state: taskState[x.state], updatedAt: Date.parse(x.startedAt) || 0 }));
+    const history = (past ?? []).flatMap((g) =>
+      g.taskId === null || g.jobId !== undefined
+        ? []
+        : [
+            {
+              id: g.taskId,
+              title: g.noteTitle ?? (g.actionId && Object.hasOwn(state.actions, g.actionId) ? state.actions[g.actionId].label : g.actionId === null ? t("history.question") : t("history.task")),
+              outcome: g.noteTitle ? ("noteSaved" as const) : ("inProgress" as const),
+              endedAt: Date.parse(g.date) || 0,
+            },
+          ],
+    );
+    const items = pickUpItems({ open, history });
+    return items.map((i) => {
+      const task = openTasks?.tasks.find((x) => x.id === i.id);
+      if (task) {
+        const ago = timeAgo(task.startedAt, lang);
+        // The phase's label, as the inbox shows it; a phase with no label is left out.
+        const action = task.action && Object.hasOwn(state.actions, task.action) ? state.actions[task.action] : null;
+        const phase = task.phase ? action?.phases?.find((p) => p.id === task.phase)?.label : undefined;
+        return { ...i, status: t(`home.status.${i.status}`), where: [phase, ago].filter(Boolean).join(" · ") };
+      }
+      const group = past?.find((g) => g.taskId === i.id);
+      const ago = group ? timeAgo(group.date, lang) : "";
+      return { ...i, status: t(`home.status.${i.status}`), where: i.status === "noteSaved" ? t("home.noteSavedAgo", { ago }) : ago };
+    });
+  }
+  const openPickUp = (id: string) => {
+    const isOpen = openTasks?.tasks.some((x) => x.id === id) === true;
+    if (onOpen) onOpen(isOpen ? { kind: "open-task", task: id } : { kind: "history", task: id });
+    else {
+      if (isOpen) void client.tasks.focus(id).catch(() => undefined);
+      onStart();
+    }
+  };
 
   // The language offer (spec §3, §10): asked for only when there is a non-English suggestion (an engine check runs).
   const offerId = useId();
@@ -161,9 +235,11 @@ export function Home({
         </button>
       </TopBar>
       <main className="hh-home-main">
-        {state.harness.logo ? <img className="hh-home-logo" src={state.harness.logo} alt="" /> : <HHLogo className="hh-home-logo" />}
-        <h1 className="hh-home-name">{name}</h1>
-        {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline}</p>}
+        <div className="hh-home-id">
+          {state.harness.logo ? <img className="hh-home-logo" src={state.harness.logo} alt="" /> : <HHLogo className="hh-home-logo" />}
+          <h1 className="hh-home-name">{name}</h1>
+          {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline}</p>}
+        </div>
         {!configured && (
           <section className="hh-missing" aria-labelledby={missingId}>
             <h2 id={missingId}>{t("home.missing.title")}</h2>
@@ -229,6 +305,7 @@ export function Home({
         {ready || checking ? (
           <button ref={startRef} className="hh-primary hh-start" disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
+            <ArrowIcon />
           </button>
         ) : (
           <button
@@ -236,23 +313,34 @@ export function Home({
             onClick={() => (!missingStep && needsProfile && onAddProfile ? onAddProfile() : onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined))}
           >
             {t("setupFlow.configure", { name })}
+            <ArrowIcon />
           </button>
         )}
         {engine ? (
-          <button className="hh-pill" onClick={onEngine}>
-            {engine.logo ? <img src={engine.logo} alt="" /> : <EngineIcon size={18} />}
-            <span>{engine.name}</span>
-            <span className={connected ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
-            <span>{connected === null ? t("home.checking") : connected ? t("home.connected") : t("home.notConnected")}</span>
-            {window && (
-              <span className={window.utilization >= WARN_AT ? "hh-warn" : "hh-caption"}>
-                {t("home.usage", { label: t("usage.five_hour"), percent: percent(window.utilization) })}
-              </span>
-            )}
-          </button>
+          <>
+            <button className="hh-pill" onClick={onEngine} aria-describedby={engineHintId}>
+              {engine.logo ? <img src={engine.logo} alt="" /> : <EngineIcon size={18} />}
+              <span>{engine.name}</span>
+              <span className="hh-sr-only">, </span>
+              <span className={connected ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
+              <span>{connected === null ? t("home.checking") : connected ? t("home.connected") : t("home.notConnected")}</span>
+              {window && (
+                <>
+                  <span className="hh-sr-only">, </span>
+                  <span className={window.utilization >= WARN_AT ? "hh-warn" : "hh-caption"}>
+                    {t("home.usage", { label: t("usage.five_hour"), percent: percent(window.utilization) })}
+                  </span>
+                </>
+              )}
+            </button>
+            <span id={engineHintId} className="hh-sr-only">
+              {t("home.engineHint")}
+            </span>
+          </>
         ) : (
           <p className="hh-caption">{t("home.noEngine")}</p>
         )}
+        {ready && <PickUp items={pickUp} onOpen={openPickUp} />}
         <BackupNotice client={client} state={state} onChange={onChange} move={move} />
       </main>
       {language && choosing && (

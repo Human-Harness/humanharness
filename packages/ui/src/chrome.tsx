@@ -123,9 +123,9 @@ export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: st
 export type TagTone = "green" | "orange" | "blue" | "violet" | "red" | "gray";
 
 /** A state, coloured by what it means (UI refresh spec §3.3): green done, orange now/waiting, blue info, violet deep/suggestion, red failed, gray neutral. */
-export function Tag({ tone, children, id }: { tone: TagTone; children: ReactNode; id?: string }) {
+export function Tag({ tone, children, id, title }: { tone: TagTone; children: ReactNode; id?: string; title?: string }) {
   return (
-    <span className={`hh-tag hh-tag-${tone}`} id={id}>
+    <span className={`hh-tag hh-tag-${tone}`} id={id} title={title}>
       {children}
     </span>
   );

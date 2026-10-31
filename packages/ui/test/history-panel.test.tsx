@@ -183,7 +183,10 @@ describe("HistoryPanel", () => {
     const newest = await screen.findByRole("button", { name: /Plan the week.*2 files changed.*Note saved/ });
     expect(newest.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("button", { name: /A question.*1 file changed/ }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: /Outside a task.*0 files changed/ }).getAttribute("aria-expanded")).toBe("false");
+    const outside = screen.getByRole("button", { name: /Outside a task.*No changes/ });
+    expect(outside.getAttribute("aria-expanded")).toBe("false");
+    // Nothing changed outside a task: the gray tag alone, no "0 files changed".
+    expect(outside.textContent).not.toMatch(/files? changed/);
     const files = screen.getByRole("list", { name: "Changed files" });
     expect(within(files).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Deletedold.md", "Changedplan.md"]);
     // The row tags a saved note; its title shows on hover.
@@ -442,5 +445,40 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
 describe("context changes in the history (context-panel spec §4.2)", () => {
   it("a Context: commit reads as one", () => {
     expect(entryLabel("Context: pinned docs/conv.md")).toEqual({ key: "history.entry.context", values: { change: "pinned docs/conv.md" } });
+  });
+});
+
+describe("the History drawer (UI refresh spec §5.7)", () => {
+  it("is a drawer with the go-back subtitle and an All / Tasks / Outside a task filter", async () => {
+    await open();
+    await screen.findByRole("button", { name: /Plan the week/ });
+    const drawer = screen.getByRole("dialog", { name: "History" });
+    expect(drawer.classList.contains("hh-drawer")).toBe(true);
+    expect(within(drawer).getByText("Go back to any point: your files return to how they were then.")).toBeTruthy();
+    const filter = within(drawer).getByRole("group", { name: "Which turns to show" });
+    expect(within(filter).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(filter).getByRole("button", { name: "Outside tasks" }));
+    expect(screen.queryByRole("button", { name: /Plan the week/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /A question/ })).toBeNull();
+    expect(screen.getByText("No changes").className).toContain("hh-tag-gray");
+    // The gray tag stands alone: no "0 files changed" beside it.
+    expect(screen.getByRole("button", { name: /Outside a task.*No changes/ }).textContent).not.toMatch(/files? changed/);
+    fireEvent.click(within(filter).getByRole("button", { name: "Tasks" }));
+    expect(screen.getByRole("button", { name: /Plan the week/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Outside a task/ })).toBeNull();
+    fireEvent.click(within(filter).getByRole("button", { name: "All" }));
+    expect(screen.getByRole("button", { name: /Outside a task.*No changes/ })).toBeTruthy();
+  });
+
+  it("makes each task a card with its status tags, and gives each point a dot, green where the AI finished", async () => {
+    await open({ currentTask: "t2" });
+    const row = await screen.findByRole("button", { name: /Plan the week/ });
+    expect(row.closest("li")?.classList.contains("hh-card")).toBe(true);
+    expect(screen.getByText("In progress").className).toContain("hh-tag-blue");
+    expect(screen.getByText("Note saved").className).toContain("hh-tag-green");
+    const points = screen.getByRole("list", { name: "Points in this task" });
+    const dots = [...points.querySelectorAll(".hh-history-dot")];
+    expect(dots).toHaveLength(3);
+    expect(dots.map((d) => d.classList.contains("green"))).toEqual([false, true, false]);
   });
 });

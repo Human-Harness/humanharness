@@ -17,6 +17,7 @@
   },
   "task": { "header": { "new": "New task" } },
   "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },
+  "drawer": { "close": "Close" },
   "start": {
     "view": {
       "label": "View",
@@ -516,12 +517,13 @@
   },
   "notes": {
     "title": "What's clear so far",
-    "close": "Close",
     "resume": "Pick this topic up again",
     "open": "Open the file",
     "openFailed": "I couldn't open that file.",
     "keyPoints_one": "{{count}} key point",
     "keyPoints_other": "{{count}} key points",
+    "count_one": "{{count}} topic summarized",
+    "count_other": "{{count}} topics summarized",
     "empty": "No summaries yet. Each topic you close leaves one here.",
     "savings": "The next question starts from your summaries instead of re-reading the code.",
     "footer": "Each topic you finish is summarized in .harness/notes/ inside your folder, so it stays when you change engines or come back another day.",
@@ -542,6 +544,13 @@
     "appScope": "App-wide",
     "title": "History",
     "intro": "Go back to any point: your files return to how they were then.",
+    "filter": {
+      "label": "Which turns to show",
+      "all": "All",
+      "tasks": "Tasks",
+      "outside": "Outside tasks"
+    },
+    "noChanges": "No changes",
     "restore": "Go back here",
     "emptyTitle": "Nothing to go back to yet",
     "empty": "Each time the AI changes your files, a point shows here so you can undo it.",
@@ -551,7 +560,6 @@
     "noteSaved": "Note saved",
     "inProgress": "In progress",
     "points": "Points in this task",
-    "close": "Close",
     "confirmFolderTitle": "Go back the whole folder to this point?",
     "confirmFolder": "Files changed after it will be undone.",
     "restored": "I went back to that point. Files changed after it were undone.",
@@ -687,7 +695,17 @@
     "readyFolder": "Folder",
     "readyEngine": "Engine",
     "readyHint": "You can change all of this whenever you like in Settings.",
-    "languageLater": "You can choose the app's language once it's set up."
+    "languageLater": "You can choose the app's language once it's set up.",
+    "cancelSetup": "Cancel setup",
+    "stepOf": "Step {{n}} of {{count}}",
+    "lastCheck": "One last check",
+    "tileStatus": {
+      "notice": "Needs your OK first · we show the notice next",
+      "not-installed": "Not on this computer yet · we install it next",
+      "outdated": "Needs an update · we update it next",
+      "logged-out": "Not signed in · you sign in next",
+      "untested": "One quick test · it runs next"
+    }
   },
   "setupSteps": {
     "skip": "Skip",
@@ -927,6 +945,7 @@
   },
   "reader": {
     "title": "Document",
+    "subtitle": "Document · {{path}}",
     "cards": "Documents from this answer",
     "new": "New",
     "updated": "Updated",
@@ -1101,8 +1120,7 @@
       "unsafe": "I couldn't write the file safely, so nothing changed.",
       "other": "I couldn't go back to that version. Try again in a moment."
     },
-    "panelTitle": "History of {{file}}",
-    "close": "Close"
+    "panelTitle": "History of {{file}}"
   },
   "goBack": {
     "yes": "Go back",

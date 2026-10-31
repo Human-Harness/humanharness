@@ -213,7 +213,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     await renderIn("en", <Flow client={client} components={{ ReadyStep }} />);
     await waitFor(() => expect(next().disabled).toBe(false));
     // A saved folder: its step shows as done (a check mark, no number), as today.
-    expect(steps().map((li) => li.textContent)).toEqual(["Your folder", "2AI engine", "3How the AI talks", "4Ready check"]);
+    expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "2AI engineStep 2 of 4", "3How the AI talks", "4Ready check"]);
     fireEvent.click(next());
     const form = await screen.findByRole("heading", { name: "How the AI talks" });
     expect(document.activeElement).toBe(form);
@@ -272,7 +272,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     cleanup();
     client.setupState = { steps: { estilo: "skipped", ready: "missing" }, blocking: ["ready"] };
     await renderIn("en", <Flow client={client} components={{ ReadyStep }} />);
-    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder", "2AI engine", "3Ready check"]));
+    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "2AI engineStep 2 of 3", "3Ready check"]));
   });
 
   it("from Home: opens at the step, the core steps marked done; its Back is Cancel", async () => {
@@ -280,7 +280,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     const onCancel = vi.fn();
     await renderIn("en", <Flow client={client} startAt="ready" onCancel={onCancel} components={{ ReadyStep }} />);
     await screen.findByRole("heading", { name: "Ready check" });
-    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder", "AI engine", "3Ready check"]));
+    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "AI engineClaude", "3Ready checkStep 3 of 3"]));
     expect(steps()[0].querySelector("svg")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -292,7 +292,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     client.setupState = { steps: { estilo: "done", ready: "done" }, blocking: [] };
     const onCancel = vi.fn();
     await renderIn("en", <Flow client={client} startAt="ready" only onCancel={onCancel} components={{ ReadyStep }} />);
-    expect(steps().map((li) => li.textContent)).toEqual(["1Ready check"]);
+    expect(steps().map((li) => li.textContent)).toEqual(["1Ready checkStep 1 of 1"]);
     fireEvent.click(await screen.findByRole("button", { name: "All good" }));
     await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(client.setupCalls).not.toContain("finish");
@@ -376,5 +376,92 @@ describe("HarnessApp and the setup steps", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "Start Demo" }) as HTMLButtonElement).disabled).toBe(true));
     await act(async () => release({ steps: { estilo: "done", ready: "done" }, blocking: [] }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Start Demo" }) as HTMLButtonElement).disabled).toBe(false));
+  });
+});
+
+describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
+  const withCodex = (client: FakeClient) => {
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", requires: "ChatGPT plan", logo: undefined }];
+    return client;
+  };
+
+  it("lists the steps on the left, done ones with their value, and says Step 2 of 2 on the current one", async () => {
+    await renderIn("en", <Flow client={new FakeClient({ language: "en", folder: "~/Documents/Demo" })} />);
+    const nav = screen.getByRole("list", { name: "Steps" });
+    expect(within(nav).getByText("~/Documents/Demo")).toBeTruthy();
+    expect(within(nav).getByText("Step 2 of 2")).toBeTruthy();
+    expect(within(nav).getAllByText(/^Step \d of \d$/)).toHaveLength(1);
+    const items = within(nav).getAllByRole("listitem");
+    expect(items[1].getAttribute("aria-current")).toBe("step");
+    expect(items[1].textContent).toContain("Step 2 of 2");
+  });
+
+  it("has a Cancel pill in the header on every step but All set", async () => {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
+    const onCancel = vi.fn();
+    await renderIn("en", <Flow client={client} onCancel={onCancel} />);
+    const header = screen.getByRole("banner");
+    expect(header.textContent).toContain("Set up Demo");
+    fireEvent.click(within(header).getByRole("button", { name: "Cancel setup" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(next().disabled).toBe(false));
+    fireEvent.click(next());
+    await screen.findByRole("heading", { name: "All set" });
+    expect(screen.queryByRole("button", { name: "Cancel setup" })).toBeNull();
+  });
+
+  it("shows engines as radio tiles with what they need and the next step", async () => {
+    const client = withCodex(new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" }));
+    client.statusFor.codex = { ...client.status, engineId: "codex", installed: false };
+    await renderIn("en", <Flow client={client} />);
+    const group = screen.getByRole("radiogroup", { name: "AI engines" });
+    const claude = within(group).getByRole("radio", { name: /Claude/ });
+    expect(claude.getAttribute("aria-checked")).toBe("true");
+    expect(claude.textContent).toContain("Anthropic");
+    expect(claude.textContent).toContain("Requires: Pro plan");
+    expect(await within(group).findByText("Not on this computer yet · we install it next")).toBeTruthy();
+    await within(group).findByRole("radio", { name: /Claude.*Connected/ });
+    // Settings' button tiles aren't shown here.
+    expect(screen.queryByRole("group", { name: "AI engines" })).toBeNull();
+    const codex = within(group).getByRole("radio", { name: /Codex/ });
+    fireEvent.click(codex);
+    expect(codex.getAttribute("aria-checked")).toBe("true");
+    expect(claude.getAttribute("aria-checked")).toBe("false");
+    await screen.findByRole("heading", { name: "Install Codex" });
+  });
+
+  it("moves the choice with the arrow keys, one tab stop for the group", async () => {
+    const client = withCodex(new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" }));
+    await renderIn("en", <Flow client={client} />);
+    const group = screen.getByRole("radiogroup", { name: "AI engines" });
+    const [claude, codex] = within(group).getAllByRole("radio");
+    expect([claude.tabIndex, codex.tabIndex]).toEqual([0, -1]);
+    claude.focus();
+    fireEvent.keyDown(claude, { key: "ArrowRight" });
+    expect(codex.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement).toBe(codex);
+    expect([claude.tabIndex, codex.tabIndex]).toEqual([-1, 0]);
+    // It wraps around.
+    fireEvent.keyDown(codex, { key: "ArrowDown" });
+    expect(claude.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement).toBe(claude);
+    fireEvent.keyDown(claude, { key: "ArrowUp" });
+    expect(codex.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("checks a ready engine in a One last check card, with the reassurance line, Back and Next in the footer", async () => {
+    await renderIn("en", <Flow client={new FakeClient()} />);
+    fireEvent.click(next());
+    await screen.findByRole("heading", { name: "Which AI does Demo use?" });
+    const card = (await screen.findByRole("heading", { name: "One last check" })).closest(".hh-settings-card") as HTMLElement;
+    expect(within(card).getByText("Claude is ready ✓")).toBeTruthy();
+    expect(within(card).getByText("Pro plan")).toBeTruthy();
+    expect(within(card).getByText("USA")).toBeTruthy();
+    expect(within(card).getByRole("link", { name: "Anthropic terms" }).getAttribute("href")).toBe("https://example.com/terms");
+    expect(within(card).getByRole("link", { name: "Anthropic privacy policy" }).getAttribute("href")).toBe("https://example.com/privacy");
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByText("You can change all of this whenever you like in Settings.")).toBeTruthy();
+    expect(within(footer).getByRole("button", { name: "Back" })).toBeTruthy();
+    expect(within(footer).getByRole("button", { name: "Next" }).className).toContain("hh-primary");
   });
 });

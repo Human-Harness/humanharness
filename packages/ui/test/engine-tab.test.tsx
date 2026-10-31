@@ -53,7 +53,7 @@ describe("EngineTab", () => {
     await screen.findByText("Claude is ready ✓");
     expect(screen.queryByRole("button", { name: "Use Claude" })).toBeNull();
     expect(onSelection).toHaveBeenLastCalledWith("claude", true);
-    fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Codex/ }));
     await screen.findByRole("heading", { name: "Sign in to Codex" });
     expect(onSelection).toHaveBeenLastCalledWith("codex", false);
   });
@@ -654,5 +654,14 @@ describe("EngineTab: legal texts in another language", () => {
     await screen.findByRole("heading", { name: "Before using Claude" });
     expect(container.querySelector(".hh-legal-english")).toBeNull();
     expect(container.querySelector("[lang]")).toBeNull();
+  });
+
+  it("in the setup flow, gives the first tile the tab stop when no engine is checked", async () => {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "gone" });
+    addCodex(client);
+    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
+    const radios = within(screen.getByRole("radiogroup", { name: "AI engines" })).getAllByRole("radio");
+    expect(radios.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "false"]);
+    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1]);
   });
 });

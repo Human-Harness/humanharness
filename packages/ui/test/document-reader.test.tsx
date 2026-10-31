@@ -611,3 +611,41 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     await within(screen.getByRole("region", { name: "Changes since the approval" })).findByText("Second edit.");
   });
 });
+
+describe("DocumentReader: the new look, still docked (UI refresh spec §5.7, Q3)", () => {
+  const TURN = "---\ntitle: A turn end to end\nstatus: Updated\n---\nOne turn, start to end.";
+  const turn = (over: Partial<Parameters<typeof DocumentReader>[0]> = {}) =>
+    setup({ target: { path: "notes/turn.md", agent: "Claude" }, kinds: undefined, ...over }, { "notes/turn.md": TURN });
+
+  it("shows the document's tags on top and Source / Show chat in its footer (spec §5.7)", async () => {
+    turn();
+    expect((await screen.findByText("Updated")).className).toContain("hh-tag-green");
+    expect(screen.getByText("1 min read").className).toContain("hh-tag-gray");
+    expect(screen.getByText("Written by Claude").className).toContain("hh-tag-gray");
+    const foot = document.querySelector(".hh-reader-foot") as HTMLElement;
+    expect(within(foot).getByRole("button", { name: "Source" })).toBeTruthy();
+    expect(within(foot).getByRole("navigation", { name: "Path" })).toBeTruthy();
+    expect(within(foot).getByText(/^Changed /)).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull(); // docked, not a drawer (Q3)
+    expect(document.querySelector("aside.hh-reader")).not.toBeNull();
+  });
+
+  it("the header has the title, 'Document · path', Aa and Full screen as pills", async () => {
+    turn();
+    const bar = (await screen.findByText("Document · notes/turn.md")).closest(".hh-reader-bar") as HTMLElement;
+    expect(within(bar).getByText("A turn end to end")).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Aa reading preferences" }).className).toContain("hh-pill");
+    expect(within(bar).getByRole("button", { name: "Full screen" }).className).toContain("hh-pill");
+  });
+
+  it("full screen: Show chat is a footer pill that brings the chat back", async () => {
+    const { props } = turn({ full: true });
+    await screen.findByText("Updated");
+    const foot = document.querySelector(".hh-reader-foot") as HTMLElement;
+    const show = within(foot).getByRole("button", { name: "Show chat" });
+    expect(show.className).toContain("hh-pill");
+    expect(screen.getAllByRole("button", { name: "Show chat" })).toHaveLength(1);
+    fireEvent.click(show);
+    expect(props.onFull).toHaveBeenCalledWith(false);
+  });
+});

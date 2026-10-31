@@ -112,3 +112,28 @@ describe("the History panel's links in the window (file-timeline spec §6.2, Q10
     expect(screen.queryByRole("dialog", { name: `History of ${FILE}` })).toBeNull();
   });
 });
+
+describe("the file timeline drawer (UI refresh spec §5.7)", () => {
+  it("renders in the drawer frame; Escape in a diff goes back to the list first; Tab stays inside", async () => {
+    const client = new FakeClient();
+    client.timelines[FILE] = [entry];
+    client.diffs[`${FILE}|${A}|${B}`] = { ok: true, kind: "text", same: false, truncated: false, lang: "json", lines: [{ kind: "ins", text: "{}", new: 1 }] };
+    let closed = 0;
+    await renderIn("en", <FileTimelinePanel client={client} path={FILE} onClose={() => closed++} />);
+    const dialog = screen.getByRole("dialog", { name: `History of ${FILE}` });
+    expect(dialog.classList.contains("hh-drawer")).toBe(true);
+    const pick = await within(dialog).findByRole("button", { name: /Spec writer/ });
+    fireEvent.click(pick);
+    await within(dialog).findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(closed).toBe(0);
+    expect(await within(dialog).findByRole("list", { name: "Versions and changes" })).toBeTruthy();
+    // Tab off the last control comes back to the first, the drawer's Close.
+    const items = [...dialog.querySelectorAll<HTMLElement>("button:not([disabled])")].filter((b) => !b.closest("[hidden]"));
+    items[items.length - 1].focus();
+    fireEvent.keyDown(items[items.length - 1], { key: "Tab" });
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(closed).toBe(1);
+  });
+});

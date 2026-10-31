@@ -4,6 +4,7 @@ import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCou
 import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
 import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView, TimelineEntry } from "./client";
 import { ApprovedDiff } from "./ApprovedDiff";
+import { Tag } from "./chrome";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { EntryDiff } from "./EntryDiff";
 import { FileTimeline } from "./FileTimeline";
@@ -472,16 +473,15 @@ export function DocumentReader({
     body = (
       <>
         <div className="hh-reader-meta">
-          {check?.unknownKind ? <span className="hh-reader-chip hh-reader-chip-muted">{t("reader.unknownKind")}</span> : front.kind && <span className="hh-reader-chip">{front.kind}</span>}
-          {front.status && <span className="hh-reader-chip">{front.status}</span>}
+          {check?.unknownKind ? <Tag tone="gray">{t("reader.unknownKind")}</Tag> : front.kind && <Tag tone="gray">{front.kind}</Tag>}
+          {front.status && <Tag tone="green">{front.status}</Tag>}
           {allowed && (
             <span className="hh-warn" role="note">
               {t("reader.badStatus", { allowed: allowed.join(", ") })}
             </span>
           )}
-          <span>{t("reader.changed", { date: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(doc.mtime)) })}</span>
-          <span>{t("reader.minutes", { count: minutes })}</span>
-          {target.agent && <span>{t("reader.writtenBy", { agent: target.agent })}</span>}
+          <Tag tone="gray">{t("reader.minutes", { count: minutes })}</Tag>
+          {target.agent && <Tag tone="gray">{t("reader.writtenBy", { agent: target.agent })}</Tag>}
         </div>
         {front.title && (
           <h1 className="hh-reader-title" tabIndex={-1} ref={titleRef}>
@@ -540,21 +540,14 @@ export function DocumentReader({
   return (
     <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}${review ? " hh-reader-reviewing" : ""}${inFocus ? " hh-reader-focus" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
       <header className="hh-reader-bar">
-        <nav aria-label={t("reader.path")}>
-          <ol className="hh-reader-crumbs">
-            {crumbs.map((c, i) => (
-              <li key={i} aria-current={i === crumbs.length - 1 ? "page" : undefined}>
-                {c}
-              </li>
-            ))}
-          </ol>
-        </nav>
+        <div className="hh-reader-head">
+          <p className="hh-reader-head-title">{(doc?.ok && front.title) || crumbs.at(-1) || t("reader.title")}</p>
+          <p className="hh-reader-head-sub">{t("reader.subtitle", { path })}</p>
+        </div>
         <div className="hh-reader-actions">
-          <button type="button" aria-pressed={source} disabled={!doc?.ok} onClick={() => setSource((s) => !s)}>
-            {t("reader.source")}
-          </button>
           <button
             type="button"
+            className="hh-pill"
             ref={prefsButton}
             aria-expanded={prefsOpen}
             aria-controls={prefsOpen ? prefsId : undefined}
@@ -583,9 +576,10 @@ export function DocumentReader({
               {inFocus ? t("focus.leave") : t("focus.enter")}
             </button>
           )}
-          {!inFocus && (
-            <button type="button" onClick={() => onFull(!full)}>
-              {full ? t("reader.showChat") : t("reader.fullScreen")}
+          {/* Back from full screen is the footer's Show chat (§5.7). */}
+          {!inFocus && !full && (
+            <button type="button" className="hh-pill" onClick={() => onFull(true)}>
+              {t("reader.fullScreen")}
             </button>
           )}
           <button type="button" onClick={onClose}>
@@ -715,6 +709,32 @@ export function DocumentReader({
         )}
       </div>
       {!inFocus && bar}
+      <footer className="hh-reader-foot">
+        <nav aria-label={t("reader.path")}>
+          <ol className="hh-reader-crumbs">
+            {crumbs.map((c, i) => (
+              <li key={i} aria-current={i === crumbs.length - 1 ? "page" : undefined}>
+                {c}
+              </li>
+            ))}
+          </ol>
+        </nav>
+        {doc?.ok && (
+          <span className="hh-reader-changed">
+            {t("reader.changed", { date: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(doc.mtime)) })}
+          </span>
+        )}
+        <div className="hh-reader-foot-actions">
+          <button type="button" className="hh-pill" aria-pressed={source} disabled={!doc?.ok} onClick={() => setSource((s) => !s)}>
+            {t("reader.source")}
+          </button>
+          {!inFocus && full && (
+            <button type="button" className="hh-pill" onClick={() => onFull(false)}>
+              {t("reader.showChat")}
+            </button>
+          )}
+        </div>
+      </footer>
     </aside>
   );
 }

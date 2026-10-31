@@ -952,9 +952,10 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* "See what changed" (§5.4): the box around the timeline's diff, which draws the changes. */
 .hh-diff { max-width: 72ch; margin: 0 auto 16px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; }
 .hh-reader-is-full .hh-diff { max-width: none; }
-/* Narrow: only the review column moves under the body; the contents list stays beside it. */
+/* Narrow: only the review column moves under the body; the contents list stays beside it. The column takes at most 40%
+   of the reader's height, so a short window still leaves the text room to read and select. */
 @container (max-width: 900px) {
-  .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) fit-content(40%); }
   .hh-reader-reviewing .hh-reader-toc { grid-column: 1; grid-row: 1; }
   .hh-reader-reviewing .hh-reader-scroll { grid-column: 2; grid-row: 1; }
   .hh-reader-reviewing .hh-review-column { grid-column: 1 / -1; grid-row: 2; max-height: 40vh; border-left: 0; border-top: 1px solid var(--hh-line); }

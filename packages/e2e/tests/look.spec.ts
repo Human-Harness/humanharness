@@ -23,6 +23,9 @@ for (const theme of ["light", "dark"] as const) {
       await start.getByRole("button", { name: /The manifest/ }).click();
       await expect(page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
       await page.screenshot({ path: path.join(lookDir, `chat-${theme}.png`) });
+      // The chat card keeps room to read at the default window: the side columns give way first.
+      const card = await page.locator(".hh-conversation").boundingBox();
+      expect(card!.width).toBeGreaterThanOrEqual(340);
     } finally {
       await closeAndClean(app, s);
     }

@@ -143,7 +143,8 @@ describe("styles", () => {
 
 describe("start view in the chat column", () => {
   it("fits a narrow chat card: the chat is a size container and the topics never overflow it", () => {
-    // The flow layout puts the chat in a ~500 px card between the path and the panels.
+    // The flow layout puts the chat in a card between the path and the panels: ~360 px wide at the default 1100 px
+    // window, ~310 px at the 900 px minimum.
     expect(css).toMatch(/^\.hh-chat\s*{[^}]*container:\s*hh-chat\s*\/\s*inline-size/m);
     expect(css).toMatch(/^\.hh-chat\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/m);
     expect(css).toMatch(/^\.hh-topics\s*{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(200px,\s*100%\),\s*1fr\)\)/m);
@@ -153,6 +154,21 @@ describe("start view in the chat column", () => {
     expect(Number(narrow![1])).toBeGreaterThanOrEqual(560);
     expect(narrow![2]).toMatch(/\.hh-topics\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
     expect(narrow![2]).toMatch(/\.hh-start-view\s*{[^}]*padding:/);
+  });
+});
+
+describe("flow layout (UI refresh spec §5.1)", () => {
+  it("the side columns give way to the chat card, never grow against it", () => {
+    expect(css).toMatch(/^\.hh-main\s*{[^}]*flex:\s*1 1 400px[^}]*min-width:\s*0/m);
+    expect(css).toMatch(/^\.hh-side\s*{[^}]*box-sizing:\s*border-box[^}]*flex:\s*0 4 280px[^}]*min-width:\s*200px/m);
+    expect(css).toMatch(/^\.hh-flow-side\s*{[^}]*flex:\s*0 4 290px[^}]*min-width:\s*220px/m);
+  });
+
+  it("in a setup step (slim) the chat card and the composer get no margins or shadow", () => {
+    expect(css).not.toMatch(/^\.hh-chat\.hh-conversation\s*{[^}]*(margin|box-shadow):/m);
+    expect(css).not.toMatch(/^\.hh-composer\s*{[^}]*(margin|box-shadow):/m);
+    expect(css).toMatch(/^\.hh-app:not\(\.hh-app-slim\) \.hh-chat\.hh-conversation\s*{[^}]*margin:[^}]*box-shadow:/m);
+    expect(css).toMatch(/^\.hh-app:not\(\.hh-app-slim\) \.hh-composer\s*{[^}]*margin:[^}]*box-shadow:/m);
   });
 });
 

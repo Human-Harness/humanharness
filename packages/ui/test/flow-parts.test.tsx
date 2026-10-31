@@ -90,6 +90,18 @@ describe("FlowSide in the soft-cards look (UI refresh spec §5.1)", () => {
     // aria-current says "Now" to screen readers: the current step keeps its plain name.
     expect(within(steps).getByRole("button", { name: "A turn" }).getAttribute("aria-current")).toBe("step");
   });
+
+  it("idle, the step the path suggests is Up next, not Now: nothing is under way", async () => {
+    await renderIn("en", <FlowSide state={state()} tasks={idle({ manifest: "done" })} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    const engines = within(screen.getByRole("list", { name: "Guided path" })).getByRole("button", { name: "Engines" });
+    expect(engines.getAttribute("aria-current")).toBe("step");
+    expect(within(engines).getByText("Up next").className).toContain("hh-tag-orange");
+    expect(within(engines).queryByText("Now")).toBeNull();
+    // A free question runs: still nothing on the path is under way.
+    cleanup();
+    await renderIn("en", <FlowSide state={state()} tasks={{ ...idle({ manifest: "done" }), current: { id: "q", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    expect(screen.queryByText("Now")).toBeNull();
+  });
 });
 
 describe("ContextMeter as a text pill (UI refresh spec §5.1, flow mode)", () => {

@@ -57,7 +57,6 @@ export function FlowSide({
   onOpenNote,
   material,
   plugins,
-  onContext,
 }: {
   state: AppState;
   tasks: TaskView;
@@ -68,8 +67,6 @@ export function FlowSide({
   material?: ReactNode;
   /** The Plugins section, after the material (only with running plugins that have panels there). */
   plugins?: ReactNode;
-  /** Opens the context panel from the meter. */
-  onContext?: () => void;
 }) {
   const { t } = useTranslation();
   const pathId = useId();
@@ -83,7 +80,7 @@ export function FlowSide({
       {tasks.current && !tasks.current.action && tasks.current.context && (
         <p className="hh-flow-question">
           {t("models.questions")}
-          <ContextMeter {...tasks.current.context} onOpen={onContext} />
+          <ContextMeter {...tasks.current.context} />
         </p>
       )}
       {path.length > 0 && (
@@ -98,6 +95,8 @@ export function FlowSide({
           <ol className="hh-steps" aria-labelledby={pathId}>
             {path.map((id, i) => {
               const here = id === current;
+              // "Now" is a step under way; idle, the step the path suggests is only up next.
+              const running = here && tasks.current?.action === id;
               const done = tasks.actions[id] === "done" && !here;
               return (
                 <li key={id}>
@@ -116,11 +115,11 @@ export function FlowSide({
                     {/* aria-current already says it to screen readers: the tag keeps the step's name as it was. */}
                     {here && (
                       <span className="hh-tag hh-tag-orange" aria-hidden="true">
-                        {t("flow.now")}
+                        {t(running ? "flow.now" : "start.view.upNext")}
                       </span>
                     )}
                   </button>
-                  {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} onOpen={onContext} />}
+                  {running && tasks.current?.context && <ContextMeter {...tasks.current.context} />}
                 </li>
               );
             })}

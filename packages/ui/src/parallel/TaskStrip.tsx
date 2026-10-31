@@ -4,19 +4,18 @@ import { Tag } from "../chrome";
 
 /**
  * Board mode (parallel spec §9.1, UI refresh spec §5.1): a row of tabs over the chat, one per open task, the one on
- * screen selected and a task waiting for you with a dot; the shown task's phase, and "New task" for the start view.
+ * screen selected and a task waiting for you with a dot, and the shown task's phase. "New task" lives in the task
+ * header only.
  * A tab asks main for the focus; the chat follows main's tasks change, as with an inbox row. Nothing when no open task
  * has the focus (the start view itself).
  */
 export function TaskStrip({
   state,
   tasks,
-  onNewTask,
   onFocus,
 }: {
   state: AppState;
   tasks: TasksState | null;
-  onNewTask: () => void;
   onFocus: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -52,9 +51,6 @@ export function TaskStrip({
           <span dir="auto">{phase}</span>
         </Tag>
       )}
-      <button type="button" className="hh-pill hh-tk-new" onClick={onNewTask}>
-        {t("parallel.newTask")}
-      </button>
     </div>
   );
 }

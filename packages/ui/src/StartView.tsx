@@ -72,7 +72,8 @@ export function StartView({
   // An interview step's action is no topic (setup-steps spec §3).
   const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id) && !state.actions[id].setup)];
   const suggested = nextInPath(path, undefined, tasks.actions);
-  const doneCount = ids.filter((id) => tasks.actions[id] === "done").length;
+  // The count sits under "Guided path": it counts the path's topics, not the ones off it.
+  const doneCount = path.filter((id) => tasks.actions[id] === "done").length;
   const text = (key: string | undefined, fallback: string) => (key ? t(key, { ns: "harness" }) : fallback);
   return (
     <div className="hh-start-view">
@@ -82,7 +83,8 @@ export function StartView({
         </p>
       )}
       <div className="hh-start-head">
-        <h2 id="hh-start-title" className="hh-start-title">
+        {/* The task header's h1 already shows the title: here it only names the region for screen readers. */}
+        <h2 id="hh-start-title" className="hh-sr-only">
           {text(copy.title, t("flow.startTitle"))}
         </h2>
         <p>{text(copy.intro, t("flow.startIntro"))}</p>
@@ -90,7 +92,7 @@ export function StartView({
       {/* The switch stays out of the region: the region's buttons are the topics and the questions. */}
       <div className="hh-start-path-head">
         <h3 className="hh-flow-heading">{t("start.view.path")}</h3>
-        <span className="hh-caption">{t("start.view.done", { done: doneCount, total: ids.length })}</span>
+        {path.length > 0 && <span className="hh-caption">{t("start.view.done", { done: doneCount, total: path.length })}</span>}
         <Segmented
           label={t("start.view.label")}
           options={[

@@ -1,7 +1,7 @@
 {
   "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
   "inbox": { "title": "Inbox", "pill": "Inbox, {{count}} waiting" },
-  "task": { "header": { "new": "New task", "topic": "Topic {{n}} of {{total}} · started {{ago}}" } },
+  "task": { "header": { "new": "New task" } },
   "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },
   "start": {
     "view": {

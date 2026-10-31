@@ -89,7 +89,29 @@ describe("StartView in the soft-cards look (UI refresh spec §5.3)", () => {
     expect(turn.getAttribute("aria-label")).toBeNull();
     expect(within(topics).getByRole("button", { name: "A turn end to end Next on the path" })).toBe(turn);
     expect(screen.getByRole("heading", { name: "Guided path" })).toBeTruthy();
-    expect(screen.getByText("2 / 6 done")).toBeTruthy();
+    expect(screen.getByText("2 / 4 done")).toBeTruthy();
+  });
+
+  it("leaves the visible title to the task header: the h2 only names the region, the intro stays", async () => {
+    const { storage } = memory();
+    await renderIn("en", <StartView state={state()} tasks={view()} notice={null} disabled={false} onStart={() => {}} onAsk={() => {}} storage={storage} />);
+    const title = screen.getByRole("heading", { level: 2, name: "Where do we start?" });
+    expect(title.className).toBe("hh-sr-only");
+    expect(screen.getByRole("region", { name: "Where do we start?" })).toBeTruthy();
+    expect(screen.getByText("Pick a topic, or ask a question below.")).toBeTruthy();
+  });
+
+  it("counts done topics over the guided path only, and shows no count without a path", async () => {
+    const { storage } = memory();
+    const props = { notice: null, disabled: false, onStart: () => {}, onAsk: () => {}, storage };
+    // Two topics off the path are done too: they don't count under "Guided path".
+    const { unmount } = await renderIn("en", <StartView {...props} state={state()} tasks={view({ manifest: "done", extra: "done", tools: "done" })} />);
+    expect(screen.getByText("1 / 4 done")).toBeTruthy();
+    unmount();
+    const s = state();
+    s.path = [];
+    await renderIn("en", <StartView {...props} state={s} tasks={view({ extra: "done" })} />);
+    expect(screen.queryByText(/ done$/)).toBeNull();
   });
 
   it("titles the frequent questions 'Or ask straight away'", async () => {

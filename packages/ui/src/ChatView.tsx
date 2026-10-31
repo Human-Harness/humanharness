@@ -1726,6 +1726,7 @@ export function ChatView({
               )}
               {showStart && !slim && (
                 <StartView
+                  key={state.harness.id}
                   state={state}
                   tasks={tasks}
                   copy={startView}

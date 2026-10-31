@@ -587,8 +587,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-start-view { display: grid; gap: 22px; padding: 28px 32px; max-width: 1080px; }
 .hh-start-body { display: grid; gap: 22px; }
 .hh-start-head { display: grid; gap: 6px; }
-.hh-start-head h2 { font-family: var(--hh-display); font-size: 22px; font-weight: 600; }
-.hh-start-title { font-size: 28px; letter-spacing: -0.5px; }
 .hh-start-path-head { display: flex; align-items: center; gap: 10px; }
 .hh-start-path-head .hh-segmented { margin-left: auto; }
 .hh-start-head p { color: var(--hh-muted); line-height: 1.5; }
@@ -681,7 +679,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }
 /* Flow mode in the soft-cards look (UI refresh spec §5.1): flow side, choices, conversation, composer, side column. */
-.hh-flow-side { width: 290px; padding: 28px 18px 28px 26px; gap: 26px; background: var(--hh-rail); }
+.hh-flow-side { flex: 0 4 290px; min-width: 220px; padding: 28px 18px 28px 26px; gap: 26px; background: var(--hh-rail); }
 .hh-flow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
 .hh-flow-head .hh-flow-heading { margin: 0; }
 .hh-steps button.hh-flow-step { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border-radius: 12px; border: 1px solid transparent; background: transparent; color: var(--hh-ink); }
@@ -696,15 +694,20 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* The recommended option is outlined in amber, not filled: a fill means it was picked. */
 .hh-choices .hh-choice.next:not([aria-pressed="true"]) { background: var(--hh-surface); color: var(--hh-ink); }
 .hh-choices .hh-choice-recommended:not([aria-pressed="true"]), .hh-choices .hh-choice-recommended:hover:not(:disabled):not([aria-pressed="true"]) { border-color: var(--hh-cta); box-shadow: inset 0 0 0 1px var(--hh-cta); }
-.hh-chat.hh-conversation { margin: 16px 20px 12px; box-shadow: var(--hh-shadow); }
-.hh-composer { margin: 0 20px 16px; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 12px 12px 18px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; box-shadow: var(--hh-shadow); }
+/* The chat card takes the room the side columns leave; in a narrow window they give way first (shrink 4), down to their minimum. */
+.hh-main { flex: 1 1 400px; min-width: 0; }
+.hh-chat.hh-conversation { padding: 24px clamp(16px, 2.5vw, 40px); }
+/* Inside a setup step (slim) the chat already sits in the step's framed box: no margins, no shadow. */
+.hh-app:not(.hh-app-slim) .hh-chat.hh-conversation { margin: 16px 20px 12px; box-shadow: var(--hh-shadow); }
+.hh-app:not(.hh-app-slim) .hh-composer { margin: 0 20px 16px; box-shadow: var(--hh-shadow); }
+.hh-composer { flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 12px 12px 18px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
 .hh-composer > textarea, .hh-composer > .hh-sk-flagged { flex: 1 1 100%; }
 .hh-composer textarea { border-color: transparent; padding: 4px 0; }
 .hh-composer-send-hint { color: var(--hh-muted); font-size: 12.5px; }
 .hh-composer button.hh-cta[type="submit"] { height: 44px; background: var(--hh-cta); color: var(--hh-cta-ink); }
 .hh-composer button.hh-cta[type="submit"]:hover:not(:disabled) { background: var(--hh-cta-hover); }
-.hh-side { width: auto; flex: 1 1 280px; max-width: 320px; padding: 24px 22px; background: var(--hh-rail); }
-@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } .hh-chat { padding: 20px 16px; } }
+.hh-side { box-sizing: border-box; width: auto; flex: 0 4 280px; min-width: 200px; max-width: 320px; padding: 24px 22px; background: var(--hh-rail); }
+@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } .hh-chat, .hh-chat.hh-conversation { padding: 20px 16px; } }
 
 .hh-scope-picker {
   display: flex;
@@ -948,7 +951,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-tk-strip .hh-tk-tab[aria-selected="true"] { border-bottom-color: var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
 .hh-tk-strip .hh-tk-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-tk-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-t-orange-ink); }
-.hh-tk-strip .hh-tk-new { margin-left: auto; flex: none; height: 32px; }
 
 /* The document reader (document-reader spec §5.2). */
 .hh-reader { display: flex; flex-direction: column; min-width: 0; flex: 0 0 55%; border-left: 1px solid var(--hh-line); background: var(--hh-surface); }

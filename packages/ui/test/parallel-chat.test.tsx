@@ -102,7 +102,9 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     expect(within(strip).getByText("Task a")).toBeTruthy();
     expect(within(strip).getByText("Drafting")).toBeTruthy();
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    fireEvent.click(within(strip).getByRole("button", { name: "New task" }));
+    // New task lives in the task header only (UI refresh spec §5.1).
+    expect(within(strip).queryByRole("button", { name: "New task" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("heading", { level: 1 }).closest("header")!).getByRole("button", { name: "New task" }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith(null));
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
   });
@@ -150,7 +152,7 @@ describe("task tabs (UI refresh spec §5.1)", () => {
       tasks: [summary("a", { label: "The turn", focused: true, state: "running" }), summary("b", { label: "Engines", state: "waiting" })],
       caps: { tasks: 2, jobs: 1 },
     };
-    await renderIn("en", <TaskStrip state={c.state} tasks={tasks} onNewTask={() => {}} onFocus={onFocus} />);
+    await renderIn("en", <TaskStrip state={c.state} tasks={tasks} onFocus={onFocus} />);
     const tabs = screen.getByRole("tablist", { name: "Open tasks" });
     expect(within(tabs).getByRole("tab", { name: "The turn" }).getAttribute("aria-selected")).toBe("true");
     expect(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }).getAttribute("aria-selected")).toBe("false");

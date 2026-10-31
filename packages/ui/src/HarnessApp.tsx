@@ -426,7 +426,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 {...(state.jobs ? { startRef: chatStart } : {})}
                 searchRef={searchRef}
                 searchContextRef={searchContextRef}
-                {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} onFocus={focusTask} />, onNewTask: newTask, draftKeep } : {})}
+                {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onFocus={focusTask} />, onNewTask: newTask, draftKeep } : {})}
                 title={screenTitle}
                 scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
                 engineProblem={status ? engineProblem(status) : null}

@@ -632,10 +632,11 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-tools-off { text-align: center; margin: 4px 0; }
 .hh-phase-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
 .hh-phase-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
-.hh-phase-steps button { border-radius: 999px; padding: 4px 12px; }
-.hh-phase-steps button.hh-phase-done { border-color: var(--hh-ink); color: var(--hh-muted); }
+/* Phases as tags (UI refresh spec §5.1): done green with a check, current orange, not reached a chip. */
+.hh-phase-steps button { height: 30px; padding: 0 10px; border-radius: 7px; font-size: 12.5px; }
+.hh-phase-steps button.hh-tag { border-color: transparent; font-weight: 500; }
 .hh-phase-steps button.hh-phase-done::before { content: "\2713\00a0"; }
-.hh-phase-steps button[aria-current="step"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-phase-steps button[aria-current="step"] { font-weight: 600; }
 .hh-phase-proposal { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--hh-line-strong); border-radius: 8px; background: var(--hh-bg); }
 .hh-phase-proposal p { margin: 0; flex: 1 1 240px; }
 .hh-time-box { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--hh-muted); font-size: 13px; }
@@ -881,9 +882,15 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-tk-cancel { flex: none; margin: 6px 6px 0 0; font-size: 0.8rem; }
 .hh-tk-summary { font-size: 0.85rem; }
 .hh-tk-new { display: block; width: calc(100% - 12px); margin: 4px 6px 2px; }
-.hh-tk-strip { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 16px; border-bottom: 1px solid var(--hh-line); font-size: 0.9rem; }
-.hh-tk-strip .hh-tk-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.hh-tk-strip button { margin-left: auto; flex: none; }
+/* Task tabs (UI refresh spec §5.1): one per open task, the one on screen underlined, an orange dot when it waits for you. */
+.hh-tk-strip { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 16px; border-bottom: 1px solid var(--hh-line); font-size: 0.9rem; }
+.hh-tk-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; }
+.hh-tk-strip .hh-tk-tab { flex: 0 1 auto; min-width: 0; max-width: 220px; height: 44px; padding: 0 12px; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--hh-muted); }
+.hh-tk-strip .hh-tk-tab:hover:not(:disabled) { color: var(--hh-ink); }
+.hh-tk-strip .hh-tk-tab[aria-selected="true"] { border-bottom-color: var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
+.hh-tk-strip .hh-tk-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-tk-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-t-orange-ink); }
+.hh-tk-strip .hh-tk-new { margin-left: auto; flex: none; height: 32px; }
 
 /* The document reader (document-reader spec §5.2). */
 .hh-reader { display: flex; flex-direction: column; min-width: 0; flex: 0 0 55%; border-left: 1px solid var(--hh-line); background: var(--hh-surface); }

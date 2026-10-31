@@ -311,6 +311,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const newTask = () => {
     client.tasks.focus(null).then(toStart, () => undefined);
   };
+  /** A task tab: main moves the focus, and the chat follows main's tasks change (a refusal: the task has just ended). */
+  const focusTask = (id: string) => {
+    client.tasks.focus(id).catch(() => undefined);
+  };
   /** A result or a ⌘Enter question: Settings closes, the work screen shows, the chat does the rest. */
   const searchIntent = (intent: SearchIntent) => {
     setSearchNotice(null);
@@ -422,7 +426,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 {...(state.jobs ? { startRef: chatStart } : {})}
                 searchRef={searchRef}
                 searchContextRef={searchContextRef}
-                {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, onNewTask: newTask, draftKeep } : {})}
+                {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} onFocus={focusTask} />, onNewTask: newTask, draftKeep } : {})}
                 title={screenTitle}
                 scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
                 engineProblem={status ? engineProblem(status) : null}

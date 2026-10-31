@@ -5,7 +5,7 @@ import { closePhaseOf, timeLeftMs } from "./phases";
 
 /**
  * The open task's parts above the chat (task-phases spec §6): each part in order, the current one marked, a click
- * moves there. Under it, the agent's proposal waiting for the person, and the time box with its controls.
+ * moves there. As tags (UI refresh spec §5.1): done green, current orange, not reached a chip. Under it, the agent's proposal waiting for the person, and the time box with its controls.
  */
 export function PhaseStepper({
   phases,
@@ -61,7 +61,7 @@ export function PhaseStepper({
                 <li key={p.id}>
                   <button
                     type="button"
-                    className={i < currentAt ? "hh-phase-done" : undefined}
+                    className={i < currentAt ? "hh-tag hh-tag-green hh-phase-done" : isCurrent ? "hh-tag hh-tag-orange" : "hh-chip"}
                     aria-current={isCurrent ? "step" : undefined}
                     aria-disabled={isCurrent ? true : undefined}
                     disabled={disabled}

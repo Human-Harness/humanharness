@@ -222,7 +222,7 @@ describe("the connect step in the setup frame (UI refresh spec §5.6)", () => {
   it("shows the folder and the engine as done steps with their values, and where this step is", async () => {
     await renderIn("en", <Flow c={client()} startAt="keys" />);
     await screen.findByRole("group", { name: "Jira API token" });
-    const nav = screen.getByRole("navigation", { name: "Steps" });
+    const nav = screen.getByRole("list", { name: "Steps" });
     const items = within(nav).getAllByRole("listitem");
     expect(items.map((li) => li.getAttribute("aria-current"))).toEqual([null, null, "step"]);
     expect(within(items[0]).getByText("/Users/me/Documents/Demo")).toBeTruthy();

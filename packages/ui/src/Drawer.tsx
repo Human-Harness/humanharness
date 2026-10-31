@@ -1,5 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { trapTab } from "./focus";
 
 /** A drawer from the right (UI refresh spec §5.7): one at a time, on the rail's ground, over a scrim. */
 export function Drawer({
@@ -52,6 +53,8 @@ export function Drawer({
         className={wide ? "hh-drawer hh-drawer-wide" : "hh-drawer"}
         onKeyDown={(e) => {
           onKeyDown?.(e);
+          // A modal: Tab and Shift+Tab cycle inside it.
+          if (e.key === "Tab" && !e.defaultPrevented) trapTab(e.currentTarget, e.nativeEvent);
           if (e.key !== "Escape" || e.defaultPrevented) return;
           // Marked handled, so focus mode's window listener does not also leave.
           e.preventDefault();

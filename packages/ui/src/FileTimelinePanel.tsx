@@ -4,7 +4,6 @@ import type { HarnessClient, TimelineEntry } from "./client";
 import { Drawer } from "./Drawer";
 import { EntryDiff } from "./EntryDiff";
 import { FileTimeline } from "./FileTimeline";
-import { trapTab } from "./focus";
 
 /**
  * A file's timeline outside the reader (file-timeline spec §6.2): any file but a `.md` the reader can open, and a
@@ -48,7 +47,6 @@ export function FileTimelinePanel({ client, path, busy = false, onClose }: { cli
       focusClose
       onClose={close}
       onKeyDown={(e) => {
-        if (e.key === "Tab") trapTab(e.currentTarget, e.nativeEvent);
         // In a diff, Escape goes back to the list; the drawer closes on the next one. Marked handled, so neither the
         // drawer nor focus mode's window listener also acts on it.
         if (e.key !== "Escape" || e.defaultPrevented || !picked) return;

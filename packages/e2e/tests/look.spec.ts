@@ -167,7 +167,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.setViewportSize({ width: 1100, height: 720 });
       await page.emulateMedia({ colorScheme: theme });
       await page.getByRole("button", { name: "Set up Demo" }).click();
-      const steps = page.getByRole("navigation", { name: "Steps" });
+      const steps = page.getByRole("list", { name: "Steps" });
       await expect(steps.getByText("Step 2 of 2")).toBeVisible();
       await expect(steps.getByText(s.folder, { exact: true })).toBeVisible();
       const claude = page.getByRole("radiogroup", { name: "AI engines" }).getByRole("radio", { name: /Claude.*Connected/ });

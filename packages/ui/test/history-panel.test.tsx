@@ -183,7 +183,10 @@ describe("HistoryPanel", () => {
     const newest = await screen.findByRole("button", { name: /Plan the week.*2 files changed.*Note saved/ });
     expect(newest.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("button", { name: /A question.*1 file changed/ }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: /Outside a task.*0 files changed/ }).getAttribute("aria-expanded")).toBe("false");
+    const outside = screen.getByRole("button", { name: /Outside a task.*No changes/ });
+    expect(outside.getAttribute("aria-expanded")).toBe("false");
+    // Nothing changed outside a task: the gray tag alone, no "0 files changed".
+    expect(outside.textContent).not.toMatch(/files? changed/);
     const files = screen.getByRole("list", { name: "Changed files" });
     expect(within(files).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Deletedold.md", "Changedplan.md"]);
     // The row tags a saved note; its title shows on hover.
@@ -458,11 +461,13 @@ describe("the History drawer (UI refresh spec §5.7)", () => {
     expect(screen.queryByRole("button", { name: /Plan the week/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /A question/ })).toBeNull();
     expect(screen.getByText("No changes").className).toContain("hh-tag-gray");
+    // The gray tag stands alone: no "0 files changed" beside it.
+    expect(screen.getByRole("button", { name: /Outside a task.*No changes/ }).textContent).not.toMatch(/files? changed/);
     fireEvent.click(within(filter).getByRole("button", { name: "Tasks" }));
     expect(screen.getByRole("button", { name: /Plan the week/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Outside a task.*0 files changed/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Outside a task/ })).toBeNull();
     fireEvent.click(within(filter).getByRole("button", { name: "All" }));
-    expect(screen.getByRole("button", { name: /Outside a task.*0 files changed/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Outside a task.*No changes/ })).toBeTruthy();
   });
 
   it("makes each task a card with its status tags, and gives each point a dot, green where the AI finished", async () => {

@@ -387,7 +387,7 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
 
   it("lists the steps on the left, done ones with their value, and says Step 2 of 2 on the current one", async () => {
     await renderIn("en", <Flow client={new FakeClient({ language: "en", folder: "~/Documents/Demo" })} />);
-    const nav = screen.getByRole("navigation", { name: "Steps" });
+    const nav = screen.getByRole("list", { name: "Steps" });
     expect(within(nav).getByText("~/Documents/Demo")).toBeTruthy();
     expect(within(nav).getByText("Step 2 of 2")).toBeTruthy();
     expect(within(nav).getAllByText(/^Step \d of \d$/)).toHaveLength(1);

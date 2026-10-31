@@ -305,7 +305,8 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
       />
       <div className="hh-setup-frame">
         {/* The steps on the left (UI refresh spec §5.6): done ones with their value, "Step n of m" under the current one. */}
-        <nav className="hh-setup-nav" aria-label={t("setupFlow.stepsLabel")}>
+        {/* One "Steps" name, on the list (the tests and the stepper before it name the list). */}
+        <nav className="hh-setup-nav">
           <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
             {steps.map((s, i) => (
               <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : undefined}>

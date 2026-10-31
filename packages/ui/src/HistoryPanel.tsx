@@ -381,6 +381,9 @@ export function HistoryPanel({
                 const key = keyOf(g);
                 const expanded = open.has(key);
                 const bodyId = `hh-history-${key}`;
+                const total = g.changes.length + linkedOf(g).reduce((n, f) => n + f.changes.length, 0);
+                // Outside a task with nothing changed: the gray tag says it, no "0 files changed".
+                const nothing = g.taskId === null && total === 0;
                 return (
                   <li key={key} className="hh-card">
                     {/* aria-controls only names a body that is there. */}
@@ -389,7 +392,8 @@ export function HistoryPanel({
                       <span className="hh-history-row-text">
                         <span className="hh-history-label">{rowLabel(g)}</span>
                         <span className="hh-caption">
-                          {span(g)} · {t("history.filesChanged", { count: g.changes.length + linkedOf(g).reduce((n, f) => n + f.changes.length, 0) })}
+                          {span(g)}
+                          {!nothing && <> · {t("history.filesChanged", { count: total })}</>}
                         </span>
                       </span>
                       {currentTask !== undefined && g.taskId === currentTask && <Tag tone="blue">{t("history.inProgress")}</Tag>}
@@ -398,7 +402,7 @@ export function HistoryPanel({
                           {t("history.noteSaved")}
                         </Tag>
                       )}
-                      {g.taskId === null && g.changes.length === 0 && <Tag tone="gray">{t("history.noChanges")}</Tag>}
+                      {nothing && <Tag tone="gray">{t("history.noChanges")}</Tag>}
                     </button>
                     {expanded && (
                       <div id={bodyId} className="hh-history-body">

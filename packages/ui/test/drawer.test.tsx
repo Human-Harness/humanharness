@@ -40,4 +40,22 @@ describe("Drawer", () => {
     expect(document.activeElement).toBe(opener);
     opener.remove();
   });
+
+  it("keeps Tab and Shift+Tab inside the drawer, wrapping at both ends", async () => {
+    await renderIn(
+      "en",
+      <Drawer title="History" onClose={() => {}}>
+        <button type="button">Last</button>
+      </Drawer>,
+    );
+    const dlg = screen.getByRole("dialog", { name: "History" });
+    const close = screen.getByRole("button", { name: "Close" });
+    const last = screen.getByRole("button", { name: "Last" });
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    expect(dlg.contains(document.activeElement)).toBe(true);
+  });
 });

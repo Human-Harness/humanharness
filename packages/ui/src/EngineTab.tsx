@@ -290,6 +290,8 @@ function SetupTiles({
   const { t } = useTranslation();
   const group = useRef<HTMLDivElement>(null);
   const usable = state.engines.filter((e) => setupEngine === undefined || e.id === setupEngine);
+  /** The group's one tab stop: the checked tile, else the first one that can be picked. */
+  const stop = usable.some((e) => e.id === selected) ? selected : usable[0]?.id;
   const move = (from: string, by: number) => {
     const i = usable.findIndex((e) => e.id === from);
     if (i < 0 || usable.length === 0) return;
@@ -321,7 +323,7 @@ function SetupTiles({
               className="hh-tile hh-engine-radio"
               data-engine={e.id}
               aria-checked={checked}
-              tabIndex={checked ? 0 : -1}
+              tabIndex={e.id === stop ? 0 : -1}
               disabled={setupEngine !== undefined && e.id !== setupEngine}
               onClick={() => onSelect(e.id)}
               onKeyDown={(ev) => {

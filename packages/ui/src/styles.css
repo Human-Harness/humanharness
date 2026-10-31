@@ -1100,7 +1100,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-reader-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--hh-muted); }
 .hh-reader-title { font-family: var(--hh-display); font-size: 1.9em; line-height: 1.2; margin: 0.4em 0 0.6em; }
 .hh-reader-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; background: var(--hh-surface-2); color: var(--hh-muted); font-size: 12px; }
-.hh-reader-chip-muted { color: var(--hh-muted); }
 .hh-reader-source { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .hh-reader-problem, .hh-reader-truncated { color: var(--hh-muted); }
 /* Contents beside the text from the default 1100 px window up, and always in full screen; below 1000 px the side reader is too narrow. */

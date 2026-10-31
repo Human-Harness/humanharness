@@ -25,6 +25,14 @@ describe("search on a harness collection (search spec D4, §7)", () => {
     expect(r.error?.issues.map((i) => i.message)).toContain('"nope" is not a field of the schema');
   });
 
+  it("takes five text fields and refuses an unknown setting", () => {
+    const wide = { scoped: false, key: "id", agent: "none" as const, schema: z.object({ id: z.string(), a: z.string(), b: z.string(), c: z.string(), d: z.string(), e: z.string() }) };
+    expect(collectionSchema.parse({ ...wide, search: { title: "id", text: ["a", "b", "c", "d", "e"] } }).search?.text).toHaveLength(5);
+    const r = collectionSchema.safeParse({ ...people, search: { title: "name", panel: "main" } });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => i.code)).toContain("unrecognized_keys");
+  });
+
   it('a collection hidden from the agent (agent: "none") may set it: search is the person\'s', () => {
     expect(collectionSchema.safeParse({ ...people, search: { title: "name" } }).success).toBe(true);
   });
@@ -57,8 +65,25 @@ describe("search on a plugin collection", () => {
   });
 
   it("refuses an unknown field, an unknown panel and an unknown key", () => {
-    expect(() => parsePluginManifest(plugin({ title: "nope" }))).toThrow(/nope.{0,2} is not a field of the schema/);
-    expect(() => parsePluginManifest(plugin({ title: "title", panel: "side" }))).toThrow(/side.{0,2} is not a declared panel/);
-    expect(() => parsePluginManifest(plugin({ title: "title", extra: 1 }))).toThrow();
+    // The zod error's message is the issues as JSON: the quotes around the name come escaped.
+    expect(() => parsePluginManifest(plugin({ title: "nope" }))).toThrow(/nope\\?"? is not a field of the schema/);
+    expect(() => parsePluginManifest(plugin({ title: "title", panel: "side" }))).toThrow(/side\\?"? is not a declared panel/);
+    expect(() => parsePluginManifest(plugin({ title: "title", extra: 1 }))).toThrow(/unrecognized key|extra/i);
+  });
+
+  it("takes up to five text fields, never six", () => {
+    const five = ["title", "body", "title", "body", "title"];
+    expect(parsePluginManifest(plugin({ title: "title", text: five })).data.items.search?.text).toEqual(five);
+    expect(() => parsePluginManifest(plugin({ title: "title", text: [...five, "body"] }))).toThrow();
+  });
+
+  it("refuses a panel when the plugin declares none", () => {
+    expect(() => parsePluginManifest(plugin({ title: "title", panel: "main" }, []))).toThrow(/main\\?"? is not a declared panel/);
+  });
+
+  it("refuses any field when the JSON schema has no properties", () => {
+    const m = plugin({ title: "title" });
+    m.data.items.schema = { type: "object" } as typeof m.data.items.schema;
+    expect(() => parsePluginManifest(m)).toThrow(/title\\?"? is not a field of the schema/);
   });
 });

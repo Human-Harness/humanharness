@@ -339,7 +339,13 @@ export function parsePluginManifest(raw: unknown): PluginManifest {
 
 /** The plugin's collections in the harness data model (data.md), app-wide; throws on a key the model refuses. */
 export function pluginCollections(m: PluginManifest): Record<string, Collection> {
-  return Object.fromEntries(Object.entries(m.data).map(([name, c]) => [name, collectionSchema.parse({ ...c, schema: jsonSchemaToZod(c.schema) })]));
+  return Object.fromEntries(
+    Object.entries(m.data).map(([name, { search, ...c }]) => {
+      // The panel a record opens in is the plugin's business, not the data model's (whose `search` is strict).
+      const { panel: _panel, ...fields } = search ?? { title: "" };
+      return [name, collectionSchema.parse({ ...c, ...(search ? { search: fields } : {}), schema: jsonSchemaToZod(c.schema) })];
+    }),
+  );
 }
 
 /** The plugin's settings in the harness settings model, checked by it (Decision 4); undefined without settings. */

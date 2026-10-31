@@ -48,7 +48,7 @@ const contextSchema = z.union([
  * Global search (search spec D4): a collection opts in by naming its searched fields. The core indexes them; no code
  * runs to answer a search. `text`: one field or up to five.
  */
-export const collectionSearchSchema = z.object({
+export const collectionSearchSchema = z.strictObject({
   title: z.string().min(1),
   text: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(5)]).optional(),
 });

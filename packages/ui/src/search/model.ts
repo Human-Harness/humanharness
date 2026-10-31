@@ -20,18 +20,20 @@ const isLocal = (k: SearchRowKind): k is "setting" | "command" => k === "setting
 
 /**
  * §5.2: nothing typed shows the recents (and, with local rows, the available actions after them); otherwise the groups
- * in §3's order, main's and the window's merged. `kind`: the chip pressed.
+ * in §3's order, main's and the window's merged. `kind`: the chip pressed. Without main's answer, only the window's.
  */
 export function sectionsOf(a: SearchAnswer | null, local?: LocalRows, kind: SearchRowKind | null = null): Section[] {
-  if (!a?.ok) return [];
   if (!local) {
+    if (!a?.ok) return [];
     if (!a.query.trim()) return a.recent.length > 0 ? [{ key: "recent", hits: a.recent }] : [];
     return a.groups.map((g) => ({ key: g.kind, hits: g.hits }));
   }
+  // Main not ready or failing (or not answered yet): the window's own rows only; Settings and Actions need no index.
+  const recent = a?.ok ? a.recent : [];
   if (!local.query.trim()) {
-    return [...(a.recent.length > 0 ? [{ key: "recent" as const, hits: a.recent }] : []), ...(local.command.length > 0 ? [{ key: "command" as const, hits: local.command }] : [])];
+    return [...(recent.length > 0 ? [{ key: "recent" as const, hits: recent }] : []), ...(local.command.length > 0 ? [{ key: "command" as const, hits: local.command }] : [])];
   }
-  const fromMain = new Map<SearchRowKind, SearchHitView[]>(a.groups.map((g) => [g.kind, g.hits]));
+  const fromMain = new Map<SearchRowKind, SearchHitView[]>(a?.ok ? a.groups.map((g) => [g.kind, g.hits]) : []);
   const cap = kind ? LOCAL_PER_KIND : LOCAL_PER_GROUP;
   return SEARCH_ROW_KINDS.filter((k) => !kind || k === kind)
     .map((k) => ({ key: k, hits: isLocal(k) ? local[k].slice(0, cap) : (fromMain.get(k) ?? []) }))

@@ -25,3 +25,9 @@ describe("local matching (plan deviation 2)", () => {
     expect(markLocal("Backup", "zzz")).toEqual([{ text: "Backup" }]);
   });
 });
+
+describe("marking a decomposed label", () => {
+  it("a label in NFD (é as e + U+0301) is marked as one word, its accent kept", () => {
+    expect(markLocal("Résumé settings", "resu")).toEqual([{ text: "Résu", mark: true }, { text: "mé settings" }]);
+  });
+});

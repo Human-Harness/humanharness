@@ -133,8 +133,9 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
   }, [client, query, kind, allScopes, refs, moved]);
 
   // Built for the query main answered, not the one being typed: the groups, the chips and their counts describe one query.
-  // Only main's answer crosses the bridge; these rows stay in the window (plan deviation 1).
-  const localRows = local && answer?.ok ? local(answer.query) : undefined;
+  // Main not ready or failing: for the typed one (no chips then), so Settings and Actions still work; nothing before
+  // main's first answer. Only main's answer crosses the bridge; these rows stay in the window (plan deviation 1).
+  const localRows = local && answer ? local(answer.ok ? answer.query : query) : undefined;
   const sections = sectionsOf(answer, localRows, kind);
   const rows = rowsOf(sections);
   const chips = chipsOf(answer, localRows);

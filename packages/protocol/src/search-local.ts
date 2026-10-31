@@ -15,8 +15,10 @@ export function localScore(query: string, label: string, extra: readonly string[
   return q.every((w) => all.some((x) => x.startsWith(w))) ? 1 : 0;
 }
 
-/** The label with the typed prefix of each matching word marked. */
-export function markLocal(label: string, query: string): SearchMarked {
+/** The label with the typed prefix of each matching word marked. A decomposed label is composed first (NFC): a
+ *  combining accent would otherwise split its word in two. */
+export function markLocal(raw: string, query: string): SearchMarked {
+  const label = raw.normalize("NFC");
   const q = words(query).sort((a, b) => b.length - a.length);
   const out: SearchMarked = [];
   let at = 0;

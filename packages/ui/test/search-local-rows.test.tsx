@@ -55,6 +55,51 @@ describe("settings and actions in the palette (search spec §3, §6)", () => {
   });
 });
 
+describe("the window's rows without main's answer", () => {
+  it("search not ready: Settings and Actions still show, under the message; no chips", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    vi.spyOn(client.search, "query").mockImplementation(async () => ({ ok: false, reason: "not-ready" }));
+    await renderIn("en", <SearchPalette client={client} where="Searching in Demo" references={false} onClose={() => {}} onPick={() => {}} onAsk={() => {}} local={(q) => ({ query: q, setting: q.trim() ? [SETTING] : [], command: [COMMAND] })} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Search tasks, notes and files" }), { target: { value: "app" } });
+    const list = await screen.findByRole("listbox", { name: "Results" });
+    expect(await within(list).findByRole("group", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByText("Search works once the app is set up.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Settings 1/ })).toBeNull();
+  });
+
+  it("the model: a failed answer keeps the local groups, nothing typed the actions", () => {
+    const failed: SearchAnswer = { ok: false, reason: "failed" };
+    expect(sectionsOf(failed, { query: "app", setting: [SETTING], command: [COMMAND] }).map((s) => s.key)).toEqual(["setting", "command"]);
+    expect(sectionsOf(failed, { query: "", setting: [], command: [COMMAND] }).map((s) => s.key)).toEqual(["command"]);
+    expect(sectionsOf(failed)).toEqual([]);
+    expect(chipsOf(failed, { query: "app", setting: [SETTING], command: [] })).toEqual([]);
+  });
+});
+
+describe("keys across merged groups", () => {
+  it("↓ goes from main's Files into Settings, then Actions; ↑ comes back; Enter opens the active row", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    vi.spyOn(client.search, "query").mockImplementation(async (q) => answer(q, { groups: q.trim() ? [{ kind: "file", total: 1, hits: [file("a.md")] }] : [], counts: { task: 0, note: 0, file: q.trim() ? 1 : 0 } }));
+    const onPick = vi.fn();
+    await renderIn("en", <SearchPalette client={client} where="Searching in Demo" references={false} onClose={() => {}} onPick={onPick} onAsk={() => {}} local={(q) => ({ query: q, setting: q.trim() ? [SETTING] : [], command: q.trim() ? [COMMAND] : [] })} />);
+    const box = screen.getByRole("combobox", { name: "Search tasks, notes and files" });
+    fireEvent.change(box, { target: { value: "a" } });
+    const list = await screen.findByRole("listbox", { name: "Results" });
+    await within(list).findByRole("group", { name: "Files" });
+    const activeText = () => document.getElementById(box.getAttribute("aria-activedescendant") ?? "")?.textContent ?? "";
+    expect(activeText()).toContain("a.md");
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(activeText()).toContain("Appearance");
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(activeText()).toContain("Open History");
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(activeText()).toContain("Open History");
+    fireEvent.keyDown(box, { key: "ArrowUp" });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onPick).toHaveBeenCalledWith(SETTING);
+  });
+});
+
 describe("the model merges main's answer with the window's rows", () => {
   const typed = answer("app", { groups: [{ kind: "file", total: 7, hits: [file("a.md"), file("b.md")] }], counts: { task: 2, note: 0, file: 7, data: 1 } });
   const settings = Array.from({ length: 8 }, (_, i) => ({ ...SETTING, id: `setting:s${i}` }));

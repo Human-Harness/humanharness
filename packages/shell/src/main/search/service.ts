@@ -4,17 +4,23 @@ import type { SearchAnswer, SearchFilters, SearchGroup, SearchHitView, SearchInd
 import {
   APP_SCOPE,
   type ChatMeta,
+  type DataMeta,
+  type DataRow,
+  type DataSource,
   FOLDER_ROOT,
   type FileMeta,
-  KINDS,
+  INDEX_KINDS,
   LiveIndex,
+  MAX_DATA_DOCS,
   type SearchDoc,
   type SearchHit,
+  dataDocs,
   docIdFor,
   fileKey,
   headingAnchorAt,
   isMarkdown,
   isRefRoot,
+  recordKeyText,
   refRoot,
   secretShaped,
   snippetAround,
@@ -45,6 +51,15 @@ export interface SearchReference {
   path: string;
 }
 
+/**
+ * Searchable collections (D4), read through main's stores. `rows` gives a collection's records as `recordRows` maps
+ * them (key checked, text capped, one row per key). Absent (tests of plan 1): no data documents.
+ */
+export interface SearchDataDeps {
+  sources(): Promise<DataSource[]>;
+  rows(source: DataSource): Promise<DataRow[]>;
+}
+
 export interface SearchServiceDeps {
   userData(): string;
   /** The active base (the folder, or the active profile's folder); null before setup. */
@@ -61,6 +76,8 @@ export interface SearchServiceDeps {
   runner: BuildRunner;
   /** "Show in Finder", checked inside `roots`. */
   reveal(file: string, roots: string[]): Promise<boolean>;
+  /** Searchable collections (D4); absent: none. */
+  data?: SearchDataDeps;
   now?: () => number;
   storeDelayMs?: number;
   limits?: BuildLimits;
@@ -80,6 +97,12 @@ interface Live {
   failures: number;
   building: { stop(): void; done: Promise<boolean> } | null;
   again: "full" | Set<string> | null;
+  /** Each searchable collection's stamp and documents (D4). */
+  data: Record<string, DataMeta>;
+  dataAt: number;
+  /** A data refresh under way; `dataAgain`: one more was asked for meanwhile. */
+  dataRun: Promise<void> | null;
+  dataAgain: boolean;
 }
 
 const EMPTY_COUNTS = (): Record<SearchIndexKind, number> => ({ task: 0, note: 0, file: 0, data: 0 });
@@ -99,6 +122,7 @@ function accounted(index: LiveIndex | null, snap: Snapshot): LiveIndex | null {
     keep.add(docIdFor(root, rel));
   }
   for (const c of Object.values(snap.chats)) for (const id of c.ids) keep.add(id);
+  for (const m of Object.values(snap.data ?? {})) for (const id of m.ids) keep.add(id);
   const stray = ids.filter((id) => !keep.has(id));
   if (stray.length) {
     index.remove(stray);
@@ -160,6 +184,10 @@ export class SearchService {
       failures: 0,
       building: null,
       again: null,
+      data: index && snap ? (snap.data ?? {}) : {},
+      dataAt: 0,
+      dataRun: null,
+      dataAgain: false,
     };
     this.live = live;
     if (index) {
@@ -189,7 +217,14 @@ export class SearchService {
   }
 
   private save(live: Live): void {
-    live.store.schedule(() => ({ index: live.index.toJSON(), files: live.files, chats: live.chats, memory: [...live.memory], truncated: live.truncated }));
+    live.store.schedule(() => ({
+      index: live.index.toJSON(),
+      files: live.files,
+      chats: live.chats,
+      memory: [...live.memory],
+      truncated: live.truncated,
+      ...(Object.keys(live.data).length > 0 ? { data: live.data } : {}),
+    }));
   }
 
   private apply(live: Live, m: BuildMessage): void {
@@ -294,8 +329,111 @@ export class SearchService {
     live.memoryAt = this.now();
   }
 
+  /** Searchable collections (D4): one refresh at a time; one asked for meanwhile runs once more after it. */
+  private refreshData(live: Live): Promise<void> {
+    // Like a build: an index swapped out or discarded meanwhile reads nothing.
+    if (!this.d.data || this.live !== live) return Promise.resolve();
+    if (live.dataRun) {
+      live.dataAgain = true;
+      return live.dataRun;
+    }
+    const run = (async () => {
+      do {
+        live.dataAgain = false;
+        await this.syncData(live);
+      } while (live.dataAgain && this.live === live);
+    })()
+      .catch((err: unknown) => console.error("Could not refresh the searchable collections", err instanceof Error ? err.message : "unknown error"))
+      .finally(() => {
+        live.dataRun = null;
+      });
+    live.dataRun = run;
+    return run;
+  }
+
+  /**
+   * A source whose stamp changed is read again (one at a time) and its documents replaced; one gone takes its documents
+   * out; one that fails keeps what the index had. At most MAX_DATA_DOCS documents in all (plan deviation 5). Nothing is
+   * applied to an index swapped out or discarded during a read.
+   */
+  private async syncData(live: Live): Promise<void> {
+    const data = this.d.data!;
+    const sources = await data.sources().catch((err: unknown) => {
+      console.error("Could not list the searchable collections", err instanceof Error ? err.message : "unknown error");
+      return null;
+    });
+    if (this.live !== live) return;
+    live.dataAt = this.now();
+    if (!sources) return;
+    const scoped = this.d.scoped();
+    const next: Record<string, DataMeta> = {};
+    let room = MAX_DATA_DOCS;
+    let changed = false;
+    for (const s of sources) {
+      // A source listed twice: the first one counts.
+      if (Object.hasOwn(next, s.id)) continue;
+      const had = live.data[s.id];
+      if (had && had.stamp === s.stamp && had.ids.length <= room) {
+        next[s.id] = had;
+        room -= had.ids.length;
+        continue;
+      }
+      // No room left: left out (its documents go below), read again once there is.
+      if (room <= 0) continue;
+      const rows = await data.rows(s).catch((err: unknown) => {
+        console.error("Could not read a searchable collection", err instanceof Error ? err.message : "unknown error");
+        return null;
+      });
+      if (this.live !== live) return;
+      if (!rows) {
+        if (had && had.ids.length <= room) {
+          next[s.id] = had;
+          room -= had.ids.length;
+        }
+        continue;
+      }
+      const docs = dataDocs(s, rows.slice(0, room), scoped);
+      const ids = new Set(docs.map((doc) => doc.id));
+      if (had) live.index.remove(had.ids.filter((id) => !ids.has(id)));
+      live.index.upsert(docs);
+      // Cut short by the cap: no stamp, so a later refresh reads it again (with more room, maybe all of it).
+      next[s.id] = { stamp: rows.length > room ? "" : s.stamp, ids: [...ids] };
+      room -= ids.size;
+      changed = true;
+    }
+    for (const [id, m] of Object.entries(live.data)) {
+      if (Object.hasOwn(next, id)) continue;
+      live.index.remove(m.ids);
+      changed = true;
+    }
+    live.data = next;
+    if (changed) {
+      live.index.compact();
+      this.save(live);
+    }
+  }
+
   /** A text file's or a chat entry's snippet, for a visible row only (§5.3); never a secret-shaped file's. */
-  private async snippet(live: Live, hit: SearchHit, refPaths: Map<string, string>): Promise<{ marked: SearchMarked; anchor?: string } | null> {
+  private async snippet(
+    live: Live,
+    hit: SearchHit,
+    refPaths: Map<string, string>,
+    rowsOf: Map<string, Promise<DataRow[] | null>>,
+  ): Promise<{ marked: SearchMarked; anchor?: string } | null> {
+    if (hit.data) {
+      // A record's text is never stored (§4.1): its collection is read again, once per answer.
+      const data = this.d.data;
+      if (!data) return null;
+      const { source, key, ...rest } = hit.data;
+      let rows = rowsOf.get(source);
+      if (!rows) {
+        rows = data.rows({ ...rest, id: source, stamp: "" }).catch(() => null);
+        rowsOf.set(source, rows);
+      }
+      const row = (await rows)?.find((r) => recordKeyText(r.key) === recordKeyText(key));
+      const s = row ? snippetAround(row.text, hit.terms) : null;
+      return s ? { marked: s.marked } : null;
+    }
     if (hit.chat) {
       const text = await readChatEntry(live.base, hit.chat.file, hit.chat.offset, hit.chat.length);
       const s = text === null ? null : snippetAround(withoutSecretLines(text), hit.terms);
@@ -324,9 +462,10 @@ export class SearchService {
     const titles = scoped ? await this.d.scopeTitles() : new Map<string, string>();
     const scopeTitle = (s: string) => (scoped && s !== APP_SCOPE && s !== open ? (titles.get(s) ?? s) : undefined);
     const out: SearchHitView[] = [];
+    const rowsOf = new Map<string, Promise<DataRow[] | null>>();
     let read = 0;
     for (const hit of hits) {
-      const snippet = snippets && hit.terms.length > 0 && read++ < MAX_SNIPPETS ? await this.snippet(live, hit, refPaths).catch(() => null) : null;
+      const snippet = snippets && hit.terms.length > 0 && read++ < MAX_SNIPPETS ? await this.snippet(live, hit, refPaths, rowsOf).catch(() => null) : null;
       out.push(hitView(hit, { refLabels, scopeTitle, ...(snippet ? { snippet } : {}) }));
     }
     return out;
@@ -346,6 +485,7 @@ export class SearchService {
     const open = scoped ? await this.d.openScope() : null;
     const empty = !q.trim();
     if (empty || this.now() - live.memoryAt > MEMORY_FRESH_MS) await this.refreshMemory(live);
+    if (empty || this.now() - live.dataAt > MEMORY_FRESH_MS) await this.refreshData(live);
     // On open (§4.1), and on a loaded snapshot's first search whatever it asks (the palette may open with a query).
     if (empty || live.reconciledAt === 0) this.maybeReconcile(live);
     const base = { ok: true as const, query: q, groups: [] as SearchGroup[], counts: EMPTY_COUNTS(), recent: [] as SearchHitView[], partial: false, allScopes };
@@ -360,9 +500,9 @@ export class SearchService {
     const { hits, partial } = live.index.search(q, { ...(scopes ? { scopes } : {}), references: filters.references !== false, openScope: open, now: this.now() });
     const counts = EMPTY_COUNTS();
     for (const h of hits) counts[h.kind]++;
-    const chosen = filters.kind ? hits.filter((h) => h.kind === filters.kind).slice(0, PER_KIND) : KINDS.flatMap((k) => hits.filter((h) => h.kind === k).slice(0, PER_GROUP));
+    const chosen = filters.kind ? hits.filter((h) => h.kind === filters.kind).slice(0, PER_KIND) : INDEX_KINDS.flatMap((k) => hits.filter((h) => h.kind === k).slice(0, PER_GROUP));
     const views = await this.views(live, chosen, open, true);
-    const groups = KINDS.filter((k) => !filters.kind || k === filters.kind)
+    const groups = INDEX_KINDS.filter((k) => !filters.kind || k === filters.kind)
       .map((k) => ({ kind: k, total: counts[k], hits: views.filter((v) => v.kind === k) }))
       .filter((g) => g.hits.length > 0);
     return { ...base, groups, counts, partial, status: live.index.status() };
@@ -389,15 +529,26 @@ export class SearchService {
     const live = this.live;
     if (!live) return;
     this.startBuild(live, paths === null ? "full" : new Set(paths));
+    // The walk never reads .harness/data/ (plan 1 deviation 15); its collections come through the stores.
+    if (paths === null || paths.some((p) => p.replaceAll("\\", "/").startsWith(".harness/data/"))) this.dataChanged();
   }
 
-  /** Settles once no build runs (tests, and a measured build). */
+  /** A searchable collection changed (a write, a plugin run, a plugin on or off). Nothing until search was opened (D0). */
+  dataChanged(): void {
+    const live = this.live;
+    if (!live || !this.d.data) return;
+    void this.refreshData(live);
+  }
+
+  /** Settles once no build and no data refresh runs (tests, and a measured build). */
   async whenIdle(): Promise<void> {
     for (let i = 0; i < 100; i++) {
       const b = this.live?.building;
-      if (!b) return;
-      await b.done;
-      await new Promise((r) => setImmediate(r));
+      const r = this.live?.dataRun;
+      if (!b && !r) return;
+      if (b) await b.done;
+      if (r) await r;
+      await new Promise((resolve) => setImmediate(resolve));
     }
   }
 

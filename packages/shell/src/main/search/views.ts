@@ -26,7 +26,7 @@ export function targetOf(hit: SearchHit, anchor?: string): SearchTarget {
 }
 
 /** What ⌘Enter may name (§5.4): never a reference file's full path, never a chat line. */
-function hintOf(hit: SearchHit, ref: boolean): SearchHitView["hint"] {
+export function hintOf(hit: SearchHit, ref: boolean): SearchHitView["hint"] {
   if (hit.kind === "data") return null;
   if (hit.kind === "file") return ref ? { kind: "name", text: baseName(hit.path) } : { kind: "path", text: hit.path };
   if (hit.kind === "note") return { kind: "note", text: hit.title };

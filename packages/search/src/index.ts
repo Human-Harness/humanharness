@@ -6,3 +6,4 @@ export * from "./gitignore";
 export * from "./secrets";
 export * from "./docs";
 export * from "./anchor";
+export * from "./snippet";

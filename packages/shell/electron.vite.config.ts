@@ -17,6 +17,7 @@ const workspacePackages = [
   "@humanharness/material",
   "@humanharness/protocol",
   "@humanharness/runtime",
+  "@humanharness/search",
   "@humanharness/workspace",
   "@humanharness/ui",
 ];
@@ -45,6 +46,8 @@ export default defineConfig({
           "material-worker": path.join(__dirname, "../material/src/convert/worker.ts"),
           // A file diff's worker thread (main/diff-runner.ts): the app passes this built file to `workerDiff`.
           "diff-worker": path.join(__dirname, "src/main/diff-worker.ts"),
+          // The search index's worker thread (main/search/runner.ts): the app passes this built file to `workerBuild`.
+          "search-worker": path.join(__dirname, "src/main/search/worker.ts"),
           harness: path.join(harnessDir, "harness.config.ts"),
         },
       },

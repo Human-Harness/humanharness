@@ -43,6 +43,12 @@ describe("readTestHooks", () => {
     for (const v of ["0", "true", "", "yes"]) expect(readTestHooks({ HH_PLUGIN_FIXTURES: v }, false)).toEqual({});
   });
 
+  it("HH_TEST_BACKGROUND=1 → the window opens without taking focus, in development only", () => {
+    expect(readTestHooks({ HH_TEST_BACKGROUND: "1" }, false)).toEqual({ background: true });
+    expect(readTestHooks({ HH_TEST_BACKGROUND: "1" }, true)).toEqual({});
+    for (const v of ["0", "true", "", "yes"]) expect(readTestHooks({ HH_TEST_BACKGROUND: v }, false)).toEqual({});
+  });
+
   it("fake secrets only when not packaged", () => {
     expect(readTestHooks({ HH_TEST_FAKE_SECRETS: "1" }, false).fakeSecrets).toBe(true);
     expect(readTestHooks({ HH_TEST_FAKE_SECRETS: "1" }, true).fakeSecrets).toBeUndefined();

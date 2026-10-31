@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CheckIcon, EngineIcon, GearIcon, HHLogo, LockIcon, NoteIcon, Segmented, TopBar } from "../src/chrome";
+import { CheckIcon, EngineIcon, GearIcon, HHLogo, LockIcon, NoteIcon, Segmented, Tag, TopBar } from "../src/chrome";
 
 afterEach(cleanup);
 
@@ -62,5 +62,10 @@ describe("chrome", () => {
     }
     expect(gear.getAttribute("width")).toBe("18");
     expect(engine.getAttribute("width")).toBe("40");
+  });
+
+  it("Tag colours a state by its meaning", () => {
+    render(<Tag tone="orange">Waiting for you</Tag>);
+    expect(screen.getByText("Waiting for you").className).toBe("hh-tag hh-tag-orange");
   });
 });

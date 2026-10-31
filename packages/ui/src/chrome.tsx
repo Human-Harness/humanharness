@@ -65,6 +65,13 @@ export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: st
   );
 }
 
+export type TagTone = "green" | "orange" | "blue" | "violet" | "red" | "gray";
+
+/** A state, coloured by what it means (UI refresh spec §3.3): green done, orange now/waiting, blue info, violet deep/suggestion, red failed, gray neutral. */
+export function Tag({ tone, children }: { tone: TagTone; children: ReactNode }) {
+  return <span className={`hh-tag hh-tag-${tone}`}>{children}</span>;
+}
+
 /** Settings: a line gear (path from Lucide's "settings" icon, ISC license). */
 export function GearIcon() {
   return (

@@ -793,6 +793,37 @@ describe("HarnessApp", () => {
     await screen.findByRole("button", { name: "Start Demo" });
   });
 
+  it("wraps the chat in the shell: top bar, rail with Tasks current (spec §4)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const rail = await screen.findByRole("navigation", { name: "App" });
+    expect(within(rail).getByRole("button", { name: "Tasks" }).getAttribute("aria-current")).toBe("page");
+    expect(within(rail).queryByRole("button", { name: "Inbox" })).toBeNull(); // no parallel: D0
+  });
+
+  it("Rail › Home goes to Home and Rail › Settings opens Settings", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const rail = await screen.findByRole("navigation", { name: "App" });
+    fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Home" }));
+    expect(await screen.findByRole("button", { name: /Start/ })).toBeTruthy();
+  });
+
+  it("Rail › Notes opens the notes drawer, only for a harness with actions (D0)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    expect(within(await screen.findByRole("navigation", { name: "App" })).queryByRole("button", { name: "Notes" })).toBeNull();
+    cleanup();
+    const client = new FakeClient(ready);
+    client.state.actions = { manifest: { label: "The manifest", cost: "medium" } };
+    client.state.path = ["manifest"];
+    await startWork(<HarnessApp client={client} />);
+    const rail = await screen.findByRole("navigation", { name: "App" });
+    expect(screen.queryByRole("dialog", { name: "What's clear so far" })).toBeNull();
+    fireEvent.click(within(rail).getByRole("button", { name: "Notes" }));
+    expect(await screen.findByRole("dialog", { name: "What's clear so far" })).toBeTruthy();
+  });
+
   it("restores the side panel from the saved conversation", async () => {
     const client = new FakeClient(ready);
     client.chat = [{ id: "1", role: "assistant", text: "", blocks: [], activities: [], at: "t", state: { progress: { percent: 60 } } }];

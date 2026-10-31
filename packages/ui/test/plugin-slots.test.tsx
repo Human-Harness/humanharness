@@ -258,4 +258,21 @@ describe("plugin slots", () => {
     expect(reloadOf(surface(), "__proto__")).toBe(0);
     expect(reloadOf(surface({ reloads: { oncall: Number.NaN } }), "oncall")).toBe(0);
   });
+
+  it("the rail shows Plugins only while a panel is in the section, and Plugins brings its first tab (UI refresh §4.2)", async () => {
+    const c = makeClient();
+    const sub = vi.spyOn(c.plugins, "onSurface");
+    await open(c);
+    await waitFor(() => expect(sub).toHaveBeenCalled());
+    const rail = screen.getByRole("navigation", { name: "App" });
+    expect(within(rail).queryByRole("button", { name: "Plugins" })).toBeNull();
+    act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE] })));
+    const tabs = await screen.findAllByRole("tab");
+    fireEvent.click(tabs[1]);
+    expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(within(rail).getByRole("button", { name: "Plugins" }));
+    await waitFor(() => expect(screen.getAllByRole("tab")[0].getAttribute("aria-selected")).toBe("true"));
+    act(() => c.emitSurface(surface()));
+    await waitFor(() => expect(within(rail).queryByRole("button", { name: "Plugins" })).toBeNull());
+  });
 });

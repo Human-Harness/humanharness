@@ -268,7 +268,7 @@ const RAIL_ICONS: Record<RailEntry, ReactNode> = {
 export function Rail({ entries, current, onPick }: { entries: RailEntry[]; current: RailEntry; onPick: (e: RailEntry) => void }) {
   const { t } = useTranslation();
   const button = (e: RailEntry) => (
-    <button key={e} className="hh-icon-button hh-rail-item" aria-label={t(`rail.${e}`)} title={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
+    <button key={e} className="hh-icon-button" aria-label={t(`rail.${e}`)} title={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {RAIL_ICONS[e]}
       </svg>

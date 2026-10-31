@@ -117,6 +117,9 @@ export function ChatView({
   openScope = null,
   onHome,
   onSettings,
+  notesRequest,
+  pluginsRequest,
+  onPluginPanels,
   onSidekickSettings,
   onFixEngine,
   onTurnOk,
@@ -159,6 +162,12 @@ export function ChatView({
   openScope?: string | null;
   onHome?: () => void;
   onSettings?: () => void;
+  /** The rail's Notes (UI refresh spec §4.2): each new number opens the Notes drawer. */
+  notesRequest?: number;
+  /** The rail's Plugins: each new number brings the Plugins section's first panel into view. */
+  pluginsRequest?: number;
+  /** Told whether a running plugin has a panel in the Plugins section (the rail's Plugins entry), and false when gone. */
+  onPluginPanels?: (has: boolean) => void;
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
@@ -1530,6 +1539,33 @@ export function ChatView({
     ) : null;
   // The core's Plugins section: only while a running plugin has a panel there (none: the side panel as before, D0).
   const pluginsSection = surfaceCtx && surfaceCtx.surface.panels.some((p) => p.slot === PLUGINS_SLOT) ? <PluginsSection ctx={surfaceCtx} /> : null;
+  const hasPluginsSection = pluginsSection !== null;
+  const pluginPanelsTo = useRef(onPluginPanels);
+  pluginPanelsTo.current = onPluginPanels;
+  useEffect(() => {
+    pluginPanelsTo.current?.(hasPluginsSection);
+  }, [hasPluginsSection]);
+  useEffect(() => () => pluginPanelsTo.current?.(false), []);
+  // The rail's Notes: the drawer, as search's "Open notes" opens it (one panel at a time). Only a pick made while this
+  // view is on screen counts: a remount (another task, back from Home) doesn't reopen it.
+  const notesSeen = useRef(notesRequest);
+  useEffect(() => {
+    if (notesRequest === notesSeen.current || slim) return;
+    notesSeen.current = notesRequest;
+    closeReader();
+    setContextOpen(false);
+    setTimelineFile(null);
+    setShowHistory(false);
+    setNotesPanel({});
+  }, [notesRequest]);
+  // The rail's Plugins: the section's first panel, opened as a chip opens it (its tab, scrolled into view).
+  const pluginsSeen = useRef(pluginsRequest);
+  useEffect(() => {
+    if (pluginsRequest === pluginsSeen.current) return;
+    pluginsSeen.current = pluginsRequest;
+    const first = surfaceNow.current?.panels.find((p) => p.slot === PLUGINS_SLOT);
+    if (first) openPanel(first.plugin, first.id);
+  }, [pluginsRequest, openPanel]);
 
   return (
     <DocumentContext.Provider value={documentHost}>

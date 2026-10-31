@@ -5,7 +5,7 @@ import { type Locales, createI18n } from "@humanharness/i18n";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn } from "./ChatView";
-import { TopBar } from "./chrome";
+import { Rail, TopBar } from "./chrome";
 import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
@@ -19,6 +19,7 @@ import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
 import { SetupFlow } from "./SetupFlow";
+import { type RailEntry, railEntries } from "./shell-nav";
 import type { SearchIntent } from "./search/intent";
 import { SearchHost } from "./search/SearchHost";
 import type { StartViewCopy } from "./StartView";
@@ -46,6 +47,13 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
   const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
+  /** On the work screen, the rail's place (UI refresh spec §4.2): the chat, or the Inbox (drawn in Part 5; until then the chat). */
+  const [view, setView] = useState<{ kind: "chat" } | { kind: "inbox"; column?: "jobs" }>({ kind: "chat" });
+  /** The rail's Notes and Plugins ask the chat to open them: each pick is a new number the chat watches. */
+  const [notesRequest, setNotesRequest] = useState(0);
+  const [pluginsRequest, setPluginsRequest] = useState(0);
+  /** The chat has a running plugin with a panel in its Plugins section: the rail shows Plugins (spec §4.2). */
+  const [pluginPanels, setPluginPanels] = useState(false);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
   const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
@@ -330,42 +338,68 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   // D0: without `parallel` the key is today's, and nothing else is kept.
   const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
+  /**
+   * The rail (spec §4.2): an entry only for a feature the harness has (D0). Notes come from declared actions' topics.
+   * Inbox and Jobs wait for the Inbox screen (spec §5.4, Part 5): until then they would lead nowhere, and the inbox stays
+   * the top bar's button.
+   */
+  const entries = railEntries({
+    parallel: Boolean(state.parallel),
+    jobs: Boolean(state.jobs?.jobs.length),
+    notes: Object.keys(state.actions).length > 0,
+    pluginPanels,
+  }).filter((e) => e !== "inbox" && e !== "jobs");
+  const railCurrent: RailEntry = view.kind === "inbox" ? (view.column === "jobs" ? "jobs" : "inbox") : "tasks";
+  const pick = (e: RailEntry) => {
+    if (e === "home") return setScreen("home");
+    if (e === "settings") return setSettings("general");
+    if (e === "inbox" || e === "jobs") return setView(e === "jobs" ? { kind: "inbox", column: "jobs" } : { kind: "inbox" });
+    if (e === "notes") return setNotesRequest((n) => n + 1);
+    if (e === "plugins") return setPluginsRequest((n) => n + 1);
+    setView({ kind: "chat" });
+  };
 
   return (
     <I18nextProvider i18n={i18n}>
       {/* Under the open Settings sheet, the whole screen (top bar included) can't be reached. */}
       <div className="hh-screen" inert={settings !== null}>
         {screen === "work" && configured ? (
-          <ChatView
-            key={state.parallel ? `${chatKey}:${epoch}` : chatKey}
-            client={client}
-            state={state}
-            components={blocks}
-            stateBlocks={stateBlocks}
-            renderSide={renderSide}
-            startView={startView}
-            openScope={openScope}
-            materialPanel={materialPanel}
-            profileBar={
-              state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
-            }
-            inboxBar={
-              state.parallel?.inbox
-                ? (refill, start) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} onStartAction={start} />
-                : undefined
-            }
-            {...(state.jobs ? { startRef: chatStart } : {})}
-            searchRef={searchRef}
-            searchContextRef={searchContextRef}
-            {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
-            scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
-            engineProblem={status ? engineProblem(status) : null}
-            onHome={() => setScreen("home")}
-            onSettings={() => setSettings("general")}
-            onFixEngine={() => setSettings("engine")}
-            onSidekickSettings={() => setSettings("sidekick")}
-            onTurnOk={checkEngine}
-          />
+          <div className="hh-shell">
+            <Rail entries={entries} current={railCurrent} onPick={pick} />
+            <div className="hh-shell-main">
+              <ChatView
+                key={state.parallel ? `${chatKey}:${epoch}` : chatKey}
+                client={client}
+                state={state}
+                components={blocks}
+                stateBlocks={stateBlocks}
+                renderSide={renderSide}
+                startView={startView}
+                openScope={openScope}
+                materialPanel={materialPanel}
+                profileBar={
+                  state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
+                }
+                inboxBar={
+                  state.parallel?.inbox
+                    ? (refill, start) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} onStartAction={start} />
+                    : undefined
+                }
+                {...(state.jobs ? { startRef: chatStart } : {})}
+                searchRef={searchRef}
+                searchContextRef={searchContextRef}
+                {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
+                scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
+                engineProblem={status ? engineProblem(status) : null}
+                notesRequest={notesRequest}
+                pluginsRequest={pluginsRequest}
+                onPluginPanels={setPluginPanels}
+                onFixEngine={() => setSettings("engine")}
+                onSidekickSettings={() => setSettings("sidekick")}
+                onTurnOk={checkEngine}
+              />
+            </div>
+          </div>
         ) : screen === "setup" ? (
           <SetupFlow
             key={`${setupAt.step ?? ""}:${setupAt.only ? "only" : ""}:${setupAt.newProfile ? "new" : ""}`}

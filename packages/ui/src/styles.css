@@ -182,8 +182,17 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-icon-button:hover { background: var(--hh-surface-2); color: var(--hh-ink); }
 /* Icon rail (UI refresh spec §4.2): a column on the left, a row under the top bar on narrow windows. */
 .hh-rail { flex: 0 0 76px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0; background: var(--hh-rail); border-right: 1px solid var(--hh-line); }
-.hh-rail-item[aria-current="page"] { background: var(--hh-active); color: var(--hh-active-ink); }
+.hh-rail > .hh-icon-button[aria-current="page"] { background: var(--hh-active); color: var(--hh-active-ink); }
 @media (max-width: 760px) { .hh-rail { flex-direction: row; flex-basis: auto; padding: 10px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--hh-line); } .hh-rail .hh-spacer { display: none; } }
+/* The shell (UI refresh spec §4): the rail beside the main column (the top bar spans both once it moves here, Task 9). */
+.hh-shell { display: grid; grid-template-rows: auto 1fr; grid-template-columns: auto minmax(0, 1fr); height: 100%; }
+.hh-shell > .hh-topbar { grid-column: 1 / -1; }
+.hh-shell > .hh-rail { width: 76px; }
+.hh-shell-main { min-width: 0; min-height: 0; display: flex; }
+.hh-shell-main > .hh-app { flex: 1; min-width: 0; }
+/* The rail takes 76px from the chat: with the reader open, the composer's field shrinks rather than push Send under it. */
+.hh-shell-main .hh-composer textarea, .hh-shell-main .hh-sk-flagged { min-width: 0; }
+@media (max-width: 760px) { .hh-shell { grid-template-columns: minmax(0, 1fr); } .hh-shell > .hh-rail { width: auto; } .hh-shell-main > .hh-app { height: 100%; } }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-surface-2); }
 .hh-segmented button { height: 24px; border: none; background: transparent; border-radius: 5px; }
 .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: 0 1px 2px rgba(25, 30, 36, 0.15); }

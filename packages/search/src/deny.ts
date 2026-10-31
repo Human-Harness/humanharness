@@ -1,4 +1,4 @@
-// What is never indexed (search spec §8.1), as pure predicates over paths relative to a root, with forward slashes.
+// What is never indexed (search spec §8.1), as pure predicates over paths relative to a root.
 
 /** By name, at any depth, compared without case. These files are not even indexed by name. */
 const SECRET_NAMES: readonly RegExp[] = [
@@ -30,9 +30,17 @@ const HARNESS_ALLOWED: readonly string[] = ["notes", "reviews", "chats"];
 /** Applied only when the root has no `.gitignore` (§8.1). Folder (or file) names, at any depth. */
 export const DEFAULT_IGNORED_DIRS: readonly string[] = ["node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", "target", ".DS_Store"];
 
+/** A name without its trailing dots and spaces, which Windows drops (`.env.` and `.env ` open `.env`). */
+function withoutTrailingDots(name: string): string {
+  let end = name.length;
+  while (end > 0 && (name[end - 1] === "." || name[end - 1] === " ")) end--;
+  return name.slice(0, end);
+}
+
 export function deniedName(name: string): boolean {
   const n = name.toLowerCase();
-  return TEMP_NAME.test(n) || SECRET_NAMES.some((r) => r.test(n));
+  const bare = withoutTrailingDots(n);
+  return [n, bare].some((x) => TEMP_NAME.test(x) || SECRET_NAMES.some((r) => r.test(x)));
 }
 
 /**
@@ -40,10 +48,16 @@ export function deniedName(name: string): boolean {
  * engine's generated instructions file.
  */
 export function deniedPath(rel: string, extra: readonly string[] = []): boolean {
-  const parts = rel.split("/");
-  if (parts.some((p) => p === "" || p === "." || p === "..")) return true;
+  // Compared without case, with `\` read as a separator and each part without trailing dots and spaces, so that
+  // `.GIT/config`, `.claude\settings.json` and `.git./config` are what they open on macOS and Windows.
+  const path = rel.replaceAll("\\", "/");
+  const raw = path.split("/");
+  if (raw.some((p) => p === "" || p === "." || p === "..")) return true;
+  const parts = raw.map((p) => withoutTrailingDots(p.toLowerCase()));
+  if (parts.some((p) => p === "")) return true;
   if (parts.includes(".git") || parts.includes(".claude")) return true;
-  if (parts[0] === ".harness" && parts.length > 1 && !HARNESS_ALLOWED.includes(parts[1])) return true;
-  if (rel === "AGENTS.md" || extra.includes(rel)) return true;
-  return parts.some(deniedName);
+  if (parts[0] === ".harness" && parts.length > 1 && !HARNESS_ALLOWED.includes(raw[1].toLowerCase())) return true;
+  const key = parts.join("/");
+  if (key === "agents.md" || extra.some((x) => x.replaceAll("\\", "/").toLowerCase() === key)) return true;
+  return raw.some(deniedName);
 }

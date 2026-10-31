@@ -53,6 +53,41 @@ describe("deniedPath (§8.1)", () => {
     expect(deniedPath(p)).toBe(false);
   });
 
+  it.each([
+    ".GIT/config",
+    "a/.Git/HEAD",
+    ".Claude/settings.json",
+    ".HARNESS/tasks.json",
+    ".Harness/data/main/tickets.json",
+    "agents.md",
+    ".git\\config",
+    "a\\.claude\\settings.json",
+    ".harness\\tasks.json",
+    "conf\\.env",
+    "a\\..\\b",
+    ".env.",
+    ".env ",
+    ".env. .",
+    "conf/.ENV. ",
+    ".git./config",
+    ".claude /settings.json",
+    ".harness/notes./a.md",
+    "certs/site.pem.",
+    "id_rsa ",
+    "secrets.",
+  ])("denies %j (case, separator and trailing-dot tricks)", (p) => {
+    expect(deniedPath(p)).toBe(true);
+  });
+
+  it("allows the person's folders under .harness whatever their case or separator", () => {
+    expect(deniedPath(".HARNESS/notes/a.md")).toBe(false);
+    expect(deniedPath(".harness\\chats\\main.jsonl")).toBe(false);
+  });
+
+  it("the engine's instructions file is compared without case", () => {
+    expect(deniedPath("claude.md", ["CLAUDE.md"])).toBe(true);
+  });
+
   it("denies the engine's instructions file when told", () => {
     expect(deniedPath("CLAUDE.md")).toBe(false);
     expect(deniedPath("CLAUDE.md", ["CLAUDE.md"])).toBe(true);

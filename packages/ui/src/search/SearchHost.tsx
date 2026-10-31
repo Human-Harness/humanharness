@@ -1,22 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AppState, HarnessClient, SearchHitView } from "../client";
+import { type AppState, type ChatSearchContext, type HarnessClient, type ScopeView, type SearchHitView, isConfigured } from "../client";
 import type { SearchIntent } from "./intent";
-import { settingRows } from "./local";
+import { commandRows, settingRows } from "./local";
 import { SearchPalette, isMod } from "./SearchPalette";
 
 /**
  * ⌘K (Ctrl+K off macOS) anywhere in the window, and `client.search.open()` (the top bar's button, a harness view):
  * the palette (search spec §5.1). ⌘K again or Esc closes it and gives focus back.
  */
-export function SearchHost({ client, state, openScope, onIntent }: { client: HarnessClient; state: AppState; openScope: string | null; onIntent: (intent: SearchIntent) => void }) {
+export function SearchHost({
+  client,
+  state,
+  openScope,
+  onIntent,
+  chatContext,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  openScope: string | null;
+  onIntent: (intent: SearchIntent) => void;
+  /** The chat's state, read when the palette asks; absent: no chat on screen. */
+  chatContext?: () => ChatSearchContext | null;
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<{ query: string; n: number } | null>(null);
   const isOpen = useRef(false);
   isOpen.current = open !== null;
   const opener = useRef<HTMLElement | null>(null);
   const opens = useRef(0);
-  const [scopeTitle, setScopeTitle] = useState<string | null>(null);
+  const [scopes, setScopes] = useState<ScopeView[]>([]);
 
   const show = useCallback((query = "") => {
     const active = document.activeElement;
@@ -47,21 +60,23 @@ export function SearchHost({ client, state, openScope, onIntent }: { client: Har
   useEffect(() => {
     setOpen(null);
   }, [profile]);
-  // "<scope> + app" names the open scope by its title.
+  // "<scope> + app" names the open scope by its title; "Switch to <scope>" lists the others.
   const shown = open !== null;
   useEffect(() => {
-    if (!shown || !state.scopes || !openScope) return setScopeTitle(null);
+    if (!shown || !state.scopes) return setScopes([]);
     let live = true;
     client.scopes.list().then(
       (list) => {
-        if (live) setScopeTitle(list.find((s) => s.id === openScope)?.title ?? openScope);
+        if (live) setScopes(list);
       },
       () => {},
     );
     return () => {
       live = false;
     };
-  }, [client, shown, state.scopes, openScope]);
+  }, [client, shown, state.scopes]);
+  const scopeTitle = openScope ? (scopes.find((s) => s.id === openScope)?.title ?? null) : null;
+  const configured = isConfigured(state.config);
 
   if (!open) return null;
   const where = state.scopes && openScope ? t("search.whereScope", { scope: scopeTitle ?? openScope }) : t("search.where", { name: state.harness.name });
@@ -88,7 +103,7 @@ export function SearchHost({ client, state, openScope, onIntent }: { client: Har
       {...(state.scopes ? { scopesPlural: state.scopes.plural } : {})}
       references={(state.references?.length ?? 0) > 0}
       harnessName={state.harness.name}
-      local={(query) => ({ query, setting: settingRows(t, state, query), command: [] })}
+      local={(query) => ({ query, setting: settingRows(t, state, query), command: configured ? commandRows(t, state, query, chatContext?.() ?? null, scopes, openScope) : [] })}
       onClose={close}
       onPick={pick}
       onAsk={(text) => {

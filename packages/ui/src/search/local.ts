@@ -1,5 +1,18 @@
 import type { TFunction } from "i18next";
-import { type AppState, SEARCHABLE_SETTINGS, type SearchHitView, type SearchSettingsTab, type SettingState, isConfigured, localScore, markLocal, settingAvailable } from "../client";
+import {
+  type AppState,
+  type ChatSearchContext,
+  SEARCHABLE_SETTINGS,
+  type ScopeView,
+  type SearchHitView,
+  type SearchSettingsTab,
+  type SettingState,
+  isConfigured,
+  localScore,
+  markLocal,
+  searchCommands,
+  settingAvailable,
+} from "../client";
 import { tabLabel, visibleTabs } from "../SettingsSheet";
 
 /** What the window's state says about each setting's `needs`. */
@@ -21,7 +34,7 @@ interface Candidate {
   hit: (title: SearchHitView["title"]) => SearchHitView;
 }
 
-/** Matched candidates, best first (label matches before keyword ones; the table's order otherwise). */
+/** Matched candidates, best first: by `localScore` (label matches before section or keyword ones), ties in the table's order; no match is left out. */
 export function matched(query: string, all: readonly Candidate[]): SearchHitView[] {
   return all
     .map((c, i) => ({ c, i, score: localScore(query, c.label, c.extra) }))
@@ -50,4 +63,17 @@ export function settingRows(t: TFunction, state: AppState, query: string): Searc
   const fixed = SEARCHABLE_SETTINGS.filter((s) => tabs.has(s.tab) && settingAvailable(s, can)).map((s) => row(s.id, s.tab, t(s.label), [...(s.keywords ?? [])]));
   const own = can.configured && tabs.has("harness") ? (state.settings?.fields ?? []).map((f) => row(`harness:${f.name}`, "harness", f.label, f.help ? [f.help] : [])) : [];
   return matched(query, [...fixed, ...own]);
+}
+
+/** Action rows (§6): all available ones in the table's order with nothing typed (plan 1 deviation 9), else the matching ones. */
+export function commandRows(t: TFunction, state: AppState, query: string, chat: ChatSearchContext | null, scopes: readonly ScopeView[], openScope: string | null): SearchHitView[] {
+  const tabs = visibleTabs(state);
+  const all = searchCommands({ chat, scopes, openScope, tabs }).map((c): Candidate => {
+    const vars = c.command === "open-settings" && c.arg ? { tab: tabLabel(t, state, c.arg as SearchSettingsTab) } : (c.vars ?? {});
+    const label = t(c.label, vars);
+    const id = `command:${c.command}${c.arg ? `:${c.arg}` : ""}`;
+    return { id, label, extra: [...c.keywords], hit: (title) => ({ id, kind: "command", title, context: [], hint: null, target: { kind: "command", command: c.command, ...(c.arg ? { arg: c.arg } : {}) } }) };
+  });
+  if (!query.trim()) return all.map((c) => c.hit([{ text: c.label }]));
+  return matched(query, all);
 }

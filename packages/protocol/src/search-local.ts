@@ -1,5 +1,5 @@
 // Settings and actions in ⌘K (search spec §6): matched in the window, never stored (§4.2, plan deviations 1–2).
-import type { SearchMarked, SearchSettingsTab } from "./views";
+import type { SearchCommandId, SearchMarked, SearchSettingsTab } from "./views";
 
 /** Case and accents folded, as `packages/search` folds the index (`fold`). */
 export const foldText = (s: string): string => s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
@@ -80,3 +80,56 @@ export const SEARCHABLE_SETTINGS: readonly SearchableSetting[] = [
 /** The window's state a setting's `needs` read. */
 export type SettingState = Record<SettingNeed, boolean>;
 export const settingAvailable = (s: SearchableSetting, state: SettingState): boolean => (s.needs ?? []).every((n) => state[n]);
+
+/** What the chat on screen says about itself; null away from it (home, setup). */
+export interface ChatSearchContext {
+  taskOpen: boolean;
+  turnRunning: boolean;
+  /** The task's next part while it waits for the person (flow harnesses with parts). */
+  nextPart: { id: string; label: string } | null;
+  /** The side panels can open (not the slim window). */
+  panels: boolean;
+}
+
+export interface SearchCommandState {
+  chat: ChatSearchContext | null;
+  scopes: readonly { id: string; title: string; archived?: boolean }[];
+  openScope: string | null;
+  /** The Settings tabs this state shows. */
+  tabs: readonly SearchSettingsTab[];
+}
+
+export interface SearchCommand {
+  command: SearchCommandId;
+  arg?: string;
+  /** An i18n key under `search.command`. */
+  label: string;
+  vars?: Record<string, string>;
+  /** English words that find it besides its label. */
+  keywords: readonly string[];
+}
+
+/**
+ * The commands available now (§6 `when`), in this order. A tab's or a scope's name is `vars` the window fills. None of
+ * them sends anything: a new question only focuses the composer, a scope switch only opens the scope (plan deviation 14).
+ */
+export function searchCommands(s: SearchCommandState): SearchCommand[] {
+  const out: SearchCommand[] = [];
+  const c = s.chat;
+  if (c && !c.taskOpen) out.push({ command: "new-question", label: "search.command.newQuestion", keywords: ["ask", "start", "chat"] });
+  if (c?.panels) {
+    out.push({ command: "open-history", label: "search.command.openHistory", keywords: ["past", "tasks"] });
+    out.push({ command: "open-notes", label: "search.command.openNotes", keywords: ["clear so far"] });
+    out.push({ command: "open-context", label: "search.command.openContext", keywords: ["tokens", "window"] });
+  }
+  if (c?.nextPart) out.push({ command: "next-part", arg: c.nextPart.id, label: "search.command.nextPart", vars: { part: c.nextPart.label }, keywords: ["phase", "step"] });
+  if (c?.turnRunning) out.push({ command: "stop-turn", label: "search.command.stopTurn", keywords: ["cancel", "halt"] });
+  for (const tab of s.tabs) out.push({ command: "open-settings", arg: tab, label: "search.command.openSettings", vars: { tab }, keywords: ["preferences"] });
+  if (!c?.turnRunning) {
+    for (const scope of s.scopes) {
+      if (scope.archived || scope.id === s.openScope) continue;
+      out.push({ command: "switch-scope", arg: scope.id, label: "search.command.switchScope", vars: { scope: scope.title }, keywords: ["open", "go"] });
+    }
+  }
+  return out;
+}

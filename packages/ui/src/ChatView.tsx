@@ -11,6 +11,7 @@ import { GearIcon, SidekickToggle, TopBar } from "./chrome";
 import {
   type AppState,
   type ChatEntry,
+  type ChatSearchContext,
   type ChoiceOption,
   type DocumentCard,
   type EngineProblem,
@@ -21,6 +22,7 @@ import {
   type ReaderPrefs,
   type RespondResult,
   type ReviewSummary,
+  type SearchCommandId,
   type SendOptions,
   type SidekickCard,
   type SidekickReview,
@@ -109,6 +111,7 @@ export function ChatView({
   inboxBar,
   startRef,
   searchRef,
+  searchContextRef,
   taskStrip,
   draftKeep,
   openScope = null,
@@ -142,6 +145,8 @@ export function ChatView({
   startRef?: { current: ((action: string, scope: string | null) => boolean) | null };
   /** Set by the chat: runs a search result or question (search spec §3); false when it can't here. */
   searchRef?: { current: ((intent: SearchIntent) => boolean) | null };
+  /** Set by the chat: what it says about itself for the palette's actions (search spec §6); null once this view is gone. */
+  searchContextRef?: { current: (() => ChatSearchContext) | null };
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
@@ -974,6 +979,64 @@ export function ChatView({
       startRef.current = null;
     };
   });
+  /** The task's next part, while it waits and nothing runs (the stepper's own guards). */
+  const nextPartOf = (): { id: string; label: string } | null => {
+    const task = tasks.current;
+    if (!task || task.status !== "waiting" || blocked() || pending || phasing) return null;
+    const i = taskPhases.findIndex((p) => p.id === task.phase);
+    const next = i >= 0 ? taskPhases[i + 1] : undefined;
+    return next ? { id: next.id, label: next.label } : null;
+  };
+  /** An action from search (§6). One side panel at a time (the History button's own steps); nothing is ever sent. */
+  const runCommand = (command: SearchCommandId): boolean => {
+    switch (command) {
+      case "new-question":
+        // The composer, empty of nothing the person typed: the question is theirs to write and send.
+        if (tasks.current) return false;
+        closeReader();
+        setTimelineFile(null);
+        setShowHistory(false);
+        setNotesPanel(null);
+        setContextOpen(false);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return true;
+      case "open-history":
+        if (slim) return false;
+        closeReader();
+        setContextOpen(false);
+        setNotesPanel(null);
+        setTimelineFile(null);
+        setHistoryTask(undefined);
+        setShowHistory(true);
+        return true;
+      case "open-notes":
+        if (slim) return false;
+        closeReader();
+        setContextOpen(false);
+        setTimelineFile(null);
+        setShowHistory(false);
+        setNotesPanel({});
+        return true;
+      case "open-context":
+        if (slim) return false;
+        openContext();
+        return true;
+      case "next-part": {
+        const next = nextPartOf();
+        if (!next) return false;
+        pickPhase(next.id);
+        return true;
+      }
+      case "stop-turn":
+        if (!chat.live && !closing && !checkpoint) return false;
+        void client.cancel();
+        return true;
+      case "open-settings":
+      case "switch-scope":
+        // HarnessApp's.
+        return false;
+    }
+  };
   /** A search result or question (search spec §3, §5.4); false when it can't run here. */
   const runSearchIntent = (intent: SearchIntent): boolean => {
     switch (intent.kind) {
@@ -1030,15 +1093,17 @@ export function ChatView({
         // HarnessApp opens Settings itself; never reaches here.
         return false;
       case "command":
-        // No palette offers commands yet (the window's rows come with their table).
-        return false;
+        return runCommand(intent.command);
     }
   };
   useLayoutEffect(() => {
-    if (!searchRef) return;
-    searchRef.current = runSearchIntent;
+    if (searchContextRef) {
+      searchContextRef.current = () => ({ taskOpen: Boolean(tasks.current), turnRunning: Boolean(chat.live) || closing || checkpoint, nextPart: nextPartOf(), panels: !slim });
+    }
+    if (searchRef) searchRef.current = runSearchIntent;
     return () => {
-      searchRef.current = null;
+      if (searchRef) searchRef.current = null;
+      if (searchContextRef) searchContextRef.current = null;
     };
   });
   const resume = (note: NoteView) => {

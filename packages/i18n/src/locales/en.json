@@ -1479,6 +1479,16 @@
     "readOnly": "{{folder}} · read only",
     "shownIn": "Shown in {{name}}",
     "fromPlugin": "From {{plugin}}",
+    "command": {
+      "newQuestion": "New question",
+      "openHistory": "Open History",
+      "openNotes": "Open what's clear so far",
+      "openContext": "Open what the AI takes into account",
+      "nextPart": "Go on to the next part: {{part}}",
+      "stopTurn": "Stop the AI",
+      "openSettings": "Open Settings › {{tab}}",
+      "switchScope": "Switch to {{scope}}"
+    },
     "where": "Searching in {{name}}",
     "whereScope": "{{scope}} + app",
     "keys": { "move": "↑↓ to move", "open": "Enter to open", "ask": "{{mod}}Enter to ask the AI", "close": "Esc to close" },

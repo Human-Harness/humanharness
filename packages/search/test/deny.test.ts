@@ -103,6 +103,53 @@ describe("deniedPath (§8.1)", () => {
   });
 });
 
+describe("deniedPath, widened names (§8.1, widened 2026-10-30)", () => {
+  it.each([
+    "prod.env",
+    "conf/Staging.ENV",
+    "prod.env.",
+    ".aws",
+    ".aws/credentials",
+    ".aws/config",
+    "home/.AWS/sso/cache/x.json",
+    ".aws./config",
+    "a\\.aws\\config",
+    ".kube/config",
+    "home/.Kube/CONFIG",
+    ".kube\\config",
+    ".docker/config.json",
+    "x/.Docker/Config.JSON",
+    ".config/gh/hosts.yml",
+    ".config/gh/hosts.yaml",
+    "home/.config/GH/Hosts.YML",
+    "release.jks",
+    "android/app/Upload.JKS",
+    "android/debug.keystore",
+  ])("denies %j", (p) => {
+    expect(deniedPath(p)).toBe(true);
+  });
+
+  it.each([
+    "prodenv",
+    "docs/env.md",
+    "env/readme.md",
+    "aws/readme.md",
+    "notes/aws.md",
+    "my.aws.md",
+    ".kube/readme.md",
+    "kube/config",
+    "docker/config.json",
+    ".docker/notes.json",
+    ".config/gh/notes.yml",
+    "gh/hosts.yml",
+    ".config/hosts.yml",
+    "jks.md",
+    "keystore-notes.md",
+  ])("allows %j", (p) => {
+    expect(deniedPath(p)).toBe(false);
+  });
+});
+
 describe("overTextBudget (§4.5)", () => {
   it("takes the largest files out first until the total fits", () => {
     const over = overTextBudget(

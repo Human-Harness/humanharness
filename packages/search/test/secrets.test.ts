@@ -44,6 +44,66 @@ describe("secretShaped (§8.2)", () => {
   });
 });
 
+describe("secretShaped, widened shapes (§8.2, widened 2026-10-30)", () => {
+  const jwt = `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.${"s".repeat(20)}`;
+  it.each([
+    `ghu_${"A".repeat(36)}`,
+    `ghs_${"b".repeat(36)}`,
+    `ghr_${"C1".repeat(18)}`,
+    `github_pat_${"A".repeat(22)}`,
+    `token: xoxa-${"1".repeat(12)}`,
+    `xoxp-${"1".repeat(12)}`,
+    `xoxr-${"1".repeat(12)}`,
+    `xoxs-${"1".repeat(12)}`,
+    `xoxo-${"1".repeat(12)}`,
+    `xoxe-${"1".repeat(12)}`,
+    `xapp-1-A0123BCDEF-1234567890-${"a".repeat(20)}`,
+    `Authorization: Bearer ${jwt}`,
+    "ASIAABCDEFGHIJKLMNOP",
+    "AWS_ASIAABCDEFGHIJKLMNOP",
+    "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+    "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NBUUVBeDE=",
+    "tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lH",
+    `sk_live_${"a1".repeat(12)}`,
+    `rk_live_${"B".repeat(16)}`,
+    `STRIPE_sk_live_${"a".repeat(24)}`,
+    `AIza${"A1_-".repeat(8)}abc`,
+    `GOOGLE_KEY=AIza${"x".repeat(35)}`,
+  ])("hits %s", (text) => {
+    expect(secretShaped(`before\n${text}\nafter`)).toBe(true);
+  });
+
+  it.each([
+    `ghx_${"A".repeat(36)}`,
+    "ghu_short",
+    "github_pat_",
+    `xoxq-${"1".repeat(12)}`,
+    "xapp-short",
+    "the xapp- prefix names a Slack app token",
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0",
+    "eyJ.eyJ.abc",
+    "asiaabcdefghijklmnop",
+    "ASIAABCDEFGHIJKLMNOPQ",
+    "XASIAABCDEFGHIJKLMNOP",
+    "-----BEGIN PGP PUBLIC KEY BLOCK-----",
+    "LS0tLS1CRUdJTiBSU0E",
+    `xLS0tLS1CRUdJTi${"A".repeat(40)}`,
+    `sk_test_${"a".repeat(24)}`,
+    "sk_live_short",
+    `dsk_live_${"a".repeat(24)}`,
+    `AIza${"x".repeat(34)}`,
+    `AIza${"x".repeat(36)}`,
+    `xAIza${"x".repeat(35)}`,
+  ])("near miss: %s", (text) => {
+    expect(secretShaped(text)).toBe(false);
+  });
+
+  it("leaves a note's line with a widened shape out", () => {
+    const jwtLine = `curl -H "Authorization: Bearer ${jwt}"`;
+    expect(withoutSecretLines(`# API\n${jwtLine}\nAIza${"x".repeat(35)}\nsk_live_${"a".repeat(24)}\nrest`)).toBe("# API\nrest");
+  });
+});
+
 describe("withoutSecretLines (notes and chats, §8.2)", () => {
   it("leaves the line out and keeps the rest", () => {
     expect(withoutSecretLines(`# Engines\nuse ghp_${"A".repeat(36)} here\nbudget plan`)).toBe("# Engines\nbudget plan");

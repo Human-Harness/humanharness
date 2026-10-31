@@ -16,12 +16,28 @@ const E = "(?![A-Za-z0-9])";
  */
 const PATTERNS: readonly RegExp[] = [
   new RegExp(`${B}sk-[A-Za-z0-9_-]{37,}`),
-  new RegExp(`${B}(?:ghp|gho)_[A-Za-z0-9]{20,}`),
+  // GitHub: personal, OAuth, user-to-server, server-to-server and refresh tokens, and fine-grained ones.
+  new RegExp(`${B}gh[pousr]_[A-Za-z0-9]{20,}`),
   new RegExp(`${B}github_pat_[A-Za-z0-9_]{20,}`),
-  new RegExp(`${B}xox[abp]-[A-Za-z0-9-]{10,}`),
-  new RegExp(`${B}AKIA[0-9A-Z]{16}${E}`),
+  // Slack: the known xox kinds (a bot, user, refresh, session, legacy, config…) and app-level tokens.
+  new RegExp(`${B}xox[abcdeoprs]-[A-Za-z0-9-]{10,}`),
+  new RegExp(`${B}xapp-[A-Za-z0-9-]{10,}`),
+  // A JWT: three base64url parts, the first two JSON objects (`{"` is `eyJ`). The class has no `.`, so the parts
+  // cannot overlap.
+  new RegExp(`${B}eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}`),
+  // AWS: long-term (AKIA) and temporary (ASIA) access key ids.
+  new RegExp(`${B}A(?:KI|SI)A[0-9A-Z]{16}${E}`),
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /-----BEGIN PGP PRIVATE KEY BLOCK-----/,
+  // A PEM block in base64 (`-----BEGIN` is `LS0tLS1CRUdJTi`), as config files and k8s secrets carry them. Any such
+  // run is matched, not only a private key's: what follows BEGIN encodes differently by its offset, and a base64
+  // certificate indexed by name only is a cheap miss.
+  new RegExp(`${B}LS0tLS1CRUdJTi[A-Za-z0-9+/=]{40,}`),
   new RegExp(`${B}glpat-[A-Za-z0-9_-]{20,}`),
+  // Stripe live secret and restricted keys (test keys are not secrets).
+  new RegExp(`${B}[rs]k_live_[A-Za-z0-9]{16,}`),
+  // Google API keys are exactly 39 characters.
+  new RegExp(`${B}AIza[A-Za-z0-9_-]{35}${E}`),
 ];
 
 /** The first line of a private-key block; its label names the END line that closes it. */

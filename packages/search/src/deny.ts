@@ -2,13 +2,14 @@
 
 /** By name, at any depth, compared without case. These files are not even indexed by name. */
 const SECRET_NAMES: readonly RegExp[] = [
-  /^\.env$/,
+  /\.env$/,
   /^\.env\..+$/,
   /\.pem$/,
   /\.key$/,
   /\.p12$/,
   /\.pfx$/,
   /\.keystore$/,
+  /\.jks$/,
   /^id_rsa/,
   /^id_ed25519/,
   /^id_ecdsa/,
@@ -20,6 +21,20 @@ const SECRET_NAMES: readonly RegExp[] = [
   /^secrets\./,
   /\.kdbx$/,
 ];
+
+/** Tool credential files, as runs of path parts at any depth (a `.aws` folder is denied whole, below). */
+const SECRET_PATHS: readonly (readonly string[])[] = [
+  [".kube", "config"],
+  [".docker", "config.json"],
+  [".config", "gh", "hosts.yml"],
+  [".config", "gh", "hosts.yaml"],
+];
+
+/** True when `seq` appears in `parts` as consecutive parts. */
+function hasRun(parts: readonly string[], seq: readonly string[]): boolean {
+  for (let i = 0; i + seq.length <= parts.length; i++) if (seq.every((s, j) => parts[i + j] === s)) return true;
+  return false;
+}
 
 /** The app's temp files (an atomic write's `<name>.<uuid>.tmp`). */
 const TEMP_NAME = /\.tmp$/i;
@@ -55,7 +70,8 @@ export function deniedPath(rel: string, extra: readonly string[] = []): boolean 
   if (raw.some((p) => p === "" || p === "." || p === "..")) return true;
   const parts = raw.map((p) => withoutTrailingDots(p.toLowerCase()));
   if (parts.some((p) => p === "")) return true;
-  if (parts.includes(".git") || parts.includes(".claude")) return true;
+  if (parts.includes(".git") || parts.includes(".claude") || parts.includes(".aws")) return true;
+  if (SECRET_PATHS.some((seq) => hasRun(parts, seq))) return true;
   if (parts[0] === ".harness" && parts.length > 1 && !HARNESS_ALLOWED.includes(raw[1].toLowerCase())) return true;
   const key = parts.join("/");
   if (key === "agents.md" || extra.some((x) => x.replaceAll("\\", "/").toLowerCase() === key)) return true;

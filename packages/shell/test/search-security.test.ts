@@ -65,6 +65,14 @@ describe("search never indexes or shows a secret (§8)", () => {
         expect(shown.toLowerCase()).not.toContain(s.toLowerCase());
         expect(logs.join("\n").toLowerCase()).not.toContain(s.toLowerCase());
       }
+      // The index splits on punctuation (`sk-`, `ghp_`, `_` and `-` are separators) and folds case, so a whole token
+      // above can't show up even when indexed: each secret's distinctive pieces are checked too.
+      const PIECES = ["z".repeat(45), "q".repeat(36), "akiaqwertyuiopasdfgh", "openssh", "marker", "dotenv"];
+      for (const p of PIECES) {
+        expect(disk.toLowerCase()).not.toContain(p);
+        expect(shown.toLowerCase()).not.toContain(p);
+        expect(logs.join("\n").toLowerCase()).not.toContain(p);
+      }
       // Denied names are not even indexed by name; the secret-shaped file by name only; the note without its line.
       for (const name of [".env", "id_ed25519", "prod.key"]) expect(shown).not.toContain(name);
       expect(shown).toContain("keys.txt");

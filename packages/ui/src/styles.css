@@ -313,6 +313,15 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-row-label { color: var(--hh-muted); }
 .hh-row-wrap { flex-wrap: wrap; }
 .hh-row-note { flex-basis: 100%; }
+/* A drawer from the right (UI refresh spec §5.7), under the top bar: the layer's top is .hh-topbar's 64px height. */
+.hh-drawer-layer { position: fixed; inset: 64px 0 0 0; z-index: 20; display: flex; justify-content: flex-end; }
+.hh-drawer-scrim { position: absolute; inset: 0; background: var(--hh-backdrop); }
+.hh-drawer { position: relative; width: min(480px, 100%); height: 100%; display: flex; flex-direction: column; background: var(--hh-rail); border-left: 1px solid var(--hh-line); box-shadow: -16px 0 48px rgba(0, 0, 0, 0.14); outline: none; }
+.hh-drawer-wide { width: min(760px, 100%); }
+.hh-drawer-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 18px 20px; border-bottom: 1px solid var(--hh-line); }
+.hh-drawer-titles { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.hh-drawer-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+.hh-drawer-body { flex: 1 1 auto; overflow: auto; padding: 16px 20px; display: grid; align-content: start; gap: 14px; }
 /* Settings › General › Text size: each choice shows its own size. */
 .hh-text-sizes { display: flex; flex-wrap: wrap; gap: 6px; }
 .hh-text-sizes button { height: auto; width: 76px; flex-direction: column; justify-content: flex-end; gap: 4px; padding: 8px 0 6px; font-size: 12px; color: var(--hh-muted); }

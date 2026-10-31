@@ -17,6 +17,7 @@
   },
   "task": { "header": { "new": "New task" } },
   "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },
+  "drawer": { "close": "Close" },
   "start": {
     "view": {
       "label": "View",

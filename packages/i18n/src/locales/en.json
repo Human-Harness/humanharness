@@ -695,7 +695,17 @@
     "readyFolder": "Folder",
     "readyEngine": "Engine",
     "readyHint": "You can change all of this whenever you like in Settings.",
-    "languageLater": "You can choose the app's language once it's set up."
+    "languageLater": "You can choose the app's language once it's set up.",
+    "cancelSetup": "Cancel setup",
+    "stepOf": "Step {{n}} of {{count}}",
+    "lastCheck": "One last check",
+    "tileStatus": {
+      "notice": "Needs your OK first · we show the notice next",
+      "not-installed": "Not on this computer yet · we install it next",
+      "outdated": "Needs an update · we update it next",
+      "logged-out": "Not signed in · you sign in next",
+      "untested": "One quick test · it runs next"
+    }
   },
   "setupSteps": {
     "skip": "Skip",

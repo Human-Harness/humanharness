@@ -53,7 +53,7 @@ test("a fresh setup: the interview started and left (the app quits) still keeps 
     app = launched.app;
     let page = launched.page;
     await page.getByRole("button", { name: "Set up Tutor" }).click();
-    await page.getByRole("group", { name: "AI engines" }).getByRole("button", { name: /Claude/ }).click();
+    await page.getByRole("radiogroup", { name: "AI engines" }).getByRole("radio", { name: /Claude/ }).click();
     const next = page.getByRole("contentinfo").getByRole("button", { name: "Next" });
     await expect(next).toBeEnabled();
     await next.click();

@@ -233,11 +233,14 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   // Once a profile is active (and not while a new one is being made), the title names the person (spec §5).
   const title = state.profiles && activeProfile && step !== "profile" ? t("profiles.setupTitle", { name, profile: activeProfile.title }) : t("setupFlow.title", { name });
 
+  const logo = state.harness.logo ? { logo: state.harness.logo } : {};
+  const savedEngine = state.engines.find((e) => e.id === state.config.engineId);
+
   if (step === "done") {
-    const engine = state.engines.find((e) => e.id === state.config.engineId);
+    const engine = savedEngine;
     return (
       <div className="hh-setup">
-        <TopBar title={title} mock={state.mock} />
+        <TopBar title={title} mock={state.mock} {...logo} />
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
@@ -272,103 +275,131 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   const own = run.flatMap((id) => harnessSteps.filter((s) => s.id === id).map((s) => ({ id: stepOf(s.id), label: s.label })));
   const profileStep: { id: Step; label: string }[] =
     state.profiles && (needsProfile || newProfile || madeProfile) ? [{ id: "profile", label: t("profiles.stepLabel") }] : [];
-  const steps: { id: Step; label: string }[] =
+  const steps: { id: Step; label: string; value?: string }[] =
     only && current
       ? own.filter((s) => s.id === step)
       : newProfile
         ? [...profileStep, ...own]
-        : [{ id: "folder", label: t("setupFlow.stepFolder") }, { id: "engine", label: t("setupFlow.stepEngine") }, ...profileStep, ...own];
+        : [
+            { id: "folder", label: t("setupFlow.stepFolder"), value: state.config.folder },
+            { id: "engine", label: t("setupFlow.stepEngine"), value: savedEngine?.name ?? state.config.engineId },
+            ...profileStep.map((s) => ({ ...s, value: activeProfile?.title })),
+            ...own,
+          ];
   const at = steps.findIndex((s) => s.id === step);
   const back = current ? backFrom(current.id) : null;
   const waiting = busy || queue === null;
 
   return (
     <div className="hh-setup">
-      <TopBar title={title} mock={state.mock} />
-      <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
-        {steps.map((s, i) => (
-          <li key={s.id} aria-current={i === at ? "step" : undefined}>
-            <span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <CheckIcon /> : i + 1}</span>
-            {s.label}
-          </li>
-        ))}
-      </ol>
-      <main className="hh-setup-body">
-        {current ? (
-          <section key={current.id} className="hh-setup-step" aria-labelledby={headingId}>
-            <h2 id={headingId} ref={heading} tabIndex={-1}>
-              {current.label}
-            </h2>
-            {current.description && <p className="hh-setup-intro">{current.description}</p>}
-            {current.kind === "form" && <SetupStepForm client={client} step={current} formId={stepFormId} onDone={() => after(current.id)} />}
-            {current.kind === "component" && (
-              <ComponentStep
+      <TopBar
+        title={title}
+        mock={state.mock}
+        {...logo}
+        trailing={
+          // Leaves at any step, as the first step's Cancel does; not while a save or create is on its way.
+          <button type="button" className="hh-pill hh-setup-cancel" aria-label={t("setupFlow.cancelSetup")} disabled={busy || saving || creating} onClick={onCancel}>
+            {t("setupFlow.cancel")}
+          </button>
+        }
+      />
+      <div className="hh-setup-frame">
+        {/* The steps on the left (UI refresh spec §5.6): done ones with their value, "Step n of m" under the current one. */}
+        <nav className="hh-setup-nav" aria-label={t("setupFlow.stepsLabel")}>
+          <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
+            {steps.map((s, i) => (
+              <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : undefined}>
+                <span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <CheckIcon /> : i + 1}</span>
+                <span className="hh-setup-step-text">
+                  <span className="hh-setup-step-label">{s.label}</span>
+                  {i < at && s.value && (
+                    <span className="hh-setup-step-value">
+                      <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
+                    </span>
+                  )}
+                  {i === at && <span className="hh-setup-step-value">{t("setupFlow.stepOf", { n: at + 1, count: steps.length })}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </nav>
+        <main className="hh-setup-body">
+          {current ? (
+            <section key={current.id} className="hh-setup-step" aria-labelledby={headingId}>
+              <h2 id={headingId} ref={heading} tabIndex={-1}>
+                {current.label}
+              </h2>
+              {current.description && <p className="hh-setup-intro">{current.description}</p>}
+              {current.kind === "form" && <SetupStepForm client={client} step={current} formId={stepFormId} onDone={() => after(current.id)} />}
+              {current.kind === "component" && (
+                <ComponentStep
+                  client={client}
+                  step={current}
+                  components={components}
+                  profile={state.profiles ? activeProfile : null}
+                  done={() => complete(current.id)}
+                  skip={() => skip(current.id)}
+                />
+              )}
+              {current.kind === "connect" && <ConnectStep client={client} step={current} onReady={(ready) => onConnectReady(current.id, ready)} />}
+              {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
+              {stepError && (
+                <p className="hh-save-error" role="alert">
+                  {t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}
+                </p>
+              )}
+            </section>
+          ) : step === "profile" && state.profiles ? (
+            <section className="hh-setup-step" aria-labelledby={headingId}>
+              <h2 id={headingId} ref={heading} tabIndex={-1}>
+                {t("profiles.heading", { name })}
+              </h2>
+              <p className="hh-setup-intro">{t("profiles.intro", { label: state.profiles.label })}</p>
+              <ProfileStep
                 client={client}
-                step={current}
-                components={components}
-                profile={state.profiles ? activeProfile : null}
-                done={() => complete(current.id)}
-                skip={() => skip(current.id)}
+                state={state}
+                formId={profileFormId}
+                others={(people?.list ?? []).filter((p) => !p.archived && p.id !== stranded?.id).length}
+                stranded={stranded ? (people?.list.find((p) => p.id === stranded.id)?.title ?? stranded.name) : null}
+                onCreated={(next) => void created(next)}
+                onStranded={(id, typed) => setStranded({ id, name: typed })}
+                onSending={setCreating}
               />
-            )}
-            {current.kind === "connect" && <ConnectStep client={client} step={current} onReady={(ready) => onConnectReady(current.id, ready)} />}
-            {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
-            {stepError && (
-              <p className="hh-save-error" role="alert">
-                {t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}
-              </p>
-            )}
-          </section>
-        ) : step === "profile" && state.profiles ? (
-          <section className="hh-setup-step" aria-labelledby={headingId}>
-            <h2 id={headingId} ref={heading} tabIndex={-1}>
-              {t("profiles.heading", { name })}
-            </h2>
-            <p className="hh-setup-intro">{t("profiles.intro", { label: state.profiles.label })}</p>
-            <ProfileStep
-              client={client}
-              state={state}
-              formId={profileFormId}
-              others={(people?.list ?? []).filter((p) => !p.archived && p.id !== stranded?.id).length}
-              stranded={stranded ? (people?.list.find((p) => p.id === stranded.id)?.title ?? stranded.name) : null}
-              onCreated={(next) => void created(next)}
-              onStranded={(id, typed) => setStranded({ id, name: typed })}
-              onSending={setCreating}
-            />
-          </section>
-        ) : step === "folder" ? (
-          <section className="hh-setup-step" aria-labelledby={headingId}>
-            <h2 id={headingId} ref={heading} tabIndex={-1}>
-              {t("setupFlow.folderHeading")}
-            </h2>
-            <p className="hh-setup-intro">{t("setupFlow.folderIntro", { name })}</p>
-            <p className="hh-caption hh-setup-language">{t("setupFlow.languageLater")}</p>
-            <FolderStep
-              client={client}
-              state={state}
-              formId={folderFormId}
-              onSaved={(s) => {
-                onChange(s);
-                if (s.config.folder) setStep("engine");
-              }}
-            />
-          </section>
-        ) : (
-          <section className="hh-setup-step" aria-labelledby={headingId}>
-            <h2 id={headingId} ref={heading} tabIndex={-1}>
-              {t("setupFlow.engineHeading", { name })}
-            </h2>
-            {/* A mock app has no plan or account to bring: only the test-mode caption. */}
-            <p className="hh-setup-intro">{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</p>
-            <EngineTab client={client} state={state} onChange={onChange} setup onSelection={(engineId, ready) => setSelection({ engineId, ready })} />
-            {saveError && (
-              <p className="hh-save-error" role="alert">
-                {t("setupFlow.saveError")}
-              </p>
-            )}
-          </section>
-        )}
-      </main>
+            </section>
+          ) : step === "folder" ? (
+            <section className="hh-setup-step" aria-labelledby={headingId}>
+              <h2 id={headingId} ref={heading} tabIndex={-1}>
+                {t("setupFlow.folderHeading")}
+              </h2>
+              <p className="hh-setup-intro">{t("setupFlow.folderIntro", { name })}</p>
+              <p className="hh-caption hh-setup-language">{t("setupFlow.languageLater")}</p>
+              <FolderStep
+                client={client}
+                state={state}
+                formId={folderFormId}
+                onSaved={(s) => {
+                  onChange(s);
+                  if (s.config.folder) setStep("engine");
+                }}
+              />
+            </section>
+          ) : (
+            <section className="hh-setup-step" aria-labelledby={headingId}>
+              <h2 id={headingId} ref={heading} tabIndex={-1}>
+                {t("setupFlow.engineHeading", { name })}
+              </h2>
+              {/* A mock app has no plan or account to bring: only the test-mode caption. */}
+              <p className="hh-setup-intro">{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</p>
+              <EngineTab client={client} state={state} onChange={onChange} setup onSelection={(engineId, ready) => setSelection({ engineId, ready })} />
+              {saveError && (
+                <p className="hh-save-error" role="alert">
+                  {t("setupFlow.saveError")}
+                </p>
+              )}
+            </section>
+          )}
+        </main>
+      </div>
       <footer className="hh-setup-footer">
         {current ? (
           <>
@@ -430,6 +461,8 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
                 </button>
               </>
             )}
+            {/* The engine step says nothing is final (UI refresh spec §5.6). */}
+            {step === "engine" && <p className="hh-caption hh-setup-reassure">{t("setupFlow.readyHint")}</p>}
             {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
             {step !== "profile" &&
               (step === "engine" && withFolder ? (

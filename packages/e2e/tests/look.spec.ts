@@ -157,3 +157,35 @@ for (const theme of ["light", "dark"] as const) {
     }
   });
 }
+
+for (const theme of ["light", "dark"] as const) {
+  test(`look: Setup's engine step and the History drawer in ${theme}`, async () => {
+    // The folder is saved, the engine isn't: the setup screen opens at the engine, with every (fake) engine offered.
+    const s = makeSandbox(`look-setup-${theme}`, { engineId: undefined });
+    const { app, page } = await launch(s, { claude: claudeScript });
+    try {
+      await page.setViewportSize({ width: 1100, height: 720 });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.getByRole("button", { name: "Set up Demo" }).click();
+      const steps = page.getByRole("navigation", { name: "Steps" });
+      await expect(steps.getByText("Step 2 of 2")).toBeVisible();
+      await expect(steps.getByText(s.folder, { exact: true })).toBeVisible();
+      const claude = page.getByRole("radiogroup", { name: "AI engines" }).getByRole("radio", { name: /Claude.*Connected/ });
+      await expect(claude).toHaveAttribute("aria-checked", "true");
+      await expect(page.getByRole("heading", { name: "One last check" })).toBeVisible();
+      await page.screenshot({ path: path.join(lookDir, `setup-${theme}.png`) });
+
+      // On to the demo: the History drawer over the chat.
+      await page.getByRole("contentinfo").getByRole("button", { name: "Next" }).click();
+      await expect(page.getByRole("heading", { name: "All set" })).toBeVisible();
+      await page.getByRole("button", { name: "Start Demo" }).click();
+      await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
+      await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
+      await page.getByRole("button", { name: "History", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "History" })).toBeVisible();
+      await page.screenshot({ path: path.join(lookDir, `history-${theme}.png`) });
+    } finally {
+      await closeAndClean(app, s);
+    }
+  });
+}

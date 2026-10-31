@@ -53,7 +53,7 @@ describe("EngineTab", () => {
     await screen.findByText("Claude is ready ✓");
     expect(screen.queryByRole("button", { name: "Use Claude" })).toBeNull();
     expect(onSelection).toHaveBeenLastCalledWith("claude", true);
-    fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Codex/ }));
     await screen.findByRole("heading", { name: "Sign in to Codex" });
     expect(onSelection).toHaveBeenLastCalledWith("codex", false);
   });

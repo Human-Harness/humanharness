@@ -64,9 +64,9 @@ test("a fresh mock app walks the setup flow, then starts the demo on the test en
     await page.getByRole("contentinfo").getByRole("button", { name: "Next" }).click();
 
     // 2. The engine: only the test engine, ready with no notice to accept.
-    const tiles = page.getByRole("group", { name: TILES });
-    await expect(tiles.getByRole("button", { name: /Simulated AI \(mock\).*Connected/ })).toBeVisible();
-    await expect(tiles.getByRole("button", { name: /Claude|Codex/ })).toHaveCount(0);
+    const tiles = page.getByRole("radiogroup", { name: TILES });
+    await expect(tiles.getByRole("radio", { name: /Simulated AI \(mock\).*Connected/ })).toBeVisible();
+    await expect(tiles.getByRole("radio", { name: /Claude|Codex/ })).toHaveCount(0);
     const next = page.getByRole("button", { name: "Next" });
     await expect(next).toBeEnabled();
     await next.click();

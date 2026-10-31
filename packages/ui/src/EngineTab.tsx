@@ -125,37 +125,41 @@ export function EngineTab({
     <div className="hh-tab">
       {/* The setup flow's engine step has its own frame: the head is the Settings section's. */}
       {!setup && <SectionHead title={t("settings.tabs.engine")} line={t("settings.line.engine", { name: state.harness.name })} />}
-      <div className="hh-tiles" role="group" aria-label={t("engine.tilesLabel")} data-setting="engine.engine">
-        {state.engines.map((e) => {
-          const s = statuses[e.id];
-          const label =
-            checkErrors[e.id] !== undefined ? t("home.notConnected") : !s ? t("home.checking") : engineProblem(s) === null ? t("home.connected") : t("home.notConnected");
-          return (
-            <button
-              key={e.id}
-              type="button"
-              className="hh-tile"
-              aria-pressed={selected === e.id}
-              disabled={setupEngine !== undefined && e.id !== setupEngine}
-              onClick={() => setSelected(e.id)}
-            >
-              {selected === e.id && (
-                <span className="hh-check" aria-hidden="true">
-                  ✓
-                </span>
-              )}
-              {e.logo ? <img src={e.logo} alt="" /> : <EngineIcon size={40} />}
-              <strong>{e.name}</strong>
-              <span className="hh-caption">{label}</span>
-              {e.id === current && <span className="hh-caption">{t("engine.current")}</span>}
-              {e.status === "pending" && <em className="hh-caption">{t("setup.enginePending")}</em>}
-            </button>
-          );
-        })}
-        <div className="hh-tile more" aria-disabled="true">
-          {t("engine.moreSoon")}
+      {setup ? (
+        <SetupTiles state={state} statuses={statuses} checkErrors={checkErrors} selected={selected} setupEngine={setupEngine} onSelect={setSelected} />
+      ) : (
+        <div className="hh-tiles" role="group" aria-label={t("engine.tilesLabel")} data-setting="engine.engine">
+          {state.engines.map((e) => {
+            const s = statuses[e.id];
+            const label =
+              checkErrors[e.id] !== undefined ? t("home.notConnected") : !s ? t("home.checking") : engineProblem(s) === null ? t("home.connected") : t("home.notConnected");
+            return (
+              <button
+                key={e.id}
+                type="button"
+                className="hh-tile"
+                aria-pressed={selected === e.id}
+                disabled={setupEngine !== undefined && e.id !== setupEngine}
+                onClick={() => setSelected(e.id)}
+              >
+                {selected === e.id && (
+                  <span className="hh-check" aria-hidden="true">
+                    ✓
+                  </span>
+                )}
+                {e.logo ? <img src={e.logo} alt="" /> : <EngineIcon size={40} />}
+                <strong>{e.name}</strong>
+                <span className="hh-caption">{label}</span>
+                {e.id === current && <span className="hh-caption">{t("engine.current")}</span>}
+                {e.status === "pending" && <em className="hh-caption">{t("setup.enginePending")}</em>}
+              </button>
+            );
+          })}
+          <div className="hh-tile more" aria-disabled="true">
+            {t("engine.moreSoon")}
+          </div>
         </div>
-      </div>
+      )}
 
       {engine && checkError !== undefined && (
         <div className="hh-onboarding">
@@ -183,7 +187,8 @@ export function EngineTab({
             </button>
           )}
           {/* The engine shown, as a card: "In use" when it is the one tasks run on. */}
-          <SettingsCard title={engine.name} actions={!setup && selected === current && <Tag tone="green">{t("engine.current")}</Tag>}>
+          {/* The setup flow's engine step: the same card, as its "One last check" (UI refresh spec §5.6). */}
+          <SettingsCard title={setup ? t("setupFlow.lastCheck") : engine.name} actions={!setup && selected === current && <Tag tone="green">{t("engine.current")}</Tag>}>
           {engine.mock ? (
             // The test engine: nothing to sign out of, no plan, no provider to disclose.
             <div className="hh-rows">
@@ -238,6 +243,17 @@ export function EngineTab({
               </div>
               <p className="hh-caption" lang={legalLang}>{t("legal.engine.noticeContent", { provider: engine.provider })}</p>
               <LegalInEnglish />
+              {setup && (
+                <p className="hh-caption">
+                  <a href={engine.termsUrl} target="_blank" rel="noreferrer">
+                    {t("engine.terms", { provider: engine.provider })}
+                  </a>{" "}
+                  ·{" "}
+                  <a href={engine.privacyUrl} target="_blank" rel="noreferrer">
+                    {t("engine.privacy", { provider: engine.provider })}
+                  </a>
+                </p>
+              )}
             </>
           )}
           </SettingsCard>
@@ -249,5 +265,91 @@ export function EngineTab({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The setup flow's engines as radio tiles (UI refresh spec §5.6): logo, name, maker, what it needs and a status line
+ * that says what comes next. One tab stop for the group; the arrow keys move the choice, as in any radio group.
+ */
+function SetupTiles({
+  state,
+  statuses,
+  checkErrors,
+  selected,
+  setupEngine,
+  onSelect,
+}: {
+  state: AppState;
+  statuses: Record<string, EngineStatus>;
+  checkErrors: Record<string, string>;
+  selected: string | undefined;
+  setupEngine?: string;
+  onSelect: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const group = useRef<HTMLDivElement>(null);
+  const usable = state.engines.filter((e) => setupEngine === undefined || e.id === setupEngine);
+  const move = (from: string, by: number) => {
+    const i = usable.findIndex((e) => e.id === from);
+    if (i < 0 || usable.length === 0) return;
+    const to = usable[(i + by + usable.length) % usable.length].id;
+    onSelect(to);
+    [...(group.current?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [])].find((el) => el.dataset.engine === to)?.focus();
+  };
+  return (
+    <>
+      <div ref={group} className="hh-tiles hh-engine-radios" role="radiogroup" aria-label={t("engine.tilesLabel")} data-setting="engine.engine">
+        {state.engines.map((e) => {
+          const s = statuses[e.id];
+          const problem = s ? engineProblem(s) : undefined;
+          const tone = checkErrors[e.id] !== undefined ? "off" : !s ? "wait" : problem === null ? "ok" : "next";
+          const line =
+            checkErrors[e.id] !== undefined
+              ? t("home.notConnected")
+              : !s
+                ? t("home.checking")
+                : problem === null || problem === undefined
+                  ? t("home.connected")
+                  : t(`setupFlow.tileStatus.${problem}`);
+          const checked = selected === e.id;
+          return (
+            <button
+              key={e.id}
+              type="button"
+              role="radio"
+              className="hh-tile hh-engine-radio"
+              data-engine={e.id}
+              aria-checked={checked}
+              tabIndex={checked ? 0 : -1}
+              disabled={setupEngine !== undefined && e.id !== setupEngine}
+              onClick={() => onSelect(e.id)}
+              onKeyDown={(ev) => {
+                const by = ev.key === "ArrowRight" || ev.key === "ArrowDown" ? 1 : ev.key === "ArrowLeft" || ev.key === "ArrowUp" ? -1 : 0;
+                if (by === 0) return;
+                ev.preventDefault();
+                move(e.id, by);
+              }}
+            >
+              <span className="hh-engine-radio-logo" aria-hidden="true">
+                {e.logo ? <img src={e.logo} alt="" /> : <EngineIcon size={24} />}
+              </span>
+              <span className="hh-engine-radio-text">
+                <strong>{e.name}</strong>
+                <span className="hh-caption">{e.provider}</span>
+                <span className="hh-caption">{t("setup.engineRequires", { plan: e.requires })}</span>
+                <span className="hh-engine-radio-status" data-tone={tone}>
+                  <span className={tone === "ok" ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
+                  {line}
+                </span>
+                {e.id === state.config.engineId && <span className="hh-caption">{t("engine.current")}</span>}
+                {e.status === "pending" && <em className="hh-caption">{t("setup.enginePending")}</em>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="hh-caption hh-engine-more">{t("engine.moreSoon")}</p>
+    </>
   );
 }

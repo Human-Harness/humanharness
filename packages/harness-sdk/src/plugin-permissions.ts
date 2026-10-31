@@ -204,7 +204,9 @@ export type PermissionLine =
   | { kind: "hosts"; hosts: string[] }
   | { kind: "exec"; command: string; readOnly: boolean; wide: boolean }
   | { kind: "secrets"; labels: string[] }
-  | { kind: "tasks" };
+  | { kind: "tasks" }
+  /** Global search (search spec §7): what the core indexes of this plugin's data. Not a permission; shown with them. */
+  | { kind: "searchable"; collections: { name: string; fields: string[] }[] };
 
 /**
  * The permission review in plain data (§7); the UI words it. `command` is the whole pattern, except for a read-only or a

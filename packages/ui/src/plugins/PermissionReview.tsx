@@ -46,6 +46,8 @@ export function PermissionText({ line }: { line: PluginLine }) {
       );
     case "tasks":
       return <>{t("plugins.review.tasks")}</>;
+    case "searchable":
+      return <>{t("plugins.review.searchable", { list: line.collections.map((c) => `${c.name} (${c.fields.join(", ")})`).join("; ") })}</>;
   }
 }
 

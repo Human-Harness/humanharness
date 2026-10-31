@@ -1346,7 +1346,9 @@ export interface PluginsView {
   plugins: PluginRow[];
 }
 /** One line of the permission review, as plain data the UI words (never markup, B12). */
-export type PluginLine = { kind: "hosts"; hosts: string[] } | { kind: "exec"; command: string; readOnly: boolean; wide: boolean } | { kind: "secrets"; labels: string[] } | { kind: "tasks" };
+export type PluginLine = { kind: "hosts"; hosts: string[] } | { kind: "exec"; command: string; readOnly: boolean; wide: boolean } | { kind: "secrets"; labels: string[] } | { kind: "tasks" }
+  /** Global search (search spec §7): what the core indexes of this plugin's data; shown with the permissions. */
+  | { kind: "searchable"; collections: { name: string; fields: string[] }[] };
 export interface PluginReview {
   id: string;
   name: string;

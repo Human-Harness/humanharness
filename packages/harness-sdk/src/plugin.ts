@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type Collection, COLLECTION_NAME, collectionSchema, searchFields } from "./data";
+import type { PermissionLine } from "./plugin-permissions";
 import { type HarnessSettings, SETTING_NAME, settingsSchema } from "./settings";
 
 /** The core plugin contract version (plugins spec §3.2): a plugin built for another one can't be added. */
@@ -346,6 +347,12 @@ export function pluginCollections(m: PluginManifest): Record<string, Collection>
       return [name, collectionSchema.parse({ ...c, ...(search ? { search: fields } : {}), schema: jsonSchemaToZod(c.schema) })];
     }),
   );
+}
+
+/** The review's "Searchable:" line (search spec §7); null when no collection opts in. */
+export function searchableLine(m: PluginManifest): Extract<PermissionLine, { kind: "searchable" }> | null {
+  const collections = Object.entries(m.data).flatMap(([name, c]) => (c.search ? [{ name, fields: searchFields(c.search) }] : []));
+  return collections.length > 0 ? { kind: "searchable", collections } : null;
 }
 
 /** The plugin's settings in the harness settings model, checked by it (Decision 4); undefined without settings. */

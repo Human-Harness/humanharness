@@ -48,7 +48,7 @@ export interface SearchClient {
   onOpen(listener: (query?: string) => void): () => void;
   /**
    * A harness view opens its own records (§3 Data): `listener` gets the record's key (null for a `single` collection)
-   * and the scope folder. One listener per collection; the last one registered wins. Answers the unsubscribe.
+   * and the scope folder. The newest listener for a collection answers; when it unsubscribes, the one still registered under it answers again. Answers the unsubscribe.
    */
   onOpenRecord(collection: string, listener: (key: string | number | null, scope: string) => void): () => void;
   /** The window hands a picked record to the view listening for `collection`; false when none does. */

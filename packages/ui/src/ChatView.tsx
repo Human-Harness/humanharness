@@ -1086,7 +1086,8 @@ export function ChatView({
         // The harness view's own handler (client.search.onOpenRecord); none listening: nothing opens (§3).
         return client.search.openRecord(intent.collection, intent.key, intent.scope);
       case "panel":
-        if (!surfaceCtx) return false;
+        // A row read before its plugin stopped (or dropped the panel) opens nothing, now or when the panel comes back.
+        if (!surfaceCtx || !surfaceCtx.surface.panels.some((p) => p.plugin === intent.plugin && p.id === intent.panel)) return false;
         openPanel(intent.plugin, intent.panel, intent.focus);
         return true;
       case "setting":

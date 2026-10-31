@@ -10,7 +10,9 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 export function searchClient(invoke: Invoke, subscribe: Subscribe): SearchClient {
   const failed = { ok: false as const, reason: "failed" as const };
   const openers = new Set<(query?: string) => void>();
-  const records = new Map<string, (key: string | number | null, scope: string) => void>();
+  // A stack per collection: the newest mounted listener answers; when it goes, the one under it answers again.
+  const records = new Map<string, { listener: (key: string | number | null, scope: string) => void }[]>();
+  const top = (collection: string) => records.get(collection)?.at(-1)?.listener;
   return {
     query: (query, filters) =>
       invoke("hh:search", query, filters ?? {}).then(
@@ -34,17 +36,20 @@ export function searchClient(invoke: Invoke, subscribe: Subscribe): SearchClient
       return () => void openers.delete(listener);
     },
     onOpenRecord: (collection, listener) => {
-      records.set(collection, listener);
+      const entry = { listener };
+      records.set(collection, [...(records.get(collection) ?? []), entry]);
       return () => {
-        if (records.get(collection) === listener) records.delete(collection);
+        const rest = (records.get(collection) ?? []).filter((e) => e !== entry);
+        if (rest.length) records.set(collection, rest);
+        else records.delete(collection);
       };
     },
     openRecord: (collection, key, scope) => {
-      const listener = records.get(collection);
+      const listener = top(collection);
       if (!listener) return false;
       listener(key, scope);
       return true;
     },
-    handlesRecord: (collection) => records.has(collection),
+    handlesRecord: (collection) => top(collection) !== undefined,
   };
 }

@@ -25,7 +25,7 @@ describe("PluginsController search (search spec D4, §7)", () => {
     const t = await running({ panels: [{ id: "list", title: "List" }, { id: "side", title: "Side" }] });
     const [s] = await t.ctl.searchSources();
     expect(s).toMatchObject({ id: "plugin:notes/items", owner: "plugin", plugin: "notes", pluginName: "Notes", panel: "list", collection: "items", folder: "_app" });
-    expect(s.stamp).toBe("none:list");
+    expect(s.stamp).toMatch(/^none\|none#[0-9a-z]+:list$/);
     await t.store.put("items", { key: "a", title: "Groceries", body: "milk and eggs" });
     const [after] = await t.ctl.searchSources();
     expect(after.stamp).not.toBe(s.stamp);
@@ -58,5 +58,21 @@ describe("PluginsController search (search spec D4, §7)", () => {
     const t = await running({});
     const detail = await t.ctl.detail("notes");
     expect(detail?.review.lines.at(-1)).toEqual({ kind: "searchable", collections: [{ name: "items", fields: ["title", "body"] }] });
+  });
+
+  it("the stamp follows the records' meta file too: a read between the two writes is read again", async () => {
+    const t = await running({});
+    await t.store.put("items", { key: "a", title: "Groceries", body: "milk" });
+    const [before] = await t.ctl.searchSources();
+    const meta = path.join(t.base, ".harness", "plugin-data", "notes", ".meta", "_app", "items.json");
+    await fs.writeFile(meta, `${JSON.stringify({ a: "2026-10-31T00:00:00.000Z", b: "2026-10-31T00:00:00.000Z" })}\n`);
+    const [after] = await t.ctl.searchSources();
+    expect(after.stamp).not.toBe(before.stamp);
+  });
+
+  it("the stamp follows the declaration: an update that changes the key, single or search reads the records again", async () => {
+    const [plain] = await (await running({})).ctl.searchSources();
+    const [other] = await (await running({ data: { items: { ...ITEMS, search: { title: "body", text: "title" } } } })).ctl.searchSources();
+    expect(other.stamp).not.toBe(plain.stamp);
   });
 });

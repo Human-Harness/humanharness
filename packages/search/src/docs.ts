@@ -181,6 +181,20 @@ export interface RecordSearch {
 }
 
 /**
+ * A short hash of what decides a collection's rows besides its records (its key, `single`, its `search`), for a
+ * source's stamp: a declaration that changes reads the records again. FNV-1a, so it runs anywhere (main, the worker).
+ */
+export function declarationStamp(c: RecordSearch): string {
+  const text = JSON.stringify([c.key ?? null, c.single, c.search]);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
  * The records of one collection as rows (D4): the declared title (else the key), the declared text fields joined by
  * lines without token-shaped ones (§8.2) and capped as a file's text is (§4.5), and when each changed (data-meta, by
  * key text). Skipped: a record with no usable key, a token-shaped key (it would be the id and maybe the title), and a

@@ -62,6 +62,7 @@ import {
 import { BROKER_LIMITS, type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";
 import { PluginData } from "./plugin-data";
+import { sourceStamp } from "./search/stamp";
 import type { runFile } from "./plugin-exec";
 import { type PluginEntry, type PluginPointers, distFolderOf, loadPlugins, readDist } from "./plugin-load";
 import { CrashPolicy, PluginScheduler } from "./plugin-scheduler";
@@ -1258,8 +1259,8 @@ export class PluginsController {
   }
 
   /**
-   * Global search (search spec D4): each running plugin's searchable collections. The stamp is the collection file's
-   * size and mtime (`none` before the first write) and the panel a record opens in (the declared one, else the first).
+   * Global search (search spec D4): each running plugin's searchable collections. The stamp follows the collection file
+   * and its meta file, the declaration (`sourceStamp`), and the panel a record opens in (the declared one, else the first).
    */
   async searchSources(): Promise<DataSource[]> {
     const c = await this.base();
@@ -1271,8 +1272,14 @@ export class PluginsController {
       for (const [name, col] of Object.entries(m.data)) {
         if (!col.search) continue;
         const panel = col.search.panel ?? m.panels[0]?.id;
-        const file = path.join(pluginDataDir(c.base, m.id), scopeDir(APP_SCOPE), `${collectionName(name)}.json`);
-        const st = await fs.lstat(file).catch(() => null);
+        const dir = pluginDataDir(c.base, m.id);
+        const file = `${collectionName(name)}.json`;
+        // As the plugin's DataStore lays them out (`dir`): the records, then `.meta/` with when each changed.
+        const stamp = await sourceStamp([path.join(dir, scopeDir(APP_SCOPE), file), path.join(dir, ".meta", scopeDir(APP_SCOPE), file)], {
+          ...(col.key ? { key: col.key } : {}),
+          single: col.single,
+          search: col.search,
+        });
         out.push({
           id: `plugin:${m.id}/${name}`,
           owner: "plugin",
@@ -1281,7 +1288,7 @@ export class PluginsController {
           ...(panel ? { panel } : {}),
           collection: name,
           folder: APP_SCOPE,
-          stamp: `${st ? `${st.size}:${st.mtimeMs}` : "none"}:${panel ?? ""}`,
+          stamp: `${stamp}:${panel ?? ""}`,
         });
       }
     }

@@ -10,6 +10,7 @@ import {
   LiveIndex,
   type SearchDoc,
   type SearchHit,
+  docIdFor,
   fileKey,
   headingAnchorAt,
   isMarkdown,
@@ -17,12 +18,13 @@ import {
   refRoot,
   secretShaped,
   snippetAround,
+  splitKey,
   withoutSecretLines,
 } from "@humanharness/search";
 import type { BuildJob, BuildLimits, BuildMessage } from "./build";
 import { readChatEntry, readText } from "./read";
 import type { BuildRunner } from "./runner";
-import { IndexStore, searchDir } from "./store";
+import { IndexStore, type Snapshot, searchDir } from "./store";
 import { hitView } from "./views";
 
 export const RECONCILE_EVERY_MS = 60_000;
@@ -79,6 +81,28 @@ interface Live {
 const EMPTY_COUNTS = (): Record<SearchKind, number> => ({ task: 0, note: 0, file: 0 });
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/**
+ * A loaded snapshot without the documents its `files.json` doesn't account for: a build cut short (a quit, a crashed
+ * worker) saved its batches, but files and chats only take that build's state on "done", so a reconcile would never
+ * take those documents out. Null when the index can't list its documents (rebuilt then).
+ */
+function accounted(index: LiveIndex | null, snap: Snapshot): LiveIndex | null {
+  const ids = index?.ids();
+  if (!index || !ids) return null;
+  const keep = new Set<string>(snap.memory);
+  for (const key of Object.keys(snap.files)) {
+    const { root, rel } = splitKey(key);
+    keep.add(docIdFor(root, rel));
+  }
+  for (const c of Object.values(snap.chats)) for (const id of c.ids) keep.add(id);
+  const stray = ids.filter((id) => !keep.has(id));
+  if (stray.length) {
+    index.remove(stray);
+    index.compact();
+  }
+  return index;
+}
+
 export class SearchService {
   private live: Live | null = null;
   private opening: { base: string; live: Promise<Live> } | null = null;
@@ -116,7 +140,7 @@ export class SearchService {
   private async load(base: string): Promise<Live> {
     const store = new IndexStore(searchDir(this.d.userData(), base), this.d.storeDelayMs !== undefined ? { delayMs: this.d.storeDelayMs } : {});
     const snap = await store.load();
-    const index = snap ? LiveIndex.fromJSON(snap.index) : null;
+    const index = snap ? accounted(LiveIndex.fromJSON(snap.index), snap) : null;
     const live: Live = {
       base,
       index: index ?? LiveIndex.empty(),

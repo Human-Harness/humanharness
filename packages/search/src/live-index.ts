@@ -52,6 +52,15 @@ export class LiveIndex implements SearchIndex {
     return this.ms.has(id);
   }
 
+  /**
+   * Every document's id, so a loaded snapshot can drop what its `files.json` doesn't account for. `minisearch` has no
+   * public listing: this reads its id map, and answers null when that isn't there (the caller rebuilds then).
+   */
+  ids(): string[] | null {
+    const map = (this.ms as unknown as { _documentIds?: unknown })._documentIds;
+    return map instanceof Map ? [...map.values()].filter((id): id is string => typeof id === "string") : null;
+  }
+
   stored(id: string): StoredDoc | null {
     if (!this.ms.has(id)) return null;
     const f = this.ms.getStoredFields(id);

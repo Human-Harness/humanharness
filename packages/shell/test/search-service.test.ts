@@ -140,6 +140,28 @@ describe("SearchService (§4, §5)", () => {
     expect(titles(await three.svc.query("alpha", {}))).toEqual(["a.md"]);
   });
 
+  it("a build cut short after its batches were saved: on the next load, what files.json doesn't account for goes", async () => {
+    put("keep.md", "alpha");
+    put("gone.md", "orphanword");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    // A quit or a crashed worker: the batches came in (and were saved), the "done" never did.
+    const cut: SearchServiceDeps["runner"] = (job, onMessage) => {
+      const r = inProcessBuild()(job, (m) => (m.type === "done" ? undefined : onMessage(m)));
+      return { done: r.done.then(() => false), stop: r.stop };
+    };
+    const one = service({ runner: cut });
+    await one.svc.query("", {});
+    await one.svc.whenIdle();
+    expect(titles(await one.svc.query("orphanword", {}))).toEqual(["gone.md"]);
+    await one.svc.flush();
+    fs.rmSync(path.join(base, "gone.md"));
+    const two = service();
+    await two.svc.query("", {});
+    await two.svc.whenIdle();
+    expect(titles(await two.svc.query("orphanword", {}))).toEqual([]);
+    expect(titles(await two.svc.query("alpha", {}))).toEqual(["keep.md"]);
+  });
+
   it("says when the file cap left files out", async () => {
     for (const p of ["a", "b", "c"]) put(p, "plan");
     const { svc } = service({ limits: { files: 2, textBytes: 1024 * 1024, totalText: 1e9 } });

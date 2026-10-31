@@ -55,3 +55,13 @@ describe("LiveIndex while documents keep changing", () => {
     expect(ix.search(words(10_003, 8).split(" ")[0]).hits.map((h) => h.id)).toContain("d3");
   });
 });
+
+describe("LiveIndex.ids", () => {
+  it("lists every document in the index, also after a snapshot round trip and a removal", () => {
+    const live = LiveIndex.empty();
+    live.upsert([doc("a", "alpha"), doc("b", "bravo"), doc("c", "charlie")]);
+    live.remove(["b"]);
+    expect(live.ids()?.sort()).toEqual(["a", "c"]);
+    expect(LiveIndex.fromJSON(live.toJSON())?.ids()?.sort()).toEqual(["a", "c"]);
+  });
+});

@@ -458,3 +458,72 @@ describe("the rail's Inbox and Jobs (UI refresh spec §4.2)", () => {
     for (const name of ["Inbox", "Jobs"]) expect(within(rail()).queryByRole("button", { name })).toBeNull();
   });
 });
+
+describe("the Inbox screen's focus and its way back to the chat (UI refresh spec §5.4)", () => {
+  const rail = () => screen.getByRole("navigation", { name: "App" });
+  const tasksButton = () => within(rail()).getByRole("button", { name: "Tasks" });
+
+  it("opening it puts the focus on its title", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    expect(document.activeElement).toBe(within(inboxScreen()).getByRole("heading", { level: 1, name: "Inbox" }));
+  });
+
+  it("Escape goes back to the chat and the focus to the rail's Tasks", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    fireEvent.keyDown(within(inboxScreen()).getByRole("button", { name: "List" }), { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    expect(document.activeElement).toBe(tasksButton());
+    expect(await inbox()).toBeTruthy();
+  });
+
+  it("a card opened leaves the focus on the rail's Tasks, not the page", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    const card = within(inboxScreen()).getByRole("button", { name: /^Task a/ });
+    card.focus();
+    fireEvent.click(card);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
+    expect(document.activeElement).toBe(tasksButton());
+  });
+
+  it("main focusing another task (a notification click) shows the chat", async () => {
+    const caps = { tasks: 2, jobs: 1 };
+    const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("b", "waiting")], caps });
+    await open(c);
+    fireEvent.click(await inbox());
+    act(() => c.tasks.set({ tasks: [summary("a", "running"), summary("b", "waiting", { focused: true })], caps }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
+  it("a cancelled message of the focused task shows the chat with its text back in the box", async () => {
+    const c = client(parallel(), { tasks: [summary("c", "queued", { focused: true })], caps: { tasks: 1, jobs: 1 } });
+    c.tasks.cancelQueued.mockResolvedValueOnce("the queued text");
+    await open(c);
+    await openList();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
+    await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("the queued text"));
+  });
+
+  it("Jobs while List is chosen shows the board on its Jobs column; Jobs again moves the focus back there", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    c.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
+    c.jobsList = [{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }];
+    await open(c);
+    await openList();
+    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
+    expect(within(inboxScreen()).getByRole("button", { name: "Board" }).getAttribute("aria-pressed")).toBe("true");
+    const column = () => document.activeElement?.closest("section")?.getAttribute("aria-labelledby") ?? "";
+    expect(column()).toContain("jobs");
+    within(inboxScreen()).getByRole("button", { name: "Board" }).focus();
+    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
+    expect(column()).toContain("jobs");
+  });
+});

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented, Tag, type TagTone } from "../chrome";
 import { type AppState, type HarnessClient, type JobSummary, type TaskSummary, type TasksState, timeAgo } from "../client";
@@ -23,8 +23,10 @@ export function InboxBoard({
   state,
   tasks,
   column,
+  request,
   onNewTask,
   onOpened,
+  onClose,
   onStartAction,
   onRefill,
   onJobSettings,
@@ -34,10 +36,14 @@ export function InboxBoard({
   tasks: TasksState | null;
   /** Rail › Jobs: the Jobs column gets the focus. */
   column?: "jobs";
+  /** Each rail pick is a new number: the focus moves again (Jobs again: back to the board, on its Jobs column). */
+  request?: number;
   /** "New task" (a harness with parallel tasks). Absent: no button. */
   onNewTask?: () => void;
   /** A task was focused, or a job's action started: the chat shows again. */
   onOpened: () => void;
+  /** Escape on the screen (outside a field that handles it): back to the chat. */
+  onClose?: () => void;
   /** Starts a needs-you job's action through the chat's start path; false when it couldn't. */
   onStartAction?: (action: string, scope: string | null) => boolean;
   /** A cancelled queued message of the focused task (List's Cancel): its text goes back in the box. */
@@ -57,6 +63,7 @@ export function InboxBoard({
   /** A focus is on its way to main: a second click asks nothing more. */
   const focusing = useRef(false);
   const jobsColumn = useRef<HTMLElement>(null);
+  const title = useRef<HTMLHeadingElement>(null);
 
   const all = tasks?.tasks ?? [];
   const columns = boardColumns<TaskSummary, JobSummary>({ tasks: all, jobs: state.jobs ? jobs : null });
@@ -65,11 +72,25 @@ export function InboxBoard({
     ? t("inbox.board.summary", { waiting: waitingCount(tasks, jobs), working, jobs: jobs.length })
     : t("inbox.board.summaryNoJobs", { waiting: waitingCount(tasks, jobs), working });
 
+  // Opening the screen puts the focus on it (its title); Jobs shows the board, whatever was chosen, for its column.
+  useEffect(() => {
+    if (column === "jobs") setView("board");
+    else title.current?.focus();
+  }, [column, request]);
   useEffect(() => {
     if (column !== "jobs" || view !== "board") return;
     jobsColumn.current?.focus();
     jobsColumn.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [column, view]);
+  }, [column, view, request]);
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented || !onClose) return;
+    const target = e.target as HTMLElement;
+    // A field keeps its own Escape (clearing, closing a list).
+    if (target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='combobox'], [role='listbox'], [role='menu']")) return;
+    // Handled here: the hidden chat's panels skip it.
+    e.preventDefault();
+    onClose();
+  };
 
   const focus = async (taskId: string) => {
     if (focusing.current) return;
@@ -226,10 +247,10 @@ export function InboxBoard({
   const conflicts = all.filter((s) => s.conflict && s.conflict.length > 0);
 
   return (
-    <section className="hh-inbox-screen" aria-labelledby={`${id}-title`}>
+    <section className="hh-inbox-screen" aria-labelledby={`${id}-title`} onKeyDown={onKeyDown}>
       <header className="hh-inbox-head">
         <div className="hh-inbox-head-text">
-          <h1 id={`${id}-title`}>{t("inbox.title")}</h1>
+          <h1 id={`${id}-title`} ref={title} tabIndex={-1}>{t("inbox.title")}</h1>
           <p className="hh-caption">{summary}</p>
         </div>
         <Segmented

@@ -32,6 +32,7 @@ export function AttentionInbox({
   client,
   view,
   onOpenPanel,
+  onPrepared,
 }: {
   client: HarnessClient;
   view: AttentionView;
@@ -40,6 +41,8 @@ export function AttentionInbox({
    * panel when it arrives). Absent, a panel target only closes the list: main said the panel exists, so it isn't gone.
    */
   onOpenPanel?: (plugin: string, panel: string, focus?: string) => void;
+  /** A prepared task's target was opened: its card comes with main's surface push, in the chat. */
+  onPrepared?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -113,6 +116,7 @@ export function AttentionInbox({
     } else if (target.kind === "prepared") {
       // The card comes with main's surface push.
       close();
+      onPrepared?.();
     } else {
       setGone(rowKey);
       setAnnounce(t("plugins.attention.gone"));

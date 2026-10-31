@@ -164,4 +164,48 @@ describe("InboxBoard (UI refresh spec §5.4)", () => {
     fireEvent.click(jobs.getByRole("button", { name: "Resume" }));
     expect(onJobSettings).toHaveBeenCalled();
   });
+  it("a job card's Run now that is refused or fails says so on its card", async () => {
+    const { client } = await renderBoard({ tasks: [], jobs: [job("Sync", { manual: true }), job("Link", { manual: true })] });
+    const sync = () => screen.getByText("Sync").closest(".hh-board-card") as HTMLElement;
+    client.jobs.run.mockResolvedValueOnce(false);
+    fireEvent.click(within(sync()).getByRole("button", { name: "Run now" }));
+    expect(await within(sync()).findByRole("alert")).toHaveProperty("textContent", "Couldn't run it now.");
+    expect(within(column("Jobs")).getAllByRole("alert")).toHaveLength(1);
+    client.jobs.run.mockRejectedValueOnce(new Error("No jobs"));
+    fireEvent.click(within(sync()).getByRole("button", { name: "Run now" }));
+    await waitFor(() => expect(client.jobs.run).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(sync()).getByRole("alert").textContent).toBe("Couldn't run it now."));
+  });
+
+  it("a job card's Open that can't start says so and keeps the screen", async () => {
+    const actions: AppState["actions"] = { implement: { label: "Implement", cost: "light" } };
+    const at = "2026-10-28T09:00:00Z";
+    const { onStartAction, onOpened } = await renderBoard({
+      tasks: [],
+      jobs: [job("Sync", { manual: true, last: { status: "needs-you", summary: "Two conflicts need you", at, action: "implement" } })],
+      actions,
+    });
+    onStartAction.mockReturnValueOnce(false);
+    fireEvent.click(within(column("Jobs")).getByRole("button", { name: "Open" }));
+    expect(onStartAction).toHaveBeenCalledWith("implement", null);
+    expect(within(column("Jobs")).getByRole("alert").textContent).toBe("Couldn't start it now.");
+    expect(onOpened).not.toHaveBeenCalled();
+  });
+
+  it("Escape returns to the chat, but not from inside a field that handles it", async () => {
+    const onClose = vi.fn();
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    client.state.parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+    const state: TasksState = { tasks: [waiting("Write A")], caps: { tasks: 2, jobs: 1 } };
+    await renderIn("en", <InboxBoard client={client} state={client.state} tasks={state} onOpened={vi.fn()} onClose={onClose} />);
+    const board = screen.getByRole("region", { name: "Inbox" });
+    expect(document.activeElement).toBe(within(board).getByRole("heading", { level: 1 }));
+    const field = document.createElement("input");
+    board.appendChild(field);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    field.remove();
+    fireEvent.keyDown(within(board).getByRole("button", { name: "Board" }), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

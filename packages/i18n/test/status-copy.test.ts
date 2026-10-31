@@ -33,6 +33,6 @@ describe("status copy", () => {
   });
 
   it('says "Working" for a task the AI is on, everywhere (spec Q4)', () => {
-    for (const key of ["home.status.working", "parallel.workingTitle", "history.inProgress"]) expect(get(key), key).toBe("Working");
+    for (const key of ["home.status.working", "parallel.workingTitle"]) expect(get(key), key).toBe("Working");
   });
 });

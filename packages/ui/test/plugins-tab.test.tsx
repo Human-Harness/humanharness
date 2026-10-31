@@ -250,7 +250,7 @@ describe("Settings › Plugins", () => {
       const keys = within(region).getByRole("group", { name: "Keys" });
       expect(keys.textContent).toContain("Jira token");
       expect(keys.textContent).toContain("From id.atlassian.com");
-      expect(keys.textContent).toContain("Not stored");
+      expect(keys.textContent).toContain("Not stored · paste the key to use On-call");
       expect(keys.textContent).toContain("Stored");
       const input = keys.querySelector('input[type="password"]') as HTMLInputElement;
       fireEvent.change(input, { target: { value: "s3cret-value-XYZ" } });

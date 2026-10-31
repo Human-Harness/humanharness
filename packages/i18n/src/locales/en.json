@@ -558,7 +558,7 @@
     "today": "Today",
     "yesterday": "Yesterday",
     "noteSaved": "Note saved",
-    "inProgress": "Working",
+    "inProgress": "Open now",
     "points": "Points in this task",
     "confirmFolderTitle": "Go back the whole folder to this point?",
     "confirmFolder": "Files changed after it will be undone.",

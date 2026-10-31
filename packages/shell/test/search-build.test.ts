@@ -115,6 +115,33 @@ describe("build (§4.3)", () => {
     expect(third.msgs.some((m) => m.type === "removed" && m.ids.includes("chat:.harness/chats/main.jsonl#u1"))).toBe(true);
     expect(third.done.chats[".harness/chats/main.jsonl"].ids).toEqual(["chat:.harness/chats/main.jsonl#u9"]);
   });
+
+  it("chats: an archived conversation (renamed away, a new file at the same path) starts over, even when longer", async () => {
+    const entry = (id: string, text: string) => `${JSON.stringify({ id, role: "user", text, at: "2026-10-30T10:00:00.000Z" })}\n`;
+    const file = path.join(root, ".harness/chats/main.jsonl");
+    put(".harness/chats/main.jsonl", entry("u1", "old talk"));
+    const first = await run(job());
+    fs.mkdirSync(path.join(root, ".harness/chats/archive"), { recursive: true });
+    fs.renameSync(file, path.join(root, ".harness/chats/archive/old.jsonl"));
+    put(".harness/chats/main.jsonl", entry("n1", "a new conversation, longer than the old one was"));
+    const second = await run(job({ known: first.done.files, chats: first.done.chats }));
+    expect(second.msgs.some((m) => m.type === "removed" && m.ids.includes("chat:.harness/chats/main.jsonl#u1"))).toBe(true);
+    expect(second.docs.has("chat:.harness/chats/main.jsonl#n1")).toBe(true);
+    expect(second.done.chats[".harness/chats/main.jsonl"].ids).toEqual(["chat:.harness/chats/main.jsonl#n1"]);
+  });
+
+  it("chats: a stored chat without the file's identity (an older snapshot) is read again from the start, once", async () => {
+    const entry = (id: string, text: string) => `${JSON.stringify({ id, role: "user", text, at: "2026-10-30T10:00:00.000Z" })}\n`;
+    put(".harness/chats/main.jsonl", entry("u1", "first question"));
+    const first = await run(job());
+    const rel = ".harness/chats/main.jsonl";
+    const { size, ids } = first.done.chats[rel];
+    const second = await run(job({ known: first.done.files, chats: { [rel]: { size, ids } } }));
+    expect(second.docs.has("chat:.harness/chats/main.jsonl#u1")).toBe(true);
+    expect(second.done.chats[rel].ids).toEqual(["chat:.harness/chats/main.jsonl#u1"]);
+    const third = await run(job({ known: second.done.files, chats: second.done.chats }));
+    expect([...third.docs.keys()].filter((k) => k.startsWith("chat:"))).toEqual([]);
+  });
 });
 
 describe("workerBuild", () => {

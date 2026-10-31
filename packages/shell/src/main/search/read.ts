@@ -34,7 +34,7 @@ async function openPlain(file: string, realRoot: string) {
     await h.close();
     return null;
   }
-  return { h, size: st.size };
+  return { h, size: st.size, identity: `${st.dev}:${st.ino}:${st.birthtimeMs}` };
 }
 
 async function readAt(h: fs.FileHandle, position: number, length: number): Promise<Buffer> {
@@ -49,14 +49,20 @@ async function readAt(h: fs.FileHandle, position: number, length: number): Promi
 }
 
 /**
- * A chat file's whole lines from byte `from` on (from 0 when the file got shorter: it was replaced). `end`: the byte
- * after the last newline read, where the next read starts. Null when the file can't be read safely.
+ * A chat file's whole lines from byte `from` on; from 0 when it isn't the file read before (`identity`, unknown when
+ * missing) or got shorter: it was replaced. `end`: the byte after the last newline read, where the next read starts.
+ * Null when the file can't be read safely.
  */
-export async function readChatFrom(file: string, realRoot: string, from: number): Promise<{ lines: { offset: number; length: number; line: string }[]; end: number; reset: boolean } | null> {
+export async function readChatFrom(
+  file: string,
+  realRoot: string,
+  from: number,
+  identity?: string,
+): Promise<{ lines: { offset: number; length: number; line: string }[]; end: number; reset: boolean; identity: string } | null> {
   const open = await openPlain(file, realRoot);
   if (!open) return null;
   try {
-    const reset = open.size < from;
+    const reset = from > 0 && (open.size < from || identity !== open.identity);
     const start = reset ? 0 : from;
     const buf = await readAt(open.h, start, Math.min(open.size - start, MAX_CHAT_READ));
     const lines: { offset: number; length: number; line: string }[] = [];
@@ -67,7 +73,7 @@ export async function readChatFrom(file: string, realRoot: string, from: number)
       lines.push({ offset: start + at, length: nl - at, line: buf.subarray(at, nl).toString("utf8") });
       at = nl + 1;
     }
-    return { lines, end: start + at, reset };
+    return { lines, end: start + at, reset, identity: open.identity };
   } finally {
     await open.h.close();
   }

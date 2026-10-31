@@ -67,4 +67,9 @@ export interface FileMeta {
 export interface ChatMeta {
   size: number;
   ids: string[];
+  /**
+   * The file read (`dev:ino:birthtimeMs`): an archived conversation is renamed away and a new one starts at the same
+   * path, so another file there means starting over. Missing (an older snapshot): unknown, read again from the start.
+   */
+  identity?: string;
 }

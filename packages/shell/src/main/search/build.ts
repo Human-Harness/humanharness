@@ -97,12 +97,12 @@ async function indexChats(base: string, known: Record<string, ChatMeta>, post: (
   if (!realBase) return out;
   for (const rel of files) {
     const prev = known[rel];
-    const read = await readChatFrom(path.join(base, rel), realBase, prev?.size ?? 0);
+    const read = await readChatFrom(path.join(base, rel), realBase, prev?.size ?? 0, prev?.identity);
     if (read === null || read.reset) if (prev) post({ type: "removed", ids: prev.ids });
     if (read === null) continue;
     const docs = chatDocs(rel, read.lines);
     if (docs.length) post({ type: "docs", docs, ...progress });
-    out[rel] = { size: read.end, ids: [...(read.reset ? [] : (prev?.ids ?? [])), ...docs.map((d) => d.id)] };
+    out[rel] = { size: read.end, ids: [...(read.reset ? [] : (prev?.ids ?? [])), ...docs.map((d) => d.id)], identity: read.identity };
   }
   return out;
 }

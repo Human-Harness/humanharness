@@ -30,7 +30,8 @@ export interface SearchPrefs {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isFileMeta = (v: unknown) => isObject(v) && typeof v.size === "number" && typeof v.mtimeMs === "number" && typeof v.how === "string";
-const isChatMeta = (v: unknown) => isObject(v) && typeof v.size === "number" && Array.isArray(v.ids) && v.ids.every((i) => typeof i === "string");
+const isChatMeta = (v: unknown) =>
+  isObject(v) && typeof v.size === "number" && Array.isArray(v.ids) && v.ids.every((i) => typeof i === "string") && (v.identity === undefined || typeof v.identity === "string");
 
 async function writeAtomic(file: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });

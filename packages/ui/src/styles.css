@@ -1066,13 +1066,15 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-reader-is-full { flex: 1 1 auto; border-left: 0; }
 /* UI refresh §5.7: still docked beside the chat (Q3), with a title header and a footer for the path, Source and Show chat. */
 .hh-reader-bar { position: relative; display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--hh-line); background: var(--hh-rail); }
-.hh-reader-head { min-width: 0; }
-.hh-reader-head-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-.hh-reader-head-sub { margin: 2px 0 0; font-size: 13px; color: var(--hh-muted); overflow-wrap: anywhere; }
+.hh-reader-head { flex: 1 1 auto; min-width: 0; }
+/* One line each: a taller bar would squeeze the text column, the place a selection is made and commented on. */
+.hh-reader-head-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hh-reader-head-sub { margin: 2px 0 0; font-size: 13px; color: var(--hh-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .hh-reader-crumbs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--hh-muted); overflow-wrap: anywhere; }
 .hh-reader-crumbs li + li::before { content: "/"; margin-right: 4px; color: var(--hh-muted); }
 .hh-reader-crumbs li[aria-current="page"] { color: var(--hh-ink); font-weight: 600; }
-.hh-reader-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.hh-reader-actions { display: flex; flex: none; align-items: center; gap: 6px; margin-left: auto; }
+.hh-reader-actions button, .hh-reader-foot-actions button { height: 32px; padding: 0 12px; border-radius: 9px; }
 .hh-reader-actions button[aria-pressed="true"] { background: var(--hh-surface-2); }
 .hh-reader-prefs { position: absolute; right: 12px; top: calc(100% + 4px); z-index: 2; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
 .hh-reader-prefs button[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); }

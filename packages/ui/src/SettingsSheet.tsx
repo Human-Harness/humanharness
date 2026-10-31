@@ -1,10 +1,9 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
-import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, type SearchSettingsTab, TEXT_SIZES, type TextSize, isConfigured } from "./client";
+import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
 import { EngineTab } from "./EngineTab";
 import { trapTab } from "./focus";
@@ -21,37 +20,15 @@ import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab } from "./sidekick/SidekickTab";
+import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = SearchSettingsTab;
-/**
- * `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4); Sidekick
- * after Models (sidekick spec §8); Plugins after Sidekick (plugins spec §7); Connections after Plugins (tools spec §9);
- * Jobs before Usage (parallel spec §9).
- */
-const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "sidekick", "plugins", "connections", "jobs", "usage"];
+export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
+
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
-
-/** The tabs this state shows (the sheet's own list, and search's: a row of a hidden tab isn't offered). */
-export function visibleTabs(state: AppState): SettingsTab[] {
-  return TABS.filter(
-    (id) =>
-      (id !== "models" || state.models !== undefined) &&
-      (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
-      (id !== "sidekick" || state.sidekick !== undefined) &&
-      (id !== "plugins" || state.plugins !== undefined) &&
-      (id !== "connections" || state.connections !== undefined) &&
-      (id !== "jobs" || state.jobs !== undefined),
-  );
-}
-
-/** A tab's name as its button says it ("Sidekicks" with several: the button passes its own `sidekick`). */
-export function tabLabel(t: TFunction, state: AppState, id: SettingsTab, sidekick = t("sidekick.tab")): string {
-  return id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : id === "sidekick" ? sidekick : id === "plugins" ? t("plugins.tab") : id === "connections" ? t("connections.tab") : id === "jobs" ? t("parallel.jobsTab") : t(`settings.tabs.${id}`);
-}
 
 /** The Settings sheet (spec 2026-10-11 "Settings sheet"): attached under the top bar, dimmed backdrop. */
 export function SettingsSheet({
@@ -232,7 +209,7 @@ export function SettingsSheet({
           {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
           {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
-          {tab === "models" && configured && <ModelsTab key={focus?.n} client={client} state={state} onChange={onChange} {...(focus?.id === "models.levels" ? { initialPart: "levels" as const } : {})} />}
+          {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} {...(focus && focus.id.startsWith("models.") ? { focus: { part: focus.id === "models.levels" ? ("levels" as const) : ("tasks" as const), n: focus.n } } : {})} />}
           {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
           {tab === "plugins" && configured && <PluginsTab client={client} />}
           {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
@@ -248,7 +225,7 @@ export function SettingsSheet({
                   onConnections={state.connections ? () => onTab("connections") : undefined}
                 />
               )}
-              {state.settings && <HarnessSettingsTab key={focus?.n} client={client} view={state.settings} {...(focus ? { focus: focus.id } : {})} />}
+              {state.settings && <HarnessSettingsTab client={client} view={state.settings} {...(focus ? { focus } : {})} />}
             </>
           )}
         </div>
@@ -483,9 +460,9 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
   const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
   // The other cap may still be on its way to main: each save builds on the last one asked for, not on `state`.
   const latest = useLatestConfig(state.config.parallel);
-  // Rows: data-setting="general.tasksAtOnce", data-setting="general.jobsAtOnce".
-  const cap = (key: "tasks" | "jobs", label: string, setting: string) => (
-    <div className="hh-row" data-setting={setting}>
+  // Each row writes its data-setting itself: the registry test reads them as written.
+  const cap = (key: "tasks" | "jobs", label: string) => (
+    <>
       <label className="hh-row-label" htmlFor={`${id}-${key}`}>
         {label}
       </label>
@@ -502,14 +479,18 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
           </option>
         ))}
       </select>
-    </div>
+    </>
   );
   return (
     <>
       <h3>{t("parallel.parallelSection")}</h3>
       <div className="hh-rows">
-        {cap("tasks", t("parallel.tasksAtOnce"), "general.tasksAtOnce")}
-        {cap("jobs", t("parallel.jobsAtOnce"), "general.jobsAtOnce")}
+        <div className="hh-row" data-setting="general.tasksAtOnce">
+          {cap("tasks", t("parallel.tasksAtOnce"))}
+        </div>
+        <div className="hh-row" data-setting="general.jobsAtOnce">
+          {cap("jobs", t("parallel.jobsAtOnce"))}
+        </div>
         {held && (
           <p className="hh-caption hh-row-note" id={`${id}-held`}>
             {t("parallel.engineHeld", { engine })}

@@ -4,6 +4,7 @@ import path from "node:path";
 import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { SEARCHABLE_SETTINGS } from "@humanharness/protocol";
+import type { AppState, ModelsView, SearchSettingsTab } from "../src/client";
 import { SettingsSheet } from "../src/SettingsSheet";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -44,4 +45,56 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
     await waitFor(() => expect(shown()).toContain("sidekick.on"));
     expect(shown().sort()).toEqual(SEARCHABLE_SETTINGS.filter((s) => s.tab === "sidekick").map((s) => s.id).sort());
   });
+
+  // One render per tab, with the state its rows need (§6): a row the registry names is drawn where it says.
+  const MODELS: ModelsView = {
+    recommended: { questions: "standard" },
+    defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
+    offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high"] } },
+    pinnedTokens: 3000,
+  };
+  const registry = (tab: SearchSettingsTab) => SEARCHABLE_SETTINGS.filter((s) => s.tab === tab).map((s) => s.id);
+  async function rowsOf(tab: SearchSettingsTab, setup: (c: FakeClient, state: AppState) => void) {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    setup(client, client.state);
+    await renderIn("en", <SettingsSheet client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    return client;
+  }
+
+  it("General with parallel and profiles renders their rows too", async () => {
+    await rowsOf("general", (_, s) => {
+      s.parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+      s.profiles = { label: "student", form: { fields: [{ name: "name", kind: "text", label: "Name", optional: false }] } };
+    });
+    await waitFor(() => expect(shown()).toContain("general.profiles"));
+    for (const id of ["general.tasksAtOnce", "general.jobsAtOnce", "general.notifyWaiting", "general.profiles"]) expect(shown()).toContain(id);
+  });
+
+  it("Models renders its Tasks row on Tasks, its Levels row on Levels", async () => {
+    await rowsOf("models", (_, s) => {
+      s.models = MODELS;
+    });
+    await waitFor(() => expect(shown()).toEqual(["models.tasks"]));
+    expect(registry("models")).toEqual(["models.tasks", "models.levels"]);
+  });
+
+  for (const [tab, setup] of [
+    ["engine", () => {}],
+    ["plugins", (c: FakeClient, s: AppState) => {
+      s.plugins = { local: true };
+      c.pluginsView = { local: true, plugins: [] };
+    }],
+    ["connections", (_: FakeClient, s: AppState) => {
+      s.connections = { count: 0 };
+    }],
+    ["jobs", (_: FakeClient, s: AppState) => {
+      s.jobs = { jobs: [] };
+    }],
+    ["usage", () => {}],
+  ] as [SearchSettingsTab, (c: FakeClient, s: AppState) => void][]) {
+    it(`${tab} renders exactly its registry rows`, async () => {
+      await rowsOf(tab, setup);
+      await waitFor(() => expect(shown().sort()).toEqual(registry(tab).sort()));
+    });
+  }
 });

@@ -136,3 +136,16 @@ describe("the model merges main's answer with the window's rows", () => {
     expect(chipsOf(typed).map((c) => c.kind)).toEqual([null, "task", "file", "data"]);
   });
 });
+
+describe("a row's text from a manifest is isolated (B12)", () => {
+  it("a harness field's label and its tab's name each sit in their own <bdi>: an RLO can't turn the row around", async () => {
+    const RLO = "‮";
+    const field: SearchHitView = { id: "setting:harness:nick", kind: "setting", title: [{ text: `Nick${RLO}eman` }], context: [{ text: `How I ${RLO}learn` }], hint: null, target: { kind: "setting", tab: "harness", field: "harness:nick" } };
+    await palette((q) => ({ query: q, setting: q.trim() ? [field] : [], command: [] }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Search tasks, notes and files" }), { target: { value: "nick" } });
+    const option = await within(await screen.findByRole("group", { name: "Settings" })).findByRole("option");
+    const isolated = [...option.querySelectorAll("bdi")].map((b) => b.textContent);
+    expect(isolated).toContain(`Nick${RLO}eman`);
+    expect(isolated).toContain(`How I ${RLO}learn`);
+  });
+});

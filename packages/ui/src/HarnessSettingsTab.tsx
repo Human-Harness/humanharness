@@ -33,8 +33,11 @@ export function HarnessSettingsTab({
 }: {
   client: HarnessClient;
   view: SettingsView;
-  /** Search opened Settings at this field (`harness:<name>`, §6): an advanced one opens with More settings expanded. */
-  focus?: string;
+  /**
+   * Search opened Settings at this field (`harness:<name>`, §6): an advanced one opens with More settings expanded.
+   * `n` changes on each search; the tab stays mounted, so a draft or a refusal on screen stays too.
+   */
+  focus?: { id: string; n: number };
 }) {
   const { t } = useTranslation();
   const moreId = useId();
@@ -42,7 +45,12 @@ export function HarnessSettingsTab({
   const [state, setState] = useState<SettingsState | null>(null);
   const [taskOpen, setTaskOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [more, setMore] = useState(() => view.fields.some((f) => f.advanced && `harness:${f.name}` === focus));
+  const advancedFocus = (id: string | undefined) => view.fields.some((f) => f.advanced && `harness:${f.name}` === id);
+  const [more, setMore] = useState(() => advancedFocus(focus?.id));
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (advancedFocus(focus?.id)) setMore(true);
+  }, [focusN]);
 
   useEffect(() => {
     let live = true;

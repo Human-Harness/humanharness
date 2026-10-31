@@ -45,10 +45,22 @@ function HitRow({ id, hit, tag, active, onPick, onHover }: { id: string; hit: Se
     <div id={id} role="option" aria-selected={active} className={active ? "hh-search-row hh-search-row-active" : "hh-search-row"} onMouseDown={(e) => e.preventDefault()} onMouseMove={onHover} onClick={onPick}>
       <span className={`hh-search-icon hh-search-icon-${hit.kind}`} aria-hidden="true" />
       <span className="hh-search-text">
+        {/* Titles and contexts come from files, records and manifests: each is isolated, so a direction mark in one
+            never turns the row around (B12). */}
         <span className="hh-search-row-title">
-          <Marked parts={hit.title} />
+          <bdi>
+            <Marked parts={hit.title} />
+          </bdi>
         </span>
-        <span className="hh-search-row-context">{hit.context.length > 0 ? <Marked parts={hit.context} /> : meta}</span>
+        <span className="hh-search-row-context">
+          {hit.context.length > 0 ? (
+            <bdi>
+              <Marked parts={hit.context} />
+            </bdi>
+          ) : (
+            meta
+          )}
+        </span>
       </span>
       {hit.folder !== undefined && <span className="hh-search-tag">{t("search.readOnly", { folder: hit.folder })}</span>}
       {hit.scope !== undefined && <span className="hh-search-tag">{hit.scope}</span>}

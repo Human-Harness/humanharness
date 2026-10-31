@@ -13,7 +13,7 @@ import {
   searchCommands,
   settingAvailable,
 } from "../client";
-import { tabLabel, visibleTabs } from "../SettingsSheet";
+import { tabLabel, visibleTabs } from "../settings-tabs";
 
 /** What the window's state says about each setting's `needs`. */
 export function settingState(state: AppState): SettingState {

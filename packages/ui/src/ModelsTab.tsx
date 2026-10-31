@@ -1,4 +1,4 @@
-import { useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
 import { Segmented } from "./chrome";
@@ -113,18 +113,22 @@ export function ModelsTab({
   client,
   state,
   onChange,
-  initialPart,
+  focus,
 }: {
   client: HarnessClient;
   state: AppState;
   onChange: (s: AppState) => void;
-  /** The part it opens on (search's Models › Levels row, §6). */
-  initialPart?: "tasks" | "levels";
+  /** Search's Models row (§6): the part it shows; `n` changes on each search, the tab staying as it is otherwise. */
+  focus?: { part: "tasks" | "levels"; n: number };
 }) {
   const { t } = useTranslation();
   const tasksId = useId();
   const [models, update, saveFailed] = useModels(client, state, onChange);
-  const [part, setPart] = useState<"tasks" | "levels">(initialPart ?? "tasks");
+  const [part, setPart] = useState<"tasks" | "levels">(focus?.part ?? "tasks");
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (focus) setPart(focus.part);
+  }, [focusN]);
   const view = state.models;
   if (!view) return null;
   const engine = state.config.engineId ?? state.engines[0]?.id ?? "";

@@ -112,8 +112,18 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-message p\s*{[^}]*white-space:\s*pre-wrap/);
   });
 
-  it("gives the clipped Start button a focus ring drawn inside it", () => {
-    expect(css).toMatch(/\.hh-start:focus-visible\s*\{[^}]*outline-offset:\s*-\d/);
+  it("draws the CTA's focus ring inside it, in its ink", () => {
+    expect(css).toMatch(/^\.hh-primary:focus-visible,\s*\.hh-cta:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--hh-cta-ink\)[^}]*outline-offset:\s*-\d/m);
+    expect(css).not.toMatch(/\.hh-start:focus-visible/);
+  });
+
+  it("keeps the border of buttons that set their own on hover", () => {
+    const hover = (sel: string) => css.match(new RegExp(`^${sel}:hover:not\\(:disabled\\)[^{]*{[^}]*border-color:\\s*([^;}]+)`, "m"))?.[1].trim();
+    expect(hover("\\.hh-steps button")).toBe("transparent");
+    expect(hover('\\.hh-steps button\\[aria-current="step"\\]')).toBe("var(--hh-line)");
+    expect(hover("\\.hh-choice\\.next")).toBe("var(--hh-ink)");
+    expect(css).toMatch(/\.hh-choice\[aria-pressed="true"\]:hover:not\(:disabled\)\s*{[^}]*border-color:\s*var\(--hh-ink\)/);
+    expect(hover('\\.hh-pl-tab\\[aria-selected="true"\\]')).toBe("var(--hh-ink)");
   });
 
   it("has the soft-cards controls: amber CTA, tags by meaning, no chamfer (spec §3.2–3.3)", () => {

@@ -147,7 +147,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-primary, .hh-cta { height: 44px; padding: 0 18px; border-radius: 12px; border-color: transparent; background: var(--hh-cta); color: var(--hh-cta-ink); font-weight: 600; }
 .hh-primary:hover:not(:disabled), .hh-cta:hover:not(:disabled) { background: var(--hh-cta-hover); border-color: transparent; }
 /* The ring sits inside the CTA, in its ink, so it shows on the amber fill. */
-.hh-primary:focus-visible, .hh-cta:focus-visible, .hh-start:focus-visible { outline: 2px solid var(--hh-cta-ink); outline-offset: -4px; }
+.hh-primary:focus-visible, .hh-cta:focus-visible { outline: 2px solid var(--hh-cta-ink); outline-offset: -4px; }
 .hh-start { height: 52px; padding: 0 26px; border-radius: 14px; font-size: 16px; }
 /* A state, coloured by what it means (spec §3.3). */
 .hh-tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
@@ -517,6 +517,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .hh-steps button { width: 100%; height: auto; justify-content: flex-start; gap: 9px; padding: 6px 8px; border-color: transparent; background: transparent; color: var(--hh-muted); text-align: left; }
 .hh-steps button[aria-current="step"] { background: var(--hh-surface); border-color: var(--hh-line); color: var(--hh-ink); font-weight: 600; }
+/* The generic button hover (0,2,1) would beat these borders; they keep their own. */
+.hh-steps button:hover:not(:disabled) { border-color: transparent; }
+.hh-steps button[aria-current="step"]:hover:not(:disabled) { border-color: var(--hh-line); }
 .hh-step-mark { width: 18px; height: 18px; flex: none; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--hh-line-strong); font-size: 11px; color: var(--hh-muted); }
 .hh-step-mark.done { border-color: transparent; color: var(--hh-ok); }
 [aria-current="step"] .hh-step-mark { border-color: transparent; background: var(--hh-ink); color: var(--hh-on-ink); }
@@ -570,6 +573,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }
 .hh-choice.next, .hh-choice[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-choice.next:hover:not(:disabled), .hh-choice[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--hh-ink); }
 .hh-recommend { display: grid; gap: 8px; }
 .hh-recommend .hh-choice, .hh-mode-list .hh-choice { flex-direction: column; align-items: flex-start; gap: 4px; }
 .hh-badge { display: inline-block; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--hh-line-strong); font-size: 12px; color: var(--hh-muted); }
@@ -820,6 +824,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-tabs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .hh-pl-tab { max-width: 100%; height: 24px; padding: 0 8px; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
 .hh-pl-tab[aria-selected="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-pl-tab[aria-selected="true"]:hover:not(:disabled) { border-color: var(--hh-ink); }
 .hh-pl-panel-head { margin: 0; padding-left: 6px; color: var(--hh-muted); font-size: 0.8rem; overflow-wrap: anywhere; }
 .hh-pl-chips { display: flex; align-items: center; gap: 4px; min-width: 0; flex-shrink: 1; overflow: hidden; }
 .hh-pl-chip { display: inline-block; max-width: 180px; height: 22px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--hh-line-strong); border-radius: 11px; background: var(--hh-surface); color: var(--hh-ink); font-size: 0.75rem; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

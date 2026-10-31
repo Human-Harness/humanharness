@@ -3652,6 +3652,8 @@ if (loaded) {
       switchTo: (target) => switches.run(target),
       trash: (p) => shell.trashItem(p),
       historyDir: (folder) => historyDir(app.getPath("userData"), folder),
+      // Profile ids are reused names: the search index is keyed by the folder's path, so a deleted one's must go.
+      forget: (folder) => searchSvc.discard(folder),
       changed: (state) => sendToWindow("hh:profiles", state),
       blocked: hold.profileChangeBlocked,
     });

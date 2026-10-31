@@ -153,6 +153,32 @@ describe("Profiles (profiles spec §5)", () => {
     expect((await t.profiles.state()).list.map((p) => p.id)).toEqual(["sofi"]);
   });
 
+  it("deleting forgets what the app kept for that folder elsewhere (its search index); a new profile under the id starts clean", async () => {
+    const forgotten: string[] = [];
+    const t = setup({ forget: async (dir) => void forgotten.push(dir) });
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    await t.profiles.open("sofi");
+    // A new profile forgets too: whatever a delete that failed to forget left under its id is not the new person's.
+    expect(forgotten).toEqual([path.join(t.root, "sofi"), path.join(t.root, "tomas")]);
+    forgotten.length = 0;
+    expect(await t.profiles.remove("tomas")).toEqual({ ok: true });
+    expect(forgotten).toEqual([path.join(t.root, "tomas")]);
+    expect(await t.profiles.create({ name: "Tomás" })).toEqual({ ok: true });
+    expect(forgotten).toEqual([path.join(t.root, "tomas"), path.join(t.root, "tomas")]);
+  });
+
+  it("a failed forget is logged and the delete still goes through", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const t = setup({ forget: async () => Promise.reject(new Error("busy")) });
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    await t.profiles.open("sofi");
+    expect(await t.profiles.remove("tomas")).toEqual({ ok: true });
+    expect((await t.profiles.state()).list.map((p) => p.id)).toEqual(["sofi"]);
+    expect(error).toHaveBeenCalled();
+  });
+
   it("a folder the Trash refuses changes nothing", async () => {
     const t = setup({ trash: async () => Promise.reject(new Error("no Trash")) });
     vi.spyOn(console, "error").mockImplementation(() => {});

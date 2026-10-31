@@ -32,6 +32,11 @@ export interface ProfilesDeps {
   trash(p: string): Promise<void>;
   /** Where the history of a folder lives (`historyDir`). */
   historyDir(folder: string): string;
+  /**
+   * Drops what the app keeps for a profile's folder outside it and outside its history (the search index, keyed by the
+   * folder's path): a deleted profile's, and whatever a new profile under a reused id would otherwise inherit.
+   */
+  forget?(folder: string): Promise<void>;
   /** The profiles changed: the window's switcher redraws. */
   changed(state: ProfilesState): void;
   /** A switch, a turn, a restore, a move or an engine change runs: archiving and deleting wait (they would race it). */
@@ -158,6 +163,7 @@ export class Profiles {
         // folder removed by hand): it is set aside, so the new person never sees it. Pruned later like a move's.
         const history = this.d.historyDir(base);
         if (await exists(history)) await fs.rename(history, `${history}.replaced-${Date.now()}`);
+        await this.forget(base);
         await prepareFolder(base, this.d.seed);
         await this.d.writeRecord(base, { ...record, name: title });
         return entry.id;
@@ -256,6 +262,11 @@ export class Profiles {
     return this.held(() => this.removeNow(id));
   }
 
+  /** `forget`, never rejecting: a failure is logged (a new profile under the id forgets again). */
+  private async forget(folder: string): Promise<void> {
+    await this.d.forget?.(folder).catch((err: unknown) => console.error("Could not drop what the app kept for the profile", err));
+  }
+
   private async removeNow(id: unknown): Promise<ProfileOutcome> {
     const root = await this.d.root();
     if (!root) return { ok: false, reason: "not-ready" };
@@ -272,6 +283,7 @@ export class Profiles {
     if (await exists(history)) {
       await this.d.trash(history).catch((err: unknown) => console.error("Could not put the profile's history in the Trash", err));
     }
+    await this.forget(dir);
     try {
       await this.store(root).remove(id);
     } catch (err) {

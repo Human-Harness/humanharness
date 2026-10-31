@@ -43,6 +43,8 @@ export const PER_KIND = 50;
 export const MAX_RECENT = 8;
 /** Snippets read per answer (plan deviation 17). */
 export const MAX_SNIPPETS = 20;
+/** A searchable collection that failed to read (same stamp) is tried again after this, then twice as long each time. */
+export const DATA_RETRY_MS = 10_000;
 
 export interface SearchReference {
   id: string;
@@ -78,6 +80,8 @@ export interface SearchServiceDeps {
   reveal(file: string, roots: string[]): Promise<boolean>;
   /** Searchable collections (D4); absent: none. */
   data?: SearchDataDeps;
+  /** Tests: the cap on data documents (MAX_DATA_DOCS). */
+  maxDataDocs?: number;
   now?: () => number;
   storeDelayMs?: number;
   limits?: BuildLimits;
@@ -100,10 +104,16 @@ interface Live {
   /** Each searchable collection's stamp and documents (D4). */
   data: Record<string, DataMeta>;
   dataAt: number;
-  /** A data refresh under way; `dataAgain`: one more was asked for meanwhile. */
+  /** A data refresh under way (`dataPass`: its pass in progress); `dataAgain`: one more was asked for meanwhile. */
   dataRun: Promise<void> | null;
+  dataPass: Promise<void> | null;
   dataAgain: boolean;
+  /** Sources whose last read failed: at which stamp, when, and how long until the next try. */
+  dataFailed: Map<string, { stamp: string; at: number; wait: number }>;
 }
+
+/** A source cut short by the cap: its stamp with the room it had, so the same room and stamp read nothing again. */
+const cutStamp = (room: number, stamp: string) => `cut:${room}:${stamp}`;
 
 const EMPTY_COUNTS = (): Record<SearchIndexKind, number> => ({ task: 0, note: 0, file: 0, data: 0 });
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -187,7 +197,9 @@ export class SearchService {
       data: index && snap ? (snap.data ?? {}) : {},
       dataAt: 0,
       dataRun: null,
+      dataPass: null,
       dataAgain: false,
+      dataFailed: new Map(),
     };
     this.live = live;
     if (index) {
@@ -329,32 +341,44 @@ export class SearchService {
     live.memoryAt = this.now();
   }
 
-  /** Searchable collections (D4): one refresh at a time; one asked for meanwhile runs once more after it. */
+  /**
+   * Searchable collections (D4): one refresh at a time; one asked for meanwhile runs once more after it. What it
+   * returns settles with the pass in progress: an answer never waits for the passes a burst of writes keeps asking for.
+   */
   private refreshData(live: Live): Promise<void> {
     // Like a build: an index swapped out or discarded meanwhile reads nothing.
     if (!this.d.data || this.live !== live) return Promise.resolve();
     if (live.dataRun) {
       live.dataAgain = true;
-      return live.dataRun;
+      return live.dataPass ?? live.dataRun;
     }
-    const run = (async () => {
-      do {
-        live.dataAgain = false;
-        await this.syncData(live);
-      } while (live.dataAgain && this.live === live);
-    })()
-      .catch((err: unknown) => console.error("Could not refresh the searchable collections", err instanceof Error ? err.message : "unknown error"))
-      .finally(() => {
-        live.dataRun = null;
-      });
+    let run: Promise<void> | null = null;
+    run = (async () => {
+      try {
+        do {
+          live.dataAgain = false;
+          live.dataPass = this.syncData(live).catch((err: unknown) =>
+            console.error("Could not refresh the searchable collections", err instanceof Error ? err.message : "unknown error"),
+          );
+          await live.dataPass;
+        } while (live.dataAgain && this.live === live);
+      } finally {
+        // Here, not in a chained handler: a refresh asked for after the last check above starts a new run.
+        if (live.dataRun === run) {
+          live.dataRun = null;
+          live.dataPass = null;
+        }
+      }
+    })();
     live.dataRun = run;
-    return run;
+    return live.dataPass ?? run;
   }
 
   /**
    * A source whose stamp changed is read again (one at a time) and its documents replaced; one gone takes its documents
-   * out; one that fails keeps what the index had. At most MAX_DATA_DOCS documents in all (plan deviation 5). Nothing is
-   * applied to an index swapped out or discarded during a read.
+   * out; one that fails keeps what the index had (while it fits), logged once per stamp and tried again later and later.
+   * At most MAX_DATA_DOCS documents in all (plan deviation 5). Nothing is applied to an index swapped out or discarded
+   * during a read.
    */
   private async syncData(live: Live): Promise<void> {
     const data = this.d.data!;
@@ -367,24 +391,33 @@ export class SearchService {
     if (!sources) return;
     const scoped = this.d.scoped();
     const next: Record<string, DataMeta> = {};
-    let room = MAX_DATA_DOCS;
+    let room = this.d.maxDataDocs ?? MAX_DATA_DOCS;
     let changed = false;
+    const listed = new Set(sources.map((s) => s.id));
+    for (const id of live.dataFailed.keys()) if (!listed.has(id)) live.dataFailed.delete(id);
     for (const s of sources) {
       // A source listed twice: the first one counts.
       if (Object.hasOwn(next, s.id)) continue;
       const had = live.data[s.id];
-      if (had && had.stamp === s.stamp && had.ids.length <= room) {
+      if (had && (had.stamp === s.stamp || had.stamp === cutStamp(room, s.stamp)) && had.ids.length <= room) {
         next[s.id] = had;
         room -= had.ids.length;
         continue;
       }
       // No room left: left out (its documents go below), read again once there is.
       if (room <= 0) continue;
-      const rows = await data.rows(s).catch((err: unknown) => {
-        console.error("Could not read a searchable collection", err instanceof Error ? err.message : "unknown error");
-        return null;
-      });
+      const failed = live.dataFailed.get(s.id);
+      const again = failed?.stamp === s.stamp ? failed : undefined;
+      const rows =
+        again && this.now() - again.at < again.wait
+          ? null
+          : await data.rows(s).catch((err: unknown) => {
+              if (!again) console.error("Could not read a searchable collection", err instanceof Error ? err.message : "unknown error");
+              live.dataFailed.set(s.id, { stamp: s.stamp, at: this.now(), wait: again ? Math.min(again.wait * 2, MAX_RECONCILE_WAIT_MS) : DATA_RETRY_MS });
+              return null;
+            });
       if (this.live !== live) return;
+      if (rows) live.dataFailed.delete(s.id);
       if (!rows) {
         if (had && had.ids.length <= room) {
           next[s.id] = had;
@@ -396,8 +429,8 @@ export class SearchService {
       const ids = new Set(docs.map((doc) => doc.id));
       if (had) live.index.remove(had.ids.filter((id) => !ids.has(id)));
       live.index.upsert(docs);
-      // Cut short by the cap: no stamp, so a later refresh reads it again (with more room, maybe all of it).
-      next[s.id] = { stamp: rows.length > room ? "" : s.stamp, ids: [...ids] };
+      // Cut short by the cap: read again only once its room or its stamp changes (with more room, maybe all of it).
+      next[s.id] = { stamp: rows.length > room ? cutStamp(room, s.stamp) : s.stamp, ids: [...ids] };
       room -= ids.size;
       changed = true;
     }

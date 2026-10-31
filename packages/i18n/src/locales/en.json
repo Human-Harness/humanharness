@@ -3,6 +3,20 @@
   "inbox": { "title": "Inbox", "pill": "Inbox, {{count}} waiting" },
   "task": { "header": { "new": "New task", "topic": "Topic {{n}} of {{total}} · started {{ago}}" } },
   "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },
+  "start": {
+    "view": {
+      "label": "View",
+      "cards": "Cards",
+      "list": "List",
+      "path": "Guided path",
+      "topics": "Topics",
+      "done": "{{done}} / {{total}} done",
+      "askNow": "Or ask straight away",
+      "upNext": "Up next",
+      "toDo": "To do",
+      "doneTag": "Done"
+    }
+  },
   "home": {
     "start": "Start {{name}}",
     "settings": "Settings",

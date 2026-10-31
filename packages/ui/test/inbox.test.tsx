@@ -2,8 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
+import { InboxPill } from "../src/parallel/Inbox";
 import type { JobSummary, ParallelInfo, TaskSummary, TasksState } from "../src/client";
 import { FakeClient } from "./fake-client";
+import { renderIn } from "./render";
 
 afterEach(cleanup);
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -371,5 +373,28 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     await screen.findByRole("button", { name: "Inbox, 1 waiting" });
     act(() => c.jobs.set(rows()));
     await screen.findByRole("button", { name: "Inbox, 2 waiting" });
+  });
+});
+
+/** A tasks state with `waiting` tasks waiting for the person. */
+const tasksWith = ({ waiting }: { waiting: number }): TasksState => ({
+  tasks: Array.from({ length: waiting }, (_, i) => summary(`w${i}`, "waiting")),
+  caps: { tasks: 2, jobs: 1 },
+});
+
+describe("Inbox pill (UI refresh spec §4.1)", () => {
+  it("is a top-bar pill with the waiting count that opens the Inbox screen (spec §4.1)", async () => {
+    const onOpen = vi.fn();
+    await renderIn("en", <InboxPill tasks={tasksWith({ waiting: 2 })} onOpen={onOpen} />);
+    fireEvent.click(screen.getByRole("button", { name: "Inbox, 2 waiting" }));
+    expect(onOpen).toHaveBeenCalled();
+  });
+
+  it("sits in the top bar on the work screen", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
+    expect(button.closest("header.hh-topbar")).not.toBeNull();
+    expect(button.className).toContain("hh-pill");
   });
 });

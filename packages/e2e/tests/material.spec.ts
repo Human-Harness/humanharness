@@ -110,6 +110,7 @@ test("material: add a chapter, the stages run, a task cites it, another student 
     await expect.poll(() => fs.readFileSync(path.join(ana, ".harness", "material-reads.jsonl"), "utf8")).toContain('"id":"fractions-002"');
 
     // Another student: their own topic, no material of Ana's.
+    await page.getByRole("button", { name: /^Profile: / }).click();
     await page.getByRole("button", { name: "Add student" }).click();
     await addStudent(page, "Ben");
     await page.getByRole("button", { name: "Start Reader" }).click();

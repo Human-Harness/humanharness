@@ -75,6 +75,7 @@ test("profiles: add two students, each with their own folder and setup, switch, 
     await expect.poll(() => fs.existsSync(path.join(s.folder, "sofi", ".harness", "usage.jsonl"))).toBe(true);
 
     // Add a second student from the work screen: the open task closes; the privacy note shows once.
+    await page.getByRole("button", { name: /^Profile: / }).click();
     await page.getByRole("button", { name: "Add student" }).click();
     await expect(page.getByRole("heading", { name: "Who's using Family Tutor?" })).toBeVisible();
     await expect(page.getByText(/they don't protect it/)).toBeVisible();
@@ -90,6 +91,7 @@ test("profiles: add two students, each with their own folder and setup, switch, 
 
     // Switch back to Sofi from the work screen's top bar.
     await page.getByRole("button", { name: "Start Family Tutor" }).click();
+    await page.getByRole("button", { name: /^Profile: / }).click();
     await page.getByRole("combobox", { name: "Choose student" }).selectOption("sofi");
     await expect.poll(() => json(path.join(s.userData, "config.json"))?.profile).toBe("sofi");
 

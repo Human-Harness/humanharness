@@ -793,6 +793,102 @@ describe("HarnessApp", () => {
     await screen.findByRole("button", { name: "Start Demo" });
   });
 
+  it("wraps the chat in the shell: top bar, rail with Tasks current (spec §4)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const rail = await screen.findByRole("navigation", { name: "App" });
+    expect(within(rail).getByRole("button", { name: "Tasks" }).getAttribute("aria-current")).toBe("page");
+    expect(within(rail).queryByRole("button", { name: "Inbox" })).toBeNull(); // no parallel: D0
+  });
+
+  it("leaves only logo, breadcrumb, Inbox, bell and avatar in the top bar (spec §4.1)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const bar = (await screen.findByRole("navigation", { name: "Breadcrumb" })).closest("header")!;
+    for (const gone of ["History", "Settings", "Home"]) expect(within(bar).queryByRole("button", { name: gone })).toBeNull();
+    // Spans the window above the rail: the rail is not inside it, and both are the shell's children.
+    expect(bar.parentElement?.className).toBe("hh-shell");
+    expect(within(bar).getByRole("button", { name: "Demo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
+  });
+
+  it("the top bar's avatar opens the profile switcher; D0: no avatar without profiles (spec §4.1, Q2)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const bar = (await screen.findByRole("navigation", { name: "Breadcrumb" })).closest("header")!;
+    expect(within(bar).queryByRole("button", { name: /^Profile/ })).toBeNull();
+    cleanup();
+    const client = new FakeClient({ ...ready, profile: "sofi" });
+    client.state = { ...client.state, profiles: { label: "student", form: { fields: [] } } };
+    client.profileList = [{ id: "sofi", title: "Sofi", color: "coral", createdAt: "2026-10-27T10:00:00.000Z", archived: false }];
+    await startWork(<HarnessApp client={client} />);
+    const avatar = await screen.findByRole("button", { name: "Profile: Sofi" });
+    expect(avatar.closest("header.hh-topbar")).not.toBeNull();
+    expect(avatar.textContent).toBe("S");
+    expect(avatar.getAttribute("data-color")).toBe("coral");
+    expect(screen.queryByRole("button", { name: "Add student" })).toBeNull();
+    fireEvent.click(avatar);
+    expect(await screen.findByRole("button", { name: "Add student" })).toBeTruthy();
+  });
+
+  it("a harness without parallel names the open task in the breadcrumb, and Tasks again when it ends (spec §4.1)", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { manifest: { label: "The manifest", cost: "medium" } };
+    client.state.path = ["manifest"];
+    await startWork(<HarnessApp client={client} />);
+    const nav = await screen.findByRole("navigation", { name: "Breadcrumb" });
+    const here = () => nav.querySelector("[aria-current=page]")?.textContent;
+    await waitFor(() => expect(here()).toBe("Tasks"));
+    await act(() => client.emitTasks({ current: { id: "t1", action: "manifest", status: "waiting" }, actions: {}, notes: [] }));
+    await waitFor(() => expect(here()).toBe("The manifest"));
+    await act(() => client.emitTasks({ current: { id: "t2", status: "waiting" }, actions: {}, notes: [] }));
+    await waitFor(() => expect(here()).toBe("A question"));
+    await act(() => client.emitTasks({ current: null, actions: {}, notes: [] }));
+    await waitFor(() => expect(here()).toBe("Tasks"));
+  });
+
+  it("the top bar's avatar switcher is disabled while a turn runs and enabled again after it", async () => {
+    const client = new FakeClient({ ...ready, profile: "sofi" });
+    client.state = { ...client.state, profiles: { label: "student", form: { fields: [] } } };
+    client.profileList = [
+      { id: "sofi", title: "Sofi", color: "coral", createdAt: "2026-10-27T10:00:00.000Z", archived: false },
+      { id: "tomas", title: "Tomás", createdAt: "2026-10-27T10:00:00.000Z", archived: false },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Profile: Sofi" }));
+    const select = () => screen.getByRole("combobox", { name: "Choose student" }) as HTMLSelectElement;
+    await waitFor(() => expect(select().disabled).toBe(false));
+    const input = await screen.findByPlaceholderText("Write a message…");
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(select().disabled).toBe(true));
+    expect((screen.getByRole("button", { name: "Add student" }) as HTMLButtonElement).disabled).toBe(true);
+    act(() => client.emit({ type: "done", ok: true }));
+    await waitFor(() => expect(select().disabled).toBe(false));
+    expect((screen.getByRole("button", { name: "Add student" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("Rail › Home goes to Home and Rail › Settings opens Settings", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    const rail = await screen.findByRole("navigation", { name: "App" });
+    fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Home" }));
+    expect(await screen.findByRole("button", { name: /Start/ })).toBeTruthy();
+  });
+
+  it("Rail › Notes opens the notes drawer, only for a harness with actions (D0)", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    expect(within(await screen.findByRole("navigation", { name: "App" })).queryByRole("button", { name: "Notes" })).toBeNull();
+    cleanup();
+    const client = new FakeClient(ready);
+    client.state.actions = { manifest: { label: "The manifest", cost: "medium" } };
+    client.state.path = ["manifest"];
+    await startWork(<HarnessApp client={client} />);
+    const rail = await screen.findByRole("navigation", { name: "App" });
+    expect(screen.queryByRole("dialog", { name: "What's clear so far" })).toBeNull();
+    fireEvent.click(within(rail).getByRole("button", { name: "Notes" }));
+    expect(await screen.findByRole("dialog", { name: "What's clear so far" })).toBeTruthy();
+  });
+
   it("restores the side panel from the saved conversation", async () => {
     const client = new FakeClient(ready);
     client.chat = [{ id: "1", role: "assistant", text: "", blocks: [], activities: [], at: "t", state: { progress: { percent: 60 } } }];

@@ -1,4 +1,6 @@
 {
+  "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
+  "inbox": { "title": "Inbox", "pill": "Inbox, {{count}} waiting" },
   "home": {
     "start": "Start {{name}}",
     "settings": "Settings",
@@ -584,6 +586,7 @@
   },
   "profiles": {
     "pick": "Choose {{label}}",
+    "avatar": "Profile: {{name}}",
     "add": "Add {{label}}",
     "stepLabel": "Who's using it",
     "heading": "Who's using {{name}}?",
@@ -611,6 +614,8 @@
     }
   },
   "app": {
+    "name": "Human Harness",
+    "breadcrumb": "Breadcrumb",
     "loadError": "The app couldn't start. Close it and open it again."
   },
   "setupFlow": {
@@ -1260,7 +1265,6 @@
     "pathsMore": "{{paths}} and {{count}} more",
     "waitingBody": "Waiting for you",
     "inbox": "Inbox",
-    "inboxButton": "Inbox, {{count}} waiting",
     "waitingTitle": "Waiting for you",
     "workingTitle": "Working",
     "queuedTitle": "Queued",

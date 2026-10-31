@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { RailEntry } from "./shell-nav";
 
 function MockBadge() {
   const { t } = useTranslation();
@@ -10,14 +11,68 @@ function MockBadge() {
   );
 }
 
-/** The window's top bar: the drag region of the hiddenInset title bar, with room for the traffic lights. */
-export function TopBar({ title, mock, children }: { title?: ReactNode; mock?: boolean; children?: ReactNode }) {
+export interface Crumb {
+  label: string;
+  onClick?: () => void;
+}
+
+/**
+ * The window's top bar (UI refresh spec §4.1): the drag region of the hiddenInset title bar, 80px left for the traffic
+ * lights, then the logo, the breadcrumb, the centre slot (search) and the trailing controls. `title` is the bar before the
+ * breadcrumb: a heading shown only when there are no crumbs, kept until every screen passes crumbs.
+ */
+export function TopBar({
+  crumbs = [],
+  title,
+  logo,
+  mock,
+  center,
+  trailing,
+  children,
+}: {
+  crumbs?: Crumb[];
+  title?: ReactNode;
+  logo?: string;
+  mock?: boolean;
+  center?: ReactNode;
+  trailing?: ReactNode;
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
   return (
     <header className="hh-topbar">
-      {title !== undefined && <h1 className="hh-title">{title}</h1>}
+      {/* The harness's own logo is decorative: its name is the first crumb. Only the HH tile is announced. */}
+      {logo ? <img className="hh-topbar-logo" src={logo} alt="" /> : <HHLogo className="hh-topbar-logo" title={t("app.name")} />}
+      {crumbs.length > 0 ? (
+        <nav className="hh-crumbs" aria-label={t("app.breadcrumb")}>
+          {/* Labels come from the manifest and the task (untrusted): dir="auto" isolates each, so RTL text or bidi
+              controls in one can't reorder the others. */}
+          {crumbs.map((c, i) => (
+            <Fragment key={i}>
+              {i > 0 && (
+                <span aria-hidden="true" className="hh-crumb-sep">
+                  /
+                </span>
+              )}
+              {i === crumbs.length - 1 ? (
+                <span aria-current="page" className="hh-crumb-here" dir="auto">
+                  {c.label}
+                </span>
+              ) : (
+                <button type="button" className="hh-crumb" dir="auto" onClick={c.onClick}>
+                  {c.label}
+                </button>
+              )}
+            </Fragment>
+          ))}
+        </nav>
+      ) : (
+        title !== undefined && <h1 className="hh-title">{title}</h1>
+      )}
       {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
       {mock && <MockBadge />}
-      <span className="hh-spacer" />
+      <span className="hh-spacer">{center}</span>
+      {trailing}
       {children}
     </header>
   );
@@ -199,5 +254,44 @@ export function BellIcon() {
       <path d="M10.27 21a2 2 0 0 0 3.46 0" />
       <path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33" />
     </svg>
+  );
+}
+
+/** The Inbox: a line tray, as the rail draws it. */
+export function InboxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 13l2.5-7h11L20 13v6H4z" />
+      <path d="M4 13h5l1 2h4l1-2h5" />
+    </svg>
+  );
+}
+
+const RAIL_ICONS: Record<RailEntry, ReactNode> = {
+  home: <path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" />,
+  tasks: <><path d="M5 5h14v10H9l-4 4z" /><path d="M9 9h6" /></>,
+  inbox: <><path d="M4 13l2.5-7h11L20 13v6H4z" /><path d="M4 13h5l1 2h4l1-2h5" /></>,
+  jobs: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>,
+  notes: <><path d="M7 4h8l4 4v12H7z" /><path d="M10 12h6M10 16h4" /></>,
+  plugins: <path d="M13 3L5 13h6l-1 8 8-10h-6z" />,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></>,
+};
+
+/** The icon rail (UI refresh spec §4.2): the screens of a harness, Settings at the bottom. */
+export function Rail({ entries, current, onPick }: { entries: RailEntry[]; current: RailEntry; onPick: (e: RailEntry) => void }) {
+  const { t } = useTranslation();
+  const button = (e: RailEntry) => (
+    <button key={e} className="hh-icon-button" aria-label={t(`rail.${e}`)} title={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {RAIL_ICONS[e]}
+      </svg>
+    </button>
+  );
+  return (
+    <nav className="hh-rail" aria-label={t("rail.label")}>
+      {entries.filter((e) => e !== "settings").map(button)}
+      <span className="hh-spacer" />
+      {entries.includes("settings") && button("settings")}
+    </nav>
   );
 }

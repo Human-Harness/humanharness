@@ -168,12 +168,37 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Top bar: the window's drag region (hiddenInset title bar), leaving room for the traffic lights. */
-.hh-topbar { height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; -webkit-app-region: drag; user-select: none; border-bottom: 1px solid var(--hh-line); }
+.hh-topbar { height: 64px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 20px 0 80px; background: var(--hh-rail); border-bottom: 1px solid var(--hh-line); -webkit-app-region: drag; user-select: none; }
 .hh-topbar button, .hh-topbar a, .hh-topbar input, .hh-topbar select { -webkit-app-region: no-drag; }
 .hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
+.hh-topbar-logo { width: 44px; height: 44px; border-radius: 12px; flex: none; }
+.hh-crumbs { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.hh-crumb { min-height: 32px; padding: 0 4px; border: 0; background: transparent; color: var(--hh-muted); }
+.hh-crumb-sep { color: var(--hh-faint); }
+.hh-crumb-here { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.hh-topbar .hh-spacer { display: flex; justify-content: center; }
 .hh-icon-button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--hh-muted); }
 .hh-icon-button:hover { background: var(--hh-surface-2); color: var(--hh-ink); }
+/* Icon rail (UI refresh spec §4.2): a column on the left, a row under the top bar on narrow windows. */
+.hh-rail { flex: 0 0 76px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0; background: var(--hh-rail); border-right: 1px solid var(--hh-line); }
+.hh-rail > .hh-icon-button[aria-current="page"] { background: var(--hh-active); color: var(--hh-active-ink); }
+@media (max-width: 760px) { .hh-rail { flex-direction: row; flex-basis: auto; padding: 10px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--hh-line); } .hh-rail .hh-spacer { display: none; } }
+/* The shell (UI refresh spec §4): the top bar across the window (its 80px clear the traffic lights), the rail beside the main column. */
+.hh-shell { display: grid; grid-template-rows: auto 1fr; grid-template-columns: auto minmax(0, 1fr); height: 100%; }
+.hh-shell > .hh-topbar { grid-column: 1 / -1; }
+.hh-shell > .hh-rail { width: 76px; }
+.hh-shell-main { min-width: 0; min-height: 0; display: flex; }
+.hh-shell-main > .hh-app { flex: 1; min-width: 0; height: 100%; grid-template-rows: auto minmax(0, 1fr); }
+/* What left the top bar, above the chat until the task header is drawn (spec §5.1): compact, so the reader keeps its height. */
+.hh-task-header { box-sizing: border-box; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 20px; border-bottom: 1px solid var(--hh-line); }
+/* The top bar's profile avatar (spec §4.1): the switcher opens under it. */
+.hh-avatar-menu { position: relative; display: flex; }
+.hh-avatar.hh-avatar-button { width: 40px; height: 40px; padding: 0; border: 0; font-size: 15px; }
+.hh-avatar-popover { width: auto; min-width: 260px; padding: 10px; }
+/* The rail takes 76px from the chat: with the reader open, the composer's field shrinks rather than push Send under it. */
+.hh-shell-main .hh-composer textarea, .hh-shell-main .hh-sk-flagged { min-width: 0; }
+@media (max-width: 760px) { .hh-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); } .hh-shell > .hh-rail { width: auto; } .hh-shell-main > .hh-app { height: 100%; } }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-surface-2); }
 .hh-segmented button { height: 24px; border: none; background: transparent; border-radius: 5px; }
 .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: 0 1px 2px rgba(25, 30, 36, 0.15); }
@@ -839,8 +864,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-item-open { align-self: flex-start; margin-top: 2px; font-size: 0.75rem; text-decoration: underline; }
 .hh-pl-item-gone { color: var(--hh-muted); font-size: 0.8rem; }
 /* The task inbox (parallel spec §9.2): a top-bar button and the shared popover, with four sections. */
-.hh-tk-button { position: relative; display: inline-flex; align-items: center; gap: 6px; }
-.hh-tk-badge { min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 0.7rem; line-height: 16px; text-align: center; }
 .hh-tk-paused { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 6px 8px; color: var(--hh-warn); font-size: 0.85rem; }
 .hh-tk-section { margin: 0 0 6px; }
 .hh-tk-section h3 { margin: 6px 6px 2px; color: var(--hh-muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -929,9 +952,10 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* "See what changed" (§5.4): the box around the timeline's diff, which draws the changes. */
 .hh-diff { max-width: 72ch; margin: 0 auto 16px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; }
 .hh-reader-is-full .hh-diff { max-width: none; }
-/* Narrow: only the review column moves under the body; the contents list stays beside it. */
+/* Narrow: only the review column moves under the body; the contents list stays beside it. The column takes at most 40%
+   of the reader's height, so a short window still leaves the text room to read and select. */
 @container (max-width: 900px) {
-  .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) fit-content(40%); }
   .hh-reader-reviewing .hh-reader-toc { grid-column: 1; grid-row: 1; }
   .hh-reader-reviewing .hh-reader-scroll { grid-column: 2; grid-row: 1; }
   .hh-reader-reviewing .hh-review-column { grid-column: 1 / -1; grid-row: 2; max-height: 40vh; border-left: 0; border-top: 1px solid var(--hh-line); }

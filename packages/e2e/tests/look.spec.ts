@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import type { ClaudeScript } from "@humanharness/fake-agent";
 import { closeAndClean, launch, launchMock, makeSandbox, shellDir } from "./helpers";
+import { claudeScript } from "./scripts";
 
 // Screenshots of the refreshed screens, one run per theme (UI refresh spec §9). No pixel assertions: the
 // reviewer compares them with the mockups by eye. They land in packages/e2e/test-results/look/ (gitignored).
@@ -113,3 +114,46 @@ test.describe("look: the Inbox board", () => {
     });
   }
 });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`look: Settings › Models and › Usage in ${theme}; the rail opens Settings and Done goes back`, async () => {
+    const s = makeSandbox(`look-settings-${theme}`);
+    // The scripted demo, as flow.spec runs it: one answered task leaves numbers in Usage.
+    const { app, page } = await launch(s, { claude: claudeScript });
+    try {
+      await page.setViewportSize({ width: 1100, height: 720 });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.getByRole("button", { name: "Start Demo" }).click();
+      await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
+      await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
+      // The next topic closes the manifest task, so Usage has a real row for it (as in flow.spec).
+      await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
+      const answer = page.getByRole("main").getByText("Los motores se detectan en cada inicio.");
+      await expect(answer).toBeVisible();
+
+      // Settings is a page opened from the rail, not a dialog over the chat.
+      await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Settings" }).click();
+      const settings = page.getByRole("main", { name: "Settings" });
+      await expect(settings).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Settings" })).toHaveCount(0);
+      await expect(answer).toBeHidden();
+
+      await settings.getByRole("tab", { name: "Models" }).click();
+      await expect(settings.getByRole("tabpanel", { name: "Models" })).toBeVisible();
+      await page.screenshot({ path: path.join(lookDir, `settings-models-${theme}.png`) });
+
+      await settings.getByRole("tab", { name: "Usage" }).click();
+      const usage = settings.getByRole("tabpanel", { name: "Usage" });
+      await expect(usage.getByText("15% used")).toBeVisible();
+      await expect(usage.getByRole("row", { name: /The manifest/ }).getByRole("cell")).toHaveText(["≈ 4% of 5 h", "about 25 times"]);
+      await page.screenshot({ path: path.join(lookDir, `settings-usage-${theme}.png`) });
+
+      // Done returns to the screen the person was on: the task's chat, as they left it.
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await expect(settings).toHaveCount(0);
+      await expect(answer).toBeVisible();
+    } finally {
+      await closeAndClean(app, s);
+    }
+  });
+}

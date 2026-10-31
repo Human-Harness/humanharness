@@ -1183,7 +1183,7 @@
       "secrets_one": "Stores {{count}} key:",
       "secrets_other": "Stores {{count}} keys:",
       "tasks": "Can propose agent tasks",
-      "searchable": "Searchable: {{list}}",
+      "searchable": "Searchable:",
       "none": "It asks for nothing beyond its own data.",
       "added": { "host": "Connects to:", "exec": "Runs:", "secret": "Stores the key:", "tasks": "Can propose agent tasks" },
       "turnOn": "Turn on",

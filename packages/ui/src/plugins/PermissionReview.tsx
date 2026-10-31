@@ -47,15 +47,29 @@ export function PermissionText({ line }: { line: PluginLine }) {
     case "tasks":
       return <>{t("plugins.review.tasks")}</>;
     case "searchable":
-      return <>{t("plugins.review.searchable", { list: line.collections.map((c) => `${c.name} (${c.fields.join(", ")})`).join("; ") })}</>;
+      // Collection and field names are the plugin's: each one isolated, never joined into the translated string.
+      return (
+        <>
+          {t("plugins.review.searchable")}{" "}
+          {line.collections.map((c, i) => (
+            <Fragment key={i}>
+              {i > 0 && "; "}
+              <Plain>{c.name}</Plain> ({joined(c.fields)})
+            </Fragment>
+          ))}
+        </>
+      );
   }
 }
 
-/** The permission lines of a review, as a list (or one line saying there are none). */
+/**
+ * The permission lines of a review, as a list. With no permission at all, one line says so; what is searchable is about
+ * the plugin's own data, so it doesn't count as one and is listed after that line.
+ */
 export function PermissionList({ lines, labelledBy }: { lines: PluginLine[]; labelledBy?: string }) {
   const { t } = useTranslation();
-  if (lines.length === 0) return <p className="hh-caption">{t("plugins.review.none")}</p>;
-  return (
+  const none = lines.every((l) => l.kind === "searchable");
+  const list = lines.length > 0 && (
     <ul className="hh-pl-perms" aria-labelledby={labelledBy}>
       {lines.map((line, i) => (
         <li key={i}>
@@ -63,6 +77,13 @@ export function PermissionList({ lines, labelledBy }: { lines: PluginLine[]; lab
         </li>
       ))}
     </ul>
+  );
+  if (!none) return list;
+  return (
+    <>
+      <p className="hh-caption">{t("plugins.review.none")}</p>
+      {list}
+    </>
   );
 }
 

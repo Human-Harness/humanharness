@@ -181,7 +181,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
                   </span>
                 )}
               </span>
-              <input type="checkbox" role="switch" aria-label={p.name} checked={p.status === "on"} onChange={(e) => setOn(p, e.target.checked)} />
+              <input className="hh-switch" type="checkbox" role="switch" aria-label={p.name} checked={p.status === "on"} onChange={(e) => setOn(p, e.target.checked)} />
             </li>
           ))}
         </ul>

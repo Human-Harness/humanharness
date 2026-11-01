@@ -63,7 +63,7 @@ describe("Home look (UI refresh spec §5.2)", () => {
 
   it("keeps the Home scrollable and the pill's name readable (review fixes)", () => {
     const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
-    expect(css).toMatch(/\.hh-home \{[^}]*grid-template-rows: 52px minmax\(0, 1fr\) auto/);
+    expect(css).toMatch(/\.hh-home \{[^}]*grid-template-rows: 64px minmax\(0, 1fr\) auto/);
     expect(css).toMatch(/\.hh-home-main \{[^}]*overflow-y: auto/);
     expect(css).toMatch(/\.hh-home-main \{[^}]*justify-content: safe center/);
   });

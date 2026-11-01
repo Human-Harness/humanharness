@@ -172,7 +172,6 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-topbar button, .hh-topbar a, .hh-topbar input, .hh-topbar select { -webkit-app-region: no-drag; }
 .hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
-.hh-topbar-logo { width: 44px; height: 44px; border-radius: 12px; flex: none; }
 .hh-crumbs { display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
 .hh-crumb { min-height: 32px; padding: 0 4px; border: 0; background: transparent; color: var(--hh-muted); }
 .hh-crumb-sep { color: var(--hh-faint); }

@@ -233,14 +233,13 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   // Once a profile is active (and not while a new one is being made), the title names the person (spec §5).
   const title = state.profiles && activeProfile && step !== "profile" ? t("profiles.setupTitle", { name, profile: activeProfile.title }) : t("setupFlow.title", { name });
 
-  const logo = state.harness.logo ? { logo: state.harness.logo } : {};
   const savedEngine = state.engines.find((e) => e.id === state.config.engineId);
 
   if (step === "done") {
     const engine = savedEngine;
     return (
       <div className="hh-setup">
-        <TopBar title={title} mock={state.mock} {...logo} />
+        <TopBar title={title} mock={state.mock} />
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
@@ -295,7 +294,6 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
       <TopBar
         title={title}
         mock={state.mock}
-        {...logo}
         trailing={
           // Leaves at any step, as the first step's Cancel does; not while a save or create is on its way.
           <button type="button" className="hh-pill hh-setup-cancel" aria-label={t("setupFlow.cancelSetup")} disabled={busy || saving || creating} onClick={onCancel}>

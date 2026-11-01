@@ -417,7 +417,6 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           <div className="hh-shell">
             <TopBar
               crumbs={[{ label: state.harness.name, onClick: () => setScreen("home") }, { label: view.kind === "inbox" ? i18n.t("inbox.title") : screenTitle }]}
-              {...(state.harness.logo ? { logo: state.harness.logo } : {})}
               mock={state.mock}
               trailing={
                 <>

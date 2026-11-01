@@ -1,6 +1,6 @@
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckIcon, TopBar } from "./chrome";
+import { AppFooter, CheckIcon, TopBar } from "./chrome";
 import { type AppState, type HarnessClient, type ProfileView, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
 import { ConnectStep } from "./connections/ConnectStep";
 import { EngineTab } from "./EngineTab";
@@ -233,14 +233,13 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   // Once a profile is active (and not while a new one is being made), the title names the person (spec §5).
   const title = state.profiles && activeProfile && step !== "profile" ? t("profiles.setupTitle", { name, profile: activeProfile.title }) : t("setupFlow.title", { name });
 
-  const logo = state.harness.logo ? { logo: state.harness.logo } : {};
   const savedEngine = state.engines.find((e) => e.id === state.config.engineId);
 
   if (step === "done") {
     const engine = savedEngine;
     return (
       <div className="hh-setup">
-        <TopBar title={title} mock={state.mock} {...logo} />
+        <TopBar title={title} />
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
@@ -267,6 +266,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             </button>
           </section>
         </main>
+        <AppFooter mock={state.mock} />
       </div>
     );
   }
@@ -289,20 +289,13 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   const at = steps.findIndex((s) => s.id === step);
   const back = current ? backFrom(current.id) : null;
   const waiting = busy || queue === null;
+  // A step whose own left button is Back still gets a Cancel at the far left, so setup can be left at any step.
+  const hasBack = current ? back !== null : step === "profile" ? !newProfile : step === "engine" && withFolder;
 
   return (
     <div className="hh-setup">
-      <TopBar
-        title={title}
-        mock={state.mock}
-        {...logo}
-        trailing={
-          // Leaves at any step, as the first step's Cancel does; not while a save or create is on its way.
-          <button type="button" className="hh-pill hh-setup-cancel" aria-label={t("setupFlow.cancelSetup")} disabled={busy || saving || creating} onClick={onCancel}>
-            {t("setupFlow.cancel")}
-          </button>
-        }
-      />
+      {/* The header holds only the title: buttons would grow it past a header's height. */}
+      <TopBar title={title} />
       <div className="hh-setup-frame">
         {/* The steps on the left (UI refresh spec §5.6): done ones with their value, "Step n of m" under the current one. */}
         {/* One "Steps" name, on the list (the tests and the stepper before it name the list). */}
@@ -324,172 +317,182 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             ))}
           </ol>
         </nav>
-        <main className="hh-setup-body">
-          {current ? (
-            <section key={current.id} className="hh-setup-step" aria-labelledby={headingId}>
-              <h2 id={headingId} ref={heading} tabIndex={-1}>
-                {current.label}
-              </h2>
-              {current.description && <p className="hh-setup-intro">{current.description}</p>}
-              {current.kind === "form" && <SetupStepForm client={client} step={current} formId={stepFormId} onDone={() => after(current.id)} />}
-              {current.kind === "component" && (
-                <ComponentStep
+        <div className="hh-setup-column">
+          <main className="hh-setup-body">
+            {current ? (
+              <section key={current.id} className="hh-setup-step" aria-labelledby={headingId}>
+                <h2 id={headingId} ref={heading} tabIndex={-1}>
+                  {current.label}
+                </h2>
+                {current.description && <p className="hh-setup-intro">{current.description}</p>}
+                {current.kind === "form" && <SetupStepForm client={client} step={current} formId={stepFormId} onDone={() => after(current.id)} />}
+                {current.kind === "component" && (
+                  <ComponentStep
+                    client={client}
+                    step={current}
+                    components={components}
+                    profile={state.profiles ? activeProfile : null}
+                    done={() => complete(current.id)}
+                    skip={() => skip(current.id)}
+                  />
+                )}
+                {current.kind === "connect" && <ConnectStep client={client} step={current} onReady={(ready) => onConnectReady(current.id, ready)} />}
+                {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
+                {stepError && (
+                  <p className="hh-save-error" role="alert">
+                    {t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}
+                  </p>
+                )}
+              </section>
+            ) : step === "profile" && state.profiles ? (
+              <section className="hh-setup-step" aria-labelledby={headingId}>
+                <h2 id={headingId} ref={heading} tabIndex={-1}>
+                  {t("profiles.heading", { name })}
+                </h2>
+                <p className="hh-setup-intro">{t("profiles.intro", { label: state.profiles.label })}</p>
+                <ProfileStep
                   client={client}
-                  step={current}
-                  components={components}
-                  profile={state.profiles ? activeProfile : null}
-                  done={() => complete(current.id)}
-                  skip={() => skip(current.id)}
+                  state={state}
+                  formId={profileFormId}
+                  others={(people?.list ?? []).filter((p) => !p.archived && p.id !== stranded?.id).length}
+                  stranded={stranded ? (people?.list.find((p) => p.id === stranded.id)?.title ?? stranded.name) : null}
+                  onCreated={(next) => void created(next)}
+                  onStranded={(id, typed) => setStranded({ id, name: typed })}
+                  onSending={setCreating}
                 />
-              )}
-              {current.kind === "connect" && <ConnectStep client={client} step={current} onReady={(ready) => onConnectReady(current.id, ready)} />}
-              {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
-              {stepError && (
-                <p className="hh-save-error" role="alert">
-                  {t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}
-                </p>
-              )}
-            </section>
-          ) : step === "profile" && state.profiles ? (
-            <section className="hh-setup-step" aria-labelledby={headingId}>
-              <h2 id={headingId} ref={heading} tabIndex={-1}>
-                {t("profiles.heading", { name })}
-              </h2>
-              <p className="hh-setup-intro">{t("profiles.intro", { label: state.profiles.label })}</p>
-              <ProfileStep
-                client={client}
-                state={state}
-                formId={profileFormId}
-                others={(people?.list ?? []).filter((p) => !p.archived && p.id !== stranded?.id).length}
-                stranded={stranded ? (people?.list.find((p) => p.id === stranded.id)?.title ?? stranded.name) : null}
-                onCreated={(next) => void created(next)}
-                onStranded={(id, typed) => setStranded({ id, name: typed })}
-                onSending={setCreating}
-              />
-            </section>
-          ) : step === "folder" ? (
-            <section className="hh-setup-step" aria-labelledby={headingId}>
-              <h2 id={headingId} ref={heading} tabIndex={-1}>
-                {t("setupFlow.folderHeading")}
-              </h2>
-              <p className="hh-setup-intro">{t("setupFlow.folderIntro", { name })}</p>
-              <p className="hh-caption hh-setup-language">{t("setupFlow.languageLater")}</p>
-              <FolderStep
-                client={client}
-                state={state}
-                formId={folderFormId}
-                onSaved={(s) => {
-                  onChange(s);
-                  if (s.config.folder) setStep("engine");
-                }}
-              />
-            </section>
-          ) : (
-            <section className="hh-setup-step" aria-labelledby={headingId}>
-              <h2 id={headingId} ref={heading} tabIndex={-1}>
-                {t("setupFlow.engineHeading", { name })}
-              </h2>
-              {/* A mock app has no plan or account to bring: only the test-mode caption. */}
-              <p className="hh-setup-intro">{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</p>
-              <EngineTab client={client} state={state} onChange={onChange} setup onSelection={(engineId, ready) => setSelection({ engineId, ready })} />
-              {saveError && (
-                <p className="hh-save-error" role="alert">
-                  {t("setupFlow.saveError")}
-                </p>
-              )}
-            </section>
-          )}
-        </main>
-      </div>
-      <footer className="hh-setup-footer">
-        {current ? (
-          <>
-            {back ? (
-              <button disabled={busy} onClick={() => setStep(back)}>
-                {t("setupFlow.back")}
-              </button>
+              </section>
+            ) : step === "folder" ? (
+              <section className="hh-setup-step" aria-labelledby={headingId}>
+                <h2 id={headingId} ref={heading} tabIndex={-1}>
+                  {t("setupFlow.folderHeading")}
+                </h2>
+                <p className="hh-setup-intro">{t("setupFlow.folderIntro", { name })}</p>
+                <p className="hh-caption hh-setup-language">{t("setupFlow.languageLater")}</p>
+                <FolderStep
+                  client={client}
+                  state={state}
+                  formId={folderFormId}
+                  onSaved={(s) => {
+                    onChange(s);
+                    if (s.config.folder) setStep("engine");
+                  }}
+                />
+              </section>
             ) : (
-              <button disabled={busy} onClick={onCancel}>
+              <section className="hh-setup-step" aria-labelledby={headingId}>
+                <h2 id={headingId} ref={heading} tabIndex={-1}>
+                  {t("setupFlow.engineHeading", { name })}
+                </h2>
+                {/* A mock app has no plan or account to bring: only the test-mode caption. */}
+                <p className="hh-setup-intro">{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</p>
+                <EngineTab client={client} state={state} onChange={onChange} setup onSelection={(engineId, ready) => setSelection({ engineId, ready })} />
+                {saveError && (
+                  <p className="hh-save-error" role="alert">
+                    {t("setupFlow.saveError")}
+                  </p>
+                )}
+              </section>
+            )}
+          </main>
+          {/* The step's buttons sit in the body, under the step: Cancel at the left, Back and Next at the right. */}
+          <div className="hh-setup-actions">
+            {hasBack && (
+              // Not while a save or create is on its way: its answer would move the flow on from wherever it went.
+              <button aria-label={t("setupFlow.cancelSetup")} disabled={busy || saving || creating} onClick={onCancel}>
                 {t("setupFlow.cancel")}
               </button>
             )}
-            {/* The form draws no buttons of its own (it has a formId): Skip lives here. */}
-            {!current.required && (
-              <button disabled={waiting} onClick={() => skip(current.id)}>
-                {t("setupSteps.skip")}
-              </button>
-            )}
-            {/* A form's Next submits it from here, like the folder step's; a component step ends itself (done()). */}
-            {current.kind === "form" && (
-              <button type="submit" form={stepFormId} className="hh-primary" disabled={waiting}>
-                {t("setupFlow.next")}
-              </button>
-            )}
-            {/* An interview's Next waits while its task is busy (a turn, the closing turn). */}
-            {current.kind === "interview" && (
-              <button
-                className="hh-primary"
-                disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
-                onClick={() => finishInterview(current)}
-              >
-                {t("setupFlow.next")}
-              </button>
-            )}
-            {/* A connect step's Next waits for every key it lists (tools spec §9). */}
-            {current.kind === "connect" && (
-              <button ref={connectNext} className="hh-primary" disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
-                {t("setupFlow.next")}
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            {/* The profile step: Cancel when it was opened by "Add", else Back to the engine. */}
-            {step === "profile" && (
+            {current ? (
               <>
-                {/* Not while a create is on its way: its answer would move the flow on from wherever it went. */}
-                {newProfile ? (
-                  <button disabled={creating} onClick={onCancel}>
-                    {t("setupFlow.cancel")}
+                {back ? (
+                  <button disabled={busy} onClick={() => setStep(back)}>
+                    {t("setupFlow.back")}
                   </button>
                 ) : (
-                  <button disabled={creating} onClick={() => setStep("engine")}>
+                  <button disabled={busy} onClick={onCancel}>
+                    {t("setupFlow.cancel")}
+                  </button>
+                )}
+                {/* The form draws no buttons of its own (it has a formId): Skip lives here. */}
+                {!current.required && (
+                  <button disabled={waiting} onClick={() => skip(current.id)}>
+                    {t("setupSteps.skip")}
+                  </button>
+                )}
+                {/* A form's Next submits it from here, like the folder step's; a component step ends itself (done()). */}
+                {current.kind === "form" && (
+                  <button type="submit" form={stepFormId} className="hh-primary" disabled={waiting}>
+                    {t("setupFlow.next")}
+                  </button>
+                )}
+                {/* An interview's Next waits while its task is busy (a turn, the closing turn). */}
+                {current.kind === "interview" && (
+                  <button
+                    className="hh-primary"
+                    disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
+                    onClick={() => finishInterview(current)}
+                  >
+                    {t("setupFlow.next")}
+                  </button>
+                )}
+                {/* A connect step's Next waits for every key it lists (tools spec §9). */}
+                {current.kind === "connect" && (
+                  <button ref={connectNext} className="hh-primary" disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
+                    {t("setupFlow.next")}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                {/* The profile step: Cancel when it was opened by "Add", else Back to the engine. */}
+                {step === "profile" && (
+                  <>
+                    {/* Not while a create is on its way: its answer would move the flow on from wherever it went. */}
+                    {newProfile ? (
+                      <button disabled={creating} onClick={onCancel}>
+                        {t("setupFlow.cancel")}
+                      </button>
+                    ) : (
+                      <button disabled={creating} onClick={() => setStep("engine")}>
+                        {t("setupFlow.back")}
+                      </button>
+                    )}
+                    <button type="submit" form={profileFormId} className="hh-primary" disabled={creating || stranded !== null}>
+                      {t("setupFlow.next")}
+                    </button>
+                  </>
+                )}
+                {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
+                {step !== "profile" && !hasBack && (
+                  <button disabled={saving} onClick={onCancel}>
+                    {t("setupFlow.cancel")}
+                  </button>
+                )}
+                {/* The engine step says nothing is final (UI refresh spec §5.6), next to the buttons that move on. */}
+                {step === "engine" && <p className="hh-caption hh-setup-reassure">{t("setupFlow.readyHint")}</p>}
+                {hasBack && step === "engine" && (
+                  <button disabled={saving} onClick={() => setStep("folder")}>
                     {t("setupFlow.back")}
                   </button>
                 )}
-                <button type="submit" form={profileFormId} className="hh-primary" disabled={creating || stranded !== null}>
-                  {t("setupFlow.next")}
-                </button>
+                {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
+                {step === "folder" && (
+                  <button type="submit" form={folderFormId} className="hh-primary">
+                    {t("setupFlow.next")}
+                  </button>
+                )}
+                {/* With harness steps, it also waits for which of them this run goes through. */}
+                {step === "engine" && (
+                  <button className="hh-primary" disabled={!selection?.ready || saving || queue === null} onClick={() => void next()}>
+                    {t("setupFlow.next")}
+                  </button>
+                )}
               </>
             )}
-            {/* The engine step says nothing is final (UI refresh spec §5.6). */}
-            {step === "engine" && <p className="hh-caption hh-setup-reassure">{t("setupFlow.readyHint")}</p>}
-            {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
-            {step !== "profile" &&
-              (step === "engine" && withFolder ? (
-                <button disabled={saving} onClick={() => setStep("folder")}>
-                  {t("setupFlow.back")}
-                </button>
-              ) : (
-                <button disabled={saving} onClick={onCancel}>
-                  {t("setupFlow.cancel")}
-                </button>
-              ))}
-            {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
-            {step === "folder" && (
-              <button type="submit" form={folderFormId} className="hh-primary">
-                {t("setupFlow.next")}
-              </button>
-            )}
-            {/* With harness steps, it also waits for which of them this run goes through. */}
-            {step === "engine" && (
-              <button className="hh-primary" disabled={!selection?.ready || saving || queue === null} onClick={() => void next()}>
-                {t("setupFlow.next")}
-              </button>
-            )}
-          </>
-        )}
-      </footer>
+          </div>
+        </div>
+      </div>
+      <AppFooter mock={state.mock} />
     </div>
   );
 }

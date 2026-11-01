@@ -40,7 +40,8 @@ function Flow({ c, startAt, onCancel = () => {} }: { c: FakeClient; startAt: str
   return <SetupFlow client={c} state={state} onChange={setState} onCancel={onCancel} onStart={() => {}} startAt={startAt} />;
 }
 
-const next = () => within(screen.getByRole("contentinfo")).getByRole("button", { name: "Next" }) as HTMLButtonElement;
+const actions = () => document.querySelector(".hh-setup-actions") as HTMLElement;
+const next = () => within(actions()).getByRole("button", { name: "Next" }) as HTMLButtonElement;
 const row = (label: string) => screen.getByRole("group", { name: label });
 const save = (label: string, value: string) => {
   fireEvent.change(within(row(label)).getByLabelText(label), { target: { value } });
@@ -174,13 +175,13 @@ describe("the connect step (tools spec §9)", () => {
     const c = client([KEYS, EXTRA]);
     await renderIn("en", <Flow c={c} startAt="keys" />);
     await screen.findByRole("group", { name: "Jira API token" });
-    const footer = screen.getByRole("contentinfo");
+    const footer = actions();
     expect(within(footer).queryByRole("button", { name: "Skip" })).toBeNull();
     cleanup();
 
     await renderIn("en", <Flow c={c} startAt="extra" />);
     await screen.findByRole("group", { name: "Slack token" });
-    fireEvent.click(within(screen.getByRole("contentinfo")).getByRole("button", { name: "Skip" }));
+    fireEvent.click(within(actions()).getByRole("button", { name: "Skip" }));
     await screen.findByRole("heading", { name: "All set" });
     expect(c.setupCalls).toContain("skip:extra");
     expect(c.setupCalls).not.toContain("complete:extra");

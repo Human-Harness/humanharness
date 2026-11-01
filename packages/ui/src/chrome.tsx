@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { RailEntry } from "./shell-nav";
 
-function MockBadge() {
+export function MockBadge() {
   const { t } = useTranslation();
   return (
     <span className="hh-mock-badge" role="note">
@@ -18,13 +18,13 @@ export interface Crumb {
 
 /**
  * The window's top bar (UI refresh spec §4.1): the drag region of the hiddenInset title bar, 80px left for the traffic
- * lights, then the logo, the breadcrumb, the centre slot (search) and the trailing controls. `title` is the bar before the
- * breadcrumb: a heading shown only when there are no crumbs, kept until every screen passes crumbs.
+ * lights, then the breadcrumb, the centre slot (search) and the trailing controls. No logo: the traffic lights sit
+ * there. `title` is the bar before the breadcrumb: a heading shown only when there are no crumbs, kept until every
+ * screen passes crumbs.
  */
 export function TopBar({
   crumbs = [],
   title,
-  logo,
   mock,
   center,
   trailing,
@@ -32,7 +32,6 @@ export function TopBar({
 }: {
   crumbs?: Crumb[];
   title?: ReactNode;
-  logo?: string;
   mock?: boolean;
   center?: ReactNode;
   trailing?: ReactNode;
@@ -41,8 +40,6 @@ export function TopBar({
   const { t } = useTranslation();
   return (
     <header className="hh-topbar">
-      {/* The harness's own logo is decorative: its name is the first crumb. Only the HH tile is announced. */}
-      {logo ? <img className="hh-topbar-logo" src={logo} alt="" /> : <HHLogo className="hh-topbar-logo" title={t("app.name")} />}
       {crumbs.length > 0 ? (
         <nav className="hh-crumbs" aria-label={t("app.breadcrumb")}>
           {/* Labels come from the manifest and the task (untrusted): dir="auto" isolates each, so RTL text or bidi
@@ -75,6 +72,21 @@ export function TopBar({
       {trailing}
       {children}
     </header>
+  );
+}
+
+/** The window's bottom strip (Home, setup): the wordmark, the work folder, and the test-mode badge at the right. */
+export function AppFooter({ folder, mock }: { folder?: string | undefined; mock?: boolean | undefined }) {
+  return (
+    <footer className="hh-footer">
+      <span className="hh-wordmark">Human Harness</span>
+      {folder && (
+        <span className="hh-footer-path" title={folder}>
+          <bdi dir="ltr">{folder}</bdi>
+        </span>
+      )}
+      {mock && <MockBadge />}
+    </footer>
   );
 }
 

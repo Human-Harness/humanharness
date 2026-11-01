@@ -344,6 +344,9 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-settings-card .hh-row-label { flex: 0 0 120px; }
 .hh-row:first-child { border-top: none; }
 .hh-row-label { color: var(--hh-muted); }
+/* Folder row: the buttons keep their size, the path gives way and keeps its end (the folder's own name) visible. */
+.hh-row > button { flex: none; white-space: nowrap; }
+.hh-row[data-setting="general.folder"] > code { flex: 1 1 0; width: 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .hh-row-wrap { flex-wrap: wrap; }
 .hh-row-note { flex-basis: 100%; }
 /* A drawer from the right (UI refresh spec §5.7), under the top bar: the layer's top is .hh-topbar's 64px height. */

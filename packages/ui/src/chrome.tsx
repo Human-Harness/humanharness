@@ -75,6 +75,21 @@ export function TopBar({
   );
 }
 
+/** The window's bottom strip (Home, setup): the wordmark, the work folder, and the test-mode badge at the right. */
+export function AppFooter({ folder, mock }: { folder?: string | undefined; mock?: boolean | undefined }) {
+  return (
+    <footer className="hh-footer">
+      <span className="hh-wordmark">Human Harness</span>
+      {folder && (
+        <span className="hh-footer-path" title={folder}>
+          <bdi dir="ltr">{folder}</bdi>
+        </span>
+      )}
+      {mock && <MockBadge />}
+    </footer>
+  );
+}
+
 export interface SegmentOption<T extends string> {
   value: T;
   label: string;

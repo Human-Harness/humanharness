@@ -245,22 +245,22 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-setup-steps .hh-step-mark.done { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
 .hh-setup-step-text { min-width: 0; display: grid; gap: 2px; padding-top: 2px; }
 .hh-setup-step-value { font-size: 12.5px; font-weight: 400; color: var(--hh-muted); overflow-wrap: anywhere; }
-.hh-setup-cancel { height: 34px; border-radius: 999px; }
 @media (max-width: 720px) {
   .hh-setup-frame { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .hh-setup-nav { padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--hh-line); }
   .hh-setup-body { padding: 20px 16px; }
 }
-.hh-setup-body { min-height: 0; overflow-y: auto; padding: 32px 32px 24px; }
+.hh-setup-column { min-height: 0; display: flex; flex-direction: column; }
+.hh-setup-body { flex: 1; min-height: 0; overflow-y: auto; padding: 32px 32px 24px; }
 .hh-setup-body.done { flex: 1; display: grid; align-content: center; }
 .hh-setup-step { max-width: 640px; margin: 0 auto; display: grid; gap: 12px; }
 .hh-setup-step h2 { font-family: var(--hh-display); font-size: 20px; font-weight: 600; }
 .hh-setup-step h2:focus { outline: none; }
 .hh-setup-intro { color: var(--hh-muted); line-height: 1.5; }
-.hh-setup-footer { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--hh-line); background: var(--hh-rail); }
-.hh-setup-footer > :first-child { margin-right: auto; }
-.hh-setup-footer > button:not(.hh-primary) { height: 40px; padding: 0 16px; border-radius: 999px; }
-.hh-setup-footer .hh-primary { border-radius: 999px; }
+.hh-setup-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 16px 32px 24px; }
+.hh-setup-actions > :first-child { margin-right: auto; }
+.hh-setup-actions > button:not(.hh-primary) { height: 40px; padding: 0 16px; border-radius: 999px; }
+.hh-setup-actions .hh-primary { border-radius: 999px; }
 .hh-setup-reassure { margin: 0; }
 /* The engine step: radio tiles, the selected one with an amber border; the onboarding block as a card. */
 .hh-engine-radios { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }

@@ -23,6 +23,8 @@ function Flow({
 }
 
 const next = () => screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+// The step's buttons: a bar at the bottom of the body column, not the app footer.
+const actions = () => document.querySelector(".hh-setup-actions") as HTMLElement;
 const steps = () => within(screen.getByRole("list", { name: "Steps" })).getAllByRole("listitem");
 
 describe("SetupFlow", () => {
@@ -35,8 +37,8 @@ describe("SetupFlow", () => {
     expect(document.activeElement).toBe(folderHeading);
     expect(steps()[0].getAttribute("aria-current")).toBe("step");
     expect(screen.queryByText(/works with an AI plan you already have, using your own account\. The app/)).toBeNull();
-    // Next sits in the footer next to Cancel, as on the engine step; the folder step has no button of its own.
-    const footer = screen.getByRole("contentinfo");
+    // Next sits in the bar under the step next to Cancel, as on the engine step; the folder step has no button of its own.
+    const footer = actions();
     expect(within(footer).getByRole("button", { name: "Next" })).toBe(next());
     expect(within(footer).getByRole("button", { name: "Cancel" })).toBeTruthy();
 
@@ -174,7 +176,7 @@ describe("SetupFlow", () => {
       engines: [{ ...client.state.engines[0], name: "Mock AI", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }],
     };
     await renderIn("en", <Flow client={client} />);
-    expect(screen.getByRole("banner").textContent).toContain("Test mode (no AI)");
+    expect(screen.getByRole("contentinfo").textContent).toContain("Test mode (no AI)");
     expect(screen.getByText(/In test mode there is only one engine/)).toBeTruthy();
     await waitFor(() => expect(next().disabled).toBe(false));
     fireEvent.click(next());
@@ -396,18 +398,21 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(items[1].textContent).toContain("Step 2 of 2");
   });
 
-  it("has a Cancel pill in the header on every step but All set", async () => {
+  it("keeps the header to the title, and has Cancel at the bottom left on every step but All set", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
     const onCancel = vi.fn();
     await renderIn("en", <Flow client={client} onCancel={onCancel} />);
     const header = screen.getByRole("banner");
     expect(header.textContent).toContain("Set up Demo");
-    fireEvent.click(within(header).getByRole("button", { name: "Cancel setup" }));
+    expect(within(header).queryByRole("button")).toBeNull();
+    const bar = actions();
+    expect(bar.firstElementChild).toBe(within(bar).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(bar).getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledOnce();
     await waitFor(() => expect(next().disabled).toBe(false));
     fireEvent.click(next());
     await screen.findByRole("heading", { name: "All set" });
-    expect(screen.queryByRole("button", { name: "Cancel setup" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Cancel/ })).toBeNull();
   });
 
   it("shows engines as radio tiles with what they need and the next step", async () => {
@@ -459,9 +464,11 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(within(card).getByText("USA")).toBeTruthy();
     expect(within(card).getByRole("link", { name: "Anthropic terms" }).getAttribute("href")).toBe("https://example.com/terms");
     expect(within(card).getByRole("link", { name: "Anthropic privacy policy" }).getAttribute("href")).toBe("https://example.com/privacy");
-    const footer = screen.getByRole("contentinfo");
+    const footer = actions();
     expect(within(footer).getByText("You can change all of this whenever you like in Settings.")).toBeTruthy();
     expect(within(footer).getByRole("button", { name: "Back" })).toBeTruthy();
+    // A step with Back still leaves setup: Cancel stays first, at the far left.
+    expect(footer.firstElementChild).toBe(within(footer).getByRole("button", { name: "Cancel setup" }));
     expect(within(footer).getByRole("button", { name: "Next" }).className).toContain("hh-primary");
   });
 });

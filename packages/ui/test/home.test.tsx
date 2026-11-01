@@ -54,6 +54,14 @@ describe("Home", () => {
     expect(document.querySelector(".hh-missing")).toBeNull();
   });
 
+  it("mock mode: the test-mode badge sits in the footer, not the top bar", async () => {
+    const client = new FakeClient({ ...configured });
+    client.state = { ...client.state, mock: true };
+    await renderHome(client);
+    expect(screen.getByRole("contentinfo").textContent).toContain("Test mode (no AI)");
+    expect(screen.getByRole("banner").textContent).not.toContain("Test mode (no AI)");
+  });
+
   it("checking: Start is shown but disabled, and the pill says Checking", async () => {
     const client = new FakeClient(configured);
     await renderHome(client);

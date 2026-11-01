@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { RailEntry } from "./shell-nav";
 
-function MockBadge() {
+export function MockBadge() {
   const { t } = useTranslation();
   return (
     <span className="hh-mock-badge" role="note">

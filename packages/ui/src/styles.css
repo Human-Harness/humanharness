@@ -210,7 +210,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: 0 1px 2px rgba(25, 30, 36, 0.15); }
 
 /* Home */
-.hh-home { height: 100vh; display: grid; grid-template-rows: 52px minmax(0, 1fr) auto; }
+.hh-home { height: 100vh; display: grid; grid-template-rows: 52px minmax(0, 1fr) auto; background: var(--hh-rail); }
 .hh-home .hh-topbar { border-bottom: none; }
 .hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 28px; overflow-y: auto; width: 100%; max-width: 760px; box-sizing: border-box; margin: 0 auto; text-align: center; padding: 40px 16px 32px; }
 .hh-home-id { display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -229,7 +229,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-dot.ok { background: var(--hh-ok-dot); }
 .hh-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 20px; color: var(--hh-muted); font-size: 12px; background: var(--hh-rail); border-top: 1px solid var(--hh-line); }
 /* Long paths keep their end (the folder's own name) visible: the ellipsis goes at the start. */
-.hh-footer-path { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.hh-footer-path { margin-left: auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .hh-wordmark { font-family: var(--hh-display); font-weight: 500; color: var(--hh-muted); }
 
 /* Setup flow (spec 2026-10-14 §2): stepper, one centred step, footer on the sheet background. */

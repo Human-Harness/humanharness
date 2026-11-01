@@ -27,6 +27,7 @@
   --hh-t-violet-ink: #5f3dba;
   --hh-t-red: #fbe4e1;
   --hh-t-red-ink: #a3321f;
+  --hh-shadow-sm: 0 1px 2px rgba(20, 20, 20, 0.12);
   --hh-shadow: 0 1px 2px rgba(20, 20, 20, 0.04), 0 8px 24px rgba(20, 20, 20, 0.05);
   --hh-backdrop: rgba(27, 28, 30, 0.18);
   --hh-on-ink: var(--hh-bg);
@@ -97,6 +98,7 @@
     --hh-t-violet-ink: #c6b4ff;
     --hh-t-red: #3b1d19;
     --hh-t-red-ink: #f3a497;
+    --hh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
     --hh-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
     --hh-backdrop: rgba(0, 0, 0, 0.45);
     --hh-on-ink: var(--hh-bg);
@@ -162,6 +164,7 @@
   --hh-t-violet-ink: #5f3dba;
   --hh-t-red: #fbe4e1;
   --hh-t-red-ink: #a3321f;
+  --hh-shadow-sm: 0 1px 2px rgba(20, 20, 20, 0.12);
   --hh-shadow: 0 1px 2px rgba(20, 20, 20, 0.04), 0 8px 24px rgba(20, 20, 20, 0.05);
   --hh-backdrop: rgba(27, 28, 30, 0.18);
   --hh-on-ink: var(--hh-bg);
@@ -224,6 +227,7 @@
   --hh-t-violet-ink: #c6b4ff;
   --hh-t-red: #3b1d19;
   --hh-t-red-ink: #f3a497;
+  --hh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --hh-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
   --hh-backdrop: rgba(0, 0, 0, 0.45);
   --hh-on-ink: var(--hh-bg);

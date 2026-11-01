@@ -124,7 +124,6 @@ describe("SettingsSheet", () => {
     await screen.findByText(/Finish signing in using your browser/);
     act(() => client.emitSetup({ kind: "url", url: "https://claude.ai/oauth/authorize?x=1" }));
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    fireEvent.click(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("button", { name: "Demo" }));
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -481,30 +480,27 @@ describe("SettingsPage (UI refresh spec §5.5)", () => {
     return renderIn("en", <Sheet client={client} initialTab={opts.tab} onClose={opts.onClose} />);
   };
 
-  it("is a full page: breadcrumb Demo / Settings / Models, a section list, and Done", async () => {
+  it("is a full page: no breadcrumb or badge in the top bar, a section list, and Done in the body", async () => {
     await renderSettings({ tab: "models" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByText("Demo")).toBeTruthy();
-    expect(within(crumbs).getByText("Settings")).toBeTruthy();
-    expect(within(crumbs).getByText("Models").getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+    expect(document.querySelector(".hh-topbar")!.textContent).toBe("");
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     expect(within(nav).getByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
     expect(within(nav).getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Done" }).className).toContain("hh-cta");
+    const done = screen.getByRole("button", { name: "Done" });
+    expect(done.className).toContain("hh-cta");
+    expect(document.querySelector(".hh-topbar")!.contains(done)).toBe(false);
+    expect(done.closest(".hh-settings-main")).toBeTruthy();
   });
 
-  it("Done, Escape and the harness's crumb go back to where the person was; the Settings crumb opens General", async () => {
+  it("Done and Escape go back to where the person was", async () => {
     const onClose = vi.fn();
     await renderSettings({ tab: "models", onClose });
-    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    fireEvent.click(within(crumbs).getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.keyDown(document, { key: "Escape" });
-    fireEvent.click(within(crumbs).getByRole("button", { name: "Demo" }));
-    expect(onClose).toHaveBeenCalledTimes(3);
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it("a section that needs attention carries an orange count", async () => {

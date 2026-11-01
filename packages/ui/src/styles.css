@@ -215,7 +215,9 @@ input[type="text"], input:not([type]) { font: inherit; height: 32px; padding: 0 
 /* Home */
 .hh-home { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr) auto; background: var(--hh-rail); }
 .hh-home .hh-topbar { border-bottom: none; }
-.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 28px; overflow-y: auto; width: 100%; max-width: 760px; box-sizing: border-box; margin: 0 auto; text-align: center; padding: 40px 16px 32px; }
+.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 28px; overflow-y: auto; width: 100%; box-sizing: border-box; text-align: center; padding: 40px max(16px, calc((100% - 728px) / 2)) 32px; }
+/* The scroller is the full-width area (scrollbar at the window edge); its children keep their size and scroll instead of squashing. */
+.hh-home-main > * { flex-shrink: 0; }
 .hh-home-id { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .hh-home-logo { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--hh-shadow); object-fit: contain; }
 svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-logo); color: var(--hh-logo-ink); }
@@ -297,6 +299,9 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-settings-navitem[aria-selected="true"] { background: var(--hh-active); color: var(--hh-active-ink); font-weight: 600; }
 .hh-settings-main { overflow-y: auto; padding: 28px 32px 48px; display: grid; align-content: start; gap: 16px; }
 .hh-settings-main > * { max-width: 860px; }
+/* Done sits at the top-right of the section, level with its title; zero height so the title row keeps its place. */
+.hh-settings-done { position: sticky; top: 0; z-index: 2; height: 0; margin-bottom: -16px; display: flex; justify-content: flex-end; align-items: flex-start; padding-top: 12px; }
+.hh-settings-main .hh-section-head { padding-right: 96px; }
 @media (max-width: 760px) { .hh-settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .hh-settings-nav { border-right: 0; border-bottom: 1px solid var(--hh-line); padding: 12px 14px; } .hh-settings-tabs { grid-auto-flow: column; overflow-x: auto; } .hh-settings-main { padding: 20px 16px 40px; } }
 /* A section's head and its cards of rows (UI refresh spec §5.5). */
 .hh-section-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-bottom: 18px; }

@@ -180,16 +180,7 @@ export function SettingsPage({
 
   return (
     <main ref={pageRef} className="hh-settings-page" aria-labelledby={titleId}>
-      <TopBar
-        crumbs={[{ label: state.harness.name, onClick: close }, { label: t("settings.title"), onClick: () => onTab("general") }, { label: tabLabel(t, state, tab, sidekickTab) }]}
-        {...(state.harness.logo ? { logo: state.harness.logo } : {})}
-        mock={state.mock}
-        trailing={
-          <button ref={doneRef} className="hh-cta" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
-            {t("settings.done")}
-          </button>
-        }
-      />
+      <TopBar />
       <div className="hh-settings-body">
         <nav className="hh-settings-nav" aria-label={t("settings.sections")}>
           <h1 id={titleId}>{t("settings.title")}</h1>
@@ -223,6 +214,11 @@ export function SettingsPage({
               <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
             </div>
           )}
+          <div className="hh-settings-done">
+            <button ref={doneRef} className="hh-cta" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
+              {t("settings.done")}
+            </button>
+          </div>
           <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
             {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
             {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}

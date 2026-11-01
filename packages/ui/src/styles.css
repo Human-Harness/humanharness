@@ -215,7 +215,9 @@ input[type="text"], input:not([type]) { font: inherit; height: 32px; padding: 0 
 /* Home */
 .hh-home { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr) auto; background: var(--hh-rail); }
 .hh-home .hh-topbar { border-bottom: none; }
-.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 28px; overflow-y: auto; width: 100%; max-width: 760px; box-sizing: border-box; margin: 0 auto; text-align: center; padding: 40px 16px 32px; }
+.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 28px; overflow-y: auto; width: 100%; box-sizing: border-box; text-align: center; padding: 40px max(16px, calc((100% - 728px) / 2)) 32px; }
+/* The scroller is the full-width area (scrollbar at the window edge); its children keep their size and scroll instead of squashing. */
+.hh-home-main > * { flex-shrink: 0; }
 .hh-home-id { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .hh-home-logo { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--hh-shadow); object-fit: contain; }
 svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-logo); color: var(--hh-logo-ink); }

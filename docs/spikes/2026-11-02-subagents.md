@@ -125,6 +125,25 @@ This section ran under the inherited env vars (`CLAUDE_CODE_AGENT`, `CLAUDE_CODE
 
 Parent cache: with no model switch there was nothing to invalidate, so this part is not answered. What was measured: the main thread's cache reads were identical with and without the variable (39,722 in `s4-sonnet` and in `s2-clean`), and its 1-hour cache writes were 4,178 and 2,592.
 
+## S4b · D2 clean-env test
+
+Claude Code `2.1.316` (`claude --version`). Same question as S4, rerun without its confounds: every invocation ran under `env -i HOME=$HOME PATH=$PATH USER=$USER` plus only the variable under test, so no `CLAUDE_CODE_*` or `ANTHROPIC_*` variable was inherited. Parent `--model sonnet`; target subagent model haiku. Each invocation is one `claude -p` process (the session id appeared in one pid only, sampled every 0.1 s; no `humanharness run`, so no second close process). Scratch cwd `/private/tmp/claude-501/d2work/<name>`, outside the repo. Message: "Use the Agent tool to spawn exactly one subagent with the prompt: reply with the single word hi. Wait for its result, then reply done." (in (c) and (d) it also names the subagent type). Base command:
+
+```bash
+env -i HOME=$HOME PATH=$PATH USER=$USER [VAR=value] claude -p --model sonnet --output-format stream-json --verbose --session-id <uuid> --permission-mode <mode> [--agents '<json>'] "<message>" </dev/null
+```
+
+The subagent's model is the `model` field of its `assistant` message in the subagent transcript, `~/.claude/projects/-private-tmp-claude-501-d2work-<name>/<session-id>/subagents/agent-<id>.jsonl` (the parent is the sibling `<session-id>.jsonl`).
+
+| Condition | Command (after the base `env -i`) | Subagent `model` in its transcript | Evidence |
+|---|---|---|---|
+| (a) baseline, nothing set | `claude -p --model sonnet …` (`--permission-mode bypassPermissions`) | `claude-sonnet-5-5` | `d2work-a2-baseline/10d0c394-…/subagents/agent-a6ee83b695633b867.jsonl`; type `general-purpose` |
+| (b) `CLAUDE_CODE_SUBAGENT_MODEL=haiku` | `CLAUDE_CODE_SUBAGENT_MODEL=haiku claude -p --model sonnet …` (`bypassPermissions`) | `claude-sonnet-5-5` | `d2work-b-subagent-model/4348cb21-…/subagents/agent-adbdab907623897bd.jsonl`; type `general-purpose` |
+| (c) `--agents` with `"model":"haiku"`, message names that agent | `claude -p --model sonnet --agents '{"probe":{"description":"Probe agent; use it for any simple task","prompt":"You answer tersely.","model":"haiku"}}' …` (`--permission-mode default`) | `claude-haiku-5-5` (also `resolvedModel` `claude-haiku-5-5` in the stream) | `d2work-c-agents-json/51ccdb3d-…/subagents/agent-ade33eadc88a79dac.jsonl`; type `probe` |
+| (d) `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` together with `CLAUDE_CODE_SUBAGENT_MODEL=haiku` | `CLAUDE_CODE_SUBAGENT_MODEL=haiku CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 claude -p --model sonnet …` (`bypassPermissions`) | `claude-sonnet-5-5` | `d2work-d-force/47e8e30c-…/subagents/agent-a2b2cf02a02fdfbee.jsonl`; type `general-purpose` |
+
+Notes. n=1 per condition. The parent was sonnet in all four, so a sonnet subagent cannot tell "variable ignored" from "inherited the parent's model"; only the haiku result in (c) shows a switch. `…_FORCE` is not in `claude --help` (official docs were not checked); it is in the binary: `grep -a -o "CLAUDE_CODE_SUBAGENT_MODEL[A-Z_]*" ~/.local/share/claude/versions/2.1.316` lists it (20 hits) next to `CLAUDE_CODE_SUBAGENT_MODEL` (8). Its accepted values are unknown: I passed `1`, and (d) also set the base variable, so (d) has two variables. A first baseline run (`a-baseline`, no process sampling) also gave `claude-sonnet-5-5`. A first attempt at (c) with `--permission-mode bypassPermissions` was refused by the auto-mode classifier and never ran; (c) ran with `default`.
+
 ## S5 · Codex and OpenCode (notes, no engine call)
 
 Codex 0.160.1 is installed; OpenCode is not (`which opencode` finds nothing). No call was made. Answers come from `docs/spikes/2026-10-10-transports.md` and `packages/engines/src/acp/client.ts`:
@@ -145,7 +164,7 @@ Codex 0.160.1 is installed; OpenCode is not (`which opencode` finds nothing). No
 **Consequences for the gate (the spike may overturn the recommendations; this is the data, not the decision):**
 
 - D1 (deny by default): supported. 0/6 unprompted spawns means denying costs nothing in the demo; `--allowedTools` does not gate it today, so `--disallowedTools` is the way.
-- D2 (env var for the model): **unproven as written**; the plain variable had no effect in this setup (n=3 replicates of one condition, with `--model opus` and two other inherited vars; a clean env with only the variable is untested). Needs its own test (`…_FORCE`, or `--agents` with a model) before D2 is relied on.
+- D2 (env var for the model): in a clean env (S4b, n=1 per condition, parent sonnet, target haiku), `CLAUDE_CODE_SUBAGENT_MODEL=haiku` gave a sonnet subagent, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` together with it also gave sonnet, and an `--agents` definition with `"model":"haiku"` gave a haiku subagent. In these runs only the `--agents` mechanism was observed to change the model; the plain variable was not, so the env var as D2's mechanism is not supported by them.
 - D3 (handback contract): the handback was small here (1.4–2.2k tokens), but the run did not ask for a limit and a bigger ask was not tried.
 - D4 (measure from `modelUsage`): supported (inferred, n=4; one subagent type, one ask, and the subagent share is the difference `modelUsage` − `result.usage`, which failed a cross-check); the usage line is 5.2–5.9× low in tokens and 4.9–5.8× low in output tokens when a subagent runs, and cost and tokens disagree.
 

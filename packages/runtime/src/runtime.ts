@@ -67,6 +67,12 @@ export interface RuntimeOptions {
    */
   instructionLinked?: () => Promise<LinkedFolderLine[]>;
   /**
+   * Whether the open scope's engine preset ships subagents (`agentsFile`), for the Subagents part of AGENTS.md
+   * (subagent policy D3), asked when the runtime starts and on every `refreshInstructions`. The manifest's
+   * `permissions.subagents` wins when set. Absent: only the manifest decides (D0).
+   */
+  instructionSubagents?: () => Promise<boolean>;
+  /**
    * The gitdir of a tracked linked folder's history (hatches spec §3.4), from its real path (`fs.realpath.native`);
    * asked when a turn first opens that folder's history in this runtime. Absent: linked folders are never tracked (D0).
    */

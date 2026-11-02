@@ -49,6 +49,13 @@ const TEXT = {
     "The person may write in the chat instead of answering. The question stays open and may still be answered later: answer what they wrote, or remind them of the question.",
   ],
   annotateRule: 'To mark parts of an answer, call `show_annotate` with `ref` (the answer\'s `blockId`, or "last") and quote the person\'s exact words in each mark.',
+  subagents: "### Subagents",
+  subagentsIntro: "You may hand work to subagents. Ask each one for this handback, so their replies stay small:",
+  subagentsRules: [
+    "Answer in at most five lines: a status (`done`, `partial` or `blocked`), what changed, and one line per issue.",
+    "Put details in the files you edit, never in the reply.",
+    "Don't write report files for the handback: the reply is the whole report.",
+  ],
   writing: "### Writing for the reader",
   writingIntro: "The person reads the `.md` files you write in a reader with rich Markdown. Write them for that reader:",
   writingRules: (withKinds: boolean) => [
@@ -169,6 +176,11 @@ export function writingLines(writing: WritingGuide | undefined): string[] {
   return lines;
 }
 
+/** The "Subagents" part (subagent policy D3): the handback contract. None unless subagents are allowed (D0). */
+export function subagentLines(allowed: boolean | undefined): string[] {
+  return allowed ? ["", TEXT.subagents, "", TEXT.subagentsIntro, "", ...TEXT.subagentsRules.map((r) => `- ${r}`)] : [];
+}
+
 export function managedSection(opts: {
   language: Language;
   blocks: Record<string, Block>;
@@ -179,6 +191,8 @@ export function managedSection(opts: {
   writing?: WritingGuide;
   /** The open scope's linked folders (hatches spec §3.3). Absent or empty: no such part, the old folder rule (D0). */
   linked?: readonly LinkedFolderLine[];
+  /** Subagents are allowed for the task: the Subagents part. Absent or false: none (D0). */
+  subagents?: boolean;
 }): string {
   const t = TEXT;
   const linked = opts.linked ?? [];
@@ -209,6 +223,7 @@ export function managedSection(opts: {
   if (linked.length > 0) lines.push("", ...linkedFolderLines(linked));
   // Only a harness with material gets this part (material spec D0).
   if (opts.material) lines.push("", t.material, "", ...t.materialRules.map((r) => `- ${r}`));
+  lines.push(...subagentLines(opts.subagents));
   lines.push(...writingLines(opts.writing));
   lines.push(MANAGED_END, "");
   return lines.join("\n");
@@ -233,6 +248,8 @@ export interface InstructionsText {
   writing?: WritingGuide;
   /** The open scope's linked folders (hatches spec §3.3). Absent or empty: none (D0). */
   linked?: readonly LinkedFolderLine[];
+  /** Subagents are allowed (subagent policy D3): the Subagents part. Absent or false: none (D0). */
+  subagents?: boolean;
 }
 
 function agentsText(opts: InstructionsText): string {
@@ -244,6 +261,7 @@ function agentsText(opts: InstructionsText): string {
     material: opts.material,
     writing: opts.writing,
     linked: opts.linked,
+    subagents: opts.subagents,
   });
   return `${opts.base.trimEnd()}\n\n${section}`;
 }

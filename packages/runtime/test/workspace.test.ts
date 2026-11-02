@@ -32,13 +32,16 @@ async function setup(
     data?: (r: unknown, slot: SlotRef) => Promise<unknown>;
     instructionSettings?: () => Promise<string[]>;
     instructionLinked?: () => Promise<LinkedFolderLine[]>;
+    instructionSubagents?: () => Promise<boolean>;
+    subagents?: boolean;
   } = {},
 ) {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const folder = path.join(base, "Work");
   const gitdir = path.join(base, "history.git");
+  const loaded = await loadHarness(extra.fixture ?? NOTES);
   ws = await createWorkspace({
-    harness: await loadHarness(extra.fixture ?? NOTES),
+    harness: extra.subagents === undefined ? loaded : { ...loaded, permissions: { ...loaded.permissions, subagents: extra.subagents } },
     engine: getEngine("claude"),
     folder,
     gitdir,
@@ -48,6 +51,7 @@ async function setup(
     ...(extra.data ? { data: extra.data } : {}),
     ...(extra.instructionSettings ? { instructionSettings: extra.instructionSettings } : {}),
     ...(extra.instructionLinked ? { instructionLinked: extra.instructionLinked } : {}),
+    ...(extra.instructionSubagents ? { instructionSubagents: extra.instructionSubagents } : {}),
   });
   return { ws, folder, gitdir };
 }
@@ -353,5 +357,31 @@ describe("linked folders in AGENTS.md (hatches spec §3.3)", () => {
     ws = undefined;
     const { folder } = await setup({ steps: [] }, { instructionLinked: async () => [] });
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(plain);
+  });
+});
+
+describe("Subagents part in AGENTS.md (subagent policy D3)", () => {
+  const has = (folder: string) => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8").includes("### Subagents");
+
+  it("manifest permissions.subagents: true writes it; absent writes none", async () => {
+    const { folder: on } = await setup({ steps: [] }, { subagents: true });
+    expect(has(on)).toBe(true);
+    await ws?.close();
+    ws = undefined;
+    const { folder: off } = await setup({ steps: [] });
+    expect(has(off)).toBe(false);
+  });
+
+  it("a preset with agentsFile writes it, an explicit manifest false wins, and a refresh follows the preset", async () => {
+    let preset = true;
+    const { ws, folder } = await setup({ steps: [] }, { instructionSubagents: async () => preset });
+    expect(has(folder)).toBe(true);
+    expect(await ws.refreshInstructions()).toBe(false);
+    preset = false;
+    expect(await ws.refreshInstructions()).toBe(true);
+    expect(has(folder)).toBe(false);
+    await ws.close();
+    const { folder: denied } = await setup({ steps: [] }, { subagents: false, instructionSubagents: async () => true });
+    expect(has(denied)).toBe(false);
   });
 });

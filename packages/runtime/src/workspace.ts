@@ -183,6 +183,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const blocks = allBlocks(harness);
   const settings = await opts.instructionSettings?.();
   const linked = (await opts.instructionLinked?.()) ?? [];
+  // An explicit manifest false wins over a preset's agentsFile (slice 2), like the --disallowedTools decision.
+  const subagentsNow = async () => (harness.permissions.subagents ?? (await opts.instructionSubagents?.()) ?? false) ? { subagents: true } : {};
+  const subagents = await subagentsNow();
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
   const tools = opts.tools && hasTools(harness) ? opts.tools : undefined;
@@ -190,7 +193,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4); the review
   // lines only with the review tools (review spec §4).
   const guide = { kinds: harness.documents?.kinds ?? {}, ...(review ? { review: true } : {}) };
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing: guide, ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...withMaterial });
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing: guide, ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -586,7 +589,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // And again after the settings arrive: a turn may have started while they were read. (A refresh under way when
         // close begins still writes: close waits for it.)
         if (ledger.anyRunning()) return false;
-        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, writing: guide, ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...withMaterial });
+        const nowSubagents = await subagentsNow();
+        if (ledger.anyRunning()) return false;
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, writing: guide, ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
         writing = write;
         try {
           return await write;

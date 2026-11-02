@@ -25,6 +25,15 @@ export interface EngineError {
 }
 
 /** One plan-limit window as reported by the engine (e.g. Claude's five_hour / seven_day). */
+/** Tokens the subagents of a turn used on one model. Apart from the turn's own `usage` counts (the main thread's). */
+export interface SubagentUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 export interface LimitWindow {
   kind: string;
   /** 0..1 share of the window already used. */
@@ -112,6 +121,11 @@ export type Event =
       costUsd?: number;
       /** The model the engine says it ran (Claude: system/init; Codex: currentModelId without its effort). */
       model?: string;
+      /**
+       * What the turn's subagents used, per model (Claude: `result.modelUsage` minus the main thread's `result.usage`).
+       * The four counts above are the main thread's only. Absent when no subagent ran or the engine can't tell.
+       */
+      subagents?: SubagentUsage[];
     }
   /** Context in use after the turn, in tokens, and the window when the engine reports it (spec §6). */
   | { type: "context"; used: number; size?: number }

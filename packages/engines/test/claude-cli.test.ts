@@ -322,6 +322,39 @@ describe("ClaudeCliTransport", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
+  describe("subagent usage (subagent slice 1, D4)", () => {
+    // Shaped like the spike's s2-default turn: result.usage is the main thread; modelUsage adds the subagent.
+    const main = { input_tokens: 4, output_tokens: 1834, cache_read_input_tokens: 32595, cache_creation_input_tokens: 9899 };
+    const row = (i: number, o: number, r: number, w: number) => ({ inputTokens: i, outputTokens: o, cacheReadInputTokens: r, cacheCreationInputTokens: w, costUSD: 0.1 });
+    const resultWith = (modelUsage: unknown, usage: unknown = main) => ({ line: { type: "result", subtype: "success", is_error: false, result: "ok", usage, modelUsage } });
+    const subagentsOf = (events: Event[]) => events.flatMap((e) => (e.type === "usage" && e.subagents ? e.subagents : []));
+
+    it("emits the difference of the main model's row as subagent usage, and keeps the usage event on result.usage", async () => {
+      const { transport } = setup({ steps: [...claudeTextLines("ok"), resultWith({ "claude-opus-5-5": row(17, 9212, 206144, 47169) })] });
+      const events = await run(transport);
+      expect(subagentsOf(events)).toEqual([{ model: "claude-opus-5-5", inputTokens: 13, outputTokens: 7378, cacheReadTokens: 173549, cacheWriteTokens: 37270 }]);
+      expect(events).toContainEqual(expect.objectContaining({ type: "usage", inputTokens: 4, outputTokens: 1834, cacheReadTokens: 32595, cacheWriteTokens: 9899 }));
+    });
+
+    it("counts another model's whole row as subagent usage", async () => {
+      const { transport } = setup({ steps: [...claudeTextLines("ok"), resultWith({ opus: row(4, 1834, 32595, 9899), "claude-haiku-5": row(2, 500, 1000, 300) })] });
+      const events = await run(transport);
+      expect(subagentsOf(events)).toEqual([{ model: "claude-haiku-5", inputTokens: 2, outputTokens: 500, cacheReadTokens: 1000, cacheWriteTokens: 300 }]);
+    });
+
+    it("emits nothing without a subagent, without modelUsage or without result.usage, and clamps below zero", async () => {
+      for (const step of [
+        resultWith({ opus: row(4, 1834, 32595, 9899) }),
+        resultWith(undefined),
+        resultWith({ opus: row(17, 9212, 206144, 47169) }, null),
+        resultWith({ opus: row(1, 1, 1, 1) }),
+      ]) {
+        const { transport } = setup({ steps: [...claudeTextLines("ok"), step] });
+        expect(subagentsOf(await run(transport))).toEqual([]);
+      }
+    });
+  });
+
   it("leaves out a limits window whose reset is missing or invalid, and keeps the turn going", async () => {
     const { transport } = setup({
       steps: [

@@ -18,6 +18,8 @@ export interface ModelProfile extends ModelSpec {
   tier: Tier | "custom";
   /** After a fallback: the model the plan didn't include. */
   fallbackFrom?: string;
+  /** The model the task's subagents run on, one tier below the task's (subagent policy D2). Claude only; absent: none chosen. */
+  subagentModel?: string;
 }
 
 /** A task the user set to custom in Settings › Modelos. */

@@ -2,7 +2,7 @@
 
 Date 2026-11-02 · Claude Code 2.1.316 · models `claude-opus-5-5` (deep) and `claude-sonnet-5-5` (standard) · harness `harnesses/demo` · plan `docs/superpowers/plans/2026-11-02-subagent-policy.md`, Phase 0.
 
-Real engine calls: 9 `humanharness run` / `claude` invocations (6 runs + 3 direct `claude`), plus 1 control = 10. A `run` starts two `claude` processes (the turn and the closing note turn), so by process count it is 6×2 + 4 = 16. Codex was not called (S5 is answered from docs and code).
+Real engine calls: 6 `humanharness run` runs + 4 direct `claude` calls (3 S2/S4 runs and 1 control) = 10 invocations. A `run` starts two `claude` processes (the turn and the closing note turn), so by process count it is 6×2 + 4 = 16. Codex was not called (S5 is answered from docs and code).
 
 Everything marked **measured** is a number read from a captured stream-json line. Everything marked **inferred** is arithmetic on measured numbers or a reading of code, and is said so.
 
@@ -48,11 +48,11 @@ env -u CLAUDE_CODE_SUBAGENT_MODEL -u CLAUDE_CODE_AGENT -u CLAUDE_CODE_CHILD_SESS
 
 ### A flaw in the setup, found late
 
-The shell that ran the spike had `CLAUDE_CODE_SUBAGENT_MODEL=sonnet`, `CLAUDE_CODE_AGENT=arkimedes` and `CLAUDE_CODE_CHILD_SESSION=1` in its environment, so every S1 run, `s2-default`, `s2-acceptEdits` and `s4-sonnet` inherited them. Only `s2-clean` ran without them. Effects, all measured: the main-thread model in S1 followed the tier (sonnet/opus), so the main thread was not affected; and the subagent model came out as opus in all four S2/S4 runs, with the variable set to `sonnet` in three of them (see S4).
+The shell that ran the spike had `CLAUDE_CODE_SUBAGENT_MODEL=sonnet`, `CLAUDE_CODE_AGENT=arkimedes` and `CLAUDE_CODE_CHILD_SESSION=1` in its environment, so every S1 run, `s2-default`, `s2-acceptEdits` and `s4-sonnet` inherited them. Only `s2-clean` ran without them. Effects: the main-thread model in S1 followed the tier (sonnet/opus), so the main-thread model was not affected; and the subagent model came out as opus in all four S2/S4 runs, with the variable set to `sonnet` in three of them (see S4). S1's 0/6 also ran with `CLAUDE_CODE_AGENT=arkimedes` (and `CLAUDE_CODE_SUBAGENT_MODEL=sonnet`) set. Whether either changes unprompted spawning was not checked, so the S1 result is confounded and unverified in a clean env.
 
 ## S1 · Does a harness task spawn a subagent, unprompted?
 
-**No. 0 spawns in 6 tasks (3 actions × 2 tiers, n=6 tasks, 12 `claude` processes).** The `Task` tool was available (it is in the `tools` of every `system/init` line) and `Agent`/`Task` is not in `--allowedTools` (`Read,Glob,Grep,TodoWrite,mcp__ui`), but the model never used it.
+**No. 0 spawns in 6 tasks (3 actions × 2 tiers, n=6 tasks, 12 `claude` processes), all under the inherited env vars (see "A flaw in the setup").** The `Task` tool was available (it is in the `tools` of every `system/init` line) and `Agent`/`Task` is not in `--allowedTools` (`Read,Glob,Grep,TodoWrite,mcp__ui`), but the model never used it.
 
 | action | tier | model | Task/Agent uses | other tool uses (main thread) | session cost `total_cost_usd` |
 |---|---|---|---|---|---|
@@ -93,7 +93,7 @@ Findings:
 
 ## S3 · What the usage line misses
 
-Fact 4 of the plan is **confirmed**. For all four S2/S4 turns, `result.usage` is the main thread only, while `modelUsage` and `total_cost_usd` include the subagent.
+Fact 4 of the plan is **consistent with** these numbers (an inference, not proven line by line; see the cross-check below). For all four S2/S4 turns, `result.usage` is the main thread only, while `modelUsage` and `total_cost_usd` include the subagent.
 
 Per turn (measured: `result.usage`, `modelUsage`, `total_cost_usd`; inferred: the subagent row, as the difference, and the USD split):
 
@@ -121,7 +121,7 @@ Reading:
 
 ## S4 · Model override
 
-`CLAUDE_CODE_SUBAGENT_MODEL=sonnet` in the process env **did not switch the model**: the subagent was `claude-opus-5-5` (`resolvedModel`, and one key in `modelUsage`) with the variable set to `sonnet` in `s4-sonnet`, and also in `s2-default` and `s2-acceptEdits` (inherited, see "A flaw in the setup"), n=3 with the variable, all opus; `s2-clean` without it: opus as well (n=1). The harness passes `--model opus` for a deep task, and `CLAUDE_CODE_SUBAGENT_MODEL` is not honoured here. Not tested, so only a lead: the binary of 2.1.316 also contains the name `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (`grep -a -o "CLAUDE_CODE_SUBAGENT_MODEL[^;]\{0,80\}" ~/.local/share/claude/versions/2.1.316`). I did not try it (call budget), and I do not know that it overrides what `--model` set, so D2's mechanism (plain env var) is **not supported by this spike**. It needs a spike of its own before D2 is built.
+This section ran under the inherited env vars (`CLAUDE_CODE_AGENT`, `CLAUDE_CODE_CHILD_SESSION`; see "A flaw in the setup"). `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` **had no effect in this setup** (with `--model opus` in the args and two other inherited vars): the subagent was `claude-opus-5-5` (`resolvedModel`, and one key in `modelUsage`) with the variable set to `sonnet` in `s4-sonnet`, and also in `s2-default` and `s2-acceptEdits` (inherited, see "A flaw in the setup"), so that is n=3 replicates of one condition (the variable inherited from the shell), all opus, and n=1 without it (`s2-clean`), opus as well. No run set the variable deliberately in an otherwise clean env, so a clean env with only the variable set is untested. The harness passes `--model opus` for a deep task. Not tested, so only a lead: the binary of 2.1.316 also contains the name `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (`grep -a -o "CLAUDE_CODE_SUBAGENT_MODEL[^;]\{0,80\}" ~/.local/share/claude/versions/2.1.316`). I did not try it (call budget), and I do not know that it overrides what `--model` set, so D2's mechanism (plain env var) is **unproven by this spike**. It needs a spike of its own before D2 is built.
 
 Parent cache: with no model switch there was nothing to invalidate, so this part is not answered. What was measured: the main thread's cache reads were identical with and without the variable (39,722 in `s4-sonnet` and in `s2-clean`), and its 1-hour cache writes were 4,178 and 2,592.
 
@@ -136,7 +136,7 @@ Codex 0.160.1 is installed; OpenCode is not (`which opencode` finds nothing). No
 
 ## Estimate: share of a heavy task's real cost that is subagents, and tokens a handback adds
 
-**Unprompted, in the demo: 0%** (0 subagents in 6 tasks; S1). A harness task like the demo's does not spawn one by itself, so a general "79%" does not carry over from Marco's own Claude Code baseline.
+**Unprompted, in the demo: 0 of 6 tasks spawned one** (S1; one harness, one brief style, under the `CLAUDE_CODE_AGENT` confound). A general "79%" is not reproduced by this spike (that baseline was not measured here).
 
 **When one is spawned (forced, deep, n=4 turns, same ask):** the subagent was 75–85% of the turn's real cost (0.35–0.43 USD of 0.42–0.51 USD; inferred split), and 5.2–5.9× the tokens the usage line shows. In a whole deep demo task (run + close), which costs 0.44–0.50 USD without a subagent (n=3, S1), one subagent of this size would add about 0.35–0.43 USD, so it would be roughly 44–49% of the task's cost (inferred: it adds this spike's subagent cost to the S1 baselines, and assumes the task would do the same work too; that is a bound for one subagent, not a measurement). On a standard (sonnet) task the baseline is 0.16–0.19 USD, so a subagent on opus would be a larger share, but it was not measured (it would run on the task's model, so sonnet; no standard S2 run was made).
 
@@ -145,9 +145,9 @@ Codex 0.160.1 is installed; OpenCode is not (`which opencode` finds nothing). No
 **Consequences for the gate (the spike may overturn the recommendations; this is the data, not the decision):**
 
 - D1 (deny by default): supported. 0/6 unprompted spawns means denying costs nothing in the demo; `--allowedTools` does not gate it today, so `--disallowedTools` is the way.
-- D2 (env var for the model): **not supported as written**; the plain variable did not change the model (n=3 with it). Needs its own test (`…_FORCE`, or `--agents` with a model) before D2 is relied on.
+- D2 (env var for the model): **unproven as written**; the plain variable had no effect in this setup (n=3 replicates of one condition, with `--model opus` and two other inherited vars; a clean env with only the variable is untested). Needs its own test (`…_FORCE`, or `--agents` with a model) before D2 is relied on.
 - D3 (handback contract): the handback was small here (1.4–2.2k tokens), but the run did not ask for a limit and a bigger ask was not tried.
-- D4 (measure from `modelUsage`): supported strongly; the usage line is 5.2–5.9× low in tokens and 4.9–5.8× low in output tokens when a subagent runs, and cost and tokens disagree.
+- D4 (measure from `modelUsage`): supported (inferred, n=4; one subagent type, one ask, and the subagent share is the difference `modelUsage` − `result.usage`, which failed a cross-check); the usage line is 5.2–5.9× low in tokens and 4.9–5.8× low in output tokens when a subagent runs, and cost and tokens disagree.
 
 ## What was not measured
 

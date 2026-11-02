@@ -32,15 +32,15 @@
 
 Output: `docs/spikes/2026-11-0X-subagents.md`, with the commands used so every number can be reproduced. Keep real engine calls under ~10, small prompts.
 
-- [x] **S1 · Does a harness task spawn one at all, unprompted?** Run 3 actions of `harnesses/demo` at `standard` and `deep` with `humanharness run` and count `Task`/`Agent` tool uses in the raw stream-json (capture it by running `claude` with the exact `claudeArgs(...)` output, or a temporary tap on the transport in the spike branch only). Record: count per action, subagent type, prompt that triggered it. Answered in `docs/spikes/2026-11-02-subagents.md`, section S1.
-- [x] **S2 · Forced case.** One `deep` task whose message asks to "use a subagent to map packages/". Record: Answered in `docs/spikes/2026-11-02-subagents.md`, section S2.
+- [x] **S1 · Does a harness task spawn one at all, unprompted?** Run 3 actions of `harnesses/demo` at `standard` and `deep` with `humanharness run` and count `Task`/`Agent` tool uses in the raw stream-json (capture it by running `claude` with the exact `claudeArgs(...)` output, or a temporary tap on the transport in the spike branch only). Record: count per action, subagent type, prompt that triggered it.
+- [x] **S2 · Forced case.** One `deep` task whose message asks to "use a subagent to map packages/". Record:
   - whether `Agent` runs with no permission prompt under `--permission-mode acceptEdits` and `default` in `-p`;
   - the subagent's model (from its own `system/init` line or `result.modelUsage`);
   - the size of the `tool_result` it hands back (characters ÷ 4);
   - the task's context before and after (`context` events).
-- [x] **S3 · What the usage line misses.** For S2's turn: `result.usage` vs `result.modelUsage` (per model) vs `total_cost_usd`. Confirm or refute fact 4, with numbers. Answered in `docs/spikes/2026-11-02-subagents.md`, section S3.
-- [x] **S4 · Model override.** Same as S2 with `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` in the process env (not settings): does the subagent switch model? Does the parent's cache stay valid? Answered in `docs/spikes/2026-11-02-subagents.md`, section S4.
-- [x] **S5 · Codex and OpenCode.** Codex's ACP init advertises `sessionCapabilities.subagents` (`docs/spikes/2026-10-10-transports.md`). Note only: does an ACP turn surface subagent usage or tool calls? No implementation in this plan. Answered in `docs/spikes/2026-11-02-subagents.md`, section S5.
+- [x] **S3 · What the usage line misses.** For S2's turn: `result.usage` vs `result.modelUsage` (per model) vs `total_cost_usd`. Confirm or refute fact 4, with numbers.
+- [x] **S4 · Model override.** Same as S2 with `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` in the process env (not settings): does the subagent switch model? Does the parent's cache stay valid?
+- [x] **S5 · Codex and OpenCode.** Codex's ACP init advertises `sessionCapabilities.subagents` (`docs/spikes/2026-10-10-transports.md`). Note only: does an ACP turn surface subagent usage or tool calls? No implementation in this plan.
 
 **Done when** the spike doc answers S1–S5 with numbers and ends with an estimate: share of a heavy task's real cost that is subagents, and tokens a handback adds.
 

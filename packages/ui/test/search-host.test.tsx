@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../src";
+import { SearchHost } from "../src/search/SearchHost";
 import type { SearchAnswer, SearchHitView } from "../src/client";
 import { FakeClient } from "./fake-client";
 
@@ -88,5 +90,21 @@ describe("search in the window (§5.1, §3)", () => {
     act(() => client.search.open("old"));
     fireEvent.click(await within(await screen.findByRole("dialog", { name: "Search" })).findByRole("option"));
     expect(await screen.findByRole("heading", { name: "History" })).toBeTruthy();
+  });
+
+  it("open before effects flush still opens", () => {
+    const client = setup();
+    // Runs in the same commit's layout phase, after SearchHost's, before any passive effect.
+    function OpenEarly() {
+      useLayoutEffect(() => client.search.open(), []);
+      return null;
+    }
+    render(
+      <>
+        <SearchHost client={client} state={client.state} openScope={null} onIntent={() => {}} />
+        <OpenEarly />
+      </>,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeNull();
   });
 });

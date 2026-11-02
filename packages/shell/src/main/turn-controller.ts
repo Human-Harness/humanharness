@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ModelProfile } from "@humanharness/engines";
+import type { ModelProfile, SubagentUsage } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
 import {
   type EnginePreset,
@@ -111,7 +111,7 @@ export interface TurnDeps {
   /** Sends an event to the window. May throw (window gone): that never loses the log entry. */
   emit: (e: Event) => void;
   /** Saves the finished turn's usage (usage.jsonl), with the turn's first limits snapshot. Failures are logged, never thrown. */
-  recordUsage?: (entry: ChatEntry, meta: UsageMeta, firstLimits: LimitWindow[] | undefined) => Promise<void>;
+  recordUsage?: (entry: ChatEntry, meta: UsageMeta, firstLimits: LimitWindow[] | undefined, subagents: SubagentUsage[]) => Promise<void>;
   /**
    * A turn ended with `session-expired`: forget the engine's passed test prompt, so Settings → Engine
    * asks to sign in (or test) again instead of saying it is ready. Failures are logged, never thrown.
@@ -245,6 +245,7 @@ export class TurnController {
         return inputs?.has(e.name) && task && turn !== undefined ? { ...e, id: blockIdOf(task, turn, index) } : e;
       };
       let reportedModel: string | undefined;
+      let subagents: SubagentUsage[] = [];
       const meta = (): UsageMeta => ({
         ...(action ? { action } : {}),
         ...(task ? { task } : {}),
@@ -278,7 +279,7 @@ export class TurnController {
           const limits = (pending ?? []).filter((e) => e.type === "limits");
           pending = null;
           for (const e of limits) this.emit(e);
-          await this.recordUsage(entry, meta(), recorder.firstLimits);
+          await this.recordUsage(entry, meta(), recorder.firstLimits, subagents);
           if (!done.ok && done.error.code === "session-expired" && engineId) await this.forgetSession(engineId);
           this.tell(onEvent, done);
           return;
@@ -292,7 +293,7 @@ export class TurnController {
             quiet ? { id: entry.id, role: "assistant", text: "", blocks: [], activities: [], at: entry.at, ...(done.ok ? {} : { error: done.error }), ...(task ? { task } : {}) } : entry,
           );
         }
-        await this.recordUsage(entry, meta(), recorder.firstLimits);
+        await this.recordUsage(entry, meta(), recorder.firstLimits, subagents);
         if (!done.ok && done.error?.code === "session-expired" && engineId) await this.forgetSession(engineId);
         this.tell(onEvent, done);
         if (surface) this.emit(done);
@@ -337,6 +338,7 @@ export class TurnController {
         if (e.type === "done") finished = finish(e);
         else {
           if (e.type === "usage" && e.model) reportedModel = e.model;
+          if (e.type === "usage" && e.subagents) subagents = e.subagents;
           recorder.add(e);
           this.tell(onEvent, e);
           // The context and compactions reach the window through the task view, never as chat events.
@@ -376,9 +378,9 @@ export class TurnController {
     }
   }
 
-  private async recordUsage(entry: ChatEntry, meta: UsageMeta, firstLimits: LimitWindow[] | undefined): Promise<void> {
+  private async recordUsage(entry: ChatEntry, meta: UsageMeta, firstLimits: LimitWindow[] | undefined, subagents: SubagentUsage[]): Promise<void> {
     try {
-      await this.deps.recordUsage?.(entry, meta, firstLimits);
+      await this.deps.recordUsage?.(entry, meta, firstLimits, subagents);
     } catch (err) {
       console.error("Could not save usage", err);
     }

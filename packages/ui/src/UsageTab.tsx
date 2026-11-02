@@ -44,6 +44,8 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       {usage?.sidekick !== undefined && <p className="hh-caption">{t("sidekick.usage", { tokens: usage.sidekick.toLocaleString(shownLanguage(i18n)) })}</p>}
       {/* Parallel spec §10: background jobs' spend, apart from the tasks' (only once a job has run). */}
       {usage?.jobs !== undefined && <p className="hh-caption">{t("parallel.jobsUsage", { tokens: usage.jobs.toLocaleString(shownLanguage(i18n)) })}</p>}
+      {/* Subagent plan D4: what the tasks' subagents used, apart from the tasks' (only once one has run). */}
+      {usage?.subagents !== undefined && <p className="hh-caption">{t("usage.subagents", { tokens: usage.subagents.toLocaleString(shownLanguage(i18n)) })}</p>}
       {/* OpenCode spec §4: real money, as the engine reported it (only once a turn reported a cost; 0 is a real US$ 0.00). */}
       {usage?.spentUsd !== undefined && engine && (
         <>

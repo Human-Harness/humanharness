@@ -279,6 +279,29 @@ describe("TurnController usage and actions", () => {
     expect(order.slice(-3)).toEqual(["log:assistant", "usage", "emit:done"]);
   });
 
+  it("hands the usage event's subagent usage to recordUsage, apart from the entry's own usage (subagent slice 1)", async () => {
+    const fake = fakeRuntime();
+    const recorded: unknown[] = [];
+    const entries: ChatEntry[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async (e) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      recordUsage: async (_entry, _meta, _limits, subagents) => void recorded.push(subagents),
+    });
+    const sent = controller.send("map it");
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    const subagents = [{ model: "opus", inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }];
+    fake.finish([
+      { type: "usage", inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 0, subagents },
+      { type: "done", ok: true },
+    ]);
+    await sent;
+    expect(recorded).toEqual([subagents]);
+    expect(entries[1].usage).toEqual({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 0 });
+  });
+
   it("still ends the turn when recording usage fails", async () => {
     const fake = fakeRuntime();
     const events: Event[] = [];

@@ -184,6 +184,7 @@ import {
   profileMeta,
   profilesUsage,
   recentUsage,
+  subagentRecord,
   summarizeUsage,
   translateRecord,
   usageRecord,
@@ -1271,10 +1272,12 @@ const turnDeps: TurnDeps = {
   stateBlocks,
   inputBlocks: () => new Set(Object.keys(inputBlocks(harness.blocks))),
   emit,
-  recordUsage: async (entry, meta, firstLimits) => {
+  recordUsage: async (entry, meta, firstLimits, subagents) => {
     const c = await validConfig();
     const record = c ? usageRecord(entry, c.engineId, meta, firstLimits) : null;
     if (c && record) await new UsageLog(baseOf(c)).append(record);
+    // The subagents' tokens are their own lines, after the turn's (subagent plan D4).
+    if (c) for (const sub of subagents) await new UsageLog(baseOf(c)).append(subagentRecord(sub, c.engineId, meta, entry.at));
   },
   engineId: async () => (await config.load()).engineId,
   sessionExpired: async (engineId) => {

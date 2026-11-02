@@ -395,6 +395,20 @@ describe("Sidekick's line (sidekick spec §8)", () => {
   });
 });
 
+describe("Subagents' line (subagent slice 1, D4)", () => {
+  it("shows the subagents' tokens apart once they have run, and nothing without (D0)", async () => {
+    const client = claude();
+    client.usage = { limits: [], estimates: {}, tokens: { questions: 1100 }, primary: "five_hour", subagents: 218210 };
+    const first = await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("Subagents: about 218,210 tokens")).toBeTruthy();
+    first.unmount();
+    client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
+    await renderIn("en", <Sheet client={client} />);
+    await screen.findByRole("tab", { name: "Usage" });
+    expect(screen.queryByText(/Subagents/)).toBeNull();
+  });
+});
+
 describe("Background jobs' line (parallel spec §10)", () => {
   it("shows the jobs' tokens apart once one has run, and nothing without (D0)", async () => {
     const client = claude();

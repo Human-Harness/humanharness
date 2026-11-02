@@ -21,3 +21,6 @@ packages/e2e/.tmp/
 test-results/
 playwright-report/
 .claude/
+
+# Brainstorm mockups (visual companion)
+.superpowers/

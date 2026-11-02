@@ -3,10 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import type { ModelProfile } from "@humanharness/engines";
 import type { Event } from "@humanharness/runtime";
 import { ScopeStore } from "@humanharness/workspace";
 import { engineApprovalTag } from "../../src/main/engine-config/approval";
-import { EngineHost } from "../../src/main/engine-config/engine-host";
+import { EngineHost, mergeSubagentModel } from "../../src/main/engine-config/engine-host";
 import { readEngineConfig } from "../../src/main/engine-config/read-config";
 import { type TaskDeps, TaskManager } from "../../src/main/task-manager";
 import { emptyTasks } from "../../src/main/task-store";
@@ -340,5 +341,66 @@ describe("EngineHost (spec §5.2, §5.3, E1)", () => {
     await w.approve();
     expect(await w.host.presetFor("_app", undefined)).toEqual({ preset: null, instructions: "", notice: null });
     expect(await w.host.presetFor("../intro", undefined)).toEqual({ preset: null, instructions: "", notice: null });
+  });
+});
+
+describe("the subagent model in a preset's agents (subagent policy D2)", () => {
+  const profile: ModelProfile = { engine: "claude", tier: "standard", model: "claude-sonnet-5-5", effort: "medium", cap: 200000, subagentModel: "claude-haiku-4-5" };
+  const REVIEWER = "---\ndescription: Reviews changes\ntools: [Read, Grep]\n---\nYou review.\n";
+  const GENERAL = "---\nname: general-purpose\ndescription: My own general agent\n---\nBe careful.\n";
+  const agentsOf = (file: string | undefined) => JSON.parse(fs.readFileSync(file!, "utf8"));
+
+  it("a preset without general-purpose gets it, on the tier-below model, in a copy outside the snapshot", async () => {
+    const w = await setup({ ...BASIC, "agents/reviewer.md": REVIEWER }, TOOLS);
+    const hash = await w.approve();
+    const { preset } = await w.host.presetFor("intro", undefined);
+    const turn = await w.host.withSubagentModel(preset!, profile);
+    expect(turn.agentsFile).not.toBe(preset!.agentsFile);
+    expect(turn.agentsFile!.startsWith(path.join(w.userData, "engine-agents"))).toBe(true);
+    const merged = agentsOf(turn.agentsFile);
+    expect(Object.keys(merged).sort()).toEqual(["general-purpose", "reviewer"]);
+    expect(merged["general-purpose"].model).toBe("claude-haiku-4-5");
+    expect(merged.reviewer).toEqual(agentsOf(preset!.agentsFile).reviewer);
+    // The snapshot's own file is untouched, and the rest of the preset is as it was.
+    expect(agentsOf(preset!.agentsFile)["general-purpose"]).toBeUndefined();
+    expect({ ...turn, agentsFile: preset!.agentsFile }).toEqual(preset);
+    expect(fs.readdirSync(path.join(w.userData, "engine-config", hash)).sort()).toEqual(["agents.json", "source"]);
+  });
+
+  it("a preset's general-purpose without a model gets only the model; its other fields stay", async () => {
+    const w = await setup({ ...BASIC, "agents/general-purpose.md": GENERAL }, TOOLS);
+    await w.approve();
+    const { preset } = await w.host.presetFor("intro", undefined);
+    const merged = agentsOf((await w.host.withSubagentModel(preset!, profile)).agentsFile);
+    expect(merged["general-purpose"]).toEqual({ ...agentsOf(preset!.agentsFile)["general-purpose"], model: "claude-haiku-4-5" });
+    expect(merged["general-purpose"].prompt).toContain("Be careful.");
+  });
+
+  it("a preset's general-purpose that names a model is kept as it is (the preset wins): same preset back", async () => {
+    const w = await setup(BASIC, TOOLS);
+    const file = path.join(w.userData, "own-agents.json");
+    fs.writeFileSync(file, JSON.stringify({ "general-purpose": { description: "d", prompt: "p", model: "claude-opus-4-5" } }));
+    const preset = { hash: "h", base: "isolated" as const, servers: [], agentsFile: file };
+    expect(await w.host.withSubagentModel(preset, profile)).toBe(preset);
+  });
+
+  it("no agentsFile, no subagent model, or an unreadable file: the preset as it is", async () => {
+    const w = await setup(BASIC, TOOLS);
+    const bare = { hash: "h", base: "isolated" as const, servers: [] };
+    expect(await w.host.withSubagentModel(bare, profile)).toBe(bare);
+    const withFile = { ...bare, agentsFile: path.join(w.userData, "missing.json") };
+    expect(await w.host.withSubagentModel(withFile, { ...profile, subagentModel: undefined })).toBe(withFile);
+    expect(await w.host.withSubagentModel(withFile, undefined)).toBe(withFile);
+    expect(w.log).not.toHaveBeenCalled();
+    expect(await w.host.withSubagentModel(withFile, profile)).toBe(withFile);
+    expect(w.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("mergeSubagentModel leaves what it can't read alone", () => {
+    expect(mergeSubagentModel([], "m1")).toEqual([]);
+    expect(mergeSubagentModel(null, "m1")).toBeNull();
+    const odd = { "general-purpose": "nope" };
+    expect(mergeSubagentModel(odd, "m1")).toBe(odd);
+    expect(mergeSubagentModel({}, "--flag")).toEqual({});
   });
 });

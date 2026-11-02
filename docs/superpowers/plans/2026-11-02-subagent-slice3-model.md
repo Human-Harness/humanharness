@@ -14,7 +14,7 @@ n=1 per condition, `claude -p --model sonnet --allowedTools Task,Agent`, prompt 
 
 ## Decisions that follow
 
-- The inline `--agents` is emitted only when subagents are allowed (`permissions.subagents ?? preset has agentsFile`) **and** the preset has no `agentsFile`. A preset that ships agents owns its definitions (and their `model`); merging would mean reading the file in the transport. Known gap, noted in `engines.md`.
+- The inline `--agents` is emitted only when subagents are allowed (`permissions.subagents ?? preset has agentsFile`) **and** the preset has no `agentsFile`. A preset that ships agents gets the model by a merge before the turn instead (follow-up: `EngineHost.withSubagentModel` writes a per-model copy of the snapshot's `agents.json`; the preset's own `general-purpose` wins, a missing `model` is filled in), so the transport still emits one `--agents` and never reads the file. See `engines.md`.
 - Only `general-purpose` is overridden: it is the type that otherwise inherits the task's model. `Explore` is already haiku; `Plan` is left alone.
 - `ModelProfile.subagentModel?: string` (set by `pick` and `fallback` of the default policy, only when the engine's tier table names a model) is the record. It is set whether or not subagents are allowed, because the profile is resolved before the permissions are known; the transport applies it only when allowed.
 - `ModelPolicy.subagentModel(profile, models)`: `tierBelow`-style, light stays light; a `custom` profile counts as light's model (nothing is below a custom choice we can trust); an engine without a model in its table gives `undefined`.

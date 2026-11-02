@@ -12,6 +12,10 @@ import { initPlugin } from "../src/plugin-init";
 import { P12_NOTE } from "../src/plugin-test";
 import { CORE, memoryIo, memoryStream, replaceIn, tempRoot } from "./helpers";
 
+// Not about the builds: a plugin whose sources did not change is not built twice, and the tools build once per distinct set of sources (cached-plugin-build.ts, cached-tool-build.ts).
+vi.mock("../src/plugin-build", async (real) => (await import("./cached-plugin-build")).withCache(await real<typeof import("../src/plugin-build")>()));
+vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
+
 const { root, cleanup } = tempRoot("hh-plugin-dev-");
 afterAll(cleanup);
 
@@ -73,7 +77,8 @@ async function withFakeTimers(body: () => Promise<void>) {
 
 /** Waits until the fake app has been spawned (the check and build ran). */
 async function spawned(calls: unknown[]) {
-  for (let i = 0; i < 600 && calls.length === 0; i++) await wait(25);
+  // The first one builds the plugin and the harness's tools for real (the rest hit the caches): ~10 s alone, a lot more under a parallel run. Polls, so a fast run never waits.
+  for (let i = 0; i < 2000 && calls.length === 0; i++) await wait(25);
   expect(calls).toHaveLength(1);
 }
 

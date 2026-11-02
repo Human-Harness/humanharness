@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { checkHarness } from "../src/check";
 import { initHarness } from "../src/init";
 import { CORE, dropExampleTool, replaceIn, tempRoot } from "./helpers";
+
+// Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
+vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
 
 const { root, cleanup } = tempRoot("hh-check-recipes-");
 afterAll(cleanup);
@@ -52,7 +55,8 @@ const AI = '{ ai: "./jobs/classify.md", input: ["ci"], output: z.object({ ids: z
 const RECIPE = `[{ tool: "pr-ci", as: "ci" }, ${AI}, { tool: "apply-triage", input: ["triage"] }]`;
 const of = (r: Awaited<ReturnType<typeof checkHarness>>, rule: string) => r.findings.filter((f) => f.rule === rule).map((f) => `${f.file} ${f.message}`);
 
-describe("check: job recipes (tools spec §3.3, §7)", () => {
+// The first test builds the tools for real, the others hit the cache (cached-tool-build.ts): the first one is slow under a parallel run.
+describe("check: job recipes (tools spec §3.3, §7)", { timeout: 120_000 }, () => {
   it("an AI step whose brief is missing is brief-missing", async () => {
     const r = await checkHarness(await fixture(RECIPE, null));
     expect(of(r, "brief-missing")).toEqual(['harness.config.ts Job "sync": its AI step brief ./jobs/classify.md does not exist.']);

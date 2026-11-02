@@ -55,7 +55,8 @@ const failure = (p: Promise<unknown>) =>
     (err: Error) => err.message,
   );
 
-describe("humanharness build (tools spec §3.2)", () => {
+// Each test builds for real two to four times (~2-3 s per tool build alone, no sharing: the builds differ); a parallel run multiplies that.
+describe("humanharness build (tools spec §3.2)", { timeout: 120_000 }, () => {
   it("writes dist/tools/<id>.js and dist/tools.json with JSON Schemas, description, agent, uses and timeout", async () => {
     const dir = await harness({ "count-notes": COUNT_NOTES });
     const m = memoryIo(dir);

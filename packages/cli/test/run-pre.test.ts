@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PassThrough } from "node:stream";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { initHarness } from "../src/init";
 import { runTask } from "../src/run";
 import { CORE, dropExampleTool, memoryStream, replaceIn, tempRoot } from "./helpers";
+
+// Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
+vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
 
 const { root, cleanup } = tempRoot("hh-run-pre-");
 afterAll(cleanup);

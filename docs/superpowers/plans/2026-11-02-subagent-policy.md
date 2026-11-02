@@ -46,15 +46,15 @@ Output: `docs/spikes/2026-11-0X-subagents.md`, with the commands used so every n
 
 ---
 
-## Decision gate (Marco, after the spike)
+## Decision gate (Marco, 2026-11-02, after the spike)
 
-Each decision has a recommendation; the spike can overturn it.
+All five decided.
 
-- **D1 · Default.** *Recommended:* deny `Task` and `Agent` in task and job slots, unless the manifest opts in with `permissions.subagents: true`, or the scope's engine preset ships `agentsFile`. Reason: a task is one topic for a non-technical person; the notes already carry memory across tasks. This is a deliberate D0 break (every harness's `--disallowedTools` changes), so it needs its own line in the spec. *Alternative:* allow, but always cap model and handback (D2 + D3). If S1 shows zero unprompted spawns, the cheapest move is deny-by-default and nothing else.
-- **D2 · Model when allowed.** *Recommended:* one tier below the task (deep → sonnet, standard → haiku, light → haiku), chosen by the `ModelPolicy` (new `subagentModel` in its pick) and passed as `CLAUDE_CODE_SUBAGENT_MODEL` in the process env. Fixed per task like the rest of the profile.
-- **D3 · Handback contract when allowed.** *Recommended:* a `### Subagents` part in the managed section of `AGENTS.md`: ask subagents for a ≤5-line answer (status, what changed, one-line issues) and to put details in the files they edit, never in the reply. Prompt-only: no report files in the person's folder.
-- **D4 · Measurement.** *Recommended, whatever D1 says:* record subagent usage from `result.modelUsage` as its own lines (`phase: "subagent"`, model, tokens), split out in Settings › Usage like background jobs ("Subagents: about N tokens"). Presets with agents keep it measurable.
-- **D5 · Fit with "driving modes"** (queue item 2026-10-28: eco/hybrid/sport). *Recommended:* ship D1's flag now; driving modes later maps eco → deny, sport → allow.
+- **D1 · Default: decided.** Deny `Task` and `Agent` in task and job slots via `--disallowedTools` (spike: `--allowedTools` does not gate them). Opt-in: manifest `permissions.subagents: true`, or the scope's engine preset ships `agentsFile`. Reason: a task is one topic for a non-technical person; the notes already carry memory across tasks. Deliberate D0 break (every harness's `--disallowedTools` changes); it has its own line in the spec (`docs/superpowers/specs/2026-10-27-harness-hatches-design.md`, §5.4).
+- **D2 · Model when allowed: decided.** Set the subagent model through `--agents` definitions that carry a `model`, one tier below the task (deep → sonnet, standard → haiku, light → haiku), chosen by the `ModelPolicy`. Not `CLAUDE_CODE_SUBAGENT_MODEL`: in the clean-env test (spike S4b, n=1 per condition) the env var, alone or with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, did not change the subagent model; only `--agents` with `"model"` did. Open for slice 3: (a) can an `--agents` definition override the built-in `general-purpose` type (otherwise a spawned general-purpose runs on the task's model); (b) does the parent's prompt cache survive.
+- **D3 · Handback contract when allowed: decided.** A `### Subagents` part in the managed section of `AGENTS.md`: ask subagents for a ≤5-line answer (status, what changed, one-line issues) and to put details in the files they edit, never in the reply. Prompt-only, no report files in the person's folder, and only when subagents are allowed.
+- **D4 · Measurement: decided.** Always record subagent usage from `result.modelUsage` as its own lines (`phase: "subagent"`, model, tokens), shown separately in Settings › Usage like background jobs ("Subagents: about N tokens"). Presets with agents stay measurable.
+- **D5 · Driving modes: decided.** Ship D1's flag now; driving modes (later spec) map eco → deny, sport → allow.
 
 ---
 
@@ -66,7 +66,7 @@ One PR each, in this order. Each gets its own TDD plan before code.
 |---|---|---|---|
 | 1 | **Measure** (D4): parse `result.modelUsage`, emit subagent usage, write `phase: "subagent"` lines, usage tab caption | `packages/engines/src/claude/transport.ts`, `contract.ts`, `packages/shell/src/main/usage-log.ts`, `packages/ui` usage view | `worktree-ui-tweaks` merged (touches `packages/ui`, `packages/shell`) |
 | 2 | **Permission** (D1): `permissions.subagents` in the manifest schema, `disallowedTools` denies by default, preset with `agentsFile` exempt, `narrowPermissions` for jobs, `check` message | `packages/harness-sdk`, `packages/engines/src/claude/transport.ts`, docs `manifest.md`, `engines.md` | slice 1; the warm-prefix work if it has reached `claudeArgs` by then |
-| 3 | **Model** (D2): `subagentModel` in `ModelPolicy`, env on the Claude process, recorded on the task profile | `packages/policies/src/model.ts`, transport env, `tasks.json` profile | slice 2 |
+| 3 | **Model** (D2): first a small check of open questions (a) can an `--agents` definition override the built-in `general-purpose` type, (b) does the parent's prompt cache survive; then `subagentModel` in `ModelPolicy`, `--agents` definitions carrying a `model` (not process env), recorded on the task profile | `packages/policies/src/model.ts`, `packages/engines/src/claude/transport.ts` (`--agents` args), `tasks.json` profile | slice 2 |
 | 4 | **Contract** (D3): `### Subagents` in the managed `AGENTS.md` section, only when allowed | `packages/workspace` (managed section) | slice 2 |
 | 5 | Codex/OpenCode parity | — | listed as a known gap in `engines.md` |
 

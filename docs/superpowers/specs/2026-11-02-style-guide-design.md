@@ -2,7 +2,7 @@
 
 Date: 2026-11-02
 Status: written from the approved guide, waiting for Marco's review
-Source: the guide artifact https://claude.ai/artifact/2j18xQrjeqXPLnYaKuDkfL (v28) and the decisions page https://claude.ai/artifact/XbHnScLhQXDTCAvUTv6aDD. Every rule below was decided by Marco on those pages; this spec only restates them in English and adds how to build them.
+Source: the guide artifact https://claude.ai/artifact/2j18xQrjeqXPLnYaKuDkfL (v29) and the decisions page https://claude.ai/artifact/XbHnScLhQXDTCAvUTv6aDD. Every rule below was decided by Marco on those pages; this spec only restates them in English and adds how to build them.
 Builds on: `2026-10-11-app-look-design.md`, `2026-10-30-ui-refresh-design.md`, `2026-10-30-global-search-design.md`, the Sidekick spec, the document reader spec.
 
 ## 1. Goal
@@ -146,7 +146,7 @@ Buttons without an icon jump from step 2 to step 4. The title is never cut to ma
 | Piece | When |
 |---|---|
 | Segmented (30) | One of 2–4 short options that change the view or a value. Also replaces button groups (text size, weekdays). |
-| Tabs (40) | Open things of the same kind: parallel tasks; Notas · Referencias · Material in Archivos. Orange dot = waits for you. |
+| Tabs (40) | Open things of the same kind: parallel tasks; Notas · Referencias · Material in Archivos; the panels of one plugin. Orange dot = waits for you. |
 | Nav item (40) | Vertical navigation: Settings, assistant steps, walkthrough. May carry a step mark or a counter. |
 | Option (52) | One among options with a description: chat options block, mode list, backup places, languages, engine. Amber border = recommended. |
 | Tile (104) | Only the topics at task start. Selected = 2 px dark border, no check. |
@@ -161,7 +161,7 @@ Buttons without an icon jump from step 2 to step 4. The title is never cut to ma
 | `.hh-tk-cancel` (11 px), 24 px buttons of the demo and plugins | Jobs, demo, plugin kit | Quiet or compact secondary |
 | `a.hh-button` | Soporte, Ver planes | Secondary (opens outside) |
 | `.hh-text-sizes`, `.hh-pl-days` | Settings, plugin schedule | Segmented |
-| `.hh-tk-tab` (44) and `.hh-pl-tab` (24) | Parallel tasks, plugin panels | Tabs (40) — see open question 3 |
+| `.hh-tk-tab` (44) and `.hh-pl-tab` (24) | Parallel tasks, plugin panels | Tabs (40) |
 | `.hh-choice` (36 and 52), `.hh-place`, `.hh-langpick-option` | Chat, modes, backup, language | Option (52) |
 | `.hh-engine-radio` | Engine | Option (52) |
 | `.hh-tile`, `.hh-topic` | Start topics | Tile |
@@ -304,7 +304,7 @@ Closed list. Nothing else goes on top of anything. There are no side drawers: wh
 | Part | Form | Allowed content |
 |---|---|---|
 | Frame | Modal 640, radius 18, 12 % from the top, dimmed backdrop. Closes with Esc, ⌘K or a click outside. Focus is trapped. | The four parts below, in order. |
-| Field | 56 tall (see open question 1), text 16, no own border; a line below. Search icon left; "Esc" hint right. | Placeholder "Buscar tareas, notas, archivos, settings…". |
+| Field | 52 tall, text 16, no own border; a line below. Search icon left; "Esc" hint right. | Placeholder "Buscar tareas, notas, archivos, settings…". |
 | Filters | One line of 30 chips, never two; scrolls sideways if needed. Chosen one in `--hh-active`. | "Todo · N" and one chip per type with results, with icon and count, fixed order: Tareas, Notas, Archivos, Settings, Acciones, Datos (only if the harness turns it on). ⌘1…⌘7 pick them. |
 | Results | Groups with 12 uppercase titles; 52 rows with type icon (grey), title with the match marked, one 13 context line and an optional grey tag on the right. Chosen row has a grey fill. "Todo": up to 5 per group; filtered: up to 50. | Only the filter types. The tag only says "solo lectura" (reference folder) or when (past task). No buttons in rows. |
 | Footer (new) | One line of shortcuts, 12 grey, keys boxed. | ↑↓ moverse · Enter abrir · ⌘Enter preguntar a la IA · Esc cerrar. No buttons. |
@@ -375,13 +375,13 @@ Closed list: nothing else may appear, from a harness either. A harness only adds
 |---|---|
 | Header | "Sidekick" (15) and chevron to fold. Nothing else. |
 | Status line | Marks (24 circle with a 14 set icon) of the sidekicks on in this task, in the person's order; on the right the state in 12: Mirando · Leyendo tu prompt… · Tiene una sugerencia · N avisos · Apagado. A mark with a waiting card has an orange dot. Clicking a mark opens a menu: Apagar en esta tarea · Ir a Settings. |
-| Cards | Only the types below. The live card on top, with shadow; earlier ones fold to a 36 line (mark, what it was, grey result tag) — see open question 1. Only cards of the open task. |
+| Cards | Only the types below. The live card on top, with shadow; earlier ones fold to a 30 line (mark, what it was, grey result tag). Only cards of the open task. |
 | Footer | One 12 line with the Sidekick's spend in the task and the model level, plus the progress bar of that cap. Fixed at the bottom. |
 | Folded (52) | Only the marks, stacked, with their orange dot. One click opens it. |
 
 Card anatomy: radius 14, padding 12, text 13. Top to bottom, always this order, skipping absent parts: who speaks (24 mark + name 13) with the moment's tag on the right · title 13 semibold (optional) · text or short list · rewrite block (grey fill, additions in green) · "para después" rows · why (12, faint) with the link "No marcar esto" · actions on one line on the right, compact: dismiss (quiet) first, then secondaries, the amber primary last. At most one primary, only on the live card. No other icons: only the mark and the dot of the notice tag.
 
-Card types (closed): Antes de enviar (orange; problems, rewrite, para después, why; Enviar igual · Editar · Enviar sugerido) · Después del turno (blue "Sigue"; what was missing and the next ask; Descartar · Al composer) · Lección (violet; Descartar · Al composer secondary) · Aviso (orange with dot; context almost full, repeated ask, off-phase, task waiting; only buttons calling paths that already exist: Guardar como decisión, Terminar tarea, Ir a la tarea) · Guardia (red "Antes de aprobar" or orange "Cambio de fase"; quotes the rule; Aprobar igual · Revisar) · Resumen del día (grey "Ayer"; up to 4 lines; only Descartar) · Respuesta de un lugar del harness (grey tag with the place's name; text only; only Descartar) · Presentación (first time, Sidekick off; what it does and what it costs; Ahora no · Prender) · Sugeridos por el harness (rows with mark, name, purpose and Adoptar; Ahora no at the bottom) · past card (36 line, a click unfolds it) · cap notice (one line, no buttons, once per task).
+Card types (closed): Antes de enviar (orange; problems, rewrite, para después, why; Enviar igual · Editar · Enviar sugerido) · Después del turno (blue "Sigue"; what was missing and the next ask; Descartar · Al composer) · Lección (violet; Descartar · Al composer secondary) · Aviso (orange with dot; context almost full, repeated ask, off-phase, task waiting; only buttons calling paths that already exist: Guardar como decisión, Terminar tarea, Ir a la tarea) · Guardia (red "Antes de aprobar" or orange "Cambio de fase"; quotes the rule; Aprobar igual · Revisar) · Resumen del día (grey "Ayer"; up to 4 lines; only Descartar) · Respuesta de un lugar del harness (grey tag with the place's name; text only; only Descartar) · Presentación (first time, Sidekick off; what it does and what it costs; Ahora no · Prender) · Sugeridos por el harness (rows with mark, name, purpose and Adoptar; Ahora no at the bottom) · past card (30 line, a click unfolds it) · cap notice (one line, no buttons, once per task).
 
 Column states: Mirando (empty state, no buttons) · Revisando (loading icon and countdown in text; the composer shows the same) · Apagado (grey marks; turned on from the top-bar Sidekick button or the presentation card).
 
@@ -395,7 +395,7 @@ All use template 3: rail visible with the page's entry selected, title 20, on th
 | Jobs | rail | One card per job: toggle, frequency, daily cap (compact field) and runs as foldable rows. Correr ahora, secondary. Replaces the Jobs tab in Settings and the Jobs view of the Bandeja. |
 | Archivos | rail (was drawer and column) | 40 tabs Notas · Referencias · Material (only those with content). Each is a list; picking a row opens its detail in the same column; Volver turns into "← Notas" and goes back to the list. Notas: learned or yours, Editar / Borrar. Referencias: read only, with lock. Material: sources with Agregar (primary). |
 | Historial | task header (was drawer) | Days with foldable rows per task; inside, files (open the Reader or the timeline) and "Volver a este punto" with the undo icon. A file's timeline is a detail of this page; Volver goes back to the day. |
-| Plugins | rail (was panel) | Plugin list on the left, like Settings (with notice dot); on the right, the chosen plugin's panel (iframe) built only with the plugin kit: table, compact buttons, chips, stat. Each plugin's configuration stays in Settings › Plugins. |
+| Plugins | rail (was panel) | Plugin list on the left, like Settings (with notice dot); on the right, the chosen plugin's panel (iframe) built only with the plugin kit: table, compact buttons, chips, stat. A plugin with several panels shows 40 tabs above the panel. Each plugin's configuration stays in Settings › Plugins. |
 
 ## 12. Inicio, Assistant and Settings
 
@@ -532,10 +532,10 @@ The work is large; the plan should split it into stages that each leave the app 
 
 Each stage runs the existing UI and e2e tests; visual changes are checked in the running app (light and dark) before merging.
 
-## 17. Open questions
+## 17. Decided while writing this spec
 
-Found while writing this spec; Marco decides.
+Marco answered these on 2026-11-02; the guide is updated to v29.
 
-1. **Heights outside the closed list.** The heights table allows 18, 24, 30, 40, 52 and 104, but the guide also uses a 56 search field and a 36 line for past Sidekick cards.
-2. **Search icon in the Assistant.** Row 36 and zone 1 say no search icon in the Assistant, but the Assistant template mock shows 🔍 ⚙.
-3. **`.hh-pl-tab`.** Today it switches between the panels of a plugin; the mapping table sends it to Tabs (40). With the Plugins page now a list on the left, it is not said what happens when one plugin has several panels.
+1. **Heights stay closed.** The search field goes from 56 to 52; the folded line of a past Sidekick card goes from 36 to 30.
+2. **No search icon in the Assistant.** The Assistant top bar has only ⚙ (the template mock is fixed).
+3. **A plugin with several panels** shows 40 tabs above its panel on the Plugins page.

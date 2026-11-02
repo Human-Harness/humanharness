@@ -50,8 +50,10 @@ describe("narrowPermissions (parallel spec §8, T5)", () => {
     const opted = { ...wide, subagents: true };
     expect(narrowPermissions(opted, undefined)).toEqual(opted);
     expect(narrowPermissions(opted, {})).toEqual(opted);
-    expect(narrowPermissions(opted, { subagents: false })).toEqual(wide);
-    expect(narrowPermissions(opted, { subagents: false })).not.toHaveProperty("subagents");
+    // The off switch is kept explicit, so a scope preset's agentsFile can't re-open it (D1).
+    expect(narrowPermissions(opted, { subagents: false })).toEqual({ ...wide, subagents: false });
+    expect(narrowPermissions(wide, { subagents: false })).toEqual({ ...wide, subagents: false });
+    expect(narrowPermissions({ ...wide, subagents: false }, { subagents: true })).toEqual({ ...wide, subagents: false });
     expect(narrowPermissions(wide, { subagents: true })).not.toHaveProperty("subagents");
   });
   it("only narrows", () => {

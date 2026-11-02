@@ -35,7 +35,9 @@ export function narrowPermissions(base: Permissions, override: PermissionsOverri
     edit: base.edit === "none" || override.edit === "none" ? "none" : "folder",
     exec: base.exec && override.exec !== false,
     web: base.web && override.web !== false,
-    // Absent stays absent (D0): only a harness that opted in has anything to narrow.
-    ...(base.subagents === true && override.subagents !== false ? { subagents: true } : {}),
+    // An explicit false is kept so a scope preset's agentsFile can't re-open it (D1). Absent stays absent (D0)
+    // unless the override turns it off; `true` needs the harness's opt-in and no override against it.
+    ...(override.subagents === false || base.subagents === false ? { subagents: false }
+      : base.subagents === true ? { subagents: true } : {}),
   };
 }

@@ -223,7 +223,7 @@ export function claudeArgs(
         // An AI step's slot only (noBuiltins): no built-in at all; without it the flags are exactly as before (D0).
         ...(o.noBuiltins ? ["--tools", ""] : []),
         "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly, linked).join(","),
-        "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked, o.permissions.subagents === true || engine?.agentsFile !== undefined), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
+        "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked, o.permissions.subagents ?? engine?.agentsFile !== undefined), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
       ];
   return [
     "-p",

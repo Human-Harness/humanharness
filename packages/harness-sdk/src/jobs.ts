@@ -20,7 +20,7 @@ export function parseEvery(s: string): number | null {
 }
 
 /** A job's own permissions: each key may only turn something off (checked against the harness's in `jobProblems`). */
-const permissionsOverride = z.strictObject({ edit: z.enum(["folder", "none"]).optional(), exec: z.boolean().optional(), web: z.boolean().optional() });
+const permissionsOverride = z.strictObject({ edit: z.enum(["folder", "none"]).optional(), exec: z.boolean().optional(), web: z.boolean().optional(), subagents: z.boolean().optional() });
 
 /** A background job (spec §3): it runs with no chat and no person in the loop. Strict: a typo is refused. */
 export const jobSchema = z.strictObject({
@@ -75,7 +75,7 @@ export function jobProblems(h: {
   jobs?: Record<string, HarnessJob>;
   actions?: Record<string, unknown>;
   scopes?: unknown;
-  permissions: { edit: "folder" | "none"; exec: boolean; web: boolean };
+  permissions: { edit: "folder" | "none"; exec: boolean; web: boolean; subagents?: boolean };
 }): JobProblem[] {
   const out: JobProblem[] = [];
   const isAction = (id: string) => !!h.actions && Object.hasOwn(h.actions, id);
@@ -103,7 +103,7 @@ export function jobProblems(h: {
     } else if (j.onLimit !== undefined && !isAction(j.onLimit)) issue(["onLimit"], `onLimit names no action "${j.onLimit}"`);
     if (j.steps !== undefined && j.permissions !== undefined) issue(["permissions"], "permissions narrow an AI job's session; a recipe's tools use their own uses");
     const p = j.permissions;
-    if (p && ((p.edit === "folder" && h.permissions.edit === "none") || (p.exec === true && !h.permissions.exec) || (p.web === true && !h.permissions.web))) {
+    if (p && ((p.edit === "folder" && h.permissions.edit === "none") || (p.exec === true && !h.permissions.exec) || (p.web === true && !h.permissions.web) || (p.subagents === true && !h.permissions.subagents))) {
       issue(["permissions"], "A job's permissions can only narrow the harness's");
     }
   }

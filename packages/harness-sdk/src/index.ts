@@ -224,7 +224,13 @@ const manifestSchema = z.object({
   engines: z.array(z.string().min(1)).min(1),
   folder: z.object({ suggested: z.string().min(1), seed: z.string().optional(), references: z.array(referenceSchema).default([]) }),
   instructions: z.string().min(1),
-  permissions: z.object({ edit: z.enum(["folder", "none"]), exec: z.boolean(), web: z.boolean() }),
+  permissions: z.object({
+    edit: z.enum(["folder", "none"]),
+    exec: z.boolean(),
+    web: z.boolean(),
+    /** Opt-in to Claude's subagent tools (`Task`, `Agent`), denied by default (subagent policy D1). Absent means denied. */
+    subagents: z.boolean({ error: "permissions.subagents must be true or false" }).optional(),
+  }),
   blocks: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), blockSchema),
   /** Ids are at most 64 characters: the models config keys a task's setting by its action id. */
   actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), actionSchema).default({}),

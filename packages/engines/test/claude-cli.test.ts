@@ -97,9 +97,27 @@ describe("disallowedTools", () => {
   it("denies every tool the manifest excludes and the settings dir", () => {
     const settings = ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"];
     expect(disallowedTools({ edit: "none", exec: false, web: false })).toEqual([
-      "AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", ...settings,
+      "AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", "Task", "Agent", ...settings,
     ]);
-    expect(disallowedTools({ edit: "folder", exec: true, web: true })).toEqual(["AskUserQuestion", ...settings]);
+    expect(disallowedTools({ edit: "folder", exec: true, web: true })).toEqual(["AskUserQuestion", "Task", "Agent", ...settings]);
+  });
+
+  it("denies subagents (Task, Agent) by default and lets permissions.subagents: true allow them (subagent policy D1)", () => {
+    const wide = { edit: "folder", exec: true, web: true } as const;
+    for (const d of [disallowedTools(wide), disallowedTools({ ...wide, subagents: false })]) {
+      expect(d).toContain("Task");
+      expect(d).toContain("Agent");
+    }
+    expect(disallowedTools({ ...wide, subagents: true })).toEqual(["AskUserQuestion", "Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"]);
+    // An explicit argument (the preset case) overrides the manifest's absence.
+    const preset = disallowedTools(wide, [], false, [], true);
+    expect(preset).not.toContain("Task");
+    expect(preset).not.toContain("Agent");
+    // MCP-only sessions keep denying them, once each, even with the opt-in.
+    const mcpOnly = disallowedTools({ ...wide, subagents: true }, [], true);
+    expect(mcpOnly).toContain("Task");
+    expect(mcpOnly).toContain("Agent");
+    expect(new Set(mcpOnly).size).toBe(mcpOnly.length);
   });
 });
 
@@ -599,8 +617,10 @@ describe("reference folders", () => {
     }
     // D0: material and task turns (no mcpOnly) deny exactly what they did.
     const none = { edit: "none", exec: false, web: false } as const;
-    expect(disallowedTools(none)).toEqual(["AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", "Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"]);
-    expect(disallowedTools({ edit: "folder", exec: true, web: true })).not.toEqual(expect.arrayContaining(["Task", "Agent", "LS", "Skill"]));
+    // The D1 break: Task and Agent are now denied here too (before, a normal session did not deny them).
+    expect(disallowedTools(none)).toEqual(["AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", "Task", "Agent", "Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"]);
+    const on = disallowedTools({ edit: "folder", exec: true, web: true, subagents: true });
+    for (const t of ["Task", "Agent", "LS", "Skill"]) expect(on).not.toContain(t);
   });
 });
 
@@ -657,7 +677,7 @@ describe("claudeArgs noTools (sidekick spec §5)", () => {
       "--setting-sources", "project", "--permission-mode", "acceptEdits",
       "--allowedTools", "Read,Glob,Grep,TodoWrite,Edit(./**),Write(./**),MultiEdit(./**),mcp__ui",
     ];
-    const denied = "AskUserQuestion,Bash,WebSearch,WebFetch,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)";
+    const denied = "AskUserQuestion,Bash,WebSearch,WebFetch,Task,Agent,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)";
     expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [uiServer], permissions })).toEqual([
       ...head, "--disallowedTools", denied, "--strict-mcp-config", "--mcp-config", mcpConfig, "--session-id", "abc",
     ]);
@@ -899,8 +919,25 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
     expect(plain).toEqual({ enableAllProjectMcpServers: false, enabledMcpjsonServers: [] });
   });
 
+  it("a preset that ships agentsFile allows subagents; one without it, or a manifest-only opt-in, follows D1", () => {
+    const denies = (args: string[]) => argAfter(args, "--disallowedTools").split(",");
+    const has = (args: string[], ...names: string[]) => names.every((n) => denies(args).includes(n));
+    const hasAny = (args: string[], ...names: string[]) => names.some((n) => denies(args).includes(n));
+    expect(has(claudeArgs(o), "Task", "Agent")).toBe(true);
+    expect(hasAny(claudeArgs({ ...o, scope: { linked: [], engine: preset } }), "Task", "Agent")).toBe(false);
+    const { agentsFile: _, ...noAgents } = preset;
+    expect(has(claudeArgs({ ...o, scope: { linked: [], engine: noAgents } }), "Task", "Agent")).toBe(true);
+    expect(hasAny(claudeArgs({ ...o, permissions: { ...permissions, subagents: true } }), "Task", "Agent")).toBe(false);
+    // An explicit subagents: false (a job, an AI step's slot) beats a preset's agentsFile.
+    expect(has(claudeArgs({ ...o, permissions: { ...permissions, subagents: false }, scope: { linked: [], engine: preset } }), "Task", "Agent")).toBe(true);
+    // A preset's own allow rule does not lift the manifest's deny.
+    const allowTask = { ...noAgents, settings: { permissions: { allow: ["Task", "Agent"] } } };
+    expect(has(claudeArgs({ ...o, scope: { linked: [], engine: allowTask } }), "Task", "Agent")).toBe(true);
+  });
+
   it("isolated adds neither the .mcp.json settings nor its deny rules", () => {
-    const args = claudeArgs({ ...o, scope: { linked: [], engine: preset } });
+    const { agentsFile: _a, ...noAgents } = preset;
+    const args = claudeArgs({ ...o, scope: { linked: [], engine: noAgents } });
     expect(JSON.parse(argAfter(args, "--settings"))).not.toHaveProperty("enableAllProjectMcpServers");
     expect(argAfter(args, "--disallowedTools")).toBe(argAfter(claudeArgs(o), "--disallowedTools"));
   });
@@ -912,7 +949,8 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
 
   it("manifest denies over a preset allow: --disallowedTools is the harness's, unchanged", () => {
     const none = { ...permissions, edit: "none" as const };
-    const engine = { ...preset, settings: { permissions: { allow: ["Edit", "Bash"] } } };
+    const { agentsFile: _a, ...noAgents } = preset;
+    const engine = { ...noAgents, settings: { permissions: { allow: ["Edit", "Bash"] } } };
     const withPreset = claudeArgs({ ...o, permissions: none, scope: { linked: [], engine } });
     const without = claudeArgs({ ...o, permissions: none });
     expect(argAfter(withPreset, "--disallowedTools")).toBe(argAfter(without, "--disallowedTools"));

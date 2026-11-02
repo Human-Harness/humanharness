@@ -22,7 +22,7 @@ describe("D0 (hatches): no linked folders, no change", () => {
     const mcpConfig = ["--strict-mcp-config", "--mcp-config", JSON.stringify({
       mcpServers: { ui: { type: "stdio", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } } },
     })];
-    const deny = "AskUserQuestion,Bash,WebSearch,WebFetch,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)";
+    const deny = "AskUserQuestion,Bash,WebSearch,WebFetch,Task,Agent,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)";
     // With a reference folder: its one --settings and its edit deny rules, nothing more.
     const withRef = [
       ...head,

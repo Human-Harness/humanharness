@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import * as blocks from "@humanharness/blocks";
-import { getEngine } from "@humanharness/engines";
+import { type CommonOptions, getEngine } from "@humanharness/engines";
+import { registry as appRegistry } from "@humanharness/engines/registry";
 import { type AcpScript, type ClaudeScript, claudeResultLine, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type LoadedHarness, loadHarness, z } from "@humanharness/harness-sdk";
 import { TurnLedger } from "../src/turn-ledger";
@@ -46,7 +47,7 @@ const PROMPT_JOB = { label: "Sync", prompt: "./brief.md", tier: "light", on: { m
  * A Claude workspace on fake-claude with everything a slot can reach: the data harness's data server, the tools server,
  * material, the review tools, two of the harness's own MCP servers, a reference folder and every permission.
  */
-async function setup(jobs: Record<string, unknown>) {
+async function setup(jobs: Record<string, unknown>, extra: { subagents?: boolean; seen?: CommonOptions[] } = {}) {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const args = path.join(base, "args.json");
   const catalogue = path.join(base, "tools-catalogue.json");
@@ -54,7 +55,7 @@ async function setup(jobs: Record<string, unknown>) {
   const loaded = await loadHarness(STUDY);
   const harness: LoadedHarness = {
     ...loaded,
-    permissions: { edit: "folder", exec: true, web: true },
+    permissions: { edit: "folder", exec: true, web: true, ...(extra.subagents !== undefined ? { subagents: extra.subagents } : {}) },
     mcp: ["mcp/one.js", "mcp/two.js"],
     tools: { "count-notes": "./tools/count-notes.ts" },
     material: {} as LoadedHarness["material"],
@@ -69,6 +70,7 @@ async function setup(jobs: Record<string, unknown>) {
     material: { request: async () => null },
     review: async () => null,
     references: [{ label: "Docs", path: "/opt/docs" }],
+    ...(extra.seen ? { registry: { ...appRegistry, adapter: appRegistry.adapter.bind(appRegistry), commandLine: appRegistry.commandLine.bind(appRegistry), createTransport: (e: Parameters<typeof appRegistry.createTransport>[0], o: CommonOptions) => { extra.seen!.push(o); return appRegistry.createTransport(e, o); } } as typeof appRegistry } : {}),
   });
   // HH_FAKE_ARGS keeps the last run's argv only.
   const run = () => {
@@ -138,6 +140,30 @@ describe("a step slot (tools spec §7.1, R1)", () => {
     const { ws, run } = await setup({ triage: RECIPE });
     await (await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage", permissions: { edit: "folder", exec: true, web: true } })).send("x", () => {}).done;
     expect(run().disallowed).toEqual(expect.arrayContaining(["Edit", "Write", "Bash", "WebFetch"]));
+  });
+
+  it("an opted-in harness's step slot still has subagents off, in its permissions and in its argv (D1)", async () => {
+    const seen: CommonOptions[] = [];
+    const { ws, run } = await setup({ triage: RECIPE }, { subagents: true, seen });
+    await (await ws.openSlot({ key: "t1" })).send("x", () => {}).done;
+    expect(seen[0].permissions.subagents).toBe(true);
+    await (await ws.openSlot({ key: "step:r1:1", kind: "step", job: "triage" })).send("x", () => {}).done;
+    expect(seen[1].permissions).toEqual({ edit: "none", exec: false, web: false, subagents: false });
+    expect(run().disallowed).toContain("Task");
+    expect(run().disallowed).toContain("Agent");
+  });
+
+  it("a job slot narrowed with subagents: false denies Task and Agent under an opted-in harness (D1)", async () => {
+    const seen: CommonOptions[] = [];
+    const { ws, run } = await setup({ triage: RECIPE }, { subagents: true, seen });
+    await (await ws.openSlot({ key: "job:r1", kind: "job", permissions: { subagents: false } })).send("x", () => {}).done;
+    expect(seen[0].permissions.subagents).toBe(false);
+    expect(run().disallowed).toContain("Task");
+    expect(run().disallowed).toContain("Agent");
+    await (await ws.openSlot({ key: "job:r2", kind: "job" })).send("x", () => {}).done;
+    expect(seen[1].permissions.subagents).toBe(true);
+    expect(run().disallowed).not.toContain("Task");
+    expect(run().disallowed).not.toContain("Agent");
   });
 
   it("no reference folders", async () => {

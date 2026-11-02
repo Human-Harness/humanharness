@@ -317,7 +317,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     }
 
     const permissions: Permissions =
-      step ? narrowPermissions(harness.permissions, { edit: "none", exec: false, web: false })
+      step ? narrowPermissions(harness.permissions, { edit: "none", exec: false, web: false, subagents: false })
       : o.kind === "job" ? narrowPermissions(harness.permissions, o.permissions)
       : harness.permissions;
     // A task or job slot clears HH_STEP so an outer one can't make it a step slot; only with a recipe declared (D0).

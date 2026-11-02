@@ -28,7 +28,7 @@ describe("textSizeShortcut", () => {
 
 describe("trafficLightY", () => {
   it("keeps the traffic lights where they are at normal size and moves them down with the top bar", () => {
-    expect(trafficLightY(1)).toBe(18);
-    expect(trafficLightY(1.5)).toBe(31);
+    expect(trafficLightY(1)).toBe(13);
+    expect(trafficLightY(1.5)).toBe(23);
   });
 });

@@ -93,8 +93,8 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
   });
 
-  it("keeps 80px for the traffic lights before the logo (spec §4.1)", () => {
-    expect(css).toMatch(/^\.hh-topbar\s*{[^}]*padding:\s*0 20px 0 80px/m);
+  it("keeps 90px for the traffic lights and a gap before the first text (spec §4.1)", () => {
+    expect(css).toMatch(/^\.hh-topbar\s*{[^}]*padding:\s*0 16px 0 90px/m);
     expect(css).toMatch(/^\.hh-topbar\s*{[^}]*background:\s*var\(--hh-rail\)/m);
   });
 
@@ -195,5 +195,19 @@ describe("the scope settings dialog", () => {
       expect(tsx).toMatch(new RegExp(`className="[^"]*\\b${name}(?![\\w-])`));
       expect(css).toMatch(new RegExp(`\\.${name}\\s*\\{`));
     }
+  });
+});
+
+describe("control size tokens and top bar overrides", () => {
+  it("defines the 40px / 12px control tokens at root and shrinks them to 30px / 8px in the top bar", () => {
+    expect(css).toMatch(/:root\s*\{[^}]*--hh-control-h:\s*40px;[^}]*--hh-control-r:\s*12px/);
+    expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*30px;[^}]*--hh-control-r:\s*8px/);
+  });
+
+  it("has rules for the top bar icon button and the language row label", () => {
+    expect(css).toMatch(/\.hh-topbar-icon\s*\{/);
+    expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
+    const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
+    expect(tsx).toMatch(/className="hh-topbar-icon"/);
   });
 });

@@ -1,6 +1,6 @@
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AppFooter, CheckIcon, TopBar } from "./chrome";
+import { AppFooter, CheckIcon, SettingsGear, TopBar } from "./chrome";
 import { type AppState, type HarnessClient, type ProfileView, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
 import { ConnectStep } from "./connections/ConnectStep";
 import { EngineTab } from "./EngineTab";
@@ -22,6 +22,8 @@ export interface SetupFlowProps {
   onChange: (state: AppState) => void;
   /** Back to Home; what was saved stays saved. */
   onCancel: () => void;
+  /** The top bar's gear: Settings over the setup, which stays as it was underneath. */
+  onSettings?: () => void;
   /** "Start <name>" on the last step: the work screen. */
   onStart: () => void;
   /** A harness step to open at (Home's missing step); the core steps are done. */
@@ -42,7 +44,7 @@ export interface SetupFlowProps {
  * (setup-steps spec §4), then "All set". A harness with profiles has one more core step after the engine: the profile
  * (profiles spec §5 "Creating a profile"), when none is active and on every "Add <label>".
  */
-export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt, only = false, newProfile = false, components = {}, blocks = {}, stateBlocks = [] }: SetupFlowProps) {
+export function SetupFlow({ client, state, onChange, onCancel, onSettings, onStart, startAt, only = false, newProfile = false, components = {}, blocks = {}, stateBlocks = [] }: SetupFlowProps) {
   const { t } = useTranslation();
   const name = state.harness.name;
   const harnessSteps = state.setup ?? [];
@@ -239,7 +241,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
     const engine = savedEngine;
     return (
       <div className="hh-setup">
-        <TopBar title={title} />
+        <TopBar title={title} trailing={onSettings && <SettingsGear onClick={onSettings} />} />
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
@@ -294,8 +296,8 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
 
   return (
     <div className="hh-setup">
-      {/* The header holds only the title: buttons would grow it past a header's height. */}
-      <TopBar title={title} />
+      {/* The header holds the title and the gear only: other buttons would grow it past a header's height. */}
+      <TopBar title={title} trailing={onSettings && <SettingsGear onClick={onSettings} />} />
       <div className="hh-setup-frame">
         {/* The steps on the left (UI refresh spec §5.6): done ones with their value, "Step n of m" under the current one. */}
         {/* One "Steps" name, on the list (the tests and the stepper before it name the list). */}

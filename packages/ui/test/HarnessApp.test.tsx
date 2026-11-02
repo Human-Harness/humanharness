@@ -460,13 +460,17 @@ describe("HarnessApp", () => {
     await screen.findByRole("heading", { name: "Where should we keep your work?" });
   });
 
-  it("the gear is a labelled icon button on Home and on the work screen", async () => {
+  it("the gear is the same bare icon, last in the top bar, on Home and on the work screen", async () => {
     await startWork(<HarnessApp client={new FakeClient({ ...ready, language: "es" })} />);
     const work = await screen.findByRole("button", { name: "Settings" });
-    expect(work.className).toBe("hh-icon-button");
+    // Top right, like Settings' save, so going in and out doesn't move it.
+    expect(work.className).toBe("hh-topbar-icon");
+    expect(work.closest("header.hh-topbar")?.lastElementChild).toBe(work);
     expect(work.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 24 24");
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
-    expect((await screen.findByRole("button", { name: "Settings" })).className).toBe("hh-icon-button");
+    const home = await screen.findByRole("button", { name: "Settings" });
+    expect(home.className).toBe("hh-topbar-icon");
+    expect(home.closest("header.hh-topbar")?.lastElementChild).toBe(home);
   });
 
   it("the gear opens Settings on General and Done goes back to Home", async () => {
@@ -800,10 +804,11 @@ describe("HarnessApp", () => {
     expect(within(rail).queryByRole("button", { name: "Inbox" })).toBeNull(); // no parallel: D0
   });
 
-  it("leaves only logo, breadcrumb, Inbox, bell and avatar in the top bar (spec §4.1)", async () => {
+  it("leaves only breadcrumb, Inbox, bell, avatar and the gear in the top bar (spec §4.1)", async () => {
     await startWork(<HarnessApp client={new FakeClient(ready)} />);
     const bar = (await screen.findByRole("navigation", { name: "Breadcrumb" })).closest("header")!;
-    for (const gone of ["History", "Settings", "Home"]) expect(within(bar).queryByRole("button", { name: gone })).toBeNull();
+    for (const gone of ["History", "Home"]) expect(within(bar).queryByRole("button", { name: gone })).toBeNull();
+    expect(within(bar).getByRole("button", { name: "Settings" })).toBeTruthy();
     // Spans the window above the rail: the rail is not inside it, and both are the shell's children.
     expect(bar.parentElement?.className).toBe("hh-shell");
     expect(within(bar).getByRole("button", { name: "Demo" })).toBeTruthy();
@@ -865,10 +870,11 @@ describe("HarnessApp", () => {
     expect((screen.getByRole("button", { name: "Add student" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("Rail › Home goes to Home and Rail › Settings opens Settings", async () => {
+  it("Rail › Home goes to Home and the top bar's gear opens Settings (not in the rail)", async () => {
     await startWork(<HarnessApp client={new FakeClient(ready)} />);
     const rail = await screen.findByRole("navigation", { name: "App" });
-    fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
+    expect(within(rail).queryByRole("button", { name: "Settings" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.click(await screen.findByRole("button", { name: "Home" }));

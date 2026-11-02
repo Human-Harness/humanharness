@@ -2,7 +2,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEf
 import { useTranslation } from "react-i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk/parallel";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { EngineIcon, Segmented, Tag, TopBar } from "./chrome";
+import { EngineIcon, SaveIcon, Segmented, Tag, TopBar } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
 import { EngineTab } from "./EngineTab";
@@ -180,7 +180,13 @@ export function SettingsPage({
 
   return (
     <main ref={pageRef} className="hh-settings-page" aria-labelledby={titleId}>
-      <TopBar />
+      <TopBar
+        trailing={
+          <button ref={doneRef} className="hh-topbar-icon hh-settings-done" aria-label={t("settings.done")} title={t("settings.done")} disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
+            <SaveIcon />
+          </button>
+        }
+      />
       <div className="hh-settings-body">
         <nav className="hh-settings-nav" aria-label={t("settings.sections")}>
           <h1 id={titleId}>{t("settings.title")}</h1>
@@ -214,11 +220,6 @@ export function SettingsPage({
               <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
             </div>
           )}
-          <div className="hh-settings-done">
-            <button ref={doneRef} className="hh-cta" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
-              {t("settings.done")}
-            </button>
-          </div>
           <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
             {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
             {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
@@ -280,7 +281,7 @@ function LanguageRow({ state, language }: { state: AppState; language?: Language
   return (
     <>
       <div className="hh-row hh-row-wrap" data-setting="general.language">
-        <span className="hh-row-label">{t("settings.language")}</span>
+        <span className="hh-row-label hh-langrow-label">{t("settings.language")}</span>
         <span className="hh-langrow-name">
           <span lang={lang}>{ownName(lang)}</span>
           {!isEnglish(lang) && (

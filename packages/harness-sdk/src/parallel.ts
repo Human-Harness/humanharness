@@ -35,5 +35,7 @@ export function narrowPermissions(base: Permissions, override: PermissionsOverri
     edit: base.edit === "none" || override.edit === "none" ? "none" : "folder",
     exec: base.exec && override.exec !== false,
     web: base.web && override.web !== false,
+    // Absent stays absent (D0): only a harness that opted in has anything to narrow.
+    ...(base.subagents === true && override.subagents !== false ? { subagents: true } : {}),
   };
 }

@@ -351,3 +351,13 @@ describe("context.pinnedTokens (context-panel spec §4.2)", () => {
     expect(() => defineHarness({ ...minimal, context: { pinnedTokens: 1.5 } })).toThrow();
   });
 });
+
+describe("permissions.subagents (subagent policy D1)", () => {
+  it("is kept when set; a manifest without it parses to the same object as before (D0)", () => {
+    expect(defineHarness({ ...base, permissions: { ...base.permissions, subagents: true } }).permissions).toEqual({ edit: "folder", exec: false, web: false, subagents: true });
+    expect(defineHarness(base).permissions).toEqual({ edit: "folder", exec: false, web: false });
+  });
+  it("refuses a non-boolean with a message that names the field", () => {
+    expect(() => defineHarness({ ...base, permissions: { ...base.permissions, subagents: "yes" } } as never)).toThrow("permissions.subagents must be true or false");
+  });
+});

@@ -73,6 +73,12 @@ describe("jobs schema (parallel spec §3)", () => {
     // Repeating the harness's own value is not a widening.
     expect(defineHarness({ ...base, jobs: { s: job({ permissions: { edit: "folder", exec: true, web: false } }) } } as never).jobs?.s.permissions).toBeDefined();
   });
+  it("a job can't turn subagents on unless the harness did, but may turn them off (D1)", () => {
+    expect(() => defineHarness({ ...base, jobs: { s: job({ permissions: { subagents: true } }) } } as never)).toThrow("narrow");
+    const on = { ...base, permissions: { ...base.permissions, subagents: true } };
+    expect(defineHarness({ ...on, jobs: { s: job({ permissions: { subagents: true } }) } } as never).jobs?.s.permissions).toEqual({ subagents: true });
+    expect(defineHarness({ ...on, jobs: { s: job({ permissions: { subagents: false } }) } } as never).jobs?.s.permissions).toEqual({ subagents: false });
+  });
   it("scope trigger needs afterTask or manual and nothing else (with scopes)", () => {
     expect(() => defineHarness({ ...scoped, jobs: { s: job({ scope: "trigger", on: { manual: true, start: true } }) } } as never)).toThrow("trigger");
     expect(() => defineHarness({ ...scoped, jobs: { s: job({ scope: "trigger", on: { every: "1h" }, dailyTokens: 10 }) } } as never)).toThrow("trigger");

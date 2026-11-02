@@ -46,6 +46,14 @@ describe("parallel (parallel spec §3)", () => {
 describe("narrowPermissions (parallel spec §8, T5)", () => {
   const wide = { edit: "folder" as const, exec: true, web: true };
   const narrow = { edit: "none" as const, exec: false, web: false };
+  it("keeps subagents only when the harness opted in and the override does not turn it off (D1)", () => {
+    const opted = { ...wide, subagents: true };
+    expect(narrowPermissions(opted, undefined)).toEqual(opted);
+    expect(narrowPermissions(opted, {})).toEqual(opted);
+    expect(narrowPermissions(opted, { subagents: false })).toEqual(wide);
+    expect(narrowPermissions(opted, { subagents: false })).not.toHaveProperty("subagents");
+    expect(narrowPermissions(wide, { subagents: true })).not.toHaveProperty("subagents");
+  });
   it("only narrows", () => {
     expect(narrowPermissions(wide, { edit: "none" })).toEqual({ edit: "none", exec: true, web: true });
     expect(narrowPermissions(wide, { exec: false, web: false })).toEqual({ edit: "folder", exec: false, web: false });

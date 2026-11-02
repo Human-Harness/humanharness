@@ -42,12 +42,14 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcp
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false, linked: LinkedAccess[] = []): string[] {
+export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false, linked: LinkedAccess[] = [], subagents = permissions.subagents === true): string[] {
   const tools = ["AskUserQuestion", ...(mcpOnly ? MCP_ONLY_DENIED : [])];
   const deny = (...names: string[]) => tools.push(...names.filter((n) => !tools.includes(n)));
   if (permissions.edit === "none") deny("Edit", "Write", "MultiEdit", "NotebookEdit");
   if (!permissions.exec) deny("Bash");
   if (!permissions.web) deny("WebSearch", "WebFetch");
+  // Subagents are off unless the manifest opts in or the scope's preset ships agents (subagent policy D1).
+  if (!subagents) deny("Task", "Agent");
   tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
   // `permissions.additionalDirectories` makes a reference folder a working directory, where acceptEdits would
   // accept edits: deny them by absolute path (`//` starts an absolute path in permission rules).
@@ -221,7 +223,7 @@ export function claudeArgs(
         // An AI step's slot only (noBuiltins): no built-in at all; without it the flags are exactly as before (D0).
         ...(o.noBuiltins ? ["--tools", ""] : []),
         "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly, linked).join(","),
-        "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
+        "--disallowedTools", [...disallowedTools(o.permissions, o.references ?? [], o.mcpOnly, linked, o.permissions.subagents === true || engine?.agentsFile !== undefined), ...(engine?.base === "global" ? GLOBAL_DENIED : [])].join(","),
       ];
   return [
     "-p",

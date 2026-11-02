@@ -156,7 +156,7 @@ describe("D0: one runtime, today's commits and prompts (parallel spec D7)", () =
       "--allowedTools",
       "Read,Glob,Grep,TodoWrite,Edit(./**),Write(./**),MultiEdit(./**),mcp__ui",
       "--disallowedTools",
-      "AskUserQuestion,Bash,WebSearch,WebFetch,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)",
+      "AskUserQuestion,Bash,WebSearch,WebFetch,Task,Agent,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)",
       "--strict-mcp-config",
       "--mcp-config",
       ["ui:stdio:HH_HARNESS,HH_BRIDGE,HH_BRIDGE_TOKEN"],

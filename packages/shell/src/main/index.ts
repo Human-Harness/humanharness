@@ -242,6 +242,7 @@ import {
   restoreTaskWithLinked,
 } from "./linked-restore";
 import { isGitRepo } from "./linked-folders";
+import { instructionSubagentsOption } from "./instruction-subagents";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -1073,6 +1074,10 @@ async function runtimeOptions(
       : {}),
     // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
     ...linkedRuntimeOptions(),
+    // The Subagents part of AGENTS.md follows the open scope's engine preset (agentsFile) when the manifest is silent.
+    ...(hasEnginePresets(harness)
+      ? { instructionSubagents: instructionSubagentsOption({ engineHost: engineHost_, currentScope: () => tasks.currentScope(), boardMode: () => !!host }) }
+      : {}),
     // The asking slot names the caller (P3); createRuntime's only slot is "main".
     ...(tools ? { tools } : {}),
     onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppState, type ChatSearchContext, type HarnessClient, type ScopeView, type SearchHitView, isConfigured } from "../client";
 import type { SearchIntent } from "./intent";
@@ -43,7 +43,9 @@ export function SearchHost({
     if (back?.isConnected) back.focus();
   }, []);
 
-  useEffect(() => {
+  // Layout effects: subscribed in the commit itself, so an open (⌘K, `client.search.open()`) fired before passive
+  // effects flush is not dropped.
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== "k" || e.altKey || e.shiftKey || !isMod(e)) return;
       e.preventDefault();
@@ -54,10 +56,14 @@ export function SearchHost({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [show, close]);
-  useEffect(() => client.search.onOpen((q) => show(typeof q === "string" ? q : "")), [client, show]);
+  useLayoutEffect(() => client.search.onOpen((q) => show(typeof q === "string" ? q : "")), [client, show]);
   // A profile switch closes search (§7).
   const profile = state.config.profile;
+  // The mount run is not a switch: it would close an open that arrived before the passive effects.
+  const seenProfile = useRef(profile);
   useEffect(() => {
+    if (seenProfile.current === profile) return;
+    seenProfile.current = profile;
     setOpen(null);
   }, [profile]);
   // "<scope> + app" names the open scope by its title; "Switch to <scope>" lists the others.

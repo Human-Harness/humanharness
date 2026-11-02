@@ -912,6 +912,7 @@ export class FakeClient implements HarnessClient {
   searchCalls: { query: string; filters?: SearchFilters }[] = [];
   searchOpened: SearchHitView[] = [];
   private searchOpeners = new Set<(query?: string) => void>();
+  private searchOpenPending: { query: string | undefined } | null = null;
   private searchStatusListeners = new Set<(s: SearchStatus) => void>();
   private searchRecords = new Map<string, (key: string | number | null, scope: string) => void>();
   readonly search: SearchClient = {
@@ -939,10 +940,19 @@ export class FakeClient implements HarnessClient {
       return () => void this.searchStatusListeners.delete(l);
     },
     open: (query) => {
+      // The app subscribes in an effect, which React flushes a moment after the screen shows (longer under load): an
+      // open asked before that is lost, and the test then waited for a dialog that never came. It is held for the
+      // first listener instead.
+      if (this.searchOpeners.size === 0) this.searchOpenPending = { query };
       for (const l of this.searchOpeners) l(query);
     },
     onOpen: (l) => {
       this.searchOpeners.add(l);
+      const pending = this.searchOpenPending;
+      this.searchOpenPending = null;
+      // After the effects of the commit that subscribed: SearchHost's own mount effect closes search (a profile reset),
+      // and would close this open if it came first.
+      if (pending) queueMicrotask(() => l(pending.query));
       return () => void this.searchOpeners.delete(l);
     },
     onOpenRecord: (collection, l) => {

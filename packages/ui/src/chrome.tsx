@@ -187,6 +187,27 @@ export function HHLogo({ className = "", title }: { className?: string; title?: 
   );
 }
 
+/** Settings' gear: the bare icon at the top bar's right on every screen (Home, work, setup), where Settings' own save sits. */
+export function SettingsGear({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <button type="button" className="hh-topbar-icon" aria-label={t("home.settings")} title={t("home.settings")} onClick={onClick}>
+      <GearIcon />
+    </button>
+  );
+}
+
+/** A floppy disk: Settings' Done (changes are already saved; this closes the page). */
+export function SaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 3h11l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 1-2z" />
+      <path d="M8 3v5h7V3" />
+      <rect x="7" y="13" width="10" height="6" rx="1" />
+    </svg>
+  );
+}
+
 /** A done step or topic. */
 export function CheckIcon() {
   return (
@@ -293,7 +314,7 @@ const RAIL_ICONS: Record<RailEntry, ReactNode> = {
   settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></>,
 };
 
-/** The icon rail (UI refresh spec §4.2): the screens of a harness, Settings at the bottom. */
+/** The icon rail (UI refresh spec §4.2): the screens of a harness. Settings is the top bar's gear, not a rail entry. */
 export function Rail({ entries, current, onPick }: { entries: RailEntry[]; current: RailEntry; onPick: (e: RailEntry) => void }) {
   const { t } = useTranslation();
   const button = (e: RailEntry) => (
@@ -306,8 +327,6 @@ export function Rail({ entries, current, onPick }: { entries: RailEntry[]; curre
   return (
     <nav className="hh-rail" aria-label={t("rail.label")}>
       {entries.filter((e) => e !== "settings").map(button)}
-      <span className="hh-spacer" />
-      {entries.includes("settings") && button("settings")}
     </nav>
   );
 }

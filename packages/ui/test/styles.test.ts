@@ -93,8 +93,8 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
   });
 
-  it("keeps 80px for the traffic lights before the logo (spec §4.1)", () => {
-    expect(css).toMatch(/^\.hh-topbar\s*{[^}]*padding:\s*0 20px 0 80px/m);
+  it("keeps 90px for the traffic lights and a gap before the first text (spec §4.1)", () => {
+    expect(css).toMatch(/^\.hh-topbar\s*{[^}]*padding:\s*0 16px 0 90px/m);
     expect(css).toMatch(/^\.hh-topbar\s*{[^}]*background:\s*var\(--hh-rail\)/m);
   });
 

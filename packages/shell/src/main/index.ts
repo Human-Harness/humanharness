@@ -992,7 +992,7 @@ function applyTextSize(size: TextSize | undefined) {
   if (!window || window.isDestroyed()) return;
   const factor = TEXT_SIZES[size ?? "normal"];
   window.webContents.setZoomFactor(factor);
-  if (process.platform === "darwin") window.setWindowButtonPosition({ x: 20, y: trafficLightY(factor) });
+  if (process.platform === "darwin") window.setWindowButtonPosition({ x: 14, y: trafficLightY(factor) });
 }
 
 /**
@@ -3274,8 +3274,9 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: harness.name,
-    // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the 52 px top bar.
-    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
+    // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the top bar (--hh-topbar-h, 40 px);
+    // y 13 centres the traffic lights in it; text size moves them with trafficLightY.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 13 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
     // Test background mode (HH_TEST_BACKGROUND, development builds only): shown without taking focus, and kept
     // rendering at full speed although nobody looks at it.

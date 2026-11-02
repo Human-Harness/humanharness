@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Language, canonicalLanguage, offeredLanguage } from "@humanharness/harness-sdk/language";
 import { BackupNotice, type FolderMove } from "./BackupNotice";
-import { AppFooter, CheckIcon, EngineIcon, GearIcon, HHLogo, TopBar } from "./chrome";
+import { AppFooter, CheckIcon, EngineIcon, HHLogo, SettingsGear, TopBar } from "./chrome";
 import {
   type AppConfig,
   type AppState,
@@ -231,9 +231,7 @@ export function Home({
       {/* Home shows the test-mode badge in the footer, not the top bar. */}
       <TopBar>
         {configured && state.profiles && onAddProfile && <ProfileSwitcher client={client} state={state} onSwitched={onChange} onAdd={onAddProfile} disabled={move?.moving === true} />}
-        <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
-          <GearIcon />
-        </button>
+        <SettingsGear onClick={onSettings} />
       </TopBar>
       <main className="hh-home-main">
         <div className="hh-home-id">

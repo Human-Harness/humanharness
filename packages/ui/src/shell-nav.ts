@@ -14,6 +14,5 @@ export function railEntries(f: RailFeatures): RailEntry[] {
   if (f.parallel && f.jobs) out.push("jobs");
   if (f.notes) out.push("notes");
   if (f.pluginPanels) out.push("plugins");
-  out.push("settings");
   return out;
 }

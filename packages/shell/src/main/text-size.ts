@@ -21,7 +21,7 @@ export function textSizeShortcut(input: KeyInput, platform: NodeJS.Platform): "i
   return null;
 }
 
-/** The 52 px top bar grows with the zoom: the traffic lights move down to stay centred in it (18 px at normal size). */
+/** The 40 px top bar (--hh-topbar-h) grows with the zoom: the traffic lights move down to stay centred in it (13 px at normal size). */
 export function trafficLightY(factor: number): number {
-  return Math.round(18 + 26 * (factor - 1));
+  return Math.round(13 + 20 * (factor - 1));
 }

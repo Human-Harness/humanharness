@@ -5,7 +5,7 @@ import { type Locales, createI18n } from "@humanharness/i18n";
 import { ProfileAvatar } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn, type ShellBridge } from "./ChatView";
-import { Rail, TopBar } from "./chrome";
+import { Rail, SettingsGear, TopBar } from "./chrome";
 import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
@@ -436,6 +436,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                     />
                   )}
                   {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
+                  <SettingsGear onClick={() => setSettings("general")} />
                 </>
               }
             />
@@ -516,6 +517,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
               if (setupAt.back) setSettings(setupAt.back);
             }}
             onStart={() => leaveSetup("work")}
+            onSettings={() => setSettings("general")}
             {...(setupAt.step ? { startAt: setupAt.step } : {})}
             only={setupAt.only === true}
             newProfile={setupAt.newProfile === true}

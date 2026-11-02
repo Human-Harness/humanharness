@@ -480,7 +480,7 @@ describe("SettingsPage (UI refresh spec §5.5)", () => {
     return renderIn("en", <Sheet client={client} initialTab={opts.tab} onClose={opts.onClose} />);
   };
 
-  it("is a full page: no breadcrumb or badge in the top bar, a section list, and Done in the body", async () => {
+  it("is a full page: no breadcrumb or badge in the top bar, a section list, and Done as a save icon in the top bar", async () => {
     await renderSettings({ tab: "models" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
@@ -490,9 +490,9 @@ describe("SettingsPage (UI refresh spec §5.5)", () => {
     expect(within(nav).getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
     const done = screen.getByRole("button", { name: "Done" });
-    expect(done.className).toContain("hh-cta");
-    expect(document.querySelector(".hh-topbar")!.contains(done)).toBe(false);
-    expect(done.closest(".hh-settings-main")).toBeTruthy();
+    expect(done.className).toContain("hh-settings-done");
+    expect(document.querySelector(".hh-topbar")!.contains(done)).toBe(true);
+    expect(done.textContent).toBe("");
   });
 
   it("Done and Escape go back to where the person was", async () => {

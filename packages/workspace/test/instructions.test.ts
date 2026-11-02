@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
-import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, writeInstructions, writingLines } from "../src";
+import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, subagentLines, writeInstructions, writingLines } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -392,5 +392,45 @@ describe("linked folders (hatches spec §3.3)", () => {
     const folder = tmp();
     await writeInstructions({ folder, base: "# Base", language: "en", blocks, engine: getEngine("claude"), linked: [{ key: "repos", label: "Repos", path: "/r", mode: "read" }] });
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("- `repos` (Repos, read only): `/r`");
+  });
+});
+
+describe("Subagents part (subagent policy D3)", () => {
+  const PART = [
+    "### Subagents",
+    "",
+    "You may hand work to subagents. Ask each one for this handback, so their replies stay small:",
+    "",
+    "- Answer in at most five lines: a status (`done`, `partial` or `blocked`), what changed, and one line per issue.",
+    "- Put details in the files you edit, never in the reply.",
+    "- Don't write report files for the handback: the reply is the whole report.",
+  ];
+
+  it("D0: absent or false is exactly the plain section", () => {
+    const plain = managedSection({ language: "en", blocks });
+    expect(managedSection({ language: "en", blocks, subagents: false })).toBe(plain);
+    expect(plain).not.toContain("### Subagents");
+    expect(subagentLines(undefined)).toEqual([]);
+  });
+
+  it("allowed: the exact contract, at most five lines, inside the managed markers", () => {
+    const s = managedSection({ language: "en", blocks, subagents: true, material: true, writing: { kinds: {} } });
+    expect(s).toContain(PART.join("\n"));
+    expect(subagentLines(true).slice(1)).toEqual(PART);
+    // The intro, then at most five contract lines.
+    expect(PART.filter((l) => l.startsWith("- ")).length).toBeLessThanOrEqual(5);
+    expect(s.indexOf("### Material")).toBeLessThan(s.indexOf("### Subagents"));
+    expect(s.indexOf("### Subagents")).toBeLessThan(s.indexOf("### Writing for the reader"));
+    expect(s.indexOf("### Subagents")).toBeLessThan(s.indexOf(MANAGED_END));
+  });
+
+  it("writeInstructions and refreshInstructions carry the option", async () => {
+    const folder = fs.mkdtempSync(path.join(root, "sub-"));
+    const base = { folder, base: "Base.", language: "en" as const, blocks };
+    await writeInstructions({ ...base, engine: getEngine("claude"), subagents: true });
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("### Subagents");
+    expect(await refreshInstructions({ ...base, subagents: true })).toBe(false);
+    expect(await refreshInstructions(base)).toBe(true);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).not.toContain("### Subagents");
   });
 });

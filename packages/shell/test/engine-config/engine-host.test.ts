@@ -1,13 +1,14 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { ModelProfile } from "@humanharness/engines";
-import type { Event } from "@humanharness/runtime";
+import { GENERAL_PURPOSE_SUBAGENT, type ModelProfile } from "@humanharness/engines";
+import type { EnginePreset, Event } from "@humanharness/runtime";
 import { ScopeStore } from "@humanharness/workspace";
 import { engineApprovalTag } from "../../src/main/engine-config/approval";
-import { EngineHost, mergeSubagentModel } from "../../src/main/engine-config/engine-host";
+import { EngineHost, mergeSubagentModel, sweepAgents } from "../../src/main/engine-config/engine-host";
 import { readEngineConfig } from "../../src/main/engine-config/read-config";
 import { type TaskDeps, TaskManager } from "../../src/main/task-manager";
 import { emptyTasks } from "../../src/main/task-store";
@@ -394,6 +395,83 @@ describe("the subagent model in a preset's agents (subagent policy D2)", () => {
     expect(w.log).not.toHaveBeenCalled();
     expect(await w.host.withSubagentModel(withFile, profile)).toBe(withFile);
     expect(w.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("the default general-purpose is the engines' shared definition", () => {
+    const merged = mergeSubagentModel({}, "claude-haiku-4-5") as Record<string, unknown>;
+    expect(merged["general-purpose"]).toEqual({ ...GENERAL_PURPOSE_SUBAGENT, model: "claude-haiku-4-5" });
+  });
+
+  it("writes the merged file through a temp file and a rename: whole content, no leftovers, concurrent turns agree", async () => {
+    const w = await setup({ ...BASIC, "agents/reviewer.md": REVIEWER }, TOOLS);
+    await w.approve();
+    const { preset } = await w.host.presetFor("intro", undefined);
+    const rename = vi.spyOn(fsp, "rename");
+    let turns: EnginePreset[];
+    try {
+      turns = await Promise.all([1, 2, 3, 4].map(() => w.host.withSubagentModel(preset!, profile)));
+      expect(new Set(turns.map((t) => t.agentsFile)).size).toBe(1);
+      expect(rename).toHaveBeenCalledTimes(4);
+      for (const [from, to] of rename.mock.calls) {
+        expect(from).not.toBe(to);
+        expect(String(from).endsWith(".tmp")).toBe(true);
+        expect(to).toBe(turns[0].agentsFile);
+      }
+    } finally {
+      rename.mockRestore();
+    }
+    const dir = path.join(w.userData, "engine-agents");
+    expect(fs.readdirSync(dir)).toEqual([path.basename(turns[0].agentsFile!)]);
+    expect(agentsOf(turns[0].agentsFile)["general-purpose"].model).toBe("claude-haiku-4-5");
+  });
+
+  it("a failed write leaves no temp file and keeps the preset", async () => {
+    const w = await setup({ ...BASIC, "agents/reviewer.md": REVIEWER }, TOOLS);
+    await w.approve();
+    const { preset } = await w.host.presetFor("intro", undefined);
+    const rename = vi.spyOn(fsp, "rename").mockRejectedValueOnce(new Error("disk"));
+    try {
+      expect(await w.host.withSubagentModel(preset!, profile)).toBe(preset);
+    } finally {
+      rename.mockRestore();
+    }
+    expect(w.log).toHaveBeenCalledTimes(1);
+    expect(fs.readdirSync(path.join(w.userData, "engine-agents"))).toEqual([]);
+  });
+
+  it("the first merge of a run removes merged files and temp files unused for a week; recent ones stay", async () => {
+    const w = await setup({ ...BASIC, "agents/reviewer.md": REVIEWER }, TOOLS);
+    await w.approve();
+    const { preset } = await w.host.presetFor("intro", undefined);
+    const dir = path.join(w.userData, "engine-agents");
+    fs.mkdirSync(dir, { recursive: true });
+    const day = 24 * 60 * 60 * 1000;
+    const make = (name: string, ageDays: number) => {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, "{}");
+      const t = new Date(Date.now() - ageDays * day);
+      fs.utimesSync(f, t, t);
+    };
+    make("old.json", 8);
+    make("old.json.1.abcd.tmp", 8);
+    make("recent.json", 1);
+    make("notes.txt", 30);
+    const turn = await w.host.withSubagentModel(preset!, profile);
+    expect(fs.readdirSync(dir).sort()).toEqual(["notes.txt", path.basename(turn.agentsFile!), "recent.json"].sort());
+    // Only once per host: a later stale file is left until the next run.
+    make("late.json", 9);
+    await w.host.withSubagentModel(preset!, profile);
+    expect(fs.existsSync(path.join(dir, "late.json"))).toBe(true);
+  });
+
+  it("sweepAgents spares files newer than the cutoff and skips folders", async () => {
+    const dir = path.join(root, `sweep${++n}`);
+    fs.mkdirSync(path.join(dir, "sub.json"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "live.json"), "{}");
+    await sweepAgents(dir, Date.now() - 60_000);
+    expect(fs.readdirSync(dir).sort()).toEqual(["live.json", "sub.json"]);
+    await sweepAgents(dir, Date.now() + 60_000);
+    expect(fs.readdirSync(dir).sort()).toEqual(["sub.json"]);
   });
 
   it("mergeSubagentModel leaves what it can't read alone", () => {

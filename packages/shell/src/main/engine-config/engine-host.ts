@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
-import { type ModelProfile, isModelId } from "@humanharness/engines";
+import { GENERAL_PURPOSE_SUBAGENT, type ModelProfile, isModelId } from "@humanharness/engines";
 import { absoluteSearchPath, type EnginePreset } from "@humanharness/runtime";
 import { type EngineApproval, type ScopeEntry, engineConfigDir, isScopeId } from "@humanharness/workspace";
 import { engineApprovalValid, enginePinTag, enginePinValid } from "./approval";
@@ -90,7 +90,7 @@ function section(snap: EngineSnapshot, action: string | undefined): string {
  * when the preset has none; the preset's own entry untouched when it has a model (the preset wins); only the missing
  * `model` filled in when it has none. Two `--agents` flags do not merge (the last wins), so this is how a preset's
  * subagents run one tier below the task too. Anything that is not an object of objects is returned as it came.
- * The default definition mirrors `subagentAgents` in `packages/engines/src/claude/transport.ts`.
+ * The default definition is the engines' `GENERAL_PURPOSE_SUBAGENT`, the one `subagentAgents` uses.
  */
 export function mergeSubagentModel(agents: unknown, model: string): unknown {
   if (!isModelId(model) || typeof agents !== "object" || agents === null || Array.isArray(agents)) return agents;
@@ -99,16 +99,25 @@ export function mergeSubagentModel(agents: unknown, model: string): unknown {
   if (own === undefined) {
     return {
       ...defs,
-      "general-purpose": {
-        description: "General-purpose agent for researching questions and carrying out multi-step tasks.",
-        prompt:
-          "You are a general-purpose subagent. Do exactly the task you are given, using the tools you have. Put any detail in the files you change and keep your final reply short: status, what changed, one-line issues.",
-        model,
-      },
+      "general-purpose": { ...GENERAL_PURPOSE_SUBAGENT, model },
     };
   }
   if (typeof own !== "object" || own === null || Array.isArray(own) || Object.hasOwn(own, "model")) return agents;
   return { ...defs, "general-purpose": { ...own, model } };
+}
+
+const TMP_SUFFIX = ".tmp";
+/** A merged agents file unused (not rewritten by a turn) for this long is removed; no turn runs that long unrewritten. */
+const AGENTS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Removes the merged agents files (and leftover temp files) in `dir` last written before `cutoff` (ms). */
+export async function sweepAgents(dir: string, cutoff: number): Promise<void> {
+  for (const name of await fs.readdir(dir)) {
+    if (!name.endsWith(".json") && !name.endsWith(TMP_SUFFIX)) continue;
+    const file = path.join(dir, name);
+    const st = await fs.stat(file).catch(() => null);
+    if (st?.isFile() && st.mtimeMs < cutoff) await fs.rm(file, { force: true });
+  }
 }
 
 /** The snapshot as the engines get it, with the task's action layer on top. */
@@ -127,6 +136,9 @@ function presetOf(snap: EngineSnapshot, action: string | undefined): EnginePrese
 }
 
 export class EngineHost {
+  /** The merged agents folder is swept once per host (per app run), after the first write. */
+  private agentsSwept = false;
+
   constructor(private readonly d: EngineHostDeps) {}
 
   /** The cleaning context of `scope` today, and its live engine folder. */
@@ -222,7 +234,20 @@ export class EngineHost {
       const dir = path.join(this.d.userData, "engine-agents");
       const file = path.join(dir, `${createHash("sha256").update(data).digest("hex").slice(0, 32)}.json`);
       await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(file, data, { mode: 0o600 });
+      // Write beside, then rename: a turn reading the content-named file never sees a half-written one. Every turn
+      // rewrites it, so its mtime is its last use (what the cleanup goes by).
+      const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}${TMP_SUFFIX}`;
+      try {
+        await fs.writeFile(tmp, data, { mode: 0o600 });
+        await fs.rename(tmp, file);
+      } catch (err) {
+        await fs.rm(tmp, { force: true }).catch(() => undefined);
+        throw err;
+      }
+      if (!this.agentsSwept) {
+        this.agentsSwept = true;
+        await sweepAgents(dir, Date.now() - AGENTS_MAX_AGE_MS).catch((e: unknown) => this.log("Could not clean the merged agents files", e));
+      }
       return { ...preset, agentsFile: file };
     } catch (err) {
       this.log("Could not merge the subagent model into the preset's agents; the turn keeps the preset's own", err);

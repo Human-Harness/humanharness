@@ -91,6 +91,20 @@ export interface ModelPolicy {
   id: string;
   pick(input: PickInput): ModelProfile;
   fallback(profile: ModelProfile, models: ModelsConfig, tried: readonly string[]): ModelProfile | null;
+  /** The model the task's subagents run on, when the engine lets us name one (subagent policy D2). */
+  subagentModel(profile: ModelProfile, models: ModelsConfig): string | undefined;
+}
+
+/** The model one tier below the profile's: deep → standard's, standard and light → light's, custom → light's. */
+export function subagentModelFor(p: ModelProfile, models: ModelsConfig): string | undefined {
+  const below: Tier = p.tier === "deep" ? "standard" : "light";
+  return tierSpec(p.engine, below, models).model;
+}
+
+/** `p` with its subagent model recorded; unchanged when there is none. */
+function withSubagentModel(p: ModelProfile, models: ModelsConfig): ModelProfile {
+  const model = subagentModelFor(p, models);
+  return model === undefined ? p : { ...p, subagentModel: model };
 }
 
 /** Today's rules: the person's choice, else the manifest's tier, the mode's floor, deep → standard → light → the engine's default. */
@@ -101,8 +115,12 @@ export const DefaultModelPolicy: ModelPolicy = {
       o.tier !== undefined
         ? { engine: o.engine, tier: o.tier, ...tierSpec(o.engine, o.tier, o.models) }
         : resolveProfile({ engine: o.engine, action: o.action, manifestTier: o.manifestTier, models: o.models, floor: o.floor });
-    if (!o.offer) return base;
-    return fitEffort(firstOffered(base, o.models, o.offer.models), o.offer.efforts);
+    const picked = o.offer ? fitEffort(firstOffered(base, o.models, o.offer.models), o.offer.efforts) : base;
+    return withSubagentModel(picked, o.models);
   },
-  fallback: (profile, models, tried) => nextFallback(profile, models, tried),
+  fallback(profile, models, tried) {
+    const next = nextFallback(profile, models, tried);
+    return next && withSubagentModel(next, models);
+  },
+  subagentModel: subagentModelFor,
 };

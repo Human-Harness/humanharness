@@ -193,6 +193,24 @@ function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
   }
 }
 
+/**
+ * `--agents` that makes the built-in `general-purpose` subagent run on the profile's `subagentModel` (subagent policy D2;
+ * spike 2026-11-02: a definition with that name overrides the built-in and its `model` is honoured, the task's cache survives
+ * while the flag is stable). Only when subagents are allowed. A preset's `agentsFile` replaces this: two `--agents` flags
+ * do not merge, the last one wins.
+ */
+export function subagentAgents(profile: ModelProfile | undefined, allowed: boolean): string[] {
+  const model = profile?.subagentModel;
+  if (!allowed || model === undefined) return [];
+  if (!isModelId(model)) throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(model)}`);
+  const general = {
+    description: "General-purpose agent for researching questions and carrying out multi-step tasks.",
+    prompt: "You are a general-purpose subagent. Do exactly the task you are given, using the tools you have. Put any detail in the files you change and keep your final reply short: status, what changed, one-line issues.",
+    model,
+  };
+  return ["--agents", JSON.stringify({ "general-purpose": general })];
+}
+
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
   o: Pick<CommonOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly" | "noBuiltins"> & {
@@ -239,7 +257,7 @@ export function claudeArgs(
     ...settingsArgs(o.references ?? [], o.scope),
     // Skills and agents from the approved snapshot, never the live folder (hatches spec §5.2).
     ...(engine?.pluginDir !== undefined ? ["--plugin-dir", engine.pluginDir] : []),
-    ...(engine?.agentsFile !== undefined ? ["--agents", engine.agentsFile] : []),
+    ...(engine?.agentsFile !== undefined ? ["--agents", engine.agentsFile] : subagentAgents(o.profile, o.permissions.subagents === true)),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
     ...profileArgs(o.profile),

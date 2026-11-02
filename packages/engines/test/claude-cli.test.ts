@@ -935,6 +935,40 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
     expect(has(claudeArgs({ ...o, scope: { linked: [], engine: allowTask } }), "Task", "Agent")).toBe(true);
   });
 
+  describe("the subagents' model (subagent policy D2)", () => {
+    const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000, subagentModel: "sonnet" };
+    const agentsArgs = (args: string[]) => args.flatMap((a, i) => (args[i - 1] === "--agents" ? [a] : []));
+    const allowed = { ...permissions, subagents: true };
+
+    it("an allowed session gets one --agents that makes general-purpose run on it", () => {
+      const [json, ...rest] = agentsArgs(claudeArgs({ ...o, permissions: allowed, profile }));
+      expect(rest).toEqual([]);
+      const agents = JSON.parse(json);
+      expect(Object.keys(agents)).toEqual(["general-purpose"]);
+      expect(agents["general-purpose"]).toMatchObject({ model: "sonnet" });
+      expect(agents["general-purpose"].description).toEqual(expect.any(String));
+      expect(agents["general-purpose"].prompt).toEqual(expect.any(String));
+    });
+
+    it("adds nothing when subagents are denied (default, explicit false) or the profile has no subagent model", () => {
+      expect(agentsArgs(claudeArgs({ ...o, profile }))).toEqual([]);
+      expect(agentsArgs(claudeArgs({ ...o, permissions: { ...permissions, subagents: false }, profile }))).toEqual([]);
+      const { subagentModel: _s, ...plain } = profile;
+      expect(agentsArgs(claudeArgs({ ...o, permissions: allowed, profile: plain }))).toEqual([]);
+      expect(agentsArgs(claudeArgs({ ...o, permissions: allowed }))).toEqual([]);
+    });
+
+    it("a preset that ships agentsFile keeps its own file only (two --agents flags do not merge)", () => {
+      expect(agentsArgs(claudeArgs({ ...o, profile, scope: { linked: [], engine: preset } }))).toEqual([preset.agentsFile]);
+      // An explicit false still wins over the preset: no agents at all.
+      expect(agentsArgs(claudeArgs({ ...o, profile, permissions: { ...permissions, subagents: false }, scope: { linked: [], engine: preset } }))).toEqual([preset.agentsFile]);
+    });
+
+    it("refuses a model id that reads as a flag", () => {
+      expect(() => claudeArgs({ ...o, permissions: allowed, profile: { ...profile, subagentModel: "--x" } })).toThrow(/model/);
+    });
+  });
+
   it("isolated adds neither the .mcp.json settings nor its deny rules", () => {
     const { agentsFile: _a, ...noAgents } = preset;
     const args = claudeArgs({ ...o, scope: { linked: [], engine: noAgents } });

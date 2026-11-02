@@ -83,7 +83,7 @@ export function cleanProfile(raw: unknown): ModelProfile | null {
   const spec = cleanSpec(raw);
   const { engine, tier } = raw;
   if (!spec || typeof engine !== "string" || !KEY.test(engine) || !(isTier(tier) || tier === "custom")) return null;
-  return { engine, tier, ...spec, ...(isModelId(raw.fallbackFrom) ? { fallbackFrom: raw.fallbackFrom } : {}) };
+  return { engine, tier, ...spec, ...(isModelId(raw.fallbackFrom) ? { fallbackFrom: raw.fallbackFrom } : {}), ...(isModelId(raw.subagentModel) ? { subagentModel: raw.subagentModel } : {}) };
 }
 
 /**

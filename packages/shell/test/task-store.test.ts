@@ -156,6 +156,17 @@ describe("TaskStore: the current task, field by field", () => {
     expect((await store.load()).current).toEqual({ id: "t1", status: "waiting", startedAt: "", turns: 1 });
   });
 
+  it("records the subagents' model on the profile; a bad one is dropped, the profile stays (subagent policy D2)", async () => {
+    const store = new TaskStore(tmp());
+    const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000, subagentModel: "sonnet" };
+    const current = { id: "t1", status: "waiting" as const, startedAt: "", turns: 1, profile };
+    await store.save({ version: 1, current, actions: {} });
+    expect((await store.load()).current).toEqual(current);
+    fs.writeFileSync(store.file, JSON.stringify({ version: 1, current: { ...current, profile: { ...profile, subagentModel: "--x" } }, actions: {} }));
+    const { subagentModel: _s, ...rest } = profile;
+    expect((await store.load()).current).toEqual({ ...current, profile: rest });
+  });
+
   it("keeps a task's policy ids by shape, not by registry; drops malformed ones (replaceable-parts §8)", async () => {
     const folder = tmp();
     const store = new TaskStore(folder);

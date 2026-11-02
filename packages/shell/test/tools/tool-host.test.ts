@@ -469,7 +469,9 @@ describe("the tool host (tools spec §4.1; T1, T2, T6)", () => {
     expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
     expect(t.onOff).not.toHaveBeenCalled();
     expect(t.host.off()).toBeNull();
-  });
+    // Measuring each delay to the millisecond steps fake time ~90 000 times (~1.1 s alone, several times that under a
+    // loaded machine): the one test here that cannot fit the 5 s default, so it has its own budget.
+  }, 30_000);
 
   it("the 5th crash within an hour turns tools off: off() is reported once and every call answers 'Tools are off after repeated crashes'", async () => {
     vi.useFakeTimers();

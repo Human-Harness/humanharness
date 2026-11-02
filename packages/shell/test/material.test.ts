@@ -3,11 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { hasMaterial } from "@humanharness/harness-sdk";
-import { type ConvertRunner, ConvertStopped, type Job, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
+import { type ConvertRunner, ConvertStopped, type Job, MAX_BYTES, MaterialStore, STAGES } from "@humanharness/material";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type MaterialDeps, MaterialService, promptFragments } from "../src/main/material";
 import { MaterialJobs } from "../src/main/material-jobs";
+import { inProcessRunner } from "./in-process-runner";
 
 // The real review and sheet stages; some tests below put a stand-in in their place.
 const realReview = STAGES.review;
@@ -34,6 +35,8 @@ const deps = (over: Partial<MaterialDeps> = {}): MaterialDeps => ({
   window: async () => null,
   afterChange: async (scope, what) => void changes.push(`${scope}: ${what}`),
   trash: async (file) => void trashed.push(file),
+  // In this thread: a worker per file costs more than the tests about the service need (see in-process-runner.ts).
+  runner: inProcessRunner(),
   ...over,
 });
 
@@ -243,7 +246,7 @@ describe("MaterialService", () => {
   it("conversions share one runner that runs a few at a time", async () => {
     let running = 0;
     let most = 0;
-    const real = workerRunner();
+    const real = inProcessRunner();
     const counted = async <T>(job: () => Promise<T>): Promise<T> => {
       running++;
       most = Math.max(most, running);
@@ -299,7 +302,7 @@ describe("MaterialService", () => {
 
 describe("stopping conversions (closeRuntime, a profile switch)", () => {
   it("a conversion under way stops; nothing is recorded; the source resumes on its base's next use", async () => {
-    const real = workerRunner();
+    const real = inProcessRunner();
     let hold = true;
     let stopped = 0;
     let release: (() => void) | null = null;
@@ -339,7 +342,7 @@ describe("stopping conversions (closeRuntime, a profile switch)", () => {
 
   it("a stop is not a lasting state: work asked for afterwards converts", async () => {
     let converts = 0;
-    const real = workerRunner();
+    const real = inProcessRunner();
     const runner: ConvertRunner = { measure: real.measure, convert: (...a) => (converts++, real.convert(...a)) };
     const svc = new MaterialService(deps({ runner }));
     await svc.stop();

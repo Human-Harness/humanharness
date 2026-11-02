@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PassThrough, Writable } from "node:stream";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema, writeScript } from "@humanharness/fake-agent";
 import type { CommandDeps } from "@humanharness/shell/tasks";
@@ -16,6 +16,9 @@ import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type Interrupts, noticeMessage, parseSettings, readyEngine, runTask } from "../src/run";
 import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
+
+// Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
+vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
 
 const { root, cleanup } = tempRoot("hh-run-");
 afterAll(cleanup);

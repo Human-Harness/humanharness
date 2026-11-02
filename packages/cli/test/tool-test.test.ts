@@ -1,12 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { CliError, UsageError } from "../src/cli";
 import { toolCommand } from "../src/tool-command";
 import { TOOL_P12_NOTE } from "../src/tool-host-node";
 import { formatToolReports, testTools } from "../src/tool-test";
 import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
+
+// Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
+vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
 
 const MINI = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "tools-mini");
 const { root, cleanup } = tempRoot("hh-tool-test-");

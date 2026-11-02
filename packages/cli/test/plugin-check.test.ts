@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type PluginFinding, checkPlugin, execWrites, formatPluginFindings, wildcardOverOneLabel } from "../src/plugin-check";
 import { P12_NOTE } from "../src/plugin-test";
 import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
+
+// Not about the build: a plugin whose sources did not change is not built twice (cached-plugin-build.ts).
+vi.mock("../src/plugin-build", async (real) => (await import("./cached-plugin-build")).withCache(await real<typeof import("../src/plugin-build")>()));
 
 type Json = Record<string, any>;
 
@@ -433,7 +436,7 @@ export default definePlugin({
     expect(await main(["plugin", "check", "--json"], json.io)).toBe(0);
     expect(json.err()).toBe(`${P12_NOTE}\n`);
     expect(JSON.parse(json.out())).toEqual({ findings: [] });
-  }, 30_000);
+  }, 60_000);
 
   it("--no-build runs no plugin code and prints no P12 note", async () => {
     const { io, out, err } = memoryIo(fixture());
@@ -447,7 +450,7 @@ export default definePlugin({
     expect(r.manifest).toBeNull();
     expect(rules(r.findings)).toEqual(["error:schema"]);
     expect(r.findings[0].message).toMatch(/^The build failed: /);
-  }, 30_000);
+  }, 60_000);
 
   it("formats a finding without a file", () => {
     expect(formatPluginFindings([{ rule: "schema", severity: "error", message: "The build failed: x" }])).toBe(

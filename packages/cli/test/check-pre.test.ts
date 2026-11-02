@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { checkHarness } from "../src/check";
 import { initHarness } from "../src/init";
 import { CORE, dropExampleTool, replaceIn, tempRoot } from "./helpers";
+
+// Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
+vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
 
 const { root, cleanup } = tempRoot("hh-check-pre-");
 afterAll(cleanup);
@@ -37,7 +40,8 @@ async function fixture(pre: string | null, returns?: string): Promise<string> {
 }
 const PRE = '[{ tool: "due-today", as: "today" }, { tool: "warmup-cards", input: ["today"] }]';
 
-describe("check: tool-steps (tools spec §3.3)", () => {
+// The first test builds the tools for real, the others hit the cache (cached-tool-build.ts): the first one is slow under a parallel run.
+describe("check: tool-steps (tools spec §3.3)", { timeout: 120_000 }, () => {
   it("a pre-step's input from a tool without returns is a tool-steps error on the manifest", async () => {
     const r = await checkHarness(await fixture(PRE));
     expect(r.findings.filter((f) => f.rule.startsWith("tool-"))).toEqual([

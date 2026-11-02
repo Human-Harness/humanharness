@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs, ruleUnsafePath } from "../src/claude/transport";
+import { ClaudeCliTransport, GENERAL_PURPOSE_SUBAGENT, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs, ruleUnsafePath } from "../src/claude/transport";
 import type { CommonOptions as TransportOptions, EnginePreset, Event, Session } from "../src/contract";
 import { absoluteSearchPath } from "../src/search-path";
 
@@ -948,6 +948,8 @@ describe("claudeArgs with an engine preset (hatches spec §5.2)", () => {
       expect(agents["general-purpose"]).toMatchObject({ model: "sonnet" });
       expect(agents["general-purpose"].description).toEqual(expect.any(String));
       expect(agents["general-purpose"].prompt).toEqual(expect.any(String));
+      // The one shared definition (the shell's per-turn merge uses it too).
+      expect(agents["general-purpose"]).toEqual({ ...GENERAL_PURPOSE_SUBAGENT, model: "sonnet" });
     });
 
     it("adds nothing when subagents are denied (default, explicit false) or the profile has no subagent model", () => {

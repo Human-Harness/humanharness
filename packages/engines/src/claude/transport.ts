@@ -193,6 +193,12 @@ function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
   }
 }
 
+/** The default `general-purpose` subagent (no model); the shell's per-turn agents merge (`mergeSubagentModel`) shares it. */
+export const GENERAL_PURPOSE_SUBAGENT = {
+  description: "General-purpose agent for researching questions and carrying out multi-step tasks.",
+  prompt: "You are a general-purpose subagent. Do exactly the task you are given, using the tools you have. Put any detail in the files you change and keep your final reply short: status, what changed, one-line issues.",
+} as const;
+
 /**
  * `--agents` that makes the built-in `general-purpose` subagent run on the profile's `subagentModel` (subagent policy D2;
  * spike 2026-11-02: a definition with that name overrides the built-in and its `model` is honoured, the task's cache survives
@@ -203,11 +209,7 @@ export function subagentAgents(profile: ModelProfile | undefined, allowed: boole
   const model = profile?.subagentModel;
   if (!allowed || model === undefined) return [];
   if (!isModelId(model)) throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(model)}`);
-  const general = {
-    description: "General-purpose agent for researching questions and carrying out multi-step tasks.",
-    prompt: "You are a general-purpose subagent. Do exactly the task you are given, using the tools you have. Put any detail in the files you change and keep your final reply short: status, what changed, one-line issues.",
-    model,
-  };
+  const general = { ...GENERAL_PURPOSE_SUBAGENT, model };
   return ["--agents", JSON.stringify({ "general-purpose": general })];
 }
 

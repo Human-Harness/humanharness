@@ -9,6 +9,7 @@ export * from "./types";
 export * from "./contract";
 export { classifyError } from "./classify";
 export { FALLBACK_SEARCH_PATH, absoluteSearchPath } from "./search-path";
+export { GENERAL_PURPOSE_SUBAGENT } from "./claude/transport";
 export { OPENCODE_ENV, OPENCODE_PERMISSION } from "./opencode/definition";
 
 export const ENGINES: readonly EngineDef[] = [claude, codex, opencode, kimi, gemini, qwen];

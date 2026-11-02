@@ -231,6 +231,7 @@ If the backend runs `claude` or `codex` interactively in a terminal, that is the
   - `permissions.edit: "none"` cannot be lifted by a preset.
   - `defaultMode`/`permission-mode` keys in a preset are ignored, since the core sets the mode. The same holds for `permissionMode` in an agent definition.
   - An agent's `tools` stay bounded by the session's `--disallowedTools` (checked live, §6).
+  - `Task` and `Agent` are in the session's `--disallowedTools` by default, in task and job slots. They are allowed only when the manifest sets `permissions.subagents: true` or the scope's engine preset ships `agentsFile`. This changes every harness's `--disallowedTools` on purpose.
 - **Never through H3:** authentication settings, environment variables carrying credentials, or `apiKeyHelper`. In `codex.toml`, keys outside the allowlist are refused, among them `model_provider`, `model_providers`, any `*_api_key`, `cli_auth_credentials_store` and `chatgpt_base_url`. They are refused when the hash is computed, with the key named.
 
 ## 6. Spikes

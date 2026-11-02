@@ -124,6 +124,11 @@ export interface TurnDeps {
    * scope (L5). Undefined: none. Absent without linked folders (D0): the turn's options are today's.
    */
   scopeAccess?: (scope: string) => Promise<TurnScope | undefined>;
+  /**
+   * The engine preset for this turn's profile (subagent policy D2): its agents with the subagent model merged in.
+   * Absent: the preset as it is. A failure: the preset as it is.
+   */
+  presetFor?: (engine: EnginePreset, profile: ModelProfile | undefined) => Promise<EnginePreset>;
 }
 
 /** The task's own work, whose input blocks get ids (input-blocks spec §4): never the closing or checkpoint turn. */
@@ -329,7 +334,8 @@ export class TurnController {
               return undefined;
             })
           : undefined;
-      const access = withEngine(folders, engine);
+      const turnEngine = engine && this.deps.presetFor ? await this.deps.presetFor(engine, profile).catch(() => engine) : engine;
+      const access = withEngine(folders, turnEngine);
       if (current.cancelled) return await finish(fail("cancelled") as Done);
 
       let finished: Promise<void> = Promise.resolve();

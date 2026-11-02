@@ -67,6 +67,7 @@ import { createI18n } from "@humanharness/i18n";
 import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
 import {
+  type EnginePreset,
   type Event,
   type HarnessRuntime,
   type HarnessWorkspace,
@@ -242,6 +243,7 @@ import {
   restoreTaskWithLinked,
 } from "./linked-restore";
 import { isGitRepo } from "./linked-folders";
+import { instructionSubagentsOption } from "./instruction-subagents";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -1073,6 +1075,10 @@ async function runtimeOptions(
       : {}),
     // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
     ...linkedRuntimeOptions(),
+    // The Subagents part of AGENTS.md follows the open scope's engine preset (agentsFile) when the manifest is silent.
+    ...(hasEnginePresets(harness)
+      ? { instructionSubagents: instructionSubagentsOption({ engineHost: engineHost_, currentScope: () => tasks.currentScope(), boardMode: () => !!host }) }
+      : {}),
     // The asking slot names the caller (P3); createRuntime's only slot is "main".
     ...(tools ? { tools } : {}),
     onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
@@ -1282,6 +1288,11 @@ const turnDeps: TurnDeps = {
   engineId: async () => (await config.load()).engineId,
   sessionExpired: async (engineId) => {
     await shared.update(engineId, { verifiedAt: null });
+  },
+  // A preset's agents get the subagent model of the turn's profile (subagent policy D2). Undefined without enginePresets (D0).
+  get presetFor() {
+    const host = engineHost_();
+    return host ? (engine: EnginePreset, profile: ModelProfile | undefined) => host.withSubagentModel(engine, profile) : undefined;
   },
   // The turn's own task scope's linked folders, checked each turn (hatches L5). A getter: undefined without them (D0).
   get scopeAccess() {

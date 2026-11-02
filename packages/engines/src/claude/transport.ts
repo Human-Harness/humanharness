@@ -196,8 +196,8 @@ function checkPreset(preset: EnginePreset, mcp: McpServerSpec[]): void {
 /**
  * `--agents` that makes the built-in `general-purpose` subagent run on the profile's `subagentModel` (subagent policy D2;
  * spike 2026-11-02: a definition with that name overrides the built-in and its `model` is honoured, the task's cache survives
- * while the flag is stable). Only when subagents are allowed. A preset's `agentsFile` replaces this: two `--agents` flags
- * do not merge, the last one wins.
+ * while the flag is stable). Only when subagents are allowed. A preset's `agentsFile` replaces this (two `--agents` flags
+ * do not merge, the last one wins); the shell merges the model into that file before the turn (`EngineHost.withSubagentModel`).
  */
 export function subagentAgents(profile: ModelProfile | undefined, allowed: boolean): string[] {
   const model = profile?.subagentModel;

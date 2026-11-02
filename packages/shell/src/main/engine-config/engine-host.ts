@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
+import { type ModelProfile, isModelId } from "@humanharness/engines";
 import { absoluteSearchPath, type EnginePreset } from "@humanharness/runtime";
 import { type EngineApproval, type ScopeEntry, engineConfigDir, isScopeId } from "@humanharness/workspace";
 import { engineApprovalValid, enginePinTag, enginePinValid } from "./approval";
@@ -79,6 +83,32 @@ function section(snap: EngineSnapshot, action: string | undefined): string {
   const layer = action !== undefined && Object.hasOwn(snap.actions, action) ? snap.actions[action] : undefined;
   const parts = [snap.instructions.trim(), layer?.instructions.trim() ?? ""].filter(Boolean);
   return parts.length > 0 ? `${SECTION}\n\n${parts.join("\n\n")}` : "";
+}
+
+/**
+ * The preset's agents with the subagent model merged in (subagent policy D2): a `general-purpose` entry with `model`
+ * when the preset has none; the preset's own entry untouched when it has a model (the preset wins); only the missing
+ * `model` filled in when it has none. Two `--agents` flags do not merge (the last wins), so this is how a preset's
+ * subagents run one tier below the task too. Anything that is not an object of objects is returned as it came.
+ * The default definition mirrors `subagentAgents` in `packages/engines/src/claude/transport.ts`.
+ */
+export function mergeSubagentModel(agents: unknown, model: string): unknown {
+  if (!isModelId(model) || typeof agents !== "object" || agents === null || Array.isArray(agents)) return agents;
+  const defs = agents as Record<string, unknown>;
+  const own = Object.hasOwn(defs, "general-purpose") ? defs["general-purpose"] : undefined;
+  if (own === undefined) {
+    return {
+      ...defs,
+      "general-purpose": {
+        description: "General-purpose agent for researching questions and carrying out multi-step tasks.",
+        prompt:
+          "You are a general-purpose subagent. Do exactly the task you are given, using the tools you have. Put any detail in the files you change and keep your final reply short: status, what changed, one-line issues.",
+        model,
+      },
+    };
+  }
+  if (typeof own !== "object" || own === null || Array.isArray(own) || Object.hasOwn(own, "model")) return agents;
+  return { ...defs, "general-purpose": { ...own, model } };
 }
 
 /** The snapshot as the engines get it, with the task's action layer on top. */
@@ -172,6 +202,32 @@ export class EngineHost {
     if (snap === "refused") return { ...NONE, notice: "refused" };
     if (!snap) return { ...NONE, notice: "unapproved" };
     return { preset: presetOf(snap, action), instructions: section(snap, action), notice: null, hash: snap.hash };
+  }
+
+  /**
+   * `preset` for a turn on `profile`: when the preset ships agents and the profile names a subagent model, its
+   * `agentsFile` becomes a copy with `general-purpose` on that model (`mergeSubagentModel`), written under
+   * `<userData>/engine-agents/` named by its content. The snapshot itself is never touched (it is hashed, shared by
+   * every task and checked byte for byte); the model is per task and changes on a fallback, so it is merged per turn.
+   * Any failure: the preset as it is, logged.
+   */
+  async withSubagentModel(preset: EnginePreset, profile: ModelProfile | undefined): Promise<EnginePreset> {
+    const model = profile?.subagentModel;
+    if (!preset.agentsFile || model === undefined || !isModelId(model)) return preset;
+    try {
+      const agents: unknown = JSON.parse(await fs.readFile(preset.agentsFile, "utf8"));
+      const merged = mergeSubagentModel(agents, model);
+      if (merged === agents) return preset;
+      const data = `${JSON.stringify(merged, null, 2)}\n`;
+      const dir = path.join(this.d.userData, "engine-agents");
+      const file = path.join(dir, `${createHash("sha256").update(data).digest("hex").slice(0, 32)}.json`);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(file, data, { mode: 0o600 });
+      return { ...preset, agentsFile: file };
+    } catch (err) {
+      this.log("Could not merge the subagent model into the preset's agents; the turn keeps the preset's own", err);
+      return preset;
+    }
   }
 
   /** The tag a new task `task` stores with its pin to `hash` in `scope` (`engineTag`); null without a key or a setup. */

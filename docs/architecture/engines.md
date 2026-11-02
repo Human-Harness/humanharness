@@ -83,6 +83,11 @@ The legal notice's texts (its title, content and the accept checkbox) are `legal
 - Those folders and `~/.opencode` are protected paths in `validate.ts`: a harness folder can be neither inside nor above them. So `~/.local`, `~/.local/share` and `~/.config` are refused as harness folders for every engine (a saved folder there is re-checked at load and sends the person back to setup).
 - `claude auth status --json` prints the account's email: the app reads only `loggedIn` from it.
 
+## Subagent usage (Claude)
+
+- Claude's `result.usage` is the main thread only (inferred from the cost split, spike `docs/spikes/2026-11-02-subagents.md` S3); `result.modelUsage` has one row per model, subagents included. `subagentUsage` (`claude/transport.ts`) subtracts the main thread's counts from the main model's row (the init model, else the biggest row, clamped at 0) and keeps every other row whole. The result is `subagents?: SubagentUsage[]` on the `usage` event, whose four counts stay the main thread's. A model the main thread also used (a title call, say) therefore shows up as subagent tokens.
+- `usage.jsonl` gets one line per model after the turn's own line: `{ at, engine, action?, task?, scope?, mode?, taskPhase?, phase: "subagent", model: <the subagent's model>, ok: true, usage }` (`subagentRecord`, `usage-log.ts`). Existing lines are unchanged. Like job lines, they stay out of the topics' estimates, the per-scope rows and a turn's measured share; `summarizeUsage` adds `subagents` (tokens, all four counts; absent when none) and Settings › Usage says "Subagents: about N tokens". Sidekick's daily card does not count them. Only the app's turn controller writes them; the CLI's `humanharness run` does not yet.
+
 ## Cost (OpenCode)
 
 - OpenCode's `usage_update` carries `cost` in USD, the session's running total. The transport keeps the total and the total at the last turn's end and turns the difference into the turn's `costUsd` on the `usage` event; it lands in `usage.jsonl` (`usage.costUsd`, real money, unlike Claude's `costEquivalentUsd`), for tasks and material stages. A non-USD currency, an amount that is not a finite number ≥ 0, or a `usage_update` whose `sessionId` is not the open session's, is ignored. The summary checks again: `spentUsd` adds only logged costs that are finite and ≥ 0.

@@ -669,6 +669,8 @@ export interface UsageSummary {
   sidekick?: number;
   /** Tokens of background job runs (parallel spec §10; with profiles, the active profile's); absent when none ran. */
   jobs?: number;
+  /** Tokens the subagents of tasks' turns used (subagent plan D4; with profiles, the active profile's); absent when none ran. */
+  subagents?: number;
   /** USD the engine reported over the last 30 days (OpenCode; every profile's turns). Absent when no turn reported a cost. */
   spentUsd?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */

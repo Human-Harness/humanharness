@@ -5,7 +5,7 @@ import type { McpServerSpec } from "@humanharness/blocks";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "../classify";
 import { ContextDrop } from "../context-drop";
-import { type ActivityKind, type CommonOptions, EDIT_PATH_MAX, type EnginePreset, type Event, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
+import { type ActivityKind, type CommonOptions, EDIT_PATH_MAX, type EnginePreset, type Event, type SubagentUsage, type LinkedAccess, type Transport, type TurnScope, fail } from "../contract";
 import { type ModelProfile, isCap, isEffort, isModelId } from "../models";
 import { absoluteSearchPath } from "../search-path";
 
@@ -398,6 +398,7 @@ export class StreamJsonReader {
       const aboutModel = typeof o.result === "string" && /\bmodel\b/i.test(o.result);
       if (o.error === "model_not_found" || (o.api_error_status === 404 && o.terminal_reason === "api_error" && aboutModel)) this.modelUnavailable = true;
       if (o.usage) {
+        const subagents = subagentUsage(o.usage, o.modelUsage, this.model);
         this.emit({
           type: "usage",
           inputTokens: o.usage.input_tokens ?? 0,
@@ -406,6 +407,7 @@ export class StreamJsonReader {
           cacheWriteTokens: o.usage.cache_creation_input_tokens ?? 0,
           ...(typeof o.total_cost_usd === "number" ? { costEquivalentUsd: o.total_cost_usd } : {}),
           ...(this.model ? { model: this.model } : {}),
+          ...(subagents.length ? { subagents } : {}),
         });
       }
       // The last call's size is the context in use; the result's totals add up every call of the turn.
@@ -416,6 +418,36 @@ export class StreamJsonReader {
       }
     }
   }
+}
+
+/**
+ * What the turn's subagents used. `result.usage` counts the main thread only; `result.modelUsage` has every model of the
+ * turn, subagents included (subagent spec D4; spike 2026-11-02 S3, inferred from the cost split). A model's subagent
+ * share is its row minus the main thread's usage, taken off the main model's row: the init model, else the biggest row.
+ */
+export function subagentUsage(usage: Record<string, any>, modelUsage: unknown, initModel?: string): SubagentUsage[] {
+  if (!modelUsage || typeof modelUsage !== "object") return [];
+  const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  const rows = Object.entries(modelUsage as Record<string, any>)
+    .filter(([, m]) => m && typeof m === "object")
+    .map(([model, m]) => ({ model, inputTokens: n(m.inputTokens), outputTokens: n(m.outputTokens), cacheReadTokens: n(m.cacheReadInputTokens), cacheWriteTokens: n(m.cacheCreationInputTokens) }));
+  const total = (r: SubagentUsage) => r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens;
+  const main = rows.find((r) => r.model === initModel) ?? rows.reduce<SubagentUsage | undefined>((a, r) => (!a || total(r) > total(a) ? r : a), undefined);
+  const out: SubagentUsage[] = [];
+  for (const r of rows) {
+    const sub: SubagentUsage =
+      r === main
+        ? {
+            model: r.model,
+            inputTokens: Math.max(0, r.inputTokens - n(usage.input_tokens)),
+            outputTokens: Math.max(0, r.outputTokens - n(usage.output_tokens)),
+            cacheReadTokens: Math.max(0, r.cacheReadTokens - n(usage.cache_read_input_tokens)),
+            cacheWriteTokens: Math.max(0, r.cacheWriteTokens - n(usage.cache_creation_input_tokens)),
+          }
+        : r;
+    if (total(sub) > 0) out.push(sub);
+  }
+  return out;
 }
 
 /** Runs one `claude -p` process per turn, resuming the session by id. */

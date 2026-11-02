@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { usageFile } from "@humanharness/workspace";
 import { DEFAULT_POLICY, contextPolicy, modelPolicy } from "@humanharness/policies";
-import type { Effort, ModelProfile } from "@humanharness/engines";
+import type { Effort, ModelProfile, SubagentUsage } from "@humanharness/engines";
 import type { Tier } from "@humanharness/harness-sdk";
 import { MEASURED_MIN, type MeasuredCosts } from "@humanharness/material/light";
 import type { LimitWindow } from "@humanharness/runtime";
@@ -24,9 +24,10 @@ interface ProfileFields {
  * processing, not a task's turn (material spec §11). `context-add`: the "Add now" turn of the context panel
  * (context-panel spec §4.1). `translate`: one batch of a translation run (language spec §5), not a task's turn.
  * `sidekick`: a Sidekick turn (sidekick spec §8), not a task's turn. `job`: a background job run's turn (parallel spec
- * §10, part 3 Decision 2).
+ * §10, part 3 Decision 2). `subagent`: the tokens a turn's subagents used (subagent plan D4), one line per model, written
+ * after the turn's own line and apart from it.
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate" | "sidekick" | "job";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate" | "sidekick" | "job" | "subagent";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -318,6 +319,26 @@ export function jobRecord(o: { engine: string; job: string; task: string; scope?
   return { at, engine: o.engine, task: o.task, ...(o.scope ? { scope: o.scope } : {}), phase: "job", job: o.job, ok: true, usage: o.usage };
 }
 
+/**
+ * What a turn's subagents used on one model (subagent plan D4): `phase: "subagent"`, the subagent's model, and the turn's
+ * task identity so the line says whose it is. The turn's own profile (tier, cap) is left out: it is not the subagent's.
+ */
+export function subagentRecord(sub: SubagentUsage, engine: string, meta: UsageMeta = {}, at: string = new Date().toISOString()): UsageRecord {
+  return {
+    at,
+    engine,
+    ...(meta.action ? { action: meta.action } : {}),
+    ...(meta.task ? { task: meta.task } : {}),
+    ...(meta.scope ? { scope: meta.scope } : {}),
+    ...(meta.mode ? { mode: meta.mode } : {}),
+    ...(meta.taskPhase ? { taskPhase: meta.taskPhase } : {}),
+    phase: "subagent",
+    model: sub.model,
+    ok: true,
+    usage: { inputTokens: sub.inputTokens, outputTokens: sub.outputTokens, cacheReadTokens: sub.cacheReadTokens, cacheWriteTokens: sub.cacheWriteTokens },
+  };
+}
+
 /** One batch of a translation run (language spec §5). */
 export function translateRecord(
   o: { engine: string; language: string; batch: number; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
@@ -372,7 +393,7 @@ export function dayTokens(records: UsageRecord[], day: string, localDay: (d: Dat
   const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
   const jobLines = ofDay.filter((u) => u.phase === "job");
   return {
-    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job")),
+    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job" && u.phase !== "subagent")),
     sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")),
     ...(jobLines.length ? { jobs: sum(jobLines) } : {}),
   };
@@ -428,7 +449,10 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * never by their id (a job may be called "questions").
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
-  const all = records.filter((r) => r.kind !== "compaction" && !(r.kind !== undefined && TOOL_ROW_KINDS.includes(r.kind)));
+  // Subagent lines are tokens a turn's own line doesn't count; they stay out of everything else, so one right after a
+  // turn never leaves it unmeasured (subagent plan D4).
+  const all = records.filter((r) => r.phase !== "subagent" && r.kind !== "compaction" && !(r.kind !== undefined && TOOL_ROW_KINDS.includes(r.kind)));
+  const subagents = records.filter((r) => r.phase === "subagent" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   const last = all.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
@@ -472,6 +496,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     ...(material > 0 ? { material } : {}),
     ...(sidekick > 0 ? { sidekick } : {}),
     ...(jobs > 0 ? { jobs } : {}),
+    ...(subagents > 0 ? { subagents } : {}),
     ...(spent !== undefined ? { spentUsd: spent } : {}),
     ...(primary ? { primary } : {}),
   };
@@ -518,10 +543,10 @@ export function profilesUsage(
   now: Date = new Date(),
 ): UsageSummary {
   const merged = mergeUsage(byProfile);
-  const { scopes: _everyone, material: _all, sidekick: _allSidekick, jobs: _allJobs, ...summary } = summarizeUsage(merged, primary, now);
+  const { scopes: _everyone, material: _all, sidekick: _allSidekick, jobs: _allJobs, subagents: _allSubagents, ...summary } = summarizeUsage(merged, primary, now);
   const own = summarizeUsage(Object.hasOwn(byProfile, activeProfile) ? byProfile[activeProfile] : [], primary, now);
   // Material stages count as their person's use: each profile processes its own material (material spec §4).
   const perPerson: Record<string, number> = {};
   for (const r of merged) if (r.usage) perPerson[r.person] = (perPerson[r.person] ?? 0) + turnTokens(r.usage);
-  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), ...(own.sidekick !== undefined ? { sidekick: own.sidekick } : {}), ...(own.jobs !== undefined ? { jobs: own.jobs } : {}), profiles: perPerson };
+  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), ...(own.sidekick !== undefined ? { sidekick: own.sidekick } : {}), ...(own.jobs !== undefined ? { jobs: own.jobs } : {}), ...(own.subagents !== undefined ? { subagents: own.subagents } : {}), profiles: perPerson };
 }

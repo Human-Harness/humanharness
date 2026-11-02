@@ -472,3 +472,20 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(within(footer).getByRole("button", { name: "Next" }).className).toContain("hh-primary");
   });
 });
+
+describe("SetupFlow settings gear", () => {
+  it("shows the Settings gear in the top bar and calls onSettings; without onSettings there is no gear", async () => {
+    const onSettings = vi.fn();
+    const client = new FakeClient();
+    await renderIn("en", <SetupFlow client={client} state={client.state} onChange={() => {}} onCancel={() => {}} onStart={() => {}} onSettings={onSettings} />);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    expect(gear.className).toContain("hh-topbar-icon");
+    expect(gear.closest(".hh-topbar")).toBeTruthy();
+    fireEvent.click(gear);
+    expect(onSettings).toHaveBeenCalledTimes(1);
+    cleanup();
+    await renderIn("en", <SetupFlow client={client} state={client.state} onChange={() => {}} onCancel={() => {}} onStart={() => {}} />);
+    await screen.findByRole("button", { name: "Cancel" });
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+  });
+});

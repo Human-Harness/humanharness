@@ -197,3 +197,17 @@ describe("the scope settings dialog", () => {
     }
   });
 });
+
+describe("control size tokens and top bar overrides", () => {
+  it("defines the 40px / 12px control tokens at root and shrinks them to 30px / 8px in the top bar", () => {
+    expect(css).toMatch(/:root\s*\{[^}]*--hh-control-h:\s*40px;[^}]*--hh-control-r:\s*12px/);
+    expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*30px;[^}]*--hh-control-r:\s*8px/);
+  });
+
+  it("has rules for the top bar icon button and the language row label", () => {
+    expect(css).toMatch(/\.hh-topbar-icon\s*\{/);
+    expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
+    const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
+    expect(tsx).toMatch(/className="hh-topbar-icon"/);
+  });
+});

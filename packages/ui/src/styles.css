@@ -15,8 +15,6 @@
   --hh-cta-hover: #f8c76e;
   --hh-active: #fde6b3;
   --hh-active-ink: #7a4f00;
-  --hh-logo: #1b1c1e;
-  --hh-logo-ink: #ffffff;
   --hh-t-green: #dff2e5;
   --hh-t-green-ink: #1d6e3f;
   --hh-t-orange: #fdebd7;
@@ -27,39 +25,8 @@
   --hh-t-violet-ink: #5f3dba;
   --hh-t-red: #fbe4e1;
   --hh-t-red-ink: #a3321f;
-  --hh-shadow-sm: 0 1px 2px rgba(20, 20, 20, 0.12);
   --hh-shadow: 0 1px 2px rgba(20, 20, 20, 0.04), 0 8px 24px rgba(20, 20, 20, 0.05);
   --hh-backdrop: rgba(27, 28, 30, 0.18);
-  --hh-on-ink: var(--hh-bg);
-  /* Aliases kept for existing rules: same meaning, new source (spec §3.1). */
-  --hh-ok: var(--hh-t-green-ink);
-  --hh-ok-dot: var(--hh-t-green-ink);
-  --hh-warn: var(--hh-t-orange-ink);
-  --hh-error-bg: var(--hh-t-red);
-  /* --hh-active's value, spelled out: the annotate marks' contrast test reads hex tokens only. */
-  --hh-highlight: #fde6b3;
-  --hh-profile-coral: #f2b8a8;
-  --hh-profile-amber: #f3d38b;
-  --hh-profile-green: #b5dcb4;
-  --hh-profile-teal: #a6d9d3;
-  --hh-profile-blue: #b4ccef;
-  --hh-profile-violet: #cdbdf0;
-  --hh-profile-pink: #f1bcd6;
-  --hh-profile-gray: #d3d5d8;
-  --hh-callout-note: #e8eef8;
-  --hh-callout-tip: #e7f3ec;
-  --hh-callout-warning: #fbefe3;
-  --hh-callout-summary: #efedf8;
-  --hh-callout-decision: #e6f2f1;
-  --hh-callout-question: #fbf3dc;
-  --hh-review-question: #fbefc4;
-  --hh-review-comment: #dde8f8;
-  --hh-review-done: #e9ebe6;
-  --hh-review-active: #f6d77a;
-  --hh-diff-ins: #e3f2e6;
-  --hh-diff-del: #fbe3e3;
-  --hh-diff-bar-ins: #2e8a5c;
-  --hh-diff-bar-del: #b3402f;
   --hh-font: "DM Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: var(--hh-font);
   font-family: var(--hh-font);
@@ -83,8 +50,6 @@
     --hh-cta-hover: #f7d184;
     --hh-active: #3a2e14;
     --hh-active-ink: #f3c56a;
-    --hh-logo: #eceef0;
-    --hh-logo-ink: #121315;
     --hh-t-green: #17311f;
     --hh-t-green-ink: #8bd8a8;
     --hh-t-orange: #3a2715;
@@ -95,39 +60,8 @@
     --hh-t-violet-ink: #c6b4ff;
     --hh-t-red: #3b1d19;
     --hh-t-red-ink: #f3a497;
-    --hh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
     --hh-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
     --hh-backdrop: rgba(0, 0, 0, 0.45);
-    --hh-on-ink: var(--hh-bg);
-    /* Aliases kept for existing rules: same meaning, new source (spec §3.1). */
-    --hh-ok: var(--hh-t-green-ink);
-    --hh-ok-dot: var(--hh-t-green-ink);
-    --hh-warn: var(--hh-t-orange-ink);
-    --hh-error-bg: var(--hh-t-red);
-    /* --hh-active's value, spelled out: the annotate marks' contrast test reads hex tokens only. */
-    --hh-highlight: #3a2e14;
-    --hh-profile-coral: #7a3d2f;
-    --hh-profile-amber: #6e5420;
-    --hh-profile-green: #2f5b37;
-    --hh-profile-teal: #255852;
-    --hh-profile-blue: #2c4670;
-    --hh-profile-violet: #4a3a74;
-    --hh-profile-pink: #6e3352;
-    --hh-profile-gray: #464b52;
-    --hh-callout-note: #1f2a3a;
-    --hh-callout-tip: #1e3026;
-    --hh-callout-warning: #3a2a1c;
-    --hh-callout-summary: #29253a;
-    --hh-callout-decision: #1c302e;
-    --hh-callout-question: #3a321c;
-    --hh-review-question: #5a4a16;
-    --hh-review-comment: #243a5a;
-    --hh-review-done: #30332e;
-    --hh-review-active: #7a5f12;
-    --hh-diff-ins: #1e3026;
-    --hh-diff-del: #3a2222;
-    --hh-diff-bar-ins: #4fb07f;
-    --hh-diff-bar-del: #e07a6a;
     color-scheme: dark;
   }
 }
@@ -166,10 +100,10 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 .hh-card { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
 .hh-display { font-family: var(--hh-display); }
 .hh-caption { color: var(--hh-muted); font-size: 12px; margin: 0; }
-.hh-warn { color: var(--hh-warn); }
-.hh-ok { color: var(--hh-ok); }
+.hh-warn { color: var(--hh-t-orange-ink); }
+.hh-ok { color: var(--hh-t-green-ink); }
 .hh-logo { color: var(--hh-ink); }
-.hh-save-error, .hh-folder-problem { color: var(--hh-warn); margin: 0; }
+.hh-save-error, .hh-folder-problem { color: var(--hh-t-orange-ink); margin: 0; }
 .hh-loading, .hh-load-error { padding: 24px; }
 .hh-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
@@ -217,8 +151,8 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 @media (max-width: 760px) { .hh-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); } .hh-shell > .hh-rail { width: auto; } .hh-shell-chat > .hh-app { height: 100%; } }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--hh-surface-2); }
 .hh-segmented button { height: 28px; border: none; background: transparent; border-radius: 6px; }
-.hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: var(--hh-shadow-sm); }
-@media (prefers-color-scheme: dark) { .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { box-shadow: var(--hh-shadow-sm), inset 0 0 0 1px var(--hh-line-strong); } }
+.hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: var(--hh-shadow); }
+@media (prefers-color-scheme: dark) { .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { box-shadow: var(--hh-shadow), inset 0 0 0 1px var(--hh-line-strong); } }
 
 /* Home */
 .hh-home { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--hh-topbar-h) minmax(0, 1fr) auto; background: var(--hh-rail); }
@@ -228,7 +162,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 .hh-home-main > * { flex-shrink: 0; }
 .hh-home-id { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .hh-home-logo { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--hh-shadow); object-fit: contain; }
-svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-logo); color: var(--hh-logo-ink); }
+svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-surface); color: var(--hh-ink); }
 .hh-home-name { font-family: var(--hh-display); font-weight: 600; font-size: 40px; letter-spacing: -1px; }
 .hh-home-tagline { color: var(--hh-muted); font-size: 15px; }
 /* Not ready yet (spec 3f §1): what is missing, above "Set up <name>". */
@@ -239,7 +173,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-pill { padding: 0 14px; border-color: var(--hh-line); gap: 8px; }
 .hh-pill img { width: 18px; height: 18px; }
 .hh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hh-muted); }
-.hh-dot.ok { background: var(--hh-ok-dot); }
+.hh-dot.ok { background: var(--hh-t-green-ink); }
 .hh-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; color: var(--hh-muted); font-size: 12px; background: var(--hh-rail); border-top: 1px solid var(--hh-line); }
 /* Long paths keep their end (the folder's own name) visible: the ellipsis goes at the start. */
 .hh-footer > :not(.hh-footer-path) { flex: none; }
@@ -282,12 +216,12 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-engine-radio-logo img { width: 24px; height: 24px; }
 .hh-engine-radio-text { min-width: 0; display: grid; gap: 2px; }
 .hh-engine-radio-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--hh-muted); }
-.hh-engine-radio-status[data-tone="ok"] { color: var(--hh-ok); }
+.hh-engine-radio-status[data-tone="ok"] { color: var(--hh-t-green-ink); }
 .hh-engine-more { margin: 0; }
 .hh-setup .hh-onboarding { padding: 18px 20px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
 .hh-setup-done { width: 100%; justify-items: center; text-align: center; gap: 14px; }
 .hh-setup-done .hh-rows { width: 100%; text-align: left; }
-.hh-setup-done-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-setup-done-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--hh-ink); color: var(--hh-bg); }
 .hh-setup-done-mark svg { width: 24px; height: 24px; }
 
 /* Settings as a page (UI refresh spec §5.5): in place of the screen, which stays mounted under it, hidden. */
@@ -295,7 +229,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-screen { display: contents; }
 .hh-screen[hidden] { display: none; }
 /* Test-mode badge: in the top bar flow, after the title. */
-.hh-mock-badge { flex: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--hh-warn); background: var(--hh-surface); color: var(--hh-warn); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.hh-mock-badge { flex: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--hh-t-orange-ink); background: var(--hh-surface); color: var(--hh-t-orange-ink); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .hh-settings-page { display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; }
 .hh-settings-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; }
 .hh-settings-nav { display: grid; align-content: start; gap: 2px; padding: 24px 14px; background: var(--hh-rail); border-right: 1px solid var(--hh-line); overflow-y: auto; }
@@ -341,7 +275,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 /* A bar of how much is used; the fill is its <i>. */
 .hh-progress { display: block; height: 6px; border-radius: 4px; background: var(--hh-surface-2); overflow: hidden; }
 .hh-progress > i { display: block; height: 100%; background: var(--hh-t-blue-ink); }
-.hh-progress.warn > i { background: var(--hh-warn); }
+.hh-progress.warn > i { background: var(--hh-t-orange-ink); }
 /* A key's letter tile and name (Connections). */
 .hh-secret > .hh-row-label { flex: 1 1 160px; color: var(--hh-ink); font-weight: 500; }
 .hh-letter-tile { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-weight: 600; }
@@ -413,7 +347,7 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-l
 .hh-not-configured h2 { margin: 0; color: var(--hh-ink); }
 .hh-not-configured p { margin: 0 0 8px; max-width: 36ch; }
 .hh-tile.more { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hh-line-strong); color: var(--hh-muted); background: transparent; }
-.hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
+.hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-bg); font-size: 11px; display: grid; place-items: center; }
 select { font: inherit; height: var(--hh-control-h); padding: 0 10px; border-radius: var(--hh-control-r); border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); }
 select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-link { height: auto; padding: 0; border: none; background: none; color: var(--hh-ink); font-size: inherit; text-decoration: underline; }
@@ -431,7 +365,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-context-meter svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
 .hh-context-meter circle { fill: none; stroke-width: 2.5; stroke: var(--hh-line-strong); }
 .hh-context-meter circle + circle { stroke: var(--hh-muted); stroke-linecap: round; }
-.hh-context-meter.warn circle + circle { stroke: var(--hh-warn); }
+.hh-context-meter.warn circle + circle { stroke: var(--hh-t-orange-ink); }
 /* The running step's ring sits at the right end of its row, outside the (disabled) button so its title still shows on hover. */
 .hh-steps li { position: relative; }
 .hh-steps li > .hh-context-meter { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
@@ -494,11 +428,11 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-md-diagram-bar { display: flex; justify-content: flex-end; }
 .hh-md-diagram-bar button { height: 24px; padding: 0 8px; font-size: 12px; }
 .hh-md-diagram-bar button[aria-pressed="true"] { background: var(--hh-surface-2); }
-.hh-md-diagram-error { margin: 0 0 6px; font-size: 13px; color: var(--hh-warn); }
+.hh-md-diagram-error { margin: 0 0 6px; font-size: 13px; color: var(--hh-t-orange-ink); }
 .hh-md-diagram-failed { background: transparent; }
 .hljs-keyword, .hljs-built_in, .hljs-type, .hljs-selector-tag { color: var(--hh-ink); font-weight: 600; }
-.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-addition { color: var(--hh-ok); }
-.hljs-number, .hljs-literal, .hljs-symbol { color: var(--hh-warn); }
+.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-addition { color: var(--hh-t-green-ink); }
+.hljs-number, .hljs-literal, .hljs-symbol { color: var(--hh-t-orange-ink); }
 .hljs-comment, .hljs-quote, .hljs-meta, .hljs-deletion { color: var(--hh-muted); font-style: italic; }
 .hljs-title, .hljs-section, .hljs-name { color: var(--hh-muted); font-weight: 600; }
 .hh-md-link { color: var(--hh-ink); text-decoration: underline; text-decoration-color: var(--hh-line-strong); text-underline-offset: 2px; overflow-wrap: anywhere; }
@@ -527,13 +461,14 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-callout { margin: 0.8em 0; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--hh-line); }
 .hh-callout > :last-child { margin-bottom: 0; }
 .hh-callout-label { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--hh-muted); }
-.hh-callout-note { background: var(--hh-callout-note); }
-.hh-callout-tip { background: var(--hh-callout-tip); }
-.hh-callout-warning { background: var(--hh-callout-warning); }
-.hh-callout-warning .hh-callout-label { color: var(--hh-warn); }
-.hh-callout-summary { background: var(--hh-callout-summary); }
-.hh-callout-decision { background: var(--hh-callout-decision); }
-.hh-callout-question { background: var(--hh-callout-question); }
+/* callout colors pending Marco (style guide plan Task 1) */
+.hh-callout-note { background: var(--hh-t-blue); }
+.hh-callout-tip { background: var(--hh-t-green); }
+.hh-callout-warning { background: var(--hh-t-orange); }
+.hh-callout-warning .hh-callout-label { color: var(--hh-t-orange-ink); }
+.hh-callout-summary { background: var(--hh-t-violet); }
+.hh-callout-decision { background: var(--hh-t-green); }
+.hh-callout-question { background: var(--hh-t-orange); }
 .hh-md-caption { margin: -0.3em 0 1em; font-size: 0.9em; color: var(--hh-muted); text-align: center; }
 .hh-md-footnotes { margin-top: 2em; padding-top: 0.6em; border-top: 1px solid var(--hh-line); font-size: 0.9em; color: var(--hh-muted); }
 .hh-md-footnotes a.hh-md-back { text-decoration: none; }
@@ -554,20 +489,20 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-activity li { display: flex; align-items: center; gap: 8px; }
 .hh-activity li.running { color: var(--hh-ink); }
 .hh-activity-mark { width: 13px; height: 13px; flex: none; display: flex; align-items: center; justify-content: center; }
-.hh-activity li.done .hh-activity-mark { color: var(--hh-ok); }
+.hh-activity li.done .hh-activity-mark { color: var(--hh-t-green-ink); }
 .hh-block { margin: 8px 0; }
-.hh-error { background: var(--hh-error-bg); border-radius: 12px; padding: 8px 12px; display: grid; gap: 8px; justify-items: start; }
+.hh-error { background: var(--hh-t-red); border-radius: 12px; padding: 8px 12px; display: grid; gap: 8px; justify-items: start; }
 .hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; padding: 10px 12px; }
 .hh-confirm p { flex-basis: 100%; }
 .hh-composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hh-line); }
 .hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); padding: 8px; }
 .hh-composer button { height: auto; }
-.hh-composer button[type="submit"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: transparent; font-weight: 600; }
+.hh-composer button[type="submit"] { background: var(--hh-ink); color: var(--hh-bg); border-color: transparent; font-weight: 600; }
 /* History (spec 3d §1, mockup "History panel redesign"): a side sheet, tasks grouped by day, entries as a timeline. */
 /* History's drawer body (UI refresh spec §5.7): the frame is the drawer's. */
 .hh-history { display: flex; flex-direction: column; gap: 8px; }
 .hh-history > .hh-segmented { align-self: flex-start; }
-.hh-history > [role="alert"] { margin: 0 8px; color: var(--hh-warn); }
+.hh-history > [role="alert"] { margin: 0 8px; color: var(--hh-t-orange-ink); }
 .hh-history-busy { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 10px 12px; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); line-height: 1.4; }
 .hh-history-busy svg { flex: none; }
 .hh-history-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px 28px; text-align: center; color: var(--hh-muted); }
@@ -594,7 +529,7 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-history-entries { border-left: 1px solid var(--hh-line-strong); }
 .hh-history-entries > li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 6px 4px 14px; border-radius: 8px; }
 .hh-history-dot { position: absolute; left: -4px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--hh-muted); }
-.hh-history-dot.green { background: var(--hh-ok); }
+.hh-history-dot.green { background: var(--hh-t-green-ink); }
 .hh-history-entries > li:hover, .hh-history-entries > li:focus-within { background: var(--hh-surface-2); }
 .hh-history-entries > li:hover .hh-history-dot:not(.green), .hh-history-entries > li:focus-within .hh-history-dot:not(.green) { background: var(--hh-ink); }
 .hh-history-entry-text { display: grid; gap: 1px; min-width: 0; }
@@ -612,24 +547,24 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-timeline-more { margin-left: 8px; font-size: 12px; }
 .hh-timeline-turns { margin: 2px 0 4px 16px; padding: 0; list-style: none; font-size: 13px; }
 .hh-timeline-chip { padding: 0 6px; border-radius: 999px; font-size: 12px; color: var(--hh-ink); }
-.hh-timeline-chip-amber { background: var(--hh-review-question); }
-.hh-timeline-chip-green { background: var(--hh-diff-ins); color: var(--hh-ok); }
-.hh-timeline-chip-grey { background: var(--hh-review-done); }
+.hh-timeline-chip-amber { background: var(--hh-t-orange); }
+.hh-timeline-chip-green { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
+.hh-timeline-chip-grey { background: var(--hh-surface-2); }
 /* File diff (file-timeline spec §4): marks carry a line or strike as well as colour. Every class is hh-filediff-*. */
 .hh-filediff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hh-filediff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.hh-filediff ins { background: var(--hh-diff-ins); text-decoration: underline; text-decoration-color: var(--hh-diff-bar-ins); }
-.hh-filediff del { background: var(--hh-diff-del); text-decoration: line-through; text-decoration-color: var(--hh-diff-bar-del); }
+.hh-filediff ins { background: var(--hh-t-green); text-decoration: underline; text-decoration-color: var(--hh-t-green-ink); }
+.hh-filediff del { background: var(--hh-t-red); text-decoration: line-through; text-decoration-color: var(--hh-t-red-ink); }
 .hh-filediff-block { padding-left: 10px; border-left: 3px solid transparent; }
-.hh-filediff-added { border-left: 3px solid var(--hh-diff-bar-ins); background: var(--hh-diff-ins); }
-.hh-filediff-removed { border-left: 3px solid var(--hh-diff-bar-del); background: var(--hh-diff-del); text-decoration: line-through; }
+.hh-filediff-added { border-left: 3px solid var(--hh-t-green-ink); background: var(--hh-t-green); }
+.hh-filediff-removed { border-left: 3px solid var(--hh-t-red-ink); background: var(--hh-t-red); text-decoration: line-through; }
 .hh-filediff-lines { width: 100%; border-collapse: collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .hh-filediff-lines td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hh-filediff-no { width: 1%; color: var(--hh-muted); text-align: right; user-select: none; }
 .hh-filediff-sign { width: 1%; user-select: none; }
 .hh-filediff-mark { display: inline-block; min-width: 1ch; margin-right: 4px; user-select: none; }
-.hh-filediff-ins { background: var(--hh-diff-ins); }
-.hh-filediff-del { background: var(--hh-diff-del); }
+.hh-filediff-ins { background: var(--hh-t-green); }
+.hh-filediff-del { background: var(--hh-t-red); }
 .hh-filediff-gap td, .hh-filediff-gaprow { color: var(--hh-muted); }
 .hh-filediff-gaprow { grid-column: 1 / -1; }
 .hh-filediff-table { border-collapse: collapse; }
@@ -646,8 +581,8 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* A file's timeline outside the reader, opened from the History panel (file-timeline spec §6.2). */
 .hh-timeline-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
-.hh-change.added { color: var(--hh-ok); }
-.hh-change.deleted { color: var(--hh-warn); }
+.hh-change.added { color: var(--hh-t-green-ink); }
+.hh-change.deleted { color: var(--hh-t-orange-ink); }
 /* Flow mode (spec 2026-10-12, mockups "Plan 3 · Explicador"): side panel, start view, choices. */
 .hh-flow-side { width: 248px; flex: none; box-sizing: border-box; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--hh-line); overflow-y: auto; }
 .hh-flow-heading { margin: 0 0 6px; padding-left: 6px; font-size: 12px; font-weight: 600; color: var(--hh-muted); }
@@ -658,8 +593,8 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-steps button:hover:not(:disabled) { border-color: transparent; }
 .hh-steps button[aria-current="step"]:hover:not(:disabled) { border-color: var(--hh-line); }
 .hh-step-mark { width: 18px; height: 18px; flex: none; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--hh-line-strong); font-size: 11px; color: var(--hh-muted); }
-.hh-step-mark.done { border-color: transparent; color: var(--hh-ok); }
-[aria-current="step"] .hh-step-mark { border-color: transparent; background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-step-mark.done { border-color: transparent; color: var(--hh-t-green-ink); }
+[aria-current="step"] .hh-step-mark { border-color: transparent; background: var(--hh-ink); color: var(--hh-bg); }
 .hh-note-list { list-style: none; margin: 0; padding: 0; }
 .hh-note-list li + li { border-top: 1px solid var(--hh-line); }
 .hh-note-list button { width: 100%; height: auto; justify-content: flex-start; gap: 7px; padding: 8px 10px; border: none; border-radius: 0; background: transparent; text-align: left; }
@@ -724,7 +659,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-topic-title { flex: 1 1 8em; min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
 .hh-topic-text { color: var(--hh-muted); line-height: 1.45; }
 .hh-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; background: var(--hh-surface-2); color: var(--hh-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.hh-badge.ok { padding: 0; background: transparent; color: var(--hh-ok); }
+.hh-badge.ok { padding: 0; background: transparent; color: var(--hh-t-green-ink); }
 .hh-faq { display: grid; gap: 8px; }
 .hh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-chip { height: 32px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 8px; background: var(--hh-surface); border: 1px solid var(--hh-line); font-size: 12px; }
@@ -733,12 +668,12 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-choices { display: grid; gap: 9px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-rail); }
 .hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }
-.hh-choice.next, .hh-choice[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-choice.next, .hh-choice[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-bg); border-color: var(--hh-ink); }
 .hh-choice.next:hover:not(:disabled), .hh-choice[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--hh-ink); }
 .hh-recommend { display: grid; gap: 8px; }
 .hh-recommend .hh-choice, .hh-mode-list .hh-choice { flex-direction: column; align-items: flex-start; gap: 4px; }
 .hh-badge { display: inline-block; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--hh-line-strong); font-size: 12px; color: var(--hh-muted); }
-.hh-choice[aria-pressed="true"] .hh-badge, .hh-choice[aria-pressed="true"] .hh-mode-reasons { color: var(--hh-on-ink); border-color: var(--hh-on-ink); }
+.hh-choice[aria-pressed="true"] .hh-badge, .hh-choice[aria-pressed="true"] .hh-mode-reasons { color: var(--hh-bg); border-color: var(--hh-bg); }
 .hh-mode-reasons { display: grid; gap: 2px; color: var(--hh-muted); font-size: 13px; line-height: 1.4; }
 .hh-mode-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-mode-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
@@ -841,7 +776,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-engine-list li { display: grid; gap: 2px; min-width: 0; }
 .hh-engine code { font-size: 12px; overflow-wrap: anywhere; }
 .hh-engine-warn { font-size: 12px; }
-.hh-engine-refusal { color: var(--hh-warn); }
+.hh-engine-refusal { color: var(--hh-t-orange-ink); }
 .hh-engine-doc { border-left: 2px solid var(--hh-line); padding-left: 10px; }
 .hh-engine-source { margin: 4px 0 0; padding: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--hh-line); font-size: 12px; }
 .hh-engine-notice { margin: 4px 0; font-size: 12px; color: var(--hh-muted); }
@@ -858,16 +793,16 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* Settings › People and Usage by person: the name takes the row's room, never more. */
 .hh-profile-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A refusal sits in the 52px bar: one line, cut short; the whole line stays in its tooltip. */
-.hh-profile-switcher [role="alert"] { max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--hh-warn); }
+.hh-profile-switcher [role="alert"] { max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--hh-t-orange-ink); }
 .hh-avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-surface-2); color: var(--hh-ink); font-size: 12px; font-weight: 600; flex: none; }
-.hh-avatar[data-color="coral"] { background: var(--hh-profile-coral); }
-.hh-avatar[data-color="amber"] { background: var(--hh-profile-amber); }
-.hh-avatar[data-color="green"] { background: var(--hh-profile-green); }
-.hh-avatar[data-color="teal"] { background: var(--hh-profile-teal); }
-.hh-avatar[data-color="blue"] { background: var(--hh-profile-blue); }
-.hh-avatar[data-color="violet"] { background: var(--hh-profile-violet); }
-.hh-avatar[data-color="pink"] { background: var(--hh-profile-pink); }
-.hh-avatar[data-color="gray"] { background: var(--hh-profile-gray); }
+.hh-avatar[data-color="coral"] { background: var(--hh-t-red); }
+.hh-avatar[data-color="amber"] { background: var(--hh-t-orange); }
+.hh-avatar[data-color="green"] { background: var(--hh-t-green); }
+.hh-avatar[data-color="teal"] { background: var(--hh-t-green); }
+.hh-avatar[data-color="blue"] { background: var(--hh-t-blue); }
+.hh-avatar[data-color="violet"] { background: var(--hh-t-violet); }
+.hh-avatar[data-color="pink"] { background: var(--hh-t-red); }
+.hh-avatar[data-color="gray"] { background: var(--hh-surface-2); }
 
 /* Input blocks (input-blocks spec §5): the core form, and an answer once sent. */
 .hh-input-block { display: flex; flex-direction: column; gap: 8px; }
@@ -878,8 +813,8 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-input-long { font: inherit; min-height: 4lh; max-height: 40vh; field-sizing: content; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); resize: vertical; }
 .hh-pair { display: flex; gap: 6px; }
 .hh-pair input { flex: 1; min-width: 0; }
-.hh-field-error, .hh-input-errors { color: var(--hh-warn); }
-.hh-input-form [aria-invalid="true"] { border-color: var(--hh-warn); }
+.hh-field-error, .hh-input-errors { color: var(--hh-t-orange-ink); }
+.hh-input-form [aria-invalid="true"] { border-color: var(--hh-t-orange-ink); }
 .hh-input-actions { display: flex; gap: 12px; align-items: center; }
 .hh-answer dl { margin: 4px 0 0; }
 .hh-answer dt { font-weight: 600; color: var(--hh-muted); }
@@ -888,12 +823,12 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* The core annotate block: marks over the person's own words, and the notes they point to. */
 .hh-annotated { margin: 6px 0; padding: 8px 10px; border-left: 3px solid var(--hh-line-strong); white-space: pre-wrap; }
 .hh-mark { position: relative; background: none; color: inherit; border-radius: 4px; text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.hh-mark.ok { text-decoration-line: underline; text-decoration-style: solid; text-decoration-color: var(--hh-ok); }
-.hh-mark.wrong { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-color: var(--hh-warn); }
-.hh-mark.gap { background: var(--hh-highlight); }
+.hh-mark.ok { text-decoration-line: underline; text-decoration-style: solid; text-decoration-color: var(--hh-t-green-ink); }
+.hh-mark.wrong { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-color: var(--hh-t-orange-ink); }
+.hh-mark.gap { background: var(--hh-active); }
 .hh-mark.note { text-decoration-line: underline; text-decoration-style: dotted; text-decoration-color: var(--hh-muted); }
 .hh-mark:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 1px; }
-.hh-mark[data-comment]:hover::after, .hh-mark[data-comment]:focus-visible::after { content: attr(data-comment); position: absolute; left: 0; top: calc(100% + 4px); z-index: 2; width: max-content; max-width: 280px; padding: 6px 8px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 12px; white-space: normal; }
+.hh-mark[data-comment]:hover::after, .hh-mark[data-comment]:focus-visible::after { content: attr(data-comment); position: absolute; left: 0; top: calc(100% + 4px); z-index: 2; width: max-content; max-width: 280px; padding: 6px 8px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-bg); font-size: 12px; white-space: normal; }
 .hh-annotate-notes { margin: 6px 0 0; padding-left: 18px; }
 .hh-mark-note strong { margin-right: 4px; }
 
@@ -902,7 +837,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-settings-next:empty { margin-bottom: -12px; }
 .hh-settings-group { display: grid; gap: 6px; }
 .hh-settings-group h3 { margin: 4px 0 0; }
-.hh-setting-pending { padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 999px; color: var(--hh-warn); font-size: 12px; }
+.hh-setting-pending { padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 999px; color: var(--hh-t-orange-ink); font-size: 12px; }
 .hh-setting-control { display: inline-flex; align-items: center; gap: 6px; }
 .hh-setting-control input[type="number"] { width: 5em; }
 
@@ -923,7 +858,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-learned-col h4 { margin: 0 0 6px; font-size: 11px; color: var(--hh-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .hh-sk-learned-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .hh-sk-learned-items input { width: 100%; box-sizing: border-box; }
-.hh-sk-rewrite ins { text-decoration: none; background: var(--hh-highlight); border-radius: 4px; }
+.hh-sk-rewrite ins { text-decoration: none; background: var(--hh-active); border-radius: 4px; }
 .hh-sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .hh-sk-foot { border-top: 1px solid var(--hh-line); padding: 10px 14px; font-size: 12px; }
 .hh-sk-foot progress { width: 100%; height: 4px; accent-color: var(--hh-ink); }
@@ -968,14 +903,14 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* Both keep a scrollbar gutter so the backdrop wraps at the same width as a field that shows a scrollbar. */
 .hh-sk-flagged textarea { background: transparent; position: relative; scrollbar-gutter: stable; }
 .hh-sk-backdrop { position: absolute; inset: 0; pointer-events: none; color: transparent; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; scrollbar-gutter: stable; box-sizing: border-box; padding: 8px; border: 1px solid transparent; border-radius: 8px; font: inherit; line-height: normal; }
-.hh-sk-backdrop mark { color: transparent; background: none; text-decoration: underline wavy var(--hh-warn); text-underline-offset: 3px; }
+.hh-sk-backdrop mark { color: transparent; background: none; text-decoration: underline wavy var(--hh-t-orange-ink); text-underline-offset: 3px; }
 /* `useNarrow` (sidekick/useNarrow.ts) mirrors this width: no review, and the harness side panel shows as before. */
 @media (max-width: 720px) { .hh-sk-panel, .hh-sk-rail { display: none; } }
 .hh-sk-fieldset { border: none; margin: 12px 0 0; padding: 0; min-width: 0; }
 /* Plugins */
 .hh-pl-inbox { position: relative; display: flex; }
 .hh-pl-inbox > .hh-icon-button { position: relative; display: inline-flex; align-items: center; justify-content: center; }
-.hh-pl-badge { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; line-height: 16px; text-align: center; }
+.hh-pl-badge { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-bg); font-size: 11px; line-height: 16px; text-align: center; }
 .hh-pl-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 340px; max-width: calc(100vw - 24px); max-height: 60vh; overflow-y: auto; box-sizing: border-box; padding: 6px; background: var(--hh-rail); border: 1px solid var(--hh-line); border-radius: 12px; color: var(--hh-ink); -webkit-app-region: no-drag; user-select: text; }
 .hh-pl-empty { margin: 10px; color: var(--hh-muted); }
 .hh-pl-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -983,7 +918,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-item:hover { background: var(--hh-surface-2); }
 .hh-pl-item-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 8px; border: none; background: transparent; color: inherit; font: inherit; text-align: left; }
 .hh-pl-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--hh-muted); }
-.hh-pl-dot[data-severity="warn"] { background: var(--hh-warn); }
+.hh-pl-dot[data-severity="warn"] { background: var(--hh-t-orange-ink); }
 .hh-pl-dot[data-severity="action"] { background: var(--hh-ink); }
 .hh-pl-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .hh-pl-item-meta { display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; color: var(--hh-muted); font-size: 11px; }
@@ -1003,7 +938,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .hh-pl-review h3:focus, .hh-pl-detail h3:focus { outline: none; }
 .hh-pl-perms, .hh-pl-added ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
-.hh-pl-added { padding: 8px 12px; border: 1px solid var(--hh-warn); border-radius: 12px; }
+.hh-pl-added { padding: 8px 12px; border: 1px solid var(--hh-t-orange-ink); border-radius: 12px; }
 .hh-pl-added p { margin: 0 0 4px; }
 .hh-pl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-pl-key-form { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
@@ -1012,7 +947,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-errors li { display: flex; flex-direction: column; gap: 2px; }
 .hh-pl-test { display: flex; flex-direction: column; gap: 8px; }
 .hh-pl-days { display: flex; flex-wrap: wrap; gap: 4px; }
-.hh-pl-days button[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-pl-days button[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-bg); }
 .hh-pl-hours select { max-width: 100%; }
 .hh-plugin-frame { display: block; width: 100%; box-sizing: border-box; border: none; background: transparent; }
 .hh-plugin-frame-error { margin: 0; padding: 8px; color: var(--hh-muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1021,23 +956,23 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-section .hh-flow-heading { margin: 0; }
 .hh-pl-tabs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .hh-pl-tab { max-width: 100%; height: 24px; padding: 0 8px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
-.hh-pl-tab[aria-selected="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-pl-tab[aria-selected="true"] { background: var(--hh-ink); color: var(--hh-bg); border-color: var(--hh-ink); }
 .hh-pl-tab[aria-selected="true"]:hover:not(:disabled) { border-color: var(--hh-ink); }
 .hh-pl-panel-head { margin: 0; padding-left: 6px; color: var(--hh-muted); font-size: 11px; overflow-wrap: anywhere; }
 .hh-pl-chips { display: flex; align-items: center; gap: 4px; min-width: 0; flex-shrink: 1; overflow: hidden; }
 .hh-pl-chip { display: inline-block; max-width: 180px; height: 24px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--hh-line-strong); border-radius: 12px; background: var(--hh-surface); color: var(--hh-ink); font-size: 11px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hh-pl-chip.warn { border-color: var(--hh-warn); color: var(--hh-warn); }
-.hh-pl-chip.action { background: var(--hh-ink); border-color: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-pl-chip.warn { border-color: var(--hh-t-orange-ink); color: var(--hh-t-orange-ink); }
+.hh-pl-chip.action { background: var(--hh-ink); border-color: var(--hh-ink); color: var(--hh-bg); }
 .hh-pl-prepared { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0 0 8px; padding: 10px 12px; background: var(--hh-surface); border: 1px solid var(--hh-line-strong); border-radius: 12px; overflow-wrap: anywhere; }
 .hh-pl-prepared p { margin: 0; }
 .hh-pl-prepared-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--hh-muted); font-size: 11px; }
 .hh-pl-prepared-prompt { margin: 0; max-height: 200px; overflow: auto; padding: 8px; background: var(--hh-rail); border: 1px solid var(--hh-line); border-radius: 8px; font: inherit; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hh-pl-prepared-note { color: var(--hh-muted); font-size: 12px; }
-.hh-pl-prepared-error { color: var(--hh-warn); font-size: 12px; white-space: pre-wrap; }
+.hh-pl-prepared-error { color: var(--hh-t-orange-ink); font-size: 12px; white-space: pre-wrap; }
 .hh-pl-item-open { align-self: flex-start; margin-top: 2px; font-size: 11px; text-decoration: underline; }
 .hh-pl-item-gone { color: var(--hh-muted); font-size: 11px; }
 /* The task inbox (parallel spec §9.2): a top-bar button and the shared popover, with four sections. */
-.hh-tk-paused { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 6px 8px; color: var(--hh-warn); font-size: 12px; }
+.hh-tk-paused { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 6px 8px; color: var(--hh-t-orange-ink); font-size: 12px; }
 .hh-tk-section { margin: 0 0 6px; }
 .hh-tk-section h3 { margin: 6px 6px 2px; color: var(--hh-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .hh-tk-empty { margin: 2px 8px 6px; color: var(--hh-muted); font-size: 12px; }
@@ -1047,7 +982,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-tk-row { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px; border: none; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; }
 .hh-tk-row[aria-current="true"] .hh-tk-label { font-weight: 600; }
 .hh-tk-meta { display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; color: var(--hh-muted); font-size: 11px; }
-.hh-tk-conflict { padding: 0 6px; border: 1px solid var(--hh-warn); border-radius: 8px; color: var(--hh-warn); font-size: 11px; }
+.hh-tk-conflict { padding: 0 6px; border: 1px solid var(--hh-t-orange-ink); border-radius: 8px; color: var(--hh-t-orange-ink); font-size: 11px; }
 .hh-tk-cancel { flex: none; margin: 6px 6px 0 0; font-size: 11px; }
 .hh-tk-summary { font-size: 12px; }
 .hh-tk-new { display: block; width: calc(100% - 12px); margin: 4px 6px 2px; }
@@ -1094,7 +1029,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-reader-actions button, .hh-reader-foot-actions button { padding: 0 12px; }
 .hh-reader-actions button[aria-pressed="true"] { background: var(--hh-surface-2); }
 .hh-reader-prefs { position: absolute; right: 12px; top: calc(100% + 4px); z-index: 2; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
-.hh-reader-prefs button[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-reader-prefs button[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-bg); }
 .hh-reader-columns { display: flex; flex: 1; min-height: 0; }
 .hh-reader-toc { flex: 0 0 200px; overflow-y: auto; padding: 16px 12px; border-right: 1px solid var(--hh-line); font-size: 13px; }
 .hh-reader-toc ol { margin: 0; padding: 0; list-style: none; }
@@ -1102,7 +1037,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-reader-toc .hh-toc-3 { padding-left: 12px; }
 .hh-reader-toc a { color: var(--hh-muted); text-decoration: none; }
 .hh-reader-toc a[aria-current="location"] { color: var(--hh-ink); font-weight: 600; }
-.hh-reader-template { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--hh-line); color: var(--hh-warn); font-size: 12px; }
+.hh-reader-template { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--hh-line); color: var(--hh-t-orange-ink); font-size: 12px; }
 .hh-reader-scroll { flex: 1; overflow-y: auto; padding: 24px 32px 48px; }
 .hh-reader-doc { max-width: 680px; margin: 0 auto; line-height: 1.65; font-size: 16px; }
 .hh-reader-doc .hh-md-codeblock, .hh-reader-doc .hh-md-table thead th { background: var(--hh-surface-2); }
@@ -1125,20 +1060,20 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
    Sidekick's panel and rail are such a column too: they hide with the reader, and come back when it closes. */
 .hh-with-reader .hh-side, .hh-with-reader .hh-sk-panel, .hh-with-reader .hh-sk-rail { display: none; }
 /* Review marks (review spec §6.1): drawn with the CSS Custom Highlight API, so the document's DOM never changes. */
-::highlight(hh-review-question) { background-color: var(--hh-review-question); }
-::highlight(hh-review-comment) { background-color: var(--hh-review-comment); }
-::highlight(hh-review-done) { background-color: var(--hh-review-done); }
-::highlight(hh-review-active) { background-color: var(--hh-review-active); }
+::highlight(hh-review-question) { background-color: var(--hh-t-orange); text-decoration: underline 2px var(--hh-t-orange-ink); }
+::highlight(hh-review-comment) { background-color: var(--hh-t-blue); text-decoration: underline 2px var(--hh-t-blue-ink); }
+::highlight(hh-review-done) { background-color: var(--hh-surface-2); text-decoration: underline 2px var(--hh-ink); }
+::highlight(hh-review-active) { background-color: var(--hh-active); text-decoration: underline 2px var(--hh-active-ink); }
 /* A reviewing reader is the container (a container query can't restyle the container itself); readers without review keep their layout (D0). */
 .hh-reader-reviewing { container-type: inline-size; }
 .hh-review-note { max-width: 72ch; margin: 0 auto 12px; }
 .hh-review-column { flex: 0 0 280px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hh-line); display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .hh-review-card { padding: 10px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-rail); }
 .hh-review-card p { margin: 6px 0 0; overflow-wrap: anywhere; }
-.hh-review-card-active { border-color: var(--hh-line-strong); box-shadow: 0 0 0 2px var(--hh-review-active); }
+.hh-review-card-active { border-color: var(--hh-line-strong); box-shadow: 0 0 0 2px var(--hh-active); }
 .hh-review-card-head { display: flex; gap: 6px; align-items: center; color: var(--hh-muted); font-size: 12px; }
 .hh-review-state { margin-left: auto; }
-.hh-review-badge { padding: 0 6px; border-radius: 999px; border: 1px solid var(--hh-warn); color: var(--hh-warn); }
+.hh-review-badge { padding: 0 6px; border-radius: 999px; border: 1px solid var(--hh-t-orange-ink); color: var(--hh-t-orange-ink); }
 .hh-review-quote { margin: 6px 0; padding-left: 8px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-muted); overflow-wrap: anywhere; }
 .hh-review-options { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; padding: 0; margin: 6px 0 0; }
 .hh-review-edit { display: flex; flex-direction: column; gap: 4px; align-self: stretch; }
@@ -1154,7 +1089,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-review-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--hh-line); background: var(--hh-surface); }
 .hh-review-bar p { margin: 0; }
 .hh-review-approve { margin-left: auto; }
-.hh-review-approved { color: var(--hh-ok); }
+.hh-review-approved { color: var(--hh-t-green-ink); }
 .hh-review-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
 .hh-review-ask textarea { flex: 1 1 100%; min-height: 3em; }
 /* "See what changed" (§5.4): the box around the timeline's diff, which draws the changes. */
@@ -1191,14 +1126,14 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-reader-focus .hh-review-bar { max-width: 68ch; margin: 24px auto 0; border: 1px solid var(--hh-line); border-radius: 8px; }
 .hh-reader-focus .hh-review-column { position: absolute; z-index: 3; right: 16px; top: 16px; width: 300px; max-height: 60vh; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
 .hh-focus-markers { position: absolute; top: 0; right: 8px; width: 12px; }
-.hh-focus-marker { position: absolute; right: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: var(--hh-review-active); }
+.hh-focus-marker { position: absolute; right: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: var(--hh-active); }
 .hh-doc-cards { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
 .hh-doc-card { height: auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; text-align: left; border-radius: 8px; }
 .hh-doc-card-title { font-weight: 600; }
 .hh-doc-card-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--hh-muted); }
-.hh-review-chip { padding: 0 6px; border-radius: 999px; background: var(--hh-review-question); color: var(--hh-ink); font-size: 12px; }
-.hh-review-chip-ok { background: var(--hh-callout-tip); color: var(--hh-ok); }
-.hh-review-chip-warn { background: var(--hh-callout-warning); color: var(--hh-warn); }
+.hh-review-chip { padding: 0 6px; border-radius: 999px; background: var(--hh-t-orange); color: var(--hh-ink); font-size: 12px; }
+.hh-review-chip-ok { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
+.hh-review-chip-warn { background: var(--hh-t-orange); color: var(--hh-t-orange-ink); }
 .hh-doc-card-missing { opacity: 0.6; cursor: default; }
 .hh-doc-card-missing .hh-doc-card-title { text-decoration: line-through; }
 /* The context panel (context-panel spec §5.1): the reader's slot; over the chat on narrow windows. */
@@ -1231,7 +1166,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langpick-option:has(input:checked) { background: var(--hh-surface-2); }
 .hh-langpick-option:has(input:disabled) { opacity: 0.55; }
 .hh-langpick-english { grid-column: 2; }
-.hh-langpick-ready { grid-row: 1 / span 2; grid-column: 3; font-size: 12px; color: var(--hh-ok); }
+.hh-langpick-ready { grid-row: 1 / span 2; grid-column: 3; font-size: 12px; color: var(--hh-t-green-ink); }
 .hh-langpick-reason, .hh-langpick-none, .hh-langpick-progress { margin: 0; }
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-langpick-actions, .hh-langnotice-actions, .hh-langoffer-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -1304,7 +1239,7 @@ input.hh-search-input {
 }
 .hh-search-chip[aria-pressed="true"] {
   background: var(--hh-ink);
-  color: var(--hh-on-ink);
+  color: var(--hh-bg);
   border-color: var(--hh-ink);
 }
 .hh-search-chip-count {
@@ -1369,7 +1304,7 @@ input.hh-search-input {
   color: var(--hh-muted);
 }
 .hh-search mark {
-  background: var(--hh-highlight);
+  background: var(--hh-active);
   color: inherit;
 }
 .hh-search-tag {
@@ -1411,7 +1346,7 @@ input.hh-search-input {
 }
 /* A chat entry opened from search is highlighted for 2 s (§3). */
 .hh-search-flash {
-  background: var(--hh-highlight);
+  background: var(--hh-active);
   transition: background 0.4s;
 }
 .hh-missing, .hh-langoffer, .hh-backup-notice { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }

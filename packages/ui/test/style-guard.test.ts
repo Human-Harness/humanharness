@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GUIDE_CLASSES } from "../src/guide/classes";
 import offenders from "./style-guard-offenders.json";
-import { parseCounted, PIECE_SIZES, ROUND_SELECTORS, scanCss, scanHarnessCss, scanRepo, scanTsx } from "./style-guard-lib";
+import { compareCounts, parseCounted, PIECE_SIZES, ROUND_SELECTORS, scanCss, scanHarnessCss, scanRepo, scanTsx } from "./style-guard-lib";
 
 describe("style guard scanner (style guide §15 Control)", () => {
   it("flags a loose color outside the token blocks, not inside them", () => {
@@ -221,27 +221,41 @@ describe("occurrence counts (answers P2.7)", () => {
   });
 });
 
+describe("count comparison (answers P2.7)", () => {
+  it("reports a higher count or a new line as added, a lower count or a missing line as fixed", () => {
+    const known = ["a|space|.x|10px ×2", "a|space|.y|3px", "a|space|.z|5px ×3"];
+    const now = ["a|space|.x|10px ×3", "a|space|.y|3px", "a|space|.w|7px", "a|space|.z|5px"];
+    expect(compareCounts(known, now)).toEqual({
+      added: ["a|space|.x|10px (now 3, list 2)", "a|space|.w|7px (now 1, list 0)"],
+      fixed: ["a|space|.z|5px (list 3, now 1)"],
+    });
+    expect(compareCounts(known, known)).toEqual({ added: [], fixed: [] });
+  });
+});
+
+describe("scanner robustness (review of the answers)", () => {
+  it("finds named colors in ternaries, quoted keys, templates and nested style objects", () => {
+    const src = '<div style={{ background: x ? "tan" : "navy", "color": "white", borderColor: `red`, inner: { fill: "teal" }, width: x ? "red" : 1 }} />';
+    expect(scanTsx("A.tsx", src, new Set())).toEqual(["A.tsx|color|style|tan", "A.tsx|color|style|navy", "A.tsx|color|style|white", "A.tsx|color|style|red", "A.tsx|color|style|teal"]);
+  });
+  it("treats a var() fallback the same with or without parentheses inside", () => {
+    expect(scanCss("a.css", ".x { padding: var(--a, calc(10px)); margin: var(--a, 10px); }", {})).toEqual([]);
+  });
+  it("checks the weight of a font shorthand whose size is a calc", () => {
+    expect(scanCss("a.css", ".x { font: 700 calc(1em - 1px) x; }", {})).toEqual(["a.css|weight|.x|700"]);
+  });
+});
+
 describe("the app stays inside the guide (style guide §15 Control, §16.2)", () => {
   const found = scanRepo(); // styles.css, plugin-ui/*.css and packages/ui/src/**/*.tsx; harness and plugin CSS included
-  const counts = (lines: string[]) => {
-    const m = new Map<string, number>();
-    for (const l of lines) {
-      const { key, count } = parseCounted(l);
-      m.set(key, (m.get(key) ?? 0) + count);
-    }
-    return m;
-  };
-  const known = counts(offenders as string[]);
-  const now = counts(found);
+  const { added, fixed } = compareCounts(offenders as string[], found);
   it("no new offender: fix it, don't add it to the list", () => {
-    const added = [...now].filter(([k, n]) => n > (known.get(k) ?? 0)).map(([k, n]) => `${k} (now ${n}, list ${known.get(k) ?? 0})`);
     const how =
       "Use a token or a scale value (style guide §2), or add the piece's class to packages/ui/src/guide/classes.ts in the PR that adds the piece (§15). " +
       "Never add lines or raise counts in style-guard-offenders.json. New offenders (file|kind|where|value):\n" + added.join("\n");
     expect(added, how).toEqual([]);
   });
   it("the list only shrinks: remove an offender you fixed", () => {
-    const fixed = [...known].filter(([k, n]) => (now.get(k) ?? 0) < n).map(([k, n]) => `${k} (list ${n}, now ${now.get(k) ?? 0})`);
     const how = "These offenders are fixed: remove the line, or lower its count (the \u00d7N at the end), in packages/ui/test/style-guard-offenders.json:\n" + fixed.join("\n");
     expect(fixed, how).toEqual([]);
   });

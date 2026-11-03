@@ -94,13 +94,41 @@ export function parseCounted(l: string): { key: string; count: number } {
 /** Drops var(), url() and env() calls: their content is not a value of the property. calc / min / max /
  * clamp stay, because their literals are sizes like any other. */
 function stripCalls(value: string): string {
-  let prev: string;
-  let out = value;
-  do {
-    prev = out;
-    out = out.replace(/\b(?:var|url|env)\([^()]*\)/g, " ");
-  } while (out !== prev);
+  let out = "";
+  for (let i = 0; i < value.length; ) {
+    const m = /^(?:var|url|env)\(/.exec(value.slice(i));
+    if (m && !/[\w-]/.test(value[i - 1] ?? " ")) {
+      // Balanced parentheses, so a fallback like var(--a, calc(10px)) goes away whole.
+      let depth = 0;
+      let j = i + m[0].length - 1;
+      for (; j < value.length; j++) {
+        if (value[j] === "(") depth++;
+        else if (value[j] === ")" && --depth === 0) break;
+      }
+      out += " ";
+      i = j + 1;
+    } else out += value[i++];
+  }
   return out;
+}
+
+/** Compares the known list with a fresh scan: `added` are offenders above their listed count (or not
+ * listed), `fixed` are listed offenders now below it. Both are printed in the failure messages. */
+export function compareCounts(known: string[], now: string[]): { added: string[]; fixed: string[] } {
+  const sum = (lines: string[]) => {
+    const m = new Map<string, number>();
+    for (const l of lines) {
+      const { key, count } = parseCounted(l);
+      m.set(key, (m.get(key) ?? 0) + count);
+    }
+    return m;
+  };
+  const k = sum(known);
+  const n = sum(now);
+  return {
+    added: [...n].filter(([key, c]) => c > (k.get(key) ?? 0)).map(([key, c]) => `${key} (now ${c}, list ${k.get(key) ?? 0})`),
+    fixed: [...k].filter(([key, c]) => (n.get(key) ?? 0) < c).map(([key, c]) => `${key} (list ${c}, now ${n.get(key) ?? 0})`),
+  };
 }
 
 type Length = { px: number; text: string };
@@ -176,8 +204,11 @@ function checkDeclaration(file: string, selector: string, prop: string, value: s
     const noLineHeight = bare.replace(/\/\s*[^\s,]+/, " ");
     const size = lengths(noLineHeight, "font-size")[0];
     if (size && !FONT_SIZES.includes(size.px)) out.push(line(file, "font-size", selector, size.text));
-    const before = size ? noLineHeight.slice(0, noLineHeight.indexOf(size.text)) : "";
-    for (const t of before.split(/\s+/)) if (/^(?:\d{3,4}|bold|bolder|lighter)$/.test(t)) checkWeight(file, selector, t, out);
+    // Up to the first token that is a size, a function or a family (a calc size has no plain length left).
+    for (const t of noLineHeight.split(/\s+/)) {
+      if (/[\d.]+(?:px|rem|em|%)|\(|^["']/.test(t)) break;
+      if (/^(?:\d{3,4}|bold|bolder|lighter)$/.test(t)) checkWeight(file, selector, t, out);
+    }
   }
 }
 
@@ -344,15 +375,48 @@ export function scanTsx(file: string, tsx: string, guideClasses: ReadonlySet<str
 
   for (const m of tsx.matchAll(/\bstyle\s*=\s*\{/g)) {
     const open = m.index + m[0].length - 1;
-    const body = tsx.slice(open, matchBrace(tsx, open));
-    for (const c of body.matchAll(COLOR)) out.push(line(file, "color", "style", c[0]));
-    // `backgroundColor: "navy"`: the key is camelCase, the value a string literal.
-    for (const kv of body.matchAll(/\b([a-zA-Z]+)\s*:\s*(["'`])((?:\\.|(?!\2).)*)\2/g)) {
-      if (!COLOR_PROPS.test(kv[1].replace(/[A-Z]/g, (u) => `-${u.toLowerCase()}`))) continue;
-      for (const c of namedColors(kv[3])) out.push(line(file, "color", "style", c));
-    }
+    const end = matchBrace(tsx, open);
+    for (const c of tsx.slice(open, end).matchAll(COLOR)) out.push(line(file, "color", "style", c[0]));
+    for (const c of styleNamedColors(tsx.slice(open + 1, end))) out.push(line(file, "color", "style", c));
   }
   return countLines(out);
+}
+
+/** Splits at the commas that are not inside a string or a bracket. */
+function splitTop(src: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '"' || ch === "'" || ch === "`") i = skipString(src, i) - 1;
+    else if ("({[".includes(ch)) depth++;
+    else if (")}]".includes(ch)) depth--;
+    else if (ch === "," && depth === 0) {
+      parts.push(src.slice(from, i));
+      from = i + 1;
+    }
+  }
+  return [...parts, src.slice(from)];
+}
+
+/** Named colors in the string literals of every color property of a style object, whatever the shape of
+ * the value (ternary, template) and the key (`backgroundColor`, `"color"`); nested objects are walked. */
+function styleNamedColors(obj: string): string[] {
+  const found: string[] = [];
+  for (const seg of splitTop(obj)) {
+    const t = seg.trim();
+    if (t.startsWith("{")) {
+      found.push(...styleNamedColors(t.slice(1, matchBrace(t, 0))));
+      continue;
+    }
+    const kv = /^(["']?)([\w-]+)\1\s*:([\s\S]*)$/.exec(t);
+    if (!kv) continue;
+    const value = kv[3].trim();
+    if (value.startsWith("{")) found.push(...styleNamedColors(value.slice(1, matchBrace(value, 0))));
+    else if (COLOR_PROPS.test(kv[2].replace(/[A-Z]/g, (u) => `-${u.toLowerCase()}`))) for (const p of stringParts(value)) found.push(...namedColors(p.text));
+  }
+  return found;
 }
 
 // From packages/ui/test to the repo root, independent of process.cwd().

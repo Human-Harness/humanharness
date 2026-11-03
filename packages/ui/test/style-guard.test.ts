@@ -24,6 +24,19 @@ describe("style guard scanner (style guide §15 Control)", () => {
   });
 });
 
+describe("harness mode (style guide §15 Harness chat blocks)", () => {
+  it("allows only --hh-* vars for color and scale values for sizes", () => {
+    expect(scanCss("h.css", ".b { color: var(--hh-ink); background: var(--other); padding: 7px; }", { harness: true })).toEqual([
+      "h.css|harness-color|.b|var(--other)",
+      "h.css|harness-size|.b|7px",
+    ]);
+  });
+  it("flags a literal hex, lets keywords and measure tokens through, ignores foreign vars outside color props", () => {
+    const css = ".b { color: #fff; border: 1px solid transparent; background: inherit; padding: var(--hh-s-3); margin: var(--gap); border-color: currentColor; }";
+    expect(scanCss("h.css", css, { harness: true })).toEqual(["h.css|harness-color|.b|#fff"]);
+  });
+});
+
 describe("style guard scanner details", () => {
   // The lists are shared module state that later parts extend; keep these cases from leaking into each other.
   afterEach(() => {
@@ -89,7 +102,7 @@ describe("style guard scanner details", () => {
 });
 
 describe("the app stays inside the guide (style guide §15 Control, §16.2)", () => {
-  const found = scanRepo(); // styles.css, plugin-ui/*.css and packages/ui/src/**/*.tsx; harness CSS joins in Task 11
+  const found = scanRepo(); // styles.css, plugin-ui/*.css and packages/ui/src/**/*.tsx; harness and plugin CSS included
   it("no new offender: fix it, don't add it to the list", () => {
     const known = new Set(offenders as string[]);
     const added = found.filter((o) => !known.has(o));

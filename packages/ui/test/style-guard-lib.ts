@@ -7,7 +7,7 @@
  * classes held in variables or props other than `className` are not seen; identical offenders in one file
  * collapse into one line (the string format has no count).
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GUIDE_CLASSES } from "../src/guide/classes";
@@ -43,9 +43,12 @@ export type CssOptions = {
   tokenFile?: boolean;
   /** Selectors of the top bar, the only place where a 90px left padding is allowed. */
   topBarSelectors?: string[];
+  /** A harness or plugin panel stylesheet (§15 Harness chat blocks): color properties may use only `--hh-*`
+   * vars (or keywords), and every size check of the app applies, reported as `harness-size`. */
+  harness?: boolean;
 };
 
-type Kind = "color" | "height" | "radius" | "space" | "font-size" | "weight" | "class";
+type Kind = "color" | "height" | "radius" | "space" | "font-size" | "weight" | "class" | "harness-color" | "harness-size";
 
 const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/g;
 const SIZE_PROPS = /^(?:min-|max-)?(?:height|width)$/;
@@ -54,6 +57,14 @@ const RADIUS_PROPS = /^border(?:-(?:top|bottom|start|end)-(?:left|right|start|en
 // Only a pure `:root` / `:root[data-theme=…]` block (or `[data-theme=…]` alone) may hold literal colors.
 const TOKEN_BLOCK = /^(?::root(?:\[data-theme=[^\]]+\]|:not\(\[data-theme=[^\]]+\]\))*|\[data-theme=[^\]]+\])$/;
 const SPACE_PROPS = /^(?:gap|row-gap|column-gap|padding(?:-[a-z]+)*|margin(?:-[a-z]+)*)$/;
+
+// Properties that carry a color. Only these are checked for foreign vars: a non-`--hh-` var in any other
+// property (a size, `content`, `transition`) is not flagged, because a harness may name its own custom
+// properties for measures; its literal px values are still checked against the scale. Named colors
+// (`red`) are not detected either: the guard only sees hex / rgb / hsl literals and vars.
+const COLOR_PROPS =
+  /^(?:color|background(?:-color)?|(?:border|outline|column-rule)(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-color)?|fill|stroke|caret-color|accent-color|text-decoration(?:-color)?|text-emphasis-color|box-shadow|text-shadow|scrollbar-color)$/;
+const VAR_CALL = /var\(\s*(--[\w-]+)\s*(?:,[^()]*)?\)/g;
 
 const line = (file: string, kind: Kind, where: string, value: string) => `${file}|${kind}|${where}|${value}`;
 const dedupe = (items: string[]) => [...new Set(items)];
@@ -135,14 +146,21 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
       // animation's name because step names (`from`, `50%`) would collide between animations.
       const parent = stack[stack.length - 2];
       if (top.keyframes && !top.selector.startsWith("@") && parent) {
-        for (const m of text.slice(idx + 1).matchAll(COLOR)) out.push(line(file, "color", parent.selector, m[0]));
+        for (const m of text.slice(idx + 1).matchAll(COLOR)) out.push(line(file, opts.harness ? "harness-color" : "color", parent.selector, m[0]));
       }
       return;
     }
     const prop = text.slice(0, idx).trim().toLowerCase();
     const value = text.slice(idx + 1).replace(/!\s*important/i, "").trim();
     const inToken = !!opts.tokenFile && selectorParts(top.selector).every((s) => TOKEN_BLOCK.test(s));
-    checkDeclaration(file, top.selector, prop, value, opts, inToken, out);
+    if (!opts.harness) return checkDeclaration(file, top.selector, prop, value, opts, inToken, out);
+    // Harness mode reuses the app's checks and renames the kinds, then adds the token-only color rule.
+    const found: string[] = [];
+    checkDeclaration(file, top.selector, prop, value, opts, false, found);
+    for (const f of found) out.push(f.replace("|color|", "|harness-color|").replace(/\|(?:height|radius|space|font-size|weight)\|/, "|harness-size|"));
+    if (COLOR_PROPS.test(prop)) {
+      for (const m of value.matchAll(VAR_CALL)) if (!m[1].startsWith("--hh-")) out.push(line(file, "harness-color", top.selector, m[0]));
+    }
   };
 
   for (let i = 0; i < css.length; i++) {
@@ -280,7 +298,7 @@ const TOP_BAR_SELECTORS = [".hh-topbar"];
 const filesUnder = (dir: string, ext: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const full = join(dir, e.name);
-    return e.isDirectory() ? (e.name === "node_modules" ? [] : filesUnder(full, ext)) : full.endsWith(ext) ? [full] : [];
+    return e.isDirectory() ? (e.name === "node_modules" || e.name === "dist" ? [] : filesUnder(full, ext)) : full.endsWith(ext) ? [full] : [];
   });
 
 /** Scans the app's own sources. Paths in the result are relative to the repo root. */
@@ -293,5 +311,16 @@ export function scanRepo(): string[] {
   css(join(src, "styles.css"), { tokenFile: true, topBarSelectors: TOP_BAR_SELECTORS });
   for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: rel(f) === "packages/ui/src/plugin-ui/tokens.css" });
   for (const f of filesUnder(src, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
+  // Harness and plugin stylesheets (§15). Missing directories are skipped; `dist/` is build output.
+  const subdirs = (base: string): string[] =>
+    existsSync(base) ? readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(base, e.name)) : [];
+  const harnesses = subdirs(join(REPO_ROOT, "harnesses"));
+  const harnessRoots = [
+    ...harnesses.map((d) => join(d, "ui")),
+    ...harnesses.flatMap((d) => subdirs(join(d, "plugins"))).map((d) => join(d, "panels")),
+    join(REPO_ROOT, "packages/cli/template/ui"),
+    ...subdirs(join(REPO_ROOT, "packages/e2e/fixtures/plugins")).map((d) => join(d, "panels")),
+  ];
+  for (const root of harnessRoots) if (existsSync(root)) for (const f of filesUnder(root, ".css")) css(f, { harness: true });
   return dedupe(out).sort();
 }

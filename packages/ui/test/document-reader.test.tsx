@@ -122,6 +122,7 @@ describe("DocumentReader (§5.2)", () => {
     expect(props.onPrefs).toHaveBeenCalledWith({ font: "serif", size: "normal" });
     expect(document.querySelector(".hh-reader-doc.hh-reader-large")).toBeNull();
     expect(screen.queryByRole("button", { name: "Large" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("a .md link opens the linked document, resolved from this one", async () => {

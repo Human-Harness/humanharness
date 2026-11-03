@@ -597,6 +597,11 @@ export function DocumentReader({
                 {t("reader.serif")}
               </button>
             </div>
+            <div className="hh-segmented">
+              <button type="button" aria-pressed={look.size === "normal"} onClick={() => setPref({ size: "normal" })}>
+                {t("reader.normal")}
+              </button>
+            </div>
           </div>
         )}
       </header>

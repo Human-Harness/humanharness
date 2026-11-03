@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GUIDE_CLASSES } from "../src/guide/classes";
 import offenders from "./style-guard-offenders.json";
-import { PIECE_SIZES, ROUND_SELECTORS, scanCss, scanHarnessCss, scanRepo, scanTsx } from "./style-guard-lib";
+import { compareCounts, parseCounted, PIECE_SIZES, ROUND_SELECTORS, scanCss, scanHarnessCss, scanRepo, scanTsx } from "./style-guard-lib";
 
 describe("style guard scanner (style guide §15 Control)", () => {
   it("flags a loose color outside the token blocks, not inside them", () => {
@@ -111,9 +111,10 @@ describe("style guard scanner details", () => {
     const css = '@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --a: #000; } }\n:root[data-theme="dark"] { --a: #000; }';
     expect(scanCss("t.css", css, { tokenFile: true })).toEqual([]);
   });
-  it("reads class names from expressions and templates, checking dynamic prefixes", () => {
-    const src = 'const a = <div className={cx("hh-card", on && "hh-bad", `hh-btn--${v} hh-tpl`)} />;';
-    expect(scanTsx("A.tsx", src, new Set(["hh-card", "hh-btn--primary"]))).toEqual(["A.tsx|class|hh-bad|hh-bad", "A.tsx|class|hh-tpl|hh-tpl"]);
+  it("reads class names from expressions and templates, ignoring interpolated tokens", () => {
+    const src = 'const a = <div className={cx("hh-card", on && "hh-bad", `hh-btn--${v} hh-tpl ${p}hh-x hh-${k}-y hh-ok`)} />;';
+    // `hh-btn--${v}`, `${p}hh-x` and `hh-${k}-y` are built at run time: not checked, not prefix-matched.
+    expect(scanTsx("A.tsx", src, new Set(["hh-card", "hh-ok"]))).toEqual(["A.tsx|class|hh-bad|hh-bad", "A.tsx|class|hh-tpl|hh-tpl"]);
   });
 
   it("frees colors only in pure token blocks, not in rules that start with :root", () => {
@@ -145,20 +146,117 @@ describe("style guard scanner details", () => {
   });
 });
 
+describe("named colors outside plain rules (answers P2.2)", () => {
+  it("flags a named color in a custom property outside a token block", () => {
+    expect(scanCss("a.css", ".x { --acento: red; --pad: 4px; }", {})).toEqual(["a.css|color|.x|red"]);
+    expect(scanCss("t.css", ":root { --a: red; }\n.x { --b: Navy; }", { tokenFile: true })).toEqual(["t.css|color|.x|navy"]);
+    expect(scanCss("h.css", ".x { --a: red; --b: var(--hh-ink); }", { harness: true })).toEqual(["h.css|harness-color|.x|red"]);
+  });
+  it("lets a named color through inside a token block of a token file, like a hex", () => {
+    expect(scanCss("t.css", ":root { --a: red; --b: #fff; }", { tokenFile: true })).toEqual([]);
+  });
+  it("flags a named color in a keyframe step, even in a token file", () => {
+    const css = "@keyframes p { from { color: transparent; animation-name: orange; } 50% { color: orange; --v: navy; } }";
+    expect(scanCss("t.css", css, { tokenFile: true })).toEqual(["t.css|color|@keyframes p|orange", "t.css|color|@keyframes p|navy"]);
+    expect(scanCss("h.css", "@keyframes p { 50% { color: orange; } }", { harness: true })).toEqual(["h.css|harness-color|@keyframes p|orange"]);
+  });
+  it("flags a named color in a TSX style object, not in other properties", () => {
+    const src = `<div style={{ color: "white", backgroundColor: 'Navy', border: "1px solid red", width: "red", content: "tan" }} />`;
+    expect(scanTsx("A.tsx", src, new Set())).toEqual(["A.tsx|color|style|white", "A.tsx|color|style|navy", "A.tsx|color|style|red"]);
+  });
+});
+
+describe("own width kind (answers P2.5)", () => {
+  it("reports widths as width and heights as height, with the same piece rules", () => {
+    expect(scanCss("a.css", ".x { width: 32px; min-width: 7px; max-width: 84px; height: 7px; max-height: 32px; }", {})).toEqual([
+      "a.css|width|.x|32px",
+      "a.css|width|.x|84px",
+      "a.css|height|.x|7px",
+      "a.css|height|.x|32px",
+    ]);
+    expect(scanCss("h.css", ".x { width: 32px; }", { harness: true })).toEqual(["h.css|harness-size|.x|32px"]);
+    PIECE_SIZES[32].push(".av");
+    try {
+      expect(scanCss("a.css", ".av { width: 32px; }", {})).toEqual([]);
+    } finally {
+      PIECE_SIZES[32] = PIECE_SIZES[32].filter((s) => s !== ".av");
+    }
+  });
+});
+
+describe("what was skipped before (answers P2.6)", () => {
+  it("checks px inside calc, min, max and clamp, and lets the guide's own calc(1em - 1px) through", () => {
+    expect(scanCss("a.css", ".x { font-size: calc(1em - 1px); }", {})).toEqual([]);
+    expect(scanCss("a.css", ".x { font-size: calc(1em - 2px); }", {})).toEqual(["a.css|font-size|.x|2px"]);
+    expect(scanCss("a.css", ".x { height: calc(100% - 7px); }", {})).toEqual(["a.css|height|.x|7px"]);
+    expect(scanCss("a.css", ".x { padding: max(16px, calc((100% - 728px) / 2)); }", {})).toEqual(["a.css|space|.x|728px"]);
+    expect(scanCss("a.css", ".x { padding: clamp(10px, 2vw, 16px); margin: min(8px, 100%); }", {})).toEqual(["a.css|space|.x|10px"]);
+    expect(scanCss("a.css", ".x { padding: var(--p, 10px); background: url(a-10px.png); }", {})).toEqual([]);
+  });
+  it("converts rem at 16px and flags non-integers and off-scale results", () => {
+    expect(scanCss("a.css", ".x { padding: 0.5rem 1rem; height: 1.5rem; border-radius: 0.5rem; font-size: 0.8125rem; }", {})).toEqual([]);
+    expect(scanCss("a.css", ".x { padding: 0.3rem; font-size: 0.9rem; border-radius: 0.4rem; height: 2rem; }", {})).toEqual([
+      "a.css|space|.x|0.3rem",
+      "a.css|font-size|.x|0.9rem",
+      "a.css|radius|.x|0.4rem",
+      "a.css|height|.x|2rem",
+    ]);
+  });
+  it("checks the size and weight of the font shorthand, not its line height", () => {
+    expect(scanCss("a.css", '.x { font: 600 13px/20px "DM Sans", sans-serif; } .y { font: inherit; } .z { font: 14px x; }', {})).toEqual([]);
+    expect(scanCss("a.css", ".x { font: italic bold 11px/7px x; }", {})).toEqual(["a.css|font-size|.x|11px", "a.css|weight|.x|700"]);
+    expect(scanCss("a.css", ".x { font: 0.9rem x; }", {})).toEqual(["a.css|font-size|.x|0.9rem"]);
+    expect(scanCss("h.css", ".x { font: 700 11px x; }", { harness: true })).toEqual(["h.css|harness-size|.x|11px", "h.css|harness-size|.x|700"]);
+  });
+});
+
+describe("occurrence counts (answers P2.7)", () => {
+  it("suffixes a line with x N when the same offender appears N > 1 times", () => {
+    expect(scanCss("a.css", ".x { padding: 10px 10px; margin: 3px; } .x { gap: 10px; }", {})).toEqual(["a.css|space|.x|10px \u00d73", "a.css|space|.x|3px"]);
+    expect(scanTsx("A.tsx", '<a className="hh-bad hh-bad" />', new Set())).toEqual(["A.tsx|class|hh-bad|hh-bad \u00d72"]);
+  });
+  it("parses a list line back into key and count", () => {
+    expect(parseCounted("s.css|space|.hh-row|10px \u00d72")).toEqual({ key: "s.css|space|.hh-row|10px", count: 2 });
+    expect(parseCounted("s.css|space|.hh-row|10px")).toEqual({ key: "s.css|space|.hh-row|10px", count: 1 });
+  });
+});
+
+describe("count comparison (answers P2.7)", () => {
+  it("reports a higher count or a new line as added, a lower count or a missing line as fixed", () => {
+    const known = ["a|space|.x|10px ×2", "a|space|.y|3px", "a|space|.z|5px ×3"];
+    const now = ["a|space|.x|10px ×3", "a|space|.y|3px", "a|space|.w|7px", "a|space|.z|5px"];
+    expect(compareCounts(known, now)).toEqual({
+      added: ["a|space|.x|10px (now 3, list 2)", "a|space|.w|7px (now 1, list 0)"],
+      fixed: ["a|space|.z|5px (list 3, now 1)"],
+    });
+    expect(compareCounts(known, known)).toEqual({ added: [], fixed: [] });
+  });
+});
+
+describe("scanner robustness (review of the answers)", () => {
+  it("finds named colors in ternaries, quoted keys, templates and nested style objects", () => {
+    const src = '<div style={{ background: x ? "tan" : "navy", "color": "white", borderColor: `red`, inner: { fill: "teal" }, width: x ? "red" : 1 }} />';
+    expect(scanTsx("A.tsx", src, new Set())).toEqual(["A.tsx|color|style|tan", "A.tsx|color|style|navy", "A.tsx|color|style|white", "A.tsx|color|style|red", "A.tsx|color|style|teal"]);
+  });
+  it("treats a var() fallback the same with or without parentheses inside", () => {
+    expect(scanCss("a.css", ".x { padding: var(--a, calc(10px)); margin: var(--a, 10px); }", {})).toEqual([]);
+  });
+  it("checks the weight of a font shorthand whose size is a calc", () => {
+    expect(scanCss("a.css", ".x { font: 700 calc(1em - 1px) x; }", {})).toEqual(["a.css|weight|.x|700"]);
+  });
+});
+
 describe("the app stays inside the guide (style guide §15 Control, §16.2)", () => {
   const found = scanRepo(); // styles.css, plugin-ui/*.css and packages/ui/src/**/*.tsx; harness and plugin CSS included
+  const { added, fixed } = compareCounts(offenders as string[], found);
   it("no new offender: fix it, don't add it to the list", () => {
-    const known = new Set(offenders as string[]);
-    const added = found.filter((o) => !known.has(o));
     const how =
       "Use a token or a scale value (style guide §2), or add the piece's class to packages/ui/src/guide/classes.ts in the PR that adds the piece (§15). " +
-      "Never add lines to style-guard-offenders.json. New offenders (file|kind|where|value):\n" + added.join("\n");
+      "Never add lines or raise counts in style-guard-offenders.json. New offenders (file|kind|where|value):\n" + added.join("\n");
     expect(added, how).toEqual([]);
   });
   it("the list only shrinks: remove an offender you fixed", () => {
-    const now = new Set(found);
-    const fixed = (offenders as string[]).filter((o) => !now.has(o));
-    const how = "These offenders are fixed: remove these lines from packages/ui/test/style-guard-offenders.json:\n" + fixed.join("\n");
+    const how = "These offenders are fixed: remove the line, or lower its count (the \u00d7N at the end), in packages/ui/test/style-guard-offenders.json:\n" + fixed.join("\n");
     expect(fixed, how).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CheckIcon, EngineIcon, GearIcon, HHLogo, LockIcon, NoteIcon, Rail, Segmented, Tag, TopBar } from "../src/chrome";
+import { HHLogo, Rail, Segmented, Tag, TopBar } from "../src/chrome";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -66,36 +66,15 @@ describe("chrome", () => {
     expect(screen.getByRole("img", { name: "Human Harness" })).toBeTruthy();
   });
 
-  it("draws decorative icons hidden from screen readers", () => {
-    const { container } = render(
-      <>
-        <CheckIcon />
-        <LockIcon />
-        <NoteIcon />
-        <GearIcon />
-        <EngineIcon />
-      </>,
-    );
-    const icons = container.querySelectorAll("svg");
-    expect(icons).toHaveLength(5);
-    for (const icon of icons) expect(icon.getAttribute("aria-hidden")).toBe("true");
-  });
-
-  it("draws the gear and the engine icon as 24-unit line icons", () => {
-    const { container } = render(
-      <>
-        <GearIcon />
-        <EngineIcon size={40} />
-      </>,
-    );
-    const [gear, engine] = container.querySelectorAll("svg");
-    for (const icon of [gear, engine]) {
-      expect(icon.getAttribute("viewBox")).toBe("0 0 24 24");
-      expect(icon.getAttribute("fill")).toBe("none");
-      expect(icon.getAttribute("stroke")).toBe("currentColor");
+  it("Rail draws each entry with a set icon at 18, hidden from screen readers", async () => {
+    const { container } = await renderIn("en", <Rail entries={["home", "tasks", "inbox", "jobs", "notes", "plugins"]} current="home" onPick={() => {}} />);
+    const icons = container.querySelectorAll("svg.hh-icon");
+    expect(icons).toHaveLength(6);
+    for (const icon of icons) {
+      expect(icon.getAttribute("aria-hidden")).toBe("true");
+      expect(icon.getAttribute("width")).toBe("18");
     }
-    expect(gear.getAttribute("width")).toBe("18");
-    expect(engine.getAttribute("width")).toBe("40");
+    expect([...icons].map((i) => i.getAttribute("class"))).toEqual(["hh-icon hh-icon-home", "hh-icon hh-icon-tasks", "hh-icon hh-icon-inbox", "hh-icon hh-icon-jobs", "hh-icon hh-icon-files", "hh-icon hh-icon-plugins"]);
   });
 
   it("Tag colours a state by its meaning", () => {

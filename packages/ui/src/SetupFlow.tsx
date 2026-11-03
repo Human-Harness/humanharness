@@ -1,6 +1,7 @@
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AppFooter, CheckIcon, SettingsGear, TopBar } from "./chrome";
+import { AppFooter, SettingsGear, TopBar } from "./chrome";
+import { Icon } from "./guide/icons";
 import { type AppState, type HarnessClient, type ProfileView, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
 import { ConnectStep } from "./connections/ConnectStep";
 import { EngineTab } from "./EngineTab";
@@ -245,7 +246,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
-              <CheckIcon />
+              <Icon name="check" size={14} />
             </span>
             <h2 id={headingId} ref={heading} tabIndex={-1}>
               {t("setupFlow.readyTitle")}
@@ -305,7 +306,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
           <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
             {steps.map((s, i) => (
               <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : undefined}>
-                <span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <CheckIcon /> : i + 1}</span>
+                <span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>
                 <span className="hh-setup-step-text">
                   <span className="hh-setup-step-label">{s.label}</span>
                   {i < at && s.value && (

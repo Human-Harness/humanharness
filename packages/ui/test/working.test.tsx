@@ -34,9 +34,9 @@ describe("WorkingStatus (a live turn)", () => {
     const { container } = await renderIn("en", <WorkingStatus items={steps} />);
     const status = screen.getByRole("status");
     expect(status.textContent).toContain("Working…");
-    const loader = container.querySelector("img.hh-loader") as HTMLImageElement;
-    expect(loader.getAttribute("alt")).toBe("");
-    expect(loader.getAttribute("width")).toBe("18");
+    const loader = container.querySelector("svg.hh-icon-loading") as SVGElement;
+    expect(loader.getAttribute("aria-hidden")).toBe("true");
+    expect(loader.getAttribute("width")).toBe("14");
     const toggle = screen.getByRole("button", { name: "Show details" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Reading manifest.md")).toBeNull();
@@ -70,10 +70,10 @@ describe("WorkingStatus (a live turn)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     const [first, , current] = screen.getAllByRole("listitem");
     expect(first.querySelector("svg")).toBeTruthy();
-    expect(first.querySelector(".hh-loader")).toBeNull();
-    const small = current.querySelector("img.hh-loader") as HTMLImageElement;
-    expect(small.getAttribute("width")).toBe("13");
-    expect(small.getAttribute("alt")).toBe("");
+    expect(first.querySelector(".hh-icon-loading")).toBeNull();
+    const small = current.querySelector("svg.hh-icon-loading") as SVGElement;
+    expect(small.getAttribute("width")).toBe("14");
+    expect(small.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("keeps the activity lines out of the live region", async () => {
@@ -90,15 +90,6 @@ describe("WorkingStatus (a live turn)", () => {
     expect(screen.getByRole("button", { name: "Hide details" }).getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("Reading manifest.md")).toBeTruthy();
   });
-
-  it("shows a still ring instead of the animated gif when motion is reduced", async () => {
-    reducedMotion(true);
-    const { container } = await renderIn("en", <WorkingStatus items={steps} />);
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector(".hh-loader-static")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
-    expect(container.querySelector("img")).toBeNull();
-  });
 });
 
 describe("FinishedActivity (a turn that ended)", () => {
@@ -113,7 +104,7 @@ describe("FinishedActivity (a turn that ended)", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     const list = document.getElementById(toggle.getAttribute("aria-controls")!) as HTMLElement;
     expect(within(list).getAllByRole("listitem")).toHaveLength(3);
-    expect(list.querySelector(".hh-loader")).toBeNull();
+    expect(list.querySelector(".hh-icon-loading")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
   });
 

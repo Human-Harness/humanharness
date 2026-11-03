@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CloseIcon } from "./chrome";
+import { Icon } from "./guide/icons";
 import type { ContextItem, ContextRead, ContextRefusal, ContextResult, HarnessClient, NoteView, TaskContext } from "./client";
 import { shownLanguage } from "./language";
 
@@ -158,7 +158,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
       </div>
       {onClose && (
         <button type="button" className="hh-icon-button" aria-label={t("context.close")} onClick={onClose}>
-          <CloseIcon />
+          <Icon name="close" size={18} />
         </button>
       )}
     </div>

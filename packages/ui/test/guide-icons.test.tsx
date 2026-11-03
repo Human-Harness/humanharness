@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { render } from "@testing-library/react";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ICON_NAMES, Icon } from "../src/guide/icons";
 
@@ -27,4 +29,28 @@ describe("icon set (style guide §4)", () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*{[^}]*\.hh-icon-loading\s*{[^}]*animation:\s*none/);
     expect(rule(".hh-icon-loading").animation).toBeDefined();
   });
+  it("the chevron turns 90 degrees when its button is expanded (§4 Desplegar)", async () => {
+    const { css } = await import("./guide-css");
+    expect(css).toMatch(/\[aria-expanded="true"\]\s*>\s*\.hh-icon-chevron\s*{[^}]*transform:\s*rotate\(90deg\)/);
+  });
+});
+
+const SRC = join(import.meta.dirname, "../src");
+const files = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? files(join(d, f)) : [join(d, f)]));
+it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (style guide §4, rows 13, 14)", () => {
+  const allowed = [
+    "guide/icons.tsx",
+    "chrome.tsx", // HHLogo only
+    "MermaidDiagram.tsx", // the diagram's own drawing
+    "FlowSide.tsx", // the context meter's ring, a gauge and not an icon
+    "markdown.tsx", // until Task 15 (callout icons)
+    "sidekick/mark.tsx", // until Task 15 (sidekick marks)
+  ];
+  for (const f of files(SRC).filter((x) => x.endsWith(".tsx"))) {
+    const text = readFileSync(f, "utf8");
+    if (allowed.some((a) => f.endsWith(a))) continue;
+    expect(text, f).not.toMatch(/<svg[\s>]/);
+  }
+  expect(files(SRC).filter((f) => f.endsWith(".gif"))).toEqual([]);
+  expect(readFileSync(join(SRC, "chrome.tsx"), "utf8").match(/<svg[\s>]/g)?.length).toBe(1); // HHLogo
 });

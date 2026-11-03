@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckIcon, Segmented, Tag } from "./chrome";
+import { Segmented, Tag } from "./chrome";
+import { Icon } from "./guide/icons";
 import { type AppState, type TaskView, nextInPath } from "./client";
 
 /** The start view's copy: keys of the harness's own strings (its `locales`). */
@@ -128,7 +129,7 @@ export function StartView({
                     <span className="hh-topic-tags">
                       {status === "done" ? (
                         <Tag tone="green">
-                          <CheckIcon />
+                          <Icon name="check" size={14} />
                           {t("start.view.doneTag")}
                         </Tag>
                       ) : next ? (

@@ -1,6 +1,7 @@
 import { type ReactNode, useId } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckIcon, LockIcon, NoteIcon, Tag } from "./chrome";
+import { Tag } from "./chrome";
+import { Icon } from "./guide/icons";
 import { type AppState, type TaskView, nextInPath } from "./client";
 import { shownLanguage } from "./language";
 
@@ -108,7 +109,7 @@ export function FlowSide({
                     onClick={() => onStart(id)}
                   >
                     <span className={done ? "hh-step-mark hh-flow-mark done" : "hh-step-mark hh-flow-mark"} aria-hidden="true">
-                      {done ? <CheckIcon /> : i + 1}
+                      {done ? <Icon name="check" size={14} /> : i + 1}
                     </span>
                     <span className="hh-flow-label">{state.actions[id].label}</span>{" "}
                     {done && <Tag tone="green">{t("flow.seen")}</Tag>}
@@ -135,7 +136,7 @@ export function FlowSide({
             {tasks.notes.map((n) => (
               <li key={n.slug}>
                 <button type="button" onClick={() => onOpenNote(n.slug)}>
-                  <NoteIcon />
+                  <Icon name="note" size={14} />
                   {n.title}
                 </button>
               </li>
@@ -151,7 +152,7 @@ export function FlowSide({
             <p key={r.id} className="hh-flow-ref">
               <code title={r.label}>{r.path}</code>
               <span>
-                <LockIcon />
+                <Icon name="lock" size={14} />
                 {t("flow.readOnly")}
               </span>
             </p>

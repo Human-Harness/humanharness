@@ -62,7 +62,7 @@ test("the connect step asks for the key, then Next", async () => {
   await expect(row()).toContainText("Not set");
   await expect(row()).toContainText("Create one at id.atlassian.com → Security → API tokens.");
   await expect(page.getByText("Paste each key to go on.")).toBeVisible();
-  const next = page.getByRole("contentinfo").getByRole("button", { name: "Next" });
+  const next = page.getByRole("button", { name: "Next", exact: true });
   await expect(next).toBeDisabled();
   await expect(page.getByRole("button", { name: "Skip" })).toHaveCount(0);
 

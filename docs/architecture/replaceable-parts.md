@@ -11,6 +11,20 @@ The parts of Human Harness that age fast sit behind seams, so each can be replac
 
 Rules: dependencies point down only; no `if (kind === "claude-cli")` outside an engine's folder (`packages/engines/test/boundary.test.ts`); policies decide and never execute; interfaces are defined by their inputs and outputs. How to add an engine: `docs/architecture/engines.md`, "Adding an engine".
 
+## Before growing the core
+
+A spec that adds a feature to the core answers three questions first (adapted from herdr-app's mod gate):
+
+1. Does the app itself act on it: does it change how a turn, a task or the folder's history runs?
+2. Does it need what only the core has: main's state, the engine sessions, the history, the secrets?
+3. Could a plugin or a harness not do it well with what the plugin and harness APIs offer today?
+
+If all three answers are no, it is a plugin or a harness, not core. If an API is missing, the spec adds the API (one general primitive), not the feature. The spec states its three answers in a short section near the top.
+
+## Decided, not now
+
+- **The runtime outside Electron** (2026-11-03). Today quitting the app runs `stopAll()`, which cancels jobs and running turns. herdr instead keeps its core running as its own process, and the window is a client. Not now: one window per folder with a person at the screen is today's model. Revisit before jobs or the Sidekick need to run with the window closed. The protocol and the IPC channel table keep that move open.
+
 ## Part 2 — protocol (done)
 
 Spec §5, §8, §12. The contract between the UI and the core is the package `@humanharness/protocol` (`packages/protocol`). It is renderer- and preload-safe: no `node:*`, no `electron`, no `react`.

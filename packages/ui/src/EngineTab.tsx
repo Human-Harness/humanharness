@@ -335,7 +335,7 @@ function SetupTiles({
               }}
             >
               <span className="hh-engine-radio-logo" aria-hidden="true">
-                {e.logo ? <img src={e.logo} alt="" /> : <Icon name="engine" size={32} />}
+                {e.logo ? <img src={e.logo} alt="" /> : <Icon name="engine" size={18} />}
               </span>
               <span className="hh-engine-radio-text">
                 <strong>{e.name}</strong>

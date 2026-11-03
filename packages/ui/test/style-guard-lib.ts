@@ -27,7 +27,7 @@ export const PIECE_SIZES: Record<number, string[]> = {
   8: [], // Dot
   14: [],
   18: [],
-  32: [], // icon sizes (Icon piece selectors; 18 and 32 are also Counter and Avatar)
+  32: [".hh-sk-mark-pick"], // icon sizes (Icon piece selectors; 18 and 32 are also Counter and Avatar)
   16: [], // Ring
   20: [],
   34: [], // Toggle (20 high, 34 wide)

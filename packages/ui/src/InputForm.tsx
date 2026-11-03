@@ -395,7 +395,7 @@ function PairsField({
           ))}
           {rows.length > 1 && (
             <button type="button" aria-label={t("input.removeRow", { n: r + 1 })} disabled={disabled} onClick={() => remove(r)}>
-              <Icon name="remove" size={18} />
+              <Icon name="remove" size={14} />
             </button>
           )}
         </div>

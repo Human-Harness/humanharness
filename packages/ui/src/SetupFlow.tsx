@@ -246,7 +246,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
-              <Icon name="check" size={14} />
+              <Icon name="check" size={18} />
             </span>
             <h2 id={headingId} ref={heading} tabIndex={-1}>
               {t("setupFlow.readyTitle")}

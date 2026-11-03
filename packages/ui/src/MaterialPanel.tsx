@@ -319,7 +319,7 @@ function RemoveButton({ client, scope, source, disabled }: { client: HarnessClie
             setAsking(true);
           }}
         >
-          <Icon name="remove" size={18} />
+          <Icon name="remove" size={14} />
         </button>
       </>
     );

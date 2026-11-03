@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "../chrome";
 import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "../client";
-import { ICON_NAMES } from "../guide/icons";
+import { ICON_NAMES, Icon } from "../guide/icons";
 import { markIcon } from "./mark";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */
@@ -117,16 +117,16 @@ export function SidekickEditor({
           <input ref={nameRef} id={`${ids}-name`} type="text" value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="hh-row">
-          <label className="hh-row-label" htmlFor={`${ids}-mark`}>
+          <span className="hh-row-label" id={`${ids}-mark`}>
             {t("sidekick.editor.mark")}
-          </label>
-          <select id={`${ids}-mark`} value={mark} onChange={(e) => setMark(e.target.value)}>
+          </span>
+          <div className="hh-sk-mark-grid" role="group" aria-labelledby={`${ids}-mark`}>
             {ICON_NAMES.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
+              <button key={n} type="button" className="hh-sk-mark-pick" aria-label={n} aria-pressed={mark === n} onClick={() => setMark(n)}>
+                <Icon name={n} size={18} />
+              </button>
             ))}
-          </select>
+          </div>
         </div>
         <div className="hh-row hh-row-wrap">
           <label className="hh-row-label" htmlFor={`${ids}-personality`}>

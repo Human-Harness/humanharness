@@ -298,8 +298,9 @@ describe("callouts, captions, footnotes (§3.2)", () => {
       ["fn:a", "Alpha."],
     ]);
     expect(items[0].querySelector("a.hh-md-back")?.getAttribute("href")).toBe("#fnref:b");
-    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBe("Back to the text");
+    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBeNull();
     expect(items[0].querySelector("a.hh-md-back")?.textContent).toBe("volver");
+    // Its accessible name is its visible text.
     expect(container.textContent).not.toContain("↩");
   });
 

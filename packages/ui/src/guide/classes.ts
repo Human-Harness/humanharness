@@ -12,4 +12,8 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   // SidekickMark (§4)
   "hh-sk-mark",
   "hh-sk-mark-off",
+  "hh-sk-mark-grid",
+  "hh-sk-mark-pick",
+  // Empty state line (§4: a 14 icon before the text)
+  "hh-history-empty-line",
 ]);

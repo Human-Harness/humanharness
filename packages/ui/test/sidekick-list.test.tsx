@@ -37,6 +37,27 @@ describe("Settings › Sidekicks (spec §8)", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Rulo down" })), slow);
   }, 20_000);
 
+  it("the mark is picked from a grid of icon buttons: clicking one sets the draft's mark and it is the pressed one", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickList = structuredClone(LIST);
+    await renderIn("en", <SidekickList client={c} />);
+    fireEvent.click(await screen.findByRole("button", { name: "New sidekick" }));
+    const group = screen.getByRole("group", { name: "Mark" });
+    const buttons = within(group).getAllByRole("button");
+    expect(buttons.length).toBeGreaterThan(10);
+    expect(buttons[0]!.querySelector("svg")?.getAttribute("width")).toBe("18");
+    expect(within(group).getByRole("button", { name: "coach" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(group).getByRole("button", { name: "guardian" }));
+    expect(within(group).getByRole("button", { name: "guardian" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(group).getByRole("button", { name: "coach" }).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Docs" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Custom" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "What it watches for" }), { target: { value: "Docs stay in sync." } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "After the reply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["saveSidekick", expect.objectContaining({ name: "Docs", mark: "guardian" }), undefined]));
+  });
+
   it("New opens the editor; a custom purpose needs text and a moment", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickList = structuredClone(LIST);

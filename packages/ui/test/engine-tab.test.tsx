@@ -44,6 +44,14 @@ describe("EngineTab", () => {
     expect(tile.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("in the small engine tile (setup radio list), an engine without a logo draws the engine icon at 18", async () => {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
+    client.state.engines = [{ ...client.state.engines[0], logo: undefined }];
+    const { container } = await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
+    const small = container.querySelector(".hh-engine-radio-logo svg");
+    expect(small?.getAttribute("width")).toBe("18");
+  });
+
   it("in the setup flow, has no Use button and reports the selected engine and its readiness", async () => {
     const client = withFolder();
     addCodex(client);

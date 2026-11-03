@@ -343,8 +343,10 @@ export function HistoryPanel({
           ))}
         {groups?.length === 0 && (
           <div className="hh-history-empty">
-            <Icon name="clock" size={32} />
-            <strong>{t("history.emptyTitle")}</strong>
+            <span className="hh-history-empty-line">
+              <Icon name="clock" size={14} />
+              <strong>{t("history.emptyTitle")}</strong>
+            </span>
             <p className="hh-caption">{t("history.empty")}</p>
           </div>
         )}

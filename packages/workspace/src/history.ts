@@ -360,6 +360,22 @@ export class History {
     return { fs, dir: this.folder, gitdir: this.gitdir };
   }
 
+  /**
+   * The status walk over the folder. isomorphic-git lists a folder and then reads every name in it, filtered out or not:
+   * a file renamed or removed in between (another task's temp file in `.harness/`) fails the whole walk with an ENOENT.
+   * Nothing is wrong with the folder then, so the walk starts again.
+   */
+  private async statusMatrix(options: { filter: (file: string) => boolean }) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await git.statusMatrix({ ...this.repo(), ...options });
+      } catch (err) {
+        const vanished = err instanceof Error && /^ENOENT: no such file or directory, lstat '/.test(err.message);
+        if (!vanished || attempt >= 5) throw err;
+      }
+    }
+  }
+
   private tracked = (file: string): boolean =>
     !file.endsWith(".DS_Store") &&
     !isAppTempFile(file) &&
@@ -432,7 +448,7 @@ export class History {
   private async saveNow(message: string, only?: ReadonlySet<string>): Promise<string | null> {
     const parent = await this.last();
     const filter = only ? (file: string) => only.has(file) && this.tracked(file) : this.tracked;
-    const matrix = await git.statusMatrix({ ...this.repo(), filter });
+    const matrix = await this.statusMatrix({ filter });
     const paths: string[] = [];
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
@@ -596,7 +612,7 @@ export class History {
    */
   private async restoreNow(sha: string, message: string): Promise<RestoreResult> {
     const target = await this.entriesAt(sha);
-    const current = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+    const current = await this.statusMatrix({ filter: this.tracked });
     const root = await fs.promises.realpath(this.folder);
     const inside = new Map<string, Promise<boolean>>();
     const staysInside = (dir: string): Promise<boolean> => {
@@ -698,7 +714,7 @@ export class History {
       const target = await this.entriesAt(sha);
       // The folder's own names: `A.md` never stands for `a.md` on a case-insensitive disk.
       const present = new Set(
-        (await git.statusMatrix({ ...this.repo(), filter: (f) => wanted.has(f) && this.tracked(f) })).map(([f]) => f),
+        (await this.statusMatrix({ filter: (f) => wanted.has(f) && this.tracked(f) })).map(([f]) => f),
       );
       const root = await fs.promises.realpath(this.folder);
       const skipped: string[] = [];
@@ -758,7 +774,7 @@ export class History {
   /** The dirty tracked paths against HEAD, by the same test `saveNow` stages with. */
   private async dirtyNow(): Promise<Map<string, string | null>> {
     const out = new Map<string, string | null>();
-    const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+    const matrix = await this.statusMatrix({ filter: this.tracked });
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
       if (head === 0 && workdir === 0) continue;
@@ -960,7 +976,7 @@ export class History {
   /** The files the history tracks in the folder now (relative, forward slashes). */
   trackedFiles(): Promise<string[]> {
     return this.serialize(async () => {
-      const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+      const matrix = await this.statusMatrix({ filter: this.tracked });
       return matrix.filter(([, , workdir]) => workdir !== 0).map(([file]) => file);
     });
   }

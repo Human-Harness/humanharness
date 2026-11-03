@@ -2,7 +2,7 @@
 
 Date: 2026-11-02
 Status: written from the approved guide, waiting for Marco's review
-Source: the guide artifact https://claude.ai/artifact/2j18xQrjeqXPLnYaKuDkfL (v29) and the decisions page https://claude.ai/artifact/XbHnScLhQXDTCAvUTv6aDD. Every rule below was decided by Marco on those pages; this spec only restates them in English and adds how to build them.
+Source: the guide artifact https://claude.ai/artifact/2j18xQrjeqXPLnYaKuDkfL (v29) and the decisions page https://claude.ai/artifact/XbHnScLhQXDTCAvUTv6aDD. Every rule below was decided by Marco on those pages; this spec only restates them in English and adds how to build them. Where this spec does not state a detail (a hover shade, a gap inside a piece), the artifact decides it until the guide page and `docs/style-guide.md` exist (Marco, 2026-11-03).
 Builds on: `2026-10-11-app-look-design.md`, `2026-10-30-ui-refresh-design.md`, `2026-10-30-global-search-design.md`, the Sidekick spec, the document reader spec.
 
 ## 1. Goal
@@ -145,11 +145,11 @@ Buttons without an icon jump from step 2 to step 4. The title is never cut to ma
 
 | Piece | When |
 |---|---|
-| Segmented (30) | One of 2–4 short options that change the view or a value. Also replaces button groups (text size, weekdays). |
+| Segmented (30) | One of 2–4 short options that change the view or a value. Also replaces button groups (text size, weekdays). Exception to the 2–4 limit: weekdays are a Segmented of 7 (Marco, 2026-11-03). |
 | Tabs (40) | Open things of the same kind: parallel tasks; Notas · Referencias · Material in Archivos; the panels of one plugin. Orange dot = waits for you. |
 | Nav item (40) | Vertical navigation: Settings, assistant steps, walkthrough. May carry a step mark or a counter. |
 | Option (52) | One among options with a description: chat options block, mode list, backup places, languages, engine. Amber border = recommended. |
-| Tile (104) | Only the topics at task start. Selected = 2 px dark border, no check. |
+| Tile (104) | Only the topics at task start. Selected = 2 px dark border and a check (14) (Marco, 2026-11-03). |
 
 ### What happens to today's buttons
 
@@ -158,7 +158,7 @@ Buttons without an icon jump from step 2 to step 4. The title is never cut to ma
 | `.hh-pill` | Historial, Sidekick, context meter, engine on Inicio, Restaurar in Modelos | Compact secondary, or chip if it shows a state |
 | `.hh-cta`, `.hh-primary` | Enviar, Nueva tarea, Guardar… | Primary (only one) |
 | `.hh-link` as action | Ver todo, Editar, plugins Back, Saltar | Quiet |
-| `.hh-tk-cancel` (11 px), 24 px buttons of the demo and plugins | Jobs, demo, plugin kit | Quiet or compact secondary |
+| `.hh-tk-cancel` (11 px), 24 px buttons of the demo and plugins | Jobs, demo, plugin kit | Compact secondary |
 | `a.hh-button` | Soporte, Ver planes | Secondary (opens outside) |
 | `.hh-text-sizes`, `.hh-pl-days` | Settings, plugin schedule | Segmented |
 | `.hh-tk-tab` (44) and `.hh-pl-tab` (24) | Parallel tasks, plugin panels | Tabs (40) |
@@ -179,6 +179,8 @@ One style: line, no fill, 24 box, 1.75 stroke, round caps, color of the surround
 | Avisos (bell) | Top bar, if plugins have notices. |
 | Buscar | Quiet icon button in the top bar next to ⚙ (tooltip "Buscar (⌘K)"); inside the search field and filter fields. |
 | Cerrar | Header of a dialog and of the split view. Nowhere else. |
+| Quitar (new) | Remove a row: key-value pairs, material rows (Marco, 2026-11-03). |
+| Reloj (new) | Wherever the clock icon is used today; the places are listed in the implementing PR (Marco, 2026-11-03). |
 | Volver | Left of the top bar, on secondary pages and Settings, inside the compact quiet button "← name". One per screen: from a detail it goes to the list; from the list, to where you came from. |
 | Seguir | Only inside the large button. |
 | Agregar | Next to the text in "Nueva tarea", "Nueva nota", "Agregar…". |
@@ -189,7 +191,7 @@ One style: line, no fill, 24 box, 1.75 stroke, round caps, color of the surround
 | Atención, Info | Start of a notice or status line (14). |
 | Solo lectura (lock) | Rows of the Referencias tab in Archivos (14). |
 | Pantalla completa, Texto | Header of the reader split view. |
-| Motor | Motor item in Settings and the engine tile when there is no logo. |
+| Motor | Motor item in Settings and, at 32, the logo place of an engine option that has no logo. |
 | Cargando (new) | Replaces the GIF. Inside a waiting button and in "Trabajando…". Static under reduced motion. |
 | Nota, Consejo, Atención, Resumen, Decisión, Pregunta | Only in markdown callouts (`> [!tip]`…), at 14. |
 | Coach, Foco, Guardián, Mentor, Resumen del día (new) | Only inside a sidekick mark (24 circle, 14 icon): status line, cards, folded column, Settings › Sidekicks. A custom sidekick picks one of these or any set icon; never an emoji or an image. |
@@ -241,7 +243,7 @@ Used in the Assistant, chat form blocks and editors. The settings row keeps the 
 | Yes / no | Toggle (settings) or checkbox (accept before going on). |
 | Secret | Hidden field + one button (Guardar when empty, Reemplazar when set) + More (⋯) with Borrar and Probar. |
 | Folder or file | Path as inline code + Elegir… |
-| Key-value pairs | Rows of two fields with remove (Cerrar icon) and a borderless Agregar at the end. |
+| Key-value pairs | Rows of two fields with remove (Quitar icon) and a borderless Agregar at the end. |
 | Slider | One value in a range, full width; min, max and step declared. |
 | Date | Field with a calendar picker. |
 | Color | Swatch + code + Cambiar. For a harness to pick its accent. |
@@ -283,7 +285,7 @@ Four ways to say something, each in four tones: error = red · attention = orang
 | Piece | When |
 |---|---|
 | Status line | Result of an action, next to it. A field error. A state that changes on its own. |
-| Notice | Something that needs attention in a zone, with up to two compact buttons: secondary with border only, transparent fill and the notice's color, or one primary if it is the key action. Never quiet. Sits above what it affects. |
+| Notice | Something that needs attention in a zone, with up to two compact buttons: secondary with border only, transparent fill and the notice's color, or one primary if it is the key action; a primary may sit next to one secondary (never two primaries). Never quiet. Sits above what it affects. |
 | Inline confirmation | Before something heavy or irreversible, inside the flow (chat, row). Escape closes. Today's four (pre-flight, level, time, mode) use it. |
 | Empty state | A list or page with no content. The page icon at 32, title, one sentence, at most one primary action. |
 
@@ -340,7 +342,7 @@ Each zone has a closed list of contents, in order, and what shows or hides it.
 
 **2 · Rail (64).** Entries in order: Inicio · Tareas · Bandeja (if parallel) · Jobs (if jobs) · Archivos (if notes, references or material) · Plugins (if plugin panels) · the harness's own pages. Each entry: 40 icon button, 18 icon, tooltip with the name, optional counter (Bandeja: waiting tasks). Selected = amber fill. Visible on Work and Secondary; absent on Inicio, Settings and the Assistant. Below 760 px it becomes a row on top.
 
-**3 · Task header.** One row: task title (20) · on the right Historial (compact secondary with icon) and Nueva tarea (compact primary, only with parallel work). Row 2 goes: scope leaves the core, the context chip moves under the composer, plan usage moves to the right column footer and Settings › Uso, plugin chips go (reach them via rail › Plugins). Always one line (section 3, one-line bars); the title stays whole.
+**3 · Task header.** One row: task title (20) · on the right Historial (compact secondary with icon) and Nueva tarea (compact primary, only with parallel work). Row 2 goes: scope leaves the core, the context chip moves under the composer, plan usage moves to Settings › Uso only, plugin chips go (reach them via rail › Plugins). Always one line (section 3, one-line bars); the title stays whole.
 
 **4 · Task tabs.** One 40 tab per open task: name, orange dot if it waits for you, phase tag. Only with parallel work and more than one open task.
 
@@ -355,11 +357,11 @@ Each zone has a closed list of contents, in order, and what shows or hides it.
 | Tools | One grey 13 row per call: status icon (green check, loading, red attention) · name and datum · chevron on the right. Open shows data and result in a code block; a failed call starts open. Foldable group "Preparó N cosas". |
 | Markdown | Headings (shown at 20 / 16 / 14, same in the reader), paragraph, lists, static checkboxes, table, code block with Copiar (compact quiet text button), Mermaid diagram with Ver fuente, quote, callout with its icon, link, image, footnote, material citation. |
 | Documents | Chip with title and type; opens the Reader split view. |
-| Blocks | Options (52 option with radio; recommended in amber; each with a type tag: Seguir orange, Profundizar blue, Preguntar violet) · mode recommendation · annotate text · form (inside a card: title, fields, Saltar · Enviar bottom right). Harness blocks: guide pieces (card, rows, options, buttons, tags) and, to draw, own CSS with tokens only (section 15). |
+| Blocks | Options (52 option with radio; recommended in amber; each with a type tag: Seguir orange, Profundizar blue, Preguntar violet) · mode recommendation · annotate text · form (inside a card: title, fields, Saltar (secondary) · Enviar (primary) bottom right). Harness blocks: guide pieces (card, rows, options, buttons, tags) and, to draw, own CSS with tokens only (section 15). |
 | Notices | Error: red box with title, text and Reintentar · Arreglar bottom right. Confirmation (before starting, level, time): orange notice with icon and its two compact buttons inside. Line "usó otro modelo". |
 | No task | Task start: topics as tiles or list (segmented Tarjetas / Lista) + FAQ chips. |
 
-**7 · Composer.** Above (optional): a task prepared by a plugin — card with title, text and Empezar (compact primary) / Cancelar. Card: textarea (Sidekick underline when it marks something); inside, bottom right: Revisar (quiet, if Sidekick) · Detener (secondary, while working) · Enviar (compact secondary with border; new — the work screen has no fixed primary, only those that appear on their own: Aprobar, Arreglar, Ir). Below, in 12 grey, outside the field: the context chip with ring (opens the Context split view), the caption ("Enter para enviar", "Revisando… ⌘ para enviar ya") and the harness caption. Inside the field only the typed text and the buttons. Always present in a task; in the Assistant interview it is replaced by a primary "Empezar entrevista".
+**7 · Composer.** Above (optional): a task prepared by a plugin — card with title, text and Empezar (compact primary) / Cancelar. Card: textarea (Sidekick underline when it marks something); inside, bottom right: Revisar (quiet, if Sidekick) · Detener (secondary, while working) · Enviar (compact secondary with border; new — the work screen has no fixed primary, only those that appear on their own: Aprobar, Arreglar, Ir, and the Enviar of a form block inside its card). Below, in 12 grey, outside the field: the context chip with ring (opens the Context split view), the caption ("Enter para enviar", "Revisando… ⌘ para enviar ya") and the harness caption. Inside the field only the typed text and the buttons. Always present in a task; in the Assistant interview it is replaced by a primary "Empezar entrevista".
 
 **8 · Left column · Walkthrough (280).** Current question (with ring) · label "Recorrido · N/M" + nav items with step mark and tag (Visto / Ahora / Sigue). Nothing else: Notas, Referencias and Material go to the Archivos page; scope goes; plugin panels go to the Plugins page. Appears by itself when the harness works in walkthrough mode; no button. Hidden below 640 px and with the reader full screen.
 
@@ -379,7 +381,7 @@ Closed list: nothing else may appear, from a harness either. A harness only adds
 | Footer | One 12 line with the Sidekick's spend in the task and the model level, plus the progress bar of that cap. Fixed at the bottom. |
 | Folded (52) | Only the marks, stacked, with their orange dot. One click opens it. |
 
-Card anatomy: radius 14, padding 12, text 13. Top to bottom, always this order, skipping absent parts: who speaks (24 mark + name 13) with the moment's tag on the right · title 13 semibold (optional) · text or short list · rewrite block (grey fill, additions in green) · "para después" rows · why (12, faint) with the link "No marcar esto" · actions on one line on the right, compact: dismiss (quiet) first, then secondaries, the amber primary last. At most one primary, only on the live card. No other icons: only the mark and the dot of the notice tag.
+Card anatomy: radius 14, padding 12, text 13. Top to bottom, always this order, skipping absent parts: who speaks (24 mark + name 13) with the moment's tag on the right · title 13 semibold (optional) · text or short list · rewrite block (grey fill, additions in green) · "para después" rows · why (12, faint) with the link "No marcar esto" · actions on one line on the right, compact: dismiss (quiet) first, then secondaries, the amber primary last. At most one primary, only on the live card: the last named action of the card is the primary (Al composer, Revisar, Prender, Adoptar), the others are secondary. No other icons: only the mark and the dot of the notice tag.
 
 Card types (closed): Antes de enviar (orange; problems, rewrite, para después, why; Enviar igual · Editar · Enviar sugerido) · Después del turno (blue "Sigue"; what was missing and the next ask; Descartar · Al composer) · Lección (violet; Descartar · Al composer secondary) · Aviso (orange with dot; context almost full, repeated ask, off-phase, task waiting; only buttons calling paths that already exist: Guardar como decisión, Terminar tarea, Ir a la tarea) · Guardia (red "Antes de aprobar" or orange "Cambio de fase"; quotes the rule; Aprobar igual · Revisar) · Resumen del día (grey "Ayer"; up to 4 lines; only Descartar) · Respuesta de un lugar del harness (grey tag with the place's name; text only; only Descartar) · Presentación (first time, Sidekick off; what it does and what it costs; Ahora no · Prender) · Sugeridos por el harness (rows with mark, name, purpose and Adoptar; Ahora no at the bottom) · past card (30 line, a click unfolds it) · cap notice (one line, no buttons, once per task).
 
@@ -406,7 +408,7 @@ All use template 3: rail visible with the page's entry selected, title 20, on th
 | | Footer | Brand and folder. |
 | Assistant | Left (280) | Nav items with step mark, name and chosen value (12). Current step: white fill with shadow and "Paso n de m". |
 | | Body | Title 20 + sentence · the step: form, engine as 52 options, place options, connection rows or interview · engine install boxes: card with numbered steps, code block and secondary buttons · foldable details with the log · status line. |
-| | Action bar | Cancelar (left) · Atrás (secondary) · Saltar (quiet, next to Siguiente) · Siguiente. Below, caption "podés cambiarlo después". End: large step mark, summary rows, large Empezar button (with arrow, as on Inicio). |
+| | Action bar | Cancelar (left) · Atrás (secondary) · Saltar (quiet, next to Siguiente) · Siguiente. Below, caption "podés cambiarlo después". End: large step mark (not an empty state with a check), summary rows, large Empezar button (with arrow, as on Inicio). |
 | | Top | Notice "Configurando…" with Cancelar while a step runs. |
 | Settings | Top bar | Volver on the left (compact quiet with arrow and the name of where you came from). Nothing else: changes save themselves. |
 | | Left (280) | Title 20 · nav items (General, Motor, Modelos, Uso, Conexiones, Sidekick, Plugins, the harness's own) with optional counter. |
@@ -436,7 +438,7 @@ All 83 rows were approved on 2026-11-02. They are the work of adapting the code.
 | 16 | ~10 error and notice styles, unstyled `role=alert` | Status line / notice / confirmation | Adapt |
 | 17 | Floating search notice (4 s) | Notice under the top bar, does not vanish on its own | Adapt |
 | 18 | Loose badges: `.hh-badge` (defined twice), "Actualizado", "Lista", "Pendiente" | Tag | Adapt |
-| 19 | Three step marks (18, 26, 26 square) and a 48 circle at the end | 24 mark; at the end, empty state with check 32 | Adapt |
+| 19 | Three step marks (18, 26, 26 square) and a 48 circle at the end | 24 mark; at the end, a large step mark | Adapt |
 | 20 | 52 Empezar button on Inicio | Large button, only Inicio and end of the Assistant | Add |
 | 21 | 104 tiles (engine, topics) | Tile only for topics; engine becomes 52 options | Add |
 | 22 | Segmented 28 / radius 6 | 30 / 8 | Adapt |
@@ -450,7 +452,7 @@ All 83 rows were approved on 2026-11-02. They are the work of adapting the code.
 | 30 | "mock" badge (bordered pill) | Grey tag "prueba" | Adapt |
 | 31 | Rail of 76 | 64 | Adapt |
 | 32 | Duplicate CSS rules overriding each other (side column, Sidekick, Sidekick card, dot) | One rule per piece (no visible change) | Adapt |
-| 33 | Enviar is the amber primary, outside the field | Compact secondary (bordered) inside the field, bottom right. No fixed primary on the work screen | Adapt |
+| 33 | Enviar is the amber primary, outside the field | Compact secondary (bordered) inside the field, bottom right. No fixed primary on the work screen (the Enviar of a form block, inside its card, is a primary) | Adapt |
 | 34 | Sidekick pill in the task header | Sidekick button with status dot in the top bar, visible by default on the work screen | Adapt |
 | 35 | Task header in two rows (scope, context, plan usage, plugin chips) | One row: title + Historial + Nueva tarea | Adapt |
 | 36 | Search opens only with ⌘K | Search icon (quiet icon button) in the top bar next to ⚙, on every screen except Settings and the Assistant | Add |
@@ -460,7 +462,7 @@ All 83 rows were approved on 2026-11-02. They are the work of adapting the code.
 | 40 | Search spec filters "Todos los alcances" and "Carpetas de referencia" | No scope filter; references always in, marked "solo lectura" | Remove |
 | 41 | Before-send card with Usar / Ajustar / Ignorar and mixed weights | Enviar igual (quiet) · Editar · Enviar sugerido (primary); same anatomy for all cards | Adapt |
 | 42 | Header with mark, name and state of the last sidekick that spoke | Header only "Sidekick"; marks and state in a status line below; each card says who speaks | Adapt |
-| 43 | Sidekick footer with plan usage | Footer with the Sidekick's spend in the task. Plan usage back to Settings › Uso | Adapt |
+| 43 | Sidekick footer with plan usage | Footer with the Sidekick's spend in the task. Plan usage only in Settings › Uso | Adapt |
 | 44 | A sidekick mark is an emoji or a color | A set icon in a 24 circle: one per purpose; a custom one picks from the set. Harness presets too | Adapt |
 | 45 | 22 single-use colors: callouts (6), review (4), diffs (4), avatars (8), plus `--hh-highlight` | Gone. They use the 5 tag colors plus grey; avatars stay at 6 | Adapt |
 | 46 | DM Sans 700 loaded; 500 without a fixed use | Weights 400, 500 (buttons and chips) and 600. 700 goes | Adapt |
@@ -515,9 +517,9 @@ All 83 rows were approved on 2026-11-02. They are the work of adapting the code.
 | New piece | 1. A proposal with the options drawn on a decision page. 2. Marco picks. 3. One PR adds the piece to the code and its row to the guide. Nothing enters another way. |
 | Exceptions | Allowed, each with its own row: where it applies and why. Today: compact 40 option (comments column of 280 only) · custom tooltip (annotation marks only) · markdown callout icons (only there) · large button (Inicio and end of the Assistant only). |
 | Harness chat blocks | Guide pieces and, when a drawing is needed (a diagram, a map), own CSS that uses only tokens: the guide's colors, measures and radii. No loose color or size. |
-| Plugin panels | Only the plugin kit, which copies the compact guide pieces (table, compact button, chip, stat) with the app's tokens. Nothing else inside the iframe. |
+| Plugin panels | Only the plugin kit, which copies the compact guide pieces (table, compact button, chip, stat, and the Clock, Empty and ErrorBar pieces it already has, kept by Marco's 2026-11-03 decision) with the app's tokens. Nothing else inside the iframe. |
 | Control | Both: an automated test that fails on a loose color, a size off the scale or a class not in the guide; and a guide checklist in the description of every PR that touches UI. |
-| Where it lives | Both: a dev-mode page inside the app (Settings › Guía de estilo) showing the real pieces built from the code, and `docs/style-guide.md` with the rules. The artifact is the draft until they exist. |
+| Where it lives | Both: a dev-mode page inside the app (Settings › Guía de estilo) showing the real pieces built from the code, and `docs/style-guide.md` with the rules. The artifact is the draft until they exist, and decides any detail this spec does not state. |
 
 ## 16. Implementation approach
 

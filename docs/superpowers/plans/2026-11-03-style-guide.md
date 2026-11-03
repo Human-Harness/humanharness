@@ -4,7 +4,7 @@
 
 **Goal:** Every screen of the core and the demo is built only from the closed set of pieces, measures, tokens, icons, templates and zones of the style guide spec, with an automated guard that keeps it closed, a dev-mode guide page and `docs/style-guide.md`.
 
-**Status:** draft, waiting for Marco's review. Not started. The open questions at the end block the tasks that name them; every other task can run as written.
+**Status:** reviewed by Marco 2026-11-03; every open question is decided (table "Decided 2026-11-03" at the end) and applied in the tasks. Not started.
 
 **Spec:** `docs/superpowers/specs/2026-11-02-style-guide-design.md`, on `master` (merged with the three open questions resolved). Guide artifact v29: https://claude.ai/artifact/2j18xQrjeqXPLnYaKuDkfL. Decisions page: https://claude.ai/artifact/XbHnScLhQXDTCAvUTv6aDD.
 
@@ -16,8 +16,8 @@
 
 ## Rules for whoever implements this
 
-1. **Decide nothing about UI.** The spec is the source of truth. When the spec does not say a visual detail (a hover color, a glyph, a gap inside a piece), stop that step and add a question to the PR body under "Questions for Marco", with options and a "Dejar para después" option. Whether the guide artifact v29 may fill such gaps is itself open (OQ-22); until Marco answers it, the artifact is not a source. Never pick a value, piece, color, size or copy yourself.
-2. **Strings.** The app ships English (language-on-demand spec). The spec writes the copy in Spanish. Every new or changed string goes in `packages/i18n/src/locales/en.json` with the English text Marco gives in OQ-1. Until OQ-1 is answered, tasks that add copy are blocked at their "strings" step; the rest of the task can land with the existing keys.
+1. **Decide nothing about UI.** The spec is the source of truth. When the spec does not say a visual detail (a hover color, a glyph, a gap inside a piece), stop that step and add a question to the PR body under "Questions for Marco", with options and a "Dejar para después" option. Guide artifact v29 may fill such gaps until the guide page and `docs/style-guide.md` exist (Marco, 2026-11-03); what neither the spec nor the artifact states comes to Marco. Never pick a value, piece, color, size or copy yourself.
+2. **Strings.** The app ships English (language-on-demand spec). The spec writes the copy in Spanish. Every new or changed string goes in `packages/i18n/src/locales/en.json` with the Spanish copy translated literally into English by the implementer; Marco corrects the wording in each PR (Marco, 2026-11-03). No task waits for copy.
 3. **One part = one PR**, stacked: each branch starts from the previous one, each PR targets the previous branch, the first targets `master`. An agent may push the branch and open the PR; only Marco reviews and merges. **Retargeting:** GitHub retargets a stacked PR only when its base branch is deleted, and this repo does not auto-delete merged branches. So when a part's PR merges, retarget the next part's PR to `master` by hand (`gh pr edit <n> --base master`) and rebase its branch on `origin/master` before asking for review.
 4. **Each part leaves the app working:** its gate is green and the demo runs (`corepack pnpm start-demo`) in light and dark with no broken screen.
 5. **The offenders list only shrinks.** From Part 3 on, every task that fixes a loose value removes its line from `packages/ui/test/style-guard-offenders.json` in the same commit. Never add a line to it.
@@ -26,7 +26,7 @@
 ## Before you start (gate)
 
 - [ ] **Step 1: The spec is merged.** Run: `git fetch origin && git log origin/master --oneline -- docs/superpowers/specs/2026-11-02-style-guide-design.md | head -1`. Expected: one commit. If empty, stop: the spec is not on `master`.
-- [ ] **Step 2: The open questions this part needs are answered** (see "Blocked by" in each part's header). If not, stop that part.
+- [ ] **Step 2: The decisions of this part** are in the "Decided 2026-11-03" table at the end and in each part's "Decisions applied" line. Nothing blocks a part.
 - [ ] **Step 3: Branch and baseline.**
 
 ```bash
@@ -65,7 +65,7 @@ A part that touches a hotspot must not run in parallel with another part touchin
 
 ## Parts and branches
 
-| Part | Stage (§16) | Branch | Base | Area (paths) | Hotspots | Spec | §13 rows | Blocked by |
+| Part | Stage (§16) | Branch | Base | Area (paths) | Hotspots | Spec | §13 rows | Decisions (table at the end) |
 |---|---|---|---|---|---|---|---|---|
 | 1 Tokens and scale | 1 | `feat/sg-tokens` | `origin/master` | `packages/ui/src/styles.css`, `packages/ui/src/plugin-ui/tokens.css`, `packages/ui/src/profiles.ts`, `packages/ui/src/review-marks.ts`, `packages/shell/src/renderer/main.tsx`, `packages/shell/package.json`, `harnesses/demo/ui/demo.css`, `packages/cli/template/ui/harness.css`, `packages/ui/test/styles.test.ts`, `packages/ui/test/plugin-ui-tokens.test.ts`, `packages/ui/test/profiles*.test.tsx` | H1, H2, H3, H6 (no new strings) | §2 | 11, 31, 45, 46, 47, 48 (values), 54 | OQ-2, OQ-3, OQ-4, OQ-5, OQ-6, OQ-7, OQ-8 |
 | 2 Guard test | 2 | `feat/sg-guard` | `feat/sg-tokens` | `packages/ui/test/style-guard.test.ts` (new file), `packages/ui/test/style-guard-offenders.json` (new file), `packages/ui/test/style-guard-lib.ts` (new file), `packages/ui/scripts/style-guard-init.ts` (new file), `packages/ui/src/guide/classes.ts` (new file) | H4 | §15 Control, §16.2 | — | OQ-2 |
@@ -92,10 +92,10 @@ Each part ends with the part gate green, the look check screenshots, the offende
 
 ## Part 1 — Tokens and scale (`feat/sg-tokens`, from `origin/master`)
 
-**Area:** `packages/ui/src/styles.css`, `packages/ui/src/plugin-ui/tokens.css`, `packages/ui/src/plugin-ui/plugin-ui.css`, `packages/ui/src/profiles.ts`, `packages/harness-sdk/src/profiles.ts` (only if OQ-5 says so), `packages/shell/src/renderer/main.tsx`, `packages/shell/package.json`, `pnpm-lock.yaml`, `harnesses/demo/ui/demo.css`, `harnesses/demo/plugins/on-this-day/panels/events.css`, `packages/cli/template/ui/harness.css`, `packages/ui/test/styles.test.ts`, `packages/ui/test/plugin-ui-tokens.test.ts`, `packages/ui/test/profiles.test.tsx`.
-**Hotspots:** H1, H2, H3 (`@fontsource/dm-mono` added, `700.css` import dropped), H9 (only with OQ-5 option B).
+**Area:** `packages/ui/src/styles.css`, `packages/ui/src/plugin-ui/tokens.css`, `packages/ui/src/plugin-ui/plugin-ui.css`, `packages/ui/src/profiles.ts`, `packages/harness-sdk/src/profiles.ts`, `packages/shell/src/renderer/main.tsx`, `packages/shell/package.json`, `pnpm-lock.yaml`, `harnesses/demo/ui/demo.css`, `harnesses/demo/plugins/on-this-day/panels/events.css`, `packages/cli/template/ui/harness.css`, `packages/ui/test/styles.test.ts`, `packages/ui/test/plugin-ui-tokens.test.ts`, `packages/ui/test/profiles.test.tsx`.
+**Hotspots:** H1, H2, H3 (`@fontsource/dm-mono` added, `700.css` import dropped), H9 (`PROFILE_COLORS` in the SDK changes).
 **Spec:** §2 (all), §1 "a harness may change values through tokens", §16.1. **Rows:** 31 (value), 45, 46, 47, 48 (values side), 54.
-**Blocked by:** OQ-2 (measure tokens), OQ-3 (off-scale values), OQ-4 (tokens outside the tables), OQ-5 (avatar colors), OQ-6 (17/18 px text), OQ-7 (active mark underline, Task 1), OQ-8 (mono fallback, Task 4).
+**Decisions applied (see the Decided table):** OQ-2 A measure tokens exist; OQ-3 A off-scale gaps, paddings and sizes go to the nearest scale value (a tie between two values goes to the PR under "Questions for Marco"); OQ-4 B closest table token by value; OQ-5 B six avatar colors in the SDK; OQ-6 B 16 px; OQ-7 A `--hh-active-ink`; OQ-8 A `"DM Mono", ui-monospace, monospace`.
 
 Scope note: this part changes tokens and the values the spec maps one to one (11 → 12 px text, 700 → 600, segmented 28/6 → 30/8, the width tokens). Every other loose measure is fixed when its piece is rebuilt in Parts 4–7, because only there does the spec say which measure it takes. Part 2's offenders list records what is left.
 
@@ -115,7 +115,7 @@ const GUIDE_COLORS = [
   "t-green", "t-green-ink", "t-orange", "t-orange-ink", "t-blue", "t-blue-ink",
   "t-violet", "t-violet-ink", "t-red", "t-red-ink",
 ];
-const NON_COLOR = ["shadow", "backdrop", "font", "mono", "display"]; // plus the measure tokens of OQ-2
+const NON_COLOR = ["shadow", "backdrop", "font", "mono", "display"]; // plus the measure tokens of Task 5
 const colorTokens = (block: string) =>
   [...block.matchAll(/--hh-([a-z0-9-]+):\s*(#[0-9a-f]{3,8}|rgba?\([^)]*\)|var\(--hh-[a-z0-9-]+\))/gi)].map((m) => m[1]);
 
@@ -144,12 +144,14 @@ Keep the existing `LIGHT`/`DARK` hex maps but delete the `logo` and `logo-ink` e
 | `var(--hh-error-bg)` | `var(--hh-t-red)` | same value today |
 | `var(--hh-on-ink)` | `var(--hh-bg)` | same value today |
 | `var(--hh-highlight)` | `var(--hh-active)` | spec §2 |
-| `var(--hh-review-question)` / `-comment` / `-done` / `-active` | `var(--hh-t-orange)` / `var(--hh-t-blue)` / `var(--hh-surface-2)` / `var(--hh-active)` as background, plus `box-shadow: inset 0 -2px 0 var(--hh-t-<type>-ink)` (grey: `var(--hh-ink)`; the active mark's underline: per OQ-7) | spec §2 review marks ("background + 2 px underline in the type's ink … the active one in `--hh-active`"), row 59 |
+| `var(--hh-review-question)` / `-comment` / `-done` / `-active` | `var(--hh-t-orange)` / `var(--hh-t-blue)` / `var(--hh-surface-2)` / `var(--hh-active)` as background, plus `box-shadow: inset 0 -2px 0 var(--hh-t-<type>-ink)` (grey: `var(--hh-ink)`; the active mark's underline: `var(--hh-active-ink)`) | spec §2 review marks ("background + 2 px underline in the type's ink … the active one in `--hh-active`"), row 59 |
 | `var(--hh-diff-ins)` / `var(--hh-diff-del)` | `var(--hh-t-green)` / `var(--hh-t-red)` | spec §2 diffs |
-| `var(--hh-diff-bar-ins)` / `var(--hh-diff-bar-del)` | per OQ-4 (border color of a diff line) | |
-| `var(--hh-callout-*)` | per OQ-4 (which tag color each callout takes) | |
-| `var(--hh-logo)`, `var(--hh-logo-ink)`, `var(--hh-shadow-sm)` | per OQ-4 | |
+| `var(--hh-diff-bar-ins)` / `var(--hh-diff-bar-del)` | the tag ink of their color: `var(--hh-t-green-ink)` / `var(--hh-t-red-ink)` | |
+| `var(--hh-callout-*)` | the tag color Marco assigns to each of the six callouts (the implementer lists today's uses and proposes in the PR under "Questions for Marco") | |
+| `var(--hh-logo)`, `var(--hh-logo-ink)`, `var(--hh-shadow-sm)`, `var(--hh-on-ink)` | the closest table token by value: `--hh-shadow-sm` → `--hh-shadow`; logo tokens → `--hh-surface` / `--hh-ink`; `--hh-on-ink` → the closest table token by value | |
 | `var(--hh-profile-*)` | Task 2 | |
+
+> OQ-23 (plugins only): the app migration above is intended, so `--hh-ok`, `--hh-ok-dot`, `--hh-warn`, `--hh-error-bg` leave `styles.css`. The plugin copy in `tokens.css` keeps them (see Task 6, OQ-23).
 
 - [ ] **Step 4: Run it.** Same command — Expected: PASS.
 - [ ] **Step 5: Commit.** `git commit -am "feat(ui): color tokens are the guide's closed list (style guide §2)"`
@@ -160,7 +162,7 @@ Keep the existing `LIGHT`/`DARK` hex maps but delete the `logo` and `logo-ink` e
 
 **Files:**
 - Modify: `packages/ui/src/profiles.ts:5-6` and the avatar rule in `packages/ui/src/styles.css` (search `hh-avatar`)
-- Modify (OQ-5 option B only): `packages/harness-sdk/src/profiles.ts` (`PROFILE_COLORS`)
+- Modify: `packages/harness-sdk/src/profiles.ts` (`PROFILE_COLORS` becomes the six colors; breaking for harnesses, say so in the PR body)
 - Test: `packages/ui/test/profiles.test.tsx`, `packages/ui/test/styles.test.ts`
 
 - [ ] **Step 1: Failing test** in `styles.test.ts`:
@@ -176,10 +178,10 @@ describe("profile avatars (style guide §2 special uses)", () => {
 });
 ```
 
-Add to `profiles.test.tsx` a case per OQ-5's answer: a stored profile with `color: "coral"` draws the avatar color OQ-5 names.
+Add to `profiles.test.tsx` a case: a stored profile whose color is no longer in the six (e.g. `color: "coral"`) draws the new color it is mapped to. The old→new pairs are listed by the implementer in the PR under "Questions for Marco" (the decision says "map stored values" without giving the pairs).
 
 - [ ] **Step 2: Run** `corepack pnpm exec vitest run packages/ui/test/styles.test.ts packages/ui/test/profiles.test.tsx` — FAIL.
-- [ ] **Step 3: Implement.** `AVATAR_COLORS = ["green", "orange", "blue", "violet", "red", "gray"] as const;` One rule per color using `data-color` (read today's avatar markup in `ProfileSwitcher.tsx` / `ProfilesSection.tsx`; if it uses an inline `style` with the token, switch it to `data-color`). Old stored values follow OQ-5.
+- [ ] **Step 3: Implement.** `AVATAR_COLORS = ["green", "orange", "blue", "violet", "red", "gray"] as const;` One rule per color using `data-color` (read today's avatar markup in `ProfileSwitcher.tsx` / `ProfilesSection.tsx`; if it uses an inline `style` with the token, switch it to `data-color`). Stored values outside the six are mapped to one of them (see the test above); the SDK list is the six.
 - [ ] **Step 4: Run** — PASS. Also run `corepack pnpm exec vitest run packages/ui/test/profiles-settings.test.tsx packages/ui/test/profile-setup.test.tsx`.
 - [ ] **Step 5: Commit** `feat(ui): six avatar colors with tag ink (style guide §2, row 45)`.
 
@@ -209,7 +211,7 @@ describe("widths (style guide §2 Widths)", () => {
 });
 ```
 
-The spec gives `--hh-column-w` as "280 (min 220 · max 320)": define `--hh-column-w: 280px;` and use `min-width: 220px; max-width: 320px;` on the columns that use it. Search's 640 is a second dialog width: add `--hh-dialog-w-search: 640px` only if OQ-2 answers A; otherwise the search rule keeps `640px` literally and the guard allows it (Task 8 list).
+Add `--hh-index-w: 200px` (the reader index, used in Task 52). The spec gives `--hh-column-w` as "280 (min 220 · max 320)": define `--hh-column-w: 280px;` and use `min-width: 220px; max-width: 320px;` on the columns that use it. Search's 640 is a second dialog width: add `--hh-dialog-w-search: 640px` (measure tokens exist) and the search rule uses it.
 
 - [ ] **Step 2: Run** — FAIL (`--hh-rail-w` is 76 today or missing).
 - [ ] **Step 3: Implement:** add the tokens; replace the hard-coded widths in the rail, `.hh-side`, `.hh-flow-side`, the Sidekick column, the reading column, dialogs and the top-bar popovers with the tokens. Update the existing test `flow layout › the side columns give way…` to expect `var(--hh-column-w)`.
@@ -249,10 +251,10 @@ Add a new file `packages/shell/test/fonts.test.ts` (no shell test reads the font
 - [ ] **Step 2: Run** — FAIL (11, 17, 18, 40 px; 700 loaded).
 - [ ] **Step 3: Implement.**
   - `corepack pnpm --filter @humanharness/shell add @fontsource/dm-mono` (H3); in `main.tsx` drop `700.css`, add `import "@fontsource/dm-mono/400.css";`.
-  - `--hh-mono: "DM Mono"` in the token block, followed by the fallback stack OQ-8 names (the spec names only DM Mono; until OQ-8 is answered write `--hh-mono: "DM Mono";` alone). Code blocks (`pre code`) and keys (`kbd`) use `var(--hh-mono)` (spec: DM Mono only for code and keys).
+  - `--hh-mono: "DM Mono"` in the token block, followed by the fallback stack `ui-monospace, monospace`, i.e. `--hh-mono: "DM Mono", ui-monospace, monospace;`. Code blocks (`pre code`) and keys (`kbd`) use `var(--hh-mono)` (spec: DM Mono only for code and keys).
   - Inline code rule as in the test; `pre > code` keeps the block style.
   - Every `font-size: 11px` → `12px` (row 11). Any `font-weight` other than 400/500/600 → 600 (row 46). Tags: `.hh-tag` weight 600 (row 54).
-  - 28 px task title → 20 (`.hh-task-title`, row 8); `.hh-section-head h2` 28 → removed with its title in Part 14 (row 75) — for now 20; `.hh-inbox-head h1` 28 → 20 (secondary page title, §11); `.hh-home-name` 40 → 28 (row 81); `.hh-reader-head-title` 18 → 20 (panel title, §2); `.hh-langpick h2` 17 → 20 (dialog title, §2). `.hh-reader-large` (18 px, a reader text-size option) per OQ-6.
+  - 28 px task title → 20 (`.hh-task-title`, row 8); `.hh-section-head h2` 28 → removed with its title in Part 14 (row 75) — for now 20; `.hh-inbox-head h1` 28 → 20 (secondary page title, §11); `.hh-home-name` 40 → 28 (row 81); `.hh-reader-head-title` 18 → 20 (panel title, §2); `.hh-langpick h2` 17 → 20 (dialog title, §2). `.hh-reader-large` (18 px, a reader text-size option) → 16, the reader size: the large option goes (its rule, its button in the reader's Texto menu and its stored value fall back to the 16 size).
 - [ ] **Step 4: Run** `styles.test.ts`, the shell font test, and `home-look.test.tsx`, `task-header.test.tsx`, `document-reader.test.tsx` — PASS.
 - [ ] **Step 5: Commit** `feat(ui): type scale, weights 400/500/600, DM Mono and inline code (style guide §2, rows 11, 46, 47, 54)`.
 
@@ -260,16 +262,16 @@ Add a new file `packages/shell/test/fonts.test.ts` (no shell test reads the font
 
 ### Task 5: Measure tokens a harness can change
 
-**Blocked by OQ-2.** If OQ-2 = B (no measure tokens beyond the widths and today's `--hh-control-h` / `--hh-control-r`), skip this task and note it in the PR.
+**Decided: one token per scale value** (heights, radii, spacing, type sizes), which a harness may override; rules use only them.
 
 **Files:**
 - Modify: `packages/ui/src/styles.css` token block
 - Test: `packages/ui/test/styles.test.ts`
 
-- [ ] **Step 1: Failing test** (names from OQ-2's answer; option A shown):
+- [ ] **Step 1: Failing test** (the tokens below):
 
 ```ts
-it("defines the measure tokens of the closed scales (style guide §1, §2; OQ-2)", () => {
+it("defines the measure tokens of the closed scales (style guide §1, §2)", () => {
   const root = css.slice(0, css.indexOf("prefers-color-scheme: dark"));
   for (const [name, v] of [["h-counter", 18], ["h-tag", 24], ["h-compact", 30], ["h-normal", 40], ["h-row", 52], ["h-tile", 104],
     ["r-compact", 8], ["r-control", 12], ["r-card", 14], ["r-dialog", 18],
@@ -285,13 +287,13 @@ it("defines the measure tokens of the closed scales (style guide §1, §2; OQ-2)
 ### Task 6: Plugin panel tokens mirror the app
 
 **Files:**
-- Modify: `packages/ui/src/plugin-ui/tokens.css` (all four blocks), `packages/ui/src/plugin-ui/plugin-ui.css:28-41` (`--hh-ok`, `--hh-warn`, `--hh-error-bg`)
+- Modify: `packages/ui/src/plugin-ui/tokens.css` (all four blocks; `--hh-ok`, `--hh-warn`, `--hh-error-bg` aliases kept). `packages/ui/src/plugin-ui/plugin-ui.css:28-41` stays as it is (`--hh-ok`, `--hh-warn`, `--hh-error-bg` unchanged, OQ-23)
 - Modify: `harnesses/demo/plugins/on-this-day/panels/events.css:4` (`--hh-highlight` → `--hh-active`)
 - Test: `packages/ui/test/plugin-ui-tokens.test.ts`, `harnesses/demo/test/on-this-day.test.ts`
 
-- [ ] **Step 1: Failing test:** the existing `every token under %s has the app's value` and `carries every colour the app has` tests already fail after Task 1. Add: `it("drops the removed tokens, keeping only the pre-refresh aliases (OQ-23)", …)` that asserts `panel` has no `--hh-callout-`, `--hh-review-`, `--hh-diff-`, `--hh-profile-`, `--hh-highlight`, `--hh-logo`. If OQ-23 says "keep one-release aliases for the removed tokens", assert those aliases point at the mapped tokens of Task 1 instead and add their names to `ALIASES`.
+- [ ] **Step 1: Failing test:** the existing `every token under %s has the app's value` and `carries every colour the app has` tests already fail after Task 1. Add: `it("drops the removed tokens, keeping only the pre-refresh aliases", …)` that asserts `panel` has no `--hh-callout-`, `--hh-review-`, `--hh-diff-`, `--hh-profile-`, `--hh-highlight`, `--hh-logo`. The existing aliases (paper, sheet, segment, slate) and the plugin status tokens `--hh-ok`, `--hh-warn`, `--hh-error-bg` are kept as they are (decided, OQ-23): the `ALIASES` list in the test does not change, and they are the only tokens outside the §2 tables that the plugin CSS checks allow.
 - [ ] **Step 2: Run** `corepack pnpm exec vitest run packages/ui/test/plugin-ui-tokens.test.ts` — FAIL.
-- [ ] **Step 3: Implement:** copy the new token block (light, dark, `[data-theme]` ×2) from `styles.css`; add `--hh-mono` next to `--hh-font`; extend the `colours()` filter in the test to skip `--hh-mono` and the measure tokens. Replace `var(--hh-ok)`, `var(--hh-warn)`, `var(--hh-error-bg)` in `plugin-ui.css` as in Task 1. Rebuild the demo plugin's `dist` (H4): `on-this-day` has no `package.json`; it is built with `humanharness plugin build` (see its README), which writes `panels/events.css` to `dist/panel-events.css`. Commit source and `dist` together; `harnesses/demo/test/on-this-day.test.ts` fails when `dist` differs from a fresh build.
+- [ ] **Step 3: Implement:** copy the new token block (light, dark, `[data-theme]` ×2) from `styles.css`, then re-add `--hh-ok`, `--hh-warn`, `--hh-error-bg` to `tokens.css` with their current values (Task 1 removes them from `styles.css`, so the copy does not carry them; OQ-23); add `--hh-mono` next to `--hh-font`; extend the `colours()` filter in the test to skip `--hh-mono` and the measure tokens. Do not change `var(--hh-ok)`, `var(--hh-warn)`, `var(--hh-error-bg)` in `plugin-ui.css` (no mapping to tag tokens). Rebuild the demo plugin's `dist` (H4): `on-this-day` has no `package.json`; it is built with `humanharness plugin build` (see its README), which writes `panels/events.css` to `dist/panel-events.css`. Commit source and `dist` together; `harnesses/demo/test/on-this-day.test.ts` fails when `dist` differs from a fresh build.
 - [ ] **Step 4: Run** — PASS. Also `corepack pnpm exec vitest run packages/ui/test/plugin-ui.test.tsx`.
 - [ ] **Step 5: Commit** `feat(plugin-ui): tokens mirror the guide (style guide §2, §16.1)`.
 
@@ -336,13 +338,15 @@ Same assertions for `packages/cli/template/ui/harness.css`, as a new case in `pa
 **Area:** `packages/ui/test/style-guard-lib.ts` (new file), `packages/ui/test/style-guard.test.ts` (new file), `packages/ui/test/style-guard-offenders.json` (new file, H4), `packages/ui/scripts/style-guard-init.ts` (new file), `packages/ui/src/guide/classes.ts` (new file).
 **Hotspots:** H4 (the offenders file, which every later part shrinks).
 **Spec:** §15 Control (automated test), §16.2. **Rows:** none directly; guards all.
-**Blocked by:** OQ-2 (whether measure tokens exist changes what "on the scale" means for harness CSS).
+**Decisions applied:** OQ-2 A — measure tokens exist, so "on the scale" means "through the measure tokens" (Task 8, Task 11).
 
 ### Task 8: The scanner
 
 **Files:**
 - Create: `packages/ui/test/style-guard-lib.ts` (new file)
 - Test: `packages/ui/test/style-guard.test.ts` (new file; unit cases on fixtures inside the test)
+
+Because the measure tokens exist (Task 5), the lists below are the values of those tokens: in a rule, a height, radius, gap/padding/margin or font size is written with its `var(--hh-…)` token. A literal px in a rule outside the token block is flagged unless the value has no token (piece-specific sizes in `PIECE_SIZES`, widths of Task 3). Existing literal rules become known offenders in Task 10 and are converted as their piece lands.
 
 The scanner returns offenders as strings `"<file>|<kind>|<where>|<value>"`, where `kind` is one of `color`, `height`, `radius`, `space`, `font-size`, `weight`, `class`, `harness-color`, `harness-size`, and `where` is the CSS selector or the class name.
 
@@ -465,7 +469,7 @@ Run once: `corepack pnpm exec tsx packages/ui/scripts/style-guard-init.ts`. Comm
 - Modify: `packages/ui/test/style-guard-lib.ts` (`scanRepo` adds `harnesses/*/ui/**/*.css`, `harnesses/*/plugins/*/panels/**/*.css`, `packages/cli/template/ui/**/*.css`, `packages/e2e/fixtures/plugins/*/panels/**/*.css` if present; `dist/` excluded)
 - Modify: `packages/ui/test/style-guard-offenders.json` (the only time lines are added: the new files' offenders, in this same commit)
 
-- [ ] **Step 1: Failing unit case** in `style-guard.test.ts`: `scanCss("h.css", ".b { color: var(--hh-ink); background: var(--other); padding: 7px; }", { harness: true })` returns `["h.css|harness-color|.b|var(--other)", "h.css|harness-size|.b|7px"]` — a harness file may use only `--hh-*` tokens for color and only scale values (or, with OQ-2 = A, measure tokens) for sizes (§15 Harness chat blocks).
+- [ ] **Step 1: Failing unit case** in `style-guard.test.ts`: `scanCss("h.css", ".b { color: var(--hh-ink); background: var(--other); padding: 7px; }", { harness: true })` returns `["h.css|harness-color|.b|var(--other)", "h.css|harness-size|.b|7px"]` — a harness file may use only `--hh-*` tokens for color and only scale values (or, the measure tokens) for sizes (§15 Harness chat blocks).
 - [ ] **Step 2: Run** — FAIL. **Step 3:** implement the `harness` mode; extend `scanRepo`; append the new files' offenders to the JSON (sorted). **Step 4: Run** — PASS. **Step 5: Commit** `test(ui): guard harness and plugin CSS (style guide §15)`.
 
 **Gate:** `corepack pnpm exec vitest run packages/ui/test/style-guard.test.ts` and the part gate.
@@ -507,10 +511,10 @@ export function rule(sel: string): Record<string, string> {
 
 ## Part 3 — Icons (`feat/sg-icons`, from `feat/sg-guard`)
 
-**Area:** `packages/ui/src/guide/icons.tsx` (new file), `packages/ui/src/guide/index.ts` (new file), `packages/ui/src/chrome.tsx` (icon functions move out), `packages/ui/src/ActivityList.tsx`, `packages/ui/src/assets/loader.gif` (deleted), `packages/ui/src/assets.d.ts`, `packages/ui/src/sidekick/mark.tsx`, `packages/ui/src/markdown.tsx`, `packages/ui/src/EngineTab.tsx`, `packages/ui/src/plugins/PluginDetail.tsx`, `packages/ui/src/InputForm.tsx`, `packages/ui/src/MaterialPanel.tsx`, `packages/ui/src/Drawer.tsx`, `packages/ui/src/sidekick/SidekickPanel.tsx`, `packages/ui/src/MermaidDiagram.tsx`, `packages/harness-sdk/src/sidekick.ts` (mark schema, OQ-10), tests.
+**Area:** `packages/ui/src/guide/icons.tsx` (new file), `packages/ui/src/guide/index.ts` (new file), `packages/ui/src/chrome.tsx` (icon functions move out), `packages/ui/src/ActivityList.tsx`, `packages/ui/src/assets/loader.gif` (deleted), `packages/ui/src/assets.d.ts`, `packages/ui/src/sidekick/mark.tsx`, `packages/ui/src/markdown.tsx`, `packages/ui/src/EngineTab.tsx`, `packages/ui/src/plugins/PluginDetail.tsx`, `packages/ui/src/InputForm.tsx`, `packages/ui/src/MaterialPanel.tsx`, `packages/ui/src/Drawer.tsx`, `packages/ui/src/sidekick/SidekickPanel.tsx`, `packages/ui/src/MermaidDiagram.tsx`, `packages/harness-sdk/src/sidekick.ts` (mark schema), tests.
 **Hotspots:** H2, H9 (SDK `mark` field, `index.ts` exports).
 **Spec:** §4 (all). **Rows:** 12, 13, 14, 15, 26, 44 (mark is a set icon).
-**Blocked by:** OQ-9 (glyph source), OQ-10 (existing marks and the SDK `mark` type: the whole part waits for it, because Task 15 changes a public SDK field), OQ-12 (remove icon), OQ-28 ("›" in sentences).
+**Decisions applied:** OQ-9 drawings of artifact v29 and a new `clock` icon; OQ-10 A marks map by purpose, SDK accepts icon names only; OQ-12 D new `remove` icon through §15; OQ-28 A "›" stays in running text.
 
 ### Task 12: One icon set with the closed names
 
@@ -529,8 +533,8 @@ describe("icon set (style guide §4)", () => {
   it("has exactly the closed names", () => {
     expect([...ICON_NAMES].sort()).toEqual([
       "add", "attention", "back", "bell", "callout-decision", "callout-note", "callout-question", "callout-summary", "callout-tip", "callout-warning",
-      "check", "chevron", "close", "coach", "daily-summary", "engine", "files", "focus", "fullscreen", "guardian", "history", "home", "inbox",
-      "info", "jobs", "loading", "lock", "mentor", "more", "next", "note", "plugins", "search", "settings", "tasks", "text", "undo",
+      "check", "chevron", "clock", "close", "coach", "daily-summary", "engine", "files", "focus", "fullscreen", "guardian", "history", "home", "inbox",
+      "info", "jobs", "loading", "lock", "mentor", "more", "next", "note", "plugins", "remove", "search", "settings", "tasks", "text", "undo",
     ].sort());
   });
   it.each([14, 18, 32] as const)("draws a 24 box, 1.75 stroke, round caps, currentColor, no fill at %i", (size) => {
@@ -552,10 +556,10 @@ describe("icon set (style guide §4)", () => {
 });
 ```
 
-The names map one to one to spec §4: Inicio `home`, Tareas `tasks`, Bandeja `inbox`, Jobs `jobs`, Archivos `files`, Plugins `plugins`, Nota `note`, Settings `settings`, Avisos `bell`, Buscar `search`, Cerrar `close`, Volver `back`, Seguir `next`, Agregar `add`, Historial `history`, Deshacer `undo`, Desplegar `chevron`, Más `more`, Listo `check`, Atención `attention`, Info `info`, Solo lectura `lock`, Pantalla completa `fullscreen`, Texto `text`, Motor `engine`, Cargando `loading`, the six callout icons `callout-*`, the five sidekick icons Coach `coach`, Foco `focus`, Guardián `guardian`, Mentor `mentor`, Resumen del día `daily-summary`.
+The names map one to one to spec §4: Inicio `home`, Tareas `tasks`, Bandeja `inbox`, Jobs `jobs`, Archivos `files`, Plugins `plugins`, Nota `note`, Settings `settings`, Avisos `bell`, Buscar `search`, Cerrar `close`, Quitar `remove` (new, added through §15: the remove icon of key-value rows and material rows), Reloj `clock` (new, added through §15: replaces today's clock icon), Volver `back`, Seguir `next`, Agregar `add`, Historial `history`, Deshacer `undo`, Desplegar `chevron`, Más `more`, Listo `check`, Atención `attention`, Info `info`, Solo lectura `lock`, Pantalla completa `fullscreen`, Texto `text`, Motor `engine`, Cargando `loading`, the six callout icons `callout-*`, the five sidekick icons Coach `coach`, Foco `focus`, Guardián `guardian`, Mentor `mentor`, Resumen del día `daily-summary`.
 
 - [ ] **Step 2: Run** `corepack pnpm exec vitest run packages/ui/test/guide-icons.test.tsx` — FAIL.
-- [ ] **Step 3: Implement** `Icon({ name, size }: { name: IconName; size: 14 | 18 | 32 })` with one `<path>`/`<circle>` list per name. Glyphs per OQ-9. The chevron points right and the CSS rotates it 90° when `aria-expanded="true"` on its button (§4 Desplegar). `loading` spins with a CSS animation, `animation: none` under reduced motion.
+- [ ] **Step 3: Implement** `Icon({ name, size }: { name: IconName; size: 14 | 18 | 32 })` with one `<path>`/`<circle>` list per name. Glyphs are the drawings of artifact v29 (the stroke stays 1.75, 24 box). The chevron points right and the CSS rotates it 90° when `aria-expanded="true"` on its button (§4 Desplegar). `loading` spins with a CSS animation, `animation: none` under reduced motion.
 - [ ] **Step 4–6** as in the shape; commit `feat(ui): one icon set with the closed names (style guide §4)`.
 
 ### Task 13: Old icons and the GIF go
@@ -584,24 +588,24 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 });
 ```
 
-- [ ] **Step 2–6** per the shape. Map: `GearIcon`→`settings`, `EngineIcon`→`engine`, `SaveIcon`→ deleted (Settings saves itself; the button goes in Part 8, row 74 — until then the Settings exit uses `back`), `CheckIcon`→`check`, `LockIcon`→`lock`, `NoteIcon`→`note`, `CloseIcon`→`close`, `ChevronIcon`→`chevron`, `UndoIcon`→`undo`, `WarnIcon`→`attention`, `BellIcon`→`bell`, `InboxIcon`→`inbox`. `ClockIcon` has no name in §4: list its uses in the PR under "Questions for Marco" and leave it as an offender (see OQ-9). Update `working.test.tsx` to expect the loading icon instead of the GIF `img`.
+- [ ] **Step 2–6** per the shape. Map: `GearIcon`→`settings`, `EngineIcon`→`engine`, `SaveIcon`→ deleted (Settings saves itself; the button goes in Part 8, row 74 — until then the Settings exit uses `back`), `CheckIcon`→`check`, `LockIcon`→`lock`, `NoteIcon`→`note`, `CloseIcon`→`close`, `ChevronIcon`→`chevron`, `UndoIcon`→`undo`, `WarnIcon`→`attention`, `BellIcon`→`bell`, `InboxIcon`→`inbox`. `ClockIcon`→`clock` (the new Reloj icon). Update `working.test.tsx` to expect the loading icon instead of the GIF `img`.
 
 ### Task 14: Characters used as icons go
 
 **Files:**
-- Modify: `packages/ui/src/EngineTab.tsx` (✓), `packages/ui/src/plugins/PluginDetail.tsx` (←), `packages/ui/src/InputForm.tsx` and `packages/ui/src/MaterialPanel.tsx` (×, both per OQ-12), `packages/ui/src/Drawer.tsx` (✕), `packages/ui/src/sidekick/SidekickPanel.tsx` (› collapse), `packages/ui/src/markdown.tsx` (↩ footnote back-link)
-- Modify: `packages/i18n/src/locales/en.json` (footnote "volver" text, OQ-1)
+- Modify: `packages/ui/src/EngineTab.tsx` (✓), `packages/ui/src/plugins/PluginDetail.tsx` (←), `packages/ui/src/InputForm.tsx` and `packages/ui/src/MaterialPanel.tsx` (×, both → the `remove` icon), `packages/ui/src/Drawer.tsx` (✕), `packages/ui/src/sidekick/SidekickPanel.tsx` (› collapse), `packages/ui/src/markdown.tsx` (↩ footnote back-link)
+- Modify: `packages/i18n/src/locales/en.json` (footnote "volver" text)
 - Test: `packages/ui/test/guide-icons.test.tsx`, `packages/ui/test/markdown.test.tsx`, `packages/ui/test/engine-tab.test.tsx`, `packages/ui/test/input-form.test.tsx`, `packages/ui/test/material-panel.test.tsx`, `packages/ui/test/drawer.test.tsx`, `packages/ui/test/sidekick-panel.test.tsx`, `packages/ui/test/plugins-tab.test.tsx`
 
-- [ ] **Step 1: Failing test:** for each `.tsx` under `src`, no JSX text node or string literal rendered as content is exactly one of `✓ ← × ✕ › ↩` (regex `/>\s*[✓←×✕›↩]\s*</` and `/["'][✓←×✕›↩]["']/`). `›` inside sentences of `en.json` (e.g. "Settings › Usage") is not checked here; see OQ-28. Markdown test: a footnote back-link renders the text from OQ-1, not `↩`.
-- [ ] **Step 2–6** per the shape: ✓ → `check` 14 (engine tile until Part 14 replaces it with options), ← → `back` 18 in a quiet button, × (remove row / remove material) → the remove icon OQ-12 names (§4 says Cerrar is for "Header of a dialog and of the split view. Nowhere else.", so `close` is not used here until Marco answers), ✕ in the Drawer header → `close` 18 (the Drawer is a panel header that goes in Part 12; until then it keeps `close`, and it is listed as an offender of §4), › → `chevron` 18, ↩ → text. Row 12.
+- [ ] **Step 1: Failing test:** for each `.tsx` under `src`, no JSX text node or string literal rendered as content is exactly one of `✓ ← × ✕ › ↩` (regex `/>\s*[✓←×✕›↩]\s*</` and `/["'][✓←×✕›↩]["']/`). `›` inside sentences of `en.json` (e.g. "Settings › Usage") stays as it is in running text and is not checked here. Markdown test: a footnote back-link renders the (literally translated) text, not `↩`.
+- [ ] **Step 2–6** per the shape: ✓ → `check` 14 (engine tile until Part 14 replaces it with options), ← → `back` 18 in a quiet button, × (remove row / remove material) → `remove` (the new Quitar icon; `close` stays for dialogs and the split view only), ✕ in the Drawer header → `close` 18 (the Drawer is a panel header that goes in Part 12; until then it keeps `close`, and it is listed as an offender of §4), › → `chevron` 18, ↩ → text. Row 12.
 
 ### Task 15: Callout icons, sidekick marks, the demo's arrows
 
 **Files:**
 - Modify: `packages/ui/src/markdown.tsx` (callout head gets `<Icon name="callout-<type>" size={14} />`)
 - Modify: `packages/ui/src/sidekick/mark.tsx` (24 circle with a 14 set icon; no emoji, no token dot)
-- Modify (only after OQ-10 is answered; do not start this task before): `packages/harness-sdk/src/sidekick.ts:62,177,264` (`mark` becomes one of the icon names; `DEFAULT_SIDEKICK.mark` per OQ-10), `packages/ui/src/sidekick/*` callers
+- Modify `packages/harness-sdk/src/sidekick.ts:62,177,264` (`mark` becomes one of the icon names, accepted only as icon names now: breaking, say so in the PR body; `DEFAULT_SIDEKICK.mark` = `coach`), `packages/ui/src/sidekick/*` callers
 - Read only: `harnesses/demo/ui/DiagramBlock.tsx` (its arrows stay as the block's drawing, row 26)
 - Test: `packages/ui/test/markdown.test.tsx`, `packages/ui/test/sidekick-panel.test.tsx`, `packages/harness-sdk/test/sidekick.test.ts`, `packages/ui/test/guide-icons.test.tsx`
 
@@ -610,7 +614,7 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
   - mark: `render(<SidekickMark icon="coach" />)` draws `span.hh-sk-mark` (24 round) containing a 14 `svg`; `SidekickMark` no longer accepts an emoji or a `--hh-*` string (TS error test via `// @ts-expect-error`) (row 44).
   - SDK: the sidekick schema rejects `mark: "🦊"` and accepts each icon name of §4 ("A custom sidekick picks one of these or any set icon").
   - guard: `DiagramBlock.tsx` keeps its own `<svg>`; add `harnesses/demo/ui/DiagramBlock.tsx` to the allowed list of Task 13's test with the comment "row 26: the block's drawing, not an icon".
-- [ ] **Step 2–6** per the shape. Stored marks that are no longer valid follow OQ-10.
+- [ ] **Step 2–6** per the shape. Stored marks that are no longer valid are mapped by purpose: prompt-coach → `coach`, focus → `focus`, process-guard → `guardian`, mentor → `mentor`, daily-summary → `daily-summary`. A custom sidekick's stored mark has no purpose to map: the implementer lists them in the PR under "Questions for Marco" and Marco names the icon for each.
 
 ### Part 3 close
 
@@ -623,7 +627,7 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 **Area:** `packages/ui/src/guide/{Button,IconButton,Segmented,Tabs,NavItem,Option,Tile,Toggle,Checkbox}.tsx` (new file), `packages/ui/src/chrome.tsx` (`Segmented`, `SidekickToggle` move/redo), and the files that use the §3 "today" classes: `TaskHeader.tsx`, `Home.tsx`, `FlowSide.tsx`, `ModelsTab.tsx`, `NotesPanel.tsx`, `DocumentReader.tsx`, `parallel/InboxBoard.tsx`, `parallel/Inbox.tsx`, `parallel/JobsTab.tsx`, `parallel/TaskStrip.tsx`, `sidekick/SidekickPanel.tsx`, `HistoryPanel.tsx`, `InputForm.tsx`, `ContextPanel.tsx`, `FileTimeline.tsx`, `HarnessSettingsTab.tsx`, `RecommendModeBlock.tsx`, `hatches/EngineConfig.tsx`, `hatches/EngineNotice.tsx`, `hatches/LinkedFolders.tsx`, `sidekick/{PresetOffer,SidekickList,LearnedList,SidekickTab,ImportSidekick}.tsx`, `plugins/{PluginDetail,PluginsTab,PluginsSection}.tsx`, `SettingsPage.tsx`, `UsageTab.tsx`, `ChoicesBlock.tsx`, `ChatView.tsx`, `ModeList.tsx`, `FolderStep.tsx`, `LanguagePicker.tsx`, `EngineTab.tsx`, `StartView.tsx`, and their tests.
 **Hotspots:** H2, H10, H6 (only labels that change).
 **Spec:** §3 (all), §5 Toggle / Checkbox / Radio and the choosing rule. **Rows:** 9, 10, 20, 21, 22, 23, 56, 80.
-**Blocked by:** OQ-1 (only for "Guardando…" busy text and any changed label), OQ-29 (check on the chosen tile), OQ-16 (recommended border, Task 20), OQ-14 (link look, Task 16), OQ-15 (weekdays, Task 17), OQ-18 (`.hh-tk-cancel` kind, Task 16).
+**Decisions applied:** OQ-1 B literal English; OQ-29 B check 14 on the chosen tile; OQ-16 B `--hh-cta` for the recommended border; OQ-14 A underlined link in the current ink; OQ-15 A weekdays as a Segmented of 7; OQ-18 `.hh-tk-cancel` is a compact secondary.
 
 ### Task 16: Button (8 types, 2 sizes, 5 states) and IconButton
 
@@ -632,17 +636,17 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 - [ ] **Step 1: Failing test** asserts:
   - `<Button kind="primary|secondary|quiet|danger|link|large">` renders a `button` (or `a` for `href`, row: `a.hh-button` → secondary that opens outside) with `data-kind` and `data-size="normal|compact"`; `icon` prop draws the icon left of the text; `busy` sets `aria-busy="true"`, shows the loading icon and the busy text, and disables it; `disabled` disables it.
   - `large` has no compact size and always draws `next` after the text when `arrow` is set (rows 20, 83).
-  - CSS: `rule(".hh-btn[data-size=\"normal\"]")` height `40px` radius `12px`; compact height `30px` radius `8px` font-size `13px` weight `500`; large height `52px` radius `14px`; primary background `var(--hh-cta)` color `var(--hh-cta-ink)` hover `var(--hh-cta-hover)` (§2 "Primary button"); quiet has no border and no fill (§3 one-line bars "No border or fill: all become quiet"); the link's look per OQ-14 (§3 gives only where it goes, not how it looks).
+  - CSS: `rule(".hh-btn[data-size=\"normal\"]")` height `40px` radius `12px`; compact height `30px` radius `8px` font-size `13px` weight `500`; large height `52px` radius `14px`; primary background `var(--hh-cta)` color `var(--hh-cta-ink)` hover `var(--hh-cta-hover)` (§2 "Primary button"); quiet has no border and no fill (§3 one-line bars "No border or fill: all become quiet"); the link is underlined text in the current ink (decided; §3 gives only where it goes).
   - Link placement (§3 Link: "Only inside running text, never as a standalone action"): source scan — every `kind="link"` use in `packages/ui/src` is a child of a text element (`p`, `li`, or an i18n `Trans` sentence); none is a direct child of a bar, card actions or a form footer.
   - Danger (§3 Danger: "Always asks for confirmation"): `kind="danger"` requires an `onConfirm` handler instead of `onClick` (TS error test via `// @ts-expect-error`); the first click never calls it. The confirmation itself (InlineConfirm or Dialog) is wired in Task 31, which adds the case "first click shows the confirmation, `onConfirm` runs only after Confirm".
   - `<IconButton icon="search" label="…" />` is square (width = height), has `aria-label` and `title` equal to the label (tooltip, §3 Icon), icon 18.
-- [ ] **Steps 2–6** per the shape. Migrate: `.hh-cta`, `.hh-primary` → primary; `.hh-pill` used as an action (Historial, Restaurar, engine on Inicio as a button) → compact secondary (row 9); `.hh-link` used as an action (Ver todo, Editar, plugin Back, Saltar) → quiet (rows 80); `.hh-tk-cancel` → quiet or compact secondary (§3 Today's buttons: "Quiet or compact secondary"; the kind per OQ-18); `a.hh-button` (Soporte, Ver planes in `SettingsPage.tsx`, `UsageTab.tsx`) → secondary `href`; `.hh-icon-button` and `.hh-topbar-icon` → `IconButton`. `.hh-pill` that shows a state (context meter, Sidekick) waits for Chip (Part 6) and the top bar (Part 8). Update `chat-look.test.tsx`, `task-header.test.tsx`, `models-tab.test.tsx`, `jobs-ui.test.tsx`, `inbox.test.tsx`, `settings.test.tsx`, `usage-tab.test.tsx`, `styles.test.ts` (`draws the CTA's focus ring` and `soft-cards controls` now name `.hh-btn[data-kind="primary"]`).
+- [ ] **Steps 2–6** per the shape. Migrate: `.hh-cta`, `.hh-primary` → primary; `.hh-pill` used as an action (Historial, Restaurar, engine on Inicio as a button) → compact secondary (row 9); `.hh-link` used as an action (Ver todo, Editar, plugin Back, Saltar) → quiet (rows 80); `.hh-tk-cancel` → compact secondary (§3 Today's buttons, now "Compact secondary"); `a.hh-button` (Soporte, Ver planes in `SettingsPage.tsx`, `UsageTab.tsx`) → secondary `href`; `.hh-icon-button` and `.hh-topbar-icon` → `IconButton`. `.hh-pill` that shows a state (context meter, Sidekick) waits for Chip (Part 6) and the top bar (Part 8). Update `chat-look.test.tsx`, `task-header.test.tsx`, `models-tab.test.tsx`, `jobs-ui.test.tsx`, `inbox.test.tsx`, `settings.test.tsx`, `usage-tab.test.tsx`, `styles.test.ts` (`draws the CTA's focus ring` and `soft-cards controls` now name `.hh-btn[data-kind="primary"]`).
 
 ### Task 17: Segmented (30, radius 8) replaces button groups
 
-**Files:** Create `packages/ui/src/guide/Segmented.tsx` (moves `Segmented` out of `chrome.tsx:99-123`, keeps its API). Modify `SettingsPage.tsx` (`.hh-text-sizes`, row 77), `plugins/PluginDetail.tsx` (`.hh-pl-days`, only per OQ-15), `StartView.tsx` (Tarjetas / Lista). Test `packages/ui/test/guide-segmented.test.tsx` (new file), `settings.test.tsx`, `plugins-tab.test.tsx`, `start-view.test.tsx`.
+**Files:** Create `packages/ui/src/guide/Segmented.tsx` (moves `Segmented` out of `chrome.tsx:99-123`, keeps its API). Modify `SettingsPage.tsx` (`.hh-text-sizes`, row 77), `plugins/PluginDetail.tsx` (`.hh-pl-days` → a Segmented of 7), `StartView.tsx` (Tarjetas / Lista). Test `packages/ui/test/guide-segmented.test.tsx` (new file), `settings.test.tsx`, `plugins-tab.test.tsx`, `start-view.test.tsx`.
 
-- [ ] **Step 1: Failing test:** `role="group"` with buttons `aria-pressed`; CSS height `30px`, radius `8px`, chosen segment background `var(--hh-active)` color `var(--hh-active-ink)` (§2 `--hh-active` "segment", row 22). Text sizes render as `Segmented` (§3 "also replaces button groups (text size, weekdays)"). The option-count limit and the weekdays (seven options) follow OQ-15: until it is answered, write no count check and leave `.hh-pl-days` as it is (offender kept).
+- [ ] **Step 1: Failing test:** `role="group"` with buttons `aria-pressed`; CSS height `30px`, radius `8px`, chosen segment background `var(--hh-active)` color `var(--hh-active-ink)` (§2 `--hh-active` "segment", row 22). Text sizes render as `Segmented` (§3 "also replaces button groups (text size, weekdays)"). The 2–4 option limit has one exception: the weekdays are a Segmented of 7 (seven segments, each toggling as today's days do); add a type-level or test check of the 2–4 limit that allows the weekdays case.
 - [ ] **Steps 2–6** per the shape. Rows 22, 77 (control part).
 
 ### Task 18: Tabs (40) with waiting dot
@@ -664,8 +668,8 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 **Files:** Create `packages/ui/src/guide/Option.tsx`, `packages/ui/src/guide/Tile.tsx`. Modify `ChoicesBlock.tsx`, `ChatView.tsx` (the `.hh-choice` uses), `RecommendModeBlock.tsx`, `ModeList.tsx`, `FolderStep.tsx` (`.hh-place`), `LanguagePicker.tsx` (`.hh-langpick-option`), `EngineTab.tsx` (`.hh-engine-radio`, `.hh-tile` → Option, rows 21, 76), `StartView.tsx` (`.hh-topic` → Tile). Test `packages/ui/test/guide-option.test.tsx` (new file), `choices.test.tsx`, `recommend-mode.test.tsx`, `modes.test.tsx`, `folder-step.test.tsx`, `language-picker.test.tsx`, `engine-tab.test.tsx`, `start-view.test.tsx`.
 
 - [ ] **Step 1: Failing test:**
-  - Option: a `radiogroup` of `radio` items, each 52 high with a visible 18 radio, title and description; `recommended` draws the amber border (§3 Option: "Amber border = recommended"), with the token OQ-16 names; optional `tag` slot (chat options' type tag, Part 9). Radio never appears outside an Option (§5 Radio): the guard's class list has no loose radio class.
-  - Tile: 104 high, radius 14, logo or description; selected = `border: 2px solid var(--hh-ink)` (§3); check or no check per OQ-29 (spec contradiction §3 vs §4).
+  - Option: a `radiogroup` of `radio` items, each 52 high with a visible 18 radio, title and description; `recommended` draws the amber border (§3 Option: "Amber border = recommended"), with `border-color: var(--hh-cta)`; optional `tag` slot (chat options' type tag, Part 9). Radio never appears outside an Option (§5 Radio): the guard's class list has no loose radio class.
+  - Tile: 104 high, radius 14, logo or description; selected = `border: 2px solid var(--hh-ink)` (§3); the chosen tile also shows a `check` icon 14 (decided; spec §3 updated).
   - The engine renders as Options, not tiles (row 21; Settings and Assistant layout in Parts 13–14).
 - [ ] **Steps 2–6** per the shape.
 
@@ -682,16 +686,16 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 
 ### Part 4 close
 
-- [ ] Part gate green (`e2e` specs that click renamed buttons updated: grep `getByRole("button"` names changed by OQ-1); look check; offenders shrank. PR body: §3, rows 9, 10, 20, 21, 22, 23, 56, 80.
+- [ ] Part gate green (`e2e` specs that click renamed buttons updated: grep `getByRole("button"` names changed by the English strings); look check; offenders shrank. PR body: §3, rows 9, 10, 20, 21, 22, 23, 56, 80.
 
 ---
 
 ## Part 5 — Forms (`feat/sg-forms`, from `feat/sg-buttons`)
 
-**Area:** `packages/ui/src/guide/{Field,FormField,SettingsRow}.tsx` and `packages/ui/src/guide/fields/*.tsx` (new file), `packages/ui/src/InputForm.tsx`, `packages/ui/src/InputBlock.tsx`, `packages/ui/src/settings-parts.tsx` (`SettingRow`), `packages/ui/src/HarnessSettingsTab.tsx`, `packages/ui/src/SetupStepForm.tsx`, `packages/ui/src/connections/SecretField.tsx`, `packages/ui/src/connections/ConnectionsTab.tsx`, `packages/ui/src/ModelsTab.tsx`, `packages/harness-sdk/src/block.ts` and `settings.ts` (only per OQ-11), tests.
-**Hotspots:** H2, H6, H9 (OQ-11).
+**Area:** `packages/ui/src/guide/{Field,FormField,SettingsRow}.tsx` and `packages/ui/src/guide/fields/*.tsx` (new file), `packages/ui/src/InputForm.tsx`, `packages/ui/src/InputBlock.tsx`, `packages/ui/src/settings-parts.tsx` (`SettingRow`), `packages/ui/src/HarnessSettingsTab.tsx`, `packages/ui/src/SetupStepForm.tsx`, `packages/ui/src/connections/SecretField.tsx`, `packages/ui/src/connections/ConnectionsTab.tsx`, `packages/ui/src/ModelsTab.tsx`, `packages/harness-sdk/src/block.ts` and `settings.ts`, tests.
+**Hotspots:** H2, H6, H9 (SDK: five new field kinds).
 **Spec:** §5 (all). **Rows:** 24, 50, 51, 52, 53, 55.
-**Blocked by:** OQ-1, OQ-11, OQ-12.
+**Decisions applied:** OQ-1 B; OQ-11 A five new kinds, today's seven names kept; OQ-11b B 5–6 short values without descriptions → Select; OQ-12 D `remove` icon.
 
 ### Task 22: Field, select, textarea and the native inputs share the field style
 
@@ -709,20 +713,20 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 
 ### Task 24: The 12 field types
 
-**Files:** Create `packages/ui/src/guide/fields/{OneOf,SeveralOf,YesNo,Secret,Path,Pairs,Slider,DateField,ColorField}.tsx`. Modify `InputForm.tsx` (drawing by kind), `connections/SecretField.tsx` (row 53), `HarnessSettingsTab.tsx` (setting controls). SDK changes only per OQ-11. Test `packages/ui/test/guide-fields.test.tsx` (new file), `input-form.test.tsx`, `connections-ui.test.tsx`, `harness-settings.test.tsx`, `input-parity.test.ts`.
+**Files:** Create `packages/ui/src/guide/fields/{OneOf,SeveralOf,YesNo,Secret,Path,Pairs,Slider,DateField,ColorField}.tsx`. Modify `InputForm.tsx` (drawing by kind), `connections/SecretField.tsx` (row 53), `HarnessSettingsTab.tsx` (setting controls). SDK changes: add the five missing kinds (secret, path, slider, date, color) and keep today's seven names, each mapped to a spec type. Test `packages/ui/test/guide-fields.test.tsx` (new file), `input-form.test.tsx`, `connections-ui.test.tsx`, `harness-settings.test.tsx`, `input-parity.test.ts`.
 
 - [ ] **Step 1: Failing test** for each type of §5:
-  - One of several: 2–4 short values → Segmented; with descriptions → Options; more than 6 → Select (the choosing rule; 5–6 values without descriptions: see OQ-11b). Never loose radios.
+  - One of several: 2–4 short values → Segmented; with descriptions → Options; more than 6 → Select (the choosing rule; 5 or 6 short values without descriptions → Select, so Segmented is 2–4 and Select is 5 or more when there are no descriptions). Never loose radios.
   - Several from a list: Toggles, one per compact row.
   - Yes / no: Toggle (settings) or Checkbox (accept before going on).
   - Secret: hidden field + one button `Guardar` when empty / `Reemplazar` when set + More (⋯) menu with `Borrar` (confirmed, Part 7 InlineConfirm) and `Probar` (row 53). The menu piece lands in Part 7: this task renders a `More` IconButton and a temporary list; Task 32 swaps in `Menu`.
   - Folder or file: path as inline code + `Elegir…`.
-  - Key-value pairs: rows of two fields with remove (icon per OQ-12) and a borderless `Agregar` at the end.
+  - Key-value pairs: rows of two fields with remove (the `remove` icon) and a borderless `Agregar` at the end.
   - Slider: full width, `min`, `max`, `step` required props.
   - Date: field with the calendar picker (§5 "Field with a calendar picker"): native `type="date"` inside the field style of Task 22.
   - Color: swatch + code + `Cambiar`.
   - Text, Number, Textarea: from Task 22.
-  - Closed list (§5 "a harness declares only these 12", row 51): the field kind is a TS union of the 12 types, so no other kind compiles; how the SDK's current kinds map onto it is OQ-11.
+  - Closed list (§5 "a harness declares only these 12", row 51): the field kind is a TS union of the 12 types, so no other kind compiles; the SDK keeps its seven names and maps them: `longText` → Textarea, `choice` → One of several, `multiChoice` → Several from a list, `pairs` → Key-value pairs, `boolean` → Yes / no; the five missing kinds are added now.
 - [ ] **Steps 2–6** per the shape. Rows 51, 53.
 
 ### Task 25: Settings row (52) and read-only rows
@@ -743,11 +747,11 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
 **Area:** `packages/ui/src/guide/{Tag,Chip,Counter,Dot,StepMark,ProgressBar,Ring,Avatar,Table,Card}.tsx` (new file), `packages/ui/src/chrome.tsx` (`Tag`, `MockBadge`), `packages/ui/src/RecommendModeBlock.tsx` (`.hh-badge`), `packages/ui/src/SetupStepsList.tsx`, `packages/ui/src/Home.tsx` (missing steps), `packages/ui/src/FlowSide.tsx`, `packages/ui/src/settings-parts.tsx` (`SettingsCard`), `packages/ui/src/connections/ConnectionsTab.tsx` (letter), `packages/ui/src/ProfileSwitcher.tsx`, `packages/ui/src/ProfilesSection.tsx`, `packages/ui/src/plugins/AttentionInbox.tsx` (`.hh-pl-badge`), `packages/ui/src/plugins/PluginChips.tsx`, `packages/ui/src/DocumentCards.tsx`, `packages/ui/src/FlowSide.tsx` (`ContextMeter`), `packages/ui/src/UsageMeter.tsx`, `packages/ui/src/markdown.tsx` (table), `packages/ui/src/UsageTab.tsx`, `packages/ui/test/style-guard-lib.ts` (`ROUND_SELECTORS`), tests.
 **Hotspots:** H2, H6 ("prueba").
 **Spec:** §6 (all, with Card). **Rows:** 18, 19, 27, 30, 49, 54.
-**Blocked by:** OQ-1 (strings only).
+**Decisions applied:** OQ-1 B literal English strings.
 
 ### Task 26: Tag (24, 600) with fixed meanings; mock badge → grey "prueba"
 
-**Files:** Create `packages/ui/src/guide/Tag.tsx` (from `chrome.tsx:136-145`). Modify `chrome.tsx` (`MockBadge` → `Tag tone="gray"` with the OQ-1 text, row 30), `RecommendModeBlock.tsx` (`.hh-badge`, defined twice in CSS — delete both), every "Actualizado", "Lista", "Pendiente" loose badge (grep those strings' keys in `en.json` and their components; row 18). Test `packages/ui/test/guide-tag.test.tsx` (new file), `chrome.test.tsx`, `recommend-mode.test.tsx`, `mock.spec.ts` (e2e).
+**Files:** Create `packages/ui/src/guide/Tag.tsx` (from `chrome.tsx:136-145`). Modify `chrome.tsx` (`MockBadge` → `Tag tone="gray"` with the translated text, row 30), `RecommendModeBlock.tsx` (`.hh-badge`, defined twice in CSS — delete both), every "Actualizado", "Lista", "Pendiente" loose badge (grep those strings' keys in `en.json` and their components; row 18). Test `packages/ui/test/guide-tag.test.tsx` (new file), `chrome.test.tsx`, `recommend-mode.test.tsx`, `mock.spec.ts` (e2e).
 
 - [ ] **Step 1: Failing test:** `Tag tone` in `green|orange|blue|violet|red|gray`; CSS height `24px`, radius `8px`, weight `600` (row 54); gray = `surface-2` + `ink` (spec §2 grey; today's test says `muted` — update it); a model-level helper `levelTone("light"|"standard"|"deep")` returns green/blue/violet (§6). Source scan: no `hh-badge`, no `hh-mock-badge` class left.
 - [ ] **Steps 2–6** per the shape.
@@ -791,15 +795,15 @@ Asserts: `section.hh-card` radius 14, `surface`, `line` border; `data-pad="16|24
 **Area:** `packages/ui/src/guide/{StatusLine,Notice,InlineConfirm,EmptyState,Dialog,Popover,Menu,AnnotationTooltip}.tsx` (new file); every file with `role="alert"` today (list in Task 30); `packages/ui/src/search/SearchPalette.tsx`, `packages/ui/src/search/SearchHost.tsx`, `packages/ui/src/search/model.ts`; `packages/ui/src/LanguagePicker.tsx`, `packages/ui/src/TranslateNotice.tsx`, `packages/ui/src/ProfileSwitcher.tsx`, `packages/ui/src/plugins/AttentionInbox.tsx`, `packages/ui/src/AnnotateBlock.tsx`, `packages/ui/src/FocusMarkers.tsx`; tests and `packages/e2e/tests/search*.spec.ts`.
 **Hotspots:** H2, H6, H10.
 **Spec:** §7, §8 (with Search). **Rows:** 16, 17, 29, 39, 40.
-**Blocked by:** OQ-1, OQ-13 (error and ok icons), OQ-17 (notice buttons).
+**Decisions applied:** OQ-1 B; OQ-13 A error → attention, ok → check; OQ-17 A a primary plus one secondary inside a notice.
 
 ### Task 30: StatusLine and Notice in four tones; no toasts
 
 **Files:** Create `packages/ui/src/guide/StatusLine.tsx`, `packages/ui/src/guide/Notice.tsx`. Modify the ~10 error/notice styles and every unstyled `role="alert"`: `ScopePicker.tsx`, `EngineOnboarding.tsx`, `ProfilesSection.tsx`, `HistoryPanel.tsx`, `ContextPanel.tsx`, `InputForm.tsx`, `SettingsPage.tsx`, `LanguagePicker.tsx`, `ErrorCard.tsx`, `FolderStep.tsx`, `NotesPanel.tsx`, `ModelsTab.tsx`, `ChatView.tsx`, `SetupFlow.tsx`, `HarnessApp.tsx`, `HarnessSettingsTab.tsx`, `EngineTab.tsx`, `FileDiff.tsx`, `BackupNotice.tsx`, `DocumentReader.tsx`, `TranslateNotice.tsx`, `ProfileStep.tsx`, `hatches/BackendCard.tsx`, `ProfileSwitcher.tsx`, `hatches/EngineConfig.tsx`, `hatches/LinkedFolders.tsx`, `sidekick/{PresetOffer,LearnedList,SidekickTab,SidekickList,ScopeSidekicks,SidekickEditor,SidekickPanel,ImportSidekick}.tsx`, `parallel/{InboxBoard,Inbox,JobsTab}.tsx`, `plugins/{PermissionReview,PluginDetail,PreparedTask,PluginsTab,PanelFrame}.tsx`, `connections/{ConnectionsTab,ConnectStep}.tsx`. (`plugin-ui/components.tsx` waits for Part 15.) Test `packages/ui/test/guide-messages.test.tsx` (new file) plus each touched component's test.
 
 - [ ] **Step 1: Failing test:**
-  - `StatusLine tone="error|attention|info|ok"`: text color only (red, orange, grey, green ink; §7 "the status line changes only the text color"); `attention` icon 14 at the start of the attention tone and `info` icon 14 at the start of the info tone (§4 "Atención, Info: Start of a notice or status line (14)"); the icon of the error and ok tones per OQ-13 (the field error of Task 23 uses `attention` because §5 says so literally; that does not decide the other places); `role="status"` (or `alert` for error).
-  - `Notice tone=…`: colored background (tag fill; info = `surface-2`), title + text, compact buttons; passing a `quiet` button is a TS error (`// @ts-expect-error`; §7 "Never quiet"). Which buttons a notice may carry (two secondaries, one primary, or a primary plus a secondary as §10.5 and §10.6 use) follows OQ-17; until then the API accepts up to two compact buttons of kind `secondary` or `primary`, with at most one `primary`, and the task asserts only that.
+  - `StatusLine tone="error|attention|info|ok"`: text color only (red, orange, grey, green ink; §7 "the status line changes only the text color"); `attention` icon 14 at the start of the attention tone and `info` icon 14 at the start of the info tone (§4 "Atención, Info: Start of a notice or status line (14)"); the error tone uses `attention` 14 and the ok tone uses `check` 14 (Listo); the field error of Task 23 also uses `attention`; `role="status"` (or `alert` for error).
+  - `Notice tone=…`: colored background (tag fill; info = `surface-2`), title + text, compact buttons; passing a `quiet` button is a TS error (`// @ts-expect-error`; §7 "Never quiet"). A notice carries up to two compact buttons of kind `secondary` or `primary`, with at most one `primary` (a primary plus one secondary is allowed; spec §7 updated); the test asserts that, and that two primaries is a TS error.
   - Placement (§7 Notice: "Sits above what it affects"): in every migrated use, the notice is the DOM sibling before the element it is about; each touched component's test asserts that order (for example the page or group error above its card, row 79).
   - Source scan: outside `guide/`, no `role="alert"` element that is not rendered by `StatusLine`/`Notice` (regex on `role="alert"` in `packages/ui/src/**/*.tsx` except `guide/` and `plugin-ui/`). No toast (no `setTimeout` that hides a message: grep test on `hh-toast` and the search notice's 4 s timer).
 - [ ] **Steps 2–6** per the shape. Row 16.
@@ -834,7 +838,7 @@ Asserts: `section.hh-card` radius 14, `surface`, `line` border; `data-pad="16|24
 
 - [ ] **Step 1: Failing tests:**
   - Frame: dialog 640 wide, radius 18, `top: 12%`, backdrop, no `Cerrar`; closes on `Escape`, ⌘K and click outside; focus trapped.
-  - Field 52 tall, text 16, no own border, a line below; `search` icon left, "Esc" hint right; placeholder from OQ-1 ("Buscar tareas, notas, archivos, settings…"). §17.1: 52, not 56.
+  - Field 52 tall, text 16, no own border, a line below; `search` icon left, "Esc" hint right; placeholder translated literally ("Buscar tareas, notas, archivos, settings…"). §17.1: 52, not 56.
   - Filters: one line of 30 chips, horizontal scroll, never wraps; chosen one in `--hh-active`; "Todo · N" then one chip per type with results, with icon and count, in the fixed order Tareas, Notas, Archivos, Settings, Acciones, Datos (Datos only if the harness turns it on); ⌘1…⌘7 pick them.
   - Results: group titles 12 uppercase; rows 52 with grey type icon, title with the match marked in `--hh-active`, one 13 context line, optional grey tag on the right saying only "solo lectura" or when; chosen row grey fill; "Todo" up to 5 per group, filtered up to 50; no buttons in rows.
   - Footer: one 12 grey line `↑↓ moverse · Enter abrir · ⌘Enter preguntar a la IA · Esc cerrar` with boxed keys (`kbd`, DM Mono), no buttons (row 39).
@@ -882,7 +886,7 @@ export function zoneNames(zone: HTMLElement): string[] {
 **Area:** `packages/ui/src/chrome.tsx` (`TopBar`, `Rail`, `SidekickToggle`, `MockBadge` placement), `packages/ui/src/shell-nav.ts`, `packages/ui/src/guide/templates/{Work,Secondary,Home,Settings,Assistant}.tsx` (new file), `packages/ui/src/guide/OneLineBar.tsx` (new file), `packages/ui/src/HarnessApp.tsx`, `packages/ui/src/parallel/Inbox.tsx` (Bandeja pill), `packages/ui/src/SettingsPage.tsx` (top bar only), `packages/ui/test/zone.ts` (new file), tests, `packages/e2e/tests/*.spec.ts` that click the rail or the top bar.
 **Hotspots:** H2, H5, H6, H9 (`index.ts` exports of `TopBar`/`Rail` if they change).
 **Spec:** §9 (rules for all, templates 1, 3, 4, 5, 6, 7), §10.1, §10.2, §3 one-line bars, §4 (top bar and rail icons). **Rows:** 6, 30 (placement), 31 (layout), 34, 36, 38 (piece), 74.
-**Blocked by:** OQ-1, OQ-19 (harness rail pages), OQ-16 (rail selected fill, Task 37).
+**Decisions applied:** OQ-1 B; OQ-19 B no page API, harness panel hidden with Sidekick on; OQ-16 B rail fill `--hh-cta`.
 
 ### Task 35: Top bar (40) with its closed list
 
@@ -902,7 +906,7 @@ export function zoneNames(zone: HTMLElement): string[] {
 **Files:** Modify `packages/ui/src/chrome.tsx` (`SidekickToggle` → top-bar Sidekick button), `packages/ui/src/TaskHeader.tsx` (remove the Sidekick pill), `packages/ui/src/search/SearchHost.tsx` (open from the icon), `packages/ui/src/HarnessApp.tsx`. Test `packages/ui/test/chrome.test.tsx`, `packages/ui/test/task-header.test.tsx`, `packages/ui/test/search-host.test.tsx`; e2e `packages/e2e/tests/search.spec.ts`, `packages/e2e/tests/sidekick.spec.ts`, `packages/e2e/tests/sidekick-many.spec.ts`.
 
 - [ ] **Step 1: Failing test:**
-  - Search: an `IconButton icon="search"` with tooltip "Buscar (⌘K)" (OQ-1 English) on every screen except Settings and the Assistant; clicking it opens the palette of Task 34 (row 36).
+  - Search: an `IconButton icon="search"` with tooltip "Buscar (⌘K)" (translated) on every screen except Settings and the Assistant; clicking it opens the palette of Task 34 (row 36).
   - Sidekick button: compact quiet, no border or fill (`rule` asserts `border: none` / transparent background, `surface-2` on hover), a `Dot` (green active · orange cards waiting · grey off) and text; `aria-pressed` reflects whether the right column is open; clicking toggles it (wiring to the column lands in Task 48 — here it toggles the same state `SidekickToggle` toggles today). Visible by default on the work screen only (row 34).
   - The task header has no Sidekick pill.
 - [ ] **Steps 2–6** per the shape. Rows 34, 36.
@@ -913,10 +917,10 @@ export function zoneNames(zone: HTMLElement): string[] {
 
 - [ ] **Step 1: Failing test:**
   - `railEntries(...)` returns, in order, `home, tasks, inbox (if parallel), jobs (if jobs), files (if notes, references or material), plugins (if plugin panels), <harness pages>` — `notes` becomes `files`; `settings` is no longer a rail entry (it lives in the top bar).
-  - Each entry is a 40 `IconButton` with an 18 icon from Task 12 and a tooltip with the name; Bandeja carries a `Counter` with the waiting tasks (row 6); selected entry has the amber fill of §10.2 ("Selected = amber fill"), with the token OQ-16 names.
+  - Each entry is a 40 `IconButton` with an 18 icon from Task 12 and a tooltip with the name; Bandeja carries a `Counter` with the waiting tasks (row 6); selected entry has the amber fill of §10.2 ("Selected = amber fill") = `var(--hh-cta)`.
   - Rail width `var(--hh-rail-w)` (64, row 31); present on Work and Secondary templates, absent on Inicio, Settings and the Assistant.
   - Below 760 px it becomes a row on top (§10.2, stated without condition: build the `@media (max-width: 760px)` rule even though the shell window's `minWidth` is 900 today, `packages/shell/src/main/index.ts:3288`; a harness or a later window minimum may reach it).
-  - Harness pages: per OQ-19.
+  - Harness pages: no SDK page API in this plan. The rail ends at Plugins; the spec's "harness's own pages" has no entries yet.
   - Each rail button navigates to a page; none opens a drawer or changes a column (assert the click changes the screen state, not a panel flag).
 - [ ] **Steps 2–6** per the shape. Until Part 12 builds the pages, `files`, `jobs` and `plugins` open today's views inside a Secondary template shell (Task 38) so the app keeps working. Rows 6 (counter), 31.
 
@@ -966,14 +970,14 @@ const actions = [
 **Area:** `packages/ui/src/TaskHeader.tsx`, `packages/ui/src/parallel/TaskStrip.tsx`, `packages/ui/src/PhaseStepper.tsx`, `packages/ui/src/ModeList.tsx`, `packages/ui/src/ChatView.tsx`, `packages/ui/src/Message.tsx`, `packages/ui/src/ActivityList.tsx`, `packages/ui/src/tools/*.tsx`, `packages/ui/src/markdown.tsx`, `packages/ui/src/ChoicesBlock.tsx`, `packages/ui/src/InputBlock.tsx`, `packages/ui/src/ErrorCard.tsx`, `packages/ui/src/DocumentCards.tsx`, `packages/ui/src/StartView.tsx`, `packages/ui/src/UsageMeter.tsx`, `packages/ui/src/plugins/PluginChips.tsx`, `packages/ui/src/plugins/PreparedTask.tsx`, `packages/ui/src/ScopePicker.tsx`, `packages/ui/src/hatches/ScopeSettings.tsx`, `packages/ui/src/index.ts`, tests, e2e.
 **Hotspots:** H2, H6, H9, H10.
 **Spec:** §10.3–§10.7. **Rows:** 8, 28, 33, 35, 38 (use), 65, 66, 67, 68, 69, 70, 71, 72, 73.
-**Blocked by:** OQ-1, OQ-31 (where plan usage goes), OQ-17 (Tasks 41, 45), OQ-18 (Task 45).
+**Decisions applied:** OQ-1 B; OQ-31 A plan usage only in Settings › Uso; OQ-17 A; OQ-18 form A (Enviar primary, Saltar secondary).
 
 ### Task 40: Task header in one row; scope leaves the core
 
 **Files:** Modify `packages/ui/src/TaskHeader.tsx`, `packages/ui/src/ChatView.tsx` (header slot), delete the scope UI: `packages/ui/src/ScopePicker.tsx`, `packages/ui/src/hatches/ScopeSettings.tsx` and their CSS, and their exports from `packages/ui/src/index.ts` (row 28 "Leaves the core", §14; breaking, say so in the PR body). Remove `PluginChips` from the header (`plugins/PluginChips.tsx` deleted if unused). Test `packages/ui/test/task-header.test.tsx`, `packages/ui/test/chat-look.test.tsx`, `packages/ui/test/scopes.test.tsx` (its ScopePicker / ScopeSettings cases deleted with the scope UI; `hatches-ui.test.tsx` and `engine-config-ui.test.tsx` also reference `ScopePicker` and lose those cases); e2e: no spec is only about scope — remove the scope steps from `flow.spec.ts`, `hatches-engine.spec.ts`, `hatches-linked.spec.ts`, `jobs.spec.ts`, `material.spec.ts`, `parallel.spec.ts`, `tool-host.spec.ts` where they drive the scope UI, and update `packages/e2e/tests/look.spec.ts`.
 
 - [ ] **Step 1: Failing test:** `zoneNames(header)` equals `["<task title>", "Historial", "Nueva tarea"]` with parallel work and `["<task title>", "Historial"]` without; title is a 20 heading (`rule(".hh-task-title")["font-size"]` = `20px`, row 8); `Historial` is compact secondary with the `history` icon, `Nueva tarea` compact primary with the `add` icon; the bar is an `OneLineBar`; no scope select, no context meter, no plan usage, no plugin chips (rows 28, 35). Source scan: no `ScopePicker` import in `packages/ui/src` (row 28).
-- [ ] **Steps 2–6** per the shape. The context chip moves under the composer in Task 46; plan usage goes per OQ-31 (Task 49 / Task 65). Rows 8, 28, 35, 38.
+- [ ] **Steps 2–6** per the shape. The context chip moves under the composer in Task 46; plan usage goes only to Settings › Uso (Task 65); it is not in the right column footer. Rows 8, 28, 35, 38.
 
 ### Task 41: Task tabs and the phase and mode bar
 
@@ -982,8 +986,8 @@ const actions = [
 - [ ] **Step 1: Failing test:**
   - Tabs: only with parallel work and more than one open task; one 40 `Tabs` tab per open task with name, orange `Dot` if it waits, phase `Tag`.
   - Phases row: done = green `Tag` with `check`, current = orange `Tag`, next = `Chip`s; `Terminar` compact secondary on the right; when narrow, next phases merge into one "+N" chip, then the buttons follow the `OneLineBar` steps (they have no icon, so 2 → 4).
-  - Time row: `StatusLine` "quedan 12 min" (OQ-1) + `Pausar` / `Extender` compact quiet.
-  - Phase proposal: info `Notice` with `Ir` and `Ahora no` (§10.5 "Ir (compact primary) and Ahora no"); the kind of each button follows OQ-17, because §7 allows only secondaries or one primary.
+  - Time row: `StatusLine` "quedan 12 min" (translated) + `Pausar` / `Extender` compact quiet.
+  - Phase proposal: info `Notice` with `Ir` and `Ahora no` (§10.5 "Ir (compact primary) and Ahora no"); `Ir` is a compact primary and `Ahora no` a compact secondary (spec §7 updated to allow a primary plus a secondary).
   - Mode row: "Modo: …" + `Cambiar modo` (quiet) that unfolds a list of `Option`s below.
   - Each row appears only if the task has phases, time or modes; there is no button that hides a row.
 - [ ] **Steps 2–6** per the shape. §10.4, §10.5, row 38.
@@ -1019,8 +1023,8 @@ const actions = [
   - Options block: 52 `Option`s with radio; recommended amber; each carries a type `Tag`: Seguir orange, Profundizar blue, Preguntar violet; a chosen option no longer fills black (row 67).
   - Mode recommendation (§10.6 "mode recommendation"): built only from guide pieces (source scan: no non-guide `hh-*` class in `RecommendModeBlock.tsx`); its content and order stay as today; its badge is the `Tag` of Task 26.
   - Annotate text (§10.6 "annotate text"): built only from guide pieces (same scan on `AnnotateBlock.tsx`); its marks show the `AnnotationTooltip` of Task 33.
-  - Form block: inside a `Card` with title, fields (`FormField`), `Saltar` · `Enviar` bottom right in that order (§10.6, row 68); the kind of each button per OQ-18 (the spec names no kinds here, and row 33 says "No fixed primary on the work screen").
-  - Error: red `Notice` with title, text and `Reintentar` · `Arreglar` bottom right (§10.6); button kinds per OQ-17.
+  - Form block: inside a `Card` with title, fields (`FormField`), `Saltar` · `Enviar` bottom right in that order (§10.6, row 68); `Enviar` is the primary and `Saltar` a secondary (spec §10.6 and row 33 updated: the primary is inside its card, so the work screen still has no fixed primary).
+  - Error: red `Notice` with title, text and `Reintentar` · `Arreglar` bottom right (§10.6); `Reintentar` is a compact secondary and `Arreglar` a compact primary.
   - Confirmation before starting, level and time: orange `Notice` with its icon and two compact buttons inside (`InlineConfirm` from Task 31; row 72).
   - "usó otro modelo": a `StatusLine` (info).
   - No task: topics as `Tile`s or a list, switched by `Segmented` Tarjetas / Lista, plus FAQ `Chip`s that send the question.
@@ -1049,7 +1053,7 @@ const actions = [
 **Area:** `packages/ui/src/FlowSide.tsx`, `packages/ui/src/sidekick/SidekickPanel.tsx`, `packages/ui/src/sidekick/PresetOffer.tsx`, `packages/ui/src/sidekick/ReviewHint.tsx`, `packages/ui/src/sidekick/FlaggedText.tsx`, `packages/ui/src/sidekick/word-diff.ts`, `packages/ui/src/sidekick/mark.tsx`, `packages/ui/src/ChatView.tsx` (column slots), `packages/ui/src/HarnessApp.tsx` (`renderSide`), tests, e2e.
 **Hotspots:** H2, H5, H6, H9 (`renderSide` contract), H10.
 **Spec:** §10.8, §10.9, Sidekick column. **Rows:** 5, 32, 37 (column), 41, 42, 43, 44 (placement), 58 (Sidekick).
-**Blocked by:** OQ-1, OQ-19, OQ-31, OQ-18 (Task 50).
+**Decisions applied:** OQ-1 B; OQ-19 B; OQ-31 A; OQ-18 cards A (the live card's last named action is the primary).
 
 ### Task 47: Left column shows only the walkthrough
 
@@ -1064,7 +1068,7 @@ const actions = [
 
 - [ ] **Step 1: Failing tests:**
   - Width `var(--hh-column-w)` (rows 5); header is only the open panel's title (15) + a `chevron` `IconButton` to fold; no panel-switching segmented.
-  - Content is the Sidekick, or the harness panel when the harness has no Sidekick or it is off; with Sidekick on, the harness panel is not in the column (where it goes: OQ-19).
+  - Content is the Sidekick, or the harness panel when the harness has no Sidekick or it is off; with Sidekick on, the harness panel is not in the column (the harness panel is hidden while the Sidekick is on; no page API in this plan).
   - Folded: 52 wide, the marks of the active sidekicks stacked with their orange dot; one click opens it.
   - Shown or hidden by the top-bar Sidekick button (Task 36) and the header chevron; hidden while a split view is open and below 720 px (§10.9, stated without condition).
   - Row 32: in `styles.test.ts`, `it("defines each side-column, Sidekick, Sidekick card and dot selector once")` counts top-level rules per selector among `.hh-side`, `.hh-flow-side`, `.hh-sk-panel`, `.hh-sk-card`, `.hh-dot` (each defined twice on `master` today: `.hh-side` lines 467 and 806, `.hh-flow-side` 646 and 779, `.hh-sk-panel` 904 and 939, `.hh-sk-card` 909 and 941, `.hh-dot` 200 and 233) and expects 1.
@@ -1077,7 +1081,7 @@ const actions = [
 - [ ] **Step 1: Failing test:**
   - Header: "Sidekick" (15) + chevron; nothing else (row 42).
   - Status line: the marks (24 circle, 14 icon) of the sidekicks on in this task, in the person's order; on the right the state in 12 — Mirando · Leyendo tu prompt… · Tiene una sugerencia · N avisos · Apagado; a mark with a waiting card has an orange `Dot`; clicking a mark opens a `Menu` with `Apagar en esta tarea` · `Ir a Settings` (rows 42, 44).
-  - Footer: one 12 line with the Sidekick's spend in the task and the model level, plus a `ProgressBar` of that cap, fixed at the bottom; plan usage per OQ-31 (spec contradiction §10.3 vs row 43).
+  - Footer: one 12 line with the Sidekick's spend in the task and the model level, plus a `ProgressBar` of that cap, fixed at the bottom; no plan usage here: it lives only in Settings › Uso (spec §10.3 updated).
   - States: Mirando = `EmptyState` without buttons; Revisando = `loading` icon and countdown text (the composer caption shows the same, Task 46); Apagado = grey marks, turned on from the top-bar button or the presentation card.
 - [ ] **Steps 2–6** per the shape. Rows 42, 43, 44.
 
@@ -1087,7 +1091,7 @@ const actions = [
 
 - [ ] **Step 1: Failing test:**
   - Anatomy: radius 14, padding 12, text 13; parts in this order, absent ones skipped: who speaks (24 mark + name 13) with the moment's `Tag` on the right · title 13/600 · text or short list · rewrite block (grey fill, additions green) · "para después" rows · why (12, faint) with `No marcar esto` · actions on one line on the right, compact: dismiss (quiet) first, secondaries, the primary last; at most one primary and only on the live card; no icons but the mark and the notice tag's dot (§10.9 card anatomy, literal).
-  - `type` is a closed union: `before-send | after-turn | lesson | notice | guard | daily-summary | place-reply | intro | harness-suggested | past | cap` (TS test with `// @ts-expect-error` on another value). Per type, the tag and the buttons of §10 Sidekick column: Antes de enviar → orange; `Enviar igual` (quiet) · `Editar` (secondary, §3 "Secondary: Everything else") · `Enviar sugerido` (primary) (row 41, literal); Después del turno → blue "Sigue"; `Descartar` (the dismiss, quiet) · `Al composer` (kind per OQ-18); Lección → violet; `Descartar` (quiet) · `Al composer` (secondary, literal); Aviso → orange with dot; only `Guardar como decisión` / `Terminar tarea` / `Ir a la tarea`; Guardia → red "Antes de aprobar" or orange "Cambio de fase"; `Aprobar igual` · `Revisar` (kinds per OQ-18); Resumen del día → grey "Ayer", up to 4 lines, `Descartar`; place reply → grey tag with the place's name, `Descartar`; Presentación → `Ahora no` · `Prender` (kinds per OQ-18); harness-suggested → rows with mark, name, purpose and `Adoptar`, `Ahora no` at the bottom (kinds per OQ-18); past → a 30 line (mark, what it was, grey result tag) that unfolds on click (§17.1: 30, not 36); cap → one line, no buttons, once per task.
+  - `type` is a closed union: `before-send | after-turn | lesson | notice | guard | daily-summary | place-reply | intro | harness-suggested | past | cap` (TS test with `// @ts-expect-error` on another value). Per type, the tag and the buttons of §10 Sidekick column: Antes de enviar → orange; `Enviar igual` (quiet) · `Editar` (secondary, §3 "Secondary: Everything else") · `Enviar sugerido` (primary) (row 41, literal); Después del turno → blue "Sigue"; `Descartar` (the dismiss, quiet) · `Al composer` (primary on the live card, secondary otherwise); Lección → violet; `Descartar` (quiet) · `Al composer` (secondary, literal); Aviso → orange with dot; only `Guardar como decisión` / `Terminar tarea` / `Ir a la tarea`; Guardia → red "Antes de aprobar" or orange "Cambio de fase"; `Aprobar igual` (secondary) · `Revisar` (primary on the live card); Resumen del día → grey "Ayer", up to 4 lines, `Descartar`; place reply → grey tag with the place's name, `Descartar`; Presentación → `Ahora no` (secondary) · `Prender` (primary on the live card); harness-suggested → rows with mark, name, purpose and `Adoptar` (primary on the live card), `Ahora no` (secondary) at the bottom; past → a 30 line (mark, what it was, grey result tag) that unfolds on click (§17.1: 30, not 36); cap → one line, no buttons, once per task.
   - The live card is on top with `--hh-shadow`; only cards of the open task.
   - Changed words: green fill for added, red fill struck through for removed — the same classes as the diff viewer (Task 54); no yellow (row 58).
 - [ ] **Steps 2–6** per the shape. Rows 41, 58.
@@ -1103,7 +1107,7 @@ const actions = [
 **Area:** `packages/ui/src/guide/templates/SplitView.tsx` (new file), `packages/ui/src/DocumentReader.tsx`, `packages/ui/src/ContextPanel.tsx`, `packages/ui/src/ReviewBar.tsx`, `packages/ui/src/ReviewColumn.tsx`, `packages/ui/src/FocusMarkers.tsx`, `packages/ui/src/review-marks.ts`, `packages/ui/src/FileDiff.tsx`, `packages/ui/src/EntryDiff.tsx`, `packages/ui/src/ApprovedDiff.tsx`, `packages/ui/src/ChatView.tsx` (split slot), tests, e2e.
 **Hotspots:** H2, H6, H10.
 **Spec:** §10.10, §2 special uses (diffs, review marks). **Rows:** 4, 57, 58 (diff viewer), 59, 60, 61, 62, 63, 64.
-**Blocked by:** OQ-1, OQ-20 (compact 40 option), OQ-30 (index width).
+**Decisions applied:** OQ-1 B; OQ-20 A compact option = radio 18 + title at 40 / radius 12; OQ-30 A new width token for the 200 index; OQ-4 B diff borders in tag ink.
 
 ### Task 51: SplitView template; Context
 
@@ -1118,7 +1122,7 @@ const actions = [
 
 - [ ] **Step 1: Failing test:**
   - Header: title 20, file crumbs, `text` IconButton (a `Menu` for size and width), `fullscreen` IconButton, `Cerrar`.
-  - Body: index (width per OQ-30; hidden below 1000 px) + the 680 document at 16.
+  - Body: index (200 wide through a new width token, `--hh-index-w: 200px`, added in Task 3; hidden below 1000 px) + the 680 document at 16.
   - Footer: compact review bar — `Enviar comentarios (N)` on the left · status, `Ver cambios` · `Aprobar` (primary) on the right; buttons are 30 (row 63).
   - Opens from a document chip, a document link, or a file in Historial (the Historial entry lands in Task 58).
 - [ ] **Steps 2–6** per the shape. Row 63.
@@ -1131,7 +1135,7 @@ const actions = [
   - Marks: background + 2 px underline in the type's ink; question orange · comment blue · resolved grey · the active one `--hh-active` (row 59).
   - Margin dots in focus mode use the type's color, not amber (row 64).
   - Comment column (280) right of the document, in review only: one `Card` per comment with `Avatar`, a type `Tag` in the header — Pregunta orange, Comentario blue, Resuelto grey (row 61) — and a red `Bloquea` `Tag` if it blocks approval; the chat shows the same red tag; no `■` anywhere (source scan) (row 60).
-  - A question is answered with `CompactOption` (40), used only inside `ReviewColumn` (source scan) (row 62; details per OQ-20).
+  - A question is answered with `CompactOption` (40), used only inside `ReviewColumn` (source scan) (row 62). `CompactOption`: radio 18, title, no description, 40 high, radius 12.
   - Add `CompactOption` to `GUIDE_CLASSES` with the comment "§15 exception: comments column only".
 - [ ] **Steps 2–6** per the shape. Rows 59, 60, 61, 62, 64.
 
@@ -1139,7 +1143,7 @@ const actions = [
 
 **Files:** Modify `packages/ui/src/FileDiff.tsx`, `packages/ui/src/EntryDiff.tsx`, `packages/ui/src/ApprovedDiff.tsx`, delete the rendered-markdown compare and its side bar (grep `rendered` / `md-compare` in these files). Test `packages/ui/test/file-diff.test.tsx`, `packages/ui/test/entry-diff.test.tsx`.
 
-- [ ] **Step 1: Failing test:** lines with green (added) / red (removed) background and border (border color per OQ-4); words inside a line with green background, or red background struck through — the same classes the Sidekick uses (Task 50; row 58); a `Segmented` Inline / Side by side, side by side becomes inline below 900 px; a markdown file is compared as lines, like code: no rendered compare, no side bar (row 57).
+- [ ] **Step 1: Failing test:** lines with green (added) / red (removed) background and border (border color = the tag ink of the line's color); words inside a line with green background, or red background struck through — the same classes the Sidekick uses (Task 50; row 58); a `Segmented` Inline / Side by side, side by side becomes inline below 900 px; a markdown file is compared as lines, like code: no rendered compare, no side bar (row 57).
 - [ ] **Steps 2–6** per the shape. Rows 57, 58.
 
 ### Part 11 close
@@ -1153,7 +1157,7 @@ const actions = [
 **Area:** `packages/ui/src/pages/{FilesPage,HistoryPage,PluginsPage,JobsPage,InboxPage}.tsx` (new file), `packages/ui/src/parallel/InboxBoard.tsx`, `packages/ui/src/parallel/Inbox.tsx`, `packages/ui/src/parallel/JobsTab.tsx`, `packages/ui/src/NotesPanel.tsx`, `packages/ui/src/MaterialPanel.tsx`, `packages/ui/src/hatches/LinkedFolders.tsx`, `packages/ui/src/HistoryPanel.tsx`, `packages/ui/src/FileTimelinePanel.tsx`, `packages/ui/src/Drawer.tsx` (removed), `packages/ui/src/plugins/PluginsSection.tsx`, `packages/ui/src/plugins/PanelFrame.tsx`, `packages/ui/src/HarnessApp.tsx`, `packages/ui/src/shell-nav.ts`, `packages/ui/src/settings-tabs.ts`, tests, e2e.
 **Hotspots:** H2, H5, H6, H10.
 **Spec:** §11, §9 template 3, §17.3. **Rows:** 1, 2, 3, 7, 37 (page).
-**Blocked by:** OQ-1, OQ-12 (material row remove, Task 57).
+**Decisions applied:** OQ-1 B; OQ-12 D `remove` icon on material rows.
 
 All pages use the `Secondary` template of Task 38: rail with the page's entry selected, title 20, the view (if any) and one primary on the right, `Volver` in the top bar (compact quiet with arrow), `Escape` goes back; from a detail `Volver` says the list's name ("← Notas") and goes to the list; from the list it says the task's name and goes to the task. Empty page: `EmptyState` with the page's icon at 32.
 
@@ -1175,7 +1179,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 
 **Files:** Create `packages/ui/src/pages/FilesPage.tsx`. Modify `packages/ui/src/NotesPanel.tsx`, `packages/ui/src/MaterialPanel.tsx`, `packages/ui/src/hatches/LinkedFolders.tsx` (become the three tabs' list and detail), `packages/ui/src/HarnessApp.tsx` (the `files` entry opens the page; the drawer route goes), `packages/ui/src/FlowSide.tsx` (nothing left to remove after Task 47; assert only). Test `packages/ui/test/files-page.test.tsx` (new file), `packages/ui/test/notes-panel.test.tsx`, `packages/ui/test/material-panel.test.tsx`, `packages/ui/test/hatches-ui.test.tsx` (`LinkedFolders` is tested there); e2e `packages/e2e/tests/hatches-linked.spec.ts` (notes and references), `packages/e2e/tests/material.spec.ts`.
 
-- [ ] **Step 1: Failing test:** 40 `Tabs` Notas · Referencias · Material, only those with content; each a list; picking a row opens its detail in the same column and `Volver` turns into "← Notas" (or the tab's name) and goes back to the list. Notas: rows with the `note` icon 14, learned or yours, `Editar` / `Borrar` (Borrar with `InlineConfirm`). A material row's remove uses the remove icon of OQ-12. Referencias: read only, rows with `lock` 14. Material: sources, with `Agregar` (primary, `add` icon) as the page's primary (rows 1, 37).
+- [ ] **Step 1: Failing test:** 40 `Tabs` Notas · Referencias · Material, only those with content; each a list; picking a row opens its detail in the same column and `Volver` turns into "← Notas" (or the tab's name) and goes back to the list. Notas: rows with the `note` icon 14, learned or yours, `Editar` / `Borrar` (Borrar with `InlineConfirm`). A material row's remove uses the `remove` icon. Referencias: read only, rows with `lock` 14. Material: sources, with `Agregar` (primary, `add` icon) as the page's primary (rows 1, 37).
 - [ ] **Steps 2–6** per the shape. Rows 1, 37.
 
 ### Task 58: Historial page; Drawer goes
@@ -1203,7 +1207,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 **Area:** `packages/ui/src/Home.tsx`, `packages/ui/src/PickUp.tsx`, `packages/ui/src/BackupNotice.tsx`, `packages/ui/src/LanguageChooser.tsx`, `packages/ui/src/SetupFlow.tsx`, `packages/ui/src/SetupStepsList.tsx`, `packages/ui/src/SetupStepForm.tsx`, `packages/ui/src/SetupInterviewStep.tsx`, `packages/ui/src/EngineOnboarding.tsx`, `packages/ui/src/FolderStep.tsx`, `packages/ui/src/ProfileStep.tsx`, `packages/ui/src/connections/ConnectStep.tsx`, tests, e2e.
 **Hotspots:** H2, H6.
 **Spec:** §12 Inicio, §12 Assistant, §9 templates 4 and 6. **Rows:** 19 (end), 20 (use), 21 (engine in the Assistant), 76 (Assistant), 81, 82, 83.
-**Blocked by:** OQ-1, OQ-21 (engine without logo).
+**Decisions applied:** OQ-1 B; OQ-21 A Motor icon at 32 for an engine with no logo; OQ-32 B large step mark at the Assistant's end.
 
 ### Task 60: Inicio
 
@@ -1223,7 +1227,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 - [ ] **Step 1: Failing test:**
   - Left (280): `NavItem`s with `StepMark`, name and the chosen value (12); the current step has white fill with shadow and "Paso n de m".
   - Body: title 20 + sentence · the step: a form (`FormField`s), the engine as 52 `Option`s (rows 21, 76), place `Option`s, connection rows, or the interview (composer replaced by a primary `Empezar entrevista`) · engine install boxes: a `Card` with numbered steps, a code block and secondary buttons · foldable details with the log · a `StatusLine`.
-  - Action bar: `Cancelar` (left) · `Atrás` (secondary) · `Saltar` (quiet, next to Siguiente; row 82) · `Siguiente` (primary); below, the caption "podés cambiarlo después" (OQ-1).
+  - Action bar: `Cancelar` (left) · `Atrás` (secondary) · `Saltar` (quiet, next to Siguiente; row 82) · `Siguiente` (primary); below, the caption "podés cambiarlo después" (translated).
   - Top: a "Configurando…" `Notice` with `Cancelar` while a step runs.
   - Top bar: only ⚙ (§17.2).
 - [ ] **Steps 2–6** per the shape. Rows 21, 76, 82.
@@ -1232,7 +1236,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 
 **Files:** Modify `packages/ui/src/SetupFlow.tsx` (end screen). Test `packages/ui/test/setup-flow.test.tsx`; e2e `packages/e2e/tests/setup-steps.spec.ts`.
 
-- [ ] **Step 1: Failing test:** the end shows the mark OQ-32 picks (spec contradiction: row 19 "at the end, empty state with check 32" vs §12 "End: large step mark"), summary `SettingsRow`s without controls, and the large `Empezar` button with the `next` arrow, as on Inicio (row 83); the 48 circle is gone.
+- [ ] **Step 1: Failing test:** the end shows a large step mark (not an empty state with a check; spec row 19 updated; the size follows artifact v29), summary `SettingsRow`s without controls, and the large `Empezar` button with the `next` arrow, as on Inicio (row 83); the 48 circle is gone.
 - [ ] **Steps 2–6** per the shape. Rows 19, 20, 83.
 
 ### Part 13 close
@@ -1246,7 +1250,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 **Area:** `packages/ui/src/SettingsPage.tsx`, `packages/ui/src/settings-parts.tsx`, `packages/ui/src/settings-tabs.ts`, `packages/ui/src/EngineTab.tsx`, `packages/ui/src/hatches/EngineConfig.tsx`, `packages/ui/src/hatches/BackendCard.tsx`, `packages/ui/src/ModelsTab.tsx`, `packages/ui/src/UsageTab.tsx`, `packages/ui/src/connections/ConnectionsTab.tsx`, `packages/ui/src/sidekick/{SidekickTab,SidekickList,SidekickEditor,LearnedList,ImportSidekick,ScopeSidekicks}.tsx`, `packages/ui/src/plugins/{PluginsTab,PluginDetail,PermissionReview}.tsx`, `packages/ui/src/ProfilesSection.tsx`, `packages/ui/src/HarnessSettingsTab.tsx`, tests, e2e.
 **Hotspots:** H2, H5, H6.
 **Spec:** §12 Settings, §9 template 5. **Rows:** 49 (Modelos), 52, 53, 55, 75, 76, 77, 78, 79, 80.
-**Blocked by:** OQ-1, OQ-21, OQ-31.
+**Decisions applied:** OQ-1 B; OQ-21 A; OQ-31 A.
 
 ### Task 63: Settings frame — nav, section header, saving
 
@@ -1263,7 +1267,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 
 **Files:** Modify `packages/ui/src/EngineTab.tsx`, `packages/ui/src/hatches/EngineConfig.tsx`, `packages/ui/src/hatches/BackendCard.tsx`. Test `packages/ui/test/engine-tab.test.tsx`, `packages/ui/test/engine-config-ui.test.tsx`; e2e `packages/e2e/tests/hatches-engine.spec.ts`, `packages/e2e/tests/opencode.spec.ts`.
 
-- [ ] **Step 1: Failing test:** engines render as 52 `Option`s with the engine logo at 32 (no logo: OQ-21); no tiles, no ✓, one "chosen" style (row 76); `Usar este motor` is inside its card, bottom right, not above it (row 78).
+- [ ] **Step 1: Failing test:** engines render as 52 `Option`s with the engine logo at 32 (an engine with no logo shows the Motor icon at 32 in the logo place); no tiles, no ✓, one "chosen" style (row 76); `Usar este motor` is inside its card, bottom right, not above it (row 78).
 - [ ] **Steps 2–6** per the shape. Rows 76, 78.
 
 ### Task 65: Modelos, Uso, Conexiones
@@ -1272,7 +1276,7 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 
 - [ ] **Step 1: Failing test:**
   - Modelos: no nested card (row 49); each changed value shows "Recomendado: …" in 12 grey only when different; no `Restaurar` button per row (row 55); `Restaurar todo` is a quiet button (row 80).
-  - Uso: stats as `Card`s with label 12 and value 20; the usage `Table`; plan usage lives here (row 43 and OQ-31); `Ver planes` is a secondary link button (Task 16).
+  - Uso: stats as `Card`s with label 12 and value 20; the usage `Table`; plan usage lives here and only here (row 43); `Ver planes` is a secondary link button (Task 16).
   - Conexiones: one `Avatar` 32 per connection (row 27 done in Task 28; assert); the secret field per Task 24 — one button + More (⋯) with `Borrar` (confirmed) and `Probar` (row 53); read-only data as `SettingsRow` without control, value as grey `Tag` (row 52).
 - [ ] **Steps 2–6** per the shape. Rows 49, 52, 53, 55.
 
@@ -1306,20 +1310,20 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 **Area:** `packages/ui/src/plugin-ui/components.tsx`, `packages/ui/src/plugin-ui/plugin-ui.css`, `packages/ui/src/plugin-ui/tokens.css`, `packages/ui/src/plugin-ui/index.ts`, `harnesses/demo/ui/*.tsx`, `harnesses/demo/ui/demo.css`, `harnesses/demo/plugins/on-this-day/panels/*`, `harnesses/demo/plugins/on-this-day/dist/*` (rebuilt), `packages/e2e/fixtures/plugins/probe/**`, `packages/cli/template/ui/harness.css`, `packages/ui/test/plugin-ui.test.tsx`, `packages/ui/test/plugin-ui-tokens.test.ts`, `harnesses/demo/test/{blocks.test.tsx,backend-panel.test.tsx,on-this-day.test.ts,manifest.test.ts}`.
 **Hotspots:** H4, H9 (`plugin-ui/index.ts` is a public export).
 **Spec:** §15 Plugin panels, §15 Harness chat blocks, §16.5. **Rows:** 25, 26.
-**Blocked by:** OQ-23 (aliases), OQ-24 (Clock, Empty, ErrorBar), OQ-18 (kind of the former 24 px buttons).
+**Decisions applied:** OQ-23 C plugin token aliases kept; OQ-24 C Clock, Empty and ErrorBar kept and added through §15; OQ-18 the former 24 px buttons are compact secondary (Today's small buttons B).
 
 ### Task 68: The kit is the compact pieces
 
-**Files:** Modify `packages/ui/src/plugin-ui/components.tsx` (Table, `Button` compact, Chip, Stat; Clock/Empty/ErrorBar per OQ-24), `packages/ui/src/plugin-ui/index.ts`. Test `packages/ui/test/plugin-ui.test.tsx`.
+**Files:** Modify `packages/ui/src/plugin-ui/components.tsx` (Table, `Button` compact, Chip, Stat; Clock, Empty and ErrorBar stay), `packages/ui/src/plugin-ui/index.ts`. Test `packages/ui/test/plugin-ui.test.tsx`.
 
-- [ ] **Step 1: Failing test:** the kit exports exactly the names OQ-24 settles (today `Table`, `Chip`, `Clock`, `Stat`, `Empty`, `ErrorBar`; spec list: table, compact button, chip, stat); the button is 30 / radius 8 / 13 / 500 (was 24 / 6; §3 Today's buttons: "Quiet or compact secondary" — the kind per OQ-18); the chip 30 / radius 8 / 500 (was 22); table rows 40 with 12 grey header; stat = label 12 + value 20 (row 25).
+- [ ] **Step 1: Failing test:** the kit exports exactly `Table`, compact `Button`, `Chip`, `Stat`, `Clock`, `Empty`, `ErrorBar` (Clock, Empty and ErrorBar are kept and added through §15; spec §15 updated); the button is 30 / radius 8 / 13 / 500 (was 24 / 6; §3 Today's buttons: compact secondary); the chip 30 / radius 8 / 500 (was 22); table rows 40 with 12 grey header; stat = label 12 + value 20 (row 25).
 - [ ] **Steps 2–6** per the shape (CSS in `plugin-ui.css`, not `styles.css`).
 
 ### Task 69: Kit CSS on the shared tokens; fixtures rebuilt
 
-**Files:** Modify `packages/ui/src/plugin-ui/plugin-ui.css` (`--hh-ok`, `--hh-warn`, `--hh-error-bg` → tag tokens), `packages/ui/src/plugin-ui/tokens.css` (aliases per OQ-23), `harnesses/demo/plugins/on-this-day/panels/*`, rebuild `harnesses/demo/plugins/on-this-day/dist/*` with `humanharness plugin build` (it has no `package.json`; see its README; `harnesses/demo/test/on-this-day.test.ts` fails if `dist` differs from a fresh build), and edit `packages/e2e/fixtures/plugins/probe/dist/panel-probe.css` by hand (the fixture has only `dist/`, no source and no build script). Test `packages/ui/test/plugin-ui-tokens.test.ts`, `harnesses/demo/test/on-this-day.test.ts`, `packages/ui/test/style-guard.test.ts` (Task 11's plugin CSS scan now has no offenders for these files); e2e `packages/e2e/tests/plugins.spec.ts`, `plugins-surface.spec.ts`.
+**Files:** Modify `packages/ui/src/plugin-ui/plugin-ui.css` (`--hh-ok`, `--hh-warn`, `--hh-error-bg` stay as they are), `packages/ui/src/plugin-ui/tokens.css` (aliases kept), `harnesses/demo/plugins/on-this-day/panels/*`, rebuild `harnesses/demo/plugins/on-this-day/dist/*` with `humanharness plugin build` (it has no `package.json`; see its README; `harnesses/demo/test/on-this-day.test.ts` fails if `dist` differs from a fresh build), and edit `packages/e2e/fixtures/plugins/probe/dist/panel-probe.css` by hand (the fixture has only `dist/`, no source and no build script). Test `packages/ui/test/plugin-ui-tokens.test.ts`, `harnesses/demo/test/on-this-day.test.ts`, `packages/ui/test/style-guard.test.ts` (Task 11's plugin CSS scan now has no offenders for these files); e2e `packages/e2e/tests/plugins.spec.ts`, `plugins-surface.spec.ts`.
 
-- [ ] **Step 1: Failing test:** `plugin-ui.css` uses no token outside the §2 tables (and the measure tokens of OQ-2); the `ALIASES` case in `plugin-ui-tokens.test.ts` is updated per OQ-23; the on-this-day panel uses only kit pieces (source scan of its panel files: imports only from `@humanharness/ui/plugin-ui`, no own `className` outside the kit's).
+- [ ] **Step 1: Failing test:** `plugin-ui.css` uses no token outside the §2 tables, the measure tokens and the kept aliases (paper, sheet, segment, slate, `--hh-ok`, `--hh-warn`, `--hh-error-bg`); the `ALIASES` case in `plugin-ui-tokens.test.ts` does not change; the on-this-day panel uses only kit pieces (source scan of its panel files: imports only from `@humanharness/ui/plugin-ui`, no own `className` outside the kit's).
 - [ ] **Steps 2–6** per the shape. Row 25.
 
 ### Task 70: Demo harness and the CLI template on the guide
@@ -1340,11 +1344,11 @@ All pages use the `Secondary` template of Task 38: rail with the page's entry se
 **Area:** `packages/ui/src/guide/GuidePage.tsx` (new file), `packages/ui/src/guide/registry.tsx` (new file), `packages/ui/src/SettingsPage.tsx`, `packages/ui/src/settings-tabs.ts`, `packages/ui/src/client.ts`, `docs/style-guide.md` (new file), `.github/pull_request_template.md` (new file), `packages/ui/test/guide-page.test.tsx` (new file), `packages/ui/test/style-guard.test.ts`, `packages/ui/test/style-guard-offenders.json`, `packages/ui/scripts/style-guard-init.ts` (removed).
 **Hotspots:** H4, H5, H6, H7.
 **Spec:** §1 (code is the source of truth), §15 Where it lives, §15 Control (checklist), §15 New piece / Exceptions (recorded in the doc), §16.6. **Rows:** 48 (doc).
-**Blocked by:** OQ-1, OQ-25 (dev mode), OQ-26 (page layout, Task 71), OQ-27 (checklist wording, Task 73).
+**Decisions applied:** OQ-1 B; OQ-25 A dev mode = unpackaged app; OQ-26 A layout by spec section; OQ-27 A six-box checklist.
 
 ### Task 71: Settings › Guía de estilo (dev mode)
 
-**Files:** Create `packages/ui/src/guide/registry.tsx` (one entry per piece: name, spec section, the real component rendered in each of its states and sizes), `packages/ui/src/guide/GuidePage.tsx`. Modify `packages/ui/src/settings-tabs.ts` (a `guide` tab, only in dev mode per OQ-25), `packages/ui/src/SettingsPage.tsx`, `packages/ui/src/client.ts` (dev-mode flag per OQ-25). Test `packages/ui/test/guide-page.test.tsx` (new file).
+**Files:** Create `packages/ui/src/guide/registry.tsx` (one entry per piece: name, spec section, the real component rendered in each of its states and sizes), `packages/ui/src/guide/GuidePage.tsx`. Modify `packages/ui/src/settings-tabs.ts` (a `guide` tab, only in dev mode), `packages/ui/src/SettingsPage.tsx`, `packages/ui/src/client.ts` (dev-mode flag: `true` when the app is unpackaged, `!app.isPackaged`, exposed to the renderer). Test `packages/ui/test/guide-page.test.tsx` (new file).
 
 - [ ] **Step 1: Failing test:**
 
@@ -1359,7 +1363,7 @@ it("renders every entry in light and dark", () => { /* render <GuidePage theme="
 it("is a Settings tab only in dev mode", () => { /* settingsTabs({ dev: false }) has no "guide"; { dev: true } has it last */ });
 ```
 
-- [ ] **Steps 2–6** per the shape. The page is a Settings tab (§15 "Settings › Guía de estilo"), so it sits in the Settings template; it renders every piece from the real components, in light and dark (§16.6). How the page lays them out (order, grouping, how measures, tokens, icons and templates are shown) is not in the spec: it follows OQ-26. Until then, the test asserts only the three cases above.
+- [ ] **Steps 2–6** per the shape. The page is a Settings tab (§15 "Settings › Guía de estilo"), so it sits in the Settings template; it renders every piece from the real components, in light and dark (§16.6). Layout (decided): one section per spec section — §2 tokens and scales, §3–§8 pieces, §4 icons, §9 templates — with each piece in light and dark side by side. The test asserts the three cases above plus that these sections exist in this order.
 
 ### Task 72: `docs/style-guide.md`
 
@@ -1373,7 +1377,7 @@ it("is a Settings tab only in dev mode", () => { /* settingsTabs({ dev: false })
 
 **Files:** Create `.github/pull_request_template.md`. Test `packages/ui/test/style-guide-doc.test.ts` (one more case).
 
-- [ ] **Step 1: Failing test:** the template exists and contains a UI checklist section (§15 Control: "a guide checklist in the description of every PR that touches UI"). The spec does not give the checklist's items or wording: they follow OQ-27. Until then the test asserts only that the section exists.
+- [ ] **Step 1: Failing test:** the template exists and contains a UI checklist section (§15 Control: "a guide checklist in the description of every PR that touches UI"). The checklist has one box per §15 rule: only guide pieces · no loose color, size, radius, spacing or weight · icons only from the set, in their places · each zone holds only its closed list · checked in light and dark · new piece or exception → decision page linked and guide row added in this PR. The test asserts the section and these six boxes.
 - [ ] **Steps 2–6** per the shape; commit `chore(github): PR template with the style-guide checklist`.
 
 ### Task 74: Close the guard
@@ -1389,193 +1393,45 @@ it("is a Settings tab only in dev mode", () => { /* settingsTabs({ dev: false })
 
 ---
 
-## Open questions for Marco
+## Decided 2026-11-03
 
-Each blocks the tasks named. Every question has a "Dejar para después" option: the task then skips that step, keeps today's behaviour for it, and lists it in the PR body. Questions marked **Spec contradiction** quote the two spec lines that disagree; the plan builds neither until Marco picks.
+Marco answered all the open questions on the review page. None was deferred. Each decision is applied in the tasks named. Questions marked "spec contradiction" are resolved and the spec text was updated to match.
 
-**OQ-1 — English copy.** The spec writes the copy in Spanish; the app ships English and translates on demand. Blocks every task that adds or changes a string (Parts 4–16).
-- A. Marco writes the English for each new or changed string; the plan's implementer lists the keys per part first.
-- B. The implementer translates literally into English and Marco corrects in each PR.
-- C. The Spanish copy goes into `en.json` as is.
-- Dejar para después.
-
-**OQ-2 — Measure tokens.** The spec fixes the scales (heights, radii, spacing, type) and lets a harness change "measures" by token (§1), but names only width tokens. Blocks Task 5, Task 8 (what "on the scale" means), Task 11, Task 69.
-- A. Add one token per scale value (heights, radii, spacing, type sizes) that a harness may override; rules use only them.
-- B. No new tokens beyond the widths and today's `--hh-control-h` / `--hh-control-r`; rules use the literal scale values and the guard checks them.
-- Dejar para después.
-
-**OQ-3 — Values off the scale today.** Gaps, paddings and sizes that are not on the scale (e.g. 2, 6, 10, 20 px). §2 says "Spacing: 4 · 8 · 12 · 16 · 24 · 32. Nothing else.", so each must move; only the value it moves to is open. Blocks Tasks 1–7 where they appear.
-- A. Each goes to the nearest scale value.
-- B. The implementer lists them per screen and Marco decides each one.
-- Dejar para después.
-
-**OQ-4 — Mapping of tokens the tables do not list.** `--hh-logo`, `--hh-logo-ink`, `--hh-shadow-sm`, `--hh-on-ink`, the diff line border color, and which tag color each of the six callouts takes. The spec already says they cannot stay: §2 "Plus `--hh-shadow` (cards and layers) and `--hh-backdrop` (dimmed background behind a dialog). Nothing else." and "Any other color token in `styles.css` not in the tables above also goes or maps to one of them." Only the mapping is open. Blocks Task 1, Task 54.
-- A. Marco gives the target token for each one (the implementer lists today's uses first).
-- B. Each goes to the closest table token by value (`--hh-shadow-sm` → `--hh-shadow`; logo tokens → `--hh-surface` / `--hh-ink`; diff borders → the tag ink of their color); callouts as Marco assigns.
-- Dejar para después.
-
-**OQ-5 — Avatar colors already stored.** Profiles may hold coral, amber, teal, pink, gray; the SDK exports `PROFILE_COLORS` with the eight. Blocks Task 2.
-- A. Map old to new (Marco gives the pairs) and keep the SDK list accepting old names.
-- B. Change the SDK list to the six (breaking for harnesses) and map stored values.
-- C. Reassign colors by order, ignoring stored values.
-- Dejar para después.
-
-**OQ-6 — What 17 and 18 px text becomes.** `.hh-reader-large` (the large reading size) is 18. §2 says "Section label · caption | 12 | The minimum. 11, 17 and 18 go.", so it cannot stay; only the replacement is open. Blocks Task 4.
-- A. It becomes 20.
-- B. It becomes 16 (the reader size), so the size option goes.
-- Dejar para después.
-
-**OQ-7 — Underline of the active review mark.** §2: "Review marks: background + 2 px underline in the type's ink. Question orange · comment blue · resolved grey · the active one in `--hh-active`." The active mark has a background but no type, so its underline ink is not stated. Blocks Task 1.
-- A. `--hh-active-ink`.
-- B. `--hh-ink`.
-- C. No underline on the active mark (background only).
-- Dejar para después.
-
-**OQ-8 — Mono fallback stack.** §2 names only "DM Mono"; today the app uses the system monospace. Blocks Task 4 (until answered, `--hh-mono: "DM Mono";` alone).
-- A. `"DM Mono", ui-monospace, monospace`.
-- B. `"DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace`.
-- C. No fallback (`"DM Mono"` only, bundled with the app).
-- Dejar para después.
-
-**OQ-9 — Icon drawings.** The spec names the icons but not their drawings. `ClockIcon` is used today and has no name in §4. Blocks Tasks 12–13.
-- A. Lucide paths (ISC license), stroke set to 1.75.
-- B. The drawings of artifact v29.
-- C. Marco provides them.
-- For the clock: A. drop its uses; B. add a "Reloj" icon through §15; C. Dejar para después.
-
-**OQ-10 — Sidekick marks already set.** Marks are emoji, a token dot or "spark" today; the SDK `mark` is a free string. Blocks Task 15 and all of Part 3 (Task 15 changes a public SDK field).
-- A. Map by purpose (prompt-coach → Coach, focus → Foco, process-guard → Guardián, mentor → Mentor, daily-summary → Resumen del día); custom sidekicks get the icon Marco names.
-- B. Like A, and the SDK accepts old values for one release with a warning.
-- C. Like A, and the SDK accepts only icon names now (breaking).
-- Dejar para después.
-
-**OQ-11 — How the SDK reaches the 12 field types.** §5 "Field types (closed list; a harness declares only these 12)" and row 51 fix the list, so the SDK must offer exactly those 12; today it has 7 input kinds (`text, longText, number, choice, multiChoice, pairs, boolean`) and 5 setting controls, and lacks secret, folder or file, slider, date, color. Only the migration is open. Blocks Task 24.
-- A. Add the 5 missing kinds now and keep today's 7 names, each mapped to a spec type (`longText` → Textarea, `choice` → One of several, `multiChoice` → Several from a list, `pairs` → Key-value pairs, `boolean` → Yes / no).
-- B. Like A, and rename the kinds to the spec's names, accepting the old names for one release with a warning.
-- C. Like B, and drop the old names now (breaking).
-- Dejar para después.
-- **OQ-11b:** "one of several" with 5 or 6 short values and no descriptions (§5: "2–4 short values → segmented · with description → options · more than 6 → select"; 5–6 without descriptions is not covered): A. Options; B. Select; C. Dejar para después.
-
-**OQ-12 — Remove icon (key-value rows, material rows). Spec contradiction.** §5 Key-value pairs: "Rows of two fields with remove (Cerrar icon) and a borderless Agregar at the end." vs §4: "Cerrar | Header of a dialog and of the split view. Nowhere else." (and §9: "**Cerrar** only in dialogs and the split view."). Today's "×" goes (§4). Blocks Task 14, Task 24, Task 57.
-- A. The Cerrar icon on these rows too (§5 wins; §4 gains this use).
-- B. A quiet "Quitar" text button, no icon (§4 wins).
-- C. A compact danger "Quitar".
-- D. A new "Quitar" icon through §15.
-- Dejar para después.
-
-**OQ-13 — Icons of the error and ok tones.** §4 gives the attention icon to warnings and the info icon to info; §5 gives the field error "13 red with the attention icon" (Task 23 builds that literally). For StatusLine and Notice in the error and ok tones the spec names no icon. Blocks Task 30.
-- A. Error uses attention; ok uses Listo (check).
-- B. Error and ok carry no icon.
-- C. Error and ok both use attention.
-- Dejar para después.
-
-**OQ-14 — How a Link looks.** §3: "Link | términos de uso | | Only inside running text, never as a standalone action." The spec gives no color, weight or underline. Blocks Task 16.
-- A. Underlined text in the current ink.
-- B. `--hh-active-ink` text, underlined on hover only.
-- C. `--hh-active-ink` text, always underlined.
-- Dejar para después.
-
-**OQ-15 — Weekdays as Segmented. Spec contradiction.** §3 Segmented: "One of 2–4 short options that change the view or a value." vs the same row: "Also replaces button groups (text size, weekdays)." Weekdays are 7 options and several may be chosen. Blocks Task 17 (`.hh-pl-days`).
-- A. Weekdays become a Segmented of 7 (the 2–4 limit gets this exception).
-- B. Weekdays become toggles, one per row (§5 "Several from a list").
-- C. Weekdays become seven compact chips that toggle.
-- Dejar para después.
-
-**OQ-16 — Which token "amber" is for the selected rail entry and the recommended Option.** §10.2: "Selected = amber fill." §3 Option: "Amber border = recommended." §2 has `--hh-cta` ("Primary button") and `--hh-active` / `--hh-active-ink` ("The chosen thing: item, chip, segment"); §3 calls the primary "amber". Blocks Task 20, Task 37.
-- A. Rail fill `--hh-active`; recommended border `--hh-active-ink`.
-- B. Rail fill `--hh-cta`; recommended border `--hh-cta`.
-- C. Rail fill `--hh-active`; recommended border `--hh-cta`.
-- Dejar para después.
-
-**OQ-17 — Buttons inside a Notice. Spec contradiction.** §7 Notice: "with up to two compact buttons: secondary with border only, transparent fill and the notice's color, or one primary if it is the key action. Never quiet." vs §10.5: "Phase proposal: info notice with Ir (compact primary) and Ahora no." (a primary plus a second button), and §10.6: "Error: red box with title, text and Reintentar · Arreglar bottom right." (kinds not named). Until answered, the Notice API of Task 30 accepts up to two compact buttons, at most one primary, no quiet. Blocks Task 30, Task 41, Task 45.
-- A. A primary plus one secondary is allowed (§10.5 wins): Ir primary · Ahora no secondary; Reintentar secondary · Arreglar primary.
-- B. "Or" means two secondaries or one primary alone (§7 wins): Ir is the only button and Ahora no becomes the notice's dismiss; Reintentar · Arreglar both secondary.
-- C. Always secondaries; no primary inside a notice.
-- Dejar para después.
-
-**OQ-18 — Button kinds the spec leaves open.** §10.6 form block: "form (inside a card: title, fields, Saltar · Enviar bottom right)" with no kinds, while row 33 says "No fixed primary on the work screen". Sidekick cards (§10.9): "dismiss (quiet) first, then secondaries, the amber primary last. At most one primary, only on the live card." but no kind is named for Después del turno "Al composer", Guardia "Aprobar igual · Revisar", Presentación "Ahora no · Prender", Sugeridos por el harness "Adoptar · Ahora no". §3 Today's buttons: "`.hh-tk-cancel` (11 px), 24 px buttons of the demo and plugins | Jobs, demo, plugin kit | Quiet or compact secondary" allows both kinds without picking. Blocks Task 16 (`.hh-tk-cancel`), Task 45, Task 50, Tasks 68 and 70 (24 px buttons).
-- Form: A. Enviar primary + Saltar secondary; B. both secondary (row 33); C. Enviar secondary + Saltar quiet.
-- Cards: A. on the live card the last named action is the primary (Al composer, Revisar, Prender, Adoptar), the others secondary; B. all secondary; C. Marco names each.
-- Today's small buttons: A. all quiet; B. all compact secondary; C. Marco names each use (the implementer lists them).
-- Dejar para después.
-
-**OQ-19 — Harness pages on the rail.** The rail ends with "the harness's own pages" and the harness panel goes to "a rail page of its own" when the Sidekick is on, but the SDK has no page API (only `renderSide`) and §4 lists no icon for such an entry. Blocks Task 37, Task 48.
-- A. Add an SDK page API: title, an icon from the set, a render function; the harness panel becomes one such page.
-- B. No page API yet; with Sidekick on, the harness panel is hidden.
-- C. No page API yet; with Sidekick on, the harness panel shares the column under a Segmented (contradicts "one panel only").
-- Dejar para después.
-
-**OQ-20 — The compact 40 option.** §10.10 and §15 name it but not its parts. Blocks Task 53.
-- A. Same as Option (radio 18, title, no description) at 40, radius 12.
-- B. Follow artifact v29 (only if OQ-22 is A).
-- Dejar para después.
-
-**OQ-21 — Engine without a logo. Spec contradiction (minor, stale wording).** §4 Motor: "Motor item in Settings and the engine tile when there is no logo." vs rows 21 and 76, where the engine is no longer a tile. Blocks Task 61, Task 64.
-- A. The Motor icon at 32 in the option's logo place.
-- B. No image; the option starts with its title.
-- Dejar para después.
-
-**OQ-22 — Is artifact v29 a source? Spec contradiction.** Spec header: "Source: the guide artifact https://claude.ai/artifact/2j18xQrjeqXPLnYaKuDkfL (v29) and the decisions page …" vs §15 Where it lives: "The artifact is the draft until they exist." Until answered, rule 1 treats the artifact as not a source: every unstated detail (hover shades, inner gaps) comes to Marco. Affects every part.
-- A. Yes, artifact v29 decides details the spec does not state, until the guide page and `docs/style-guide.md` exist.
-- B. No, every unstated detail comes to Marco.
-- Dejar para después.
-
-**OQ-23 — Plugin token aliases.** `plugin-ui/tokens.css` exposes aliases (paper, sheet, segment, slate) and plugin CSS uses `--hh-ok`, `--hh-warn`, `--hh-error-bg`. Blocks Task 6, Task 69.
-- A. Remove them; rebuild our fixtures (third-party panels break).
-- B. Keep them one release, mapped to the new tokens.
-- C. Keep them.
-- Dejar para después.
-
-**OQ-24 — Kit pieces outside the list.** The kit has `Clock`, `Empty` and `ErrorBar`; §15 lists table, compact button, chip, stat. Blocks Task 68.
-- A. Remove the three.
-- B. `Empty` and `ErrorBar` copy EmptyState and StatusLine; `Clock` goes.
-- C. Keep them, each added through §15.
-- Dejar para después.
-
-**OQ-25 — Dev mode.** Settings › Guía de estilo appears "in dev mode", which the app does not have. Blocks Task 71.
-- A. Unpackaged app (`!app.isPackaged`).
-- B. An environment variable.
-- C. A hidden switch in Settings › General.
-- D. Always visible.
-- Dejar para después.
-
-**OQ-26 — Layout of the guide page.** §15 says only "a dev-mode page inside the app (Settings › Guía de estilo) showing the real pieces built from the code" and §16.6 "renders every piece from the real components, in light and dark". Order, grouping and how measures, tokens, icons and templates are shown are not stated. Blocks Task 71.
-- A. One section per spec section (§2 tokens and scales, §3–§8 pieces, §4 icons, §9 templates), each piece in light and dark side by side.
-- B. An alphabetical list of pieces with a filter box; tokens and icons as their own entries.
-- C. Marco draws it on a decision page first (§15 "New piece").
-- Dejar para después.
-
-**OQ-27 — Wording of the PR checklist.** §15 Control: "a guide checklist in the description of every PR that touches UI"; §16.6: "Add the UI checklist to the PR template." The items are not stated. Blocks Task 73.
-- A. One box per §15 rule: only guide pieces · no loose color, size, radius, spacing or weight · icons only from the set, in their places · each zone holds only its closed list · checked in light and dark · new piece or exception → decision page linked and guide row added in this PR.
-- B. One box: "Follows docs/style-guide.md (checked in light and dark)".
-- C. Marco writes it.
-- Dejar para después.
-
-**OQ-28 — "›" inside sentences.** Strings such as "Settings › Usage" use "›" as a path separator; §4 lists only "/" and "·" as separators. Blocks Task 14 (strings).
-- A. Keep "›" in running text.
-- B. Change it to "/".
-- C. Rewrite those sentences without a path.
-- Dejar para después.
-
-**OQ-29 — Check on the chosen tile. Spec contradiction.** §3 Tile: "Selected = 2 px dark border, no check." vs §4 Listo (check): "\"Listo\" tag, done step mark, chosen tile (14)." Blocks Task 20.
-- A. No check.
-- B. Check 14.
-- Dejar para después.
-
-**OQ-30 — Reader index width.** The index is 200 wide; 200 is not in the widths table. Blocks Task 52.
-- A. A new width token.
-- B. Literal 200 allowed only in the reader rule.
-- Dejar para después.
-
-**OQ-31 — Where plan usage goes. Spec contradiction.** §10.3: "plan usage moves to the right column footer and Settings › Uso" vs row 43: "Footer with the Sidekick's spend in the task. Plan usage back to Settings › Uso" (and §10.9 Footer: "One 12 line with the Sidekick's spend in the task and the model level"). Blocks Tasks 40, 49, 65.
-- A. Only Settings › Uso.
-- B. Settings › Uso, and the right column footer when the harness panel (not the Sidekick) is open.
-- Dejar para después.
-
-**OQ-32 — Assistant end mark. Spec contradiction.** Row 19: "24 mark; at the end, empty state with check 32" vs §12 Assistant: "End: large step mark, summary rows, large Empezar button". Blocks Task 62.
-- A. Empty state with check 32.
-- B. A large step mark.
-- Dejar para después.
+| OQ | Question | Decision | Tasks affected |
+|---|---|---|---|
+| OQ-1 | English copy | B: the implementer translates the Spanish copy literally into English; Marco corrects in each PR. No task waits for copy. | every task that adds or changes a string (Parts 4–16); rule 2 |
+| OQ-2 | Measure tokens | A: one token per scale value (heights, radii, spacing, type sizes) that a harness may override; rules use only them; also `--hh-dialog-w-search`. | 5, 3, 8, 11, 69 |
+| OQ-3 | Values off the scale today | A: each goes to the nearest scale value (a tie goes to the PR under "Questions for Marco"). | 1–7 where they appear |
+| OQ-4 | Mapping of tokens the tables do not list | B: closest table token by value (`--hh-shadow-sm` → `--hh-shadow`; logo tokens → `--hh-surface` / `--hh-ink`; diff borders → tag ink); the six callouts take the tag color Marco assigns, listed in the PR. | 1, 54 |
+| OQ-5 | Avatar colors already stored | B: the SDK `PROFILE_COLORS` becomes the six (breaking); stored values are mapped (pairs listed in the PR). | 2 |
+| OQ-6 | 17 and 18 px text | B: becomes 16, the reader size; the large option goes. | 4 |
+| OQ-7 | Underline of the active review mark | A: `--hh-active-ink`. | 1 |
+| OQ-8 | Mono fallback stack | A: `"DM Mono", ui-monospace, monospace`. | 4 |
+| OQ-9 | Icon drawings and the clock | Drawings: B, those of artifact v29. Clock: B, a new "Reloj" icon (`clock`) added through §15 (spec §4 row added). | 12, 13 |
+| OQ-10 | Sidekick marks already set | A: map by purpose (prompt-coach → coach, focus → focus, process-guard → guardian, mentor → mentor, daily-summary → daily-summary); custom sidekicks get the icon Marco names; the SDK accepts icon names only (breaking). | 15 |
+| OQ-11 | How the SDK reaches the 12 field types | A: add the 5 missing kinds now, keep today's 7 names, each mapped to a spec type. | 24 |
+| OQ-11b | One of several with 5–6 short values, no description | B: Select (Segmented stays 2–4). | 24 |
+| OQ-12 | Remove icon (spec contradiction) | D: a new "Quitar" icon (`remove`) through §15; `close` stays for dialogs and the split view. Spec §4 and §5 updated. | 12, 14, 24, 57 |
+| OQ-13 | Icons of the error and ok tones | A: error uses attention; ok uses Listo (check). | 30 |
+| OQ-14 | How a Link looks | A: underlined text in the current ink. | 16 |
+| OQ-15 | Weekdays as Segmented (spec contradiction) | A: a Segmented of 7; the 2–4 limit gets this exception. Spec §3 updated. | 17 |
+| OQ-16 | Which token is the "amber" | B: rail fill `--hh-cta`; recommended border `--hh-cta`. | 20, 37 |
+| OQ-17 | Buttons inside a Notice (spec contradiction) | A: a primary plus one secondary is allowed (Ir primary · Ahora no secondary; Reintentar secondary · Arreglar primary). Spec §7 updated. | 30, 41, 45 |
+| OQ-18 | Button kinds the spec leaves open (spec contradiction, confirmed) | Form: A, Enviar primary + Saltar secondary. Cards: A, the live card's last named action is the primary (Al composer, Revisar, Prender, Adoptar), the others secondary. Today's small buttons: B, all compact secondary. Spec §3, §10.6, §10.9 and row 33 updated. | 16, 45, 50, 68, 70 |
+| OQ-19 | Harness pages in the rail | B: no page API yet; with Sidekick on, the harness panel is hidden. | 37, 48 |
+| OQ-20 | The compact 40 option | A: radio 18 + title, no description, 40 high, radius 12. | 53 |
+| OQ-21 | Engine without a logo (spec contradiction) | A: the Motor icon at 32 in the logo place. Spec §4 updated. | 61, 64 |
+| OQ-22 | Is artifact v29 a source (spec contradiction) | A: yes, it decides details the spec does not state until the guide page and `docs/style-guide.md` exist. Spec header and §15 updated; rule 1 updated. | all parts; rule 1 |
+| OQ-23 | Plugin token aliases | C, plugins only: the four aliases (paper, sheet, segment, slate) and the plugin status tokens `--hh-ok`, `--hh-warn`, `--hh-error-bg` stay unchanged in `tokens.css` and `plugin-ui.css` (not mapped, not moved to tag tokens). The app's `packages/ui/src/styles.css` migrates `--hh-ok`, `--hh-ok-dot`, `--hh-warn`, `--hh-error-bg` to tag tokens (Task 1). | 1, 6, 69 |
+| OQ-24 | Kit pieces outside the list | C: keep Clock, Empty and ErrorBar, each added through §15. Spec §15 updated. | 68 |
+| OQ-25 | Dev mode | A: unpackaged app (`!app.isPackaged`). | 71 |
+| OQ-26 | Layout of the guide page | A: one section per spec section (§2 tokens and scales, §3–§8 pieces, §4 icons, §9 templates), each piece in light and dark side by side. | 71 |
+| OQ-27 | Wording of the PR checklist | A: one box per §15 rule (six boxes, listed in Task 73). | 73 |
+| OQ-28 | "›" inside sentences | A: keep "›" in running text. | 14 |
+| OQ-29 | Check on the chosen tile (spec contradiction) | B: check 14. Spec §3 updated. | 20 |
+| OQ-30 | Reader index width | A: a new width token (`--hh-index-w: 200px`). | 3, 52 |
+| OQ-31 | Where plan usage goes (spec contradiction) | A: only Settings › Uso. Spec §10.3 updated. | 40, 49, 65 |
+| OQ-32 | Assistant end mark (spec contradiction) | B: a large step mark. Spec row 19 and §12 updated. | 62 |
 
 **Closed by the spec (no longer questions):**
 - Scope exports: row 28 "Scope … | Leaves the core | Remove" and §14 "The scope feature (row 28) beyond removing its UI from the core". Task 40 deletes `ScopePicker`, `ScopeSettings` and their exports from `packages/ui/src/index.ts` (breaking; say so in the PR body).
@@ -1636,7 +1492,7 @@ Each blocks the tasks named. Every question has a "Dejar para después" option: 
 
 ### Migration rows
 
-A row whose task names an open question is covered once that question is answered; until then the task keeps today's behaviour for that step ("Dejar para después").
+Every row is covered by its task; the decisions of the "Decided 2026-11-03" table are already applied in the tasks.
 
 
 | Row | Tasks | Row | Tasks | Row | Tasks |

@@ -249,7 +249,7 @@ test("a task started from an open one runs in its own lane, with its own chat", 
     await expect.poll(() => laneOf(s.folder, "write-a")?.status).toBe("waiting");
     const a = laneOf(s.folder, "write-a")!.id;
     // A next topic while the first task waits: the first closes (its note), the second starts in a new lane.
-    await page.getByRole("main").getByRole("button", { name: "Write B next" }).click();
+    await page.getByRole("main").getByRole("radio", { name: "Write B next" }).click();
     await expect(page.getByRole("main").getByText("Wrote b.")).toBeVisible();
     await expect.poll(() => lanes(s.folder).map((l) => l.action)).toEqual(["write-b"]);
     const b = laneOf(s.folder, "write-b")!.id;

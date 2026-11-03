@@ -12,7 +12,8 @@ afterEach(cleanup);
 const drive = "/Users/me/Library/CloudStorage/GoogleDrive-me@example.com/My Drive";
 const work = "/Users/me/Library/CloudStorage/GoogleDrive-work@example.com/My Drive";
 const icloud = "/Users/me/Library/Mobile Documents/com~apple~CloudDocs";
-const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLElement;
+const checked = (name: string) => radio(name).getAttribute("aria-checked") === "true";
 
 /** The step with a footer button that submits it, as the setup flow renders it. */
 function renderStep(language: string, client: FakeClient, onSaved: (s: AppState) => void = () => {}) {
@@ -47,8 +48,8 @@ describe("FolderStep", () => {
     await renderStep("en", client, onSaved);
     const places = screen.getByRole("radiogroup", { name: "Where to keep your work" });
     expect(places.textContent).toContain("Save it in Google Drive so you don't lose it");
-    expect(radio("Save it in Google Drive so you don't lose it").checked).toBe(true);
-    expect(radio("Only on this computer").checked).toBe(false);
+    expect(checked("Save it in Google Drive so you don't lose it")).toBe(true);
+    expect(checked("Only on this computer")).toBe(false);
     expect(screen.getByText(`${drive}/Demo`)).toBeTruthy();
     submit();
     await waitFor(() => expect(client.state.config.folder).toBe(`${drive}/Demo`));
@@ -59,7 +60,7 @@ describe("FolderStep", () => {
     await renderStep("en", client);
     fireEvent.click(radio("Save it in iCloud Drive so you don't lose it"));
     expect(screen.getByText(`${icloud}/Demo`)).toBeTruthy();
-    expect(radio("Save it in iCloud Drive so you don't lose it").checked).toBe(true);
+    expect(checked("Save it in iCloud Drive so you don't lose it")).toBe(true);
     fireEvent.click(radio("Only on this computer"));
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));

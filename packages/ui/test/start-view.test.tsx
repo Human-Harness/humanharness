@@ -37,9 +37,9 @@ describe("StartView in the soft-cards look (UI refresh spec §5.3)", () => {
     expect(switcher.classList.contains("hh-segmented")).toBe(true);
     expect(within(switcher).getAllByRole("button").map((b) => b.textContent)).toEqual(["Cards", "List"]);
     expect(within(switcher).getByRole("button", { name: "Cards" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("list", { name: "Topics" }).className).toBe("hh-topics");
+    expect(screen.getByRole("list", { name: "Topics" }).getAttribute("data-layout")).toBe("cards");
     fireEvent.click(within(switcher).getByRole("button", { name: "List" }));
-    expect(screen.getByRole("list", { name: "Topics" }).className).toContain("hh-topics-list");
+    expect(screen.getByRole("list", { name: "Topics" }).getAttribute("data-layout")).toBe("list");
     expect(store.get(`hh.start.view.${s.harness.id}`)).toBe("list");
     unmount();
     const again = await renderIn("en", <StartView {...props} />);
@@ -77,10 +77,10 @@ describe("StartView in the soft-cards look (UI refresh spec §5.3)", () => {
     expect(within(turn).getByText("Up next").className).toContain("hh-tag-orange");
     expect(within(turn).getByText("Deep").className).toContain("hh-tag-violet");
     expect(within(turn).getByText("03")).toBeTruthy();
-    expect(turn.className).toContain("hh-topic-next");
+    expect(turn.getAttribute("data-recommended")).toBe("true");
     const manifest = within(topics).getByRole("button", { name: /The manifest/ });
     expect(within(manifest).getByText("Done").className).toContain("hh-tag-green");
-    expect(manifest.className).not.toContain("hh-topic-next");
+    expect(manifest.hasAttribute("data-recommended")).toBe(false);
     const blocks = within(topics).getByRole("button", { name: /Blocks/ });
     expect(within(blocks).getByText("To do").className).toContain("hh-tag-gray");
     expect(within(blocks).getByText("Standard").className).toContain("hh-tag-blue");

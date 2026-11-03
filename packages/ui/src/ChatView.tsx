@@ -71,6 +71,7 @@ import { TaskHeader } from "./TaskHeader";
 import { UsageMeter } from "./UsageMeter";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 import { Button } from "./guide/Button";
+import { Option, OptionGroup } from "./guide/Option";
 
 /** How close to the bottom (px) the user must be for new content to keep the chat pinned. */
 const STICK_THRESHOLD = 80;
@@ -582,13 +583,13 @@ export function ChatView({
   useEffect(() => {
     if (!askingMode) return;
     askRef.current?.scrollIntoView?.({ block: "nearest" });
-    askRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+    askRef.current?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus();
   }, [askingMode]);
   const askingTime = timePick !== null;
   useEffect(() => {
     if (!askingTime) return;
     timeRef.current?.scrollIntoView?.({ block: "nearest" });
-    timeRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+    timeRef.current?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus();
   }, [askingTime]);
 
   // The answer appears at a steady pace, word by word and block by block: the turn running now, then its entry
@@ -1878,12 +1879,12 @@ export function ChatView({
                   <p id="hh-time-title">
                     <strong>{t("phases.timeTitle")}</strong>
                   </p>
-                  <div className="hh-mode-list" role="group" aria-labelledby="hh-time-title">
+                  <OptionGroup labelledBy="hh-time-title">
                     {timeChoices(timePick.options.action).map((m) => (
-                      <button
+                      <Option
                         key={m ?? "none"}
-                        type="button"
-                        className="hh-choice"
+                        checked={false}
+                        title={m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
                         onClick={() => {
                           const p = timePick;
                           setTimePick(null);
@@ -1892,11 +1893,9 @@ export function ChatView({
                           inputRef.current?.focus();
                           send(p.text, { ...p.options, timeBox: m });
                         }}
-                      >
-                        {m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
-                      </button>
+                      />
                     ))}
-                  </div>
+                  </OptionGroup>
                   <button onClick={closeTime}>{t("modes.notNow")}</button>
                 </div>
               )}

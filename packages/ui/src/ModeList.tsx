@@ -1,8 +1,9 @@
 import { type KeyboardEvent, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Option, OptionGroup } from "./guide/Option";
 import type { ModeOption } from "./modes";
 
-/** The modes as buttons, each with its description; the current one pressed. */
+/** The modes as options, each with its description; the current one chosen. */
 export function ModeList({
   id,
   modes,
@@ -20,14 +21,11 @@ export function ModeList({
   labelledBy: string;
 }) {
   return (
-    <div id={id} className="hh-mode-list" role="group" aria-labelledby={labelledBy}>
+    <OptionGroup id={id} labelledBy={labelledBy}>
       {modes.map((m) => (
-        <button key={m.id} type="button" className="hh-choice" aria-pressed={m.id === current} disabled={disabled} onClick={() => onPick(m.id)}>
-          <strong>{m.label}</strong>
-          {m.description && <span className="hh-mode-reasons">{m.description}</span>}
-        </button>
+        <Option key={m.id} checked={m.id === current} disabled={disabled} title={m.label} description={m.description || undefined} onClick={() => onPick(m.id)} />
       ))}
-    </div>
+    </OptionGroup>
   );
 }
 

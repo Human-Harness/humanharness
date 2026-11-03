@@ -5,3 +5,5 @@ export * from "./IconButton";
 export * from "./Segmented";
 export * from "./Tabs";
 export * from "./NavItem";
+export * from "./Option";
+export * from "./Tile";

@@ -36,14 +36,14 @@ describe("RecommendModeBlock (task-modes spec §4)", () => {
   it("shows the recommended mode first with its badge and reasons, then the alternatives; a pick goes to chooseMode", async () => {
     const p = props();
     await renderIn("en", <RecommendModeBlock {...p} />);
-    const group = screen.getByRole("group", { name: "How do we work?" });
-    const buttons = within(group).getAllByRole("button");
+    const group = screen.getByRole("radiogroup", { name: "How do we work?" });
+    const buttons = within(group).getAllByRole("radio");
     expect(buttons).toHaveLength(2);
     expect(buttons[0].textContent).toBe("SocraticRecommendedOne key idea to discover.You like to reason it out.");
     expect(buttons[1].textContent).toBe("Worked examplesIf you want to see it solved first.");
     fireEvent.click(buttons[0]);
     expect(p.chooseMode).toHaveBeenCalledWith("socratic");
-    expect(buttons[0].getAttribute("aria-pressed")).toBe("true");
+    expect(buttons[0].getAttribute("aria-checked")).toBe("true");
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -53,31 +53,31 @@ describe("RecommendModeBlock (task-modes spec §4)", () => {
     const more = screen.getByRole("button", { name: "See all modes" });
     expect(more.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(more);
-    const list = screen.getByRole("group", { name: "See all modes" });
-    expect(within(list).getAllByRole("button").map((b) => b.textContent)).toEqual([
+    const list = screen.getByRole("radiogroup", { name: "See all modes" });
+    expect(within(list).getAllByRole("radio").map((b) => b.textContent)).toEqual([
       "SocraticQuestions that lead you to the idea.",
       "Feynman",
       "Worked examples",
     ]);
-    fireEvent.click(within(list).getByRole("button", { name: "Feynman" }));
+    fireEvent.click(within(list).getByRole("radio", { name: "Feynman" }));
     expect(p.chooseMode).toHaveBeenCalledWith("feynman");
   });
 
   it("'See all modes' marks the mode just picked, else the task's mode", async () => {
     await renderIn("en", <RecommendModeBlock {...props({ modes: { views, allowed, current: "feynman" } })} />);
     fireEvent.click(screen.getByRole("button", { name: "See all modes" }));
-    const list = screen.getByRole("group", { name: "See all modes" });
-    expect(within(list).getByRole("button", { name: "Feynman" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(within(list).getByRole("button", { name: /^Socratic/ }));
-    expect(within(list).getByRole("button", { name: /^Socratic/ }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(list).getByRole("button", { name: "Feynman" }).getAttribute("aria-pressed")).toBe("false");
+    const list = screen.getByRole("radiogroup", { name: "See all modes" });
+    expect(within(list).getByRole("radio", { name: "Feynman" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(list).getByRole("radio", { name: /^Socratic/ }));
+    expect(within(list).getByRole("radio", { name: /^Socratic/ }).getAttribute("aria-checked")).toBe("true");
+    expect(within(list).getByRole("radio", { name: "Feynman" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("stays unpicked when the switch isn't sent; is disabled once the conversation moved on; draws nothing when malformed", async () => {
     const refused = props({ chooseMode: vi.fn(() => false) });
     const { unmount } = await renderIn("en", <RecommendModeBlock {...refused} />);
-    fireEvent.click(screen.getAllByRole("button")[0]);
-    expect(screen.getAllByRole("button")[0].getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getAllByRole("radio")[0]);
+    expect(screen.getAllByRole("radio")[0].getAttribute("aria-checked")).toBe("false");
     unmount();
     await renderIn(
       "en",
@@ -87,8 +87,8 @@ describe("RecommendModeBlock (task-modes spec §4)", () => {
         <RecommendModeBlock {...props({ modes: undefined })} />
       </>,
     );
-    expect(screen.getAllByRole("group")).toHaveLength(1);
-    expect(screen.getAllByRole("button").filter((b) => b.textContent !== "See all modes").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole("radiogroup")).toHaveLength(1);
+    expect(screen.getAllByRole("radio").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 });
 
@@ -138,9 +138,9 @@ describe("the mode helpers and the bar", () => {
     expect(bar.textContent).toContain("Mode: Worked examples");
     expect(bar.textContent).toContain("Running below the level this mode asks for");
     fireEvent.click(within(bar).getByRole("button", { name: "Change mode" }));
-    const list = within(bar).getByRole("group", { name: "Change mode" });
-    expect(within(list).getByRole("button", { name: "Worked examples" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(within(list).getByRole("button", { name: "Feynman" }));
+    const list = within(bar).getByRole("radiogroup", { name: "Change mode" });
+    expect(within(list).getByRole("radio", { name: "Worked examples" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(list).getByRole("radio", { name: "Feynman" }));
     expect(onPick).toHaveBeenCalledWith("feynman");
     cleanup();
     await renderIn("en", <ModeBar modes={modes} disabled onPick={onPick} />);
@@ -154,8 +154,8 @@ describe("the mode helpers and the bar", () => {
     const change = screen.getByRole("button", { name: "Change mode" });
     fireEvent.click(change);
     expect(change.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.keyDown(screen.getByRole("button", { name: "Feynman" }), { key: "Escape" });
-    expect(screen.queryByRole("group", { name: "Change mode" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Feynman" }), { key: "Escape" });
+    expect(screen.queryByRole("radiogroup", { name: "Change mode" })).toBeNull();
     expect(change.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(change);
   });
@@ -165,8 +165,8 @@ describe("the mode helpers and the bar", () => {
     await renderIn("en", <ModeBar modes={modes} disabled={false} onPick={() => {}} />);
     const change = screen.getByRole("button", { name: "Change mode" });
     fireEvent.click(change);
-    fireEvent.click(screen.getByRole("button", { name: "Feynman" }));
-    expect(screen.queryByRole("group", { name: "Change mode" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Feynman" }));
+    expect(screen.queryByRole("radiogroup", { name: "Change mode" })).toBeNull();
     expect(document.activeElement).toBe(change);
   });
 });

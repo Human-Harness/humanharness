@@ -4,6 +4,7 @@ import type { BlockProps } from "./Message";
 import { ModeList } from "./ModeList";
 import { readRecommendation } from "./modes";
 import { Button } from "./guide/Button";
+import { Option, OptionGroup } from "./guide/Option";
 
 /**
  * The core `recommend_mode` block (task-modes spec §4): the agent's recommendation first, with its reasons, then the
@@ -28,27 +29,24 @@ export function RecommendModeBlock({ data, chooseMode, modes, active }: BlockPro
     if (chooseMode?.(m)) setPicked(m);
   };
   return (
-    <section className="hh-choices hh-recommend">
+    <section className="hh-choices">
       <h3 id={id}>{t("modes.recommendTitle")}</h3>
-      <div className="hh-choice-list" role="group" aria-labelledby={id}>
-        <button type="button" className="hh-choice hh-recommended" aria-pressed={picked === r.recommended} disabled={!usable} onClick={() => pick(r.recommended)}>
-          <strong>{views[r.recommended].label}</strong>
-          <span className="hh-badge">{t("modes.recommended")}</span>
-          <span className="hh-mode-reasons">
-            {r.reasons.map((reason, i) => (
-              <span key={i}>{reason}</span>
-            ))}
-          </span>
-        </button>
+      <OptionGroup labelledBy={id}>
+        <Option
+          recommended
+          checked={picked === r.recommended}
+          disabled={!usable}
+          title={views[r.recommended].label}
+          tag={<span className="hh-badge">{t("modes.recommended")}</span>}
+          description={r.reasons.map((reason, i) => (
+            <span key={i}>{reason}</span>
+          ))}
+          onClick={() => pick(r.recommended)}
+        />
         {r.alternatives.map((a) => (
-          <button key={a.mode} type="button" className="hh-choice" aria-pressed={picked === a.mode} disabled={!usable} onClick={() => pick(a.mode)}>
-            <strong>{views[a.mode].label}</strong>
-            <span className="hh-mode-reasons">
-              <span>{a.why}</span>
-            </span>
-          </button>
+          <Option key={a.mode} checked={picked === a.mode} disabled={!usable} title={views[a.mode].label} description={<span>{a.why}</span>} onClick={() => pick(a.mode)} />
         ))}
-      </div>
+      </OptionGroup>
       <Button
         type="button"
         id={allId}

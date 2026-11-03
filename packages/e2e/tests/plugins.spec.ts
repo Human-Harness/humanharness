@@ -161,7 +161,7 @@ test("a plugin added from a folder: review, on, its data and inbox item; the age
     await expect(page.getByRole("switch", { name: "Hello" })).not.toBeChecked();
     await expect.poll(async () => (await backendWindows(app)).length).toBe(0);
     await page.getByRole("button", { name: "Done", exact: true }).click();
-    await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
+    await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
     const next = readJsonl<Run>(s.claudePrompts).find((r) => r.prompt.includes("# Topic: engines"));
     expect(next).toBeDefined();

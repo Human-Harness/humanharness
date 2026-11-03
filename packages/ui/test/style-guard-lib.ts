@@ -38,7 +38,7 @@ export const SPACES = [0, 4, 8, 12, 16, 24, 32]; // plus 90 only as the top bar'
 export const FONT_SIZES = [12, 13, 14, 15, 16, 20, 28];
 export const WEIGHTS = [400, 500, 600];
 /** Selectors allowed a round radius (999px / 50%). Part 6 fills it with the round pieces. */
-export const ROUND_SELECTORS: string[] = [".hh-sk-mark", ".hh-tab-dot"]; // the sidekick mark, a 24 circle (§4, row 44)
+export const ROUND_SELECTORS: string[] = [".hh-sk-mark", ".hh-tab-dot", ".hh-option-mark"]; // the sidekick mark, a 24 circle (§4, row 44); the Option's 18 radio (§3, row 52)
 
 export type CssOptions = {
   /** The file defines the tokens: colors are allowed inside its `:root` / `[data-theme]` blocks. */

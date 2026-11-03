@@ -39,7 +39,7 @@ describe("EngineTab", () => {
     expect(screen.queryByRole("link")).toBeNull();
     expect(container.querySelector(".hh-tab > .hh-caption")).toBeNull();
     // No logo: the tile draws the generic screen icon instead.
-    const tile = screen.getByRole("button", { name: /IA simulada \(mock\)/ });
+    const tile = screen.getByRole("radio", { name: /IA simulada \(mock\)/ });
     expect(tile.querySelector("img")).toBeNull();
     expect(tile.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
@@ -48,7 +48,7 @@ describe("EngineTab", () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
     client.state.engines = [{ ...client.state.engines[0], logo: undefined }];
     const { container } = await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
-    const small = container.querySelector(".hh-engine-radio-logo svg");
+    const small = container.querySelector(".hh-option-lead svg");
     expect(small?.getAttribute("width")).toBe("18");
   });
 
@@ -72,7 +72,7 @@ describe("EngineTab", () => {
     await renderIn("en", <Tab client={client} />);
 
     await screen.findByRole("heading", { name: "Before using Claude" });
-    expect(screen.getByRole("button", { name: /Claude/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("radio", { name: /Claude/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText(/This app is not made or endorsed by Anthropic/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Anthropic terms" }).getAttribute("href")).toBe("https://example.com/terms");
     const accept = screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
@@ -135,7 +135,7 @@ describe("EngineTab", () => {
     expect(screen.getByText("Pro plan")).toBeTruthy();
     expect(screen.getByText("USA")).toBeTruthy();
     expect(screen.getByText("2.1.296")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Claude.*Connected.*In use/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Claude.*Connected.*In use/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Sign in to Claude" });
     expect(client.setupRuns).toEqual([{ engineId: "claude", step: "logout" }]);
@@ -149,7 +149,7 @@ describe("EngineTab", () => {
     const card = ready.closest(".hh-settings-card") as HTMLElement;
     expect(within(card).getByRole("heading", { name: "Claude" })).toBeTruthy();
     expect(within(card).getByText("In use").className).toContain("hh-tag-green");
-    fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Codex/ }));
     await screen.findByRole("button", { name: "Use Codex" });
     const other = screen.getByRole("heading", { name: "Codex" }).closest(".hh-settings-card") as HTMLElement;
     expect(within(other).queryByText("In use")).toBeNull();
@@ -160,7 +160,7 @@ describe("EngineTab", () => {
     addCodex(client);
     await renderIn("en", <Tab client={client} />);
     expect(screen.getByText("More engines · coming soon")).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Codex/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
     await waitFor(() => expect(client.state.config.engineId).toBe("codex"));
   });
@@ -442,7 +442,7 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", noticeAccepted: false };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     await screen.findByRole("heading", { name: "Before using OpenCode" });
     expect(screen.getByText("You choose the provider in OpenCode. Its terms and privacy rules apply between you and that provider.")).toBeTruthy();
   });
@@ -464,7 +464,7 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     await screen.findByRole("heading", { name: "Choose a provider in OpenCode" });
     expect(screen.getByText("opencode auth login")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
@@ -480,7 +480,7 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Test my local model" }));
     await waitFor(() => expect(client.tested).toEqual(["opencode"]));
   });
@@ -490,7 +490,7 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Check again" }));
     await screen.findByText("OpenCode still has no provider. Finish the steps in Terminal, then check again.");
   });
@@ -508,7 +508,7 @@ describe("EngineTab: OpenCode", () => {
       return testEngine(id);
     };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Test my local model" }));
     await screen.findByText("Sending OpenCode a tiny test message…");
     await act(async () => release());
@@ -520,7 +520,7 @@ describe("EngineTab: OpenCode", () => {
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: null, verified: false };
     client.testResult = { ok: false, error: { code: "session-expired" } };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
     await waitFor(() => expect(client.terminalOpened).toBe(1));
     expect(client.setupCopied).toEqual(["opencode:login"]);
@@ -541,7 +541,7 @@ describe("EngineTab: OpenCode", () => {
       client.terminalOpened++;
     };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByText("Signing out…");
     await act(async () => release());
@@ -554,7 +554,7 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode" };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByText("Finish signing out in Terminal, then press Check again.");
     expect((screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement).disabled).toBe(false);
@@ -571,7 +571,7 @@ describe("EngineTab: OpenCode", () => {
       throw new Error("no Terminal");
     };
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByText("The sign-out command is copied, but Terminal didn't open. Open Terminal yourself, paste the command, then press Check again.");
     expect(client.setupCopied).toEqual(["opencode:logout"]);
@@ -585,7 +585,7 @@ describe("EngineTab: OpenCode", () => {
     client.statusFor.opencode = { ...client.status, engineId: "opencode" };
     client.copyError = new Error("copy failed");
     await renderIn("en", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByRole("alert");
     expect(client.terminalOpened).toBe(0);

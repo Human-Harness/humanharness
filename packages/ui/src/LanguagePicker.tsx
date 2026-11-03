@@ -5,6 +5,7 @@ import type { LanguageState } from "./client";
 import { ownName } from "./language";
 import { useDialogKeys } from "./focus";
 import { Button } from "./guide/Button";
+import { Option, OptionGroup } from "./guide/Option";
 
 /** English and its variants (en-GB) need no translation: main answers them with the bundled English. */
 const isEnglish = (tag: Language) => tag === DEFAULT_LANGUAGE || tag.startsWith(`${DEFAULT_LANGUAGE}-`);
@@ -107,23 +108,25 @@ export function LanguagePicker({
           </p>
         )}
         {shown.length === 0 && <p className="hh-caption hh-langpick-none">{t("language.noMatch")}</p>}
-        <div
+        <OptionGroup
+          followFocus
           className="hh-langpick-list"
-          role="radiogroup"
-          aria-labelledby={`${id}-title`}
-          aria-describedby={view.canTranslate !== true ? `${id}-reason` : undefined}
+          labelledBy={`${id}-title`}
+          describedBy={view.canTranslate !== true ? `${id}-reason` : undefined}
         >
           {shown.map((tag) => (
-            <label key={tag} className="hh-langpick-option">
-              <input type="radio" name={`${id}-lang`} value={tag} checked={picked === tag} disabled={pending || !usable(tag)} onChange={() => setPicked(tag)} />
-              <span className="hh-langpick-name" lang={tag}>
-                {names.get(tag)!.own}
-              </span>
-              <span className="hh-caption hh-langpick-english" lang="en">{names.get(tag)!.english}</span>
-              {!isEnglish(tag) && readyLanguage(view, tag) && <span className="hh-langpick-ready">{t("language.ready")}</span>}
-            </label>
+            <Option
+              key={tag}
+              value={tag}
+              checked={picked === tag}
+              disabled={pending || !usable(tag)}
+              onClick={() => setPicked(tag)}
+              title={<span lang={tag}>{names.get(tag)!.own}</span>}
+              description={<span lang="en">{names.get(tag)!.english}</span>}
+              trail={!isEnglish(tag) && readyLanguage(view, tag) ? <span className="hh-langpick-ready">{t("language.ready")}</span> : undefined}
+            />
           ))}
-        </div>
+        </OptionGroup>
         {error && (
           <p className="hh-save-error" role="alert">
             {error}

@@ -138,10 +138,10 @@ describe("StartView", () => {
       <StartView state={s} tasks={idle({ manifest: "done", turn: "unsaved" })} notice={null} disabled={false} onStart={onStart} onAsk={() => {}} />,
     );
     const topics = within(screen.getByRole("region", { name: "Where do we start?" })).getAllByRole("button");
-    expect(topics.map((b) => b.querySelector(".hh-topic-title")?.textContent)).toEqual(["The manifest", "Engines", "A turn", "Extra"]);
+    expect(topics.map((b) => b.querySelector(".hh-tile-title")?.textContent)).toEqual(["The manifest", "Engines", "A turn", "Extra"]);
     expect(topics[0].textContent).toContain("Done");
     expect(topics[1].textContent).toContain("Next on the path");
-    expect(topics[1].className).toContain("next");
+    expect(topics[1].getAttribute("data-recommended")).toBe("true");
     expect(topics[2].textContent).toContain("No summary");
     expect(topics[0].textContent).toContain("What a harness declares.");
     fireEvent.click(topics[3]);

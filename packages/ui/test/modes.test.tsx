@@ -51,7 +51,7 @@ async function open(client: FakeClient, text = "Let's pick a way.") {
 const bar = () => screen.getByRole("group", { name: "Task mode" });
 const pickInBar = (name: string) => {
   fireEvent.click(within(bar()).getByRole("button", { name: "Change mode" }));
-  fireEvent.click(within(bar()).getByRole("button", { name }));
+  fireEvent.click(within(bar()).getByRole("radio", { name }));
 };
 
 describe("task modes in the chat", () => {
@@ -59,14 +59,14 @@ describe("task modes in the chat", () => {
     await open(coachClient({ modes: false }));
     expect(screen.queryByRole("group", { name: "Task mode" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Change mode" })).toBeNull();
-    expect(screen.queryByRole("group", { name: "How do we work?" })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "How do we work?" })).toBeNull();
   });
 
   it("the recommended mode switches the task: a system line, then the mode bar names it", async () => {
     const client = coachClient();
     await open(client);
     expect(bar().textContent).toContain("No mode chosen yet");
-    fireEvent.click(within(screen.getByRole("group", { name: "How do we work?" })).getAllByRole("button")[0]);
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "How do we work?" })).getAllByRole("radio")[0]);
     await waitFor(() => expect(client.modeChoices).toEqual([{ mode: "socratic", choice: {} }]));
     const line = await screen.findByText("Switched to Socratic");
     expect(line.className).toBe("hh-mode-line");
@@ -142,9 +142,9 @@ describe("task modes in the chat", () => {
     const client = coachClient();
     client.modeResult = { ok: false, reason: "unknown" };
     await open(client);
-    fireEvent.click(within(screen.getByRole("group", { name: "How do we work?" })).getAllByRole("button")[1]);
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "How do we work?" })).getAllByRole("radio")[1]);
     expect((await screen.findByRole("alert")).textContent).toBe("That didn't go through. Pick a mode again.");
-    const again = within(screen.getByRole("group", { name: "How do we work?" })).getAllByRole("button")[1] as HTMLButtonElement;
+    const again = within(screen.getByRole("radiogroup", { name: "How do we work?" })).getAllByRole("radio")[1] as HTMLButtonElement;
     expect(again.disabled).toBe(false);
   });
 
@@ -171,8 +171,8 @@ describe("task modes in the chat", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Study" }))[0]);
     const dialog = await screen.findByRole("dialog", { name: "How do you want to work?" });
     expect(client.sent).toEqual([]);
-    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getAllByRole("button")[0]));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Feynman" }));
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getAllByRole("radio")[0]));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Feynman" }));
     await waitFor(() => expect(client.sentOptions.at(-1)).toEqual({ action: "study", mode: "feynman" }));
     expect(screen.queryByRole("dialog", { name: "How do you want to work?" })).toBeNull();
     expect(document.activeElement?.tagName).toBe("TEXTAREA");

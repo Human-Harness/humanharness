@@ -79,7 +79,7 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     expect(agents()).toContain("after 2 failed tries");
 
     // Next: the task closes, AGENTS.md is rewritten, then the next task starts.
-    await page.getByRole("button", { name: "Next →" }).click();
+    await page.getByRole("radio", { name: "Next →" }).click();
     await expect(page.getByRole("main").getByText("Repasemos.")).toBeVisible();
     await expect.poll(agents).toContain("- Give a hint after 4 failed tries, not before.");
     const prompts = readJsonl<{ prompt: string }>(s.claudePrompts).map((p) => p.prompt);

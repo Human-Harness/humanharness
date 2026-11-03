@@ -285,13 +285,13 @@ it("defines the measure tokens of the closed scales (style guide §1, §2)", () 
 ### Task 6: Plugin panel tokens mirror the app
 
 **Files:**
-- Modify: `packages/ui/src/plugin-ui/tokens.css` (all four blocks), `packages/ui/src/plugin-ui/plugin-ui.css:28-41` (`--hh-ok`, `--hh-warn`, `--hh-error-bg`)
+- Modify: `packages/ui/src/plugin-ui/tokens.css` (all four blocks; `--hh-ok`, `--hh-warn`, `--hh-error-bg` aliases kept). `packages/ui/src/plugin-ui/plugin-ui.css:28-41` stays as it is (`--hh-ok`, `--hh-warn`, `--hh-error-bg` unchanged, OQ-23)
 - Modify: `harnesses/demo/plugins/on-this-day/panels/events.css:4` (`--hh-highlight` → `--hh-active`)
 - Test: `packages/ui/test/plugin-ui-tokens.test.ts`, `harnesses/demo/test/on-this-day.test.ts`
 
-- [ ] **Step 1: Failing test:** the existing `every token under %s has the app's value` and `carries every colour the app has` tests already fail after Task 1. Add: `it("drops the removed tokens, keeping only the pre-refresh aliases", …)` that asserts `panel` has no `--hh-callout-`, `--hh-review-`, `--hh-diff-`, `--hh-profile-`, `--hh-highlight`, `--hh-logo`. The existing aliases (paper, sheet, segment, slate) are kept as they are (decided): the `ALIASES` list in the test does not change, and they are the only tokens outside the §2 tables that the plugin CSS checks allow.
+- [ ] **Step 1: Failing test:** the existing `every token under %s has the app's value` and `carries every colour the app has` tests already fail after Task 1. Add: `it("drops the removed tokens, keeping only the pre-refresh aliases", …)` that asserts `panel` has no `--hh-callout-`, `--hh-review-`, `--hh-diff-`, `--hh-profile-`, `--hh-highlight`, `--hh-logo`. The existing aliases (paper, sheet, segment, slate) and the plugin status tokens `--hh-ok`, `--hh-warn`, `--hh-error-bg` are kept as they are (decided, OQ-23): the `ALIASES` list in the test does not change, and they are the only tokens outside the §2 tables that the plugin CSS checks allow.
 - [ ] **Step 2: Run** `corepack pnpm exec vitest run packages/ui/test/plugin-ui-tokens.test.ts` — FAIL.
-- [ ] **Step 3: Implement:** copy the new token block (light, dark, `[data-theme]` ×2) from `styles.css`; add `--hh-mono` next to `--hh-font`; extend the `colours()` filter in the test to skip `--hh-mono` and the measure tokens. Replace `var(--hh-ok)`, `var(--hh-warn)`, `var(--hh-error-bg)` in `plugin-ui.css` as in Task 1. Rebuild the demo plugin's `dist` (H4): `on-this-day` has no `package.json`; it is built with `humanharness plugin build` (see its README), which writes `panels/events.css` to `dist/panel-events.css`. Commit source and `dist` together; `harnesses/demo/test/on-this-day.test.ts` fails when `dist` differs from a fresh build.
+- [ ] **Step 3: Implement:** copy the new token block (light, dark, `[data-theme]` ×2) from `styles.css`, keeping `--hh-ok`, `--hh-warn`, `--hh-error-bg` in `tokens.css` as they are (OQ-23); add `--hh-mono` next to `--hh-font`; extend the `colours()` filter in the test to skip `--hh-mono` and the measure tokens. Do not change `var(--hh-ok)`, `var(--hh-warn)`, `var(--hh-error-bg)` in `plugin-ui.css` (no mapping to tag tokens). Rebuild the demo plugin's `dist` (H4): `on-this-day` has no `package.json`; it is built with `humanharness plugin build` (see its README), which writes `panels/events.css` to `dist/panel-events.css`. Commit source and `dist` together; `harnesses/demo/test/on-this-day.test.ts` fails when `dist` differs from a fresh build.
 - [ ] **Step 4: Run** — PASS. Also `corepack pnpm exec vitest run packages/ui/test/plugin-ui.test.tsx`.
 - [ ] **Step 5: Commit** `feat(plugin-ui): tokens mirror the guide (style guide §2, §16.1)`.
 
@@ -1420,7 +1420,7 @@ Marco answered all the open questions on the review page. None was deferred. Eac
 | OQ-20 | The compact 40 option | A: radio 18 + title, no description, 40 high, radius 12. | 53 |
 | OQ-21 | Engine without a logo (spec contradiction) | A: the Motor icon at 32 in the logo place. Spec §4 updated. | 61, 64 |
 | OQ-22 | Is artifact v29 a source (spec contradiction) | A: yes, it decides details the spec does not state until the guide page and `docs/style-guide.md` exist. Spec header and §15 updated; rule 1 updated. | all parts; rule 1 |
-| OQ-23 | Plugin token aliases | C: keep them. | 6, 69 |
+| OQ-23 | Plugin token aliases | C: keep them. The four aliases (paper, sheet, segment, slate) and the plugin status tokens `--hh-ok`, `--hh-warn`, `--hh-error-bg` stay unchanged (not mapped, not moved to tag tokens). | 6, 69 |
 | OQ-24 | Kit pieces outside the list | C: keep Clock, Empty and ErrorBar, each added through §15. Spec §15 updated. | 68 |
 | OQ-25 | Dev mode | A: unpackaged app (`!app.isPackaged`). | 71 |
 | OQ-26 | Layout of the guide page | A: one section per spec section (§2 tokens and scales, §3–§8 pieces, §4 icons, §9 templates), each piece in light and dark side by side. | 71 |

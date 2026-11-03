@@ -46,7 +46,7 @@ const script: ClaudeScript = {
 async function addStudent(page: Page, name: string) {
   await expect(page.getByRole("heading", { name: "Who's using Reader?" })).toBeVisible();
   await page.getByRole("textbox", { name: "Name" }).fill(name);
-  await page.getByRole("contentinfo").getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
 }
 
 /** Creates and opens the topic "Fractions" (ScopePicker). */
@@ -140,7 +140,7 @@ test("D0: a harness without material has no panel and no material files", async 
     const launched = await launch(s, { claude: plain }, path.join(outDir, "main", "index.js"));
     app = launched.app;
     const page = launched.page;
-    const next = page.getByRole("contentinfo").getByRole("button", { name: "Next" });
+    const next = page.getByRole("button", { name: "Next", exact: true });
     await page.getByRole("button", { name: "Set up Family Tutor" }).click();
     await page.getByRole("textbox", { name: "Name" }).fill("Sofi");
     await next.click();

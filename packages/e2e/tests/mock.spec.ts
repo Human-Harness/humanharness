@@ -61,7 +61,7 @@ test("a fresh mock app walks the setup flow, then starts the demo on the test en
     const local = page.getByRole("radio", { name: "Only on this computer" });
     if (await local.count()) await local.check();
     await expect(page.getByText(s.folder, { exact: true })).toBeVisible();
-    await page.getByRole("contentinfo").getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
 
     // 2. The engine: only the test engine, ready with no notice to accept.
     const tiles = page.getByRole("radiogroup", { name: TILES });

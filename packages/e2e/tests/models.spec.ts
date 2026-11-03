@@ -57,7 +57,7 @@ test("a model the plan doesn't include falls back a level, and the task says so"
     expect(sessionOf(runs[1].argv)).not.toBe(sessionOf(runs[0].argv));
     await expect
       .poll(() => readTasks(s.folder).current?.profile)
-      .toEqual({ engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000, fallbackFrom: "opus" });
+      .toEqual({ engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000, fallbackFrom: "opus", subagentModel: "haiku" });
   } finally {
     await closeAndClean(app, s);
   }

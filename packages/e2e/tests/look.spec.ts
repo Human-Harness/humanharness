@@ -131,8 +131,8 @@ for (const theme of ["light", "dark"] as const) {
       const answer = page.getByRole("main").getByText("Los motores se detectan en cada inicio.");
       await expect(answer).toBeVisible();
 
-      // Settings is a page opened from the rail, not a dialog over the chat.
-      await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Settings" }).click();
+      // Settings is a page opened from the top bar gear, not a dialog over the chat.
+      await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
       const settings = page.getByRole("main", { name: "Settings" });
       await expect(settings).toBeVisible();
       await expect(page.getByRole("dialog", { name: "Settings" })).toHaveCount(0);
@@ -176,7 +176,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.screenshot({ path: path.join(lookDir, `setup-${theme}.png`) });
 
       // On to the demo: the History drawer over the chat.
-      await page.getByRole("contentinfo").getByRole("button", { name: "Next" }).click();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
       await expect(page.getByRole("heading", { name: "All set" })).toBeVisible();
       await page.getByRole("button", { name: "Start Demo" }).click();
       await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();

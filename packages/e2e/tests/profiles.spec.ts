@@ -40,7 +40,7 @@ test("profiles: add two students, each with their own folder and setup, switch, 
     const launched = await launch(s, { claude: script }, path.join(outDir, "main", "index.js"));
     app = launched.app;
     const page = launched.page;
-    const next = page.getByRole("contentinfo").getByRole("button", { name: "Next" });
+    const next = page.getByRole("button", { name: "Next", exact: true });
 
     // Home: the folder and engine are set; no one uses the app yet.
     await expect(page.getByText("One step left: add a student")).toBeVisible();

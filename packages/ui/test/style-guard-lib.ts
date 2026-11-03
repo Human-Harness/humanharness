@@ -2,6 +2,10 @@
  * Scanner behind the style guard (style guide §15 Control). It reads CSS and TSX sources and returns
  * offenders as "<file>|<kind>|<where>|<value>" strings; the test compares them with the known-offenders
  * list, which may only shrink.
+ *
+ * Limits: only px literals are checked (not rem, the `font` shorthand or px inside calc/min/max); TSX
+ * classes held in variables or props other than `className` are not seen; identical offenders in one file
+ * collapse into one line (the string format has no count).
  */
 
 // Style guide §2 (heights, radii, spacing, type, weights) and the fixed sizes named in §4–§10.
@@ -42,7 +46,9 @@ type Kind = "color" | "height" | "radius" | "space" | "font-size" | "weight" | "
 const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/g;
 const SIZE_PROPS = /^(?:min-|max-)?(?:height|width)$/;
 const HEIGHT_PROPS = /^(?:min-|max-)?height$/;
-const RADIUS_PROPS = /^(?:border-(?:top|bottom|start|end)-(?:left|right|start|end)-)?radius$|^border-radius$|^border-(?:top|bottom|start|end)-(?:left|right|start|end)-radius$/;
+const RADIUS_PROPS = /^border(?:-(?:top|bottom|start|end)-(?:left|right|start|end))?-radius$/;
+// Only a pure `:root` / `:root[data-theme=…]` block (or `[data-theme=…]` alone) may hold literal colors.
+const TOKEN_BLOCK = /^(?::root(?:\[data-theme=[^\]]+\]|:not\(\[data-theme=[^\]]+\]\))*|\[data-theme=[^\]]+\])$/;
 const SPACE_PROPS = /^(?:gap|row-gap|column-gap|padding(?:-[a-z]+)*|margin(?:-[a-z]+)*)$/;
 
 const line = (file: string, kind: Kind, where: string, value: string) => `${file}|${kind}|${where}|${value}`;
@@ -78,6 +84,7 @@ function checkDeclaration(file: string, selector: string, prop: string, value: s
       if (px === 0) continue;
       const own = inList(selector, PIECE_SIZES[px] ?? []);
       if (isHeight && !HEIGHTS.includes(px) && !own) out.push(line(file, "height", selector, `${px}px`));
+      // Widths are reported with kind `height` (the plan has no width kind).
       // A width off the piece list belongs to the width tokens, which are checked elsewhere.
       else if (!isHeight && px in PIECE_SIZES && !own) out.push(line(file, "height", selector, `${px}px`));
     }
@@ -90,7 +97,7 @@ function checkDeclaration(file: string, selector: string, prop: string, value: s
       const round = (m[2] === "px" && n === 999) || (m[2] === "%" && n === 50);
       const ok = round
         ? inList(selector, ROUND_SELECTORS)
-        : m[2] === "px" && (RADII.includes(n) || (n === 4 && selectorParts(selector).some((s) => /\bcode$/.test(s))));
+        : m[2] === "px" && (RADII.includes(n) || (n === 4 && selectorParts(selector).some((s) => /(?:^|[\s>+~])code$/.test(s))));
       if (!ok && (m[2] === "px" || round)) out.push(line(file, "radius", selector, token));
     }
   } else if (SPACE_PROPS.test(prop)) {
@@ -109,9 +116,8 @@ function checkDeclaration(file: string, selector: string, prop: string, value: s
 
 /** Scans one stylesheet. Walks nested blocks (`@media`, `@container`) with a stack of selectors. */
 export function scanCss(file: string, css: string, opts: CssOptions = {}): string[] {
-  const src = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const out: string[] = [];
-  const stack: { selector: string; at: boolean }[] = [];
+  const stack: { selector: string; at: boolean; keyframes: boolean }[] = [];
   let buf = "";
   let depth = 0; // parentheses and quotes keep `;` and `{` inside url(...) or strings from splitting
   let quote = "";
@@ -121,27 +127,38 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
     const top = stack[stack.length - 1];
     if (idx < 0 || !top || top.at) return;
     const prop = text.slice(0, idx).trim().toLowerCase();
-    const value = text.slice(idx + 1).replace(/!important/i, "").trim();
-    const inToken = !!opts.tokenFile && /^(?::root|\[data-theme)/.test(top.selector);
+    const value = text.slice(idx + 1).replace(/!\s*important/i, "").trim();
+    const inToken = !!opts.tokenFile && selectorParts(top.selector).every((s) => TOKEN_BLOCK.test(s));
     checkDeclaration(file, top.selector, prop, value, opts, inToken, out);
   };
 
-  for (const ch of src) {
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i];
     if (quote) {
       buf += ch;
-      if (ch === quote) quote = "";
+      if (ch === "\\") buf += css[++i] ?? "";
+      else if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === "/" && css[i + 1] === "*") {
+      const end = css.indexOf("*/", i + 2);
+      if (end < 0) throw new Error(`scanCss: unterminated comment in ${file}`);
+      i = end + 1;
       continue;
     }
     if (ch === '"' || ch === "'") quote = ch;
     if (ch === "(") depth++;
-    if (ch === ")") depth--;
+    if (ch === ")") depth = Math.max(0, depth - 1);
     if (depth > 0 || quote) {
       buf += ch;
       continue;
     }
     if (ch === "{") {
       const selector = buf.trim().replace(/\s+/g, " ");
-      stack.push({ selector, at: selector.startsWith("@") });
+      const parent = stack[stack.length - 1];
+      const keyframes = /^@(?:-\w+-)?keyframes\b/.test(selector) || !!parent?.keyframes;
+      // Keyframe steps (`from`, `50%`) are not selectors; a name like that would collide between animations.
+      stack.push({ selector, at: selector.startsWith("@") || keyframes, keyframes });
       buf = "";
     } else if (ch === "}") {
       declare(buf);
@@ -154,6 +171,8 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
       buf += ch;
     }
   }
+  // A broken parse must fail loudly: silently dropping the rest of a file would shrink the offenders list.
+  if (quote || stack.length) throw new Error(`scanCss: unbalanced input in ${file}`);
   return dedupe(out);
 }
 

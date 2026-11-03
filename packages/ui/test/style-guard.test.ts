@@ -54,4 +54,28 @@ describe("style guard scanner details", () => {
     const src = 'const a = <div className={cx("hh-card", on && "hh-bad", `hh-btn--${v} hh-tpl`)} />;';
     expect(scanTsx("A.tsx", src, new Set(["hh-card", "hh-btn--primary"]))).toEqual(["A.tsx|class|hh-bad|hh-bad", "A.tsx|class|hh-tpl|hh-tpl"]);
   });
+
+  it("frees colors only in pure token blocks, not in rules that start with :root", () => {
+    const css = ':root .x { color: #123; }\n[data-theme="dark"] .y { background: #000; }\n:root { --a: #fff; }';
+    expect(scanCss("t.css", css, { tokenFile: true })).toEqual(["t.css|color|:root .x|#123", 't.css|color|[data-theme="dark"] .y|#000']);
+  });
+  it("is not fooled by escaped quotes, comment markers or separators inside strings and urls", () => {
+    const css = '.a { content: "\\"{"; }\n.b { content: "/*"; height: 7px; }\n.c { background: url(data:image/png;base64,AA{;}) ; padding: 10px; }';
+    expect(scanCss("a.css", css, {})).toEqual(["a.css|height|.b|7px", "a.css|space|.c|10px"]);
+  });
+  it("handles !important, keyframes, font-face and multi-value margins", () => {
+    const css = [
+      ".a { font-weight: 700 ! important; margin: -4px auto 10px 0; }",
+      "@keyframes k { from { height: 7px; } 50% { color: #fff; } }",
+      "@font-face { font-family: x; src: url(x.woff2); }",
+      ".b { border-radius: 8px 6px / 12px; }",
+    ].join("\n");
+    expect(scanCss("a.css", css, {})).toEqual(["a.css|weight|.a|700", "a.css|space|.a|10px", "a.css|radius|.b|6px"]);
+  });
+  it("treats only the code element as inline code", () => {
+    expect(scanCss("a.css", ".hh-code { border-radius: 4px; }", {})).toEqual(["a.css|radius|.hh-code|4px"]);
+  });
+  it("throws on unbalanced input instead of dropping the rest of the file", () => {
+    expect(() => scanCss("a.css", ".a { color: red;", {})).toThrow(/unbalanced/);
+  });
 });

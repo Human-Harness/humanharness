@@ -4,4 +4,9 @@
  *
  * It starts empty on purpose: every `hh-*` class in use today is an offender until its piece lands.
  */
-export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([]);
+export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
+  // Icon (§4)
+  "hh-icon",
+  "hh-icon-loading",
+  "hh-icon-chevron",
+]);

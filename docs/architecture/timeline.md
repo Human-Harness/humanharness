@@ -65,7 +65,7 @@ Main (`FileTimelineService`) keeps up to 32 timelines per history, each keyed on
 **In the window** (`packages/ui/src/FileDiff.tsx`), the diff is only drawn:
 
 - Unchanged, added and removed blocks are drawn whole with the reader's `<Markdown>`. A changed block shows its plain text with `<ins>`/`<del>` word marks: bold, links and code spans aren't drawn inside it (Q5). Code and other text files are line tables, highlighted up to 3,000 lines. Long unchanged runs of lines fold to a few lines of context around each change (`aroundChanges`); a `gap` line main sent is always drawn as a gap, in both layouts.
-- Nothing becomes HTML: diff text is React text nodes in `<ins>`, `<del>` and `<span>`, and colours are `--hh-diff-*` tokens. The CSP is unchanged.
+- Nothing becomes HTML: diff text is React text nodes in `<ins>`, `<del>` and `<span>`, and colours are the green and red tag tokens (`--hh-t-green`, `--hh-t-red` and their `-ink`). The CSP is unchanged.
 - **Inline or side by side.** Side by side draws inline while the diff's own box is narrower than 900 px, measured with `ResizeObserver` (Q12); the switch keeps the choice for when it widens. Changed cells carry a sign and a hidden "Added"/"Removed", and the columns hidden "Before"/"After" labels, so the colour isn't the only signal.
 - **Source** shows the line diff of the raw text. A changed Mermaid fence shows the diagram before and after, with its own Source toggle.
 

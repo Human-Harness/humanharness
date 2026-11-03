@@ -34,7 +34,9 @@ profiles: { label: "student", fields: ["name", "color", "ageBand"] },
 - Otherwise `profile` is an ordinary collection: the harness picks its `agent` permission and its `context`. The agent
   learns who it talks to only through that `context`.
 - `PROFILE_COLORS` (from `@humanharness/harness-sdk`) are the colours an avatar can take. A `color` field of that enum
-  gives each person one; the window draws any other colour as a neutral avatar.
+  gives each person one; the window draws any other colour as a neutral avatar. The retired names (`coral`, `amber`,
+  `teal`, `pink`) are drawn as their mapped colour, and `DataStore.load` rewrites them in the `profile` collection
+  before the schema check, so data saved before the style guide still loads.
 - Code: `packages/harness-sdk/src/profiles.ts` (`profilesSchema`, `hasProfiles`, `profileFormSpec`), the rules in the
   `superRefine` of `packages/harness-sdk/src/index.ts`.
 

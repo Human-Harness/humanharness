@@ -90,7 +90,7 @@ The window never trusts a saved entry: `cleanDocumentCards` (`packages/ui/src/ca
 
   See `reviews.md`.
 
-Reading preferences (`font`: `sans`/`serif`, `size`: `normal`/`large`) are saved in `AppConfig.reader` (`cleanReaderPrefs`); the config keeps only its valid fields. They live only in the "Aa" menu (Q7).
+Reading preferences (`font`: `sans`/`serif`, `size`: `normal`; a stored `large` from before the style guide reads as `normal`) are saved in `AppConfig.reader` (`cleanReaderPrefs`); the config keeps only its valid fields. They live only in the "Aa" menu (Q7).
 
 ### Main process
 

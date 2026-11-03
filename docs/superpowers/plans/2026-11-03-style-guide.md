@@ -1439,6 +1439,32 @@ Marco answered all the open questions on the review page. None was deferred. Eac
 
 ---
 
+## Decided after Parts 1–2 (2026-11-03)
+
+Marco answered the "Questions for Marco" of PR #116 (P1) and PR #117 (P2) on a review page. Applied in `feat/sg-answers` unless a later part is named.
+
+| Q | Question | Decision | Where |
+|---|---|---|---|
+| P1.1 | Callout colors | A: Note blue, Tip green, Warning orange, Summary violet, Decision green, Question orange (two pairs share a color). | kept |
+| P1.2 | Logo tile on Inicio | B: `ink` tile, `bg` glyph. | `feat/sg-answers` |
+| P1.3 | Focus margin dot, active review card ring | A: `--hh-active`. | kept |
+| P1.4 | Retired avatar colors | A: coral → red, amber → orange, teal → green, pink → red. | kept |
+| P1.5 | Scope dialog width | A: `--hh-dialog-w` 440. | kept |
+| P1.6 | Review column, timeline drawer, master-detail | A: all three use `--hh-column-w`. | `feat/sg-answers` |
+| P1.7 | Settings and Assistant nav | A: `minmax(220px, var(--hh-column-w))`. | `feat/sg-answers` |
+| P1.8 | Reader size control with only Normal | B: removed. | `feat/sg-answers` |
+| P1.9 | Em sizes off the scale (`.hh-reader-title`, `.hh-md-h`, `.hh-md-raw`) | A: map each onto the type scale; show Marco the table of final px values in that PR. | Part 11 |
+| P1.10 | Plugin kit measure tokens | A: the kit ships the height, radius, spacing and width tokens. | Part 15 |
+| P1.11 | Inline code padding outside chat | A: no padding outside chat. | kept |
+| P1.12 | Grey timeline chip, resolved review mark | B1: `--hh-line` fill. | `feat/sg-answers` |
+| P2.1 | Foreign vars in harness size properties | A: allowed. | kept |
+| P2.2 | Named colors in custom properties, keyframe steps, TSX style objects | A: the guard flags them now. | `feat/sg-answers` |
+| P2.3 | TSX class built with interpolation | B: ignored by the guard. | `feat/sg-answers` |
+| P2.4 | Template `harness.css` offenders (14px, 6px) | B: stay; the template belongs to the harness author. Part 15 does not touch those two values. | Part 15 |
+| P2.5 | Widths reported as `height` | B: own `width` kind. | `feat/sg-answers` |
+| P2.6 | px inside calc/min/max/clamp, rem, font shorthand | B: the guard checks them. | `feat/sg-answers` |
+| P2.7 | Duplicate offender sites | B: the list counts occurrences. | `feat/sg-answers` |
+
 ## Coverage
 
 ### Spec sections

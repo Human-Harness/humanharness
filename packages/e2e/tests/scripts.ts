@@ -141,7 +141,7 @@ const placeTurn = { match: `^${MOCK_SIDEKICK_MARKS.place}`, steps: [...claudeTex
 /** Sidekick's import turn (sidekick spec §2a.6): a mentor draft, one thing it knows, tool permissions skipped. */
 const importTurn = {
   match: `^${MOCK_SIDEKICK_MARKS.import}`,
-  steps: sidekickReply({ name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] }),
+  steps: sidekickReply({ name: "Rulo", mark: "mentor", personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] }),
 };
 
 /** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */

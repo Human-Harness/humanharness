@@ -39,7 +39,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
 
   it("Sidekick renders exactly its registry rows", async () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
-    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
+    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     client.sidekickState = SK_ON;
     await renderIn("en", <SettingsPage client={client} state={client.state} tab="sidekick" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
     await waitFor(() => expect(shown()).toContain("sidekick.on"));

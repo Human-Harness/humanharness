@@ -496,8 +496,8 @@ describe("SidekickController loose sessions and stale cards", () => {
   });
 
   it("a no-task session is adopted only by its own sidekick", async () => {
-    const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0 };
-    const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }], order: 1 };
+    const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0 };
+    const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" as const }], order: 1 };
     const h = harness({ record: on, task: null, extra: [RULO, DEF], answers: [SUGGEST, json({ next: "x" }), SUGGEST] });
     await h.ctl.review({ text: "make it better" });
     expect(h.sessions).toEqual(["sidekick"]);
@@ -512,8 +512,8 @@ describe("SidekickController loose sessions and stale cards", () => {
   });
 
   it("closing one no-task session keeps the loose spend while another no-task session is held", async () => {
-    const COACH = { id: "coach", type: "sidekick" as const, name: "Coach", mark: "c", personality: "", purposes: [{ id: "custom" as const, text: "Check names.", moments: ["pre-send" as const] }], order: 0 };
-    const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }], order: 1 };
+    const COACH = { id: "coach", type: "sidekick" as const, name: "Coach", mark: "coach" as const, personality: "", purposes: [{ id: "custom" as const, text: "Check names.", moments: ["pre-send" as const] }], order: 0 };
+    const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" as const }], order: 1 };
     const h = harness({ record: on, task: null, extra: [COACH, DEF] });
     // A flag goes to Sidekick (prompt-coach); a forced clean prompt to Coach (first in order).
     await h.ctl.review({ text: "make it better" });
@@ -598,7 +598,7 @@ describe("outcomes and learning signals (spec §6.1–6.3)", () => {
     const h = harness({ record: on });
     const r = await h.ctl.review({ text: "make it better" });
     if (r.kind !== "card") throw new Error("card expected");
-    expect(r.card).toMatchObject({ moment: "pre", kind: "vague", speaker: { id: "sidekick", name: "Sidekick", mark: "spark" } });
+    expect(r.card).toMatchObject({ moment: "pre", kind: "vague", speaker: { id: "sidekick", name: "Sidekick", mark: "coach" as const } });
     expect(r.card.why).toBeUndefined();
     await h.ctl.resolve(r.card.id, "used");
     expect(h.events).toEqual([expect.objectContaining({ sidekick: "sidekick", moment: "pre", kind: "vague", outcome: "used", confidence: 0.8, task: "t1", scope: "main" })]);
@@ -1304,15 +1304,15 @@ describe("What Sidekick learned in Settings (spec §6.4)", () => {
 });
 
 describe("several sidekicks (spec §2a)", () => {
-  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" as const }], order: 1 };
-  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
-  const CUSTOM = (id: string, text: string, order: number) => ({ id, type: "sidekick" as const, name: id.toUpperCase(), mark: "x", personality: "", purposes: [{ id: "custom" as const, text, moments: ["after-reply" as const] }], order });
+  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" as const }], order: 1 };
+  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
+  const CUSTOM = (id: string, text: string, order: number) => ({ id, type: "sidekick" as const, name: id.toUpperCase(), mark: "focus" as const, personality: "", purposes: [{ id: "custom" as const, text, moments: ["after-reply" as const] }], order });
   const END = { task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "p", reply: "r", fromBlock: false, modeSwitch: false };
 
   it("pre-send: only Sidekick speaks (Rulo has no pre-send purpose); one session", async () => {
     const h = harness({ record: on, extra: [DEF, RULO] });
     const r = await h.ctl.review({ text: "make it better" });
-    expect(r.kind === "card" && r.card.speaker).toEqual({ id: "sidekick", name: "Sidekick", mark: "spark" });
+    expect(r.kind === "card" && r.card.speaker).toEqual({ id: "sidekick", name: "Sidekick", mark: "coach" as const });
     expect(h.sessions).toEqual(["sidekick"]);
     expect(h.logged[0]).toMatchObject({ sidekick: "sidekick", moment: "pre" });
   });
@@ -1328,7 +1328,7 @@ describe("several sidekicks (spec §2a)", () => {
   it("after-reply with two candidates: one speaker by order, the other's session never opens", async () => {
     const h = harness({ record: on, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ lesson: "Sources first." })] });
     await h.ctl.afterReply(END);
-    expect((await h.ctl.state()).cards[0]?.speaker).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
+    expect((await h.ctl.state()).cards[0]?.speaker).toEqual({ id: "rulo", name: "Rulo", mark: "mentor" as const });
     expect(h.sessions).toEqual(["rulo"]);
     expect(h.briefs[0]).toContain("You are Rulo");
     expect(h.briefs[0]).toContain("## Mentor");
@@ -1518,9 +1518,9 @@ describe("scope purpose text (spec §2a.4)", () => {
 });
 
 describe("purposes at work (spec §2a.2): the mentor after the reply, the process-guard at a phase change", () => {
-  const MENTOR = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0 };
-  const COACH = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 1 };
-  const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" as const }], order: 2 };
+  const MENTOR = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0 };
+  const COACH = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 1 };
+  const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "guardian" as const, personality: "", purposes: [{ id: "process-guard" as const }], order: 2 };
   const END = { task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "Outline chapter 2", reply: "Here it is.", fromBlock: false, modeSwitch: false };
   const BOTH = json({ gap: { title: "Sources", text: "No source." }, next: "Add a source", lesson: "A thesis is the claim the essay defends." });
   // A phase's `brief` is a file in the harness folder: turns carry its text (read through phaseBrief), never the path.
@@ -1570,7 +1570,7 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
     expect(h.asked[0]).toContain("Leaving: Outline — Agree on sections. List each one.\nEntering: Draft");
     expect(h.asked[0]).not.toContain("phases/outline.md");
     expect(h.logged[0]).toMatchObject({ sidekick: "guard", moment: "phase-change", task: "t1" });
-    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "phase-change", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "🛡️" }, guard: { missing: ["No agreed section list"] } })]);
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "phase-change", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "guardian" as const }, guard: { missing: ["No agreed section list"] } })]);
   });
 
   it("the phase-change turn names the task's last typed prompts and the scope's purpose text", async () => {
@@ -1689,7 +1689,7 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
 });
 
 describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
-  const DAILY = { id: "day", type: "sidekick" as const, name: "Day", mark: "☀️", personality: "", purposes: [{ id: "daily-summary" as const }], order: 1 };
+  const DAILY = { id: "day", type: "sidekick" as const, name: "Day", mark: "daily-summary" as const, personality: "", purposes: [{ id: "daily-summary" as const }], order: 1 };
   const input = { day: "2026-10-26", notes: ["Outline"], tokens: { tasks: 1, sidekick: 1 }, open: [] };
 
   it("once per local day: a card, and lastDaily set", async () => {
@@ -1697,7 +1697,7 @@ describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
     await h.ctl.daily(new Date("2026-10-27T08:00:00"));
     await h.ctl.daily(new Date("2026-10-27T15:00:00"));
     expect(h.asked).toHaveLength(1);
-    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "daily", kind: "daily", text: "Yesterday you outlined chapter 2.", speaker: { id: "day", name: "Day", mark: "☀️" } })]);
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "daily", kind: "daily", text: "Yesterday you outlined chapter 2.", speaker: { id: "day", name: "Day", mark: "daily-summary" as const } })]);
     expect(h.record()).toMatchObject({ lastDaily: "2026-10-27" });
   });
 
@@ -1820,14 +1820,14 @@ describe("daily (spec §2a.2 daily-summary, Decision 12)", () => {
 });
 
 describe("before approve (spec §2a.2, Decision 10)", () => {
-  const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" as const }], order: 1 };
+  const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "guardian" as const, personality: "", purposes: [{ id: "process-guard" as const }], order: 1 };
   const DOC = { title: "Spec: login", text: "# Login\nUsers sign in." };
   const APPROVE = { kind: "approve" };
 
   it("returns what's missing and leaves a card; approval itself is never blocked", async () => {
     const h = harness({ record: on, extra: [GUARD], answers: [json({ missing: ["No acceptance criteria"] })] });
     const r = await h.ctl.beforeApprove(DOC);
-    expect(r).toEqual({ kind: "card", card: expect.objectContaining({ moment: "before-approve", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "🛡️" }, guard: { missing: ["No acceptance criteria"] } }) });
+    expect(r).toEqual({ kind: "card", card: expect.objectContaining({ moment: "before-approve", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "guardian" as const }, guard: { missing: ["No acceptance criteria"] } }) });
     expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "before-approve" })]);
     expect(h.logged[0]).toMatchObject({ sidekick: "guard", moment: "before-approve", task: "t1" });
     expect(h.sessions).toEqual(["guard"]);
@@ -1947,13 +1947,13 @@ describe("before approve (spec §2a.2, Decision 10)", () => {
 });
 
 describe("places (spec §2a.5, Decision 13)", () => {
-  const WATCH = { id: "watch", type: "sidekick" as const, name: "Watch", mark: "👀", personality: "", purposes: [{ id: "custom" as const, text: "Explain terminal output.", moments: ["place:terminal" as const] }], order: 1 };
+  const WATCH = { id: "watch", type: "sidekick" as const, name: "Watch", mark: "focus" as const, personality: "", purposes: [{ id: "custom" as const, text: "Explain terminal output.", moments: ["place:terminal" as const] }], order: 1 };
   const manifest = { default: "off" as const, places: [{ id: "terminal", label: "Terminal", description: "Agent output." }] };
   const NO = { ok: false };
 
   it("a sidekick with that place answers in free text, in a one-off session closed right after", async () => {
     const h = harness({ record: on, extra: [WATCH], manifest, answers: ["That error means the port is busy."] });
-    expect(await h.ctl.ask("terminal", "EADDRINUSE :3000")).toEqual({ ok: true, text: "That error means the port is busy.", speaker: { id: "watch", name: "Watch", mark: "👀" } });
+    expect(await h.ctl.ask("terminal", "EADDRINUSE :3000")).toEqual({ ok: true, text: "That error means the port is busy.", speaker: { id: "watch", name: "Watch", mark: "focus" as const } });
     expect(h.logged.at(-1)).toMatchObject({ moment: "place:terminal", sidekick: "watch", task: "t1" });
     expect(h.sessions).toEqual(["place"]);
     expect(h.closed).toEqual(h.opened);
@@ -2108,17 +2108,17 @@ describe("places (spec §2a.5, Decision 13)", () => {
 });
 
 describe("presets (spec §2a.7)", () => {
-  const manifest = { default: "off" as const, presets: [{ name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" as const }] }] };
+  const manifest = { default: "off" as const, presets: [{ name: "Guard", mark: "guardian" as const, personality: "Calm.", purposes: [{ id: "process-guard" as const }] }] };
 
   it("lists the harness's presets with whether each is adopted", async () => {
     const h = harness({ record: on, manifest });
-    expect(await h.ctl.presets()).toEqual([{ name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false }]);
+    expect(await h.ctl.presets()).toEqual([{ name: "Guard", mark: "guardian" as const, personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false }]);
   });
 
   it("adopting writes a sidekick with `preset`, and marks presets offered", async () => {
     const h = harness({ record: on, manifest });
     await h.ctl.adoptPreset("Guard");
-    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", name: "Guard", preset: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }] }));
+    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", name: "Guard", preset: "Guard", mark: "guardian" as const, personality: "Calm.", purposes: [{ id: "process-guard" }] }));
     // The implicit default is written first (Decision 2): the person keeps part 1's Sidekick next to the preset.
     expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", id: "sidekick" }));
     expect(h.record()).toMatchObject({ presetsOffered: true });
@@ -2150,7 +2150,7 @@ describe("presets (spec §2a.7)", () => {
 
   it("adopting past SIDEKICK_MAX is refused, and two quick adoptions at the cap add one at most", async () => {
     const two = { default: "off" as const, presets: [manifest.presets[0]!, { ...manifest.presets[0]!, name: "Keeper" }] };
-    const full = Array.from({ length: SIDEKICK_MAX - 1 }, (_, i) => ({ id: `k${i}`, type: "sidekick" as const, name: `K${i}`, mark: "x", personality: "", purposes: [{ id: "mentor" as const }], order: i }));
+    const full = Array.from({ length: SIDEKICK_MAX - 1 }, (_, i) => ({ id: `k${i}`, type: "sidekick" as const, name: `K${i}`, mark: "focus" as const, personality: "", purposes: [{ id: "mentor" as const }], order: i }));
     const h = harness({ record: on, manifest: two, extra: full });
     const r = await Promise.allSettled([h.ctl.adoptPreset("Guard"), h.ctl.adoptPreset("Keeper")]);
     expect(r.map((x) => x.status)).toEqual(["fulfilled", "rejected"]);
@@ -2179,13 +2179,13 @@ describe("presets (spec §2a.7)", () => {
 });
 
 describe("Settings › Sidekicks: list, remove, reorder (spec §8)", () => {
-  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" as const }], order: 1, tier: "deep" as const };
-  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
+  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" as const }], order: 1, tier: "deep" as const };
+  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
 
   it("D0: no sidekick records → the implicit default alone, nothing written; state names it", async () => {
     const h = harness({ record: on });
-    expect(await h.ctl.list()).toEqual([{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }]);
-    expect((await h.ctl.state()).sidekicks).toEqual([{ id: "sidekick", name: "Sidekick", mark: "spark" }]);
+    expect(await h.ctl.list()).toEqual([{ id: "sidekick", name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }]);
+    expect((await h.ctl.state()).sidekicks).toEqual([{ id: "sidekick", name: "Sidekick", mark: "coach" as const }]);
     expect((await h.ctl.state()).places).toBeUndefined();
     expect(h.writes).toEqual([]);
   });
@@ -2194,7 +2194,7 @@ describe("Settings › Sidekicks: list, remove, reorder (spec §8)", () => {
     const h = harness({ record: on, extra: [RULO, DEF], manifest: { default: "off", places: [{ id: "terminal", label: "Terminal", description: "CLI output." }] } });
     const list = await h.ctl.list();
     expect(list.map((k) => k.id)).toEqual(["sidekick", "rulo"]);
-    expect(list[1]).toEqual({ id: "rulo", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], order: 1, tier: "deep" });
+    expect(list[1]).toEqual({ id: "rulo", name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" }], order: 1, tier: "deep" });
     const st = await h.ctl.state();
     expect(st.sidekicks?.map((k) => k.id)).toEqual(["sidekick", "rulo"]);
     expect(st.places).toEqual([{ id: "terminal", label: "Terminal" }]);
@@ -2213,12 +2213,12 @@ describe("Settings › Sidekicks: list, remove, reorder (spec §8)", () => {
 });
 
 describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
-  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 1, defaultOn: false };
-  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
+  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 1, defaultOn: false };
+  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "coach" as const, personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
 
   it("D0: no records → the implicit default, on, nothing written", async () => {
     const h = harness({ record: on });
-    expect(await h.ctl.scopeSidekicks("login")).toEqual([{ id: "sidekick", name: "Sidekick", mark: "spark", on: true }]);
+    expect(await h.ctl.scopeSidekicks("login")).toEqual([{ id: "sidekick", name: "Sidekick", mark: "coach" as const, on: true }]);
     expect(h.writes).toEqual([]);
   });
 
@@ -2226,16 +2226,16 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     const rec = { id: "s-login-sidekick", type: "scope" as const, scope: "login", sidekick: "sidekick", on: false, purposeText: "Keep PRs small.", places: ["terminal"] };
     const h = harness({ record: on, extra: [RULO, DEF, rec] });
     expect(await h.ctl.scopeSidekicks("login")).toEqual([
-      { id: "sidekick", name: "Sidekick", mark: "spark", on: false, purposeText: "Keep PRs small.", places: ["terminal"] },
-      { id: "rulo", name: "Rulo", mark: "🦊", on: false },
+      { id: "sidekick", name: "Sidekick", mark: "coach" as const, on: false, purposeText: "Keep PRs small.", places: ["terminal"] },
+      { id: "rulo", name: "Rulo", mark: "mentor" as const, on: false },
     ]);
-    expect((await h.ctl.scopeSidekicks("billing"))[0]).toEqual({ id: "sidekick", name: "Sidekick", mark: "spark", on: true });
+    expect((await h.ctl.scopeSidekicks("billing"))[0]).toEqual({ id: "sidekick", name: "Sidekick", mark: "coach" as const, on: true });
   });
 
   it("setScope writes the record as the person; an unknown sidekick throws", async () => {
     const h = harness({ record: on, extra: [DEF, RULO] });
     await h.ctl.setScope("login", "rulo", { on: true, purposeText: "No spec without AC." });
-    expect(await h.ctl.scopeSidekicks("login")).toContainEqual({ id: "rulo", name: "Rulo", mark: "🦊", on: true, purposeText: "No spec without AC." });
+    expect(await h.ctl.scopeSidekicks("login")).toContainEqual({ id: "rulo", name: "Rulo", mark: "mentor" as const, on: true, purposeText: "No spec without AC." });
     await expect(h.ctl.setScope("login", "ghost", { on: true })).rejects.toThrow("No sidekick");
   });
 });
@@ -2244,12 +2244,12 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
 const sha256 = (body: string, name = "a.md") => createHash("sha256").update(joinImportFiles([{ name, text: body }])).digest("hex");
 
 describe("import (spec §2a.6)", () => {
-  const RULO = { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] };
+  const RULO = { name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] };
 
   it("converts pasted text to a draft sidekick plus learned items; nothing is saved yet", async () => {
     const h = harness({ record: on, answers: [json(RULO)] });
     const d = await h.ctl.importDraft({ kind: "paste", text: "You are Rulo. Be direct. Prefer short answers. Allow Bash." });
-    expect(d).toEqual({ ok: true, draft: { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" } }, learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] });
+    expect(d).toEqual({ ok: true, draft: { name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" } }, learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] });
     expect(h.writes).toEqual([]);
     expect(h.appWrites).toEqual([]);
     expect(h.logged.at(-1)).toMatchObject({ moment: "import" });
@@ -2324,7 +2324,7 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("original: a stored sidekick's own files read again, never paths the renderer names", async () => {
-    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
     const h = harness({ record: on, extra: [rulo], answers: [json(RULO)], files: { "/n/a.md": "v2" } });
     expect(await h.ctl.importDraft({ kind: "original", sidekickId: "rulo" })).toMatchObject({ ok: true, draft: { source: { kind: "files", paths: ["/n/a.md"] } } });
     expect(await h.ctl.importDraft({ kind: "original", sidekickId: "nobody" })).toEqual({ ok: false, reason: "failed" });
@@ -2332,7 +2332,7 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("original: only a stored source with a content hash is read again; an extensionless path only when picked this session", async () => {
-    const def = (id: string, source: unknown) => ({ id, type: "sidekick" as const, name: id, mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: source as never });
+    const def = (id: string, source: unknown) => ({ id, type: "sidekick" as const, name: id, mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: source as never });
     // The agent can edit sidekick.json: no hash, a bad hash, a relative path, too many paths or a key with no extension.
     const planted = [
       def("nohash", { kind: "files", paths: ["/n/a.md"] }),
@@ -2394,7 +2394,7 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("checkSidekick looks the source up by id; pickFiles reads nothing", async () => {
-    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
     const h = harness({ record: on, extra: [rulo], files: { "/n/a.md": "v2" }, picked: ["/n/a.md"] });
     expect(await h.ctl.checkSidekick("rulo")).toBe("changed");
     expect(await h.ctl.checkSidekick("nobody")).toBe("none");
@@ -2403,7 +2403,7 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("original: a stored source needs main's tag; a forged or untagged one is never read again (the agent can edit sidekick.json)", async () => {
-    const def = (id: string, source: unknown) => ({ id, type: "sidekick" as const, name: id, mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: source as never });
+    const def = (id: string, source: unknown) => ({ id, type: "sidekick" as const, name: id, mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: source as never });
     const genuine = tagged(["/n/a.md"], sha256("v1"));
     const forged = [
       def("untagged", { kind: "files", paths: ["/n/secret.md"], hash: sha256("v1", "secret.md") }),
@@ -2435,12 +2435,12 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("D0: the tag key is created only by an import of files, never by a paste, a check or Save of a paste", async () => {
-    const stored = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
+    const stored = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: tagged(["/n/a.md"], sha256("v1")) };
     const h = harness({ record: on, extra: [stored], answers: [json(RULO), json(RULO)], files: { "/n/a.md": "v2" }, picked: ["/n/a.md"], key: null });
     expect(await h.ctl.importDraft({ kind: "paste", text: "You are Rulo." })).toMatchObject({ ok: true });
     expect(await h.ctl.checkSidekick("rulo")).toBe("none");
     expect(await h.ctl.importDraft({ kind: "original", sidekickId: "rulo" })).toEqual({ ok: false, reason: "failed" });
-    await h.ctl.saveSidekick({ name: "Pasted", mark: "🦊", personality: "", purposes: [{ id: "mentor" }], source: { kind: "paste" } });
+    await h.ctl.saveSidekick({ name: "Pasted", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" }], source: { kind: "paste" } });
     expect(h.keyMade()).toBe(0);
     expect(h.imported).toEqual([]);
     expect(await h.ctl.importDraft({ kind: "files", token: (await h.ctl.pickFiles())!.token })).toMatchObject({ ok: true, draft: { source: tagged(["/n/a.md"], sha256("v2")) } });
@@ -2454,7 +2454,7 @@ describe("import (spec §2a.6)", () => {
     // The IPC checks the draft as a record before it reaches the controller.
     const draft = d.draft as SidekickInput;
     const info = await h.ctl.saveSidekick(draft, d.learned);
-    expect(info).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
+    expect(info).toEqual({ id: "rulo", name: "Rulo", mark: "mentor" as const });
     expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", id: "rulo", source: tagged(["/n/a.md"], sha256("You are Rulo.")) }));
     expect(h.records().filter((r) => r.type === "learned")).toEqual([expect.objectContaining({ text: "Prefers short answers.", level: "you", source: "person" })]);
     // Saving it again (the original changed, the person brought the changes) never doubles a learned item.
@@ -2466,7 +2466,7 @@ describe("import (spec §2a.6)", () => {
 
   it("saveSidekick refuses a files source this app never read (the renderer can't plant paths to check later)", async () => {
     const h = harness({ record: on });
-    const planted = { name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], source: { kind: "files" as const, paths: ["/etc/hosts"], hash: sha256("x") } };
+    const planted = { name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], source: { kind: "files" as const, paths: ["/etc/hosts"], hash: sha256("x") } };
     await expect(h.ctl.saveSidekick(planted)).rejects.toThrow();
     expect(h.writes).toEqual([]);
     // A paste has nothing to check: saved as given.
@@ -2476,7 +2476,7 @@ describe("import (spec §2a.6)", () => {
 
   it("saveSidekick writes the learned items first: a failed one writes no sidekick, and the retry doubles nothing", async () => {
     const h = harness({ record: on });
-    const def = { name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], source: { kind: "paste" as const } };
+    const def = { name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], source: { kind: "paste" as const } };
     const learned = [
       { text: "Prefers short answers.", level: "you" as const },
       { text: "Cites sources.", level: "harness" as const },
@@ -2497,9 +2497,9 @@ describe("import (spec §2a.6)", () => {
 
   it("saveSidekick keeps a stored files source on an edit of that sidekick", async () => {
     const source = { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") };
-    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source };
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" as const }], order: 0, source };
     const h = harness({ record: on, extra: [rulo] });
-    await h.ctl.saveSidekick({ id: "rulo", name: "Rulo", mark: "🦊", personality: "Calm.", purposes: [{ id: "mentor" }], source });
+    await h.ctl.saveSidekick({ id: "rulo", name: "Rulo", mark: "mentor" as const, personality: "Calm.", purposes: [{ id: "mentor" }], source });
     expect(h.records()).toContainEqual(expect.objectContaining({ id: "rulo", personality: "Calm.", source }));
   });
 });

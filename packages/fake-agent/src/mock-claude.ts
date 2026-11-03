@@ -101,7 +101,7 @@ export function mockSidekickReply(prompt: string): string {
   // A harness place (sidekick spec §2a.5): plain text.
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.place)) return "Mock: nothing in this output needs your attention.";
   // An import (sidekick spec §2a.6): a fixed draft, nothing learned or skipped.
-  if (prompt.startsWith(MOCK_SIDEKICK_MARKS.import)) return '{"name":"Imported","mark":"🦊","personality":"Direct and brief.","purposes":[{"id":"prompt-coach"}],"learned":[],"skipped":[]}';
+  if (prompt.startsWith(MOCK_SIDEKICK_MARKS.import)) return '{"name":"Imported","mark":"mentor","personality":"Direct and brief.","purposes":[{"id":"prompt-coach"}],"learned":[],"skipped":[]}';
   // Routing (sidekick spec §2a.3): the first choice, the person's order.
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.route)) return /^Who should speak\? Choices:\n- ([^:\n]+):/m.exec(prompt)?.[1] ?? "";
   const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";

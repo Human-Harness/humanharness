@@ -39,7 +39,7 @@ function quizClient(withSidekick: boolean) {
   client.state.path = ["practice"];
   client.state.inputs = { commit_answer: SPEC };
   if (withSidekick) {
-    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
+    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     client.sidekickState = SK_ON;
   }
   client.chat = [

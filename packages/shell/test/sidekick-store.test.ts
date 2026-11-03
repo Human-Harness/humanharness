@@ -164,7 +164,7 @@ function mem(initial: object[]) {
   return { store: s, writes, deleted, records };
 }
 
-const RULO = { id: "rulo", type: "sidekick", name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }], order: 1 };
+const RULO = { id: "rulo", type: "sidekick", name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }], order: 1 };
 
 describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
   it("D0: no sidekick records → the implicit default, nothing written", async () => {
@@ -183,7 +183,7 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
 
   it("saving a new one writes the default first, then the new one with a slug id and the next order", async () => {
     const s = mem([]);
-    const saved = await s.store.saveSidekick({ name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }] });
+    const saved = await s.store.saveSidekick({ name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" }] });
     expect(saved.id).toBe("rulo");
     expect(s.writes.map((w) => (w as { record: { id: string } }).record.id)).toEqual(["sidekick", "rulo"]);
     expect((await s.store.sidekicks()).map((k) => [k.id, k.order])).toEqual([["sidekick", 0], ["rulo", 1]]);
@@ -191,37 +191,37 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
 
   it("editing keeps the id and the order; an unknown id is refused", async () => {
     const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, RULO]);
-    const saved = await s.store.saveSidekick({ id: "rulo", name: "Rulo II", mark: "y", personality: "Calm.", purposes: [{ id: "focus" }], defaultOn: false });
-    expect(saved).toEqual({ id: "rulo", name: "Rulo II", mark: "y", personality: "Calm.", purposes: [{ id: "focus" }], order: 1, defaultOn: false });
-    await expect(s.store.saveSidekick({ id: "nope", name: "N", mark: "n", personality: "", purposes: [{ id: "focus" }] })).rejects.toThrow(/No sidekick/);
+    const saved = await s.store.saveSidekick({ id: "rulo", name: "Rulo II", mark: "coach" as const, personality: "Calm.", purposes: [{ id: "focus" }], defaultOn: false });
+    expect(saved).toEqual({ id: "rulo", name: "Rulo II", mark: "coach" as const, personality: "Calm.", purposes: [{ id: "focus" }], order: 1, defaultOn: false });
+    await expect(s.store.saveSidekick({ id: "nope", name: "N", mark: "focus", personality: "", purposes: [{ id: "focus" }] })).rejects.toThrow(/No sidekick/);
   });
 
   it("name clashes get -2, -3", async () => {
     const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }]);
-    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-2");
-    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
+    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-2");
+    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
   });
 
   it("reserved ids: a new one is never `learn` (the learning folder) nor `sidekick` (the default's), even after it is gone", async () => {
     const s = mem([{ ...RULO, order: 0 }]);
-    expect((await s.store.saveSidekick({ name: "Learn", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("learn-2");
-    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-2");
-    expect((await s.store.saveSidekick({ name: "!!!", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
+    expect((await s.store.saveSidekick({ name: "Learn", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("learn-2");
+    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-2");
+    expect((await s.store.saveSidekick({ name: "!!!", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
   });
 
   it("reserved ids: a new one is never `route` (the routing turn's folder)", async () => {
     const s = mem([{ ...RULO, order: 0 }]);
-    expect((await s.store.saveSidekick({ name: "Route", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("route-2");
+    expect((await s.store.saveSidekick({ name: "Route", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("route-2");
   });
 
   it("reserved ids: a new one is never `daily` (the daily turn's folder)", async () => {
     const s = mem([{ ...RULO, order: 0 }]);
-    expect((await s.store.saveSidekick({ name: "Daily", mark: "x", personality: "", purposes: [{ id: "daily-summary" }] })).id).toBe("daily-2");
+    expect((await s.store.saveSidekick({ name: "Daily", mark: "focus" as const, personality: "", purposes: [{ id: "daily-summary" }] })).id).toBe("daily-2");
   });
 
   it("reserved ids: a new one is never `place` (the place turns' folder)", async () => {
     const s = mem([{ ...RULO, order: 0 }]);
-    expect((await s.store.saveSidekick({ name: "Place", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("place-2");
+    expect((await s.store.saveSidekick({ name: "Place", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("place-2");
   });
 
   it("a new id never takes another record's: settings, a scope record, a learned item's shape (s-, l-)", async () => {
@@ -231,7 +231,7 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
       { id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false },
       { id: "l-1a2b3c4d", type: "learned", text: "x", level: "you", source: "person", updatedAt: "2026-10-27T09:00:00Z" },
     ]);
-    const add = async (name: string) => (await s.store.saveSidekick({ name, mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id;
+    const add = async (name: string) => (await s.store.saveSidekick({ name, mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id;
     expect(await add("Settings")).toBe("settings-2");
     expect(await add("S Main Rulo")).toBe("k-s-main-rulo");
     expect(await add("L 1a2b3c4d")).toBe("k-l-1a2b3c4d");
@@ -242,14 +242,14 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
 
   it("a slug drops accents rather than splitting on them", async () => {
     const s = mem([]);
-    expect((await s.store.saveSidekick({ name: "Andrés", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("andres");
+    expect((await s.store.saveSidekick({ name: "Andrés", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] })).id).toBe("andres");
   });
 
   it("muting an unknown sidekick writes nothing; a new sidekick never inherits a stale muted entry", async () => {
     const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, { id: "settings", type: "settings", muted: { rulo: ["gap"] } }]);
     await expect(s.store.mute("rulo", "Rulo", "vague", "2026-10-27T09:00:00Z")).rejects.toThrow(/No sidekick/);
     expect(s.writes).toEqual([]);
-    await s.store.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }] });
+    await s.store.saveSidekick({ name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] });
     expect((await s.store.settings()).muted).toEqual({});
     const d = mem([]);
     await d.store.mute("sidekick", "Sidekick", "vague", "2026-10-27T09:00:00Z");
@@ -292,8 +292,8 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
   it("two quick saves: the default written once, two distinct ids", async () => {
     const s = mem([]);
     const [a, b] = await Promise.all([
-      s.store.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }] }),
-      s.store.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }] }),
+      s.store.saveSidekick({ name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] }),
+      s.store.saveSidekick({ name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }] }),
     ]);
     expect([a.id, b.id]).toEqual(["rulo", "rulo-2"]);
     expect((await s.store.sidekicks()).map((k) => [k.id, k.order])).toEqual([["sidekick", 0], ["rulo", 1], ["rulo-2", 2]]);
@@ -302,7 +302,7 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
 
   it("SIDEKICK_MAX: quick saves at the cap pass it once at most; an edit at the cap still saves", async () => {
     const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, ...Array.from({ length: SIDEKICK_MAX - 2 }, (_, i) => ({ ...RULO, id: `k${i}`, order: i + 1 }))]);
-    const def = { name: "New", mark: "x", personality: "", purposes: [{ id: "mentor" as const }] };
+    const def = { name: "New", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" as const }] };
     const r = await Promise.allSettled([s.store.saveSidekick(def), s.store.saveSidekick(def), s.store.saveSidekick(def)]);
     expect(r.map((x) => x.status)).toEqual(["fulfilled", "rejected", "rejected"]);
     expect((r[1] as PromiseRejectedResult).reason).toEqual(new Error(`At most ${SIDEKICK_MAX} sidekicks`));
@@ -338,8 +338,8 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
 
   it("the collection schema accepts a sidekick with defaultOn and the store reads it back", async () => {
     const { s } = await store();
-    const saved = await s.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }], defaultOn: false });
-    expect((await s.sidekicks()).find((k) => k.id === saved.id)).toEqual({ id: "rulo", name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }], order: 1, defaultOn: false });
+    const saved = await s.saveSidekick({ name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }], defaultOn: false });
+    expect((await s.sidekicks()).find((k) => k.id === saved.id)).toEqual({ id: "rulo", name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }], order: 1, defaultOn: false });
     expect(await s.scopeFor("main", "rulo")).toEqual({ on: false });
   });
 });

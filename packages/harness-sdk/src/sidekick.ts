@@ -54,12 +54,65 @@ export type SidekickPurposeDef = z.output<typeof purposeSchema>;
 /** The moments a purpose speaks at. */
 export const purposeMoments = (p: SidekickPurposeDef): readonly SidekickMoment[] => (p.id === "custom" ? (p.moments as SidekickMoment[]) : PURPOSE_MOMENTS[p.id]);
 
+/**
+ * The icon names of the style guide's closed set (§4): the only marks a sidekick can have. A copy of `ICON_NAMES` in
+ * packages/ui (the SDK cannot import the UI); `packages/ui/test/guide-icons.test.tsx` checks the two lists match.
+ */
+export const SIDEKICK_MARKS = [
+  "add",
+  "attention",
+  "back",
+  "bell",
+  "callout-decision",
+  "callout-note",
+  "callout-question",
+  "callout-summary",
+  "callout-tip",
+  "callout-warning",
+  "check",
+  "chevron",
+  "clock",
+  "close",
+  "coach",
+  "daily-summary",
+  "engine",
+  "files",
+  "focus",
+  "fullscreen",
+  "guardian",
+  "history",
+  "home",
+  "inbox",
+  "info",
+  "jobs",
+  "loading",
+  "lock",
+  "mentor",
+  "more",
+  "next",
+  "note",
+  "plugins",
+  "remove",
+  "search",
+  "settings",
+  "tasks",
+  "text",
+  "undo",
+] as const;
+export type SidekickMarkName = (typeof SIDEKICK_MARKS)[number];
+const markSchema = z.enum(SIDEKICK_MARKS);
+/** A stored or received mark as an icon name; anything else (an old emoji, `"spark"`) reads as `coach`, never throws. */
+export function sidekickMark(mark: unknown): SidekickMarkName {
+  const r = markSchema.safeParse(mark);
+  return r.success ? r.data : "coach";
+}
+
 /** A harness place a sidekick can be asked about (spec §2a.5); its id follows the action-id pattern. */
 const placeSchema = z.strictObject({ id: z.string().regex(PLACE_ID), label: z.string().min(1).max(40), description: z.string().min(1).max(300) });
 /** A ready-made sidekick the harness offers (spec §2a.7). */
 const presetSchema = z.strictObject({
   name: z.string().min(1).max(40),
-  mark: z.string().min(1).max(16),
+  mark: markSchema,
   personality: z.string().max(SIDEKICK_PERSONALITY_MAX),
   purposes: z.array(purposeSchema).min(1).max(6),
 });
@@ -174,7 +227,7 @@ export const sidekickRecordSchema = z
     updatedAt: ISO.optional(),
     // sidekick
     name: z.string().min(1).max(40).optional(),
-    mark: z.string().min(1).max(16).optional(),
+    mark: markSchema.optional(),
     personality: z.string().max(SIDEKICK_PERSONALITY_MAX).optional(),
     purposes: z.array(purposeSchema).min(1).max(6).optional(),
     order: z.number().int().min(0).max(999).optional(),
@@ -249,7 +302,7 @@ export function sidekickSettings(stored: Partial<SidekickRecord> | null, m: Pick
 export interface SidekickDef {
   id: string;
   name: string;
-  mark: string;
+  mark: SidekickMarkName;
   personality: string;
   purposes: SidekickPurposeDef[];
   order: number;
@@ -260,8 +313,8 @@ export interface SidekickDef {
   defaultOn?: boolean;
 }
 
-/** Without sidekick records, a profile gets this one (spec §3): part 1's single Sidekick. `"spark"` names the core's SVG mark. */
-export const DEFAULT_SIDEKICK: SidekickDef = { id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 };
+/** Without sidekick records, a profile gets this one (spec §3): part 1's single Sidekick. Its mark is the `coach` icon. */
+export const DEFAULT_SIDEKICK: SidekickDef = { id: "sidekick", name: "Sidekick", mark: "coach", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 };
 
 /** Whether `s` has a purpose that speaks at `moment`. */
 export const speaksAt = (s: Pick<SidekickDef, "purposes">, moment: SidekickMoment): boolean => s.purposes.some((p) => purposeMoments(p).includes(moment));

@@ -80,7 +80,7 @@ describe("Settings › Plugins", () => {
 
   it("adds Plugins after Sidekick, rescans once, and shows the empty state with Add from folder", async () => {
     const c = client();
-    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
+    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     await draw(c, "general");
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Sidekick", "Plugins", "Usage"]);
     expect(c.pluginCalls).toEqual([]);

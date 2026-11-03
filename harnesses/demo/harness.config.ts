@@ -64,7 +64,7 @@ export default defineHarness({
     default: "off",
     tips: "The person is learning how Human Harness works. A good prompt names the part (manifest, engines, a turn, blocks, context, history) and what they want to understand about it.",
     // A ready-made second sidekick the person may add (sidekick spec §2a.7); nothing changes until they do.
-    presets: [{ name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
+    presets: [{ name: "Guard", mark: "guardian", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
   },
   // The demo ships one plugin, off until the person turns it on (plugins spec §10), and accepts plugins added from a
   // folder (§3.4). Not in `on`: a normal demo run never reaches Wikimedia.

@@ -3,6 +3,7 @@ import { render } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { SIDEKICK_MARKS } from "@humanharness/harness-sdk";
 import { ICON_NAMES, Icon } from "../src/guide/icons";
 
 describe("icon set (style guide §4)", () => {
@@ -37,14 +38,12 @@ describe("icon set (style guide §4)", () => {
 
 const SRC = join(import.meta.dirname, "../src");
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? files(join(d, f)) : [join(d, f)]));
-it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (style guide §4, rows 13, 14)", () => {
+it("no <svg> outside the icon set, the logos; no GIF (style guide §4, rows 13, 14)", () => {
   const allowed = [
     "guide/icons.tsx",
     "chrome.tsx", // HHLogo only
     "MermaidDiagram.tsx", // the diagram's own drawing
     "FlowSide.tsx", // the context meter's ring, a gauge and not an icon
-    "markdown.tsx", // until Task 15 (callout icons)
-    "sidekick/mark.tsx", // until Task 15 (sidekick marks)
   ];
   for (const f of files(SRC).filter((x) => x.endsWith(".tsx"))) {
     const text = readFileSync(f, "utf8");
@@ -52,6 +51,16 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
     expect(text, f).not.toMatch(/<svg[\s>]/);
   }
   expect(files(SRC).filter((f) => f.endsWith(".gif"))).toEqual([]);
+  // Outside the core, the demo's own drawing.
+  const demo = join(import.meta.dirname, "../../../harnesses/demo/ui");
+  const demoAllowed = [
+    "DiagramBlock.tsx", // row 26: the block's drawing, not an icon
+  ];
+  for (const f of files(demo).filter((x) => x.endsWith(".tsx"))) {
+    if (demoAllowed.some((a) => f.endsWith(a))) continue;
+    expect(readFileSync(f, "utf8"), f).not.toMatch(/<svg[\s>]/);
+  }
+  expect(readFileSync(join(demo, "DiagramBlock.tsx"), "utf8")).toMatch(/<svg[\s>]/);
   expect(readFileSync(join(SRC, "chrome.tsx"), "utf8").match(/<svg[\s>]/g)?.length).toBe(1); // HHLogo
 });
 
@@ -63,4 +72,8 @@ it("no character stands in for an icon in any component (style guide §4, row 12
     expect(text, f).not.toMatch(/^\s*[✓←×✕›↩]\s*$/m); // JSX text alone on its line
     expect(text, f).not.toMatch(/^\s*← \{t\(/m);
   }
+});
+
+it("the SDK's sidekick marks are exactly the icon set (style guide §4, row 44)", () => {
+  expect([...SIDEKICK_MARKS].sort()).toEqual([...ICON_NAMES].sort());
 });

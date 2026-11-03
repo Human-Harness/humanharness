@@ -4,7 +4,7 @@ import { Segmented, Tag } from "../chrome";
 import { Icon } from "../guide/icons";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../client";
 import { shownLanguage } from "../language";
-import { SidekickMark } from "./mark";
+import { SidekickMark, markIcon } from "./mark";
 import { wordDiff } from "./word-diff";
 
 export interface SidekickPanelProps {
@@ -57,7 +57,7 @@ function Speaker({ who }: { who: SidekickInfo | undefined }) {
   if (!who) return null;
   return (
     <span className="hh-sk-speaker">
-      <SidekickMark mark={who.mark} size={16} /> {who.name}
+      <SidekickMark icon={markIcon(who.mark)} /> {who.name}
     </span>
   );
 }
@@ -73,7 +73,7 @@ export function SidekickRail({ state: s, onOpen, buttonRef }: { state: SidekickS
   return (
     <div className="hh-sk-rail">
       <button ref={buttonRef} type="button" aria-label={waiting.length > 0 ? t("sidekick.rail.waiting", { count: waiting.length }) : t("sidekick.open")} onClick={onOpen}>
-        {marks.length > 0 ? marks.map((mark, i) => <SidekickMark key={i} mark={mark} />) : <SidekickMark off={!s.settings.on} />}
+        {marks.length > 0 ? marks.map((mark, i) => <SidekickMark key={i} icon={markIcon(mark)} />) : <SidekickMark off={!s.settings.on} />}
         {waiting.length > 0 && <span className="hh-sk-dot" aria-hidden="true" />}
       </button>
     </div>
@@ -93,7 +93,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
   return (
     <aside className="hh-sk-panel" aria-label={s.info.name}>
       <header className="hh-sk-head">
-        <SidekickMark off={!s.settings.on} mark={s.info.mark} />
+        <SidekickMark off={!s.settings.on} icon={markIcon(s.info.mark)} />
         <h2 className="hh-sk-name">{s.info.name}</h2>
         {/* On, the state is a green tag (UI refresh spec §5.1); past its cap, orange. */}
         {s.settings.on ? (

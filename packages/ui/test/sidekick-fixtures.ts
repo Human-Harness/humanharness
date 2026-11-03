@@ -2,7 +2,7 @@ import type { SidekickState } from "../src/client";
 
 /** Sidekick on, watching, with some tokens spent: the base state the Sidekick UI tests start from. */
 export const SK_ON: SidekickState = {
-  info: { id: "sidekick", name: "Sidekick", mark: "spark" },
+  info: { id: "sidekick", name: "Sidekick", mark: "coach" },
   settings: { on: true, preSend: true, wait: 6, cap: 20_000, introSeen: true, afterReply: true, headsUps: true, presetsOffered: false, muted: {} },
   status: "watching",
   spent: 1200,

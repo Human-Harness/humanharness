@@ -9,4 +9,7 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-icon",
   "hh-icon-loading",
   "hh-icon-chevron",
+  // SidekickMark (§4)
+  "hh-sk-mark",
+  "hh-sk-mark-off",
 ]);

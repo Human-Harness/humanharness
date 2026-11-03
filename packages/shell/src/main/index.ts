@@ -747,7 +747,7 @@ async function appState(): Promise<AppState> {
     // Only a harness with settings gets its tab (harness-settings D0).
     ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
     // Sidekick is core (sidekick spec D1): every harness sends it; the window draws it only with this.
-    sidekick: { id: "sidekick", name: "Sidekick", mark: "spark" },
+    sidekick: { id: "sidekick", name: "Sidekick", mark: "coach" },
     // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
     ...(hasModes(harness)
       ? {

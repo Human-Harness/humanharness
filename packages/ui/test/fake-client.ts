@@ -1155,7 +1155,7 @@ export class FakeClient implements HarnessClient {
   /** What sidekick.checkOriginal answers. */
   sidekickOriginal: SidekickOriginal = "none";
   /** What sidekick.list answers (the implicit default by default); saveSidekick, remove and reorder change it. */
-  sidekickList: SidekickView[] = [{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }];
+  sidekickList: SidekickView[] = [{ id: "sidekick", name: "Sidekick", mark: "coach", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }];
   /** When set, sidekick.saveSidekick rejects with this message. */
   sidekickSaveFails: string | null = null;
   /** What sidekick.scope answers (any scope); setScope changes it. */

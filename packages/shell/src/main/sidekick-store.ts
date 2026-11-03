@@ -10,6 +10,7 @@ import {
   type SidekickManifest,
   type SidekickRecord,
   type SidekickSettings,
+  sidekickMark,
   sidekickSettings,
   z,
 } from "@humanharness/harness-sdk";
@@ -65,7 +66,7 @@ const slug = (name: string) => {
 const toDef = (r: SidekickRecord): SidekickDef => ({
   id: r.id,
   name: r.name!,
-  mark: r.mark!,
+  mark: sidekickMark(r.mark),
   personality: r.personality ?? "",
   purposes: r.purposes!,
   order: r.order!,

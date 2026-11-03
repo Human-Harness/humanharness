@@ -11,8 +11,8 @@ import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
 const LIST: SidekickView[] = [
-  { id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 },
-  { id: "rulo", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], order: 1, tier: "deep", defaultOn: false, source: { kind: "files", paths: ["/n/rulo.md"], hash: "a".repeat(64) } },
+  { id: "sidekick", name: "Sidekick", mark: "coach", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 },
+  { id: "rulo", name: "Rulo", mark: "mentor", personality: "Direct.", purposes: [{ id: "mentor" }], order: 1, tier: "deep", defaultOn: false, source: { kind: "files", paths: ["/n/rulo.md"], hash: "a".repeat(64) } },
 ];
 
 describe("Settings › Sidekicks (spec §8)", () => {
@@ -53,7 +53,7 @@ describe("Settings › Sidekicks (spec §8)", () => {
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
     await waitFor(() =>
-      expect(c.sidekickCalls).toContainEqual(["saveSidekick", { name: "Docs", mark: "spark", personality: "", purposes: [{ id: "custom", text: "Docs stay in sync.", moments: ["after-reply"] }] }, undefined]),
+      expect(c.sidekickCalls).toContainEqual(["saveSidekick", { name: "Docs", mark: "coach", personality: "", purposes: [{ id: "custom", text: "Docs stay in sync.", moments: ["after-reply"] }] }, undefined]),
     );
     // Saved: the editor closes, the list shows it, focus is back on New sidekick.
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3));
@@ -85,7 +85,7 @@ describe("Settings › Sidekicks (spec §8)", () => {
     await waitFor(() =>
       expect(c.sidekickCalls).toContainEqual([
         "saveSidekick",
-        { id: "rulo", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "focus" }, { id: "mentor" }], tier: "deep", defaultOn: false, source: LIST[1]!.source },
+        { id: "rulo", name: "Rulo", mark: "mentor", personality: "Direct.", purposes: [{ id: "focus" }, { id: "mentor" }], tier: "deep", defaultOn: false, source: LIST[1]!.source },
         undefined,
       ]),
     );
@@ -162,7 +162,7 @@ describe("Settings › Sidekicks (spec §8)", () => {
 
   it("a daily-summary sidekick off by default says it never gives the daily summary", async () => {
     const c = new FakeClient({ language: "en" });
-    c.sidekickList = [LIST[0]!, { id: "day", name: "Day", mark: "☀️", personality: "", purposes: [{ id: "daily-summary" }], order: 1, defaultOn: false }];
+    c.sidekickList = [LIST[0]!, { id: "day", name: "Day", mark: "daily-summary", personality: "", purposes: [{ id: "daily-summary" }], order: 1, defaultOn: false }];
     await renderIn("en", <SidekickList client={c} />);
     expect(await screen.findByText("Off by default, so it never gives the daily summary.")).toBeTruthy();
   });
@@ -172,7 +172,7 @@ describe("Settings › Sidekicks (spec §8)", () => {
     await renderIn("en", <SidekickList client={c} />);
     fireEvent.click(await screen.findByRole("button", { name: "Import", expanded: false }));
     expect(screen.getByRole("textbox", { name: "Paste instructions" })).toBeTruthy();
-    c.sidekickList = [...c.sidekickList, { id: "guard", name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" }], order: 1, preset: "Guard" }];
+    c.sidekickList = [...c.sidekickList, { id: "guard", name: "Guard", mark: "guardian", personality: "", purposes: [{ id: "process-guard" }], order: 1, preset: "Guard" }];
     c.emitSidekick(SK_ON);
     expect(await screen.findByText("Guard")).toBeTruthy();
   });
@@ -219,7 +219,7 @@ describe("Settings › Sidekicks: guards", () => {
 
   it("Save counts what it sends: a gone place isn't a moment, more than 6 purposes says why", async () => {
     const c = new FakeClient({ language: "en" });
-    c.sidekickList = [{ id: "docs", name: "Docs", mark: "spark", personality: "", purposes: [{ id: "custom", text: "Docs in sync.", moments: ["place:gone"] }], order: 0 }];
+    c.sidekickList = [{ id: "docs", name: "Docs", mark: "coach", personality: "", purposes: [{ id: "custom", text: "Docs in sync.", moments: ["place:gone"] }], order: 0 }];
     await renderIn("en", <SidekickList client={c} />);
     fireEvent.click(await screen.findByRole("button", { name: "Edit Docs" }));
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
@@ -230,7 +230,7 @@ describe("Settings › Sidekicks: guards", () => {
     const d = new FakeClient({ language: "en" });
     const all = [{ id: "prompt-coach" }, { id: "focus" }, { id: "process-guard" }, { id: "mentor" }, { id: "daily-summary" }];
     d.sidekickList = [
-      { id: "big", name: "Big", mark: "spark", personality: "", order: 0, purposes: [...all, { id: "custom", text: "A", moments: ["daily"] }, { id: "custom", text: "B", moments: ["daily"] }] },
+      { id: "big", name: "Big", mark: "coach", personality: "", order: 0, purposes: [...all, { id: "custom", text: "A", moments: ["daily"] }, { id: "custom", text: "B", moments: ["daily"] }] },
     ];
     await renderIn("en", <SidekickList client={d} />);
     fireEvent.click(await screen.findByRole("button", { name: "Edit Big" }));
@@ -247,7 +247,7 @@ describe("Settings › Sidekicks in the tab", () => {
   it("the presets stay offered while one is not adopted, even after they were offered once", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, presetsOffered: true } };
-    c.sidekickPresets = [{ name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false }];
+    c.sidekickPresets = [{ name: "Guard", mark: "guardian", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false }];
     await renderIn("en", <SidekickTab client={c} onModels={() => undefined} />);
     expect(await screen.findByRole("button", { name: "Add Guard" })).toBeTruthy();
     expect(await screen.findByRole("region", { name: "Sidekicks" })).toBeTruthy();
@@ -255,12 +255,12 @@ describe("Settings › Sidekicks in the tab", () => {
 
   it("the Settings tab reads Sidekicks with two or more; its id is unchanged", async () => {
     const c = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
-    c.sidekickState = { ...SK_ON, sidekicks: [{ id: "sidekick", name: "Sidekick", mark: "spark" }] };
+    c.sidekickState = { ...SK_ON, sidekicks: [{ id: "sidekick", name: "Sidekick", mark: "coach" }] };
     const state = { ...c.state, sidekick: SK_ON.info };
     await renderIn("en", <SettingsPage client={c} state={state} tab="sidekick" onTab={() => undefined} onChange={() => undefined} onClose={() => undefined} onSetup={() => undefined} />);
     const dialog = screen.getByRole("main", { name: "Settings" });
     expect(await within(dialog).findByRole("tab", { name: "Sidekick" })).toBeTruthy();
-    c.emitSidekick({ ...SK_ON, sidekicks: [{ id: "sidekick", name: "Sidekick", mark: "spark" }, { id: "rulo", name: "Rulo", mark: "🦊" }] });
+    c.emitSidekick({ ...SK_ON, sidekicks: [{ id: "sidekick", name: "Sidekick", mark: "coach" }, { id: "rulo", name: "Rulo", mark: "mentor" }] });
     expect(await within(dialog).findByRole("tab", { name: "Sidekicks" })).toBeTruthy();
   });
 });

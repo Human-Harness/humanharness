@@ -9,6 +9,7 @@ import { CALLOUTS, type Callout, createSlugger, splitFrontMatter } from "@humanh
 import { CitationContext, splitCitations } from "./citations";
 import { imageTarget, isAutolink, linkTarget } from "./doc-links";
 import { DocumentContext, type DocumentHost } from "./documents-context";
+import { Icon } from "./guide/icons";
 import { highlightCode } from "./highlight";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { fenceClosed } from "./mermaid-loader";
@@ -476,29 +477,11 @@ function CalloutBox({ kind, label, children }: { kind: Callout; label: string; c
   return (
     <div className={`hh-callout hh-callout-${kind}`} role="note" aria-labelledby={labelId}>
       <p className="hh-callout-label" id={labelId}>
-        <CalloutIcon kind={kind} />
+        <Icon name={`callout-${kind}`} size={14} />
         {label}
       </p>
       {children}
     </div>
-  );
-}
-
-const CALLOUT_ICONS: Record<Callout, string> = {
-  note: "M12 8v5M12 16h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
-  tip: "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z",
-  warning: "M12 9v4M12 17h.01M10.3 4l-8 14a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0z",
-  summary: "M5 6h14M5 12h14M5 18h9",
-  decision: "M5 12l4 4 10-10",
-  question: "M9.1 9a3 3 0 1 1 4.2 2.7c-.8.4-1.3 1.1-1.3 2v.3M12 17h.01",
-};
-
-/** A small line icon per callout, in the text colour (no colour of its own). */
-function CalloutIcon({ kind }: { kind: Callout }) {
-  return (
-    <svg className="hh-callout-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={CALLOUT_ICONS[kind]} />
-    </svg>
   );
 }
 

@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "../chrome";
 import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "../client";
+import { ICON_NAMES } from "../guide/icons";
+import { markIcon } from "./mark";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */
 const CORE = ["prompt-coach", "focus", "process-guard", "mentor", "daily-summary"] as const;
@@ -9,7 +11,6 @@ const CORE = ["prompt-coach", "focus", "process-guard", "mentor", "daily-summary
 const MOMENTS = ["pre-send", "after-reply", "heads-up", "before-approve", "phase-change", "daily"] as const;
 /** The record's bounds (SDK `sidekickRecordSchema`). */
 const NAME_MAX = 40;
-const MARK_MAX = 16;
 const PERSONALITY_MAX = 1500;
 const CUSTOM_MAX = 600;
 const PURPOSES_MAX = 6;
@@ -39,7 +40,7 @@ export function SidekickEditor({
   const ids = useId();
   const customs = initial?.purposes.filter((p) => p.id === "custom") ?? [];
   const [name, setName] = useState(initial?.name ?? "");
-  const [mark, setMark] = useState(initial?.mark ?? "spark");
+  const [mark, setMark] = useState<string>(markIcon(initial?.mark));
   const [personality, setPersonality] = useState(initial?.personality ?? "");
   const [core, setCore] = useState<string[]>(initial?.purposes.filter((p) => p.id !== "custom").map((p) => p.id) ?? []);
   const [custom, setCustom] = useState(customs.length > 0);
@@ -80,7 +81,7 @@ export function SidekickEditor({
       ...(initial?.preset !== undefined ? { preset: initial.preset } : {}),
       ...(initial?.defaultOn !== undefined ? { defaultOn: initial.defaultOn } : {}),
       name: name.trim(),
-      mark: mark.trim() || "spark",
+      mark: markIcon(mark),
       personality: personality.trim(),
       purposes,
       ...(tier !== "default" ? { tier } : {}),
@@ -119,7 +120,13 @@ export function SidekickEditor({
           <label className="hh-row-label" htmlFor={`${ids}-mark`}>
             {t("sidekick.editor.mark")}
           </label>
-          <input id={`${ids}-mark`} type="text" value={mark} maxLength={MARK_MAX} onChange={(e) => setMark(e.target.value)} />
+          <select id={`${ids}-mark`} value={mark} onChange={(e) => setMark(e.target.value)}>
+            {ICON_NAMES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="hh-row hh-row-wrap">
           <label className="hh-row-label" htmlFor={`${ids}-personality`}>

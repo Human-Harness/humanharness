@@ -9,7 +9,7 @@ import { renderIn } from "./render";
 afterEach(cleanup);
 const DRAFT = {
   ok: true as const,
-  draft: { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" as const } },
+  draft: { name: "Rulo", mark: "mentor", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" as const } },
   learned: [{ text: "Prefers short answers.", level: "you" as const }],
   skipped: ["Tool permissions"],
 };
@@ -194,7 +194,7 @@ describe("The original changed (spec §2a.6)", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(c.sidekickCalls).toContainEqual([
       "saveSidekick",
-      { id: "rulo", tier: "light", defaultOn: false, name: "Rulo", mark: "🦊", personality: "Blunt.", purposes: [{ id: "mentor" }], source: NEW_SOURCE },
+      { id: "rulo", tier: "light", defaultOn: false, name: "Rulo", mark: "mentor", personality: "Blunt.", purposes: [{ id: "mentor" }], source: NEW_SOURCE },
       [{ text: "Prefers short answers.", level: "you" }],
     ]);
   });

@@ -233,6 +233,12 @@ describe("citations (material spec §9)", () => {
 });
 
 describe("callouts, captions, footnotes (§3.2)", () => {
+  it.each(["note", "tip", "warning", "summary", "decision", "question"])("the %s callout's head draws its set icon at 14 (style guide §4, row 15)", async (kind) => {
+    const { container } = await renderIn("en", <Markdown source={`> [!${kind}]\n> x`} />);
+    const svg = container.querySelector(".hh-callout-label svg")!;
+    expect(svg.getAttribute("class")).toContain(`hh-icon-callout-${kind}`);
+    expect(svg.getAttribute("width")).toBe("14");
+  });
   it("draws each of the six callouts as a labelled box; the marker is gone", async () => {
     const src = ["NOTE", "TIP", "WARNING", "SUMMARY", "DECISION", "QUESTION"].map((c) => `> [!${c}]\n> Body of ${c.toLowerCase()}.`).join("\n\n");
     const { container } = await renderIn("en", <Markdown source={src} />);

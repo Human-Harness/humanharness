@@ -886,10 +886,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .hh-sk-foot { border-top: 1px solid var(--hh-line); padding: 10px 14px; font-size: 12px; }
 .hh-sk-foot progress { width: 100%; height: 4px; accent-color: var(--hh-ink); }
-.hh-sk-mark { color: var(--hh-ink); flex: none; }
-.hh-sk-mark-off { color: var(--hh-muted); }
-.hh-sk-mark-text { line-height: 1; }
-.hh-sk-mark-dot { display: inline-block; border-radius: 50%; }
 .hh-sk-speaker { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hh-muted); margin-bottom: 6px; overflow-wrap: anywhere; }
 .hh-sk-daily { white-space: pre-wrap; }
 .hh-sk-presets { margin-bottom: 20px; }
@@ -1386,3 +1382,7 @@ input.hh-search-input {
 .hh-icon-loading { animation: hh-icon-spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .hh-icon-loading { animation: none; } }
 [aria-expanded="true"] > .hh-icon-chevron { transform: rotate(90deg); }
+
+/* guide: SidekickMark */
+.hh-sk-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-surface); border: 1px solid var(--hh-line); color: var(--hh-ink); }
+.hh-sk-mark-off { color: var(--hh-muted); }

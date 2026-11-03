@@ -1,0 +1,241 @@
+/**
+ * Scanner behind the style guard (style guide §15 Control). It reads CSS and TSX sources and returns
+ * offenders as "<file>|<kind>|<where>|<value>" strings; the test compares them with the known-offenders
+ * list, which may only shrink.
+ */
+
+// Style guide §2 (heights, radii, spacing, type, weights) and the fixed sizes named in §4–§10.
+export const HEIGHTS = [18, 24, 30, 40, 52, 104];
+/** Sizes the spec gives to specific pieces (§4–§10): progress bar 6, dot 8, icon 14 / 18 / 32, ring 16,
+ * toggle 20 × 34, avatar 32, logo 84, underline 2, border 1. Each size is allowed ONLY on its own piece's
+ * selectors, never as a general height: the list of selectors per size starts empty and each piece task
+ * (Parts 3, 4 and 6) adds its own selector when it writes the piece's CSS, like ROUND_SELECTORS. */
+export const PIECE_SIZES: Record<number, string[]> = {
+  1: [], // border: only `border*` widths and the 1 px line pieces (divider)
+  2: [], // active underline (Tabs, NavItem, active review mark)
+  6: [], // ProgressBar
+  8: [], // Dot
+  14: [],
+  18: [],
+  32: [], // icon sizes (Icon piece selectors; 18 and 32 are also Counter and Avatar)
+  16: [], // Ring
+  20: [],
+  34: [], // Toggle (20 high, 34 wide)
+  84: [], // engine / harness logo
+};
+export const RADII = [8, 12, 14, 18]; // plus 4 only on inline code, plus round (999px or 50%) only on round pieces
+export const SPACES = [0, 4, 8, 12, 16, 24, 32]; // plus 90 only as the top bar's left padding (§9)
+export const FONT_SIZES = [12, 13, 14, 15, 16, 20, 28];
+export const WEIGHTS = [400, 500, 600];
+/** Selectors allowed a round radius (999px / 50%). Part 6 fills it with the round pieces. */
+export const ROUND_SELECTORS: string[] = [];
+
+export type CssOptions = {
+  /** The file defines the tokens: colors are allowed inside its `:root` / `[data-theme]` blocks. */
+  tokenFile?: boolean;
+  /** Selectors of the top bar, the only place where a 90px left padding is allowed. */
+  topBarSelectors?: string[];
+};
+
+type Kind = "color" | "height" | "radius" | "space" | "font-size" | "weight" | "class";
+
+const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/g;
+const SIZE_PROPS = /^(?:min-|max-)?(?:height|width)$/;
+const HEIGHT_PROPS = /^(?:min-|max-)?height$/;
+const RADIUS_PROPS = /^(?:border-(?:top|bottom|start|end)-(?:left|right|start|end)-)?radius$|^border-radius$|^border-(?:top|bottom|start|end)-(?:left|right|start|end)-radius$/;
+const SPACE_PROPS = /^(?:gap|row-gap|column-gap|padding(?:-[a-z]+)*|margin(?:-[a-z]+)*)$/;
+
+const line = (file: string, kind: Kind, where: string, value: string) => `${file}|${kind}|${where}|${value}`;
+const dedupe = (items: string[]) => [...new Set(items)];
+
+/** Drops function calls (var, calc, url...) so only literal values are left to check. */
+function stripCalls(value: string): string {
+  let prev: string;
+  let out = value;
+  do {
+    prev = out;
+    out = out.replace(/\b(?:var|calc|clamp|min|max|url|env)\([^()]*\)/g, " ");
+  } while (out !== prev);
+  return out;
+}
+
+const pxValues = (value: string): number[] =>
+  [...stripCalls(value).matchAll(/(?<![\w.#-])(-?\d*\.?\d+)px\b/g)].map((m) => Number(m[1]));
+
+const selectorParts = (selector: string) => selector.split(",").map((s) => s.trim());
+const inList = (selector: string, list: string[]) => selectorParts(selector).some((s) => list.includes(s));
+
+function checkDeclaration(file: string, selector: string, prop: string, value: string, opts: CssOptions, inTokenBlock: boolean, out: string[]) {
+  if (!inTokenBlock) {
+    for (const m of value.matchAll(COLOR)) out.push(line(file, "color", selector, m[0]));
+  }
+  if (prop.startsWith("--")) return;
+  const bare = stripCalls(value).trim();
+
+  if (SIZE_PROPS.test(prop)) {
+    const isHeight = HEIGHT_PROPS.test(prop);
+    for (const px of pxValues(value)) {
+      if (px === 0) continue;
+      const own = inList(selector, PIECE_SIZES[px] ?? []);
+      if (isHeight && !HEIGHTS.includes(px) && !own) out.push(line(file, "height", selector, `${px}px`));
+      // A width off the piece list belongs to the width tokens, which are checked elsewhere.
+      else if (!isHeight && px in PIECE_SIZES && !own) out.push(line(file, "height", selector, `${px}px`));
+    }
+  } else if (RADIUS_PROPS.test(prop)) {
+    for (const token of bare.split(/[\s/]+/).filter(Boolean)) {
+      const m = /^(-?\d*\.?\d+)(px|%)$/.exec(token);
+      if (!m) continue;
+      const n = Number(m[1]);
+      if (n === 0) continue;
+      const round = (m[2] === "px" && n === 999) || (m[2] === "%" && n === 50);
+      const ok = round
+        ? inList(selector, ROUND_SELECTORS)
+        : m[2] === "px" && (RADII.includes(n) || (n === 4 && selectorParts(selector).some((s) => /\bcode$/.test(s))));
+      if (!ok && (m[2] === "px" || round)) out.push(line(file, "radius", selector, token));
+    }
+  } else if (SPACE_PROPS.test(prop)) {
+    for (const px of pxValues(value)) {
+      if (px <= 0 || SPACES.includes(px)) continue;
+      const topBar = px === 90 && prop.startsWith("padding") && inList(selector, opts.topBarSelectors ?? []);
+      if (!topBar) out.push(line(file, "space", selector, `${px}px`));
+    }
+  } else if (prop === "font-size") {
+    for (const px of pxValues(value)) if (!FONT_SIZES.includes(px)) out.push(line(file, "font-size", selector, `${px}px`));
+  } else if (prop === "font-weight") {
+    const n = bare === "bold" ? 700 : /^\d+$/.test(bare) ? Number(bare) : null;
+    if (n !== null && !WEIGHTS.includes(n)) out.push(line(file, "weight", selector, String(n)));
+  }
+}
+
+/** Scans one stylesheet. Walks nested blocks (`@media`, `@container`) with a stack of selectors. */
+export function scanCss(file: string, css: string, opts: CssOptions = {}): string[] {
+  const src = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const out: string[] = [];
+  const stack: { selector: string; at: boolean }[] = [];
+  let buf = "";
+  let depth = 0; // parentheses and quotes keep `;` and `{` inside url(...) or strings from splitting
+  let quote = "";
+
+  const declare = (text: string) => {
+    const idx = text.indexOf(":");
+    const top = stack[stack.length - 1];
+    if (idx < 0 || !top || top.at) return;
+    const prop = text.slice(0, idx).trim().toLowerCase();
+    const value = text.slice(idx + 1).replace(/!important/i, "").trim();
+    const inToken = !!opts.tokenFile && /^(?::root|\[data-theme)/.test(top.selector);
+    checkDeclaration(file, top.selector, prop, value, opts, inToken, out);
+  };
+
+  for (const ch of src) {
+    if (quote) {
+      buf += ch;
+      if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (depth > 0 || quote) {
+      buf += ch;
+      continue;
+    }
+    if (ch === "{") {
+      const selector = buf.trim().replace(/\s+/g, " ");
+      stack.push({ selector, at: selector.startsWith("@") });
+      buf = "";
+    } else if (ch === "}") {
+      declare(buf);
+      stack.pop();
+      buf = "";
+    } else if (ch === ";") {
+      declare(buf);
+      buf = "";
+    } else {
+      buf += ch;
+    }
+  }
+  return dedupe(out);
+}
+
+type Part = { text: string; dynamicEnd: boolean };
+
+/** Index just after the string or template literal that starts at `i`. */
+function skipString(src: string, i: number): number {
+  const q = src[i];
+  let j = i + 1;
+  while (j < src.length && src[j] !== q) {
+    if (src[j] === "\\") j++;
+    else if (q === "`" && src[j] === "$" && src[j + 1] === "{") j = matchBrace(src, j + 1);
+    j++;
+  }
+  return j + 1;
+}
+
+/** Index of the `}` that closes the `{` at `i`, skipping strings. */
+function matchBrace(src: string, i: number): number {
+  let depth = 0;
+  for (let j = i; j < src.length; j++) {
+    const ch = src[j];
+    if (ch === '"' || ch === "'" || ch === "`") j = skipString(src, j) - 1;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) return j;
+  }
+  return src.length;
+}
+
+/** Static text of every string literal and template literal in an expression. */
+function stringParts(src: string): Part[] {
+  const parts: Part[] = [];
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '"' || ch === "'") {
+      const end = skipString(src, i);
+      parts.push({ text: src.slice(i + 1, end - 1), dynamicEnd: false });
+      i = end - 1;
+    } else if (ch === "`") {
+      const end = skipString(src, i);
+      let buf = "";
+      for (let j = i + 1; j < end - 1; j++) {
+        if (src[j] === "$" && src[j + 1] === "{") {
+          const close = matchBrace(src, j + 1);
+          parts.push({ text: buf, dynamicEnd: true }, ...stringParts(src.slice(j + 2, close)));
+          buf = "";
+          j = close;
+        } else buf += src[j];
+      }
+      parts.push({ text: buf, dynamicEnd: false });
+      i = end - 1;
+    }
+  }
+  return parts;
+}
+
+/**
+ * Scans one TSX file: every `hh-*` class in a `className` must be in the guide's list, and a `style`
+ * object must not hold a hex / rgb / hsl color. A class cut by an interpolation (`hh-btn--${v}`) passes
+ * when some class in the list starts with the static prefix.
+ */
+export function scanTsx(file: string, tsx: string, guideClasses: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+
+  for (const m of tsx.matchAll(/\bclassName\s*=\s*/g)) {
+    const start = m.index + m[0].length;
+    let parts: Part[] = [];
+    if (tsx[start] === '"' || tsx[start] === "'") parts = stringParts(tsx.slice(start, skipString(tsx, start)));
+    else if (tsx[start] === "{") parts = stringParts(tsx.slice(start + 1, matchBrace(tsx, start)));
+    for (const part of parts) {
+      for (const c of part.text.matchAll(/(?<![\w-])hh-[\w-]*/g)) {
+        const name = c[0];
+        const cut = part.dynamicEnd && c.index + name.length === part.text.length;
+        const ok = cut ? [...guideClasses].some((g) => g.startsWith(name)) : guideClasses.has(name);
+        if (!ok) out.push(line(file, "class", name, name));
+      }
+    }
+  }
+
+  for (const m of tsx.matchAll(/\bstyle\s*=\s*\{/g)) {
+    const open = m.index + m[0].length - 1;
+    for (const c of tsx.slice(open, matchBrace(tsx, open)).matchAll(COLOR)) out.push(line(file, "color", "style", c[0]));
+  }
+  return dedupe(out);
+}

@@ -19,6 +19,11 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-icon-btn",
   // Segmented (§3)
   "hh-segmented",
+  // Tabs (§3)
+  "hh-tabs",
+  "hh-tab-item",
+  "hh-tab-label",
+  "hh-tab-dot",
   // Empty state line (§4: a 14 icon before the text)
   "hh-history-empty-line",
 ]);

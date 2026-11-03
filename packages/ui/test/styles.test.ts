@@ -137,7 +137,6 @@ describe("styles", () => {
     expect(hover('\\.hh-steps button\\[aria-current="step"\\]')).toBe("var(--hh-line)");
     expect(hover("\\.hh-choice\\.next")).toBe("var(--hh-ink)");
     expect(css).toMatch(/\.hh-choice\[aria-pressed="true"\]:hover:not\(:disabled\)\s*{[^}]*border-color:\s*var\(--hh-ink\)/);
-    expect(hover('\\.hh-pl-tab\\[aria-selected="true"\\]')).toBe("var(--hh-ink)");
   });
 
   it("has the soft-cards controls: amber CTA, tags by meaning, no chamfer (spec §3.2–3.3)", () => {

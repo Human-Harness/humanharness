@@ -3,3 +3,4 @@ export * from "./classes";
 export * from "./Button";
 export * from "./IconButton";
 export * from "./Segmented";
+export * from "./Tabs";

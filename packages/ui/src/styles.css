@@ -948,10 +948,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-section, .hh-pl-slot, .hh-pl-tabpanel, .hh-pl-slot-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .hh-pl-slot { gap: 12px; }
 .hh-pl-section .hh-flow-heading { margin: 0; }
-.hh-pl-tabs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
-.hh-pl-tab { max-width: 100%; height: 24px; padding: 0 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
-.hh-pl-tab[aria-selected="true"] { background: var(--hh-ink); color: var(--hh-bg); border-color: var(--hh-ink); }
-.hh-pl-tab[aria-selected="true"]:hover:not(:disabled) { border-color: var(--hh-ink); }
 .hh-pl-panel-head { margin: 0; padding-left: 6px; color: var(--hh-muted); font-size: 12px; overflow-wrap: anywhere; }
 .hh-pl-chips { display: flex; align-items: center; gap: 4px; min-width: 0; flex-shrink: 1; overflow: hidden; }
 .hh-pl-chip { display: inline-block; max-width: 180px; height: 24px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--hh-line-strong); border-radius: 12px; background: var(--hh-surface); color: var(--hh-ink); font-size: 12px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -997,14 +993,8 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-board-title { font-weight: 600; }
 .hh-board-tags, .hh-board-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .hh-board-files { font-size: 12px; }
-/* Task tabs (UI refresh spec §5.1): one per open task, the one on screen underlined, an orange dot when it waits for you. */
+/* The strip over the chat: the task tabs and the phase tag. */
 .hh-tk-strip { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 16px; border-bottom: 1px solid var(--hh-line); font-size: 13px; }
-.hh-tk-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; }
-.hh-tk-strip .hh-tk-tab { flex: 0 1 auto; min-width: 0; max-width: 220px; height: 44px; padding: 0 12px; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--hh-muted); }
-.hh-tk-strip .hh-tk-tab:hover:not(:disabled) { color: var(--hh-ink); }
-.hh-tk-strip .hh-tk-tab[aria-selected="true"] { border-bottom-color: var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
-.hh-tk-strip .hh-tk-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hh-tk-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-t-orange-ink); }
 
 /* The document reader (document-reader spec §5.2). */
 .hh-reader { display: flex; flex-direction: column; min-width: 0; flex: 0 0 var(--hh-split-w); border-left: 1px solid var(--hh-line); background: var(--hh-surface); }
@@ -1387,3 +1377,11 @@ input.hh-search-input {
 .hh-segmented { display: inline-flex; box-sizing: border-box; height: var(--hh-h-compact); border-radius: var(--hh-r-compact); background: var(--hh-surface-2); }
 .hh-segmented button { height: 100%; padding: 0 var(--hh-s-3); border: 0; border-radius: var(--hh-r-compact); background: transparent; font-size: 13px; font-weight: 500; color: var(--hh-ink); }
 .hh-segmented button[aria-pressed="true"] { background: var(--hh-active); color: var(--hh-active-ink); }
+/* guide: Tabs */
+.hh-tabs { display: flex; align-items: stretch; gap: calc(var(--hh-s-1) / 2); min-width: 0; flex: 0 1 auto; overflow-x: auto; }
+.hh-tab-item { display: inline-flex; align-items: center; gap: var(--hh-s-2); box-sizing: border-box; flex: 0 1 auto; min-width: 0; max-width: 220px; height: var(--hh-h-normal); padding: 0 var(--hh-s-3); border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--hh-muted); font: inherit; font-size: 13px; }
+.hh-tab-item:hover:not(:disabled) { color: var(--hh-ink); }
+.hh-tab-item[aria-selected="true"] { border-bottom-color: var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
+.hh-tab-item:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: -2px; }
+.hh-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-tab-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-t-orange-ink); }

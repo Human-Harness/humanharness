@@ -233,7 +233,7 @@ describe("plugin slots", () => {
     expect(document.querySelector(".hh-pl-chips b, .hh-pl-section b")).toBeNull();
     expect(screen.getByRole("tab").textContent).toBe(evil);
     expect(document.querySelector(".hh-pl-chip")?.firstChild?.textContent).toBe(evil);
-    for (const el of document.querySelectorAll(".hh-pl-chip, .hh-pl-tab, .hh-pl-panel-head")) expect(el.getAttribute("dir")).toBe("auto");
+    for (const el of document.querySelectorAll(".hh-pl-chip, .hh-tab-label, .hh-pl-panel-head")) expect(el.getAttribute("dir")).toBe("auto");
   });
 
   it("a dev reload remounts that plugin's frames only", async () => {

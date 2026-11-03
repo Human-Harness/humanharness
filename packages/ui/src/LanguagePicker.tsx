@@ -4,6 +4,7 @@ import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, languageName, offer
 import type { LanguageState } from "./client";
 import { ownName } from "./language";
 import { useDialogKeys } from "./focus";
+import { Button } from "./guide/Button";
 
 /** English and its variants (en-GB) need no translation: main answers them with the bundled English. */
 const isEnglish = (tag: Language) => tag === DEFAULT_LANGUAGE || tag.startsWith(`${DEFAULT_LANGUAGE}-`);
@@ -132,9 +133,9 @@ export function LanguagePicker({
           <button type="button" onClick={onClose}>
             {t("language.cancel")}
           </button>
-          <button type="button" className="hh-primary" disabled={!canUse} onClick={use}>
+          <Button type="button" kind="primary" disabled={!canUse} onClick={use}>
             {t("language.use")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

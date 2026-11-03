@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tag } from "../chrome";
 import type { HarnessClient, SidekickLearned } from "../client";
+import { Button } from "../guide/Button";
 
 type Level = SidekickLearned["level"];
 
@@ -96,14 +97,14 @@ export function LearnedList({ client }: { client: HarnessClient }) {
                   )}
                   <span id={`${ids}-${i.id}`}>{i.text}</span>
                   {i.source === "person" && <span className="hh-caption"> · {t("sidekick.learned.yours")}</span>}{" "}
-                  <button
+                  <Button
                     type="button"
-                    className="hh-link"
+                    kind="quiet" size="compact"
                     aria-describedby={`${ids}-${i.id}`}
                     onClick={() => run(() => client.sidekick.forget(i.id))}
                   >
                     {t("sidekick.learned.forget")}
-                  </button>
+                  </Button>
                 </>
               )}
             </li>
@@ -122,9 +123,9 @@ export function LearnedList({ client }: { client: HarnessClient }) {
       </div>
       {editing ? (
         <div className="hh-sk-actions">
-          <button type="button" className="hh-primary" onClick={save}>
+          <Button type="button" kind="primary" onClick={save}>
             {t("sidekick.learned.save")}
-          </button>
+          </Button>
           <button
             type="button"
             onClick={() => {

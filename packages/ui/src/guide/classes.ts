@@ -14,6 +14,9 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-sk-mark-off",
   "hh-sk-mark-grid",
   "hh-sk-mark-pick",
+  // Button and IconButton (§3)
+  "hh-btn",
+  "hh-icon-btn",
   // Empty state line (§4: a 14 icon before the text)
   "hh-history-empty-line",
 ]);

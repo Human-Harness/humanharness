@@ -64,7 +64,7 @@ describe("SetupFlow", () => {
     expect(screen.getByText("Claude")).toBeTruthy();
     expect(screen.getByText("You can change all of this whenever you like in Settings.")).toBeTruthy();
     const start = screen.getByRole("button", { name: "Start Demo" });
-    expect(start.className).toBe("hh-primary hh-start");
+    expect(start.getAttribute("data-kind")).toBe("large");
     fireEvent.click(start);
     expect(onStart).toHaveBeenCalledOnce();
   });
@@ -471,7 +471,7 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(within(footer).getByRole("button", { name: "Back" })).toBeTruthy();
     // A step with Back still leaves setup: Cancel stays first, at the far left.
     expect(footer.firstElementChild).toBe(within(footer).getByRole("button", { name: "Cancel setup" }));
-    expect(within(footer).getByRole("button", { name: "Next" }).className).toContain("hh-primary");
+    expect(within(footer).getByRole("button", { name: "Next" }).getAttribute("data-kind")).toBe("primary");
   });
 });
 
@@ -481,7 +481,7 @@ describe("SetupFlow settings gear", () => {
     const client = new FakeClient();
     await renderIn("en", <SetupFlow client={client} state={client.state} onChange={() => {}} onCancel={() => {}} onStart={() => {}} onSettings={onSettings} />);
     const gear = await screen.findByRole("button", { name: "Settings" });
-    expect(gear.className).toContain("hh-topbar-icon");
+    expect(gear.getAttribute("data-size")).toBe("compact");
     expect(gear.closest(".hh-topbar")).toBeTruthy();
     fireEvent.click(gear);
     expect(onSettings).toHaveBeenCalledTimes(1);

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { authorName, type FileTimelineResult, type HarnessClient, type TimelineEntry, timeAgo } from "./client";
 import { entryLabel } from "./HistoryPanel";
+import { Button } from "./guide/Button";
 
 // Shared with main's native go-back confirmation, so both say who and when the same way.
 export { authorName, timeAgo };
@@ -115,9 +116,9 @@ export function FileTimeline({ client, path, selected, onPick }: FileTimelinePro
               </div>
             )}
             {e.commits.length > 1 && (
-              <button type="button" className="hh-link hh-timeline-more" aria-expanded={open.has(e.to)} aria-controls={turnsId} onClick={() => toggle(e.to)}>
+              <Button type="button" kind="quiet" size="compact" className="hh-timeline-more" aria-expanded={open.has(e.to)} aria-controls={turnsId} onClick={() => toggle(e.to)}>
                 {t("timeline.turns", { count: e.commits.length })}
-              </button>
+              </Button>
             )}
             {open.has(e.to) && (
               <ol id={turnsId} className="hh-timeline-turns">

@@ -24,7 +24,7 @@ describe("TaskHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: "New task" }));
     expect(onHistory).toHaveBeenCalled();
     expect(onNew).toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "New task" }).className).toContain("hh-cta");
+    expect(screen.getByRole("button", { name: "New task" }).getAttribute("data-kind")).toBe("primary");
   });
 
   it("has no New task without onNewTask (plain mode, D0)", async () => {
@@ -35,7 +35,7 @@ describe("TaskHeader", () => {
   it("the context meter as a pill reads 'Context n%' and keeps its name and readout", async () => {
     await renderIn("en", <ContextMeter used={84_000} cap={200_000} onOpen={() => {}} pill />);
     const pill = screen.getByRole("button", { name: "What the AI takes into account" });
-    expect(pill.className).toContain("hh-pill");
+    expect(pill.className).toContain("hh-pill"); // a state pill, not a Button
     expect(pill.textContent).toContain("Context 42%");
     expect(screen.getByRole("meter", { name: "Context in use" }).getAttribute("aria-valuenow")).toBe("42");
   });
@@ -55,6 +55,6 @@ describe("TaskHeader", () => {
     fireEvent.click(start);
     const h1 = await screen.findByRole("heading", { level: 1 });
     expect(h1.closest("header")?.className).toContain("hh-task-head");
-    expect(screen.getByRole("button", { name: "History" }).className).toContain("hh-pill");
+    expect(screen.getByRole("button", { name: "History" }).getAttribute("data-size")).toBe("compact");
   });
 });

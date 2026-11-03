@@ -464,12 +464,12 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={new FakeClient({ ...ready, language: "es" })} />);
     const work = await screen.findByRole("button", { name: "Settings" });
     // Top right, like Settings' save, so going in and out doesn't move it.
-    expect(work.className).toBe("hh-topbar-icon");
+    expect(work.getAttribute("data-size")).toBe("compact");
     expect(work.closest("header.hh-topbar")?.lastElementChild).toBe(work);
     expect(work.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 24 24");
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     const home = await screen.findByRole("button", { name: "Settings" });
-    expect(home.className).toBe("hh-topbar-icon");
+    expect(home.getAttribute("data-size")).toBe("compact");
     expect(home.closest("header.hh-topbar")?.lastElementChild).toBe(home);
   });
 

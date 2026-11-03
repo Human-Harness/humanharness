@@ -9,6 +9,7 @@ import { useCurrentWindows } from "./UsageMeter";
 import { shownLanguage } from "./language";
 import { Tag, type TagTone } from "./chrome";
 import { SectionHead } from "./settings-parts";
+import { Button } from "./guide/Button";
 
 const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
 
@@ -71,9 +72,9 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
         <div className="hh-rows">
           <div className="hh-row">
             <span>{t("usage.plans", { provider: engine.provider })}</span>
-            <a className="hh-button" href={engine.plansUrl} target="_blank" rel="noopener noreferrer">
+            <Button href={engine.plansUrl ?? ""} target="_blank" rel="noopener noreferrer">
               {t("usage.seePlans", { provider: engine.provider })}
-            </a>
+            </Button>
           </div>
         </div>
       )}

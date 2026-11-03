@@ -3,6 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk/language";
 import { ownName } from "./language";
 import { useDialogKeys } from "./focus";
+import { Button } from "./guide/Button";
 
 /**
  * The notice before a translation run (spec §4, D3): what will run, on whose engine, and that legal texts stay English.
@@ -77,9 +78,9 @@ export function TranslateNotice({
           <button type="button" ref={cancel} onClick={onCancel}>
             {t("language.cancel")}
           </button>
-          <button type="button" className="hh-primary" disabled={busy || disabled} onClick={onTranslate}>
+          <Button type="button" kind="primary" disabled={busy || disabled} onClick={onTranslate}>
             {t("language.translate")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

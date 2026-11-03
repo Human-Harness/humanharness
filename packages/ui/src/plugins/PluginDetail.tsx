@@ -5,6 +5,7 @@ import { groups, HarnessFieldRow } from "../HarnessSettingsTab";
 import { Icon } from "../guide/icons";
 import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
+import { Button } from "../guide/Button";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const message = (r: PluginResult, failed: string) => (r.ok ? null : "message" in r && r.message ? r.message : failed);
@@ -105,9 +106,9 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   return (
     <section className="hh-tab hh-card hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
       <div>
-        <button type="button" className="hh-link" onClick={onBack}>
-          <Icon name="back" size={18} /> {t("plugins.detail.back")}
-        </button>
+        <Button type="button" kind="quiet" size="compact" icon="back" onClick={onBack}>
+          {t("plugins.detail.back")}
+        </Button>
       </div>
       <h3 id={`${id}-name`} ref={head} tabIndex={-1}>
         <Plain>{row.name}</Plain>

@@ -26,6 +26,7 @@ import type { SearchIntent } from "./search/intent";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
+import { Button } from "./guide/Button";
 
 /** English and its variants (en-GB) show the bundled English: nothing to offer (D0). */
 const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
@@ -280,37 +281,36 @@ export function Home({
               >
                 {t("language.offerLater")}
               </button>
-              <button
+              <Button
                 type="button"
-                className="hh-primary"
+                kind="primary"
                 onClick={() => {
                   setChoosing(true);
                   answerOffer();
                 }}
               >
                 {t("language.offerChoose")}
-              </button>
+              </Button>
             </div>
           </section>
         )}
         {ready || checking ? (
-          <button ref={startRef} className="hh-primary hh-start" disabled={checking} onClick={onStart}>
+          <Button ref={startRef} kind="large" arrow disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
-            <Icon name="next" size={18} />
-          </button>
+          </Button>
         ) : (
-          <button
-            className="hh-primary hh-start"
+          <Button
+            kind="large"
+            arrow
             onClick={() => (!missingStep && needsProfile && onAddProfile ? onAddProfile() : onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined))}
           >
             {t("setupFlow.configure", { name })}
-            <Icon name="next" size={18} />
-          </button>
+          </Button>
         )}
         {engine ? (
           <>
-            <button className="hh-pill" onClick={onEngine} aria-describedby={engineHintId}>
-              {engine.logo ? <img src={engine.logo} alt="" /> : <Icon name="engine" size={18} />}
+            <Button size="compact" onClick={onEngine} aria-describedby={engineHintId}>
+              {engine.logo ? <img src={engine.logo} alt="" width={18} height={18} /> : <Icon name="engine" size={18} />}
               <span>{engine.name}</span>
               <span className="hh-sr-only">, </span>
               <span className={connected ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
@@ -323,7 +323,7 @@ export function Home({
                   </span>
                 </>
               )}
-            </button>
+            </Button>
             <span id={engineHintId} className="hh-sr-only">
               {t("home.engineHint")}
             </span>

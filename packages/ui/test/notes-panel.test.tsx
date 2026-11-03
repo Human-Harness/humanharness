@@ -118,8 +118,8 @@ describe("the Notes drawer (UI refresh spec §5.7)", () => {
     const cards = panel.querySelector(".hh-note-cards")!;
     expect(why.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(where.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-    expect(within(panel).getByRole("button", { name: "Pick this topic up again" }).classList.contains("hh-pill")).toBe(true);
-    expect(within(panel).getByRole("button", { name: "Open the file" }).classList.contains("hh-pill")).toBe(true);
+    expect(within(panel).getByRole("button", { name: "Pick this topic up again" }).classList.contains("hh-btn")).toBe(true);
+    expect(within(panel).getByRole("button", { name: "Open the file" }).getAttribute("data-size")).toBe("compact");
   });
 
   it("says one topic in the singular", async () => {

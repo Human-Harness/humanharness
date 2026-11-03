@@ -7,6 +7,7 @@ import { PluginDetail, when } from "./PluginDetail";
 import { usePluginsRescan } from "./usePlugins";
 import { Tag, type TagTone } from "../chrome";
 import { SectionHead } from "../settings-parts";
+import { Button } from "../guide/Button";
 
 /** Each state's tag colour (UI refresh spec): on green, needs review orange, off after crashes and errors red. */
 const STATUS_TONE: Record<PluginRow["status"], TagTone> = { on: "green", off: "gray", review: "orange", crashed: "red", error: "red" };
@@ -145,9 +146,9 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
           {view.plugins.map((p) => (
             <li key={p.id} className="hh-row hh-row-wrap hh-pl-row">
               <span className="hh-pl-row-main">
-                <button type="button" className="hh-link hh-pl-name" data-plugin-open={p.id} onClick={() => setScreen({ kind: "detail", id: p.id })}>
+                <Button type="button" kind="quiet" size="compact" className="hh-pl-name" data-plugin-open={p.id} onClick={() => setScreen({ kind: "detail", id: p.id })}>
                   <Plain>{p.name}</Plain>
-                </button>
+                </Button>
                 <span className="hh-caption hh-pl-meta">
                   {p.version && t("plugins.version", { version: p.version })}
                   {" · "}

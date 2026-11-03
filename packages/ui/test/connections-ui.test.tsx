@@ -131,7 +131,7 @@ describe("Settings › Connections (tools spec §9)", () => {
     await renderIn("en", <Sheet c={c} />);
     const gh = await screen.findByRole("group", { name: "GitHub token" });
     expect(field("GitHub token").type).toBe("password");
-    expect(within(gh).getByRole("button", { name: "Save" }).className).toContain("hh-cta");
+    expect(within(gh).getByRole("button", { name: "Save" }).getAttribute("data-kind")).toBe("primary");
     expect(within(gh).getByText("Not set · paste the key to use it").className).toContain("hh-tag-orange");
     expect(within(row("Jira API token")).getByText("Set").className).toContain("hh-tag-green");
   });

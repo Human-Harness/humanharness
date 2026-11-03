@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { BlockProps } from "./Message";
 import { ModeList } from "./ModeList";
 import { readRecommendation } from "./modes";
+import { Button } from "./guide/Button";
 
 /**
  * The core `recommend_mode` block (task-modes spec §4): the agent's recommendation first, with its reasons, then the
@@ -48,16 +49,16 @@ export function RecommendModeBlock({ data, chooseMode, modes, active }: BlockPro
           </button>
         ))}
       </div>
-      <button
+      <Button
         type="button"
         id={allId}
-        className="hh-link"
+        kind="quiet" size="compact"
         aria-expanded={all}
         aria-controls={all ? allListId : undefined}
         onClick={() => setAll((x) => !x)}
       >
         {t("modes.seeAll")}
-      </button>
+      </Button>
       {all && (
         <ModeList
           id={allListId}

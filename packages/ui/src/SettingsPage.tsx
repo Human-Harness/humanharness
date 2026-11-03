@@ -26,6 +26,8 @@ import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
+import { Button } from "./guide/Button";
+import { IconButton } from "./guide/IconButton";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 
@@ -183,9 +185,7 @@ export function SettingsPage({
     <main ref={pageRef} className="hh-settings-page" aria-labelledby={titleId}>
       <TopBar
         trailing={
-          <button ref={doneRef} className="hh-topbar-icon hh-settings-done" aria-label={t("settings.done")} title={t("settings.done")} disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
-            <Icon name="back" size={18} />
-          </button>
+          <IconButton ref={doneRef} icon="back" label={t("settings.done")} size="compact" className="hh-settings-done" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close} />
         }
       />
       <div className="hh-settings-body">
@@ -448,9 +448,9 @@ function GeneralTab({
         <div className="hh-row">
           <span>{t("settings.madeBy", { author: state.harness.author })}</span>
           {state.harness.donate && (
-            <a className="hh-button" href={state.harness.donate} target="_blank" rel="noreferrer">
+            <Button href={state.harness.donate} target="_blank" rel="noreferrer">
               {t("settings.support")}
-            </a>
+            </Button>
           )}
         </div>
       </div>
@@ -540,9 +540,9 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
       <h2>{t("setupFlow.notConfiguredTitle")}</h2>
       <p>{t("setupFlow.notConfiguredText")}</p>
       {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
-      <button className="hh-primary" onClick={() => onSetup()}>
+      <Button kind="primary" onClick={() => onSetup()}>
         {t("setupFlow.configure", { name })}
-      </button>
+      </Button>
     </div>
   );
 }

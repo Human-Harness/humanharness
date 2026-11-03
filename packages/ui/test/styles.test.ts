@@ -127,8 +127,8 @@ describe("styles", () => {
   });
 
   it("draws the CTA's focus ring inside it, in its ink", () => {
-    expect(css).toMatch(/^\.hh-primary:focus-visible,\s*\.hh-cta:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--hh-cta-ink\)[^}]*outline-offset:\s*-\d/m);
-    expect(css).not.toMatch(/\.hh-start:focus-visible/);
+    expect(css).toMatch(/^\.hh-btn\[data-kind="primary"\]:focus-visible,\s*\.hh-btn\[data-kind="large"\]:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--hh-cta-ink\)[^}]*outline-offset:\s*-\d/m);
+    expect(css).not.toMatch(/\.hh-start\b[^-]/);
   });
 
   it("keeps the border of buttons that set their own on hover", () => {
@@ -141,7 +141,7 @@ describe("styles", () => {
   });
 
   it("has the soft-cards controls: amber CTA, tags by meaning, no chamfer (spec §3.2–3.3)", () => {
-    expect(css).toMatch(/^\.hh-primary,\s*\.hh-cta\s*{[^}]*background:\s*var\(--hh-cta\)[^}]*color:\s*var\(--hh-cta-ink\)/m);
+    expect(css).toMatch(/^\.hh-btn\[data-kind="primary"\],\s*\.hh-btn\[data-kind="large"\]\s*{[^}]*background:\s*var\(--hh-cta\)[^}]*color:\s*var\(--hh-cta-ink\)/m);
     expect(css).not.toMatch(/clip-path:\s*polygon/);
     for (const t of ["green", "orange", "blue", "violet", "red"])
       expect(css).toMatch(new RegExp(`^\\.hh-tag-${t}\\s*{\\s*background:\\s*var\\(--hh-t-${t}\\);\\s*color:\\s*var\\(--hh-t-${t}-ink\\)`, "m"));
@@ -214,10 +214,10 @@ describe("control size tokens and top bar overrides", () => {
   });
 
   it("has rules for the top bar icon button and the language row label", () => {
-    expect(css).toMatch(/\.hh-topbar-icon\s*\{/);
+    expect(css).toMatch(/\.hh-icon-btn\[data-size="compact"\]\s*\{/);
     expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
     const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
-    expect(tsx).toMatch(/className="hh-topbar-icon"/);
+    expect(tsx).toMatch(/<IconButton[^>]*size="compact"/);
   });
 });
 

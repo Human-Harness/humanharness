@@ -4,6 +4,7 @@ import type { HarnessClient, SidekickPurposeView, SidekickView } from "../client
 import { ImportSidekick } from "./ImportSidekick";
 import { SidekickMark, markIcon } from "./mark";
 import { SidekickEditor } from "./SidekickEditor";
+import { Button } from "../guide/Button";
 
 /** Where focus goes once a view closes or the list changes under it. */
 type Back = { kind: "new" } | { kind: "import" } | { kind: "head" } | { kind: "edit" | "remove" | "up" | "down"; id: string };
@@ -150,23 +151,23 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
                 {dailyOff(k) && <p className="hh-caption">{t("sidekick.list.dailyOff")}</p>}
               </div>
               <div className="hh-sk-actions">
-                <button type="button" className="hh-link" ref={ref("edit", k.id)} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing(k.id))}>
+                <Button type="button" kind="quiet" size="compact" ref={ref("edit", k.id)} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing(k.id))}>
                   {t("sidekick.list.edit", { name: k.name })}
-                </button>
+                </Button>
                 {i > 0 && (
-                  <button type="button" className="hh-link" ref={ref("up", k.id)} aria-disabled={busy} onClick={() => void move(k.id, "up")}>
+                  <Button type="button" kind="quiet" size="compact" ref={ref("up", k.id)} aria-disabled={busy} onClick={() => void move(k.id, "up")}>
                     {t("sidekick.list.up", { name: k.name })}
-                  </button>
+                  </Button>
                 )}
                 {i < list.length - 1 && (
-                  <button type="button" className="hh-link" ref={ref("down", k.id)} aria-disabled={busy} onClick={() => void move(k.id, "down")}>
+                  <Button type="button" kind="quiet" size="compact" ref={ref("down", k.id)} aria-disabled={busy} onClick={() => void move(k.id, "down")}>
                     {t("sidekick.list.down", { name: k.name })}
-                  </button>
+                  </Button>
                 )}
                 {list.length > 1 && (
-                  <button type="button" className="hh-link" ref={ref("remove", k.id)} aria-disabled={busy} onClick={() => !busy && setConfirm(k.id)}>
+                  <Button type="button" kind="quiet" size="compact" ref={ref("remove", k.id)} aria-disabled={busy} onClick={() => !busy && setConfirm(k.id)}>
                     {t("sidekick.list.remove", { name: k.name })}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>

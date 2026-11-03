@@ -17,7 +17,7 @@ describe("the conversation and the composer in the soft-cards look (UI refresh s
     const conversation = await screen.findByRole("region", { name: "Conversation" });
     expect(conversation.className).toContain("hh-card");
     const form = (await screen.findByRole("button", { name: "Send" })).closest("form")!;
-    expect(within(form).getByRole("button", { name: "Send" }).className).toContain("hh-cta");
+    expect(within(form).getByRole("button", { name: "Send" }).getAttribute("data-kind")).toBe("primary");
     expect(within(form).getByText("⏎ to send")).toBeTruthy();
   });
 });

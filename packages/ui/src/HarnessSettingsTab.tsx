@@ -2,6 +2,7 @@ import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "./chrome";
 import type { HarnessClient, SettingFieldView, SettingsResult, SettingsState, SettingsView } from "./client";
+import { Button } from "./guide/Button";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -149,9 +150,9 @@ export function HarnessSettingsTab({
       {advanced.length > 0 && (
         <>
           <div>
-            <button type="button" className="hh-link" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((o) => !o)}>
+            <Button type="button" kind="quiet" size="compact" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((o) => !o)}>
               {t("settings.harness.more")}
-            </button>
+            </Button>
           </div>
           {more && (
             <div id={moreId} className="hh-tab">

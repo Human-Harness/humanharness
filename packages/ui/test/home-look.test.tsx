@@ -58,7 +58,7 @@ describe("Home look (UI refresh spec §5.2)", () => {
 
   it("Start is the amber CTA", async () => {
     await renderHome(new FakeClient(configured));
-    expect(screen.getByRole("button", { name: /Start Demo/ }).className).toContain("hh-start");
+    expect(screen.getByRole("button", { name: /Start Demo/ }).getAttribute("data-kind")).toBe("large");
   });
 
   it("keeps the Home scrollable and the pill's name readable (review fixes)", () => {

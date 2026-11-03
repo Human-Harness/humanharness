@@ -14,6 +14,7 @@ import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
 import { ReviewColumn } from "./ReviewColumn";
 import { formatSize } from "./sizes";
 import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
+import { Button } from "./guide/Button";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
 export interface ReaderTarget {
@@ -546,16 +547,16 @@ export function DocumentReader({
           <p className="hh-reader-head-sub">{t("reader.subtitle", { path })}</p>
         </div>
         <div className="hh-reader-actions">
-          <button
+          <Button
             type="button"
-            className="hh-pill"
+            size="compact"
             ref={prefsButton}
             aria-expanded={prefsOpen}
             aria-controls={prefsOpen ? prefsId : undefined}
             onClick={() => setPrefsOpen((o) => !o)}
           >
             Aa <span className="hh-sr-only">{t("reader.prefsButton")}</span>
-          </button>
+          </Button>
           <button
             type="button"
             ref={drawerButton}
@@ -579,9 +580,9 @@ export function DocumentReader({
           )}
           {/* Back from full screen is the footer's Show chat (§5.7). */}
           {!inFocus && !full && (
-            <button type="button" className="hh-pill" onClick={() => onFull(true)}>
+            <Button type="button" size="compact" onClick={() => onFull(true)}>
               {t("reader.fullScreen")}
-            </button>
+            </Button>
           )}
           <button type="button" onClick={onClose}>
             {t("reader.close")}
@@ -718,13 +719,13 @@ export function DocumentReader({
           </span>
         )}
         <div className="hh-reader-foot-actions">
-          <button type="button" className="hh-pill" aria-pressed={source} disabled={!doc?.ok} onClick={() => setSource((s) => !s)}>
+          <Button type="button" size="compact" aria-pressed={source} disabled={!doc?.ok} onClick={() => setSource((s) => !s)}>
             {t("reader.source")}
-          </button>
+          </Button>
           {!inFocus && full && (
-            <button type="button" className="hh-pill" onClick={() => onFull(false)}>
+            <Button type="button" size="compact" onClick={() => onFull(false)}>
               {t("reader.showChat")}
-            </button>
+            </Button>
           )}
         </div>
       </footer>

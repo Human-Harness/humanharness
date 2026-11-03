@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../guide/icons";
 import type { AttentionItemView, AttentionView, HarnessClient } from "../client";
 import { shownLanguage } from "../language";
+import { IconButton } from "../guide/IconButton";
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 31_536_000],
@@ -137,17 +138,16 @@ export function AttentionInbox({
   const unread = t("plugins.attention.unread", { count: view.badge });
   return (
     <div className="hh-pl-inbox" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
-      <button
+      <IconButton
         ref={button}
-        className="hh-icon-button"
-        aria-label={t("plugins.attention.title")}
+        icon="bell"
+        label={t("plugins.attention.title")}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? `${id}-list` : undefined}
         aria-describedby={view.badge > 0 ? `${id}-count` : undefined}
         onClick={() => (open ? close() : setOpen(true))}
       >
-        <Icon name="bell" size={18} />
         {view.badge > 0 && (
           <>
             <span className="hh-pl-badge" aria-hidden="true">
@@ -158,7 +158,7 @@ export function AttentionInbox({
             </span>
           </>
         )}
-      </button>
+      </IconButton>
       <span className="hh-sr-only" aria-live="polite">
         {announce}
       </span>

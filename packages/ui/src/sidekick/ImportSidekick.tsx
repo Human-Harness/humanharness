@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "../client";
 import { SidekickMark, markIcon } from "./mark";
+import { Button } from "../guide/Button";
 
 /** A stored sidekick imported from files: its id and the fields a new draft doesn't carry (Save replaces every field). */
 export interface ImportedSidekick {
@@ -126,9 +127,9 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
       {original ? (
         <p>
           <span>{t("sidekick.import.changed")}</span> ·{" "}
-          <button type="button" ref={buttons.bring} className="hh-link" aria-disabled={busy || saving} onClick={() => void bring()}>
+          <Button type="button" ref={buttons.bring} kind="quiet" size="compact" aria-disabled={busy || saving} onClick={() => void bring()}>
             {t("sidekick.import.bring")}
-          </button>
+          </Button>
         </p>
       ) : (
         <>
@@ -188,9 +189,9 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
           </label>
           {saveFailed && <p role="alert">{t("sidekick.import.saveFailed", { name: draft.draft.name })}</p>}
           <div className="hh-sk-actions">
-            <button type="button" className="hh-primary" disabled={!ack} aria-disabled={saving} onClick={() => void save(draft)}>
+            <Button type="button" kind="primary" disabled={!ack} aria-disabled={saving} onClick={() => void save(draft)}>
               {t("sidekick.import.save")}
-            </button>
+            </Button>
             <button type="button" onClick={close}>
               {t("sidekick.import.cancel")}
             </button>

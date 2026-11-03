@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickPreset } from "../client";
 import { SidekickMark, markIcon } from "./mark";
+import { Button } from "../guide/Button";
 
 /** Clients whose harness has no presets: its manifest can't change while the app runs, so it isn't asked again. */
 const noPresets = new WeakSet<HarnessClient>();
@@ -110,9 +111,9 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
         ))}
       </ul>
       {failed !== null && <p role="alert">{failed ? t("sidekick.presets.failed", { name: failed }) : t("sidekick.presets.notNowFailed")}</p>}
-      <button type="button" className="hh-link" {...wait} onClick={() => void notNow()}>
+      <Button type="button" kind="quiet" size="compact" {...wait} onClick={() => void notNow()}>
         {t("sidekick.presets.notNow")}
-      </button>
+      </Button>
     </section>
   );
 }

@@ -2,6 +2,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef } from "re
 import { useTranslation } from "react-i18next";
 import { trapTab } from "./focus";
 import { Icon } from "./guide/icons";
+import { IconButton } from "./guide/IconButton";
 
 /** A drawer from the right (UI refresh spec §5.7): one at a time, on the rail's ground, over a scrim. */
 export function Drawer({
@@ -69,9 +70,7 @@ export function Drawer({
             {subtitle && <span className="hh-caption">{subtitle}</span>}
           </div>
           {actions}
-          <button ref={closeRef} type="button" className="hh-icon-button" aria-label={t("drawer.close")} onClick={onClose}>
-            <Icon name="close" size={18} />
-          </button>
+          <IconButton ref={closeRef} icon="close" label={t("drawer.close")} onClick={onClose} />
         </header>
         <div className="hh-drawer-body">{children}</div>
       </div>

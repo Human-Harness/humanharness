@@ -9,6 +9,7 @@ import { ScopeSidekicks } from "./ScopeSidekicks";
 import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
 import { SectionHead, SettingRow, SettingsCard } from "../settings-parts";
+import { Button } from "../guide/Button";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
@@ -145,9 +146,9 @@ export function SidekickTab({
           <span className="hh-stat-value">{t(`sidekick.tiers.${state.tier}`, { defaultValue: state.tier })}</span>
           {/* Off: it can't be changed, as the rows below (spec §8). */}
           <fieldset className="hh-sk-fieldset hh-stat-action" disabled={!s.on}>
-            <button type="button" className="hh-link" onClick={onModels}>
+            <Button type="button" kind="quiet" size="compact" onClick={onModels}>
               {t("sidekick.settings.changeTier")}
-            </button>
+            </Button>
           </fieldset>
         </div>
       </div>
@@ -217,13 +218,13 @@ export function SidekickTab({
             {muted.map(([sidekick, kind]) => (
               <li key={`${sidekick}/${kind}`} className="hh-row">
                 <span className="hh-row-label">{t("sidekick.mutedRow", { name: nameOf(sidekick), kind: kindLabel(kind) })}</span>
-                <button
+                <Button
                   type="button"
-                  className="hh-link"
+                  kind="quiet" size="compact"
                   onClick={() => void client.sidekick.unmute(sidekick, kind).catch((err: unknown) => setFailed(err instanceof Error ? err.message : String(err)))}
                 >
                   {t("sidekick.settings.unmute", { kind: kindLabel(kind) })}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

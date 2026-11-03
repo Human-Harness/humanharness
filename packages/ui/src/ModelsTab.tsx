@@ -5,6 +5,7 @@ import { Segmented, Tag, type TagTone } from "./chrome";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
 import { SectionHead, SettingRow, SettingsCard } from "./settings-parts";
+import { Button } from "./guide/Button";
 
 // Local copies: the UI imports nothing from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
@@ -308,9 +309,9 @@ function LevelsSection({
       </div>
       <p className="hh-caption">{t("models.fallbackHint")}</p>
       <div>
-        <button type="button" className="hh-pill" onClick={() => update((m) => withTier(m, engine, null))}>
+        <Button type="button" size="compact" onClick={() => update((m) => withTier(m, engine, null))}>
           {t("models.restoreAll")}
-        </button>
+        </Button>
       </div>
       </SettingsCard>
     </section>
@@ -358,17 +359,17 @@ function TaskRow({
       {value === "custom" && (
         <p className="hh-caption">
           {t("models.customSummary", { model: spec.model ?? t("models.engineDefault"), effort: t(`models.effortLevel.${spec.effort}`), cap: formatCap(spec.cap) })}{" "}
-          <button type="button" className="hh-link" aria-expanded={open} aria-controls={open ? editorId : undefined} onClick={() => setOpen(!open)}>
+          <Button type="button" kind="quiet" size="compact" aria-expanded={open} aria-controls={open ? editorId : undefined} onClick={() => setOpen(!open)}>
             {t("models.edit")}
-          </button>
+          </Button>
         </p>
       )}
       {value !== "custom" && value !== recommended && (
         <p className="hh-model-note">
           <span className="hh-model-changed">{t("models.changed", { tier: t(`models.tier.${recommended}`) })}</span>{" "}
-          <button type="button" className="hh-pill" onClick={onRestore}>
+          <Button type="button" size="compact" onClick={onRestore}>
             {t("models.restore")}
-          </button>
+          </Button>
         </p>
       )}
       {value === "custom" && open && (

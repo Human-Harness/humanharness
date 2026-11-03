@@ -7,6 +7,7 @@ import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { taskGroups } from "./board";
 import { useJobs } from "./useJobs";
+import { Button } from "../guide/Button";
 
 export { WORKING } from "./board";
 
@@ -23,11 +24,11 @@ export function InboxPill({ tasks, jobs, onOpen }: { tasks: TasksState | null; j
   const { t } = useTranslation();
   const count = waitingCount(tasks, jobs);
   return (
-    <button className="hh-pill" aria-label={t("inbox.pill", { count })} onClick={onOpen}>
+    <Button size="compact" aria-label={t("inbox.pill", { count })} onClick={onOpen}>
       <Icon name="inbox" size={18} />
       {t("inbox.title")}
       {count > 0 && <Tag tone="orange">{count}</Tag>}
-    </button>
+    </Button>
   );
 }
 
@@ -213,9 +214,9 @@ export function InboxList({
           )}
         </button>
         {s.state === "queued" && (
-          <button className="hh-tk-cancel" aria-describedby={labelId} onClick={() => cancel(s)}>
+          <Button size="compact" aria-describedby={labelId} onClick={() => cancel(s)}>
             {t("parallel.cancel")}
-          </button>
+          </Button>
         )}
       </li>
     );
@@ -256,8 +257,8 @@ export function InboxList({
         </div>
         {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
         {action && (
-          <button
-            className="hh-tk-cancel"
+          <Button
+            size="compact"
             aria-describedby={labelId}
             onClick={() => {
               setJobProblem(null);
@@ -266,12 +267,12 @@ export function InboxList({
             }}
           >
             {t("parallel.start")}
-          </button>
+          </Button>
         )}
         {j.manual && !j.running && j.paused !== "off" && (
-          <button className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
+          <Button size="compact" aria-describedby={labelId} onClick={() => runNow(j)}>
             {t("parallel.runNow")}
-          </button>
+          </Button>
         )}
       </li>
     );

@@ -4,6 +4,7 @@ import { Tag } from "./chrome";
 import type { NoteView } from "./client";
 import { Drawer } from "./Drawer";
 import { shownLanguage } from "./language";
+import { Button } from "./guide/Button";
 
 /** "What's clear so far": the notes of `.harness/notes/`, one opened at a time. */
 export function NotesPanel({
@@ -102,12 +103,12 @@ export function NotesPanel({
                       </ul>
                       <code className="hh-caption">{n.path}</code>
                       <div className="hh-note-actions">
-                        <button type="button" className="hh-pill" disabled={disabled} onClick={() => onResume(n)}>
+                        <Button type="button" size="compact" disabled={disabled} onClick={() => onResume(n)}>
                           {t("notes.resume")}
-                        </button>
-                        <button type="button" className="hh-pill" onClick={() => openFile(n.path)}>
+                        </Button>
+                        <Button type="button" size="compact" onClick={() => openFile(n.path)}>
                           {t("notes.open")}
-                        </button>
+                        </Button>
                       </div>
                     </>
                   )}

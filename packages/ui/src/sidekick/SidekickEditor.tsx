@@ -4,6 +4,7 @@ import { Segmented } from "../chrome";
 import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "../client";
 import { ICON_NAMES, Icon } from "../guide/icons";
 import { markIcon } from "./mark";
+import { Button } from "../guide/Button";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */
 const CORE = ["prompt-coach", "focus", "process-guard", "mentor", "daily-summary"] as const;
@@ -187,16 +188,16 @@ export function SidekickEditor({
       {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
       <div className="hh-sk-actions">
         {/* disabled until the sidekick is complete; aria-disabled while it saves, so the button keeps focus. */}
-        <button
+        <Button
           type="button"
-          className="hh-primary"
+          kind="primary"
           disabled={!ready}
           aria-disabled={busy}
           {...(tooMany || tooManyMoments ? { "aria-describedby": tooMany ? `${ids}-too-many` : `${ids}-too-many-moments` } : {})}
           onClick={() => void save()}
         >
           {t("sidekick.editor.save")}
-        </button>
+        </Button>
         <button type="button" onClick={() => onDone(false)}>
           {t("sidekick.editor.cancel")}
         </button>

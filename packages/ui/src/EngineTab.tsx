@@ -5,6 +5,7 @@ import { Icon } from "./guide/icons";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
 import { EngineOnboarding, LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 import { SectionHead, SettingsCard } from "./settings-parts";
+import { Button } from "./guide/Button";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
 export function errorDetail(err: unknown): string {
@@ -183,9 +184,9 @@ export function EngineTab({
       {engine && status && ready && (
         <>
           {!setup && selected !== current && (
-            <button className="hh-primary" disabled={busy !== null} onClick={() => void use()}>
+            <Button kind="primary" disabled={busy !== null} onClick={() => void use()}>
               {t("engine.use", { engine: engine.name })}
-            </button>
+            </Button>
           )}
           {/* The engine shown, as a card: "In use" when it is the one tasks run on. */}
           {/* The setup flow's engine step: the same card, as its "One last check" (UI refresh spec §5.6). */}

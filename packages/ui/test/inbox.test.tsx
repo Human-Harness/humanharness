@@ -400,7 +400,7 @@ describe("Inbox pill (UI refresh spec §4.1)", () => {
     await open(c);
     const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
     expect(button.closest("header.hh-topbar")).not.toBeNull();
-    expect(button.className).toContain("hh-pill");
+    expect(button.getAttribute("data-size")).toBe("compact");
   });
 
   it("opens the Inbox screen, not a drop-down; the screen has no pill (spec §4.1, §5.4)", async () => {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, CurrentTaskView, HarnessClient } from "../client";
 import { ScopeSettings } from "./ScopeSettings";
+import { Button } from "../guide/Button";
 
 /**
  * Under the task header (hatches spec §5.3): the task runs without its scope's engine config, because it isn't
@@ -30,9 +31,9 @@ export function EngineNotice({
     <p className="hh-engine-notice" role="status">
       <span>{t(notice === "refused" ? "hatches.engineNotUsed" : "hatches.engineNotApproved")}</span>
       {" · "}
-      <button type="button" className="hh-link" onClick={() => void review()}>
+      <Button type="button" kind="quiet" size="compact" onClick={() => void review()}>
         {t("hatches.engineReview")}
-      </button>
+      </Button>
       {open !== null && <ScopeSettings client={client} state={state} scope={scope} title={open} focusEngine onClose={() => setOpen(null)} />}
     </p>
   );

@@ -6,6 +6,7 @@ import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
 import { SectionHead } from "../settings-parts";
+import { Button } from "../guide/Button";
 
 /** The lowest daily cap the field takes: less would pause a periodic job after its first run. */
 export const DAILY_CAP_MIN = 1000;
@@ -112,8 +113,8 @@ export function JobsTab({
         </div>
         {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
         {action && (
-          <button
-            className="hh-tk-cancel"
+          <Button
+            size="compact"
             aria-describedby={labelId}
             onClick={() => {
               setProblem(null);
@@ -121,12 +122,12 @@ export function JobsTab({
             }}
           >
             {t("parallel.start")}
-          </button>
+          </Button>
         )}
         {j.manual && !j.running && j.paused !== "off" && (
-          <button className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
+          <Button size="compact" aria-describedby={labelId} onClick={() => runNow(j)}>
             {t("parallel.runNow")}
-          </button>
+          </Button>
         )}
       </li>
     );

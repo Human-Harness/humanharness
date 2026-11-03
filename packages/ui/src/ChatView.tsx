@@ -70,6 +70,7 @@ import { initialChat, isToolLine, reduceChat } from "./state";
 import { TaskHeader } from "./TaskHeader";
 import { UsageMeter } from "./UsageMeter";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
+import { Button } from "./guide/Button";
 
 /** How close to the bottom (px) the user must be for new content to keep the chat pinned. */
 const STICK_THRESHOLD = 80;
@@ -1738,9 +1739,9 @@ export function ChatView({
               )}
               {slim && slimStart && (
                 <div className="hh-slim-start">
-                  <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
+                  <Button type="button" kind="primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
                     {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
-                  </button>
+                  </Button>
                 </div>
               )}
               {flow && !slim && since !== null && !tasks.current && !chat.live && (
@@ -1818,8 +1819,8 @@ export function ChatView({
                     <strong className="hh-warn">{t("preflight.title")}</strong>
                   </p>
                   <p id="hh-preflight-text">{preflightText}</p>
-                  <button
-                    className="hh-primary"
+                  <Button
+                    kind="primary"
                     onClick={() => {
                       const p = pending;
                       setPending(null);
@@ -1828,7 +1829,7 @@ export function ChatView({
                     }}
                   >
                     {t("preflight.continue")}
-                  </button>
+                  </Button>
                   <button ref={notNowRef} onClick={closePreflight}>
                     {t("preflight.notNow")}
                   </button>
@@ -1853,9 +1854,9 @@ export function ChatView({
                   <p id="hh-tier-text">
                     {t("modes.tierText", { required: t(`models.tier.${tierAsk.required}`), current: t(`models.tier.${tierAsk.current}`) })}
                   </p>
-                  <button className="hh-primary" onClick={() => answerTier("continue")}>
+                  <Button kind="primary" onClick={() => answerTier("continue")}>
                     {t("modes.keepTier")}
-                  </button>
+                  </Button>
                   <button onClick={() => answerTier("new-task")}>{t("modes.newTask", { mode: modeLabel(tierAsk.mode) })}</button>
                   <button ref={tierNotNowRef} onClick={() => answerTier()}>
                     {t("modes.notNow")}
@@ -2009,9 +2010,9 @@ export function ChatView({
                       </button>
                     )}
                     <span className="hh-caption hh-composer-send-hint">{t("chat.enterToSend")}</span>
-                    <button type="submit" className="hh-cta">
+                    <Button type="submit" kind="primary">
                       {t("chat.send")}
-                    </button>
+                    </Button>
                   </>
                 )}
               </form>

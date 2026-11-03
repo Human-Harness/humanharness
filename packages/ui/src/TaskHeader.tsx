@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./guide/Button";
 
 /** The task's own header (UI refresh spec §5.1): what moved out of the top bar, next to the work it is about. */
 export function TaskHeader({
@@ -36,13 +37,13 @@ export function TaskHeader({
       {meters}
       {sidekick}
       {chips}
-      <button type="button" className="hh-pill" onClick={onHistory}>
+      <Button type="button" size="compact" onClick={onHistory}>
         {t("history.title")}
-      </button>
+      </Button>
       {onNewTask && (
-        <button type="button" className="hh-cta" onClick={onNewTask}>
+        <Button type="button" kind="primary" onClick={onNewTask}>
           {t("task.header.new")}
-        </button>
+        </Button>
       )}
     </header>
   );

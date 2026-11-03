@@ -21,7 +21,6 @@ describe("design tokens", () => {
     bg: "#f3f3f1", rail: "#fbfbfa", column: "#f8f8f6", surface: "#ffffff", "surface-2": "#f2f2ef",
     line: "#e7e7e3", "line-strong": "#d9d9d4", ink: "#1b1c1e", muted: "#62656b", faint: "#8a8d93",
     cta: "#fbd38d", "cta-ink": "#3b2a06", "cta-hover": "#f8c76e", active: "#fde6b3", "active-ink": "#7a4f00",
-    logo: "#1b1c1e", "logo-ink": "#ffffff",
     "t-green": "#dff2e5", "t-green-ink": "#1d6e3f", "t-orange": "#fdebd7", "t-orange-ink": "#a94f08",
     "t-blue": "#e4ecfd", "t-blue-ink": "#2d55c4", "t-violet": "#ece6fb", "t-violet-ink": "#5f3dba",
     "t-red": "#fbe4e1", "t-red-ink": "#a3321f",
@@ -30,7 +29,6 @@ describe("design tokens", () => {
     bg: "#121315", rail: "#16171a", column: "#17181b", surface: "#1e2024", "surface-2": "#26292e",
     line: "#2a2d32", "line-strong": "#383c42", ink: "#eceef0", muted: "#a3a8ae", faint: "#80858c",
     cta: "#f3c56a", "cta-ink": "#2a1d02", "cta-hover": "#f7d184", active: "#3a2e14", "active-ink": "#f3c56a",
-    logo: "#eceef0", "logo-ink": "#121315",
     "t-green": "#17311f", "t-green-ink": "#8bd8a8", "t-orange": "#3a2715", "t-orange-ink": "#f4b47e",
     "t-blue": "#1c2944", "t-blue-ink": "#a3beff", "t-violet": "#29223f", "t-violet-ink": "#c6b4ff",
     "t-red": "#3b1d19", "t-red-ink": "#f3a497",
@@ -54,22 +52,31 @@ describe("design tokens", () => {
     }
   });
 
-  it("keeps highlight equal to active in light and dark", () => {
-    // highlight is a hex copy of active, not var(--hh-active), because token() reads hex values only.
-    for (const block of [light, dark]) expect(token(block, "highlight")).toBe(token(block, "active"));
-  });
-
   it("drops the renamed tokens (paper, sheet, segment, slate)", () => {
     for (const old of ["paper", "sheet", "segment", "slate"]) expect(css).not.toMatch(new RegExp(`--hh-${old}:`));
   });
 
-  it("defines the diff tokens in light and dark, and keeps the timeline's chips readable (file-timeline spec §6.1)", () => {
+  // spec §2 Color: the only color tokens. Tag tokens keep today's names (--hh-t-<color>, --hh-t-<color>-ink).
+  const GUIDE_COLORS = [
+    "bg", "rail", "column", "surface", "surface-2", "line", "line-strong", "ink", "muted", "faint",
+    "cta", "cta-ink", "cta-hover", "active", "active-ink",
+    "t-green", "t-green-ink", "t-orange", "t-orange-ink", "t-blue", "t-blue-ink",
+    "t-violet", "t-violet-ink", "t-red", "t-red-ink",
+  ];
+  const NON_COLOR = ["shadow", "backdrop", "font", "mono", "display"]; // plus the measure tokens of Task 5
+  const colorTokens = (block: string) =>
+    [...block.matchAll(/--hh-([a-z0-9-]+):\s*(#[0-9a-f]{3,8}|rgba?\([^)]*\)|var\(--hh-[a-z0-9-]+\))/gi)].map((m) => m[1]);
+
+  it("defines exactly the guide's color tokens in light and dark (style guide §2)", () => {
     for (const block of [light, dark]) {
-      for (const n of ["diff-ins", "diff-del", "diff-bar-ins", "diff-bar-del"]) expect(token(block, n)).toMatch(/^#/);
-      expect(ratio(token(block, "t-green-ink"), token(block, "diff-ins"))).toBeGreaterThanOrEqual(4.5);
-      for (const bg of ["review-question", "review-done"]) expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(4.5);
-      for (const bg of ["review-question", "review-done", "review-comment", "callout-note", "callout-tip", "callout-warning", "callout-summary", "callout-decision", "callout-question"]) expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(4.5);
+      const names = colorTokens(block).filter((n) => !NON_COLOR.includes(n) && !n.endsWith("-w") && !n.endsWith("-h") && !n.endsWith("-r"));
+      expect(new Set(names)).toEqual(new Set(GUIDE_COLORS));
     }
+  });
+
+  it("drops the single-use tokens (style guide §2 'Tokens that go', row 45)", () => {
+    for (const gone of ["callout-", "review-", "diff-", "profile-", "highlight", "logo", "on-ink", "ok:", "ok-dot", "warn:", "error-bg", "shadow-sm"])
+      expect(css).not.toMatch(new RegExp(`--hh-${gone}`));
   });
 });
 
@@ -162,8 +169,8 @@ describe("start view in the chat column", () => {
 describe("flow layout (UI refresh spec §5.1)", () => {
   it("the side columns give way to the chat card, never grow against it", () => {
     expect(css).toMatch(/^\.hh-main\s*{[^}]*flex:\s*1 1 400px[^}]*min-width:\s*0/m);
-    expect(css).toMatch(/^\.hh-side\s*{[^}]*box-sizing:\s*border-box[^}]*flex:\s*0 4 280px[^}]*min-width:\s*200px/m);
-    expect(css).toMatch(/^\.hh-flow-side\s*{[^}]*flex:\s*0 4 290px[^}]*min-width:\s*220px/m);
+    expect(css).toMatch(/^\.hh-side\s*{[^}]*box-sizing:\s*border-box[^}]*flex:\s*0 4 var\(--hh-column-w\)[^}]*min-width:\s*220px[^}]*max-width:\s*320px/m);
+    expect(css).toMatch(/^\.hh-flow-side\s*{[^}]*flex:\s*0 4 var\(--hh-column-w\)[^}]*min-width:\s*220px[^}]*max-width:\s*320px/m);
   });
 
   it("in a setup step (slim) the chat card and the composer get no margins or shadow", () => {
@@ -175,16 +182,8 @@ describe("flow layout (UI refresh spec §5.1)", () => {
 });
 
 describe("annotate marks", () => {
-  it("the highlight under a gap keeps ink readable in light and dark", () => {
-    for (const block of [light, dark]) expect(ratio(token(block, "ink"), token(block, "highlight"))).toBeGreaterThanOrEqual(7);
-  });
-});
-
-describe("profile avatars", () => {
-  it("every avatar colour has a light and a dark token, and its letter stays readable (≥ 4.5:1)", () => {
-    for (const block of [light, dark]) {
-      for (const color of AVATAR_COLORS) expect(ratio(token(block, "ink"), token(block, `profile-${color}`))).toBeGreaterThanOrEqual(4.5);
-    }
+  it("the highlight under a gap keeps ink readable on active in light and dark", () => {
+    for (const block of [light, dark]) expect(ratio(token(block, "ink"), token(block, "active"))).toBeGreaterThanOrEqual(7);
   });
 });
 
@@ -198,10 +197,20 @@ describe("the scope settings dialog", () => {
   });
 });
 
+describe("measure tokens", () => {
+  it("defines the measure tokens of the closed scales (style guide §1, §2)", () => {
+    const root = css.slice(0, css.indexOf("prefers-color-scheme: dark"));
+    for (const [name, v] of [["h-counter", 18], ["h-tag", 24], ["h-compact", 30], ["h-normal", 40], ["h-row", 52], ["h-tile", 104],
+      ["r-compact", 8], ["r-control", 12], ["r-card", 14], ["r-dialog", 18],
+      ["s-1", 4], ["s-2", 8], ["s-3", 12], ["s-4", 16], ["s-5", 24], ["s-6", 32]] as const)
+      expect(root).toMatch(new RegExp(`--hh-${name}:\\s*${v}px`));
+  });
+});
+
 describe("control size tokens and top bar overrides", () => {
   it("defines the 40px / 12px control tokens at root and shrinks them to 30px / 8px in the top bar", () => {
-    expect(css).toMatch(/:root\s*\{[^}]*--hh-control-h:\s*40px;[^}]*--hh-control-r:\s*12px/);
-    expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*30px;[^}]*--hh-control-r:\s*8px/);
+    expect(css).toMatch(/:root\s*\{[^}]*--hh-control-h:\s*var\(--hh-h-normal\);[^}]*--hh-control-r:\s*var\(--hh-r-control\)/);
+    expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*var\(--hh-h-compact\);[^}]*--hh-control-r:\s*var\(--hh-r-compact\)/);
   });
 
   it("has rules for the top bar icon button and the language row label", () => {
@@ -209,5 +218,49 @@ describe("control size tokens and top bar overrides", () => {
     expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
     const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
     expect(tsx).toMatch(/className="hh-topbar-icon"/);
+  });
+});
+
+describe("profile avatars (style guide §2 special uses)", () => {
+  it("six colors, each a tag fill with its tag ink; grey is surface-2 + ink", () => {
+    expect([...AVATAR_COLORS]).toEqual(["green", "orange", "blue", "violet", "red", "gray"]);
+    for (const c of ["green", "orange", "blue", "violet", "red"])
+      expect(css).toMatch(new RegExp(`\\.hh-avatar\\[data-color="${c}"\\]\\s*{[^}]*background:\\s*var\\(--hh-t-${c}\\);[^}]*color:\\s*var\\(--hh-t-${c}-ink\\)`));
+    expect(css).toMatch(/\.hh-avatar\[data-color="gray"\]\s*{[^}]*background:\s*var\(--hh-surface-2\);[^}]*color:\s*var\(--hh-ink\)/);
+  });
+});
+
+describe("widths (style guide §2 Widths)", () => {
+  it("defines the closed width tokens", () => {
+    expect(css).toMatch(/:root\s*{[^}]*--hh-rail-w:\s*64px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-column-w:\s*280px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-split-w:\s*55%/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-read-w:\s*680px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-dialog-w:\s*440px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-dialog-w-search:\s*640px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-popover-w:\s*320px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-index-w:\s*200px/);
+  });
+  it("the rail uses its token", () => {
+    expect(css).toMatch(/^\.hh-rail\s*{[^}]*width:\s*var\(--hh-rail-w\)/m);
+  });
+});
+
+describe("type (style guide §2 Type)", () => {
+  it("only 12, 13, 14, 15, 16, 20 and 28 px text", () => {
+    const sizes = new Set([...css.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1])));
+    for (const s of sizes) expect([12, 13, 14, 15, 16, 20, 28], `${s}px`).toContain(s);
+  });
+  it("only weights 400, 500 and 600", () => {
+    const w = new Set([...css.matchAll(/font-weight:\s*(\d+)/g)].map((m) => Number(m[1])));
+    for (const v of w) expect([400, 500, 600]).toContain(v);
+  });
+  it("inline code: DM Mono 400, one point below, surface-2, radius 4", () => {
+    expect(css).toMatch(/--hh-mono:\s*"DM Mono"/);
+    expect(css).toMatch(/^:not\(pre\)\s*>\s*code\s*{[^}]*font-family:\s*var\(--hh-mono\)[^}]*font-size:\s*calc\(1em - 1px\)[^}]*background:\s*var\(--hh-surface-2\)[^}]*border-radius:\s*4px/m);
+  });
+  it("raw diff line code is not styled as inline code, and the reset stays off the Markdown diff", () => {
+    expect(css).toMatch(/^\.hh-filediff-lines code,\s*\.hh-filediff-mono code\s*{[^}]*background:\s*none[^}]*border-radius:\s*0[^}]*font-size:\s*12px/m);
+    expect(css).not.toMatch(/^\.hh-filediff code/m);
   });
 });

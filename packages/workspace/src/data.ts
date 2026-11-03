@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { type Collection, type DataKey, type DataRecord, type DataWho, type RulesContext, SETTINGS_COLLECTION, z } from "@humanharness/harness-sdk";
+import { type Collection, type DataKey, type DataRecord, type DataWho, type RulesContext, PROFILE_COLLECTION, SETTINGS_COLLECTION, migrateProfileColor, z } from "@humanharness/harness-sdk";
 import { APP_SCOPE, collectionName, dataFile, dataMetaFile, dataPath, isScopeDir, scopeDir } from "./layout";
 import { stable } from "./data-diff";
 import { LinkRefused, TooLarge, readNoLinks, removeNoLinks, writeNoLinks } from "./no-links";
@@ -542,7 +542,9 @@ export class DataStore {
     const seen = new Set<DataKey>();
     let invalid = 0;
     for (const item of list) {
-      const parsed = c.schema.safeParse(name === SETTINGS_COLLECTION && c.single ? validFields(c, item) : item);
+      // A profile saved before the six avatar colours is read as the colour it maps to, so it stays readable and writable.
+      const stored = name === PROFILE_COLLECTION ? migrateProfileColor(item) : item;
+      const parsed = c.schema.safeParse(name === SETTINGS_COLLECTION && c.single ? validFields(c, stored) : stored);
       if (!parsed.success) {
         invalid++;
         continue;

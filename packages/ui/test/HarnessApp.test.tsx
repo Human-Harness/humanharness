@@ -827,7 +827,7 @@ describe("HarnessApp", () => {
     const avatar = await screen.findByRole("button", { name: "Profile: Sofi" });
     expect(avatar.closest("header.hh-topbar")).not.toBeNull();
     expect(avatar.textContent).toBe("S");
-    expect(avatar.getAttribute("data-color")).toBe("coral");
+    expect(avatar.getAttribute("data-color")).toBe("red");
     expect(screen.queryByRole("button", { name: "Add student" })).toBeNull();
     fireEvent.click(avatar);
     expect(await screen.findByRole("button", { name: "Add student" })).toBeTruthy();

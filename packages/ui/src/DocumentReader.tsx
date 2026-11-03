@@ -103,8 +103,9 @@ export function DocumentReader({
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [current, setCurrent] = useState<string | null>(null);
   // The look applies at once; the caller saves it and passes it back.
-  const [look, setLook] = useState<Required<ReaderPrefs>>({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" });
-  useEffect(() => setLook({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" }), [prefs.font, prefs.size]);
+  // One reader size (style guide §2): a stored "large" falls back to it.
+  const [look, setLook] = useState<Required<ReaderPrefs>>({ font: prefs.font ?? "sans", size: "normal" });
+  useEffect(() => setLook({ font: prefs.font ?? "sans", size: "normal" }), [prefs.font]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const prefsButton = useRef<HTMLButtonElement>(null);
@@ -600,9 +601,6 @@ export function DocumentReader({
               <button type="button" aria-pressed={look.size === "normal"} onClick={() => setPref({ size: "normal" })}>
                 {t("reader.normal")}
               </button>
-              <button type="button" aria-pressed={look.size === "large"} onClick={() => setPref({ size: "large" })}>
-                {t("reader.large")}
-              </button>
             </div>
           </div>
         )}
@@ -649,7 +647,7 @@ export function DocumentReader({
           {picked ? (
             <EntryDiff client={client} path={path} entry={picked} busy={busy} onBack={leaveDiff} refresh={doc?.ok ? doc.text : undefined} />
           ) : (
-            <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
+            <article className={`hh-reader-doc hh-reader-${look.font}`}>{body}</article>
           )}
           {inFocus && bar}
           {inFocus && doc?.ok && !source && rv?.ok && rv.review && (

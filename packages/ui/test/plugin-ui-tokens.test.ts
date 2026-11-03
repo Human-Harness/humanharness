@@ -32,6 +32,10 @@ const appLight = tokens(block(app, ":root"));
 const appDark = tokens(block(app, "@media (prefers-color-scheme: dark)"));
 /** Pre-refresh names the panel keeps as aliases for one release; the app no longer has them. */
 const ALIASES = ["--hh-paper", "--hh-sheet", "--hh-segment", "--hh-slate"];
+/** Plugin status tokens plugin-ui.css uses; not in the guide's tables, so the app has none (OQ-23). Set in the panel's first block only. */
+const STATUS = ["--hh-ok", "--hh-warn", "--hh-error-bg"];
+/** Tokens the panel does not mirror: the mono font is theme-less, widths and measures are app layout. */
+const APP_ONLY = /^--hh-(mono|[a-z]+-w(-[a-z]+)?|h-[a-z]+|r-[a-z]+|s-\d)$/;
 
 describe("plugin-ui tokens (Decision 4)", () => {
   it("the app's own blocks hold tokens to compare with", () => {
@@ -47,16 +51,22 @@ describe("plugin-ui tokens (Decision 4)", () => {
   ])("every token under %s has the app's value", (marker, expected) => {
     const got = tokens(block(panel, marker));
     expect(got.size).toBeGreaterThan(20);
-    for (const [name, value] of got) if (!ALIASES.includes(name)) expect([name, value]).toEqual([name, expected.get(name)]);
+    for (const [name, value] of got) if (!ALIASES.includes(name) && !STATUS.includes(name) && name !== "--hh-mono") expect([name, value]).toEqual([name, expected.get(name)]);
   });
 
   it("carries every colour the app has, light and dark", () => {
     const colours = (m: Map<string, string>) =>
-      [...m.keys()].filter((k) => k !== "--hh-font" && k !== "--hh-display" && !ALIASES.includes(k));
+      [...m.keys()].filter((k) => k !== "--hh-font" && k !== "--hh-display" && !APP_ONLY.test(k) && !ALIASES.includes(k) && !STATUS.includes(k));
     expect(colours(tokens(block(panel, ":root")))).toEqual(colours(appLight));
     expect(colours(tokens(block(panel, '[data-theme="light"]')))).toEqual(colours(appLight));
     expect([...tokens(block(panel, "@media (prefers-color-scheme: dark)")).keys()]).toEqual([...appDark.keys()]);
     expect([...tokens(block(panel, '[data-theme="dark"]')).keys()]).toEqual([...appDark.keys()]);
+  });
+
+  it("drops the removed tokens, keeping only the pre-refresh aliases", () => {
+    for (const marker of [":root", "@media (prefers-color-scheme: dark)", '[data-theme="light"]', '[data-theme="dark"]'])
+      for (const name of tokens(block(panel, marker)).keys())
+        expect(name, marker).not.toMatch(/^--hh-(callout-|review-|diff-|profile-|highlight$|logo)/);
   });
 
   it("keeps the pre-refresh names as aliases for published plugins (one release)", () => {
@@ -77,7 +87,7 @@ describe("plugin-ui tokens (Decision 4)", () => {
     const css = readFileSync(join(SRC, "plugin-ui/plugin-ui.css"), "utf8");
     const used = new Set([...css.matchAll(/var\((--hh-[a-z0-9-]+)\)/g)].map((m) => m[1]));
     expect(used.size).toBeGreaterThan(0);
-    for (const name of used) expect(appLight.has(name), name).toBe(true);
+    for (const name of used) expect(appLight.has(name) || STATUS.includes(name), name).toBe(true);
   });
 
   it("plugin-ui imports nothing else from @humanharness/ui", () => {

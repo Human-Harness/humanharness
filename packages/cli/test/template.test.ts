@@ -38,4 +38,11 @@ describe("template", () => {
     expect(brief).toContain("show_choices");
     expect(brief).toContain("{{notesIndex}}");
   });
+
+  it("harness.css uses only guide font sizes and weights (style guide §2)", () => {
+    const css = fs.readFileSync(path.join(TEMPLATE, "ui", "harness.css"), "utf8");
+    for (const m of css.matchAll(/font-size:\s*(\d+)px/g)) expect([12, 13, 14, 15, 16, 20, 28]).toContain(Number(m[1]));
+    for (const m of css.matchAll(/font-weight:\s*(\d+)/g)) expect([400, 500, 600]).toContain(Number(m[1]));
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  });
 });

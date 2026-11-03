@@ -178,8 +178,8 @@ describe("document cards (§5.1)", () => {
     const save = vi.spyOn(client, "saveConfig");
     fireEvent.click(await screen.findByRole("button", { name: /Analysis/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
-    fireEvent.click(screen.getByRole("button", { name: "Large" }));
-    expect(save).toHaveBeenCalledWith({ reader: { font: "sans", size: "large" } });
+    fireEvent.click(screen.getByRole("button", { name: "Serif" }));
+    expect(save).toHaveBeenCalledWith({ reader: { font: "serif", size: "normal" } });
   });
 });
 

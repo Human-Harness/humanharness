@@ -15,7 +15,7 @@ const configured = { language: "en" as const, folder: "/Users/me/Documents/Famil
 const FORM: InputSpec = {
   fields: [
     { name: "name", kind: "text", label: "Name", optional: false, min: 1, max: 40 },
-    { name: "color", kind: "choice", label: "Color", optional: true, options: ["coral", "teal"] },
+    { name: "color", kind: "choice", label: "Color", optional: true, options: ["red", "green"] },
   ],
 };
 const GOAL: SetupStepView = { id: "goal", kind: "form", label: "Your goal", required: true, form: { fields: [{ name: "text", kind: "text", label: "Text", optional: false }] } };

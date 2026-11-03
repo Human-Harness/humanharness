@@ -18,10 +18,10 @@ function family() {
     profiles: { label: "student", form: { fields: [{ name: "name", kind: "text", label: "Name", optional: false }] } },
   };
   client.profileList = [
-    { id: "sofi", title: "Sofi", color: "coral", createdAt: "", archived: false },
+    { id: "sofi", title: "Sofi", color: "red", createdAt: "", archived: false },
     { id: "tomas", title: "Tomás", createdAt: "", archived: false },
   ];
-  client.records.profile = [{ name: "Sofi", color: "coral" }];
+  client.records.profile = [{ name: "Sofi", color: "red" }];
   return client;
 }
 
@@ -47,7 +47,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
     const name = await within(sofi).findByLabelText("Name");
     fireEvent.change(name, { target: { value: "Sofía" } });
     fireEvent.click(within(sofi).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(client.records.profile.at(-1)).toEqual({ name: "Sofía", color: "coral" }));
+    await waitFor(() => expect(client.records.profile.at(-1)).toEqual({ name: "Sofía", color: "red" }));
   });
 
   it("a blank name is refused next to Name, and nothing is saved", async () => {
@@ -58,7 +58,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
     fireEvent.change(await within(sofi).findByLabelText("Name"), { target: { value: "   " } });
     fireEvent.click(within(sofi).getByRole("button", { name: "Save" }));
     expect(await within(sofi).findByText("Enter a name")).toBeTruthy();
-    expect(client.records.profile).toEqual([{ name: "Sofi", color: "coral" }]);
+    expect(client.records.profile).toEqual([{ name: "Sofi", color: "red" }]);
     expect(within(sofi).getByLabelText("Name")).toBeTruthy();
   });
 

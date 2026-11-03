@@ -1,13 +1,17 @@
 import { type FocusEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, ProfileResult, ProfileView, ProfilesState } from "./client";
-import { AVATAR_COLORS } from "./profiles";
+import { AVATAR_COLORS, RETIRED_AVATAR_COLORS } from "./profiles";
 
 /** An avatar's letter: the title's first character (a whole code point), upper-cased. */
 const initialOf = (title: string): string => [...title.trim()][0]?.toUpperCase() ?? "";
 
-/** An avatar's colour: only one we draw; anything else is neutral. */
-const knownColor = (color: string | undefined): string | undefined => (color && (AVATAR_COLORS as readonly string[]).includes(color) ? color : undefined);
+/** An avatar's colour: one of the six, or the one a retired name maps to; anything else is neutral. */
+const knownColor = (color: string | undefined): string | undefined => {
+  if (!color) return undefined;
+  if ((AVATAR_COLORS as readonly string[]).includes(color)) return color;
+  return Object.hasOwn(RETIRED_AVATAR_COLORS, color) ? RETIRED_AVATAR_COLORS[color] : undefined;
+};
 
 /** A profile's avatar (spec D7): the title's first letter on its colour; neutral when the colour is not one we draw. */
 export function Avatar({ profile }: { profile: Pick<ProfileView, "title" | "color"> }) {

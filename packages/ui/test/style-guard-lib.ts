@@ -58,10 +58,16 @@ const RADIUS_PROPS = /^border(?:-(?:top|bottom|start|end)-(?:left|right|start|en
 const TOKEN_BLOCK = /^(?::root(?:\[data-theme=[^\]]+\]|:not\(\[data-theme=[^\]]+\]\))*|\[data-theme=[^\]]+\])$/;
 const SPACE_PROPS = /^(?:gap|row-gap|column-gap|padding(?:-[a-z]+)*|margin(?:-[a-z]+)*)$/;
 
+// The 148 CSS named colors. `transparent`, `currentColor`, `inherit`, `initial`, `unset` and `none` are not in
+// it, so they pass. Checked as whole words, only inside color properties.
+const NAMED_COLORS = new Set(
+  "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen".split(" "),
+);
+
 // Properties that carry a color. Only these are checked for foreign vars: a non-`--hh-` var in any other
 // property (a size, `content`, `transition`) is not flagged, because a harness may name its own custom
 // properties for measures; its literal px values are still checked against the scale. Named colors
-// (`red`) are not detected either: the guard only sees hex / rgb / hsl literals and vars. Keyframe steps
+// (`red`) are flagged in these properties only. Keyframe steps
 // check literal colors only, not foreign vars. Offenders of every size kind in a harness file share the
 // kind `harness-size`, so identical selector + value collapse into one line.
 const COLOR_PROPS =
@@ -93,6 +99,10 @@ function checkDeclaration(file: string, selector: string, prop: string, value: s
     for (const m of value.matchAll(COLOR)) out.push(line(file, "color", selector, m[0]));
   }
   if (prop.startsWith("--")) return;
+  if (COLOR_PROPS.test(prop)) {
+    const words = stripCalls(value).replace(/(["'])(?:\\.|(?!\1).)*\1/g, " ").matchAll(/(?<![\w#-])[a-z]+(?![\w-])/gi);
+    for (const m of words) if (NAMED_COLORS.has(m[0].toLowerCase())) out.push(line(file, "color", selector, m[0].toLowerCase()));
+  }
   const bare = stripCalls(value).trim();
 
   if (SIZE_PROPS.test(prop)) {

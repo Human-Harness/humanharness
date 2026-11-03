@@ -54,6 +54,17 @@ describe("harness foreign vars", () => {
   });
 });
 
+describe("named colors", () => {
+  it("flags a named color in a color property, in both modes", () => {
+    expect(scanCss("a.css", ".x { color: Red; border: 1px solid navy; }", {})).toEqual(["a.css|color|.x|red", "a.css|color|.x|navy"]);
+    expect(scanCss("h.css", ".x { background: linear-gradient(to right, var(--hh-line), white); }", { harness: true })).toEqual(["h.css|harness-color|.x|white"]);
+  });
+  it("lets keywords, other properties, strings and url() through", () => {
+    const css = '.x { color: transparent; background: none url(red.png) no-repeat; border-color: currentColor; outline: inherit; animation-name: orange; content: "red"; font-family: tan; }';
+    expect(scanCss("a.css", css, {})).toEqual([]);
+  });
+});
+
 describe("harness stylesheet walk", () => {
   it("skips dist, node_modules and absent directories", () => {
     const root = mkdtempSync(join(tmpdir(), "sg-"));

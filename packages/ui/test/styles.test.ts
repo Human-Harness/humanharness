@@ -235,3 +235,18 @@ describe("widths (style guide §2 Widths)", () => {
     expect(css).toMatch(/^\.hh-rail\s*{[^}]*width:\s*var\(--hh-rail-w\)/m);
   });
 });
+
+describe("type (style guide §2 Type)", () => {
+  it("only 12, 13, 14, 15, 16, 20 and 28 px text", () => {
+    const sizes = new Set([...css.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1])));
+    for (const s of sizes) expect([12, 13, 14, 15, 16, 20, 28], `${s}px`).toContain(s);
+  });
+  it("only weights 400, 500 and 600", () => {
+    const w = new Set([...css.matchAll(/font-weight:\s*(\d+)/g)].map((m) => Number(m[1])));
+    for (const v of w) expect([400, 500, 600]).toContain(v);
+  });
+  it("inline code: DM Mono 400, one point below, surface-2, radius 4", () => {
+    expect(css).toMatch(/--hh-mono:\s*"DM Mono"/);
+    expect(css).toMatch(/^:not\(pre\)\s*>\s*code\s*{[^}]*font-family:\s*var\(--hh-mono\)[^}]*font-size:\s*calc\(1em - 1px\)[^}]*background:\s*var\(--hh-surface-2\)[^}]*border-radius:\s*4px/m);
+  });
+});

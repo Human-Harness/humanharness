@@ -115,12 +115,13 @@ describe("DocumentReader (§5.2)", () => {
     expect(again.props.onFull).toHaveBeenCalledWith(false);
   });
 
-  it("reading preferences: serif and large, always both fields", async () => {
+  it("reading preferences: serif, always both fields; a stored large size falls back to the one size", async () => {
     const { props } = setup({ prefs: { size: "large" } });
     fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Serif" }));
-    expect(props.onPrefs).toHaveBeenCalledWith({ font: "serif", size: "large" });
-    expect(document.querySelector(".hh-reader-doc.hh-reader-large")).not.toBeNull();
+    expect(props.onPrefs).toHaveBeenCalledWith({ font: "serif", size: "normal" });
+    expect(document.querySelector(".hh-reader-doc.hh-reader-large")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Large" })).toBeNull();
   });
 
   it("a .md link opens the linked document, resolved from this one", async () => {
@@ -193,8 +194,8 @@ describe("DocumentReader: untrusted targets and big documents", () => {
   it("applies a changed preference at once, even before the parent passes it back", async () => {
     setup();
     fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
-    fireEvent.click(screen.getByRole("button", { name: "Large" }));
-    expect(document.querySelector(".hh-reader-doc.hh-reader-large")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Serif" }));
+    expect(document.querySelector(".hh-reader-doc.hh-reader-serif")).not.toBeNull();
   });
 });
 

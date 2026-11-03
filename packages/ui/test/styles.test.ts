@@ -169,8 +169,8 @@ describe("start view in the chat column", () => {
 describe("flow layout (UI refresh spec §5.1)", () => {
   it("the side columns give way to the chat card, never grow against it", () => {
     expect(css).toMatch(/^\.hh-main\s*{[^}]*flex:\s*1 1 400px[^}]*min-width:\s*0/m);
-    expect(css).toMatch(/^\.hh-side\s*{[^}]*box-sizing:\s*border-box[^}]*flex:\s*0 4 280px[^}]*min-width:\s*200px/m);
-    expect(css).toMatch(/^\.hh-flow-side\s*{[^}]*flex:\s*0 4 290px[^}]*min-width:\s*220px/m);
+    expect(css).toMatch(/^\.hh-side\s*{[^}]*box-sizing:\s*border-box[^}]*flex:\s*0 4 var\(--hh-column-w\)[^}]*min-width:\s*220px[^}]*max-width:\s*320px/m);
+    expect(css).toMatch(/^\.hh-flow-side\s*{[^}]*flex:\s*0 4 var\(--hh-column-w\)[^}]*min-width:\s*220px[^}]*max-width:\s*320px/m);
   });
 
   it("in a setup step (slim) the chat card and the composer get no margins or shadow", () => {
@@ -217,5 +217,21 @@ describe("profile avatars (style guide §2 special uses)", () => {
     for (const c of ["green", "orange", "blue", "violet", "red"])
       expect(css).toMatch(new RegExp(`\\.hh-avatar\\[data-color="${c}"\\]\\s*{[^}]*background:\\s*var\\(--hh-t-${c}\\);[^}]*color:\\s*var\\(--hh-t-${c}-ink\\)`));
     expect(css).toMatch(/\.hh-avatar\[data-color="gray"\]\s*{[^}]*background:\s*var\(--hh-surface-2\);[^}]*color:\s*var\(--hh-ink\)/);
+  });
+});
+
+describe("widths (style guide §2 Widths)", () => {
+  it("defines the closed width tokens", () => {
+    expect(css).toMatch(/:root\s*{[^}]*--hh-rail-w:\s*64px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-column-w:\s*280px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-split-w:\s*55%/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-read-w:\s*680px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-dialog-w:\s*440px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-dialog-w-search:\s*640px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-popover-w:\s*320px/);
+    expect(css).toMatch(/:root\s*{[^}]*--hh-index-w:\s*200px/);
+  });
+  it("the rail uses its token", () => {
+    expect(css).toMatch(/^\.hh-rail\s*{[^}]*width:\s*var\(--hh-rail-w\)/m);
   });
 });

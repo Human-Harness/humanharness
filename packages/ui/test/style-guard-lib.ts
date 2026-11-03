@@ -125,7 +125,16 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
   const declare = (text: string) => {
     const idx = text.indexOf(":");
     const top = stack[stack.length - 1];
-    if (idx < 0 || !top || top.at) return;
+    if (idx < 0 || !top) return;
+    if (top.at) {
+      // A keyframe step holds animated values, so only its colors are checked; they are reported under the
+      // animation's name because step names (`from`, `50%`) would collide between animations.
+      const parent = stack[stack.length - 2];
+      if (top.keyframes && !top.selector.startsWith("@") && parent) {
+        for (const m of text.slice(idx + 1).matchAll(COLOR)) out.push(line(file, "color", parent.selector, m[0]));
+      }
+      return;
+    }
     const prop = text.slice(0, idx).trim().toLowerCase();
     const value = text.slice(idx + 1).replace(/!\s*important/i, "").trim();
     const inToken = !!opts.tokenFile && selectorParts(top.selector).every((s) => TOKEN_BLOCK.test(s));

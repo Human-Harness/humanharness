@@ -73,7 +73,11 @@ describe("style guard scanner details", () => {
       "@font-face { font-family: x; src: url(x.woff2); }",
       ".b { border-radius: 8px 6px / 12px; }",
     ].join("\n");
-    expect(scanCss("a.css", css, {})).toEqual(["a.css|weight|.a|700", "a.css|space|.a|10px", "a.css|radius|.b|6px"]);
+    expect(scanCss("a.css", css, {})).toEqual(["a.css|weight|.a|700", "a.css|space|.a|10px", "a.css|color|@keyframes k|#fff", "a.css|radius|.b|6px"]);
+  });
+  it("flags a literal color in a keyframe step, even in a token file, but not var()", () => {
+    const css = "@keyframes pulse { from { background: var(--hh-accent); } to { background: rgba(0, 0, 0, .5); box-shadow: 0 0 0 7px #abc; } }";
+    expect(scanCss("t.css", css, { tokenFile: true })).toEqual(["t.css|color|@keyframes pulse|rgba(0, 0, 0, .5)", "t.css|color|@keyframes pulse|#abc"]);
   });
   it("treats only the code element as inline code", () => {
     expect(scanCss("a.css", ".hh-code { border-radius: 4px; }", {})).toEqual(["a.css|radius|.hh-code|4px"]);

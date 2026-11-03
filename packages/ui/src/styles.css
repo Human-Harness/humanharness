@@ -219,8 +219,8 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-setup-actions > :first-child { margin-right: auto; }
 .hh-setup-reassure { margin: 0; }
 /* The engine step: the onboarding block as a card. */
-.hh-engine-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--hh-muted); }
-.hh-engine-status[data-tone="ok"] { color: var(--hh-t-green-ink); }
+.hh-engine-radio-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--hh-muted); }
+.hh-engine-radio-status[data-tone="ok"] { color: var(--hh-t-green-ink); }
 .hh-engine-more { margin: 0; }
 .hh-setup .hh-onboarding { padding: 18px 20px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
 .hh-setup-done { width: 100%; justify-items: center; text-align: center; gap: 14px; }

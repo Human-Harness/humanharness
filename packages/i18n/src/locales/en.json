@@ -961,7 +961,6 @@
     "prefsButton": "reading preferences",
     "sans": "Sans",
     "serif": "Serif",
-    "normal": "Normal",
     "changed": "Changed {{date}}",
     "minutes_one": "{{count}} min read",
     "minutes_other": "{{count}} min read",

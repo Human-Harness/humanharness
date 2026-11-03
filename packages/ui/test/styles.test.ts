@@ -197,10 +197,20 @@ describe("the scope settings dialog", () => {
   });
 });
 
+describe("measure tokens", () => {
+  it("defines the measure tokens of the closed scales (style guide §1, §2)", () => {
+    const root = css.slice(0, css.indexOf("prefers-color-scheme: dark"));
+    for (const [name, v] of [["h-counter", 18], ["h-tag", 24], ["h-compact", 30], ["h-normal", 40], ["h-row", 52], ["h-tile", 104],
+      ["r-compact", 8], ["r-control", 12], ["r-card", 14], ["r-dialog", 18],
+      ["s-1", 4], ["s-2", 8], ["s-3", 12], ["s-4", 16], ["s-5", 24], ["s-6", 32]] as const)
+      expect(root).toMatch(new RegExp(`--hh-${name}:\\s*${v}px`));
+  });
+});
+
 describe("control size tokens and top bar overrides", () => {
   it("defines the 40px / 12px control tokens at root and shrinks them to 30px / 8px in the top bar", () => {
-    expect(css).toMatch(/:root\s*\{[^}]*--hh-control-h:\s*40px;[^}]*--hh-control-r:\s*12px/);
-    expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*30px;[^}]*--hh-control-r:\s*8px/);
+    expect(css).toMatch(/:root\s*\{[^}]*--hh-control-h:\s*var\(--hh-h-normal\);[^}]*--hh-control-r:\s*var\(--hh-r-control\)/);
+    expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*var\(--hh-h-compact\);[^}]*--hh-control-r:\s*var\(--hh-r-compact\)/);
   });
 
   it("has rules for the top bar icon button and the language row label", () => {

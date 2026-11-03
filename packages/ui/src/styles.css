@@ -36,6 +36,23 @@
   --hh-dialog-w-search: 640px;
   --hh-popover-w: 320px;
   --hh-index-w: 200px;
+  /* Heights, radii and spacing (style guide §1, §2): one token per scale value, a harness may override them. */
+  --hh-h-counter: 18px;
+  --hh-h-tag: 24px;
+  --hh-h-compact: 30px;
+  --hh-h-normal: 40px;
+  --hh-h-row: 52px;
+  --hh-h-tile: 104px;
+  --hh-r-compact: 8px;
+  --hh-r-control: 12px;
+  --hh-r-card: 14px;
+  --hh-r-dialog: 18px;
+  --hh-s-1: 4px;
+  --hh-s-2: 8px;
+  --hh-s-3: 12px;
+  --hh-s-4: 16px;
+  --hh-s-5: 24px;
+  --hh-s-6: 32px;
   --hh-font: "DM Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: var(--hh-font);
   --hh-mono: "DM Mono", ui-monospace, monospace; /* code and keys only */
@@ -87,7 +104,7 @@ code { font-family: var(--hh-mono); font-size: 12px; overflow-wrap: anywhere; }
 a { color: var(--hh-ink); }
 /* Soft-cards controls (UI refresh spec §3.2). Compact controls below override the height. */
 /* One height and one corner for every button, field and select, so no control is taller or rounder than its neighbour. */
-:root { --hh-control-h: 40px; --hh-control-r: 12px; }
+:root { --hh-control-h: var(--hh-h-normal); --hh-control-r: var(--hh-r-control); }
 button, .hh-button { font: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: var(--hh-control-h); padding: 0 14px; border-radius: var(--hh-control-r); border: 1px solid var(--hh-line); background: var(--hh-surface); color: var(--hh-ink); text-decoration: none; cursor: default; }
 button:hover:not(:disabled), .hh-button:hover { border-color: var(--hh-line-strong); }
 button:disabled { opacity: 0.5; }
@@ -123,7 +140,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 /* One top-bar height for every screen, as short as a native toolbar; the traffic lights (y 13) sit centred in it.
    Controls inside it are a size smaller so they fit with room above and below. */
 :root { --hh-topbar-h: 40px; }
-.hh-topbar { --hh-control-h: 30px; --hh-control-r: 8px; }
+.hh-topbar { --hh-control-h: var(--hh-h-compact); --hh-control-r: var(--hh-r-compact); }
 .hh-topbar { height: var(--hh-topbar-h); box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 90px; background: var(--hh-rail); border-bottom: 1px solid var(--hh-line); -webkit-app-region: drag; user-select: none; }
 .hh-topbar button, .hh-topbar a, .hh-topbar input, .hh-topbar select { -webkit-app-region: no-drag; }
 .hh-title { margin: 0; line-height: 1; font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

@@ -1464,6 +1464,11 @@ Marco answered the "Questions for Marco" of PR #116 (P1) and PR #117 (P2) on a r
 | P2.5 | Widths reported as `height` | B: own `width` kind. | `feat/sg-answers` |
 | P2.6 | px inside calc/min/max/clamp, rem, font shorthand | B: the guard checks them. | `feat/sg-answers` |
 | P2.7 | Duplicate offender sites | B: the list counts occurrences. | `feat/sg-answers` |
+| G1 | px offsets inside calc (PR #118) | A: the guard keeps flagging every px inside calc; each case is fixed or accepted in its part. | kept |
+| G2 | rem in height/width (PR #118) | A: a height in rem must still be one of the six heights. | kept |
+| I1 | Drawing of `clock` (today's is almost the `jobs` icon) | B: alarm clock, `<circle cx="12" cy="13" r="7"/><path d="M12 10v3l2 1.5"/><path d="M4.5 6.5 7 4M19.5 6.5 17 4"/>`. | Part 3 |
+| I2 | Drawing of `remove` | C: trash can, `<path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/>`. | Part 3 |
+| I3 | Drawing of `daily-summary` | C: sunrise, `<path d="M3 18h18"/><path d="M7 18a5 5 0 0 1 10 0"/><path d="M12 6v3M5.6 11.6 7 13M18.4 11.6 17 13"/>`. | Part 3 |
 
 ## Coverage
 

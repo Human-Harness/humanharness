@@ -107,6 +107,8 @@ An engine is a definition plus an adapter (`packages/engines/src/contract.ts`, `
 
 Mock mode does not go through the registry. `HH_TEST_ENGINES` replaces an engine's command with a fake CLI that speaks the same protocol (`packages/fake-agent`), so the engine's own adapter and transport still run.
 
+**Prefer the protocol over per-engine knowledge.** What an engine reports through its protocol (ACP, or Claude's stream-json) is the source. An engine quirk we work around (a field it leaves out, an output we parse) is debt. Each one goes in that engine's folder, with a comment that names the engine version it was seen on and the date. When the engine reports it properly, the workaround is removed. (herdr dropped its per-agent screen detection for a protocol for this reason; comparison 2026-11-03.)
+
 ## Compaction detection
 
 The adapters report compactions; the shell only reacts (`docs/architecture/replaceable-parts.md`, Part 4). `ContextDrop` (`packages/engines/src/context-drop.ts`, `COMPACTED_DROP` 0.5) infers one when the context in use falls below half of the previous reading. The Claude transport emits `{ type: "compaction" }` right before the `context` event; the ACP adapter runs the drop on a `usage_update`'s `used` through a per-turn dedup, so a turn never gets two compaction events, reported or inferred. The detector resets on a new session and on `endSession`, and is seeded with `CommonOptions.lastContextUsed` / `SlotOptions.lastContextUsed` when a stored session resumes (board mode passes the lane's saved `context.used`).

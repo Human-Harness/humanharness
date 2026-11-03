@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SIDEKICK,
+  SIDEKICK_MARKS,
+  sidekickMark,
   RESERVED_COLLECTIONS,
   SIDEKICK_COLLECTION,
   SIDEKICK_MIN_WORDS,
@@ -120,7 +122,7 @@ describe("several sidekicks (spec §2a)", () => {
   });
 
   it("presets: known purposes, custom with text and known moments, personality within 1,500", () => {
-    const ok = { name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" as const }, { id: "custom" as const, text: "Watch the terminal.", moments: ["place:terminal"] }] };
+    const ok = { name: "Guard", mark: "guardian" as const, personality: "Calm.", purposes: [{ id: "process-guard" as const }, { id: "custom" as const, text: "Watch the terminal.", moments: ["place:terminal"] }] };
     const h = defineHarness({ ...minimal, sidekick: { places: [{ id: "terminal", label: "Terminal", description: "x" }], presets: [ok] } });
     expect(h.sidekick?.presets?.[0].name).toBe("Guard");
     expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, purposes: [{ id: "wizard" }] }] } as never })).toThrow();
@@ -129,8 +131,8 @@ describe("several sidekicks (spec §2a)", () => {
   });
 
   it("presets: names unique (adopting one finds it by name)", () => {
-    const p = { name: "Guard", mark: "x", personality: "", purposes: [{ id: "focus" as const }] };
-    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, mark: "y" }] } })).toThrow(/unique/);
+    const p = { name: "Guard", mark: "focus" as const, personality: "", purposes: [{ id: "focus" as const }] };
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, mark: "coach" as const }] } })).toThrow(/unique/);
     expect(defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, name: "Guard 2" }] } }).sidekick?.presets).toHaveLength(2);
   });
 
@@ -145,8 +147,8 @@ describe("several sidekicks (spec §2a)", () => {
   it("record types: learned, sidekick and scope, each with its own fields", () => {
     expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "Takes scope fixes.", level: "you", source: "learned", updatedAt: "2026-10-27T10:00:00Z" }).success).toBe(true);
     expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "x", level: "team", source: "learned", updatedAt: "x" }).success).toBe(false);
-    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], order: 1 }).success).toBe(true);
-    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [], order: 1 }).success).toBe(false);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [{ id: "mentor" }], order: 1 }).success).toBe(true);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "mentor" as const, personality: "Direct.", purposes: [], order: 1 }).success).toBe(false);
     expect(schema().safeParse({ id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false, purposeText: "No spec without AC." }).success).toBe(true);
     expect(schema().safeParse({ id: "settings", type: "settings", afterReply: false, headsUps: true, muted: { sidekick: ["vague"] }, learnedAt: "2026-10-27T10:00:00Z", lastDaily: "2026-10-27" }).success).toBe(true);
   });
@@ -161,9 +163,33 @@ describe("several sidekicks (spec §2a)", () => {
   it("record types: missing fields and a misplaced source are refused", () => {
     expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "x", level: "you", updatedAt: "2026-10-27T10:00:00Z" }).success).toBe(false);
     expect(schema().safeParse({ id: "l-1a2b3c4d", type: "learned", text: "x", level: "you", source: { kind: "paste" }, updatedAt: "2026-10-27T10:00:00Z" }).success).toBe(false);
-    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" }], order: 1, source: "person" }).success).toBe(false);
-    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" }], order: 1, source: { kind: "paste" } }).success).toBe(true);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" }], order: 1, source: "person" }).success).toBe(false);
+    expect(schema().safeParse({ id: "rulo", type: "sidekick", name: "Rulo", mark: "mentor" as const, personality: "", purposes: [{ id: "mentor" }], order: 1, source: { kind: "paste" } }).success).toBe(true);
     expect(schema().safeParse({ id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo" }).success).toBe(false);
     expect(schema().safeParse({ id: "rulo", type: "settings" }).success).toBe(false);
+  });
+});
+
+describe("sidekick marks are icon names (style guide §4, row 44)", () => {
+  const schema = () => sidekickCollection().schema;
+  const rec = (mark: string) => ({ id: "rulo", type: "sidekick", name: "Rulo", mark, personality: "", purposes: [{ id: "mentor" }], order: 1 });
+  it("the record schema reads an emoji or a token as coach (stored data stays loadable) and accepts each icon name", () => {
+    expect(schema().parse(rec("🦊")).mark).toBe("coach");
+    expect(schema().parse(rec("--hh-accent")).mark).toBe("coach");
+    expect(schema().parse(rec("spark")).mark).toBe("coach");
+    for (const m of SIDEKICK_MARKS) expect(schema().safeParse(rec(m)).success, m).toBe(true);
+  });
+  it("a preset's mark must be an icon name", () => {
+    const p = { name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "focus" as const }] };
+    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p] } } as never)).toThrow();
+  });
+  it("the default sidekick's mark is coach", () => {
+    expect(DEFAULT_SIDEKICK.mark).toBe("coach");
+  });
+  it("sidekickMark falls back to coach for anything that is not an icon name", () => {
+    expect(sidekickMark("guardian")).toBe("guardian");
+    expect(sidekickMark("🦊")).toBe("coach");
+    expect(sidekickMark("spark")).toBe("coach");
+    expect(sidekickMark(undefined)).toBe("coach");
   });
 });

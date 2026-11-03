@@ -159,7 +159,7 @@ describe("sidekick IPC: places", () => {
   function askWire(available = true) {
     const handlers = new Map<string, (...args: never[]) => unknown>();
     const calls: unknown[][] = [];
-    const ctl = { ask: async (place: unknown, content: unknown) => (calls.push([place, content]), { ok: true, text: "Busy port.", speaker: { id: "watch", name: "Watch", mark: "👀" } }) };
+    const ctl = { ask: async (place: unknown, content: unknown) => (calls.push([place, content]), { ok: true, text: "Busy port.", speaker: { id: "watch", name: "Watch", mark: "focus" } }) };
     registerSidekickIpc(
       (ch, fn) => void handlers.set(ch, fn),
       () => (available ? (ctl as never) : null),
@@ -170,7 +170,7 @@ describe("sidekick IPC: places", () => {
 
   it("hh:sidekickAsk passes a valid place and text through", async () => {
     const w = askWire();
-    expect(await w.call("hh:sidekickAsk", "terminal", "EADDRINUSE")).toEqual({ ok: true, text: "Busy port.", speaker: { id: "watch", name: "Watch", mark: "👀" } });
+    expect(await w.call("hh:sidekickAsk", "terminal", "EADDRINUSE")).toEqual({ ok: true, text: "Busy port.", speaker: { id: "watch", name: "Watch", mark: "focus" } });
     expect(await w.call("hh:sidekickAsk", "t", "x".repeat(4000))).toMatchObject({ ok: true });
     expect(w.calls).toEqual([["terminal", "EADDRINUSE"], ["t", "x".repeat(4000)]]);
   });
@@ -210,7 +210,7 @@ describe("sidekick IPC: presets", () => {
     );
     return (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
   }
-  const GUARD = { name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" }], adopted: false };
+  const GUARD = { name: "Guard", mark: "guardian", personality: "", purposes: [{ id: "process-guard" }], adopted: false };
 
   it("lists the presets ([] without a controller or on a failure); adopts a bounded name only", async () => {
     const calls: unknown[] = [];
@@ -229,7 +229,7 @@ describe("sidekick IPC: saveSidekick", () => {
     const handlers = new Map<string, (...args: never[]) => unknown>();
     const calls: unknown[][] = [];
     const ctl = {
-      saveSidekick: async (def: unknown, learned: unknown) => (calls.push([def, learned]), { id: "rulo", name: "Rulo", mark: "🦊" }),
+      saveSidekick: async (def: unknown, learned: unknown) => (calls.push([def, learned]), { id: "rulo", name: "Rulo", mark: "mentor" }),
       list: async () => Array.from({ length: count }, (_, i) => ({ id: `k${i}` })),
     };
     registerSidekickIpc(
@@ -238,11 +238,11 @@ describe("sidekick IPC: saveSidekick", () => {
     );
     return { call: (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args), calls };
   }
-  const DEF = { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" } };
+  const DEF = { name: "Rulo", mark: "mentor", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" } };
 
   it("passes a valid def (only a sidekick's fields) and bounded learned items", async () => {
     const w = saveWire();
-    expect(await w.call("hh:sidekickSave", { ...DEF, id: "rulo", tier: "light", defaultOn: false, order: 3, on: true, text: "x" }, [{ text: " Short answers. ", level: "you" }])).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
+    expect(await w.call("hh:sidekickSave", { ...DEF, id: "rulo", tier: "light", defaultOn: false, order: 3, on: true, text: "x" }, [{ text: " Short answers. ", level: "you" }])).toEqual({ id: "rulo", name: "Rulo", mark: "mentor" });
     await w.call("hh:sidekickSave", DEF);
     expect(w.calls).toEqual([
       [{ ...DEF, id: "rulo", tier: "light", defaultOn: false }, [{ text: "Short answers.", level: "you" }]],
@@ -283,7 +283,7 @@ describe("sidekick IPC: the list, remove and reorder (Settings › Sidekicks)", 
   it("passes valid requests through; the store's refusal comes back as its message", async () => {
     const calls: unknown[][] = [];
     const call = listWire({
-      list: async () => [{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }], order: 0 }],
+      list: async () => [{ id: "sidekick", name: "Sidekick", mark: "coach", personality: "", purposes: [{ id: "prompt-coach" }], order: 0 }],
       removeSidekick: async (id: string) => {
         calls.push(["remove", id]);
         if (id === "sidekick") throw new Error("Keep at least one sidekick");
@@ -319,7 +319,7 @@ describe("sidekick IPC: sidekicks in a scope (spec §2a.4)", () => {
     );
     return (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
   }
-  const ROW = { id: "rulo", name: "Rulo", mark: "🦊", on: true };
+  const ROW = { id: "rulo", name: "Rulo", mark: "mentor", on: true };
 
   it("passes valid requests through; the store's refusal comes back as its message", async () => {
     const calls: unknown[][] = [];

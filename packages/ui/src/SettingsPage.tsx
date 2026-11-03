@@ -2,7 +2,8 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEf
 import { useTranslation } from "react-i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk/parallel";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { EngineIcon, SaveIcon, Segmented, Tag, TopBar } from "./chrome";
+import { Segmented, Tag, TopBar } from "./chrome";
+import { Icon } from "./guide/icons";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
 import { EngineTab } from "./EngineTab";
@@ -183,7 +184,7 @@ export function SettingsPage({
       <TopBar
         trailing={
           <button ref={doneRef} className="hh-topbar-icon hh-settings-done" aria-label={t("settings.done")} title={t("settings.done")} disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
-            <SaveIcon />
+            <Icon name="back" size={18} />
           </button>
         }
       />
@@ -535,7 +536,7 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
   const name = state.harness.name;
   return (
     <div className="hh-tab hh-not-configured">
-      <EngineIcon size={40} />
+      <Icon name="engine" size={32} />
       <h2>{t("setupFlow.notConfiguredTitle")}</h2>
       <p>{t("setupFlow.notConfiguredText")}</p>
       {/* No step: the click event must not arrive as one (the flow would open that step alone). */}

@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Language, canonicalLanguage, offeredLanguage } from "@humanharness/harness-sdk/language";
 import { BackupNotice, type FolderMove } from "./BackupNotice";
-import { AppFooter, CheckIcon, EngineIcon, HHLogo, SettingsGear, TopBar } from "./chrome";
+import { AppFooter, HHLogo, SettingsGear, TopBar } from "./chrome";
+import { Icon } from "./guide/icons";
 import {
   type AppConfig,
   type AppState,
@@ -25,15 +26,6 @@ import type { SearchIntent } from "./search/intent";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
-
-/** The Start button's arrow (UI refresh spec §5.2). */
-function ArrowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 12h14M13 6l6 6-6 6" />
-    </svg>
-  );
-}
 
 /** English and its variants (en-GB) show the bundled English: nothing to offer (D0). */
 const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
@@ -244,7 +236,7 @@ export function Home({
             <h2 id={missingId}>{t("home.missing.title")}</h2>
             <ol>
               <li>
-                <span className={state.config.folder ? "hh-step-mark done" : "hh-step-mark"}>{state.config.folder ? <CheckIcon /> : 1}</span>
+                <span className={state.config.folder ? "hh-step-mark done" : "hh-step-mark"}>{state.config.folder ? <Icon name="check" size={14} /> : 1}</span>
                 {t("home.missing.folder")}
               </li>
               <li>
@@ -304,7 +296,7 @@ export function Home({
         {ready || checking ? (
           <button ref={startRef} className="hh-primary hh-start" disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
-            <ArrowIcon />
+            <Icon name="next" size={18} />
           </button>
         ) : (
           <button
@@ -312,13 +304,13 @@ export function Home({
             onClick={() => (!missingStep && needsProfile && onAddProfile ? onAddProfile() : onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined))}
           >
             {t("setupFlow.configure", { name })}
-            <ArrowIcon />
+            <Icon name="next" size={18} />
           </button>
         )}
         {engine ? (
           <>
             <button className="hh-pill" onClick={onEngine} aria-describedby={engineHintId}>
-              {engine.logo ? <img src={engine.logo} alt="" /> : <EngineIcon size={18} />}
+              {engine.logo ? <img src={engine.logo} alt="" /> : <Icon name="engine" size={18} />}
               <span>{engine.name}</span>
               <span className="hh-sr-only">, </span>
               <span className={connected ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />

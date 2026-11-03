@@ -241,6 +241,11 @@ describe("HistoryPanel", () => {
     await open({ client });
     expect(await screen.findByText("Nothing to go back to yet")).toBeTruthy();
     expect(screen.getByText("Each time the AI changes your files, a point shows here so you can undo it.")).toBeTruthy();
+    // The clock is 14 and sits inline before the text, not a 32 icon above it.
+    const empty = document.querySelector(".hh-history-empty")!;
+    expect(empty.querySelector("svg")?.getAttribute("width")).toBe("14");
+    expect(empty.querySelector("svg")?.nextElementSibling?.textContent).toBe("Nothing to go back to yet");
+    expect(empty.querySelectorAll("svg")).toHaveLength(1);
   });
 
   it("opens a row on click and shows its entries in plain language", async () => {

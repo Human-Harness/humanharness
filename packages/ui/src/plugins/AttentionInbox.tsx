@@ -1,6 +1,6 @@
 import { type FocusEvent, type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BellIcon } from "../chrome";
+import { Icon } from "../guide/icons";
 import type { AttentionItemView, AttentionView, HarnessClient } from "../client";
 import { shownLanguage } from "../language";
 
@@ -147,7 +147,7 @@ export function AttentionInbox({
         aria-describedby={view.badge > 0 ? `${id}-count` : undefined}
         onClick={() => (open ? close() : setOpen(true))}
       >
-        <BellIcon />
+        <Icon name="bell" size={18} />
         {view.badge > 0 && (
           <>
             <span className="hh-pl-badge" aria-hidden="true">

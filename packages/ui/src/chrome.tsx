@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Icon, type IconName } from "./guide/icons";
 import type { RailEntry } from "./shell-nav";
 
 export function MockBadge() {
@@ -143,26 +144,6 @@ export function Tag({ tone, children, id, title }: { tone: TagTone; children: Re
   );
 }
 
-/** Settings: a line gear (path from Lucide's "settings" icon, ISC license). */
-export function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-/** An engine without a logo (the test engine): a generic screen. */
-export function EngineIcon({ size = 24 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="12" rx="2" />
-      <path d="M8 20h8M12 16v4" />
-    </svg>
-  );
-}
-
 /**
  * The Human Harness H (beveled, charcoal on paper): a vector stand-in for `hh.logo.jpeg` until the
  * designer's file arrives. It takes the ink colour, so it also works in dark mode.
@@ -192,126 +173,19 @@ export function SettingsGear({ onClick }: { onClick: () => void }) {
   const { t } = useTranslation();
   return (
     <button type="button" className="hh-topbar-icon" aria-label={t("home.settings")} title={t("home.settings")} onClick={onClick}>
-      <GearIcon />
+      <Icon name="settings" size={18} />
     </button>
   );
 }
 
-/** A floppy disk: Settings' Done (changes are already saved; this closes the page). */
-export function SaveIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 3h11l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 1-2z" />
-      <path d="M8 3v5h7V3" />
-      <rect x="7" y="13" width="10" height="6" rx="1" />
-    </svg>
-  );
-}
-
-/** A done step or topic. */
-export function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-      <path d="M5 12l5 5 9-10" />
-    </svg>
-  );
-}
-
-/** A read-only folder. */
-export function LockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <rect x="5" y="11" width="14" height="9" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
-/** A saved note. */
-export function NoteIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M5 4h11l3 3v13H5z" />
-    </svg>
-  );
-}
-
-/** Closes a panel. */
-export function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <path d="M6 6l12 12M18 6L6 18" />
-    </svg>
-  );
-}
-
-/** A row that opens (points down when open). */
-export function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"} />
-    </svg>
-  );
-}
-
-/** Undoing: going back. */
-export function UndoIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 5L4 10l5 5" />
-      <path d="M4 10h11a5 5 0 0 1 0 10h-4" />
-    </svg>
-  );
-}
-
-/** Time: the history, or waiting for the AI. */
-export function ClockIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-/** Something that can't be taken back. */
-export function WarnIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l9.5 17h-19z" />
-      <path d="M12 10v4M12 17.5v.01" />
-    </svg>
-  );
-}
-
-/** The Attention inbox: a line bell (paths from Lucide's "bell" icon, ISC license). */
-export function BellIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10.27 21a2 2 0 0 0 3.46 0" />
-      <path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33" />
-    </svg>
-  );
-}
-
-/** The Inbox: a line tray, as the rail draws it. */
-export function InboxIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 13l2.5-7h11L20 13v6H4z" />
-      <path d="M4 13h5l1 2h4l1-2h5" />
-    </svg>
-  );
-}
-
-const RAIL_ICONS: Record<RailEntry, ReactNode> = {
-  home: <path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" />,
-  tasks: <><path d="M5 5h14v10H9l-4 4z" /><path d="M9 9h6" /></>,
-  inbox: <><path d="M4 13l2.5-7h11L20 13v6H4z" /><path d="M4 13h5l1 2h4l1-2h5" /></>,
-  jobs: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>,
-  notes: <><path d="M7 4h8l4 4v12H7z" /><path d="M10 12h6M10 16h4" /></>,
-  plugins: <path d="M13 3L5 13h6l-1 8 8-10h-6z" />,
-  settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></>,
+const RAIL_ICONS: Record<RailEntry, IconName> = {
+  home: "home",
+  tasks: "tasks",
+  inbox: "inbox",
+  jobs: "jobs",
+  notes: "files",
+  plugins: "plugins",
+  settings: "settings",
 };
 
 /** The icon rail (UI refresh spec §4.2): the screens of a harness. Settings is the top bar's gear, not a rail entry. */
@@ -319,9 +193,7 @@ export function Rail({ entries, current, onPick }: { entries: RailEntry[]; curre
   const { t } = useTranslation();
   const button = (e: RailEntry) => (
     <button key={e} className="hh-icon-button" aria-label={t(`rail.${e}`)} title={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        {RAIL_ICONS[e]}
-      </svg>
+      <Icon name={RAIL_ICONS[e]} size={18} />
     </button>
   );
   return (

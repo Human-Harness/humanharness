@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { EngineIcon, Tag } from "./chrome";
+import { Tag } from "./chrome";
+import { Icon } from "./guide/icons";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
 import { EngineOnboarding, LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 import { SectionHead, SettingsCard } from "./settings-parts";
@@ -144,10 +145,10 @@ export function EngineTab({
               >
                 {selected === e.id && (
                   <span className="hh-check" aria-hidden="true">
-                    ✓
+                    <Icon name="check" size={14} />
                   </span>
                 )}
-                {e.logo ? <img src={e.logo} alt="" /> : <EngineIcon size={40} />}
+                {e.logo ? <img src={e.logo} alt="" /> : <Icon name="engine" size={32} />}
                 <strong>{e.name}</strong>
                 <span className="hh-caption">{label}</span>
                 {e.id === current && <span className="hh-caption">{t("engine.current")}</span>}
@@ -334,7 +335,7 @@ function SetupTiles({
               }}
             >
               <span className="hh-engine-radio-logo" aria-hidden="true">
-                {e.logo ? <img src={e.logo} alt="" /> : <EngineIcon size={24} />}
+                {e.logo ? <img src={e.logo} alt="" /> : <Icon name="engine" size={18} />}
               </span>
               <span className="hh-engine-radio-text">
                 <strong>{e.name}</strong>

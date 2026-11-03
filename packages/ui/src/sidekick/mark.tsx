@@ -1,32 +1,16 @@
-/** A colour token name (`--hh-accent`): the only marks that go into a style. */
-const TOKEN = /^--hh-[a-z0-9-]+$/;
+import { ICON_NAMES, type IconName, Icon } from "../guide/icons";
+
+/** A stored or received mark as an icon name: anything that is not one (an old emoji, `"spark"`) reads as `coach`. */
+export const markIcon = (mark: string | undefined): IconName => ((ICON_NAMES as readonly string[]).includes(mark ?? "") ? (mark as IconName) : "coach");
 
 /**
- * A sidekick's mark: `"spark"` (or none) is the core's small speech bubble with a spark, colour from the token, grey
- * when off; a `--hh-*` token name is a dot in that colour; any other mark (an emoji) is shown as text.
+ * A sidekick's mark (style guide §4, row 44): a 24 circle holding a 14 icon of the set, grey when the sidekick is off.
+ * It takes only an icon name; `markIcon` turns a stored or received string into one.
  */
-export function SidekickMark({ off, size = 20, mark = "spark" }: { off?: boolean; size?: number; mark?: string }) {
-  if (TOKEN.test(mark)) {
-    const d = Math.round(size * 0.6);
-    return (
-      <span
-        className={`hh-sk-mark hh-sk-mark-dot${off ? " hh-sk-mark-off" : ""}`}
-        style={{ width: d, height: d, background: off ? "var(--hh-muted)" : `var(${mark})` }}
-        aria-hidden="true"
-      />
-    );
-  }
-  if (mark !== "spark") {
-    return (
-      <span className={`hh-sk-mark hh-sk-mark-text${off ? " hh-sk-mark-off" : ""}`} style={{ fontSize: size * 0.8 }} aria-hidden="true">
-        {mark}
-      </span>
-    );
-  }
+export function SidekickMark({ off, icon = "coach" }: { off?: boolean; icon?: IconName }) {
   return (
-    <svg className={`hh-sk-mark${off ? " hh-sk-mark-off" : ""}`} width={size} height={size} viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path d="M4 4h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M10 6.5l.9 1.9 1.9.9-1.9.9-.9 1.9-.9-1.9-1.9-.9 1.9-.9z" fill="currentColor" />
-    </svg>
+    <span className={`hh-sk-mark${off ? " hh-sk-mark-off" : ""}`} aria-hidden="true">
+      <Icon name={icon} size={14} />
+    </span>
   );
 }

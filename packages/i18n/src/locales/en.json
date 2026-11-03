@@ -982,6 +982,7 @@
     "table": "Table",
     "footnotes": "Footnotes",
     "backToText": "Back to the text",
+    "footnoteBack": "volver",
     "opensInBrowser": "Opens in the browser",
     "footnoteRef": "Footnote {{n}}",
     "copy": "Copy",

@@ -7,7 +7,7 @@ import { renderIn } from "./render";
 import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
-const GUARD = { name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false };
+const GUARD = { name: "Guard", mark: "guardian", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false };
 
 it("offers the presets once; Add adopts; Not now marks them offered", async () => {
   const c = new FakeClient({ language: "en" });
@@ -39,13 +39,13 @@ it("D0: no presets, or all adopted → nothing shown", async () => {
   expect(again.container.textContent).toBe("");
 });
 
-it("the mark shows as text unless it names the core's spark", async () => {
+it("each preset's mark is its icon; one that is not an icon name reads as coach", async () => {
   const c = new FakeClient({ language: "en" });
-  c.sidekickPresets = [GUARD, { ...GUARD, name: "Spark", mark: "spark" }];
+  c.sidekickPresets = [GUARD, { ...GUARD, name: "Spark", mark: "🦊" }];
   const { container } = await renderIn("en", <PresetOffer client={c} />);
   await screen.findByRole("button", { name: "Add Spark" });
-  expect(container.textContent).toContain("🛡️");
-  expect(container.querySelectorAll("svg.hh-sk-mark")).toHaveLength(1);
+  expect(container.querySelectorAll(".hh-sk-mark svg.hh-icon-guardian")).toHaveLength(1);
+  expect(container.querySelectorAll(".hh-sk-mark svg.hh-icon-coach")).toHaveLength(1);
 });
 
 it("a harness without presets is asked once, not on every mount", async () => {

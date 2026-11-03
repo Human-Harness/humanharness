@@ -24,7 +24,7 @@ export default defineHarness({
   path: ["report"],
   sidekick: {
     default: "off",
-    presets: [{ name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
+    presets: [{ name: "Guard", mark: "guardian", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
   },
   author: "Human Harness tests",
 });

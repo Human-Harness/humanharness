@@ -35,6 +35,22 @@ describe("History", () => {
     expect(fs.existsSync(path.join(gitdir, "HEAD"))).toBe(true);
   });
 
+  it("starts the status walk again when a file in an ignored folder vanishes under it", async () => {
+    write("a.md", "1");
+    const real = git.statusMatrix;
+    let calls = 0;
+    const spy = vi.spyOn(git, "statusMatrix").mockImplementation(async (opts) => {
+      if (calls++ === 0) throw new Error("ENOENT: no such file or directory, lstat '.harness/tasks.json.x.tmp'");
+      return real(opts);
+    });
+    try {
+      expect(await history.save("first")).not.toBeNull();
+      expect(calls).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("commits changes and skips empty saves", async () => {
     write("a.md", "1");
     const sha = await history.save("first");

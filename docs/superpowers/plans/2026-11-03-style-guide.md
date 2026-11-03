@@ -640,6 +640,8 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
   - Link placement (§3 Link: "Only inside running text, never as a standalone action"): source scan — every `kind="link"` use in `packages/ui/src` is a child of a text element (`p`, `li`, or an i18n `Trans` sentence); none is a direct child of a bar, card actions or a form footer.
   - Danger (§3 Danger: "Always asks for confirmation"): `kind="danger"` requires an `onConfirm` handler instead of `onClick` (TS error test via `// @ts-expect-error`); the first click never calls it. The confirmation itself (InlineConfirm or Dialog) is wired in Task 31, which adds the case "first click shows the confirmation, `onConfirm` runs only after Confirm".
   - `<IconButton icon="search" label="…" />` is square (width = height), has `aria-label` and `title` equal to the label (tooltip, §3 Icon), icon 18.
+  - I13 (Part 3 answer): the PluginDetail back becomes a quiet `Button` with the `back` icon at 18, built in this task.
+  - I8 (Part 3 answer): the Home Start button keeps `next` 18.
 - [ ] **Steps 2–6** per the shape. Migrate: `.hh-cta`, `.hh-primary` → primary; `.hh-pill` used as an action (Historial, Restaurar, engine on Inicio as a button) → compact secondary (row 9); `.hh-link` used as an action (Ver todo, Editar, plugin Back, Saltar) → quiet (rows 80); `.hh-tk-cancel` → compact secondary (§3 Today's buttons, now "Compact secondary"); `a.hh-button` (Soporte, Ver planes in `SettingsPage.tsx`, `UsageTab.tsx`) → secondary `href`; `.hh-icon-button` and `.hh-topbar-icon` → `IconButton`. `.hh-pill` that shows a state (context meter, Sidekick) waits for Chip (Part 6) and the top bar (Part 8). Update `chat-look.test.tsx`, `task-header.test.tsx`, `models-tab.test.tsx`, `jobs-ui.test.tsx`, `inbox.test.tsx`, `settings.test.tsx`, `usage-tab.test.tsx`, `styles.test.ts` (`draws the CTA's focus ring` and `soft-cards controls` now name `.hh-btn[data-kind="primary"]`).
 
 ### Task 17: Segmented (30, radius 8) replaces button groups
@@ -1464,6 +1466,32 @@ Marco answered the "Questions for Marco" of PR #116 (P1) and PR #117 (P2) on a r
 | P2.5 | Widths reported as `height` | B: own `width` kind. | `feat/sg-answers` |
 | P2.6 | px inside calc/min/max/clamp, rem, font shorthand | B: the guard checks them. | `feat/sg-answers` |
 | P2.7 | Duplicate offender sites | B: the list counts occurrences. | `feat/sg-answers` |
+| G1 | px offsets inside calc (PR #118) | A: the guard keeps flagging every px inside calc; each case is fixed or accepted in its part. | kept |
+| G2 | rem in height/width (PR #118) | A: a height in rem must still be one of the six heights. | kept |
+| I1 | Drawing of `clock` (today's is almost the `jobs` icon) | B: alarm clock, `<circle cx="12" cy="13" r="7"/><path d="M12 10v3l2 1.5"/><path d="M4.5 6.5 7 4M19.5 6.5 17 4"/>`. | Part 3 |
+| I2 | Drawing of `remove` | C: trash can, `<path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/>`. | Part 3 |
+| I3 | Drawing of `daily-summary` | C: sunrise, `<path d="M3 18h18"/><path d="M7 18a5 5 0 0 1 10 0"/><path d="M12 6v3M5.6 11.6 7 13M18.4 11.6 17 13"/>`. | Part 3 |
+
+## Decided after Part 3 (2026-11-03)
+
+Marco answered the "Questions for Marco" of Part 3 (icons). Applied in `feat/sg-icons`.
+
+| id | answer | meaning |
+|---|---|---|
+| I4 | B | Engine without logo: `engine` 18 in the small tile in EngineTab (was 24); 32 in the NotConfigured / empty view. |
+| I5 | B | History empty state: `clock` 14 inline before the text, not a 32 icon above it. |
+| I6 | A | Inbox pill (parallel/Inbox) keeps `inbox` 18. An accepted exception to §4's "Bandeja only in rail and its empty state". |
+| I7 | A | "Working…" loader is `loading` 14. |
+| I8 | A | Home Start button keeps `next` 18 (Task 16 must keep it). |
+| I9 | A | The FlowSide context ring stays an svg gauge (allowed list). |
+| I10 | B | Setup done-step mark: `check` 18 (was forced to 24 by `.hh-setup-done-mark svg`). |
+| I11 | B | `remove` is 14 in rows: MaterialPanel and InputForm. |
+| I12 | B | The footnote back-link's accessible name equals its visible text, "volver". |
+| I13 | B | The PluginDetail back becomes a quiet Button with `back` 18. **Done in Part 4 (Buttons)**; see Task 16. |
+| I14 | A | Stored custom sidekick marks that are not icon names read as `coach`. |
+| I15 | B | The sidekick editor picks the mark from a grid of icons, not a select by name. |
+| I16 | A | The mark circle: surface fill plus a line border. |
+| I17 | A | Import: the AI picks an icon name; unknown → `coach`. |
 
 ## Coverage
 

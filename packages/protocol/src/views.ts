@@ -1102,11 +1102,11 @@ export type { BlockAnswer, ChoiceOption, InputField, InputIssue, InputSpec, Resp
 
 // ── Sidekick (sidekick spec; plan 2026-10-27 part 1) ──
 
-/** The sidekick that speaks. Part 1's one: `{ id: "sidekick", name: "Sidekick", mark: "spark" }`. */
+/** The sidekick that speaks. Part 1's one: `{ id: "sidekick", name: "Sidekick", mark: "coach" }`. */
 export interface SidekickInfo {
   id: string;
   name: string;
-  /** Its mark: "spark" names the core's SVG mark; else a short text (an emoji). */
+  /** Its mark: an icon name of the set (style guide §4); anything else reads as `coach`. */
   mark: string;
 }
 

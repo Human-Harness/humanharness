@@ -30,7 +30,7 @@ const CARD: SidekickCard = {
 function client(withSidekick = true) {
   const c = new FakeClient(ready);
   if (withSidekick) {
-    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
+    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     c.sidekickState = SK_ON;
   }
   return c;
@@ -528,9 +528,9 @@ describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
 });
 
 describe("several sidekicks in the chat (spec §7, §2a.7)", () => {
-  const RULO = { id: "rulo", name: "Rulo", mark: "🦊" };
+  const RULO = { id: "rulo", name: "Rulo", mark: "mentor" };
   const HEADS_UP: SidekickCard = { id: "h1", moment: "heads-up", kind: "context", speaker: RULO, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp: { kind: "context", share: 0.8 } };
-  const GUARD = { name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false };
+  const GUARD = { name: "Guard", mark: "guardian", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false };
   const live = () => document.querySelector('[aria-live="polite"]')?.textContent;
 
   it("a heads-up is announced once, by who speaks; the rail counts it", async () => {
@@ -542,7 +542,7 @@ describe("several sidekicks in the chat (spec §7, §2a.7)", () => {
     await act(async () => undefined);
     expect(live()).toBe("Rulo has a new card.");
     fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
-    expect(screen.getByRole("button", { name: "Sidekick · 1 waiting" }).textContent).toContain("🦊");
+    expect(screen.getByRole("button", { name: "Sidekick · 1 waiting" }).querySelector("svg.hh-icon-mentor")).toBeTruthy();
   });
 
   it("the panel's first open offers the presets once and marks them offered", async () => {

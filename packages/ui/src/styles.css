@@ -250,7 +250,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-setup-done { width: 100%; justify-items: center; text-align: center; gap: 14px; }
 .hh-setup-done .hh-rows { width: 100%; text-align: left; }
 .hh-setup-done-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--hh-ink); color: var(--hh-bg); }
-.hh-setup-done-mark svg { width: 24px; height: 24px; }
 
 /* Settings as a page (UI refresh spec §5.5): in place of the screen, which stays mounted under it, hidden. */
 /* Wraps Home or the work screen without changing its layout (hidden, and inert, while Settings shows). */
@@ -508,8 +507,6 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-work-toggle { height: 24px; gap: 5px; padding: 0 9px; background: transparent; font-size: 12px; color: var(--hh-muted); }
 .hh-work.done { min-width: 0; background: none; border: 0; }
 .hh-work.done > .hh-work-toggle { align-self: flex-start; border-color: transparent; padding: 0 6px; margin-left: -6px; color: var(--hh-muted); }
-.hh-loader { display: block; flex: none; }
-.hh-loader-static { display: block; flex: none; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--hh-line-strong); border-top-color: var(--hh-muted); }
 .hh-activity { list-style: none; margin: 0; padding: 10px 14px 12px 38px; display: flex; flex-direction: column; gap: 7px; border-top: 1px solid var(--hh-line); color: var(--hh-muted); font-size: 12px; }
 .hh-activity[hidden] { display: none; }
 .hh-work.done .hh-activity { padding: 6px 0 4px; border-top: 0; }
@@ -533,6 +530,7 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-history-busy { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 10px 12px; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); line-height: 1.4; }
 .hh-history-busy svg { flex: none; }
 .hh-history-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px 28px; text-align: center; color: var(--hh-muted); }
+.hh-history-empty-line { display: inline-flex; align-items: center; gap: 8px; }
 .hh-history-empty strong { color: var(--hh-ink); }
 .hh-history-empty p { line-height: 1.45; }
 .hh-history-day { display: grid; gap: 6px; }
@@ -888,10 +886,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .hh-sk-foot { border-top: 1px solid var(--hh-line); padding: 10px 14px; font-size: 12px; }
 .hh-sk-foot progress { width: 100%; height: 4px; accent-color: var(--hh-ink); }
-.hh-sk-mark { color: var(--hh-ink); flex: none; }
-.hh-sk-mark-off { color: var(--hh-muted); }
-.hh-sk-mark-text { line-height: 1; }
-.hh-sk-mark-dot { display: inline-block; border-radius: 50%; }
 .hh-sk-speaker { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hh-muted); margin-bottom: 6px; overflow-wrap: anywhere; }
 .hh-sk-daily { white-space: pre-wrap; }
 .hh-sk-presets { margin-bottom: 20px; }
@@ -915,6 +909,9 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-list-text p { margin: 2px 0 0; }
 .hh-sk-list button[aria-disabled="true"], .hh-sk-editor button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .hh-sk-editor { border: 1px solid var(--hh-line); border-radius: 12px; padding: 12px; margin-top: 8px; }
+.hh-sk-mark-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.hh-sk-mark-pick { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--hh-ink); }
+.hh-sk-mark-pick[aria-pressed="true"] { background: var(--hh-active); color: var(--hh-active-ink); }
 .hh-sk-editor textarea { width: 100%; box-sizing: border-box; }
 .hh-sk-scope label { display: block; }
 .hh-sk-scope textarea { width: 100%; box-sizing: border-box; margin-top: 2px; }
@@ -1381,3 +1378,14 @@ input.hh-search-input {
 .hh-pickup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 280px)); justify-content: center; gap: 12px; }
 .hh-pickup-card { min-width: 0; overflow-wrap: anywhere; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; border-radius: 14px; min-height: 44px; height: auto; text-align: left; }
 .hh-pickup-title { font-weight: 600; }
+
+/* guide: Icon */
+.hh-icon { flex: none; }
+@keyframes hh-icon-spin { to { transform: rotate(360deg); } }
+.hh-icon-loading { animation: hh-icon-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .hh-icon-loading { animation: none; } }
+[aria-expanded="true"] > .hh-icon-chevron { transform: rotate(90deg); }
+
+/* guide: SidekickMark */
+.hh-sk-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-surface); border: 1px solid var(--hh-line); color: var(--hh-ink); }
+.hh-sk-mark-off { color: var(--hh-muted); }

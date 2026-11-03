@@ -1,36 +1,9 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import loaderGif from "./assets/loader.gif";
-import { CheckIcon } from "./chrome";
+import { Icon } from "./guide/icons";
 import type { LiveActivity } from "./state";
 
 type Step = Pick<LiveActivity, "kind" | "detail" | "done">;
-
-const REDUCE = "(prefers-reduced-motion: reduce)";
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(REDUCE).matches;
-}
-
-/** Follows the system's "reduce motion" setting, live. */
-function useReducedMotion(): boolean {
-  const [reduce, setReduce] = useState(prefersReducedMotion);
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia(REDUCE);
-    const onChange = () => setReduce(query.matches);
-    query.addEventListener?.("change", onChange);
-    return () => query.removeEventListener?.("change", onChange);
-  }, []);
-  return reduce;
-}
-
-/** The grey working ring: animated, or still when the system asks for less motion. Decorative. */
-export function Loader({ size }: { size: 13 | 18 }) {
-  const reduce = useReducedMotion();
-  if (reduce) return <span className="hh-loader-static" style={{ width: size, height: size }} aria-hidden="true" />;
-  return <img className="hh-loader" src={loaderGif} alt="" width={size} height={size} />;
-}
 
 /**
  * Whether the live turn's detail is open: the choice holds for the rest of the app session (never saved to disk).
@@ -42,14 +15,6 @@ export function resetWorkDetail() {
   liveDetailOpen = false;
 }
 
-function Chevron({ up }: { up: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <path d={up ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"} />
-    </svg>
-  );
-}
-
 function Steps({ id, items, open, label }: { id: string; items: Step[]; open: boolean; label: string }) {
   const { t } = useTranslation();
   return (
@@ -57,7 +22,7 @@ function Steps({ id, items, open, label }: { id: string; items: Step[]; open: bo
       {open &&
         items.map((a, i) => (
           <li key={i} className={a.done ? "done" : "running"}>
-            <span className="hh-activity-mark">{a.done ? <CheckIcon /> : <Loader size={13} />}</span>
+            <span className="hh-activity-mark">{a.done ? <Icon name="check" size={14} /> : <Icon name="loading" size={14} />}</span>
             {t(`activity.${a.kind}`, { detail: a.detail })}
           </li>
         ))}
@@ -69,7 +34,7 @@ function Toggle({ controls, open, onToggle, children }: { controls: string; open
   return (
     <button type="button" className="hh-work-toggle" aria-expanded={open} aria-controls={controls} onClick={onToggle}>
       {children}
-      <Chevron up={open} />
+      <Icon name="chevron" size={14} />
     </button>
   );
 }
@@ -93,7 +58,7 @@ export function WorkingStatus({ items, label }: { items: Step[]; label?: string 
     <div className="hh-work">
       <div className="hh-work-row">
         <span className="hh-work-status" role="status">
-          <Loader size={18} />
+          <Icon name="loading" size={14} />
           <span>{mounted ? (label ?? t("chat.working")) : ""}</span>
         </span>
         <Toggle controls={id} open={open} onToggle={toggle}>

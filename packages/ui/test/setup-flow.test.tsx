@@ -55,6 +55,8 @@ describe("SetupFlow", () => {
     fireEvent.click(next());
     const done = await screen.findByRole("heading", { name: "All set" });
     expect(document.activeElement).toBe(done);
+    // The done mark's check is 18, drawn at its own size.
+    expect(document.querySelector(".hh-setup-done-mark svg")?.getAttribute("width")).toBe("18");
     expect(client.state.config.engineId).toBe("claude");
     expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();

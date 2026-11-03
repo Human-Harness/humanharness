@@ -137,6 +137,7 @@ describe("InputForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add a row" }));
     fireEvent.change(screen.getByLabelText("Front 3"), { target: { value: "three" } });
     const third = screen.getByLabelText("Front 3");
+    expect(screen.getByRole("button", { name: "Remove row 1" }).querySelector("svg")?.getAttribute("width")).toBe("14");
     fireEvent.click(screen.getByRole("button", { name: "Remove row 1" }));
     expect((screen.getByLabelText("Front 1") as HTMLInputElement).value).toBe("two");
     // The old third row's input is the same element, now second.

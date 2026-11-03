@@ -233,6 +233,12 @@ describe("citations (material spec §9)", () => {
 });
 
 describe("callouts, captions, footnotes (§3.2)", () => {
+  it.each(["note", "tip", "warning", "summary", "decision", "question"])("the %s callout's head draws its set icon at 14 (style guide §4, row 15)", async (kind) => {
+    const { container } = await renderIn("en", <Markdown source={`> [!${kind}]\n> x`} />);
+    const svg = container.querySelector(".hh-callout-label svg")!;
+    expect(svg.getAttribute("class")).toContain(`hh-icon-callout-${kind}`);
+    expect(svg.getAttribute("width")).toBe("14");
+  });
   it("draws each of the six callouts as a labelled box; the marker is gone", async () => {
     const src = ["NOTE", "TIP", "WARNING", "SUMMARY", "DECISION", "QUESTION"].map((c) => `> [!${c}]\n> Body of ${c.toLowerCase()}.`).join("\n\n");
     const { container } = await renderIn("en", <Markdown source={src} />);
@@ -287,12 +293,15 @@ describe("callouts, captions, footnotes (§3.2)", () => {
       ["2", "#fn:a", "fnref:a"],
     ]);
     const items = [...container.querySelectorAll(".hh-md-footnotes li")];
-    expect(items.map((li) => [li.id, li.textContent?.replace("↩", "").trim()])).toEqual([
+    expect(items.map((li) => [li.id, li.textContent?.replace("volver", "").trim()])).toEqual([
       ["fn:b", "Beta."],
       ["fn:a", "Alpha."],
     ]);
     expect(items[0].querySelector("a.hh-md-back")?.getAttribute("href")).toBe("#fnref:b");
-    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBe("Back to the text");
+    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBeNull();
+    expect(items[0].querySelector("a.hh-md-back")?.textContent).toBe("volver");
+    // Its accessible name is its visible text.
+    expect(container.textContent).not.toContain("↩");
   });
 
   it("a second reference to the same note reuses its number; only the first gets the back-link id", async () => {
@@ -325,7 +334,7 @@ describe("callouts, captions, footnotes (§3.2)", () => {
 
   it("finds definitions nested in a quote or a list", async () => {
     const { container } = await renderIn("en", <Markdown source={"A[^q] B[^l].\n\n> [^q]: In a quote.\n\n- [^l]: In a list."} idPrefix="" />);
-    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.textContent?.replace("↩", "").trim())).toEqual(["In a quote.", "In a list."]);
+    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.textContent?.replace("volver", "").trim())).toEqual(["In a quote.", "In a list."]);
   });
 
   it("a note that references itself, and two notes that reference each other, end", async () => {

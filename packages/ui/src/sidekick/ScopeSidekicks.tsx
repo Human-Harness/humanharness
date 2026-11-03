@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickInScope } from "../client";
-import { SidekickMark } from "./mark";
+import { SidekickMark, markIcon } from "./mark";
 
 /** The longest purpose text (the SDK's SIDEKICK_PURPOSE_TEXT_MAX; the UI imports only types). */
 const PURPOSE_MAX = 600;
@@ -140,7 +140,7 @@ function ScopeRow({
   return (
     <li aria-busy={busy}>
       <div className="hh-sk-list-row">
-        <SidekickMark mark={row.mark} off={!on} />
+        <SidekickMark icon={markIcon(row.mark)} off={!on} />
         <div className="hh-sk-list-text">
           <label>
             <input

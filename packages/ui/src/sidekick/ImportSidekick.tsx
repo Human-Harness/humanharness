@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "../client";
-import { SidekickMark } from "./mark";
+import { SidekickMark, markIcon } from "./mark";
 
 /** A stored sidekick imported from files: its id and the fields a new draft doesn't carry (Save replaces every field). */
 export interface ImportedSidekick {
@@ -160,7 +160,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
       {draft && (
         <section aria-label={t("sidekick.import.preview")} className="hh-sk-preview">
           <h4 ref={head} tabIndex={-1}>
-            <SidekickMark mark={draft.draft.mark} /> <strong>{draft.draft.name}</strong>
+            <SidekickMark icon={markIcon(draft.draft.mark)} /> <strong>{draft.draft.name}</strong>
           </h4>
           {draft.draft.personality && <p className="hh-sk-personality">{draft.draft.personality}</p>}
           <ul className="hh-sk-purposes">

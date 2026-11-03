@@ -20,7 +20,8 @@ import {
   UNDO_PREFIX,
   type UndoRefusal,
 } from "./client";
-import { ChevronIcon, ClockIcon, Segmented, Tag, UndoIcon } from "./chrome";
+import { Segmented, Tag } from "./chrome";
+import { Icon } from "./guide/icons";
 import { Drawer } from "./Drawer";
 import { shownLanguage } from "./language";
 
@@ -247,7 +248,7 @@ export function HistoryPanel({
   const goBack = (r: Restore) =>
     r.kind === "task" ? (
       <button id={triggerId(r)} className="hh-history-undo" disabled={disabled || restoring} onClick={() => restore(r)}>
-        <UndoIcon />
+        <Icon name="undo" size={14} />
         {t("history.restoreTask")}
       </button>
     ) : (
@@ -327,7 +328,7 @@ export function HistoryPanel({
       <div className="hh-history">
         {disabled && (
           <p role="status" className="hh-history-busy">
-            <ClockIcon />
+            <Icon name="clock" size={14} />
             {t("history.busy")}
           </p>
         )}
@@ -342,8 +343,10 @@ export function HistoryPanel({
           ))}
         {groups?.length === 0 && (
           <div className="hh-history-empty">
-            <ClockIcon size={28} />
-            <strong>{t("history.emptyTitle")}</strong>
+            <span className="hh-history-empty-line">
+              <Icon name="clock" size={14} />
+              <strong>{t("history.emptyTitle")}</strong>
+            </span>
             <p className="hh-caption">{t("history.empty")}</p>
           </div>
         )}
@@ -388,7 +391,7 @@ export function HistoryPanel({
                   <li key={key} className="hh-card">
                     {/* aria-controls only names a body that is there. */}
                     <button className="hh-history-row" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined} onClick={() => toggle(key)}>
-                      <ChevronIcon open={expanded} />
+                      <Icon name="chevron" size={14} />
                       <span className="hh-history-row-text">
                         <span className="hh-history-label">{rowLabel(g)}</span>
                         <span className="hh-caption">

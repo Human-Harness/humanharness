@@ -41,6 +41,7 @@ describe("MaterialPanel (material spec §11)", () => {
   it("remove asks first; Cancel on a waiting card removes it", async () => {
     const client = await panel(view([src({}), src({ id: "w", name: "w.pdf", status: "pending", notice: "warn", fragments: 0 })]));
     expect(screen.queryByRole("button", { name: "Remove w.pdf" })).toBeNull();
+    expect((await screen.findByRole("button", { name: "Remove ch2.pdf" })).querySelector("svg")?.getAttribute("width")).toBe("14");
     fireEvent.click(await screen.findByRole("button", { name: "Remove ch2.pdf" }));
     expect(screen.getByText("Remove ch2.pdf? Its file goes to the Trash.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));

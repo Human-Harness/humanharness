@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { InboxIcon, Tag } from "../chrome";
+import { Tag } from "../chrome";
+import { Icon } from "../guide/icons";
 import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
@@ -23,7 +24,7 @@ export function InboxPill({ tasks, jobs, onOpen }: { tasks: TasksState | null; j
   const count = waitingCount(tasks, jobs);
   return (
     <button className="hh-pill" aria-label={t("inbox.pill", { count })} onClick={onOpen}>
-      <InboxIcon />
+      <Icon name="inbox" size={18} />
       {t("inbox.title")}
       {count > 0 && <Tag tone="orange">{count}</Tag>}
     </button>

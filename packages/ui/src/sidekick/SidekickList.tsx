@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickPurposeView, SidekickView } from "../client";
 import { ImportSidekick } from "./ImportSidekick";
-import { SidekickMark } from "./mark";
+import { SidekickMark, markIcon } from "./mark";
 import { SidekickEditor } from "./SidekickEditor";
 
 /** Where focus goes once a view closes or the list changes under it. */
@@ -143,7 +143,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
         {list.map((k, i) => (
           <li key={k.id}>
             <div className="hh-sk-list-row">
-              <SidekickMark mark={k.mark} />
+              <SidekickMark icon={markIcon(k.mark)} />
               <div className="hh-sk-list-text">
                 <strong>{k.name}</strong>
                 <p className="hh-caption">{k.purposes.map(purpose).join(" · ")}</p>

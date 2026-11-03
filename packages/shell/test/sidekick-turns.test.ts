@@ -449,6 +449,8 @@ describe("import turn (spec §2a.6)", () => {
     expect(p.startsWith(SIDEKICK_IMPORT_MARK)).toBe(true);
     expect(p.match(/<\/instructions>/g)).toHaveLength(1);
     expect(p).toContain("Drop tool permissions");
+    expect(p).toContain("a mark (one icon name of: ");
+    expect(p).not.toContain("one emoji");
     expect(p).not.toContain("place:");
     expect(isMockSidekickTurn(p)).toBe(true);
     expect(parseImport(mockSidekickReply(p))).toMatchObject({ name: "Imported", purposes: [{ id: "prompt-coach" }] });
@@ -465,12 +467,16 @@ describe("import turn (spec §2a.6)", () => {
     };
     expect(parseImport(JSON.stringify(reply))).toEqual({
       name: "Rulo the fox",
-      mark: "🦊",
+      mark: "coach", // an emoji is not an icon name
       personality: "Direct.",
       purposes: [{ id: "mentor" }, { id: "custom", text: "Docs in sync.", moments: ["after-reply"] }],
       learned: [{ text: "Prefers short answers.", level: "you" }],
       skipped: ["Tool permissions", "y".repeat(120)],
     });
+  });
+
+  it("keeps a mark that is an icon name", () => {
+    expect(parseImport(JSON.stringify({ name: "Rulo", mark: "mentor", personality: "", purposes: [{ id: "mentor" }] }))).toMatchObject({ mark: "mentor" });
   });
 
   it("refuses what breaks the contract", () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickPreset } from "../client";
-import { SidekickMark } from "./mark";
+import { SidekickMark, markIcon } from "./mark";
 
 /** Clients whose harness has no presets: its manifest can't change while the app runs, so it isn't asked again. */
 const noPresets = new WeakSet<HarnessClient>();
@@ -98,7 +98,7 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
       <ul className="hh-sk-presets-list">
         {open.map((p) => (
           <li key={p.name}>
-            <SidekickMark mark={p.mark} />
+            <SidekickMark icon={markIcon(p.mark)} />
             <div>
               <strong>{p.name}</strong>
               {p.personality && <p className="hh-caption">{p.personality}</p>}

@@ -92,11 +92,17 @@ describe("the app stays inside the guide (style guide §15 Control, §16.2)", ()
   const found = scanRepo(); // styles.css, plugin-ui/*.css and packages/ui/src/**/*.tsx; harness CSS joins in Task 11
   it("no new offender: fix it, don't add it to the list", () => {
     const known = new Set(offenders as string[]);
-    expect(found.filter((o) => !known.has(o))).toEqual([]);
+    const added = found.filter((o) => !known.has(o));
+    const how =
+      "Use a token or a scale value (style guide §2), or add the piece's class to packages/ui/src/guide/classes.ts in the PR that adds the piece (§15). " +
+      "Never add lines to style-guard-offenders.json. New offenders (file|kind|where|value):\n" + added.join("\n");
+    expect(added, how).toEqual([]);
   });
   it("the list only shrinks: remove an offender you fixed", () => {
     const now = new Set(found);
-    expect((offenders as string[]).filter((o) => !now.has(o))).toEqual([]);
+    const fixed = (offenders as string[]).filter((o) => !now.has(o));
+    const how = "These offenders are fixed: remove these lines from packages/ui/test/style-guard-offenders.json:\n" + fixed.join("\n");
+    expect(fixed, how).toEqual([]);
   });
 });
 

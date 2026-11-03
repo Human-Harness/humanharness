@@ -291,7 +291,7 @@ export function scanRepo(): string[] {
   const css = (f: string, opts: CssOptions) => out.push(...scanCss(rel(f), readFileSync(f, "utf8"), opts));
 
   css(join(src, "styles.css"), { tokenFile: true, topBarSelectors: TOP_BAR_SELECTORS });
-  for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: f.endsWith("/tokens.css") });
+  for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: rel(f) === "packages/ui/src/plugin-ui/tokens.css" });
   for (const f of filesUnder(src, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
   return dedupe(out).sort();
 }

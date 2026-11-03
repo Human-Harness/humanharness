@@ -27,6 +27,18 @@ describe("LanguagePicker (spec §2, §3)", () => {
     expect(onPick).toHaveBeenCalledWith("es");
   });
 
+  it("moves between languages with the arrows and picks the one it lands on", async () => {
+    await renderIn("en", <LanguagePicker current="en" suggested="es" view={view} onPick={() => {}} onClose={() => {}} />);
+    const es = screen.getByRole("radio", { name: /Español/ });
+    es.focus();
+    const radios = screen.getAllByRole("radio");
+    const next = radios[(radios.indexOf(es) + 1) % radios.length];
+    fireEvent.keyDown(es, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(next);
+    expect(checked(next)).toBe(true);
+    expect(checked(es)).toBe(false);
+  });
+
   it("filters by search; without an engine only English and complete languages can be picked, and it says why", async () => {
     for (const canTranslate of ["mock", "no-engine"] as const) {
       const { unmount } = await renderIn("en", <LanguagePicker current="en" suggested="es" view={{ ...view, canTranslate }} onPick={() => {}} onClose={() => {}} />);

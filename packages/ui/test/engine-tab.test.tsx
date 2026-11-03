@@ -672,4 +672,25 @@ describe("EngineTab: legal texts in another language", () => {
     expect(radios.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "false"]);
     expect(radios.map((r) => r.tabIndex)).toEqual([0, -1]);
   });
+
+  it("in the setup flow, the arrows move the focus between engines and choose the one they land on", async () => {
+    const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    addCodex(client);
+    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
+    const radios = within(screen.getByRole("radiogroup", { name: "AI engines" })).getAllByRole("radio");
+    radios[0].focus();
+    fireEvent.keyDown(radios[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(radios[1]);
+    await waitFor(() => expect(radios[1].getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("in Settings, the arrows move the focus between engines", async () => {
+    const client = withFolder();
+    addCodex(client);
+    await renderIn("en", <Tab client={client} />);
+    const radios = within(await screen.findByRole("radiogroup", { name: "AI engines" })).getAllByRole("radio");
+    radios[0].focus();
+    fireEvent.keyDown(radios[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(radios[1]);
+  });
 });

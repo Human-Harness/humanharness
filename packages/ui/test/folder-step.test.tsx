@@ -67,6 +67,16 @@ describe("FolderStep", () => {
     expect(await screen.findByText("/Users/me/Elsewhere")).toBeTruthy();
   });
 
+  it("moves between the places with the arrows and picks the one it lands on", async () => {
+    const client = withPlaces();
+    await renderStep("en", client);
+    const drivePlace = radio("Save it in Google Drive so you don't lose it");
+    drivePlace.focus();
+    fireEvent.keyDown(drivePlace, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(radio("Save it in iCloud Drive so you don't lose it"));
+    expect(checked("Save it in iCloud Drive so you don't lose it")).toBe(true);
+  });
+
   it("tells two accounts of one provider apart", async () => {
     const client = new FakeClient();
     client.state.backup = {

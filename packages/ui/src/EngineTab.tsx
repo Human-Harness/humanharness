@@ -316,7 +316,7 @@ function SetupTiles({
                 <>
                   <span>{e.provider}</span>
                   <span>{t("setup.engineRequires", { plan: e.requires })}</span>
-                  <span className="hh-engine-radio-status" data-tone={tone}>
+                  <span className="hh-engine-status" data-tone={tone}>
                     <span className={tone === "ok" ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
                     {line}
                   </span>

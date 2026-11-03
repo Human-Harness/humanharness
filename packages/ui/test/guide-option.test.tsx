@@ -42,6 +42,13 @@ describe("Option (style guide §3, row 'Option')", () => {
     expect(document.querySelector(".hh-option-mark")).not.toBeNull();
   });
 
+  it("overrides the generic button: left aligned, and it grows past 52", () => {
+    const item = rule(".hh-option-item");
+    expect(item["justify-content"]).toBe("flex-start");
+    expect(item.height).toBe("auto");
+    expect(px(item["min-height"])).toBe("52px");
+  });
+
   it("recommended is the amber border, and the tag slot sits by the title", () => {
     render(<Option checked={false} recommended title="Socratic" tag={<span>Recommended</span>} />);
     const radio = screen.getByRole("radio");
@@ -95,6 +102,13 @@ describe("Tile (style guide §3, row 'Tile')", () => {
   it("is 104 high with a radius of 14", () => {
     expect(px(rule(".hh-tile")["min-height"])).toBe("104px");
     expect(px(rule(".hh-tile")["border-radius"])).toBe("14px");
+  });
+
+  it("overrides the generic button: left aligned, and it grows past 104", () => {
+    const tile = rule(".hh-tile");
+    expect(tile["justify-content"]).toBe("flex-start");
+    expect(tile.height).toBe("auto");
+    expect(px(tile["min-height"])).toBe("104px");
   });
 
   it("shows a logo or a description under its title, and acts on click", () => {

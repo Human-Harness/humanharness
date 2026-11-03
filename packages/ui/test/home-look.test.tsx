@@ -61,6 +61,15 @@ describe("Home look (UI refresh spec §5.2)", () => {
     expect(screen.getByRole("button", { name: /Start Demo/ }).getAttribute("data-kind")).toBe("large");
   });
 
+  it("I8: Start keeps the next arrow at 18, after the text", async () => {
+    await renderHome(new FakeClient(configured));
+    const start = screen.getByRole("button", { name: /Start Demo/ });
+    const arrow = start.lastElementChild!;
+    expect(arrow.classList.contains("hh-icon-next")).toBe(true);
+    expect(arrow.getAttribute("width")).toBe("18");
+    expect(start.querySelectorAll("svg")).toHaveLength(1);
+  });
+
   it("keeps the Home scrollable and the pill's name readable (review fixes)", () => {
     const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
     expect(css).toMatch(/\.hh-home \{[^}]*grid-template-rows: var\(--hh-topbar-h\) minmax\(0, 1fr\) auto/);

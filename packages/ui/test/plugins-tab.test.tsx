@@ -207,6 +207,18 @@ describe("Settings › Plugins", () => {
       return region;
     }
 
+    it("I13: the back is a quiet compact Button with the back icon at 18", async () => {
+      const c = client([row()]);
+      c.pluginDetails = { oncall: detail() };
+      const region = await openDetail(c);
+      const back = within(region).getAllByRole("button")[0];
+      expect(back.getAttribute("data-kind")).toBe("quiet");
+      expect(back.getAttribute("data-size")).toBe("compact");
+      const icon = back.querySelector("svg.hh-icon-back");
+      expect(icon?.getAttribute("width")).toBe("18");
+      expect(back.querySelectorAll("svg")).toHaveLength(1);
+    });
+
     it("draws settings with SettingRow and shows a refusal under the field", async () => {
       const c = client([row()]);
       c.pluginDetails = { oncall: detail() };

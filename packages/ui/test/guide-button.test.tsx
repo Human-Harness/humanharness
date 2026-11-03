@@ -218,6 +218,19 @@ describe("Button and IconButton CSS (style guide §2, §3)", () => {
     expect(c.width).toBe(c.height);
     expect(rule(".hh-icon-btn").background).toBe("transparent");
   });
+  it("no context rule beats the Button: the composer's selectors leave .hh-btn alone (Send stays the amber primary)", () => {
+    const composer = [...css.matchAll(/^(\.hh-composer button[^{]*)\{([^}]*)\}/gm)];
+    expect(composer.length).toBeGreaterThan(0);
+    for (const [, sel] of composer) expect(sel, sel).toContain(":not(.hh-btn)");
+    expect(rule('.hh-btn[data-kind="primary"]').background).toBe("var(--hh-cta)");
+    expect(rule('.hh-btn[data-size="normal"]').height).toBe("var(--hh-h-normal)");
+  });
+  it("the current rail item keeps its active fill on hover", () => {
+    const hover = rule('.hh-rail > .hh-icon-btn[aria-current="page"]:hover:not(:disabled)');
+    expect(hover.background).toBe("var(--hh-active)");
+    expect(hover.color).toBe("var(--hh-active-ink)");
+    expect(css.indexOf('.hh-rail > .hh-icon-btn[aria-current="page"]:hover')).toBeGreaterThan(css.indexOf(".hh-icon-btn:hover:not(:disabled)"));
+  });
   it("its classes belong to the guide", () => {
     expect(GUIDE_CLASSES.has("hh-btn")).toBe(true);
     expect(GUIDE_CLASSES.has("hh-icon-btn")).toBe(true);

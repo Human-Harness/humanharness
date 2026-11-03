@@ -146,7 +146,6 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 .hh-topbar .hh-spacer { display: flex; justify-content: center; }
 /* Icon rail (UI refresh spec §4.2): a column on the left, a row under the top bar on narrow windows. */
 .hh-rail { flex: 0 0 var(--hh-rail-w); width: var(--hh-rail-w); box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0; background: var(--hh-rail); border-right: 1px solid var(--hh-line); }
-.hh-rail > .hh-icon-btn[aria-current="page"] { background: var(--hh-active); color: var(--hh-active-ink); }
 @media (max-width: 760px) { .hh-rail { flex-direction: row; flex-basis: auto; padding: 10px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--hh-line); } .hh-rail .hh-spacer { display: none; } }
 /* The shell (UI refresh spec §4): the top bar across the window (its 90px leave room after the traffic lights), the rail beside the main column. */
 .hh-shell { display: grid; grid-template-rows: auto 1fr; grid-template-columns: auto minmax(0, 1fr); height: 100%; }
@@ -506,8 +505,8 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-confirm p { flex-basis: 100%; }
 .hh-composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hh-line); }
 .hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); padding: 8px; }
-.hh-composer button { height: auto; }
-.hh-composer button[type="submit"] { background: var(--hh-ink); color: var(--hh-bg); border-color: transparent; font-weight: 600; }
+.hh-composer button:not(.hh-btn) { height: auto; }
+.hh-composer button[type="submit"]:not(.hh-btn) { background: var(--hh-ink); color: var(--hh-bg); border-color: transparent; font-weight: 600; }
 /* History (spec 3d §1, mockup "History panel redesign"): a side sheet, tasks grouped by day, entries as a timeline. */
 /* History's drawer body (UI refresh spec §5.7): the frame is the drawer's. */
 .hh-history { display: flex; flex-direction: column; gap: 8px; }
@@ -1395,3 +1394,4 @@ input.hh-search-input {
 .hh-icon-btn:hover:not(:disabled) { background: var(--hh-surface-2); color: var(--hh-ink); }
 .hh-icon-btn:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-icon-btn:disabled { opacity: 0.5; }
+.hh-rail > .hh-icon-btn[aria-current="page"], .hh-rail > .hh-icon-btn[aria-current="page"]:hover:not(:disabled) { background: var(--hh-active); color: var(--hh-active-ink); }

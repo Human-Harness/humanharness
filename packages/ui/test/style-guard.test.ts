@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { GUIDE_CLASSES } from "../src/guide/classes";
 import { PIECE_SIZES, ROUND_SELECTORS, scanCss, scanTsx } from "./style-guard-lib";
 
 describe("style guard scanner (style guide §15 Control)", () => {
@@ -77,5 +80,12 @@ describe("style guard scanner details", () => {
   });
   it("throws on unbalanced input instead of dropping the rest of the file", () => {
     expect(() => scanCss("a.css", ".a { color: red;", {})).toThrow(/unbalanced/);
+  });
+});
+
+describe("the guide's class list", () => {
+  const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
+  it("every guide class has a rule in styles.css", () => {
+    for (const c of GUIDE_CLASSES) expect(css, c).toMatch(new RegExp(`\\.${c}(?![\\w-])`));
   });
 });

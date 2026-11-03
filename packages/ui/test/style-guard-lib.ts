@@ -7,6 +7,10 @@
  * classes held in variables or props other than `className` are not seen; identical offenders in one file
  * collapse into one line (the string format has no count).
  */
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { GUIDE_CLASSES } from "../src/guide/classes";
 
 // Style guide §2 (heights, radii, spacing, type, weights) and the fixed sizes named in §4–§10.
 export const HEIGHTS = [18, 24, 30, 40, 52, 104];
@@ -266,4 +270,28 @@ export function scanTsx(file: string, tsx: string, guideClasses: ReadonlySet<str
     for (const c of tsx.slice(open, matchBrace(tsx, open)).matchAll(COLOR)) out.push(line(file, "color", "style", c[0]));
   }
   return dedupe(out);
+}
+
+// From packages/ui/test to the repo root, independent of process.cwd().
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+/** The top bar is the only place with a 90px left padding (§9). */
+const TOP_BAR_SELECTORS = [".hh-topbar"];
+
+const filesUnder = (dir: string, ext: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = join(dir, e.name);
+    return e.isDirectory() ? (e.name === "node_modules" ? [] : filesUnder(full, ext)) : full.endsWith(ext) ? [full] : [];
+  });
+
+/** Scans the app's own sources. Paths in the result are relative to the repo root. */
+export function scanRepo(): string[] {
+  const src = join(REPO_ROOT, "packages/ui/src");
+  const rel = (f: string) => relative(REPO_ROOT, f).split("\\").join("/");
+  const out: string[] = [];
+  const css = (f: string, opts: CssOptions) => out.push(...scanCss(rel(f), readFileSync(f, "utf8"), opts));
+
+  css(join(src, "styles.css"), { tokenFile: true, topBarSelectors: TOP_BAR_SELECTORS });
+  for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: f.endsWith("/tokens.css") });
+  for (const f of filesUnder(src, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
+  return dedupe(out).sort();
 }

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GUIDE_CLASSES } from "../src/guide/classes";
-import { PIECE_SIZES, ROUND_SELECTORS, scanCss, scanTsx } from "./style-guard-lib";
+import offenders from "./style-guard-offenders.json";
+import { PIECE_SIZES, ROUND_SELECTORS, scanCss, scanRepo, scanTsx } from "./style-guard-lib";
 
 describe("style guard scanner (style guide §15 Control)", () => {
   it("flags a loose color outside the token blocks, not inside them", () => {
@@ -84,6 +85,18 @@ describe("style guard scanner details", () => {
   });
   it("throws on unbalanced input instead of dropping the rest of the file", () => {
     expect(() => scanCss("a.css", ".a { color: red;", {})).toThrow(/unbalanced/);
+  });
+});
+
+describe("the app stays inside the guide (style guide §15 Control, §16.2)", () => {
+  const found = scanRepo(); // styles.css, plugin-ui/*.css and packages/ui/src/**/*.tsx; harness CSS joins in Task 11
+  it("no new offender: fix it, don't add it to the list", () => {
+    const known = new Set(offenders as string[]);
+    expect(found.filter((o) => !known.has(o))).toEqual([]);
+  });
+  it("the list only shrinks: remove an offender you fixed", () => {
+    const now = new Set(found);
+    expect((offenders as string[]).filter((o) => !now.has(o))).toEqual([]);
   });
 });
 

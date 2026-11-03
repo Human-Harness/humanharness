@@ -8,6 +8,7 @@ export const AVATAR_COLORS = ["green", "orange", "blue", "violet", "red", "gray"
 /**
  * Colours profiles stored before the six, and the one of the six each draws as.
  * PENDING MARCO: these pairs are option A (the old rules' nearest tag color), not a decision.
+ * A copy of `RETIRED_PROFILE_COLORS` in the SDK; profiles.test.tsx keeps them in step.
  */
 export const RETIRED_AVATAR_COLORS: Readonly<Record<string, (typeof AVATAR_COLORS)[number]>> = {
   coral: "red",

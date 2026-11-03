@@ -4,9 +4,23 @@ import { type InputSpec, inputFields } from "./input";
 
 /** The collection that says who a profile is (profiles spec D7): one app-wide record in each profile's own folder. */
 export const PROFILE_COLLECTION = "profile";
-/** The colours an avatar can take. A `color` the window doesn't know draws the neutral avatar; the pre-2026-11 names (coral, amber, teal, pink) draw as their mapped colour. */
+/** The colours an avatar can take. A `color` the window doesn't know draws the neutral avatar. */
 export const PROFILE_COLORS = ["green", "orange", "blue", "violet", "red", "gray"] as const;
 export type ProfileColor = (typeof PROFILE_COLORS)[number];
+/**
+ * Colours profiles stored before the six, and the one of the six each becomes.
+ * PENDING MARCO: these pairs are option A (the old rules' nearest tag colour), not a decision.
+ * The window keeps a copy (`RETIRED_AVATAR_COLORS`); profiles.test.tsx keeps them in step.
+ */
+export const RETIRED_PROFILE_COLORS = { coral: "red", amber: "orange", teal: "green", pink: "red" } as const satisfies Record<string, ProfileColor>;
+/** A stored `profile` record with a retired `color` read as the colour it maps to; anything else comes back as it is. */
+export function migrateProfileColor(record: unknown): unknown {
+  if (typeof record !== "object" || record === null) return record;
+  const color = (record as { color?: unknown }).color;
+  return typeof color === "string" && Object.hasOwn(RETIRED_PROFILE_COLORS, color)
+    ? { ...record, color: RETIRED_PROFILE_COLORS[color as keyof typeof RETIRED_PROFILE_COLORS] }
+    : record;
+}
 /** The most fields the add and edit form asks for. */
 export const PROFILE_FIELDS_MAX = 6;
 

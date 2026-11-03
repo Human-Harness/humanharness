@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { dataCollections, dataSchema, settingsSchema, z } from "@humanharness/harness-sdk";
+import { PROFILE_COLORS, dataCollections, dataSchema, settingsSchema, z } from "@humanharness/harness-sdk";
 import { type DataChange, DataError, DataStore, dataPath, parseDataPath, runDataRequest } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -274,5 +274,19 @@ describe("DataStore: the reserved settings collection", () => {
     fs.writeFileSync(f, JSON.stringify({ name: 3 }));
     expect(await store.get("profile", undefined, person)).toBeNull();
     await expect(store.put("profile", { name: "x" }, person)).rejects.toMatchObject({ code: "broken-file" });
+  });
+});
+
+describe("a profile stored with a retired avatar colour", () => {
+  it("is read as the colour it maps to and saved back with it", async () => {
+    const base = tmp();
+    const profile = dataSchema.parse({ profile: { scoped: false, single: true, schema: z.object({ name: z.string(), color: z.enum(PROFILE_COLORS).optional() }), agent: "read" } });
+    const f = file(base, ".harness/data/_app/profile.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify({ name: "Sofi", color: "coral" }));
+    const store = new DataStore(base, profile);
+    expect(await store.get("profile", undefined, person)).toEqual({ name: "Sofi", color: "red" });
+    await store.put("profile", { name: "Sofía", color: "red" }, person);
+    expect(JSON.parse(fs.readFileSync(f, "utf8"))).toEqual({ name: "Sofía", color: "red" });
   });
 });

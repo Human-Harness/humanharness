@@ -80,9 +80,12 @@ describe("harness stylesheet walk", () => {
 
 describe("style guard scanner details", () => {
   // The lists are shared module state that later parts extend; keep these cases from leaking into each other.
+  // Restore, not empty: Parts 4 and 6 fill these lists with real pieces.
+  const pieceSizes8 = [...PIECE_SIZES[8]];
+  const roundSelectors = [...ROUND_SELECTORS];
   afterEach(() => {
-    PIECE_SIZES[8] = [];
-    ROUND_SELECTORS.length = 0;
+    PIECE_SIZES[8] = [...pieceSizes8];
+    ROUND_SELECTORS.splice(0, ROUND_SELECTORS.length, ...roundSelectors);
   });
 
   it("allows a piece size only on its own selectors", () => {

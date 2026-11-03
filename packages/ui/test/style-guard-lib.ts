@@ -3,9 +3,11 @@
  * offenders as "<file>|<kind>|<where>|<value>" strings; the test compares them with the known-offenders
  * list, which may only shrink.
  *
- * Limits: only px literals are checked (not rem, the `font` shorthand or px inside calc/min/max); TSX
- * classes held in variables or props other than `className` are not seen; identical offenders in one file
- * collapse into one line (the string format has no count).
+ * Lengths are px and rem (16px per rem), also inside calc / min / max / clamp, and the `font` shorthand is
+ * read for its size and weight. Identical offenders in one file collapse into one line with a " ×N" suffix.
+ *
+ * Limits: TSX classes held in variables or props other than `className` are not seen, and a class token
+ * with an interpolation (`hh-btn--${v}`) is not checked at all.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -48,7 +50,7 @@ export type CssOptions = {
   harness?: boolean;
 };
 
-type Kind = "color" | "height" | "radius" | "space" | "font-size" | "weight" | "class" | "harness-color" | "harness-size";
+type Kind = "color" | "height" | "width" | "radius" | "space" | "font-size" | "weight" | "class" | "harness-color" | "harness-size";
 
 const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/g;
 const SIZE_PROPS = /^(?:min-|max-)?(?:height|width)$/;
@@ -75,69 +77,107 @@ const COLOR_PROPS =
 const VAR_CALL = /var\(\s*(--[\w-]+)/g;
 
 const line = (file: string, kind: Kind, where: string, value: string) => `${file}|${kind}|${where}|${value}`;
-const dedupe = (items: string[]) => [...new Set(items)];
 
-/** Drops function calls (var, calc, url...) so only literal values are left to check. */
+const COUNT_SUFFIX = / \u00d7(\d+)$/;
+/** Collapses repeated lines into one with a " ×N" suffix (N > 1), keeping first-seen order. */
+function countLines(items: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const i of items) counts.set(i, (counts.get(i) ?? 0) + 1);
+  return [...counts].map(([k, n]) => (n > 1 ? `${k} \u00d7${n}` : k));
+}
+/** Reads a list line back into its key and count (1 when there is no suffix). */
+export function parseCounted(l: string): { key: string; count: number } {
+  const m = COUNT_SUFFIX.exec(l);
+  return m ? { key: l.slice(0, m.index), count: Number(m[1]) } : { key: l, count: 1 };
+}
+
+/** Drops var(), url() and env() calls: their content is not a value of the property. calc / min / max /
+ * clamp stay, because their literals are sizes like any other. */
 function stripCalls(value: string): string {
   let prev: string;
   let out = value;
   do {
     prev = out;
-    out = out.replace(/\b(?:var|calc|clamp|min|max|url|env)\([^()]*\)/g, " ");
+    out = out.replace(/\b(?:var|url|env)\([^()]*\)/g, " ");
   } while (out !== prev);
   return out;
 }
 
-const pxValues = (value: string): number[] =>
-  [...stripCalls(value).matchAll(/(?<![\w.#-])(-?\d*\.?\d+)px\b/g)].map((m) => Number(m[1]));
+type Length = { px: number; text: string };
+/** px and rem literals (rem at 16px), with the text to report. In `font-size`, the guide's own
+ * `calc(Nem ± 1px)` ("one point below the surrounding text", §2) leaves its 1px offset out. */
+function lengths(value: string, prop = ""): Length[] {
+  let v = stripCalls(value);
+  if (prop === "font-size") v = v.replace(/(calc\(\s*[\d.]+em\s*[-+]\s*)1px\b/g, "$1");
+  return [...v.matchAll(/(?<![\w.#-])(-?\d*\.?\d+)(px|rem)\b/g)].map((m) => ({ px: Number(m[1]) * (m[2] === "rem" ? 16 : 1), text: m[0] }));
+}
 
 const selectorParts = (selector: string) => selector.split(",").map((s) => s.trim());
 const inList = (selector: string, list: string[]) => selectorParts(selector).some((s) => list.includes(s));
+
+/** Named colors (lowercase) in a value; strings, url() and var() are not looked at. */
+function namedColors(value: string): string[] {
+  const words = stripCalls(value).replace(/(["'])(?:\\.|(?!\1).)*\1/g, " ").matchAll(/(?<![\w#-])[a-z]+(?![\w-])/gi);
+  return [...words].map((m) => m[0].toLowerCase()).filter((w) => NAMED_COLORS.has(w));
+}
+
+function checkWeight(file: string, selector: string, token: string, out: string[]) {
+  const n = token === "bold" ? 700 : /^\d+$/.test(token) ? Number(token) : null;
+  if (n !== null && !WEIGHTS.includes(n)) out.push(line(file, "weight", selector, String(n)));
+}
 
 function checkDeclaration(file: string, selector: string, prop: string, value: string, opts: CssOptions, inTokenBlock: boolean, out: string[]) {
   if (!inTokenBlock) {
     for (const m of value.matchAll(COLOR)) out.push(line(file, "color", selector, m[0]));
   }
-  if (prop.startsWith("--")) return;
-  if (COLOR_PROPS.test(prop)) {
-    const words = stripCalls(value).replace(/(["'])(?:\\.|(?!\1).)*\1/g, " ").matchAll(/(?<![\w#-])[a-z]+(?![\w-])/gi);
-    for (const m of words) if (NAMED_COLORS.has(m[0].toLowerCase())) out.push(line(file, "color", selector, m[0].toLowerCase()));
+  // A custom property holds any value, so a named color in it is flagged outside token blocks only.
+  if (prop.startsWith("--")) {
+    if (!inTokenBlock) for (const c of namedColors(value)) out.push(line(file, "color", selector, c));
+    return;
   }
+  if (COLOR_PROPS.test(prop)) for (const c of namedColors(value)) out.push(line(file, "color", selector, c));
   const bare = stripCalls(value).trim();
 
   if (SIZE_PROPS.test(prop)) {
     const isHeight = HEIGHT_PROPS.test(prop);
-    for (const px of pxValues(value)) {
+    for (const { px, text } of lengths(value, prop)) {
       if (px === 0) continue;
       const own = inList(selector, PIECE_SIZES[px] ?? []);
-      if (isHeight && !HEIGHTS.includes(px) && !own) out.push(line(file, "height", selector, `${px}px`));
-      // Widths are reported with kind `height` (the plan has no width kind).
+      if (isHeight && !HEIGHTS.includes(px) && !own) out.push(line(file, "height", selector, text));
       // A width off the piece list belongs to the width tokens, which are checked elsewhere.
-      else if (!isHeight && px in PIECE_SIZES && !own) out.push(line(file, "height", selector, `${px}px`));
+      else if (!isHeight && px in PIECE_SIZES && !own) out.push(line(file, "width", selector, text));
     }
   } else if (RADIUS_PROPS.test(prop)) {
-    for (const token of bare.split(/[\s/]+/).filter(Boolean)) {
-      const m = /^(-?\d*\.?\d+)(px|%)$/.exec(token);
+    // Math functions are opened up so their literals are tokens too.
+    for (const token of bare.replace(/\b(?:calc|min|max|clamp)\(|[(),*]/g, " ").split(/[\s/]+/).filter(Boolean)) {
+      const m = /^(-?\d*\.?\d+)(px|rem|%)$/.exec(token);
       if (!m) continue;
-      const n = Number(m[1]);
+      const n = Number(m[1]) * (m[2] === "rem" ? 16 : 1);
       if (n === 0) continue;
       const round = (m[2] === "px" && n === 999) || (m[2] === "%" && n === 50);
       const ok = round
         ? inList(selector, ROUND_SELECTORS)
-        : m[2] === "px" && (RADII.includes(n) || (n === 4 && selectorParts(selector).some((s) => /(?:^|[\s>+~])code$/.test(s))));
-      if (!ok && (m[2] === "px" || round)) out.push(line(file, "radius", selector, token));
+        : m[2] !== "%" && (RADII.includes(n) || (n === 4 && selectorParts(selector).some((s) => /(?:^|[\s>+~])code$/.test(s))));
+      if (!ok) out.push(line(file, "radius", selector, token));
     }
   } else if (SPACE_PROPS.test(prop)) {
-    for (const px of pxValues(value)) {
+    for (const { px, text } of lengths(value)) {
       if (px <= 0 || SPACES.includes(px)) continue;
       const topBar = px === 90 && prop.startsWith("padding") && inList(selector, opts.topBarSelectors ?? []);
-      if (!topBar) out.push(line(file, "space", selector, `${px}px`));
+      if (!topBar) out.push(line(file, "space", selector, text));
     }
   } else if (prop === "font-size") {
-    for (const px of pxValues(value)) if (!FONT_SIZES.includes(px)) out.push(line(file, "font-size", selector, `${px}px`));
+    for (const { px, text } of lengths(value, prop)) if (!FONT_SIZES.includes(px)) out.push(line(file, "font-size", selector, text));
   } else if (prop === "font-weight") {
-    const n = bare === "bold" ? 700 : /^\d+$/.test(bare) ? Number(bare) : null;
-    if (n !== null && !WEIGHTS.includes(n)) out.push(line(file, "weight", selector, String(n)));
+    checkWeight(file, selector, bare, out);
+  } else if (prop === "font") {
+    // Shorthand: [style variant weight stretch] size[/line-height] family. The line height is cut first so
+    // it is not read as the size; the weight is whatever stands before the size.
+    const noLineHeight = bare.replace(/\/\s*[^\s,]+/, " ");
+    const size = lengths(noLineHeight, "font-size")[0];
+    if (size && !FONT_SIZES.includes(size.px)) out.push(line(file, "font-size", selector, size.text));
+    const before = size ? noLineHeight.slice(0, noLineHeight.indexOf(size.text)) : "";
+    for (const t of before.split(/\s+/)) if (/^(?:\d{3,4}|bold|bolder|lighter)$/.test(t)) checkWeight(file, selector, t, out);
   }
 }
 
@@ -154,11 +194,16 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
     const top = stack[stack.length - 1];
     if (idx < 0 || !top) return;
     if (top.at) {
-      // A keyframe step holds animated values, so only its colors are checked; they are reported under the
-      // animation's name because step names (`from`, `50%`) would collide between animations.
+      // A keyframe step holds animated values, so only its colors are checked (literal, and named ones in
+      // color or custom properties); they are reported under the animation's name because step names
+      // (`from`, `50%`) would collide between animations.
       const parent = stack[stack.length - 2];
       if (top.keyframes && !top.selector.startsWith("@") && parent) {
-        for (const m of text.slice(idx + 1).matchAll(COLOR)) out.push(line(file, opts.harness ? "harness-color" : "color", parent.selector, m[0]));
+        const stepProp = text.slice(0, idx).trim().toLowerCase();
+        const stepValue = text.slice(idx + 1);
+        const kind = opts.harness ? "harness-color" : "color";
+        for (const m of stepValue.matchAll(COLOR)) out.push(line(file, kind, parent.selector, m[0]));
+        if (COLOR_PROPS.test(stepProp) || stepProp.startsWith("--")) for (const c of namedColors(stepValue)) out.push(line(file, kind, parent.selector, c));
       }
       return;
     }
@@ -169,7 +214,7 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
     // Harness mode reuses the app's checks and renames the kinds, then adds the token-only color rule.
     const found: string[] = [];
     checkDeclaration(file, top.selector, prop, value, opts, false, found);
-    for (const f of found) out.push(f.replace("|color|", "|harness-color|").replace(/\|(?:height|radius|space|font-size|weight)\|/, "|harness-size|"));
+    for (const f of found) out.push(f.replace("|color|", "|harness-color|").replace(/\|(?:height|width|radius|space|font-size|weight)\|/, "|harness-size|"));
     if (COLOR_PROPS.test(prop)) {
       for (const m of value.matchAll(VAR_CALL)) if (!m[1].startsWith("--hh-")) out.push(line(file, "harness-color", top.selector, `var(${m[1]})`));
     }
@@ -216,10 +261,10 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
   }
   // A broken parse must fail loudly: silently dropping the rest of a file would shrink the offenders list.
   if (quote || stack.length) throw new Error(`scanCss: unbalanced input in ${file}`);
-  return dedupe(out);
+  return countLines(out);
 }
 
-type Part = { text: string; dynamicEnd: boolean };
+type Part = { text: string; dynamicStart: boolean; dynamicEnd: boolean };
 
 /** Index just after the string or template literal that starts at `i`. */
 function skipString(src: string, i: number): number {
@@ -252,20 +297,22 @@ function stringParts(src: string): Part[] {
     const ch = src[i];
     if (ch === '"' || ch === "'") {
       const end = skipString(src, i);
-      parts.push({ text: src.slice(i + 1, end - 1), dynamicEnd: false });
+      parts.push({ text: src.slice(i + 1, end - 1), dynamicStart: false, dynamicEnd: false });
       i = end - 1;
     } else if (ch === "`") {
       const end = skipString(src, i);
       let buf = "";
+      let afterExpr = false;
       for (let j = i + 1; j < end - 1; j++) {
         if (src[j] === "$" && src[j + 1] === "{") {
           const close = matchBrace(src, j + 1);
-          parts.push({ text: buf, dynamicEnd: true }, ...stringParts(src.slice(j + 2, close)));
+          parts.push({ text: buf, dynamicStart: afterExpr, dynamicEnd: true }, ...stringParts(src.slice(j + 2, close)));
           buf = "";
+          afterExpr = true;
           j = close;
         } else buf += src[j];
       }
-      parts.push({ text: buf, dynamicEnd: false });
+      parts.push({ text: buf, dynamicStart: afterExpr, dynamicEnd: false });
       i = end - 1;
     }
   }
@@ -274,8 +321,8 @@ function stringParts(src: string): Part[] {
 
 /**
  * Scans one TSX file: every `hh-*` class in a `className` must be in the guide's list, and a `style`
- * object must not hold a hex / rgb / hsl color. A class cut by an interpolation (`hh-btn--${v}`) passes
- * when some class in the list starts with the static prefix.
+ * object must not hold a hex / rgb / hsl or named color. A class token touching an interpolation
+ * (`hh-btn--${v}`) is built at run time and is not checked.
  */
 export function scanTsx(file: string, tsx: string, guideClasses: ReadonlySet<string>): string[] {
   const out: string[] = [];
@@ -288,18 +335,24 @@ export function scanTsx(file: string, tsx: string, guideClasses: ReadonlySet<str
     for (const part of parts) {
       for (const c of part.text.matchAll(/(?<![\w-])hh-[\w-]*/g)) {
         const name = c[0];
-        const cut = part.dynamicEnd && c.index + name.length === part.text.length;
-        const ok = cut ? [...guideClasses].some((g) => g.startsWith(name)) : guideClasses.has(name);
-        if (!ok) out.push(line(file, "class", name, name));
+        const cutEnd = part.dynamicEnd && c.index + name.length === part.text.length;
+        const cutStart = part.dynamicStart && c.index === 0;
+        if (!cutEnd && !cutStart && !guideClasses.has(name)) out.push(line(file, "class", name, name));
       }
     }
   }
 
   for (const m of tsx.matchAll(/\bstyle\s*=\s*\{/g)) {
     const open = m.index + m[0].length - 1;
-    for (const c of tsx.slice(open, matchBrace(tsx, open)).matchAll(COLOR)) out.push(line(file, "color", "style", c[0]));
+    const body = tsx.slice(open, matchBrace(tsx, open));
+    for (const c of body.matchAll(COLOR)) out.push(line(file, "color", "style", c[0]));
+    // `backgroundColor: "navy"`: the key is camelCase, the value a string literal.
+    for (const kv of body.matchAll(/\b([a-zA-Z]+)\s*:\s*(["'`])((?:\\.|(?!\2).)*)\2/g)) {
+      if (!COLOR_PROPS.test(kv[1].replace(/[A-Z]/g, (u) => `-${u.toLowerCase()}`))) continue;
+      for (const c of namedColors(kv[3])) out.push(line(file, "color", "style", c));
+    }
   }
-  return dedupe(out);
+  return countLines(out);
 }
 
 // From packages/ui/test to the repo root, independent of process.cwd().
@@ -344,5 +397,5 @@ export function scanRepo(): string[] {
   for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: rel(f) === "packages/ui/src/plugin-ui/tokens.css" });
   for (const f of filesUnder(src, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
   for (const root of harnessRoots(REPO_ROOT)) out.push(...scanHarnessCss(REPO_ROOT, root));
-  return dedupe(out).sort();
+  return out.sort();
 }

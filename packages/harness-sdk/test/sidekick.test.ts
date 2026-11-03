@@ -173,9 +173,10 @@ describe("several sidekicks (spec §2a)", () => {
 describe("sidekick marks are icon names (style guide §4, row 44)", () => {
   const schema = () => sidekickCollection().schema;
   const rec = (mark: string) => ({ id: "rulo", type: "sidekick", name: "Rulo", mark, personality: "", purposes: [{ id: "mentor" }], order: 1 });
-  it("the record schema rejects an emoji and accepts each icon name", () => {
-    expect(schema().safeParse(rec("🦊")).success).toBe(false);
-    expect(schema().safeParse(rec("--hh-accent")).success).toBe(false);
+  it("the record schema reads an emoji or a token as coach (stored data stays loadable) and accepts each icon name", () => {
+    expect(schema().parse(rec("🦊")).mark).toBe("coach");
+    expect(schema().parse(rec("--hh-accent")).mark).toBe("coach");
+    expect(schema().parse(rec("spark")).mark).toBe("coach");
     for (const m of SIDEKICK_MARKS) expect(schema().safeParse(rec(m)).success, m).toBe(true);
   });
   it("a preset's mark must be an icon name", () => {

@@ -227,7 +227,8 @@ export const sidekickRecordSchema = z
     updatedAt: ISO.optional(),
     // sidekick
     name: z.string().min(1).max(40).optional(),
-    mark: markSchema.optional(),
+    // A stored mark that is not an icon name (an old emoji, "spark") reads as coach, so the record stays loadable and writable.
+    mark: z.preprocess((v) => (v === undefined ? v : sidekickMark(v)), markSchema).optional(),
     personality: z.string().max(SIDEKICK_PERSONALITY_MAX).optional(),
     purposes: z.array(purposeSchema).min(1).max(6).optional(),
     order: z.number().int().min(0).max(999).optional(),

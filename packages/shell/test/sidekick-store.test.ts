@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SIDEKICK, SIDEKICK_COLLECTION, type SidekickRecord, sidekickCollection } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
+import { dataFile } from "../../workspace/src/layout";
 import { SIDEKICK_MAX, SidekickStore } from "../src/main/sidekick-store";
 
 async function store(manifest?: { default: "on" | "off" }) {
@@ -341,5 +342,18 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
     const saved = await s.saveSidekick({ name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }], defaultOn: false });
     expect((await s.sidekicks()).find((k) => k.id === saved.id)).toEqual({ id: "rulo", name: "Rulo", mark: "focus" as const, personality: "", purposes: [{ id: "mentor" }], order: 1, defaultOn: false });
     expect(await s.scopeFor("main", "rulo")).toEqual({ on: false });
+  });
+
+  it("a stored mark that is not an icon name (an emoji, spark) loads as coach, and later writes still work (style guide §4, row 44)", async () => {
+    const { s, ds, base } = await store();
+    const old = (id: string, mark: string, order: number) => ({ id, type: "sidekick", name: id, mark, personality: "", purposes: [{ id: "mentor" }], order });
+    const file = dataFile(base, APP_SCOPE, SIDEKICK_COLLECTION);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify([old("fox", "🧭", 1), old("sparky", "spark", 2), old("owl", "mentor", 3)]));
+    expect((await s.sidekicks()).map((k) => [k.id, k.mark])).toEqual([["fox", "coach"], ["sparky", "coach"], ["owl", "mentor"]]);
+    const saved = await s.saveSidekick({ name: "Rulo", mark: "focus", personality: "", purposes: [{ id: "mentor" }] });
+    expect(saved.mark).toBe("focus");
+    await s.set({ on: true });
+    expect((await ds.readAll(SIDEKICK_COLLECTION, APP_SCOPE)).invalid).toBe(0);
   });
 });

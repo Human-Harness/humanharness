@@ -4,8 +4,8 @@ import { type InputSpec, inputFields } from "./input";
 
 /** The collection that says who a profile is (profiles spec D7): one app-wide record in each profile's own folder. */
 export const PROFILE_COLLECTION = "profile";
-/** The colours an avatar can take. A `color` the window doesn't know draws the neutral avatar. */
-export const PROFILE_COLORS = ["coral", "amber", "green", "teal", "blue", "violet", "pink", "gray"] as const;
+/** The colours an avatar can take. A `color` the window doesn't know draws the neutral avatar; the pre-2026-11 names (coral, amber, teal, pink) draw as their mapped colour. */
+export const PROFILE_COLORS = ["green", "orange", "blue", "violet", "red", "gray"] as const;
 export type ProfileColor = (typeof PROFILE_COLORS)[number];
 /** The most fields the add and edit form asks for. */
 export const PROFILE_FIELDS_MAX = 6;

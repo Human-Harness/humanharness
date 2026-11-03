@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AVATAR_COLORS } from "../src/profiles";
 
 const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
 const [light, dark] = css.split("prefers-color-scheme: dark");
@@ -207,5 +208,14 @@ describe("control size tokens and top bar overrides", () => {
     expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
     const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
     expect(tsx).toMatch(/className="hh-topbar-icon"/);
+  });
+});
+
+describe("profile avatars (style guide §2 special uses)", () => {
+  it("six colors, each a tag fill with its tag ink; grey is surface-2 + ink", () => {
+    expect([...AVATAR_COLORS]).toEqual(["green", "orange", "blue", "violet", "red", "gray"]);
+    for (const c of ["green", "orange", "blue", "violet", "red"])
+      expect(css).toMatch(new RegExp(`\\.hh-avatar\\[data-color="${c}"\\]\\s*{[^}]*background:\\s*var\\(--hh-t-${c}\\);[^}]*color:\\s*var\\(--hh-t-${c}-ink\\)`));
+    expect(css).toMatch(/\.hh-avatar\[data-color="gray"\]\s*{[^}]*background:\s*var\(--hh-surface-2\);[^}]*color:\s*var\(--hh-ink\)/);
   });
 });

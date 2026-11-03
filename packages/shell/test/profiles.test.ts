@@ -79,13 +79,13 @@ describe("Profiles (profiles spec §5)", () => {
 
   it("creating: closes the task, registers it, makes its folder with the seed, writes its record, makes it active", async () => {
     const t = setup();
-    expect(await t.profiles.create({ name: "Sofi", color: "coral" })).toEqual({ ok: true });
+    expect(await t.profiles.create({ name: "Sofi", color: "red" })).toEqual({ ok: true });
     const dir = path.join(t.root, "sofi");
     expect(t.calls).toEqual(["closeTask", "closeRuntime"]);
     expect(fs.readFileSync(path.join(dir, "README.md"), "utf8")).toBe("seed");
-    expect(t.records.get(dir)).toEqual({ name: "Sofi", color: "coral" });
+    expect(t.records.get(dir)).toEqual({ name: "Sofi", color: "red" });
     expect(t.active()).toBe("sofi");
-    expect(await t.profiles.state()).toMatchObject({ active: "sofi", list: [{ id: "sofi", title: "Sofi", color: "coral", archived: false }] });
+    expect(await t.profiles.state()).toMatchObject({ active: "sofi", list: [{ id: "sofi", title: "Sofi", color: "red", archived: false }] });
     expect(t.changed).toHaveBeenLastCalledWith(expect.objectContaining({ active: "sofi" }));
   });
 
@@ -228,11 +228,11 @@ describe("Profiles (profiles spec §5)", () => {
 
   it("the registry copies the record's name and colour; a bad name changes nothing", async () => {
     const t = setup();
-    await t.profiles.create({ name: "Sofi", color: "coral" });
+    await t.profiles.create({ name: "Sofi", color: "red" });
     const dir = path.join(t.root, "sofi");
-    t.records.set(dir, { name: "Sofía", color: "teal" });
+    t.records.set(dir, { name: "Sofía", color: "green" });
     await t.profiles.sync(dir);
-    expect((await new ProfileStore(t.root).list())[0]).toMatchObject({ id: "sofi", title: "Sofía", color: "teal" });
+    expect((await new ProfileStore(t.root).list())[0]).toMatchObject({ id: "sofi", title: "Sofía", color: "green" });
     t.records.set(dir, { name: "" });
     await t.profiles.sync(dir);
     expect((await new ProfileStore(t.root).list())[0].title).toBe("Sofía");
@@ -370,9 +370,9 @@ describe("Profiles (profiles spec §5)", () => {
 describe("Profiles: editing the active one (spec §5)", () => {
   it("writes the form's fields over the record: a field left out is cleared, one the form doesn't ask for stays; the registry follows", async () => {
     const t = setup();
-    await t.profiles.create({ name: "Sofi", color: "coral" });
+    await t.profiles.create({ name: "Sofi", color: "red" });
     const dir = path.join(t.root, "sofi");
-    t.records.set(dir, { name: "Sofi", color: "coral", goal: "Pass maths" });
+    t.records.set(dir, { name: "Sofi", color: "red", goal: "Pass maths" });
     expect(await t.profiles.edit({ name: "  Sofía ", goal: "ignored" })).toEqual({ ok: true });
     expect(t.records.get(dir)).toEqual({ name: "Sofía", goal: "Pass maths" });
     expect((await t.profiles.state()).list).toEqual([expect.objectContaining({ id: "sofi", title: "Sofía" })]);

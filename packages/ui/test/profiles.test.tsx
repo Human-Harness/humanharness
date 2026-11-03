@@ -157,9 +157,23 @@ describe("Avatar", () => {
     );
     const marks = container.querySelectorAll(".hh-avatar");
     expect([...marks].map((m) => [m.textContent, m.getAttribute("data-color")])).toEqual([
-      ["S", "coral"],
+      ["S", "red"],
       ["Ñ", null],
     ]);
+  });
+
+  it("a stored colour no longer in the six draws the colour it is mapped to; the six draw as themselves", async () => {
+    const stored = ["coral", "amber", "teal", "pink", "green", "blue", "violet", "gray", "orange", "red"];
+    const { container } = await renderIn(
+      "en",
+      <>
+        {stored.map((color) => (
+          <Avatar key={color} profile={{ title: "a", color }} />
+        ))}
+      </>,
+    );
+    const drawn = [...container.querySelectorAll(".hh-avatar")].map((m) => m.getAttribute("data-color"));
+    expect(drawn).toEqual(["red", "orange", "green", "red", "green", "blue", "violet", "gray", "orange", "red"]);
   });
 });
 

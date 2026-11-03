@@ -795,14 +795,12 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* A refusal sits in the 52px bar: one line, cut short; the whole line stays in its tooltip. */
 .hh-profile-switcher [role="alert"] { max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--hh-t-orange-ink); }
 .hh-avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-surface-2); color: var(--hh-ink); font-size: 12px; font-weight: 600; flex: none; }
-.hh-avatar[data-color="coral"] { background: var(--hh-t-red); }
-.hh-avatar[data-color="amber"] { background: var(--hh-t-orange); }
-.hh-avatar[data-color="green"] { background: var(--hh-t-green); }
-.hh-avatar[data-color="teal"] { background: var(--hh-t-green); }
-.hh-avatar[data-color="blue"] { background: var(--hh-t-blue); }
-.hh-avatar[data-color="violet"] { background: var(--hh-t-violet); }
-.hh-avatar[data-color="pink"] { background: var(--hh-t-red); }
-.hh-avatar[data-color="gray"] { background: var(--hh-surface-2); }
+.hh-avatar[data-color="green"] { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
+.hh-avatar[data-color="orange"] { background: var(--hh-t-orange); color: var(--hh-t-orange-ink); }
+.hh-avatar[data-color="blue"] { background: var(--hh-t-blue); color: var(--hh-t-blue-ink); }
+.hh-avatar[data-color="violet"] { background: var(--hh-t-violet); color: var(--hh-t-violet-ink); }
+.hh-avatar[data-color="red"] { background: var(--hh-t-red); color: var(--hh-t-red-ink); }
+.hh-avatar[data-color="gray"] { background: var(--hh-surface-2); color: var(--hh-ink); }
 
 /* Input blocks (input-blocks spec §5): the core form, and an answer once sent. */
 .hh-input-block { display: flex; flex-direction: column; gap: 8px; }

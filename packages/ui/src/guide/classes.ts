@@ -24,6 +24,11 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-tab-item",
   "hh-tab-label",
   "hh-tab-dot",
+  // NavItem (§3)
+  "hh-nav-item",
+  "hh-nav-lead",
+  "hh-nav-label",
+  "hh-nav-trail",
   // Empty state line (§4: a 14 icon before the text)
   "hh-history-empty-line",
 ]);

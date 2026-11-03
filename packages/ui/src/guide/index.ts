@@ -4,3 +4,4 @@ export * from "./Button";
 export * from "./IconButton";
 export * from "./Segmented";
 export * from "./Tabs";
+export * from "./NavItem";

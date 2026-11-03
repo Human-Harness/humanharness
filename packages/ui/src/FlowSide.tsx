@@ -2,6 +2,7 @@ import { type ReactNode, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { Tag } from "./chrome";
 import { Icon } from "./guide/icons";
+import { NavItem } from "./guide/NavItem";
 import { type AppState, type TaskView, nextInPath } from "./client";
 import { shownLanguage } from "./language";
 
@@ -101,25 +102,30 @@ export function FlowSide({
               const done = tasks.actions[id] === "done" && !here;
               return (
                 <li key={id}>
-                  <button
-                    type="button"
-                    className={done ? "hh-flow-step is-done" : "hh-flow-step"}
-                    aria-current={here ? "step" : undefined}
+                  <NavItem
+                    selected={here}
+                    current="step"
                     disabled={disabled || (here && tasks.current !== null)}
                     onClick={() => onStart(id)}
-                  >
-                    <span className={done ? "hh-step-mark hh-flow-mark done" : "hh-step-mark hh-flow-mark"} aria-hidden="true">
-                      {done ? <Icon name="check" size={14} /> : i + 1}
-                    </span>
-                    <span className="hh-flow-label">{state.actions[id].label}</span>{" "}
-                    {done && <Tag tone="green">{t("flow.seen")}</Tag>}
-                    {/* aria-current already says it to screen readers: the tag keeps the step's name as it was. */}
-                    {here && (
-                      <span className="hh-tag hh-tag-orange" aria-hidden="true">
-                        {t(running ? "flow.now" : "start.view.upNext")}
+                    lead={
+                      <span className={done ? "hh-step-mark hh-flow-mark done" : "hh-step-mark hh-flow-mark"} aria-hidden="true">
+                        {done ? <Icon name="check" size={14} /> : i + 1}
                       </span>
-                    )}
-                  </button>
+                    }
+                    trail={
+                      <>
+                        {done && <Tag tone="green">{t("flow.seen")}</Tag>}
+                        {/* aria-current already says it to screen readers: the tag keeps the step's name as it was. */}
+                        {here && (
+                          <span className="hh-tag hh-tag-orange" aria-hidden="true">
+                            {t(running ? "flow.now" : "start.view.upNext")}
+                          </span>
+                        )}
+                      </>
+                    }
+                  >
+                    {state.actions[id].label}
+                  </NavItem>
                   {running && tasks.current?.context && <ContextMeter {...tasks.current.context} />}
                 </li>
               );

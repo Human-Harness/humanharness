@@ -29,6 +29,7 @@ import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 import { Button } from "./guide/Button";
 import { IconButton } from "./guide/IconButton";
+import { NavItem } from "./guide/NavItem";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 
@@ -194,21 +195,21 @@ export function SettingsPage({
           <h1 id={titleId}>{t("settings.title")}</h1>
           <div className="hh-settings-tabs" role="tablist" aria-label={t("settings.title")} aria-orientation="vertical">
             {tabs.map((id) => (
-              <button
+              <NavItem
                 key={id}
                 id={tabId(id)}
-                type="button"
                 role="tab"
-                className="hh-settings-navitem"
+                selected={tab === id}
+                current="page"
                 aria-selected={tab === id}
                 aria-controls={panelId}
                 tabIndex={tab === id ? 0 : -1}
+                trail={attention[id] ? <Tag tone="orange">{attention[id]}</Tag> : null}
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
                 {tabLabel(t, state, id, sidekickTab)}
-                {attention[id] ? <Tag tone="orange">{attention[id]}</Tag> : null}
-              </button>
+              </NavItem>
             ))}
           </div>
         </nav>

@@ -13,6 +13,7 @@ import { useProfiles } from "./ProfileSwitcher";
 import { SetupInterviewStep } from "./SetupInterviewStep";
 import { SetupStepForm } from "./SetupStepForm";
 import { Button } from "./guide/Button";
+import { NavItem } from "./guide/NavItem";
 
 /** A core step, or a harness step by id (setup-steps spec §4). */
 type Step = "folder" | "engine" | "profile" | "done" | `step:${string}`;
@@ -306,17 +307,24 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
         <nav className="hh-setup-nav">
           <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
             {steps.map((s, i) => (
-              <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : undefined}>
-                <span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>
-                <span className="hh-setup-step-text">
-                  <span className="hh-setup-step-label">{s.label}</span>
-                  {i < at && s.value && (
-                    <span className="hh-setup-step-value">
-                      <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
-                    </span>
-                  )}
-                  {i === at && <span className="hh-setup-step-value">{t("setupFlow.stepOf", { n: at + 1, count: steps.length })}</span>}
-                </span>
+              <li key={s.id}>
+                <NavItem
+                  selected={i === at}
+                  current="step"
+                  look="white"
+                  tone={i > at ? "muted" : undefined}
+                  lead={<span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>}
+                >
+                  <span className="hh-setup-step-text">
+                    <span className="hh-setup-step-label">{s.label}</span>
+                    {i < at && s.value && (
+                      <span className="hh-setup-step-value">
+                        <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
+                      </span>
+                    )}
+                    {i === at && <span className="hh-setup-step-value">{t("setupFlow.stepOf", { n: at + 1, count: steps.length })}</span>}
+                  </span>
+                </NavItem>
               </li>
             ))}
           </ol>

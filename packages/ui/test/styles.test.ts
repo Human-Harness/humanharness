@@ -133,8 +133,6 @@ describe("styles", () => {
 
   it("keeps the border of buttons that set their own on hover", () => {
     const hover = (sel: string) => css.match(new RegExp(`^${sel}:hover:not\\(:disabled\\)[^{]*{[^}]*border-color:\\s*([^;}]+)`, "m"))?.[1].trim();
-    expect(hover("\\.hh-steps button")).toBe("transparent");
-    expect(hover('\\.hh-steps button\\[aria-current="step"\\]')).toBe("var(--hh-line)");
     expect(hover("\\.hh-choice\\.next")).toBe("var(--hh-ink)");
     expect(css).toMatch(/\.hh-choice\[aria-pressed="true"\]:hover:not\(:disabled\)\s*{[^}]*border-color:\s*var\(--hh-ink\)/);
   });

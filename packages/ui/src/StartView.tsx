@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented, Tag } from "./chrome";
+import { Tag } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import { Icon } from "./guide/icons";
 import { type AppState, type TaskView, nextInPath } from "./client";
 

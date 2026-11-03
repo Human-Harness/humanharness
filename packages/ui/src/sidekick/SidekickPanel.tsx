@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented, Tag } from "../chrome";
+import { Tag } from "../chrome";
+import { Segmented } from "../guide/Segmented";
 import { Icon } from "../guide/icons";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../client";
 import { shownLanguage } from "../language";

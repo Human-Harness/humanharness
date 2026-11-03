@@ -92,37 +92,6 @@ export function AppFooter({ folder, mock }: { folder?: string | undefined; mock?
   );
 }
 
-export interface SegmentOption<T extends string> {
-  value: T;
-  label: string;
-}
-
-/** macOS-style segmented control: one choice among a few. */
-export function Segmented<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-  describedBy,
-}: {
-  label: string;
-  options: SegmentOption<T>[];
-  value: T;
-  onChange: (value: T) => void;
-  /** Ids of the texts that describe the group (help, an error). */
-  describedBy?: string;
-}) {
-  return (
-    <div className="hh-segmented" role="group" aria-label={label} aria-describedby={describedBy}>
-      {options.map((o) => (
-        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** The task header's Sidekick pill (sidekick spec §7, UI refresh spec §5.1): a state dot, green when on. */
 export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   const { t } = useTranslation();

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "../chrome";
+import { Segmented } from "../guide/Segmented";
 import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "../client";
 import { shownLanguage } from "../language";
 import { LearnedList } from "./LearnedList";

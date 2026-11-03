@@ -20,7 +20,8 @@ import {
   UNDO_PREFIX,
   type UndoRefusal,
 } from "./client";
-import { Segmented, Tag } from "./chrome";
+import { Tag } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import { Icon } from "./guide/icons";
 import { Drawer } from "./Drawer";
 import { shownLanguage } from "./language";

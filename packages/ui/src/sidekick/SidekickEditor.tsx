@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "../chrome";
+import { Segmented } from "../guide/Segmented";
 import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "../client";
 import { ICON_NAMES, Icon } from "../guide/icons";
 import { markIcon } from "./mark";

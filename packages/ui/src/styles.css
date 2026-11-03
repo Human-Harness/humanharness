@@ -168,11 +168,6 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 /* The rail takes its width from the chat: with the reader open, the composer's field shrinks rather than push Send under it. */
 .hh-shell-main .hh-composer textarea, .hh-shell-main .hh-sk-flagged { min-width: 0; }
 @media (max-width: 760px) { .hh-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); } .hh-shell > .hh-rail { width: auto; } .hh-shell-chat > .hh-app { height: 100%; } }
-.hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--hh-surface-2); }
-.hh-segmented button { height: 28px; border: none; background: transparent; border-radius: 6px; }
-.hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: var(--hh-shadow); }
-@media (prefers-color-scheme: dark) { .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { box-shadow: var(--hh-shadow), inset 0 0 0 1px var(--hh-line-strong); } }
-
 /* Home */
 .hh-home { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--hh-topbar-h) minmax(0, 1fr) auto; background: var(--hh-rail); }
 .hh-home .hh-topbar { border-bottom: none; }
@@ -318,11 +313,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-drawer-titles { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .hh-drawer-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; overflow-wrap: anywhere; }
 .hh-drawer-body { flex: 1 1 auto; overflow: auto; padding: 16px 20px; display: grid; align-content: start; gap: 14px; }
-/* Settings › General › Text size: each choice shows its own size. */
-.hh-text-sizes { display: flex; flex-wrap: wrap; gap: 6px; }
-.hh-text-sizes button { height: auto; width: 76px; flex-direction: column; justify-content: flex-end; gap: 4px; padding: 8px 0; font-size: 12px; color: var(--hh-muted); }
-.hh-text-sizes button[aria-pressed="true"] { border-color: var(--hh-ink); box-shadow: inset 0 0 0 1px var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
-.hh-text-size-sample { font-weight: 600; line-height: 1; color: var(--hh-ink); }
 /* Settings › Uso: plan windows with a bar, and the topic table in the look of .hh-rows. */
 .hh-usage-windows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .hh-usage-window { padding: 16px; display: grid; gap: 8px; align-content: start; }
@@ -952,8 +942,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
 .hh-pl-errors li { display: flex; flex-direction: column; gap: 2px; }
 .hh-pl-test { display: flex; flex-direction: column; gap: 8px; }
-.hh-pl-days { display: flex; flex-wrap: wrap; gap: 4px; }
-.hh-pl-days button[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-bg); }
 .hh-pl-hours select { max-width: 100%; }
 .hh-plugin-frame { display: block; width: 100%; box-sizing: border-box; border: none; background: transparent; }
 .hh-plugin-frame-error { margin: 0; padding: 8px; color: var(--hh-muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1395,3 +1383,7 @@ input.hh-search-input {
 .hh-icon-btn:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-icon-btn:disabled { opacity: 0.5; }
 .hh-rail > .hh-icon-btn[aria-current="page"], .hh-rail > .hh-icon-btn[aria-current="page"]:hover:not(:disabled) { background: var(--hh-active); color: var(--hh-active-ink); }
+/* guide: Segmented */
+.hh-segmented { display: inline-flex; box-sizing: border-box; height: var(--hh-h-compact); border-radius: var(--hh-r-compact); background: var(--hh-surface-2); }
+.hh-segmented button { height: 100%; padding: 0 var(--hh-s-3); border: 0; border-radius: var(--hh-r-compact); background: transparent; font-size: 13px; font-weight: 500; color: var(--hh-ink); }
+.hh-segmented button[aria-pressed="true"] { background: var(--hh-active); color: var(--hh-active-ink); }

@@ -2,7 +2,8 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEf
 import { useTranslation } from "react-i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk/parallel";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { Segmented, Tag, TopBar } from "./chrome";
+import { Tag, TopBar } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import { Icon } from "./guide/icons";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
@@ -391,19 +392,14 @@ function GeneralTab({
           <Segmented label={t("settings.appearance")} value={state.config.appearance ?? "system"} onChange={(appearance) => void save({ appearance })} options={appearances} />
         </div>
         <div className="hh-row hh-row-wrap" data-setting="general.textSize">
-          <span className="hh-row-label" id={sizeId}>
-            {t("settings.textSize")}
-          </span>
-          <div className="hh-text-sizes" role="group" aria-labelledby={sizeId} aria-describedby={`${sizeId}-hint`}>
-            {TEXT_SIZE_KEYS.map((textSize) => (
-              <button key={textSize} type="button" aria-pressed={(state.config.textSize ?? "normal") === textSize} onClick={() => void save({ textSize })}>
-                <span className="hh-text-size-sample" style={{ fontSize: `${Math.round(15 * TEXT_SIZES[textSize])}px` }} aria-hidden="true">
-                  Aa
-                </span>
-                <span>{t(`settings.textSizes.${textSize}`)}</span>
-              </button>
-            ))}
-          </div>
+          <span className="hh-row-label">{t("settings.textSize")}</span>
+          <Segmented
+            label={t("settings.textSize")}
+            describedBy={`${sizeId}-hint`}
+            value={state.config.textSize ?? "normal"}
+            onChange={(textSize) => void save({ textSize })}
+            options={TEXT_SIZE_KEYS.map((textSize) => ({ value: textSize, label: t(`settings.textSizes.${textSize}`) }))}
+          />
           <p className="hh-caption hh-row-note" id={`${sizeId}-hint`}>
             {t("settings.textSizeHint", { mod: ZOOM_KEY })}
           </p>

@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented, Tag, type TagTone } from "../chrome";
+import { Tag, type TagTone } from "../chrome";
+import { Segmented } from "../guide/Segmented";
 import { type AppState, type HarnessClient, type JobSummary, type TaskSummary, type TasksState, timeAgo } from "../client";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";

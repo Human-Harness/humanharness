@@ -34,6 +34,8 @@ describe("StartView in the soft-cards look (UI refresh spec §5.3)", () => {
     const props = { state: s, tasks: view(), notice: null, disabled: false, onStart: () => {}, onAsk: () => {}, storage };
     const { unmount } = await renderIn("en", <StartView {...props} />);
     const switcher = screen.getByRole("group", { name: "View" });
+    expect(switcher.classList.contains("hh-segmented")).toBe(true);
+    expect(within(switcher).getAllByRole("button").map((b) => b.textContent)).toEqual(["Cards", "List"]);
     expect(within(switcher).getByRole("button", { name: "Cards" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("list", { name: "Topics" }).className).toBe("hh-topics");
     fireEvent.click(within(switcher).getByRole("button", { name: "List" }));

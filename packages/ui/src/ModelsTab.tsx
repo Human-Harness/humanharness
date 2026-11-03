@@ -1,7 +1,8 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
-import { Segmented, Tag, type TagTone } from "./chrome";
+import { Tag, type TagTone } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
 import { SectionHead, SettingRow, SettingsCard } from "./settings-parts";

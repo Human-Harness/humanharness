@@ -220,9 +220,10 @@ describe("SettingsSheet", () => {
     const client = new FakeClient(ready);
     await renderIn("en", <Sheet client={client} />);
     const sizes = screen.getByRole("group", { name: "Text size" });
-    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["AaNormal", "AaLarge", "AaLarger", "AaLargest"]);
+    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["Normal", "Large", "Larger", "Largest"]);
     expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
     expect(sizes.getAttribute("aria-describedby")).toBe(screen.getByText(/0 goes back to Normal\.$/).id);
+    expect(sizes.classList.contains("hh-segmented")).toBe(true);
     fireEvent.click(within(sizes).getByRole("button", { name: "Larger" }));
     await waitFor(() => expect(client.state.config.textSize).toBe("larger"));
     expect(within(sizes).getByRole("button", { name: "Larger" }).getAttribute("aria-pressed")).toBe("true");

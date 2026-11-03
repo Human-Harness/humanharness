@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import type { HarnessClient, SettingFieldView, SettingsResult, SettingsState, SettingsView } from "./client";
 import { Button } from "./guide/Button";
 

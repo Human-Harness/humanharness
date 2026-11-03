@@ -244,8 +244,11 @@ describe("Settings › Plugins", () => {
       c2.pluginResults = [{ ok: true }, { ok: true }];
       const r2 = await openDetail(c2);
       const group = within(r2).getByRole("group", { name: "Work hours" });
-      const days = within(group).getAllByRole("button").filter((b) => b.hasAttribute("aria-pressed"));
+      const week = within(group).getByRole("group", { name: "Days" });
+      expect(week.classList.contains("hh-segmented")).toBe(true);
+      const days = within(week).getAllByRole("button");
       expect(days).toHaveLength(7);
+      expect(days[0].getAttribute("aria-label")).toBe("Sunday");
       expect(days.filter((d) => d.getAttribute("aria-pressed") === "true")).toHaveLength(5);
       fireEvent.click(days[6]); // Saturday (Sunday first)
       await waitFor(() => expect(c2.pluginCalls).toContainEqual(["setWorkHours", "oncall", { ...wh, days: [1, 2, 3, 4, 5, 6] }]));

@@ -61,10 +61,12 @@ const SPACE_PROPS = /^(?:gap|row-gap|column-gap|padding(?:-[a-z]+)*|margin(?:-[a
 // Properties that carry a color. Only these are checked for foreign vars: a non-`--hh-` var in any other
 // property (a size, `content`, `transition`) is not flagged, because a harness may name its own custom
 // properties for measures; its literal px values are still checked against the scale. Named colors
-// (`red`) are not detected either: the guard only sees hex / rgb / hsl literals and vars.
+// (`red`) are not detected either: the guard only sees hex / rgb / hsl literals and vars. Keyframe steps
+// check literal colors only, not foreign vars. Offenders of every size kind in a harness file share the
+// kind `harness-size`, so identical selector + value collapse into one line.
 const COLOR_PROPS =
-  /^(?:color|background(?:-color)?|(?:border|outline|column-rule)(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-color)?|fill|stroke|caret-color|accent-color|text-decoration(?:-color)?|text-emphasis-color|box-shadow|text-shadow|scrollbar-color)$/;
-const VAR_CALL = /var\(\s*(--[\w-]+)\s*(?:,[^()]*)?\)/g;
+  /^(?:-webkit-)?(?:(?:text-fill|tap-highlight)-color|color|background(?:-image|-color)?|(?:border|outline|column-rule)(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-color)?|border-image|fill|stroke|stop-color|flood-color|lighting-color|caret-color|accent-color|text-decoration(?:-color)?|text-emphasis-color|box-shadow|text-shadow|scrollbar-color|filter)$/;
+const VAR_CALL = /var\(\s*(--[\w-]+)/g;
 
 const line = (file: string, kind: Kind, where: string, value: string) => `${file}|${kind}|${where}|${value}`;
 const dedupe = (items: string[]) => [...new Set(items)];
@@ -159,7 +161,7 @@ export function scanCss(file: string, css: string, opts: CssOptions = {}): strin
     checkDeclaration(file, top.selector, prop, value, opts, false, found);
     for (const f of found) out.push(f.replace("|color|", "|harness-color|").replace(/\|(?:height|radius|space|font-size|weight)\|/, "|harness-size|"));
     if (COLOR_PROPS.test(prop)) {
-      for (const m of value.matchAll(VAR_CALL)) if (!m[1].startsWith("--hh-")) out.push(line(file, "harness-color", top.selector, m[0]));
+      for (const m of value.matchAll(VAR_CALL)) if (!m[1].startsWith("--hh-")) out.push(line(file, "harness-color", top.selector, `var(${m[1]})`));
     }
   };
 
@@ -301,6 +303,26 @@ const filesUnder = (dir: string, ext: string): string[] =>
     return e.isDirectory() ? (e.name === "node_modules" || e.name === "dist" ? [] : filesUnder(full, ext)) : full.endsWith(ext) ? [full] : [];
   });
 
+const subdirs = (base: string): string[] =>
+  existsSync(base) ? readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(base, e.name)) : [];
+
+/** Harness and plugin stylesheet roots (§15). Absent directories are simply not in the list. */
+export function harnessRoots(root: string): string[] {
+  const harnesses = subdirs(join(root, "harnesses"));
+  return [
+    ...harnesses.map((d) => join(d, "ui")),
+    ...harnesses.flatMap((d) => subdirs(join(d, "plugins"))).map((d) => join(d, "panels")),
+    join(root, "packages/cli/template/ui"),
+    ...subdirs(join(root, "packages/e2e/fixtures/plugins")).map((d) => join(d, "panels")),
+  ];
+}
+
+/** Scans every .css under one harness root in harness mode; `dist/` and `node_modules` are skipped. */
+export function scanHarnessCss(repoRoot: string, dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return filesUnder(dir, ".css").flatMap((f) => scanCss(relative(repoRoot, f).split("\\").join("/"), readFileSync(f, "utf8"), { harness: true }));
+}
+
 /** Scans the app's own sources. Paths in the result are relative to the repo root. */
 export function scanRepo(): string[] {
   const src = join(REPO_ROOT, "packages/ui/src");
@@ -311,16 +333,6 @@ export function scanRepo(): string[] {
   css(join(src, "styles.css"), { tokenFile: true, topBarSelectors: TOP_BAR_SELECTORS });
   for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: rel(f) === "packages/ui/src/plugin-ui/tokens.css" });
   for (const f of filesUnder(src, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
-  // Harness and plugin stylesheets (§15). Missing directories are skipped; `dist/` is build output.
-  const subdirs = (base: string): string[] =>
-    existsSync(base) ? readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(base, e.name)) : [];
-  const harnesses = subdirs(join(REPO_ROOT, "harnesses"));
-  const harnessRoots = [
-    ...harnesses.map((d) => join(d, "ui")),
-    ...harnesses.flatMap((d) => subdirs(join(d, "plugins"))).map((d) => join(d, "panels")),
-    join(REPO_ROOT, "packages/cli/template/ui"),
-    ...subdirs(join(REPO_ROOT, "packages/e2e/fixtures/plugins")).map((d) => join(d, "panels")),
-  ];
-  for (const root of harnessRoots) if (existsSync(root)) for (const f of filesUnder(root, ".css")) css(f, { harness: true });
+  for (const root of harnessRoots(REPO_ROOT)) out.push(...scanHarnessCss(REPO_ROOT, root));
   return dedupe(out).sort();
 }

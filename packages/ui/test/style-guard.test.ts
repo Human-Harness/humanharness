@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GUIDE_CLASSES } from "../src/guide/classes";
 import offenders from "./style-guard-offenders.json";
-import { PIECE_SIZES, ROUND_SELECTORS, scanCss, scanRepo, scanTsx } from "./style-guard-lib";
+import { PIECE_SIZES, ROUND_SELECTORS, scanCss, scanHarnessCss, scanRepo, scanTsx } from "./style-guard-lib";
 
 describe("style guard scanner (style guide §15 Control)", () => {
   it("flags a loose color outside the token blocks, not inside them", () => {
@@ -34,6 +35,35 @@ describe("harness mode (style guide §15 Harness chat blocks)", () => {
   it("flags a literal hex, lets keywords and measure tokens through, ignores foreign vars outside color props", () => {
     const css = ".b { color: #fff; border: 1px solid transparent; background: inherit; padding: var(--hh-s-3); margin: var(--gap); border-color: currentColor; }";
     expect(scanCss("h.css", css, { harness: true })).toEqual(["h.css|harness-color|.b|#fff"]);
+  });
+});
+
+describe("harness foreign vars", () => {
+  const h = (css: string) => scanCss("h.css", css, { harness: true });
+  it("sees a foreign var with a nested fallback, and one nested inside a fallback", () => {
+    expect(h(".b { color: var(--other, var(--hh-ink)); }")).toEqual(["h.css|harness-color|.b|var(--other)"]);
+    expect(h(".b { color: var(--hh-ink, var(--other)); }")).toEqual(["h.css|harness-color|.b|var(--other)"]);
+  });
+  it("checks vars in gradients, svg colors, webkit colors and filters", () => {
+    expect(h(".b { background-image: linear-gradient(var(--x), var(--hh-line)); stop-color: var(--y); -webkit-text-fill-color: var(--z); filter: drop-shadow(0 0 var(--w)); }")).toEqual([
+      "h.css|harness-color|.b|var(--x)",
+      "h.css|harness-color|.b|var(--y)",
+      "h.css|harness-color|.b|var(--z)",
+      "h.css|harness-color|.b|var(--w)",
+    ]);
+  });
+});
+
+describe("harness stylesheet walk", () => {
+  it("skips dist, node_modules and absent directories", () => {
+    const root = mkdtempSync(join(tmpdir(), "sg-"));
+    const ui = join(root, "ui");
+    for (const d of ["dist", "node_modules/pkg"]) mkdirSync(join(ui, d), { recursive: true });
+    writeFileSync(join(ui, "a.css"), ".a { padding: 7px; }");
+    writeFileSync(join(ui, "dist/b.css"), ".b { padding: 7px; }");
+    writeFileSync(join(ui, "node_modules/pkg/c.css"), ".c { padding: 7px; }");
+    expect(scanHarnessCss(root, ui)).toEqual(["ui/a.css|harness-size|.a|7px"]);
+    expect(scanHarnessCss(root, join(root, "plugins"))).toEqual([]);
   });
 });
 

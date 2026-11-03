@@ -74,6 +74,13 @@ describe("NavItem (style guide §3, row 'Nav item')", () => {
     expect(chosen.color).toBe("var(--hh-active-ink)");
   });
 
+  it("overrides the generic button: left aligned, and it grows past 40 for two-line labels", () => {
+    const item = rule(".hh-nav-item");
+    expect(item["justify-content"]).toBe("flex-start");
+    expect(item.height).toBe("auto");
+    expect(px(item["min-height"])).toBe("40px");
+  });
+
   it("leaves no rule of the old nav items", () => {
     expect(css).not.toMatch(/\.hh-settings-navitem|\.hh-flow-step|\.hh-flow-label|\.hh-setup-steps li/);
     expect(GUIDE_CLASSES.has("hh-nav-item")).toBe(true);

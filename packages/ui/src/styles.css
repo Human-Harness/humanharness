@@ -583,7 +583,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-flow-side { width: 248px; flex: none; box-sizing: border-box; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--hh-line); overflow-y: auto; }
 .hh-flow-heading { margin: 0 0 6px; padding-left: 6px; font-size: 12px; font-weight: 600; color: var(--hh-muted); }
 .hh-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-/* The generic button hover (0,2,1) would beat these borders; they keep their own. */
 .hh-step-mark { width: 18px; height: 18px; flex: none; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--hh-line-strong); font-size: 12px; color: var(--hh-muted); }
 .hh-step-mark.done { border-color: transparent; color: var(--hh-t-green-ink); }
 [aria-current="step"] .hh-step-mark { border-color: transparent; background: var(--hh-ink); color: var(--hh-bg); }
@@ -1373,7 +1372,7 @@ input.hh-search-input {
 .hh-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-tab-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-t-orange-ink); }
 /* guide: NavItem */
-.hh-nav-item { display: flex; align-items: center; gap: var(--hh-s-2); box-sizing: border-box; width: 100%; min-height: var(--hh-h-normal); padding: 0 var(--hh-s-3); border: 0; border-radius: var(--hh-r-control); background: transparent; color: var(--hh-ink); font: inherit; text-align: start; }
+.hh-nav-item { display: flex; align-items: center; justify-content: flex-start; height: auto; gap: var(--hh-s-2); box-sizing: border-box; width: 100%; min-height: var(--hh-h-normal); padding: 0 var(--hh-s-3); border: 0; border-radius: var(--hh-r-control); background: transparent; color: var(--hh-ink); font: inherit; text-align: start; }
 .hh-nav-item[data-selected="true"] { background: var(--hh-active); color: var(--hh-active-ink); font-weight: 600; }
 .hh-nav-item[data-tone="muted"] { color: var(--hh-muted); }
 .hh-nav-item[data-selected="true"][data-look="white"] { background: var(--hh-surface); color: var(--hh-ink); box-shadow: var(--hh-shadow); }

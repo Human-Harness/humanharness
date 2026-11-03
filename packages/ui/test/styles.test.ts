@@ -249,7 +249,8 @@ describe("type (style guide §2 Type)", () => {
     expect(css).toMatch(/--hh-mono:\s*"DM Mono"/);
     expect(css).toMatch(/^:not\(pre\)\s*>\s*code\s*{[^}]*font-family:\s*var\(--hh-mono\)[^}]*font-size:\s*calc\(1em - 1px\)[^}]*background:\s*var\(--hh-surface-2\)[^}]*border-radius:\s*4px/m);
   });
-  it("diff line code is not styled as inline code", () => {
-    expect(css).toMatch(/^\.hh-filediff code\s*{[^}]*background:\s*none[^}]*border-radius:\s*0[^}]*font-size:\s*12px/m);
+  it("raw diff line code is not styled as inline code, and the reset stays off the Markdown diff", () => {
+    expect(css).toMatch(/^\.hh-filediff-lines code,\s*\.hh-filediff-mono code\s*{[^}]*background:\s*none[^}]*border-radius:\s*0[^}]*font-size:\s*12px/m);
+    expect(css).not.toMatch(/^\.hh-filediff code/m);
   });
 });

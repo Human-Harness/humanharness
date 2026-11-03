@@ -565,7 +565,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-filediff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hh-filediff ins { background: var(--hh-t-green); text-decoration: underline; text-decoration-color: var(--hh-t-green-ink); }
 .hh-filediff del { background: var(--hh-t-red); text-decoration: line-through; text-decoration-color: var(--hh-t-red-ink); }
-.hh-filediff code { background: none; border-radius: 0; font-size: 12px; } /* per-line code, not inline code: keeps the row tint and the old size */
+.hh-filediff-lines code, .hh-filediff-mono code { background: none; border-radius: 0; font-size: 12px; } /* raw per-line code, not inline code: keeps the row tint and the old size; the Markdown diff keeps its own code styling */
 .hh-filediff-block { padding-left: 10px; border-left: 3px solid transparent; }
 .hh-filediff-added { border-left: 3px solid var(--hh-t-green-ink); background: var(--hh-t-green); }
 .hh-filediff-removed { border-left: 3px solid var(--hh-t-red-ink); background: var(--hh-t-red); text-decoration: line-through; }

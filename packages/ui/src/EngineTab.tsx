@@ -145,7 +145,7 @@ export function EngineTab({
               >
                 {selected === e.id && (
                   <span className="hh-check" aria-hidden="true">
-                    ✓
+                    <Icon name="check" size={14} />
                   </span>
                 )}
                 {e.logo ? <img src={e.logo} alt="" /> : <Icon name="engine" size={32} />}

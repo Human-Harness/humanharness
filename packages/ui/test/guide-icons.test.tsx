@@ -54,3 +54,13 @@ it("no <svg> outside the icon set, the logos and the sidekick mark; no GIF (styl
   expect(files(SRC).filter((f) => f.endsWith(".gif"))).toEqual([]);
   expect(readFileSync(join(SRC, "chrome.tsx"), "utf8").match(/<svg[\s>]/g)?.length).toBe(1); // HHLogo
 });
+
+it("no character stands in for an icon in any component (style guide §4, row 12)", () => {
+  for (const f of files(SRC).filter((x) => x.endsWith(".tsx"))) {
+    const text = readFileSync(f, "utf8");
+    expect(text, f).not.toMatch(/>\s*[✓←×✕›↩]\s*</);
+    expect(text, f).not.toMatch(/["'][✓←×✕›↩]["']/);
+    expect(text, f).not.toMatch(/^\s*[✓←×✕›↩]\s*$/m); // JSX text alone on its line
+    expect(text, f).not.toMatch(/^\s*← \{t\(/m);
+  }
+});

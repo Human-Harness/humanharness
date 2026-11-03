@@ -287,12 +287,14 @@ describe("callouts, captions, footnotes (§3.2)", () => {
       ["2", "#fn:a", "fnref:a"],
     ]);
     const items = [...container.querySelectorAll(".hh-md-footnotes li")];
-    expect(items.map((li) => [li.id, li.textContent?.replace("↩", "").trim()])).toEqual([
+    expect(items.map((li) => [li.id, li.textContent?.replace("volver", "").trim()])).toEqual([
       ["fn:b", "Beta."],
       ["fn:a", "Alpha."],
     ]);
     expect(items[0].querySelector("a.hh-md-back")?.getAttribute("href")).toBe("#fnref:b");
     expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBe("Back to the text");
+    expect(items[0].querySelector("a.hh-md-back")?.textContent).toBe("volver");
+    expect(container.textContent).not.toContain("↩");
   });
 
   it("a second reference to the same note reuses its number; only the first gets the back-link id", async () => {
@@ -325,7 +327,7 @@ describe("callouts, captions, footnotes (§3.2)", () => {
 
   it("finds definitions nested in a quote or a list", async () => {
     const { container } = await renderIn("en", <Markdown source={"A[^q] B[^l].\n\n> [^q]: In a quote.\n\n- [^l]: In a list."} idPrefix="" />);
-    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.textContent?.replace("↩", "").trim())).toEqual(["In a quote.", "In a list."]);
+    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.textContent?.replace("volver", "").trim())).toEqual(["In a quote.", "In a list."]);
   });
 
   it("a note that references itself, and two notes that reference each other, end", async () => {

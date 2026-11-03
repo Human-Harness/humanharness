@@ -10,19 +10,8 @@ const steps = [
   { kind: "read" as const, detail: "harness.config.ts", done: false },
 ];
 
-/** Makes `prefers-reduced-motion: reduce` match (or not). */
-function reducedMotion(on: boolean) {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: on && query.includes("prefers-reduced-motion: reduce"),
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-}
-
 beforeEach(() => {
   resetWorkDetail();
-  reducedMotion(false);
 });
 afterEach(() => {
   cleanup();

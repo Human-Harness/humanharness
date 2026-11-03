@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, MaterialAddResult, MaterialChoice, MaterialInfo, MaterialResult, MaterialSourceView, MaterialView } from "./client";
+import { Icon } from "./guide/icons";
 import { shownLanguage } from "./language";
 
 export interface MaterialPanelProps {
@@ -318,7 +319,7 @@ function RemoveButton({ client, scope, source, disabled }: { client: HarnessClie
             setAsking(true);
           }}
         >
-          <span aria-hidden="true">×</span>
+          <Icon name="remove" size={18} />
         </button>
       </>
     );

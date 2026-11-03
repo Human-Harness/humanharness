@@ -1,5 +1,6 @@
 import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Icon } from "./guide/icons";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
 import { type Draft, answerRows, draftOf, draftValue, emptyDraft, isSkipped, optionLabel, optionsOf } from "./input";
 import { ReviewHint } from "./sidekick/ReviewHint";
@@ -394,7 +395,7 @@ function PairsField({
           ))}
           {rows.length > 1 && (
             <button type="button" aria-label={t("input.removeRow", { n: r + 1 })} disabled={disabled} onClick={() => remove(r)}>
-              ×
+              <Icon name="remove" size={18} />
             </button>
           )}
         </div>

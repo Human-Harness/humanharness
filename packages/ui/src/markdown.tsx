@@ -297,7 +297,7 @@ function renderFootnotes(ctx: Ctx): ReactNode {
       <li key={id} id={noteId(ctx, id)}>
         {renderBlocks(def.children, inner, true)}{" "}
         <a href={`#${refId(ctx, id)}`} className="hh-md-back" aria-label={ctx.t("reader.backToText")} onClick={(e) => jump(e, refId(ctx, id))}>
-          ↩
+          {ctx.t("reader.footnoteBack")}
         </a>
       </li>,
     );

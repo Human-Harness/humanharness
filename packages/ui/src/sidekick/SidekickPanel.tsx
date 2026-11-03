@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented, Tag } from "../chrome";
+import { Icon } from "../guide/icons";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../client";
 import { shownLanguage } from "../language";
 import { SidekickMark } from "./mark";
@@ -104,7 +105,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
         )}
         <span className="hh-spacer" />
         <button type="button" className="hh-sk-collapse" aria-label={t("sidekick.collapse")} onClick={p.onCollapse}>
-          ›
+          <Icon name="chevron" size={18} />
         </button>
       </header>
       {p.harnessSide !== undefined && (

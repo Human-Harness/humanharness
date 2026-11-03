@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, PluginDetail as Detail, PluginResult, PluginRow, PluginTestResult, PluginWorkHours, SettingFieldView } from "../client";
 import { groups, HarnessFieldRow } from "../HarnessSettingsTab";
+import { Icon } from "../guide/icons";
 import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
 
@@ -105,7 +106,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
     <section className="hh-tab hh-card hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
       <div>
         <button type="button" className="hh-link" onClick={onBack}>
-          ← {t("plugins.detail.back")}
+          <Icon name="back" size={18} /> {t("plugins.detail.back")}
         </button>
       </div>
       <h3 id={`${id}-name`} ref={head} tabIndex={-1}>

@@ -76,6 +76,17 @@ describe("readTestHooks", () => {
 });
 
 describe("testEngineStatus", () => {
+  it("reports the missing step HH_TEST_ENGINE_PROBLEM names, in development only", () => {
+    expect(readTestHooks({ HH_TEST_ENGINE_PROBLEM: "logged-out" }, false)).toEqual({ engineProblem: "logged-out" });
+    expect(readTestHooks({ HH_TEST_ENGINE_PROBLEM: "logged-out" }, true)).toEqual({});
+    expect(readTestHooks({ HH_TEST_ENGINE_PROBLEM: "notice" }, false)).toEqual({});
+    const claude = getEngine("claude");
+    expect(testEngineStatus(claude, true, "not-installed")).toMatchObject({ installed: false, version: null });
+    expect(testEngineStatus(claude, true, "outdated")).toMatchObject({ installed: true, outdated: true, version: "0.0.1" });
+    expect(testEngineStatus(claude, true, "logged-out").loggedIn).toBe(false);
+    expect(testEngineStatus(claude, true, "untested").verified).toBe(false);
+  });
+
   it("reports a fake engine as installed, signed in and tested", () => {
     expect(testEngineStatus(getEngine("claude"), true)).toEqual({
       engineId: "claude",

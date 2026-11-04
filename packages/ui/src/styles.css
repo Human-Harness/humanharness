@@ -263,10 +263,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: var(--hh-s-4); background: v
   .hh-setup-body { padding: var(--hh-s-5) var(--hh-s-4); }
 }
 /* The engine step: the onboarding block as a card. */
-.hh-engine-radio-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--hh-muted); }
-.hh-engine-radio-status[data-tone="ok"] { color: var(--hh-t-green-ink); }
-.hh-engine-more { margin: 0; }
-.hh-setup .hh-onboarding { padding: 18px 20px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
 
 /* Settings as a page (UI refresh spec §5.5): in place of the screen, which stays mounted under it, hidden. */
 /* Wraps Home or the work screen without changing its layout (hidden, and inert, while Settings shows). */
@@ -301,7 +297,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: var(--hh-s-4); background: v
 .hh-progress { display: block; height: 6px; border-radius: 4px; background: var(--hh-surface-2); overflow: hidden; }
 .hh-progress > i { display: block; height: 100%; background: var(--hh-t-blue-ink); }
 .hh-progress.warn > i { background: var(--hh-t-orange-ink); }
-.hh-manual ol { margin: 0 0 8px; padding-left: 20px; }
 .hh-tab { display: grid; gap: 20px; }
 .hh-tab > section { display: grid; gap: 20px; }
 .hh-rows { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
@@ -322,8 +317,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: var(--hh-s-4); background: v
 .hh-drawer-titles { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .hh-drawer-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; overflow-wrap: anywhere; }
 .hh-drawer-body { flex: 1 1 auto; overflow: auto; padding: 16px 20px; display: grid; align-content: start; gap: 14px; }
-.hh-onboarding { display: grid; gap: 10px; justify-items: start; }
-.hh-onboarding pre { max-height: 160px; overflow: auto; font-size: 12px; color: var(--hh-muted); white-space: pre-wrap; }
 /* Always there for screen readers; while empty it takes no room (out of the flow, still in the tree). */
 .hh-backup-status { max-width: var(--hh-dialog-w); overflow-wrap: anywhere; }
 .hh-backup-status:empty { position: absolute; }
@@ -998,7 +991,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langpick-reason, .hh-langpick-none, .hh-langpick-progress { margin: 0; }
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-langpick-actions, .hh-langnotice-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.hh-legal-english { margin-top: 4px; font-style: italic; }
 
 /* ---- Search palette (search spec §5; packages/ui/src/search). One block: the UI refresh moves it as a unit. ---- */
 .hh-search-backdrop {

@@ -48,12 +48,12 @@ describe("EngineTab", () => {
     expect(tile.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("in the small engine tile (setup radio list), an engine without a logo draws the engine icon at 18", async () => {
+  it("in the Assistant's engine choice, an engine without a logo draws the engine icon at 18", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
     client.state.engines = [{ ...client.state.engines[0], logo: undefined }];
-    const { container } = await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
-    const small = container.querySelector(".hh-option-lead svg");
-    expect(small?.getAttribute("width")).toBe("18");
+    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />, { theme: true });
+    const label = screen.getByRole("radio", { name: /Claude/ }).closest("label") as HTMLElement;
+    expect(label.querySelector("svg")?.getAttribute("width")).toBe("18");
   });
 
   it("in the setup flow, has no Use button and reports the selected engine and its readiness", async () => {
@@ -680,23 +680,26 @@ describe("EngineTab: legal texts in another language", () => {
     expect(container.querySelector("[lang]")).toBeNull();
   });
 
-  it("in the setup flow, gives the first tile the tab stop when no engine is checked", async () => {
+  it("in the setup flow, the group is the one tab stop when no engine is checked", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "gone" });
     addCodex(client);
-    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
-    const radios = within(screen.getByRole("radiogroup", { name: "AI engines" })).getAllByRole("radio");
+    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />, { theme: true });
+    const group = screen.getByRole("radiogroup", { name: "AI engines" });
+    const radios = within(group).getAllByRole("radio");
     expect(radios.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "false"]);
-    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1]);
+    // Radix keeps the tab stop on the group and hands the focus to the first engine.
+    expect(group.tabIndex).toBe(0);
+    expect(radios.map((r) => r.tabIndex)).toEqual([-1, -1]);
   });
 
   it("in the setup flow, the arrows move the focus between engines and choose the one they land on", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     addCodex(client);
-    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />);
+    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup />, { theme: true });
     const radios = within(screen.getByRole("radiogroup", { name: "AI engines" })).getAllByRole("radio");
     radios[0].focus();
     fireEvent.keyDown(radios[0], { key: "ArrowDown" });
-    expect(document.activeElement).toBe(radios[1]);
+    await waitFor(() => expect(document.activeElement).toBe(radios[1]));
     await waitFor(() => expect(radios[1].getAttribute("aria-checked")).toBe("true"));
   });
 

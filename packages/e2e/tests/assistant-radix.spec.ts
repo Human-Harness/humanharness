@@ -135,3 +135,69 @@ test("the connect step", async () => {
     await closeAndClean(app, s);
   }
 });
+
+/** The end of a step longer than the window: every scroller scrolled to its bottom, both themes. */
+async function shootEnd(page: Page, name: string) {
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll<HTMLElement>("*")) if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
+    });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(lookDir, `assistant-radix-${name}-end-${theme}.png`) });
+  }
+}
+
+// Stage 3c: the engine step. The choice and its One last check; then the card of each missing step. A fake engine is
+// always ready, so HH_TEST_ENGINE_PROBLEM makes it report the step; the legal notice is the real one.
+test("the engine step: the choice and One last check, light and dark, and narrow", async () => {
+  test.setTimeout(120_000);
+  const s = makeSandbox("assistant-engine", { engineId: undefined });
+  const { app, page } = await launch(s, { claude: claudeScript });
+  try {
+    await page.getByRole("button", { name: "Set up Demo" }).click();
+    const claude = page.getByRole("radiogroup", { name: "AI engines" }).getByRole("radio", { name: /Claude.*Connected/ });
+    await expect(claude).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("heading", { name: "One last check" })).toBeVisible();
+    await shoot(page, "engine", true);
+    await shootEnd(page, "engine");
+  } finally {
+    await closeAndClean(app, s);
+  }
+});
+
+test("the engine step: the legal notice", async () => {
+  test.setTimeout(120_000);
+  const s = makeSandbox("assistant-engine-notice", { engineId: undefined });
+  fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: {} }));
+  const { app, page } = await launch(s, { claude: claudeScript });
+  try {
+    await page.getByRole("button", { name: "Set up Demo" }).click();
+    await expect(page.getByRole("heading", { name: "Before using Claude" })).toBeVisible();
+    await shoot(page, "engine-notice", true);
+    await shootEnd(page, "engine-notice");
+  } finally {
+    await closeAndClean(app, s);
+  }
+});
+
+for (const [problem, heading] of [
+  ["not-installed", "Install Claude"],
+  ["outdated", "Update Claude"],
+  ["logged-out", "Sign in to Claude"],
+] as const) {
+  test(`the engine step: ${problem}`, async () => {
+    test.setTimeout(120_000);
+    const s = makeSandbox(`assistant-engine-${problem}`, { engineId: undefined });
+    const { app, page } = await launch(s, { claude: claudeScript }, shellDir, { HH_TEST_ENGINE_PROBLEM: problem });
+    try {
+      await page.getByRole("button", { name: "Set up Demo" }).click();
+      await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+      await shoot(page, `engine-${problem}`, problem === "not-installed");
+      await shootEnd(page, `engine-${problem}`);
+    } finally {
+      await closeAndClean(app, s);
+    }
+  });
+}

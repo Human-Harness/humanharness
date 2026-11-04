@@ -705,12 +705,12 @@
     "cancelSetup": "Cancel setup",
     "stepOf": "Step {{n}} of {{count}}",
     "lastCheck": "One last check",
-    "tileStatus": {
-      "notice": "Needs your OK first · we show the notice next",
-      "not-installed": "Not on this computer yet · we install it next",
-      "outdated": "Needs an update · we update it next",
-      "logged-out": "Not signed in · you sign in next",
-      "untested": "One quick test · it runs next"
+    "tileBadge": {
+      "notice": "Needs your OK",
+      "not-installed": "Not installed",
+      "outdated": "Needs an update",
+      "logged-out": "Not signed in",
+      "untested": "Needs a test"
     }
   },
   "setupSteps": {

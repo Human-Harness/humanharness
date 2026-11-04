@@ -27,16 +27,22 @@ export interface TestHooks {
   pluginFixtures?: boolean;
   /** Keys are stored with a reversible test crypto, never the Keychain (HH_TEST_FAKE_SECRETS=1: e2e; tools S6). */
   fakeSecrets?: boolean;
+  /** Every fake engine reports this missing step (HH_TEST_ENGINE_PROBLEM), so e2e can show the engine step's cards. */
+  engineProblem?: TestEngineProblem;
   /** The window opens inactive (no focus steal) and the Dock icon is hidden (HH_TEST_BACKGROUND=1: e2e runs in the background). */
   background?: boolean;
 }
+
+/** The steps a fake engine can report missing (HH_TEST_ENGINE_PROBLEM); the legal notice stays the real one. */
+export const TEST_ENGINE_PROBLEMS = ["not-installed", "outdated", "logged-out", "untested"] as const;
+export type TestEngineProblem = (typeof TEST_ENGINE_PROBLEMS)[number];
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR,
  * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1"), HH_TEST_MINUTE_MS (a time-box minute in ms), HH_PLUGIN_DIRS (absolute
- * plugin folders, `path.delimiter`-separated), HH_TEST_PLUGIN_RUN_LIMIT_MS, HH_PLUGIN_FIXTURES ("1"), HH_TEST_FAKE_SECRETS ("1"), HH_TEST_BACKGROUND ("1") and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
+ * plugin folders, `path.delimiter`-separated), HH_TEST_PLUGIN_RUN_LIMIT_MS, HH_PLUGIN_FIXTURES ("1"), HH_TEST_FAKE_SECRETS ("1"), HH_TEST_BACKGROUND ("1"), HH_TEST_ENGINE_PROBLEM (one of TEST_ENGINE_PROBLEMS) and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
  * can be passed this way.
  */
 export function readTestHooks(env: Record<string, string | undefined>, packaged: boolean): TestHooks {
@@ -59,6 +65,8 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   if (env.HH_PLUGIN_FIXTURES === "1") hooks.pluginFixtures = true;
   if (env.HH_TEST_FAKE_SECRETS === "1") hooks.fakeSecrets = true;
   if (env.HH_TEST_BACKGROUND === "1") hooks.background = true;
+  const problem = TEST_ENGINE_PROBLEMS.find((p) => p === env.HH_TEST_ENGINE_PROBLEM);
+  if (problem) hooks.engineProblem = problem;
   let raw: unknown;
   try {
     raw = env.HH_TEST_ENGINES ? JSON.parse(env.HH_TEST_ENGINES) : undefined;
@@ -92,17 +100,17 @@ export function mockToolsDir(hooks: Pick<TestHooks, "mock" | "engines">): string
   return replayed && path.isAbsolute(replayed) ? path.join(replayed, "tools") : null;
 }
 
-/** A fake engine is always installed, signed in and tested; only the legal notice is real. */
-export function testEngineStatus(engine: EngineDef, noticeAccepted: boolean): EngineStatus {
+/** A fake engine is installed, signed in and tested unless `problem` says a step is missing; the legal notice is real. */
+export function testEngineStatus(engine: EngineDef, noticeAccepted: boolean, problem?: TestEngineProblem): EngineStatus {
   return {
     engineId: engine.id,
-    installed: true,
-    version: engine.detect.minVersion,
+    installed: problem !== "not-installed",
+    version: problem === "not-installed" ? null : problem === "outdated" ? "0.0.1" : engine.detect.minVersion,
     minVersion: engine.detect.minVersion,
-    outdated: false,
-    loggedIn: true,
+    outdated: problem === "outdated",
+    loggedIn: problem !== "logged-out",
     noticeAccepted,
-    verified: true,
+    verified: problem !== "untested",
   };
 }
 

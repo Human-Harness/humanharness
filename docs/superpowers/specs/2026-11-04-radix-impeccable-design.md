@@ -29,7 +29,7 @@ New in DESIGN.md, taken from what the spike agent had to invent:
 
 - **Settings row anatomy:** name and hint on the left, control right-aligned in one column, hairline between rows; rows grouped in cards, no nested cards; tight spacing inside a group, generous between groups.
 - **Control per kind of setting:** 2–4 instant choices → segmented; a number in a small range or a long list → select; on/off → switch; a value chosen elsewhere → value + "Change…" button.
-- **Status as a badge**, colored by state (green ok, amber needs attention, gray off), not a sentence.
+- **Status as a badge**, colored by state (green ok, orange needs attention, gray off), not a sentence. Orange, not amber: amber means primary and chosen (decided 2026-11-04).
 - **One highlighted band per page** at most, for the one thing that needs the person.
 
 ## 3. Pieces: Radix instead of our own

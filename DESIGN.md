@@ -84,7 +84,7 @@ spacing:
 
 Radix Themes provides the pieces: accent amber, gray sand, radius large, sizes 1 to 4. Impeccable provides the loop. This file holds our rules. A screen uses only the pieces listed here (spec §1, §2 "Closed world").
 
-Screens import the pieces from one barrel, `packages/ui/src/guide`, as the `Rx` namespace. The barrel lists 27 names: AlertDialog, Avatar, Badge, Box, Button, Callout, Card, Checkbox, Code, Dialog, DropdownMenu, Flex, Grid, Heading, IconButton, Popover, Progress, RadioGroup, ScrollArea, SegmentedControl, Select, Separator, Switch, Tabs, Text, TextArea, TextField (`packages/ui/src/guide/radix.ts`). A guard test keeps the list closed.
+Screens import the pieces from one barrel, `packages/ui/src/guide`, as the `Rx` namespace. The barrel lists 27 names: AlertDialog, Avatar, Badge, Box, Button, Callout, Card, Checkbox, Code, Dialog, DropdownMenu, Flex, Grid, Heading, IconButton, Popover, Progress, RadioGroup, ScrollArea, SegmentedControl, Select, Separator, Switch, Tabs, Text, TextArea, TextField (`packages/ui/src/guide/radix.ts`). A guard test keeps the list closed. Our wrappers (`Field`, `Group`, `Row`, `SettingsNav`) are named below but are not in the barrel yet: they arrive with the screens that need them, from stage 2 on (spec §7).
 
 The tokens above come from `packages/ui/src/styles.css`. Every key ending in `-dark` is the dark value of the key without it. The app follows the system's light or dark mode (spec §3).
 

@@ -21,15 +21,12 @@ export function Tabs({
   value,
   onChange,
   id,
-  small,
 }: {
   label: string;
   items: readonly TabItem[];
   value: string;
   onChange: (id: string) => void;
   id?: string;
-  /** Font 12 instead of 13: the plugin panel tabs (answer T5). */
-  small?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const index = Math.max(
@@ -54,7 +51,7 @@ export function Tabs({
     ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
   return (
-    <div ref={ref} className="hh-tabs" data-small={small ? "true" : undefined} role="tablist" aria-label={label} onKeyDown={onKeyDown}>
+    <div ref={ref} className="hh-tabs" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
       {items.map((it, i) => {
         const selected = i === index;
         return (

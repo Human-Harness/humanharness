@@ -7,6 +7,14 @@ import { HarnessApp } from "../src";
 import type { PluginPanelView, PluginSurfaceView, SearchAnswer, SearchHitView } from "../src/client";
 import { FakeClient } from "./fake-client";
 
+/**
+ * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
+ * happy-dom has no CSS to drop the hidden one from the accessible name.
+ */
+const tab = (label: string) => ({ name: (_: string, el: Element) => el.querySelector(".rt-TabsTriggerInner")?.textContent === label });
+/** Radix tabs select on mouse down, not on click. */
+const pick = (el: Element) => fireEvent.mouseDown(el, { button: 0, ctrlKey: false });
+
 afterEach(cleanup);
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -50,10 +58,10 @@ describe("a plugin record's panel from search (search spec §3 Data)", () => {
     fireEvent.click(await within(dialog).findByRole("option"));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull());
     act(() => c.emitSurface(surface([DIGEST, QUEUE])));
-    await screen.findByRole("tab", { name: "Queue" });
+    await screen.findByRole("tab", tab("Queue"));
     await act(async () => {});
-    expect(screen.getByRole("tab", { name: "Digest" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tab", tab("Digest")).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", tab("Queue")).getAttribute("aria-selected")).toBe("false");
   });
 
   it("a row whose panel is on screen opens it", async () => {
@@ -65,10 +73,10 @@ describe("a plugin record's panel from search (search spec §3 Data)", () => {
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
-    await screen.findByRole("tab", { name: "Queue" });
+    await screen.findByRole("tab", tab("Queue"));
     act(() => c.search.open("inc"));
     const dialog = await screen.findByRole("dialog", { name: "Search" });
     fireEvent.click(await within(dialog).findByRole("option"));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("tab", tab("Queue")).getAttribute("aria-selected")).toBe("true"));
   });
 });

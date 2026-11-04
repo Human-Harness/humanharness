@@ -1,32 +1,44 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, PluginResult, PluginReview, PluginRow } from "../client";
+import { Group, Icon, Row, Rx, SectionHead } from "../guide";
 import { shownLanguage } from "../language";
 import { Plain, PermissionReview } from "./PermissionReview";
 import { PluginDetail, when } from "./PluginDetail";
 import { usePluginsRescan } from "./usePlugins";
-import { Tag, type TagTone } from "../chrome";
-import { SectionHead } from "../settings-parts";
-import { Button } from "../guide/Button";
-import { Toggle } from "../guide/Toggle";
 
-/** Each state's tag colour (UI refresh spec): on green, needs review orange, off after crashes and errors red. */
-const STATUS_TONE: Record<PluginRow["status"], TagTone> = { on: "green", off: "gray", review: "orange", crashed: "red", error: "red" };
+/**
+ * Each state's badge (DESIGN.md "Badge": green ok, orange needs attention, gray off). A plugin turned off after
+ * crashes, or in error, says so in a red line under its row instead: its words are a sentence, not a tag.
+ */
+const STATUS_BADGE: Partial<Record<PluginRow["status"], "green" | "gray" | "orange">> = { on: "green", off: "gray", review: "orange" };
 
 /** A review's `from`: the row whose switch asked for it (focus goes back there); none for Add from folder. */
 type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?: string; from?: string } | { kind: "detail"; id: string };
+
+/** A screen inside the section: the top bar's Volver names the list and goes back to it (DESIGN.md "Settings"). */
+export interface SettingsSub {
+  label: string;
+  back: () => void;
+}
 
 /**
  * Settings › Plugins (plugins spec §7): the list (opening it rescans), Add from folder (main shows the dialog and
  * answers a review and a one-time token, never a path from here), the permission review and each plugin's detail.
  * Only shown with `state.plugins` (D0).
+ *
+ * Radix stage 2e: the list is loose, one row per plugin (its name opens the detail; its state as a badge; its switch on
+ * the right); Add from folder is an outline button under it. A review or a detail takes the list's place and hands
+ * `onSub` the way back, so the top bar reads "← Plugins" and Escape goes back to the list.
  */
-export function PluginsTab({ client }: { client: HarnessClient }) {
+export function PluginsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub: SettingsSub | null) => void }) {
   const { t, i18n } = useTranslation();
   const language = shownLanguage(i18n);
   const { view, failed: loadFailed } = usePluginsRescan(client);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
@@ -47,6 +59,20 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     back.current = row ? { row } : {};
     setScreen({ kind: "list" });
   };
+
+  // Away from the list, the top bar goes back to it (not while Turn on is in flight: it could still end with the
+  // plugin on). Read through a ref, so the top bar always runs this screen's way back.
+  const leave = useRef<() => void>(() => {});
+  leave.current = () => {
+    if (screen.kind === "list" || busyRef.current) return;
+    toList(screen.kind === "detail" ? screen.id : screen.from);
+  };
+  const away = screen.kind !== "list";
+  const subLabel = t("plugins.tab");
+  useEffect(() => {
+    onSub?.(away ? { label: subLabel, back: () => leave.current() } : null);
+  }, [away, subLabel]);
+  useEffect(() => () => onSub?.(null), []);
 
   const add = () => {
     if (busy) return;
@@ -102,6 +128,11 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     }
   };
 
+  // A detail whose plugin is gone (removed here or elsewhere): the list again, and the top bar with it.
+  useEffect(() => {
+    if (screen.kind === "detail" && view && !view.plugins.some((p) => p.id === screen.id)) toList();
+  }, [view, screen]);
+
   // Back on the list (from a detail, a review or a removal): focus the row it came from, else Add from folder.
   useEffect(() => {
     if (screen.kind !== "list" || back.current === null) return;
@@ -111,18 +142,17 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     (to ?? addButton.current)?.focus();
   }, [screen]);
 
-  // The section's heading shows in every state (loading, failed, review), so the levels below never skip one.
-  const head = <SectionHead title={t("plugins.tab")} line={t("settings.line.plugins")} />;
+  const head = <SectionHead line={t("settings.line.plugins")} />;
   if (!view) {
     return loadFailed ? (
-      <div className="hh-tab" data-setting="plugins.plugins">
+      <div data-setting="plugins.plugins">
         {head}
-        <p className="hh-field-error" role="alert">
-          {failed}
-        </p>
+        <Rx.Callout.Root color="red" role="alert">
+          <Rx.Callout.Text>{failed}</Rx.Callout.Text>
+        </Rx.Callout.Root>
       </div>
     ) : (
-      <div className="hh-tab" data-setting="plugins.plugins" aria-busy="true">
+      <div data-setting="plugins.plugins" aria-busy="true">
         {head}
       </div>
     );
@@ -130,87 +160,119 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
 
   if (screen.kind === "review") {
     return (
-      <div className="hh-tab" data-setting="plugins.plugins">
-        {head}
+      <div data-setting="plugins.plugins">
         <PermissionReview review={screen.review} busy={busy} error={reviewError} onTurnOn={() => void turnOn(screen)} onCancel={() => toList(screen.from)} />
       </div>
     );
   }
-  // A detail sits beside the list, which stays as it is (gone, removed here or elsewhere: the list alone).
+  // A detail takes the list's place (gone, removed here or elsewhere: the list again).
   const open = screen.kind === "detail" ? view.plugins.find((p) => p.id === screen.id) : undefined;
+  if (open) {
+    return (
+      <div data-setting="plugins.plugins">
+        <PluginDetail key={open.id} client={client} row={open} onRemoved={() => toList()} />
+      </div>
+    );
+  }
 
-  const list =
-      view.plugins.length === 0 ? (
-        <p className="hh-pl-empty">{t("plugins.empty")}</p>
-      ) : (
-        <ul className="hh-rows hh-pl-list">
-          {view.plugins.map((p) => (
-            <li key={p.id} className="hh-row hh-row-wrap hh-pl-row">
-              <span className="hh-pl-row-main">
-                <Button type="button" kind="quiet" size="compact" className="hh-pl-name" data-plugin-open={p.id} onClick={() => setScreen({ kind: "detail", id: p.id })}>
-                  <Plain>{p.name}</Plain>
-                </Button>
-                <span className="hh-caption hh-pl-meta">
-                  {p.version && t("plugins.version", { version: p.version })}
-                  {" · "}
-                  {p.origin === "bundled" ? (
-                    t("plugins.origin.bundled")
-                  ) : (
-                    <>
-                      {t(`plugins.origin.${p.origin}`)} <Plain>{p.folder ?? ""}</Plain>
-                    </>
-                  )}
-                </span>
-                <span className="hh-pl-status">
-                  <Tag tone={STATUS_TONE[p.status]}>{t(`plugins.status.${p.status}`)}</Tag>
-                  {p.status === "error" && (
-                    <>
-                      {" "}
-                      <Plain>{p.error ?? failed}</Plain>
-                    </>
-                  )}
-                  {p.updated && <span className="hh-pl-tag">{t("plugins.updated")}</span>}
-                  {p.lastSync && <span className="hh-caption"> · {t("plugins.lastSync", { time: when(p.lastSync, language) })}</span>}
-                </span>
-                {p.lastError && (
-                  <span className="hh-caption hh-pl-error-text">
-                    {t("plugins.lastError")} <Plain>{p.lastError}</Plain>
-                  </span>
-                )}
-                {Object.hasOwn(rowErrors, p.id) && (
-                  <span className="hh-field-error" role="alert">
-                    {rowErrors[p.id]}
-                  </span>
-                )}
-              </span>
-              <Toggle aria-label={p.name} checked={p.status === "on"} onChange={(on) => setOn(p, on)} />
-            </li>
-          ))}
-        </ul>
-      );
+  const addRow = view.local && (
+    <Rx.Flex direction="column" align="start" gap="3" mt={view.plugins.length > 0 ? "3" : undefined}>
+      <Rx.Button ref={addButton} variant="outline" color="gray" size="1" aria-disabled={busy} onClick={add}>
+        <Icon name="add" size={14} />
+        {t("plugins.add")}
+      </Rx.Button>
+      {addError && (
+        <Rx.Callout.Root color="red" role="alert">
+          <Rx.Callout.Text>{addError}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+    </Rx.Flex>
+  );
 
   return (
-    <div className="hh-tab" data-setting="plugins.plugins">
+    <div data-setting="plugins.plugins">
       {head}
-      {open ? (
-        <div className="hh-master-detail">
-          <div className="hh-master-list">{list}</div>
-          <PluginDetail key={open.id} client={client} row={open} onBack={() => toList(open.id)} onRemoved={() => toList()} />
-        </div>
+      {view.plugins.length === 0 ? (
+        <>
+          <Rx.Text as="p" size="2" color="gray" mb="3">
+            {t("plugins.empty")}
+          </Rx.Text>
+          {addRow}
+        </>
       ) : (
-        list
-      )}
-      {view.local && (
-        <div>
-          <button type="button" ref={addButton} aria-disabled={busy} onClick={add}>
-            {t("plugins.add")}
-          </button>
-          {addError && (
-            <p className="hh-field-error" role="alert">
-              {addError}
-            </p>
-          )}
-        </div>
+        <Group loose after={addRow}>
+          {view.plugins.map((p) => {
+            const badge = STATUS_BADGE[p.status];
+            const lines = [
+              p.status === "crashed" ? t("plugins.status.crashed") : null,
+              p.status === "error" ? (
+                <>
+                  {t("plugins.status.error")} <Plain>{p.error ?? failed}</Plain>
+                </>
+              ) : null,
+              p.lastError ? (
+                <>
+                  {t("plugins.lastError")} <Plain>{p.lastError}</Plain>
+                </>
+              ) : null,
+            ].filter((l) => l !== null);
+            const rowError = Object.hasOwn(rowErrors, p.id) ? rowErrors[p.id] : undefined;
+            return (
+              <Row
+                key={p.id}
+                as="li"
+                aria-label={p.name}
+                label={
+                  <Rx.Flex as="span" align="center" gap="2" wrap="wrap" minWidth="0">
+                    <Rx.Button variant="ghost" color="gray" highContrast size="2" data-plugin-open={p.id} onClick={() => setScreen({ kind: "detail", id: p.id })}>
+                      <Rx.Text weight="bold">
+                        <Plain>{p.name}</Plain>
+                      </Rx.Text>
+                    </Rx.Button>
+                    {badge && <Rx.Badge color={badge}>{t(`plugins.status.${p.status}`)}</Rx.Badge>}
+                    {p.updated && (
+                      <Rx.Badge variant="outline" color="gray">
+                        {t("plugins.updated")}
+                      </Rx.Badge>
+                    )}
+                  </Rx.Flex>
+                }
+                hint={
+                  <>
+                    {p.version && t("plugins.version", { version: p.version })}
+                    {p.version && " · "}
+                    {p.origin === "bundled" ? (
+                      t("plugins.origin.bundled")
+                    ) : (
+                      <>
+                        {t(`plugins.origin.${p.origin}`)} <span className="hh-gd-path">{p.folder ?? ""}</span>
+                      </>
+                    )}
+                    {p.lastSync && ` · ${t("plugins.lastSync", { time: when(p.lastSync, language) })}`}
+                  </>
+                }
+                below={
+                  (lines.length > 0 || rowError) && (
+                    <Rx.Flex direction="column" gap="1">
+                      {lines.map((l, i) => (
+                        <Rx.Text as="p" size="1" color="red" key={i}>
+                          {l}
+                        </Rx.Text>
+                      ))}
+                      {rowError && (
+                        <Rx.Text as="p" size="1" color="red" role="alert">
+                          {rowError}
+                        </Rx.Text>
+                      )}
+                    </Rx.Flex>
+                  )
+                }
+              >
+                <Rx.Switch aria-label={p.name} checked={p.status === "on"} onCheckedChange={(on) => setOn(p, on)} />
+              </Row>
+            );
+          })}
+        </Group>
       )}
     </div>
   );

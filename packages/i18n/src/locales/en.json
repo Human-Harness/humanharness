@@ -1269,21 +1269,13 @@
       "cancel": "Cancel"
     },
     "detail": {
-      "back": "All plugins",
       "permissions": "What it may do",
       "settings": "Settings",
       "reset": "Reset settings"
     },
     "keys": {
       "title": "Keys",
-      "note": "A key is kept encrypted on this computer and is never shown again.",
-      "stored": "Stored",
-      "notStored": "Not stored · paste the key to use {{plugin}}",
-      "input": "Paste the key",
-      "save": "Save",
-      "replace": "Replace",
-      "delete": "Delete",
-      "cancel": "Cancel"
+      "note": "A key is kept encrypted on this computer and is never shown again."
     },
     "test": {
       "button": "Test connection",

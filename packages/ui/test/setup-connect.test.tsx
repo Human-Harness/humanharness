@@ -209,7 +209,7 @@ describe("the connect step (tools spec §9)", () => {
       return <SettingsPage client={c} state={c.state} tab={tab} onTab={setTab} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />;
     }
     await renderIn("en", <Sheet />, { theme: true });
-    const item = screen.getByRole("listitem", { name: "Connect your tools" });
+    const item = screen.getByRole("group", { name: "Connect your tools" });
     await waitFor(() => expect(within(item).getByText("Skipped. You can do it now.")).toBeTruthy());
     expect(within(item).queryByRole("button", { name: "Do it now" })).toBeNull();
     fireEvent.click(within(item).getByRole("button", { name: "Open" }));

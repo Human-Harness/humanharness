@@ -8,6 +8,14 @@ import type { PluginChipView, PluginPanelView, PluginSurfaceView } from "../src/
 import { reloadOf } from "../src/plugins/surface";
 import { FakeClient } from "./fake-client";
 
+/**
+ * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
+ * happy-dom has no CSS to drop the hidden one from the accessible name.
+ */
+const tab = (label: string) => ({ name: (_: string, el: Element) => el.querySelector(".rt-TabsTriggerInner")?.textContent === label });
+/** Radix tabs select on mouse down, not on click. */
+const pick = (el: Element) => fireEvent.mouseDown(el, { button: 0, ctrlKey: false });
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -93,17 +101,18 @@ describe("plugin slots", () => {
     const sec = await screen.findByRole("region", { name: "Plugins" });
     expect(sec.closest("nav.hh-flow-side")).not.toBeNull();
     const tabs = within(within(sec).getByRole("tablist", { name: "Plugin panels" })).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Queue", "Digest"]);
+    expect(tabs.map((t) => t.querySelector(".rt-TabsTriggerInner")?.textContent)).toEqual(["Queue", "Digest"]);
     expect(tabs.map((t) => t.getAttribute("title"))).toEqual(["On-call", "News"]);
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]);
     expect(within(sec).getByText("On-call")).toBeTruthy();
-    fireEvent.click(tabs[1]);
+    pick(tabs[1]);
     expect(tabs[1].getAttribute("aria-selected")).toBe("true");
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
-    // Arrow keys move between tabs.
+    // Arrow keys move between tabs (focus follows, and so does the selection).
+    act(() => tabs[1].focus());
     fireEvent.keyDown(tabs[1], { key: "ArrowRight" });
-    expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]);
+    await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));
   });
 
   it("Home and End move to the first and last tab", async () => {
@@ -111,12 +120,14 @@ describe("plugin slots", () => {
     const c = makeClient({ view: surface({ panels: [QUEUE, DIGEST, third] }) });
     await open(c);
     const tabs = await screen.findAllByRole("tab");
+    act(() => tabs[0].focus());
     fireEvent.keyDown(tabs[0], { key: "End" });
-    expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+    // Radix moves focus on the next tick; the tab follows focus.
+    await waitFor(() => expect(tabs[2].getAttribute("aria-selected")).toBe("true"));
     expect(document.activeElement).toBe(tabs[2]);
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([third.url]);
     fireEvent.keyDown(tabs[2], { key: "Home" });
-    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(tabs[0].getAttribute("aria-selected")).toBe("true"));
     expect(document.activeElement).toBe(tabs[0]);
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]);
   });
@@ -230,10 +241,15 @@ describe("plugin slots", () => {
     await open(c);
     await screen.findByRole("region", { name: "Plugins" });
     expect(document.querySelector("img")).toBeNull();
-    expect(document.querySelector(".hh-pl-chips b, .hh-pl-section b")).toBeNull();
-    expect(screen.getByRole("tab").textContent).toBe(evil);
+    const sec = screen.getByRole("region", { name: "Plugins" });
+    expect(document.querySelector(".hh-pl-chips b")).toBeNull();
+    expect(sec.querySelector("b")).toBeNull();
+    expect(screen.getByRole("tab").querySelector(".rt-TabsTriggerInner")?.textContent).toBe(evil);
     expect(document.querySelector(".hh-pl-chip")?.firstChild?.textContent).toBe(evil);
-    for (const el of document.querySelectorAll(".hh-pl-chip, .hh-tab-label, .hh-pl-panel-head")) expect(el.getAttribute("dir")).toBe("auto");
+    for (const el of document.querySelectorAll(".hh-pl-chip")) expect(el.getAttribute("dir")).toBe("auto");
+    // The panel's title and its plugin's name are isolated in the section.
+    for (const b of sec.querySelectorAll("bdi")) expect(b.getAttribute("dir")).toBe("auto");
+    expect([...sec.querySelectorAll("bdi")].some((b) => b.textContent === evil)).toBe(true);
   });
 
   it("a dev reload remounts that plugin's frames only", async () => {
@@ -268,7 +284,7 @@ describe("plugin slots", () => {
     expect(within(rail).queryByRole("button", { name: "Plugins" })).toBeNull();
     act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE] })));
     const tabs = await screen.findAllByRole("tab");
-    fireEvent.click(tabs[1]);
+    pick(tabs[1]);
     expect(tabs[1].getAttribute("aria-selected")).toBe("true");
     fireEvent.click(within(rail).getByRole("button", { name: "Plugins" }));
     await waitFor(() => expect(screen.getAllByRole("tab")[0].getAttribute("aria-selected")).toBe("true"));

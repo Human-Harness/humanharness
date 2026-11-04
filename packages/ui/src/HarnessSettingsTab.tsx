@@ -1,9 +1,7 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "./guide/Segmented";
 import type { HarnessClient, SettingFieldView, SettingsResult, SettingsState, SettingsView } from "./client";
-import { Button } from "./guide/Button";
-import { Toggle } from "./guide/Toggle";
+import { Group as Card, Icon, Row, Rx } from "./guide";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -27,6 +25,9 @@ const RESET = "";
 /**
  * Settings › the harness's own tab (harness-settings spec §4): the core's controls, each change saved at once through
  * the data store. While a task is open, changes the agent reads wait for the next task (D4) and are marked "Pending".
+ *
+ * Radix stage 2e (DESIGN.md "Settings rows"): one card per section, a row per field; More options and the reset are
+ * ghost row actions; a reset that fails is a red notice above the reset.
  */
 export function HarnessSettingsTab({
   client,
@@ -92,7 +93,7 @@ export function HarnessSettingsTab({
     if (moved.length > 0) setErrors((e) => (moved.some((name) => Object.hasOwn(e, name)) ? Object.fromEntries(Object.entries(e).filter(([name]) => !moved.includes(name))) : e));
   }, [state]);
 
-  if (!state) return <div className="hh-tab" aria-busy="true" />;
+  if (!state) return <div aria-busy="true" />;
 
   const failed = t("settings.harness.failed");
   const settle = (key: string, r: SettingsResult) => {
@@ -133,52 +134,52 @@ export function HarnessSettingsTab({
   );
   const drawGroups = (fields: SettingFieldView[]) =>
     groups(view, fields).map((g) => (
-      <section key={g.id ?? ""} className="hh-settings-group hh-card hh-settings-card">
-        {g.label && <h3>{g.label}</h3>}
-        <div className="hh-rows">{g.fields.map(row)}</div>
-      </section>
+      <Card key={g.id ?? ""} title={g.label}>
+        {g.fields.map(row)}
+      </Card>
     ));
   const advanced = view.fields.filter((f) => f.advanced);
   const resetError = Object.hasOwn(errors, RESET) ? errors[RESET] : undefined;
 
   return (
-    <div className="hh-tab">
+    <div>
       {/* Always mounted, so a screen reader hears the line each time a task opens. */}
-      <p className="hh-caption hh-settings-next" role="status">
+      <Rx.Text as="p" size="1" color="gray" role="status" mb={taskOpen ? "3" : undefined}>
         {taskOpen ? t("settings.harness.nextTask") : ""}
-      </p>
+      </Rx.Text>
       {drawGroups(view.fields.filter((f) => !f.advanced))}
       {advanced.length > 0 && (
         <>
-          <div>
-            <Button type="button" kind="quiet" size="compact" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((o) => !o)}>
+          <Rx.Box mb="5">
+            <Rx.Button variant="ghost" color="gray" size="1" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((o) => !o)}>
+              <Icon name="chevron" size={14} />
               {t("settings.harness.more")}
-            </Button>
-          </div>
-          {more && (
-            <div id={moreId} className="hh-tab">
-              {drawGroups(advanced)}
-            </div>
-          )}
+            </Rx.Button>
+          </Rx.Box>
+          {more && <div id={moreId}>{drawGroups(advanced)}</div>}
         </>
       )}
       {changed && (
-        <div>
-          <button type="button" onClick={() => void reset()} aria-describedby={resetError ? resetErrorId : undefined}>
-            {t("settings.harness.reset")}
-          </button>
+        <Rx.Flex direction="column" align="start" gap="3">
           {resetError && (
-            <p className="hh-field-error" id={resetErrorId} role="alert">
-              {resetError}
-            </p>
+            <Rx.Callout.Root color="red" role="alert" id={resetErrorId}>
+              <Rx.Callout.Text>{resetError}</Rx.Callout.Text>
+            </Rx.Callout.Root>
           )}
-        </div>
+          <Rx.Button variant="ghost" color="gray" size="1" onClick={() => void reset()} aria-describedby={resetError ? resetErrorId : undefined}>
+            {t("settings.harness.reset")}
+          </Rx.Button>
+        </Rx.Flex>
       )}
     </div>
   );
 }
 
-/** One setting with the core's control (also drawn by a plugin's detail, whose labels are the plugin's: bidi-isolated). */
+/**
+ * One setting with the core's control (also drawn by a plugin's detail, whose labels are the plugin's: bidi-isolated).
+ * A settings row: the name (with a gray Pending badge while it waits for the next task) and help on the left, the
+ * control on the right; a refusal is a red line under the row.
+ */
 export function HarnessFieldRow({
   setting,
   field,
@@ -205,55 +206,73 @@ export function HarnessFieldRow({
   const errId = `${id}-error`;
   const describedBy = [pending ? pendingId : null, field.help ? helpId : null, error ? errId : null].filter(Boolean).join(" ") || undefined;
   const aria = { ...(describedBy ? { "aria-describedby": describedBy } : {}), ...(error ? { "aria-invalid": true as const } : {}) };
+  const segmented = field.control === "segmented";
   let control;
-  if (field.control === "segmented") {
-    control = <Segmented label={field.label} value={String(value)} options={field.options ?? []} onChange={(v) => onSave(v)} describedBy={describedBy} />;
+  if (segmented) {
+    control = (
+      <Rx.SegmentedControl.Root value={String(value)} onValueChange={(v) => onSave(v)} aria-label={field.label} {...aria}>
+        {(field.options ?? []).map((o) => (
+          <Rx.SegmentedControl.Item key={o.value} value={o.value}>
+            {o.label}
+          </Rx.SegmentedControl.Item>
+        ))}
+      </Rx.SegmentedControl.Root>
+    );
   } else if (field.control === "select") {
     control = (
-      <select id={id} value={String(value)} onChange={(e) => onSave(e.target.value)} {...aria}>
-        {(field.options ?? []).map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <Rx.Select.Root value={String(value)} onValueChange={(v) => onSave(v)}>
+        <Rx.Select.Trigger id={id} aria-label={field.label} {...aria} />
+        <Rx.Select.Content position="popper">
+          {(field.options ?? []).map((o) => (
+            <Rx.Select.Item key={o.value} value={o.value}>
+              {o.label}
+            </Rx.Select.Item>
+          ))}
+        </Rx.Select.Content>
+      </Rx.Select.Root>
     );
   } else if (field.control === "toggle") {
-    control = <Toggle id={id} checked={value === true} onChange={onSave} {...aria} />;
+    control = <Rx.Switch id={id} checked={value === true} onCheckedChange={(on) => onSave(on)} {...aria} />;
   } else {
-    control = <DraftInput id={id} field={field} value={value} aria={aria} onSave={onSave} onDrop={onDrop} />;
+    control = (
+      <>
+        <DraftInput id={id} field={field} value={value} aria={aria} onSave={onSave} onDrop={onDrop} />
+        {field.unit && (
+          <Rx.Text size="1" color="gray" dir="auto">
+            {field.unit}
+          </Rx.Text>
+        )}
+      </>
+    );
   }
+  const name = <bdi dir="auto">{field.label}</bdi>;
   return (
-    <div className="hh-row hh-row-wrap" {...(setting ? { "data-setting": setting } : {})}>
-      {field.control === "segmented" ? (
-        <span className="hh-row-label" dir="auto">
-          {field.label}
-        </span>
-      ) : (
-        <label className="hh-row-label" htmlFor={id} dir="auto">
-          {field.label}
-        </label>
-      )}
-      {pending && (
-        <span className="hh-setting-pending" id={pendingId}>
-          {t("settings.harness.pending")}
-        </span>
-      )}
-      <span className="hh-setting-control">
-        {control}
-        {field.unit && <span className="hh-caption">{field.unit}</span>}
-      </span>
-      {field.help && (
-        <p className="hh-caption hh-row-note" id={helpId} dir="auto">
-          {field.help}
-        </p>
-      )}
-      {error && (
-        <p className="hh-field-error hh-row-note" id={errId} role="alert">
-          {error}
-        </p>
-      )}
-    </div>
+    <Row
+      {...(segmented ? { "aria-label": field.label } : { htmlFor: id })}
+      label={
+        pending ? (
+          <Rx.Flex as="span" align="center" gap="2" wrap="wrap">
+            {name}
+            <Rx.Badge color="gray" id={pendingId}>
+              {t("settings.harness.pending")}
+            </Rx.Badge>
+          </Rx.Flex>
+        ) : (
+          name
+        )
+      }
+      {...(field.help ? { hint: <bdi dir="auto">{field.help}</bdi>, hintId: helpId } : {})}
+      below={
+        error ? (
+          <Rx.Text as="p" size="1" color="red" id={errId} role="alert">
+            {error}
+          </Rx.Text>
+        ) : undefined
+      }
+      {...(setting ? { "data-setting": setting } : {})}
+    >
+      {control}
+    </Row>
   );
 }
 
@@ -308,5 +327,10 @@ function DraftInput({
     : field.max !== undefined
       ? { maxLength: field.max }
       : {};
-  return <input id={id} type={number ? "number" : "text"} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={onKey} {...bounds} {...aria} />;
+  // A number is short; a text gets room for a name (DESIGN.md: "Number: field with min and max, unit after it, grey").
+  return (
+    <Rx.Box width={number ? "96px" : "240px"} maxWidth="100%">
+      <Rx.TextField.Root id={id} type={number ? "number" : "text"} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={onKey} {...bounds} {...aria} />
+    </Rx.Box>
+  );
 }

@@ -308,10 +308,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-settings-card > .hh-rows:first-child > .hh-row:first-child { border-top: 0; }
 .hh-settings-card > h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--hh-ink); }
 .hh-settings-card-head + .hh-rows > .hh-row:first-child { border-top: 0; }
-.hh-danger { color: var(--hh-t-red-ink); }
-/* A list with the selected item's detail beside it (Plugins). */
-.hh-master-detail { display: grid; grid-template-columns: var(--hh-column-w) minmax(0, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 760px) { .hh-master-detail { grid-template-columns: minmax(0, 1fr); } }
 /* A bar of how much is used; the fill is its <i>. */
 .hh-progress { display: block; height: 6px; border-radius: 4px; background: var(--hh-surface-2); overflow: hidden; }
 .hh-progress > i { display: block; height: 100%; background: var(--hh-t-blue-ink); }
@@ -328,8 +324,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 /* Folder row: the buttons keep their size, the path gives way and keeps its end (the folder's own name) visible. */
 .hh-row > button { flex: none; white-space: nowrap; }
 .hh-row[data-setting="general.folder"] > code { flex: 1 1 0; width: 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
-.hh-row-wrap { flex-wrap: wrap; }
-.hh-row-note { flex-basis: 100%; }
 /* A drawer from the right (UI refresh spec §5.7), under the top bar: the layer's top is the top bar's height. */
 .hh-drawer-layer { position: fixed; inset: var(--hh-topbar-h) 0 0 0; z-index: 20; display: flex; justify-content: flex-end; }
 .hh-drawer-scrim { position: absolute; inset: 0; background: var(--hh-backdrop); }
@@ -760,14 +754,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-annotate-notes { margin: 6px 0 0; padding-left: 18px; }
 .hh-mark-note strong { margin-right: 4px; }
 
-/* Settings › the harness's tab (harness-settings spec §4). */
-/* The next-task line stays mounted (a live region, kept in the accessibility tree); empty, its grid gap is taken back. */
-.hh-settings-next:empty { margin-bottom: -12px; }
-.hh-settings-group { display: grid; gap: 6px; }
-.hh-settings-group h3 { margin: 4px 0 0; }
-.hh-setting-pending { padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 999px; color: var(--hh-t-orange-ink); font-size: 12px; }
-.hh-setting-control { display: inline-flex; align-items: center; gap: 6px; }
-.hh-setting-control input[type="number"] { width: 5em; }
 
 /* Sidekick (sidekick spec §7) */
 .hh-sk-panel { width: var(--hh-column-w); min-width: 220px; max-width: 320px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--hh-line); background: var(--hh-bg); min-height: 0; }
@@ -823,32 +809,11 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-pl-item[data-unread="true"] .hh-pl-item-title { font-weight: 600; }
 .hh-pl-item-body { color: var(--hh-muted); font-size: 12px; white-space: pre-wrap; }
 .hh-pl-dismiss { flex: none; margin: 6px 6px 0 0; font-size: 12px; }
-.hh-pl-list { list-style: none; margin: 0; padding: 0; }
-.hh-pl-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; overflow-wrap: anywhere; }
-.hh-pl-name { text-align: left; overflow-wrap: anywhere; }
-.hh-pl-meta, .hh-pl-status { min-width: 0; overflow-wrap: anywhere; }
-.hh-pl-tag { margin-left: 8px; padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 8px; font-size: 12px; }
-.hh-pl-error-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
-.hh-pl-review, .hh-pl-detail { min-width: 0; overflow-wrap: anywhere; }
-.hh-pl-detail.hh-card { padding: 18px 20px; }
-.hh-master-list { min-width: 0; }
-.hh-pl-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.hh-pl-review h3:focus, .hh-pl-detail h3:focus { outline: none; }
-.hh-pl-perms, .hh-pl-added ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
-.hh-pl-added { padding: 8px 12px; border: 1px solid var(--hh-t-orange-ink); border-radius: 12px; }
-.hh-pl-added p { margin: 0 0 4px; }
 .hh-pl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.hh-pl-key-form { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
-.hh-pl-key-form input { min-width: 0; flex: 1 1 160px; }
-.hh-pl-plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
-.hh-pl-errors li { display: flex; flex-direction: column; gap: 2px; }
-.hh-pl-test { display: flex; flex-direction: column; gap: 8px; }
-.hh-pl-hours select { max-width: 100%; }
 .hh-plugin-frame { display: block; width: 100%; box-sizing: border-box; border: none; background: transparent; }
 .hh-plugin-frame-error { margin: 0; padding: 8px; color: var(--hh-muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.hh-pl-section, .hh-pl-slot, .hh-pl-tabpanel, .hh-pl-slot-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hh-pl-slot, .hh-pl-slot-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .hh-pl-slot { gap: 12px; }
-.hh-pl-section .hh-flow-heading { margin: 0; }
 .hh-pl-panel-head { margin: 0; padding-left: 6px; color: var(--hh-muted); font-size: 12px; overflow-wrap: anywhere; }
 .hh-pl-chips { display: flex; align-items: center; gap: 4px; min-width: 0; flex-shrink: 1; overflow: hidden; }
 .hh-pl-chip { display: inline-block; max-width: 180px; height: 24px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--hh-line-strong); border-radius: 12px; background: var(--hh-surface); color: var(--hh-ink); font-size: 12px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1267,7 +1232,6 @@ input.hh-search-input {
 /* guide: Tabs */
 .hh-tabs { display: flex; align-items: stretch; gap: calc(var(--hh-s-1) / 2); min-width: 0; flex: 0 1 auto; overflow-x: auto; }
 .hh-tab-item { display: inline-flex; align-items: center; gap: var(--hh-s-2); box-sizing: border-box; flex: 0 1 auto; min-width: 0; max-width: 220px; height: var(--hh-h-normal); padding: 0 var(--hh-s-3); border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--hh-muted); font: inherit; font-size: 13px; }
-.hh-tabs[data-small="true"] .hh-tab-item { font-size: 12px; }
 .hh-tab-item:hover:not(:disabled) { color: var(--hh-ink); }
 .hh-tab-item[aria-selected="true"] { border-bottom-color: var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
 .hh-tab-item:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: -2px; }

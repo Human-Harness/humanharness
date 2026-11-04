@@ -33,7 +33,7 @@ describe("the review's searchable line (search spec §7)", () => {
   it("a plugin that asks for nothing still says so, and says what is searchable", async () => {
     render(
       <I18nextProvider i18n={await createI18n("en")}>
-        <PermissionList lines={[{ kind: "searchable", collections: [{ name: "issues", fields: ["title"] }] }]} />
+        <PermissionList title="What it may do" lines={[{ kind: "searchable", collections: [{ name: "issues", fields: ["title"] }] }]} />
       </I18nextProvider>,
     );
     expect(screen.getByText("It asks for nothing beyond its own data.")).toBeTruthy();
@@ -43,7 +43,7 @@ describe("the review's searchable line (search spec §7)", () => {
   it("with permissions, the searchable line is one more in the list and the none sentence is not shown", async () => {
     render(
       <I18nextProvider i18n={await createI18n("en")}>
-        <PermissionList lines={[{ kind: "tasks" }, { kind: "searchable", collections: [{ name: "issues", fields: ["title"] }] }]} />
+        <PermissionList title="What it may do" lines={[{ kind: "tasks" }, { kind: "searchable", collections: [{ name: "issues", fields: ["title"] }] }]} />
       </I18nextProvider>,
     );
     expect(screen.queryByText("It asks for nothing beyond its own data.")).toBeNull();

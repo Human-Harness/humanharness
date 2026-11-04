@@ -7,6 +7,14 @@ import { HarnessApp } from "../src";
 import type { AttentionItemView, AttentionView, PluginPanelView, PluginSurfaceView } from "../src/client";
 import { FakeClient } from "./fake-client";
 
+/**
+ * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
+ * happy-dom has no CSS to drop the hidden one from the accessible name.
+ */
+const tab = (label: string) => ({ name: (_: string, el: Element) => el.querySelector(".rt-TabsTriggerInner")?.textContent === label });
+/** Radix tabs select on mouse down, not on click. */
+const pick = (el: Element) => fireEvent.mouseDown(el, { button: 0, ctrlKey: false });
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -260,12 +268,12 @@ describe("Attention inbox", () => {
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
       expect(c.pluginCalls).toEqual([["attention.open", "oncall", "k1"]]);
       await waitFor(() => expect(frame().getAttribute("src")).toBe(QUEUE.url));
-      expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("tab", tab("Queue")).getAttribute("aria-selected")).toBe("true");
       // The person moves on: a later push is not a new open, so it doesn't pull the tab back.
-      fireEvent.click(screen.getByRole("tab", { name: "Digest" }));
+      pick(screen.getByRole("tab", tab("Digest")));
       act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE], chips: [] })));
       await act(async () => {});
-      expect(screen.getByRole("tab", { name: "Digest" }).getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("tab", tab("Digest")).getAttribute("aria-selected")).toBe("true");
     });
 
     it("a panel target passes its focus to the frame, and a dev reload of the plugin doesn't send it again", async () => {
@@ -334,7 +342,7 @@ describe("Attention inbox", () => {
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
       expect(within(dialog).queryByText("This item can't be opened any more")).toBeNull();
       await act(async () => arrive(surface({ panels: [DIGEST, QUEUE] })));
-      await waitFor(() => expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("true"));
+      await waitFor(() => expect(screen.getByRole("tab", tab("Queue")).getAttribute("aria-selected")).toBe("true"));
     });
   });
 });

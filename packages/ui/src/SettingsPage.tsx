@@ -17,11 +17,10 @@ import { LanguageChooser } from "./LanguageChooser";
 import { useLatestConfig } from "./latest-config";
 import { ModelsTab } from "./ModelsTab";
 import { JobsTab } from "./parallel/JobsTab";
-import { PluginsTab } from "./plugins/PluginsTab";
+import { PluginsTab, type SettingsSub } from "./plugins/PluginsTab";
 import { usePluginsView } from "./plugins/usePlugins";
 import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
-import { SectionHead } from "./settings-parts";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
@@ -109,6 +108,13 @@ export function SettingsPage({
   const close = () => {
     if (!runningRef.current) onCloseRef.current();
   };
+  /**
+   * A screen inside a section (a plugin's detail or review): the top bar names the section and goes back to its list,
+   * and so does Escape (DESIGN.md "Settings": "← Plugins").
+   */
+  const [sub, setSub] = useState<SettingsSub | null>(null);
+  const subRef = useRef(sub);
+  subRef.current = sub;
 
   useEffect(() => {
     let heard = false;
@@ -152,7 +158,8 @@ export function SettingsPage({
       if (e.key === "Escape" && !runningRef.current) {
         // Handled: focus mode's window listener leaves this Escape alone.
         e.preventDefault();
-        onCloseRef.current();
+        if (subRef.current) subRef.current.back();
+        else onCloseRef.current();
       }
       if (e.key === "Tab") trapTab(page, e);
     };
@@ -182,13 +189,13 @@ export function SettingsPage({
             color="gray"
             size="1"
             className="hh-settings-done"
-            aria-label={t("settings.backTo", { place: back })}
+            aria-label={t("settings.backTo", { place: sub?.label ?? back })}
             disabled={running !== null}
             aria-describedby={running ? runningId : undefined}
-            onClick={close}
+            onClick={sub ? sub.back : close}
           >
             <Icon name="back" size={18} />
-            {back}
+            {sub?.label ?? back}
           </Rx.Button>
         }
       />
@@ -223,13 +230,13 @@ export function SettingsPage({
             {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
             {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} {...(focus && focus.id.startsWith("models.") ? { focus: { part: focus.id === "models.levels" ? ("levels" as const) : ("tasks" as const), n: focus.n } } : {})} />}
             {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
-            {tab === "plugins" && configured && <PluginsTab client={client} />}
+            {tab === "plugins" && configured && <PluginsTab client={client} onSub={setSub} />}
             {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
             {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
             {tab === "usage" && configured && <UsageTab client={client} state={state} />}
             {tab === "harness" && configured && (
               <>
-                <SectionHead title={tabLabel(t, state, "harness")} line={t("settings.line.harness", { name: state.harness.name })} />
+                <GuideSectionHead line={t("settings.line.harness", { name: state.harness.name })} />
                 {state.setup && (
                   <SetupStepsList
                     client={client}

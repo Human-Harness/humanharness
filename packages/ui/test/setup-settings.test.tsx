@@ -20,6 +20,7 @@ async function sheet(client: FakeClient) {
   await renderIn(
     "en",
     <SettingsPage client={client} state={client.state} tab="harness" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />,
+    { theme: true },
   );
   return onSetup;
 }
@@ -43,7 +44,7 @@ describe("Settings › Setup (setup-steps spec §5)", () => {
   it("each step with its status; interviews and components run again from the setup screen", async () => {
     const client = withSteps();
     const onSetup = await sheet(client);
-    const row = (label: string) => screen.getByRole("listitem", { name: label });
+    const row = (label: string) => screen.getByRole("group", { name: label });
     await waitFor(() => expect(within(row("Get to know you")).getByText("Done")).toBeTruthy());
     expect(within(row("Ready check")).getByText("Skipped. You can do it now.")).toBeTruthy();
     fireEvent.click(within(row("Get to know you")).getByRole("button", { name: "Do it again" }));
@@ -55,7 +56,7 @@ describe("Settings › Setup (setup-steps spec §5)", () => {
   it("a form step edits in place, from its saved values", async () => {
     const client = withSteps();
     await sheet(client);
-    const row = await screen.findByRole("listitem", { name: "Your goal" });
+    const row = await screen.findByRole("group", { name: "Your goal" });
     fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
     const goal = (await within(row).findByLabelText("Goal")) as HTMLInputElement;
     expect(goal.value).toBe("Pass maths");
@@ -69,7 +70,7 @@ describe("Settings › Setup (setup-steps spec §5)", () => {
     const client = withSteps();
     client.setupFailure = { ok: false, reason: "invalid", errors: [{ path: "goal", message: "Too long" }] };
     await sheet(client);
-    const row = await screen.findByRole("listitem", { name: "Your goal" });
+    const row = await screen.findByRole("group", { name: "Your goal" });
     fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
     await within(row).findByLabelText("Goal");
     fireEvent.click(within(row).getByRole("button", { name: "Save" }));

@@ -102,20 +102,13 @@ describe("Tabs (style guide §3, row 23)", () => {
 });
 
 describe("Tabs size (answer T5)", () => {
-  it("task tabs are 13, the plugin panel tabs 12, and both stay at most 220 wide", () => {
+  it("task tabs are 13 and stay at most 220 wide", () => {
     expect(rule(".hh-tab-item")["font-size"]).toBe("13px");
     expect(rule(".hh-tab-item")["max-width"]).toBe("220px");
-    expect(rule('.hh-tabs[data-small="true"] .hh-tab-item')["font-size"]).toBe("12px");
-    expect(rule('.hh-tabs[data-small="true"] .hh-tab-item')["max-width"]).toBeUndefined();
   });
-  it("small marks the tab list, and only the plugin panels ask for it", () => {
-    render(<Tabs small label="Panels" items={items} value="a" onChange={() => {}} />);
-    expect(screen.getByRole("tablist").getAttribute("data-small")).toBe("true");
-    cleanup();
-    render(<Tabs label="Tasks" items={items} value="a" onChange={() => {}} />);
-    expect(screen.getByRole("tablist").getAttribute("data-small")).toBeNull();
+  it("the plugin panels use Radix tabs at size 1 (stage 2e); the guide Tabs stays only for the task tabs", () => {
     const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
-    expect(src("plugins/PluginsSection.tsx")).toMatch(/<Tabs[^>]*\bsmall\b/);
-    expect(src("parallel/TaskStrip.tsx")).not.toMatch(/<Tabs[^>]*\bsmall\b/);
+    expect(src("plugins/PluginsSection.tsx")).toMatch(/<Rx\.Tabs\.List size="1"/);
+    expect(src("plugins/PluginsSection.tsx")).not.toMatch(/<Tabs\b/);
   });
 });

@@ -20,7 +20,11 @@ out/
 packages/e2e/.tmp/
 test-results/
 playwright-report/
-.claude/
+# Local Claude state stays out; the vendored Impeccable skill is in (Radix + Impeccable spec §4).
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/impeccable/
 
 # Brainstorm mockups (visual companion)
 .superpowers/

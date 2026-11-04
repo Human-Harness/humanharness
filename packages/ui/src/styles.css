@@ -102,6 +102,17 @@ code { font-family: var(--hh-mono); font-size: 12px; overflow-wrap: anywhere; }
 /* Inline code sits one point below its sentence; blocks (pre > code) keep their own size. */
 :not(pre) > code { font-family: var(--hh-mono); font-size: calc(1em - 1px); background: var(--hh-surface-2); border-radius: 4px; }
 a { color: var(--hh-ink); }
+
+/* Radix bridge (Radix + Impeccable spec §3). Radix pieces read our fonts and background, in every Radix root,
+ * including the ones its overlays open on <body>. :root raises the specificity above Radix's own `.radix-themes`. */
+:root .radix-themes {
+  --default-font-family: var(--hh-font);
+  --heading-font-family: var(--hh-display);
+  --code-font-family: var(--hh-mono);
+  --color-background: var(--hh-bg);
+}
+/* The app's root draws no box and gives its children no text style: the screens look exactly as before. */
+.radix-themes.hh-theme { display: contents; font: inherit; line-height: inherit; letter-spacing: inherit; color: inherit; overflow-wrap: inherit; -webkit-font-smoothing: inherit; -moz-osx-font-smoothing: inherit; -webkit-text-size-adjust: inherit; text-size-adjust: inherit; }
 /* Soft-cards controls (UI refresh spec §3.2). Compact controls below override the height. */
 /* One height and one corner for every button, field and select, so no control is taller or rounder than its neighbour. */
 :root { --hh-control-h: var(--hh-h-normal); --hh-control-r: var(--hh-r-control); }

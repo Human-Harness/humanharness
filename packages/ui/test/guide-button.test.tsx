@@ -301,8 +301,8 @@ describe("Link placement (style guide §3: only inside running text)", () => {
 
 describe("Cancel, Start and Run now on a task row (answer B9)", () => {
   it.each([
+    // Settings › Jobs moved to Radix (stage 2c): its Start and Run now are outline gray size-1 buttons.
     ["parallel/Inbox.tsx", 3],
-    ["parallel/JobsTab.tsx", 2],
   ])("%s gives each compact row button the hh-tk-cancel layout class", (file, count) => {
     const src = readFileSync(join(import.meta.dirname, "../src", file), "utf8");
     expect(src.match(/className="hh-tk-cancel"/g)?.length).toBe(count);

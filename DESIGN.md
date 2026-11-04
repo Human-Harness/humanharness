@@ -84,7 +84,7 @@ spacing:
 
 Radix Themes provides the pieces: accent amber, gray sand, radius large, sizes 1 to 4. Impeccable provides the loop. This file holds our rules. A screen uses only the pieces listed here (spec §1, §2 "Closed world").
 
-Screens import the pieces from one barrel, `packages/ui/src/guide`, as the `Rx` namespace. The barrel lists 27 names: AlertDialog, Avatar, Badge, Box, Button, Callout, Card, Checkbox, Code, Dialog, DropdownMenu, Flex, Grid, Heading, IconButton, Popover, Progress, RadioGroup, ScrollArea, SegmentedControl, Select, Separator, Switch, Tabs, Text, TextArea, TextField (`packages/ui/src/guide/radix.ts`). A guard test keeps the list closed. Our wrappers (`Field`, `Group`, `Row`, `SettingsNav`) are named below but are not in the barrel yet: they arrive with the screens that need them, from stage 2 on (spec §7).
+Screens import the pieces from one barrel, `packages/ui/src/guide`, as the `Rx` namespace. The barrel lists 28 names: AlertDialog, Avatar, Badge, Box, Button, Callout, Card, Checkbox, Code, Dialog, DropdownMenu, Flex, Grid, Heading, IconButton, Popover, Progress, RadioGroup, ScrollArea, SegmentedControl, Select, Separator, Switch, Table, Tabs, Text, TextArea, TextField (`packages/ui/src/guide/radix.ts`). A guard test keeps the list closed. Our wrappers (`Field`, `Group`, `Row`, `SettingsNav`) are named below but are not in the barrel yet: they arrive with the screens that need them, from stage 2 on (spec §7).
 
 The tokens above come from `packages/ui/src/styles.css`. Every key ending in `-dark` is the dark value of the key without it. The app follows the system's light or dark mode (spec §3).
 
@@ -270,6 +270,10 @@ All use template 3. The rail is visible with the page's entry selected. Volver i
 - **Levels (Marco, 2026-11-04):** one row per level inside one card, never cards inside a card; the tasks that use a level are outline gray badges in a list.
 - **Engine of the tasks (Marco, 2026-11-04):** a gray soft badge in the Tasks card's title, not text beside the Tasks/Levels control.
 - **A named row** (`Row` with `name`) is a `group` named by its `aria-label`, so tests and screen readers can scope to it.
+- **Plan limits (Marco, 2026-11-04):** one card, one row per limit: the name (and an orange soft "Close to your limit" badge from 80%), "% used" on the right (orange near the limit), and under it a Progress and the renewal in 12 grey.
+- **Spend apart from tasks (Marco, 2026-11-04):** one card, "Apart from your tasks", one row per kind (material, Sidekick, jobs, subagents) with "about N tokens" in grey on the right, and the dollars spent last.
+- **Job runs (Marco, 2026-11-04):** a foldable row per run. Folded: a chevron, the scope, the status as a badge (blue running, green ok, orange needs you, red failed, gray not run yet) and the last and next run in 12 grey. Start and Run now stay visible on the right as outline gray size 1 buttons. Open: the summary and the steps, indented under the chevron.
+- **Text only screen readers get** goes through `Hidden` (`packages/ui/src/guide/Hidden.tsx`): a table's caption, or the detail a hover title shows.
 
 ## Elevation & Depth
 
@@ -428,7 +432,7 @@ Card parts, in this order, skipping absent ones (guide §6):
 `Rx.Avatar` (spec §3). Profile in the top bar and in lists. The connection letter (guide §6).
 
 ### Table
-Data in columns: usage, markdown. Header 12 grey (guide §6).
+`Rx.Table` (added with stage 2c, Marco 2026-11-04). Data in columns: usage, markdown. Header 12 grey (guide §6). Ghost variant, size 1, inside a card; the row's first cell is its header. A Root's props land on its wrapper, so the table is named by a `Hidden` caption.
 
 ### Icons (guide §4)
 Our icon set stays. Radix has no icons of its own that we adopt (spec §2).

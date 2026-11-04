@@ -240,8 +240,9 @@
   "usage": {
     "byScope": "Usage by {{plural}}",
     "byProfile": "Usage by person",
-    "material": "Material processing: about {{tokens}} tokens",
-    "subagents": "Subagents: about {{tokens}} tokens",
+    "apartTitle": "Apart from your tasks",
+    "aboutTokens": "about {{tokens}} tokens",
+    "row": { "material": "Material processing", "sidekick": "Sidekick", "jobs": "Background jobs", "subagents": "Subagents" },
     "scopeTokens": "{{tokens}} tokens",
     "appScope": "App-wide",
     "five_hour": "5 h",
@@ -943,8 +944,7 @@
       "daily": "Daily summary"
     },
     "mutedRow": "{{name}} · {{kind}}",
-    "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },
-    "usage": "Sidekick: about {{tokens}} tokens"
+    "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" }
   },
   "reader": {
     "title": "Document",
@@ -1390,7 +1390,6 @@
     "dailyCapMin": "The daily cap is at least {{min}} tokens.",
     "notRunYet": "Not run yet",
     "saveFailed": "Couldn't save the change.",
-    "jobsUsage": "Background jobs: about {{tokens}} tokens",
     "historyJob": "Job · {{label}}",
     "historyJobUnknown": "A background job"
   },

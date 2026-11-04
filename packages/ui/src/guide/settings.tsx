@@ -30,16 +30,20 @@ export function Group({
   title,
   tag,
   loose,
+  titleId,
   children,
   "data-setting": setting,
 }: {
   title?: ReactNode;
+  /** The title's id, when something in the group is described by it. */
+  titleId?: string;
   tag?: ReactNode;
   loose?: boolean;
   children: ReactNode;
   "data-setting"?: string;
 }) {
-  const id = useId();
+  const ownId = useId();
+  const id = titleId ?? ownId;
   const kids = Children.toArray(children).filter(Boolean);
   if (loose) {
     return (

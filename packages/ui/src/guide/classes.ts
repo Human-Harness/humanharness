@@ -66,4 +66,6 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-checkbox-box",
   // Empty state line (§4: a 14 icon before the text)
   "hh-history-empty-line",
+  // Hidden: text only screen readers get (Radix + Impeccable spec, stage 2c)
+  "hh-sr-only",
 ]);

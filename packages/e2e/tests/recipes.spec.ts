@@ -118,6 +118,8 @@ test("Steps unfolds the run's calls", async () => {
     await runNow(page, s, "Triage", "triage");
     const row = group(page, "Triage");
     await expect(row).toContainText("Triaged 1");
+    // A run is a foldable row (Radix stage 2c): its summary and Steps show once it is open.
+    await row.getByRole("button", { expanded: false }).first().click();
     const steps = row.getByRole("button", { name: "Steps" });
     await expect(steps).toHaveAttribute("aria-expanded", "false");
     await steps.click();
@@ -133,6 +135,7 @@ test("Steps after a second run shows that run's calls, not the first run's", asy
   await withApp("recipes-steps-rerun", async (page, s) => {
     await runNow(page, s, "Triage", "triage");
     const row = group(page, "Triage");
+    await row.getByRole("button", { expanded: false }).first().click();
     const steps = row.getByRole("button", { name: "Steps" });
     await steps.click();
     await expect(toolLine(row, "apply-triage")).toHaveCount(2);
@@ -193,6 +196,7 @@ test("a failed tool step fails the run", async () => {
     const row = group(page, "Broken");
     await expect(row).toContainText("Failed");
     await expect(row).toContainText("boom failed: boom");
+    await row.getByRole("button", { expanded: false }).first().click();
     await row.getByRole("button", { name: "Steps" }).click();
     const line = toolLine(row, "boom");
     await expect(line).toHaveAccessibleName("boom failed · boom");

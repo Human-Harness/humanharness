@@ -104,9 +104,10 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     const digest = group("Digest");
     const caption = within(digest).getByText("Every 1h");
     const sw = within(digest).getByRole("switch", { name: "On" });
-    const row = sw.closest("label") as HTMLElement;
-    expect(row.contains(caption)).toBe(true);
-    expect(row.lastElementChild).toBe(sw);
+    // The row's line: name and caption on the left, the switch alone on the right.
+    const line = caption.parentElement!.parentElement as HTMLElement;
+    expect(line.contains(sw)).toBe(true);
+    expect(line.lastElementChild!.lastElementChild).toBe(sw);
     expect(caption.compareDocumentPosition(sw) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -168,7 +169,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     c.saveError = new Error("disk full");
     await renderIn("en", <Sheet c={c} />, { theme: true });
     fireEvent.click(within(group("Sync inbox")).getByRole("switch", { name: "On" }));
-    expect(await screen.findByText("Couldn't save the change.")).toHaveProperty("role", "alert");
+    expect((await screen.findByText("Couldn't save the change.")).closest('[role="alert"]')).toBeTruthy();
   });
 
   it("an unchanged cap is not checked again (one set by hand under the minimum), and an emptied one goes back to the manifest's", async () => {

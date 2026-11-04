@@ -26,7 +26,8 @@ const next = () => screen.getByRole("button", { name: "Next" }) as HTMLButtonEle
 // The step's buttons: a bar at the bottom of the body column, not the app footer.
 const actions = () => document.querySelector(".hh-setup-actions") as HTMLElement;
 const steps = () => within(screen.getByRole("list", { name: "Steps" })).getAllByRole("listitem");
-const currentOf = (item: Element) => item.querySelector(".hh-nav-item")?.getAttribute("aria-current");
+// The current step is the item itself (Radix stage 3b: a Card, no NavItem).
+const currentOf = (item: Element) => item.getAttribute("aria-current");
 
 describe("SetupFlow", () => {
   it("walks a fresh app from the folder to the engine to All set, then starts", async () => {
@@ -47,7 +48,7 @@ describe("SetupFlow", () => {
     const engineHeading = await screen.findByRole("heading", { name: "Which AI does Demo use?" });
     expect(client.state.config).toEqual({ language: systemLanguage(), folder: "/Users/me/Documents/Demo" });
     expect(document.activeElement).toBe(engineHeading);
-    expect(steps()[0].querySelector("svg")).toBeTruthy();
+    expect(steps()[0].textContent).not.toMatch(/Step \d of \d/); // done: its name and value, no mark (Marco, 2026-11-04)
     expect(currentOf(steps()[1])).toBe("step");
     // Settings' own "Use Claude" isn't shown: Next does that.
     expect(screen.queryByRole("button", { name: "Use Claude" })).toBeNull();
@@ -56,8 +57,8 @@ describe("SetupFlow", () => {
     fireEvent.click(next());
     const done = await screen.findByRole("heading", { name: "All set" });
     expect(document.activeElement).toBe(done);
-    // The done mark's check is 18, drawn at its own size.
-    expect(document.querySelector(".hh-setup-done-mark svg")?.getAttribute("width")).toBe("18");
+    // No mark over the title (Radix stage 3b): the title and the summary say it.
+    expect(document.querySelector(".hh-setup-end svg:not(.hh-icon)")).toBeNull();
     expect(client.state.config.engineId).toBe("claude");
     expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
@@ -65,7 +66,7 @@ describe("SetupFlow", () => {
     expect(screen.getByText("Claude")).toBeTruthy();
     expect(screen.getByText("You can change all of this whenever you like in Settings.")).toBeTruthy();
     const start = screen.getByRole("button", { name: "Start Demo" });
-    expect(start.getAttribute("data-kind")).toBe("large");
+    expect(start.className).toContain("rt-r-size-3");
     fireEvent.click(start);
     expect(onStart).toHaveBeenCalledOnce();
   });
@@ -73,8 +74,8 @@ describe("SetupFlow", () => {
   it("the folder step says the language comes once the app is set up (spec §3, D2)", async () => {
     await renderIn("en", <Flow client={new FakeClient()} />);
     const line = screen.getByText("You can choose the app's language once it's set up.");
-    expect(line.className).toBe("hh-caption hh-setup-language");
-    expect(line.previousElementSibling?.className).toBe("hh-setup-intro");
+    expect(line.tagName).toBe("P");
+    expect(line.previousElementSibling?.textContent).toContain("keeps everything you do in a folder");
   });
 
   it("skips the folder step when a folder is saved, and Cancel goes back", async () => {
@@ -82,7 +83,7 @@ describe("SetupFlow", () => {
     const onCancel = vi.fn();
     await renderIn("en", <Flow client={client} onCancel={onCancel} />);
     expect(screen.getByRole("heading", { name: "Which AI does Demo use?" })).toBeTruthy();
-    expect(steps()[0].querySelector("svg")).toBeTruthy();
+    expect(steps()[0].textContent).not.toMatch(/Step \d of \d/); // done: its name and value, no mark (Marco, 2026-11-04)
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledOnce();
@@ -217,8 +218,8 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     const client = withSteps(new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" }));
     await renderIn("en", <Flow client={client} components={{ ReadyStep }} />);
     await waitFor(() => expect(next().disabled).toBe(false));
-    // A saved folder: its step shows as done (a check mark, no number), as today.
-    expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "2AI engineStep 2 of 4", "3How the AI talks", "4Ready check"]);
+    // A saved folder: its step shows as done, its name and value only (Radix stage 3b).
+    expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "AI engineStep 2 of 4", "How the AI talks", "Ready check"]);
     fireEvent.click(next());
     const form = await screen.findByRole("heading", { name: "How the AI talks" });
     expect(document.activeElement).toBe(form);
@@ -277,7 +278,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     cleanup();
     client.setupState = { steps: { estilo: "skipped", ready: "missing" }, blocking: ["ready"] };
     await renderIn("en", <Flow client={client} components={{ ReadyStep }} />);
-    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "2AI engineStep 2 of 3", "3Ready check"]));
+    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "AI engineStep 2 of 3", "Ready check"]));
   });
 
   it("from Home: opens at the step, the core steps marked done; its Back is Cancel", async () => {
@@ -285,8 +286,8 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     const onCancel = vi.fn();
     await renderIn("en", <Flow client={client} startAt="ready" onCancel={onCancel} components={{ ReadyStep }} />);
     await screen.findByRole("heading", { name: "Ready check" });
-    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "AI engineClaude", "3Ready checkStep 3 of 3"]));
-    expect(steps()[0].querySelector("svg")).toBeTruthy();
+    await waitFor(() => expect(steps().map((li) => li.textContent)).toEqual(["Your folder/Users/me/Documents/Demo", "AI engineClaude", "Ready checkStep 3 of 3"]));
+    expect(steps()[0].textContent).not.toMatch(/Step \d of \d/); // done: its name and value, no mark (Marco, 2026-11-04)
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledOnce();
@@ -297,7 +298,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     client.setupState = { steps: { estilo: "done", ready: "done" }, blocking: [] };
     const onCancel = vi.fn();
     await renderIn("en", <Flow client={client} startAt="ready" only onCancel={onCancel} components={{ ReadyStep }} />);
-    expect(steps().map((li) => li.textContent)).toEqual(["1Ready checkStep 1 of 1"]);
+    expect(steps().map((li) => li.textContent)).toEqual(["Ready checkStep 1 of 1"]);
     fireEvent.click(await screen.findByRole("button", { name: "All good" }));
     await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(client.setupCalls).not.toContain("finish");
@@ -313,7 +314,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     expect(screen.getByRole("heading", { name: "How the AI talks" })).toBeTruthy();
     client.setupFailure = null;
     fireEvent.click(screen.getByRole("button", { name: "Skip" }));
-    expect((await screen.findByText("This step can't be shown. Skip it, or update the app.")).getAttribute("role")).toBe("alert");
+    expect((await screen.findByText("This step can't be shown. Skip it, or update the app.")).closest("[role=alert]")).toBeTruthy();
   });
 
   it("a refusal with no field errors (setup.json can't be saved) says it didn't go through", async () => {
@@ -468,11 +469,12 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(within(card).getByRole("link", { name: "Anthropic terms" }).getAttribute("href")).toBe("https://example.com/terms");
     expect(within(card).getByRole("link", { name: "Anthropic privacy policy" }).getAttribute("href")).toBe("https://example.com/privacy");
     const footer = actions();
-    expect(within(footer).getByText("You can change all of this whenever you like in Settings.")).toBeTruthy();
+    // The reassurance sits under the bar (Radix stage 3b), so the bar keeps its buttons only.
+    expect(footer.nextElementSibling?.textContent).toBe("You can change all of this whenever you like in Settings.");
     expect(within(footer).getByRole("button", { name: "Back" })).toBeTruthy();
     // A step with Back still leaves setup: Cancel stays first, at the far left.
     expect(footer.firstElementChild).toBe(within(footer).getByRole("button", { name: "Cancel setup" }));
-    expect(within(footer).getByRole("button", { name: "Next" }).getAttribute("data-kind")).toBe("primary");
+    expect(within(footer).getByRole("button", { name: "Next" }).className).toContain("rt-variant-solid");
   });
 });
 

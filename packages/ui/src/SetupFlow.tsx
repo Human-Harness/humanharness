@@ -1,4 +1,4 @@
-import { type ComponentType, useEffect, useId, useRef, useState } from "react";
+import { type ComponentType, type ReactNode, type Ref, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppFooter, SettingsGear, TopBar } from "./chrome";
 import { Icon } from "./guide/icons";
@@ -12,8 +12,41 @@ import { ProfileStep } from "./ProfileStep";
 import { useProfiles } from "./ProfileSwitcher";
 import { SetupInterviewStep } from "./SetupInterviewStep";
 import { SetupStepForm } from "./SetupStepForm";
-import { Button } from "./guide/Button";
-import { NavItem } from "./guide/NavItem";
+import { Rx } from "./guide";
+
+/** The action bar's buttons (DESIGN.md "Buttons"): Cancel and Skip are quiet, Back is secondary, Next is primary. */
+const quiet = { variant: "ghost", color: "gray" } as const;
+const secondary = { variant: "outline", color: "gray" } as const;
+
+/** A step's head: its title (the focus target on each step change) and its sentence. */
+function StepHead({ id, headingRef, title, intro }: { id: string; headingRef: Ref<HTMLHeadingElement>; title: string; intro?: ReactNode }) {
+  return (
+    <Rx.Flex direction="column" gap="2">
+      <Rx.Heading as="h2" size="5" id={id} ref={headingRef} tabIndex={-1}>
+        {title}
+      </Rx.Heading>
+      {intro}
+    </Rx.Flex>
+  );
+}
+
+/** A step's sentence under its title. */
+function Intro({ children }: { children: ReactNode }) {
+  return (
+    <Rx.Text as="p" size="2" color="gray">
+      {children}
+    </Rx.Text>
+  );
+}
+
+/** A red notice that a save or a step didn't go through. */
+function Problem({ children }: { children: ReactNode }) {
+  return (
+    <Rx.Callout.Root color="red" role="alert">
+      <Rx.Callout.Text>{children}</Rx.Callout.Text>
+    </Rx.Callout.Root>
+  );
+}
 
 /** A core step, or a harness step by id (setup-steps spec §4). */
 type Step = "folder" | "engine" | "profile" | "done" | `step:${string}`;
@@ -245,31 +278,35 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
     return (
       <div className="hh-setup">
         <TopBar title={title} trailing={onSettings && <SettingsGear onClick={onSettings} />} />
+        {/* The end (DESIGN.md "Assistant"): a dialog-wide column, centred like Inicio's, with the summary and Start. */}
         <main className="hh-setup-body done">
-          <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
-            <span className="hh-setup-done-mark" aria-hidden="true">
-              <Icon name="check" size={18} />
-            </span>
-            <h2 id={headingId} ref={heading} tabIndex={-1}>
-              {t("setupFlow.readyTitle")}
-            </h2>
-            <div className="hh-rows">
-              <div className="hh-row">
-                <span className="hh-row-label">{t("setupFlow.readyFolder")}</span>
-                <code>
-                  <bdi dir="ltr">{state.config.folder}</bdi>
-                </code>
-              </div>
-              <div className="hh-row">
-                <span className="hh-row-label">{t("setupFlow.readyEngine")}</span>
-                <span>{engine ? (engine.mock ? `${engine.name} · ${t("mock.modelName")}` : engine.name) : state.config.engineId}</span>
-              </div>
-            </div>
-            <p className="hh-caption">{t("setupFlow.readyHint")}</p>
-            <Button kind="large" onClick={onStart}>
-              {t("home.start", { name })}
-            </Button>
-          </section>
+          <Rx.Flex asChild direction="column" align="center" gap="5">
+            <section className="hh-setup-end" aria-labelledby={headingId}>
+              <Rx.Heading as="h2" size="6" id={headingId} ref={heading} tabIndex={-1}>
+                {t("setupFlow.readyTitle")}
+              </Rx.Heading>
+              <Rx.Box width="100%">
+                <Rx.Card size="3">
+                  <SummaryRow label={t("setupFlow.readyFolder")}>
+                    <bdi dir="ltr">{state.config.folder}</bdi>
+                  </SummaryRow>
+                  <Rx.Separator size="4" />
+                  <SummaryRow label={t("setupFlow.readyEngine")}>
+                    {engine ? (engine.mock ? `${engine.name} · ${t("mock.modelName")}` : engine.name) : state.config.engineId}
+                  </SummaryRow>
+                </Rx.Card>
+              </Rx.Box>
+              <Rx.Flex direction="column" align="center" gap="2">
+                <Rx.Button size="3" onClick={onStart}>
+                  {t("home.start", { name })}
+                  <Icon name="next" size={18} />
+                </Rx.Button>
+                <Rx.Text as="p" size="1" color="gray">
+                  {t("setupFlow.readyHint")}
+                </Rx.Text>
+              </Rx.Flex>
+            </section>
+          </Rx.Flex>
         </main>
         <AppFooter mock={state.mock} />
       </div>
@@ -304,40 +341,44 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
       <div className="hh-setup-frame">
         {/* The steps on the left (UI refresh spec §5.6): done ones with their value, "Step n of m" under the current one. */}
         {/* One "Steps" name, on the list (the tests and the stepper before it name the list). */}
+        {/* Marco, 2026-11-04: no marks; a done step shows its value in 12 grey, an upcoming one is grey, the current
+            one is a white card with "Step n of m". */}
         <nav className="hh-setup-nav">
           <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
-            {steps.map((s, i) => (
-              <li key={s.id}>
-                <NavItem
-                  selected={i === at}
-                  current="step"
-                  look="white"
-                  align="start"
-                  tone={i > at ? "muted" : undefined}
-                  lead={<span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>}
-                >
-                  <span className="hh-setup-step-text">
-                    <span className="hh-setup-step-label">{s.label}</span>
-                    {i < at && s.value && (
-                      <span className="hh-setup-step-value">
-                        <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
-                      </span>
-                    )}
-                    {i === at && <span className="hh-setup-step-value">{t("setupFlow.stepOf", { n: at + 1, count: steps.length })}</span>}
-                  </span>
-                </NavItem>
-              </li>
-            ))}
+            {steps.map((s, i) => {
+              const text = (
+                <Rx.Flex direction="column" gap="1">
+                  <Rx.Text size="2" weight={i === at ? "medium" : "regular"} color={i > at ? "gray" : undefined}>
+                    {s.label}
+                  </Rx.Text>
+                  {i < at && s.value && (
+                    <Rx.Text size="1" color="gray" className="hh-gd-path">
+                      <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
+                    </Rx.Text>
+                  )}
+                  {i === at && (
+                    <Rx.Text size="1" color="gray">
+                      {t("setupFlow.stepOf", { n: at + 1, count: steps.length })}
+                    </Rx.Text>
+                  )}
+                </Rx.Flex>
+              );
+              return i === at ? (
+                <Rx.Card key={s.id} asChild size="1" variant="classic">
+                  <li aria-current="step">{text}</li>
+                </Rx.Card>
+              ) : (
+                <li key={s.id}>{text}</li>
+              );
+            })}
           </ol>
         </nav>
-        <div className="hh-setup-column">
-          <main className="hh-setup-body">
+        <main className="hh-setup-body">
+          <div className="hh-setup-step">
             {current ? (
-              <section key={current.id} className="hh-setup-step" aria-labelledby={headingId}>
-                <h2 id={headingId} ref={heading} tabIndex={-1}>
-                  {current.label}
-                </h2>
-                {current.description && <p className="hh-setup-intro">{current.description}</p>}
+              <Rx.Flex key={current.id} asChild direction="column" gap="4">
+              <section aria-labelledby={headingId}>
+                <StepHead id={headingId} headingRef={heading} title={current.label} intro={current.description && <Intro>{current.description}</Intro>} />
                 {current.kind === "form" && <SetupStepForm client={client} step={current} formId={stepFormId} onDone={() => after(current.id)} />}
                 {current.kind === "component" && (
                   <ComponentStep
@@ -352,17 +393,14 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                 {current.kind === "connect" && <ConnectStep client={client} step={current} onReady={(ready) => onConnectReady(current.id, ready)} />}
                 {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
                 {stepError && (
-                  <p className="hh-save-error" role="alert">
-                    {t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}
-                  </p>
+                  <Problem>{t(stepError === "failed" ? "setupSteps.failed" : current.kind === "connect" ? "connections.stepIncomplete" : "setupSteps.incomplete")}</Problem>
                 )}
               </section>
+              </Rx.Flex>
             ) : step === "profile" && state.profiles ? (
-              <section className="hh-setup-step" aria-labelledby={headingId}>
-                <h2 id={headingId} ref={heading} tabIndex={-1}>
-                  {t("profiles.heading", { name })}
-                </h2>
-                <p className="hh-setup-intro">{t("profiles.intro", { label: state.profiles.label })}</p>
+              <Rx.Flex asChild direction="column" gap="4">
+              <section aria-labelledby={headingId}>
+                <StepHead id={headingId} headingRef={heading} title={t("profiles.heading", { name })} intro={<Intro>{t("profiles.intro", { label: state.profiles.label })}</Intro>} />
                 <ProfileStep
                   client={client}
                   state={state}
@@ -374,13 +412,23 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                   onSending={setCreating}
                 />
               </section>
+              </Rx.Flex>
             ) : step === "folder" ? (
-              <section className="hh-setup-step" aria-labelledby={headingId}>
-                <h2 id={headingId} ref={heading} tabIndex={-1}>
-                  {t("setupFlow.folderHeading")}
-                </h2>
-                <p className="hh-setup-intro">{t("setupFlow.folderIntro", { name })}</p>
-                <p className="hh-caption hh-setup-language">{t("setupFlow.languageLater")}</p>
+              <Rx.Flex asChild direction="column" gap="4">
+              <section aria-labelledby={headingId}>
+                <StepHead
+                  id={headingId}
+                  headingRef={heading}
+                  title={t("setupFlow.folderHeading")}
+                  intro={
+                    <>
+                      <Intro>{t("setupFlow.folderIntro", { name })}</Intro>
+                      <Rx.Text as="p" size="1" color="gray">
+                        {t("setupFlow.languageLater")}
+                      </Rx.Text>
+                    </>
+                  }
+                />
                 <FolderStep
                   client={client}
                   state={state}
@@ -391,122 +439,142 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                   }}
                 />
               </section>
+              </Rx.Flex>
             ) : (
-              <section className="hh-setup-step" aria-labelledby={headingId}>
-                <h2 id={headingId} ref={heading} tabIndex={-1}>
-                  {t("setupFlow.engineHeading", { name })}
-                </h2>
+              <Rx.Flex asChild direction="column" gap="4">
+              <section aria-labelledby={headingId}>
                 {/* A mock app has no plan or account to bring: only the test-mode caption. */}
-                <p className="hh-setup-intro">{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</p>
+                <StepHead
+                  id={headingId}
+                  headingRef={heading}
+                  title={t("setupFlow.engineHeading", { name })}
+                  intro={<Intro>{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</Intro>}
+                />
                 <EngineTab client={client} state={state} onChange={onChange} setup onSelection={(engineId, ready) => setSelection({ engineId, ready })} />
-                {saveError && (
-                  <p className="hh-save-error" role="alert">
-                    {t("setupFlow.saveError")}
-                  </p>
-                )}
+                {saveError && <Problem>{t("setupFlow.saveError")}</Problem>}
               </section>
+              </Rx.Flex>
             )}
-          </main>
-          {/* The step's buttons sit in the body, under the step: Cancel at the left, Back and Next at the right. */}
-          <div className="hh-setup-actions">
-            {hasBack && (
-              // Not while a save or create is on its way: its answer would move the flow on from wherever it went.
-              <button aria-label={t("setupFlow.cancelSetup")} disabled={busy || saving || creating} onClick={onCancel}>
-                {t("setupFlow.cancel")}
-              </button>
-            )}
-            {current ? (
-              <>
-                {back ? (
-                  <button disabled={busy} onClick={() => setStep(back)}>
-                    {t("setupFlow.back")}
-                  </button>
-                ) : (
-                  <button disabled={busy} onClick={onCancel}>
-                    {t("setupFlow.cancel")}
-                  </button>
-                )}
-                {/* The form draws no buttons of its own (it has a formId): Skip lives here. */}
-                {!current.required && (
-                  <button disabled={waiting} onClick={() => skip(current.id)}>
-                    {t("setupSteps.skip")}
-                  </button>
-                )}
-                {/* A form's Next submits it from here, like the folder step's; a component step ends itself (done()). */}
-                {current.kind === "form" && (
-                  <Button type="submit" form={stepFormId} kind="primary" disabled={waiting}>
-                    {t("setupFlow.next")}
-                  </Button>
-                )}
-                {/* An interview's Next waits while its task is busy (a turn, the closing turn). */}
-                {current.kind === "interview" && (
-                  <Button
-                    kind="primary"
-                    disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
-                    onClick={() => finishInterview(current)}
-                  >
-                    {t("setupFlow.next")}
-                  </Button>
-                )}
-                {/* A connect step's Next waits for every key it lists (tools spec §9). */}
-                {current.kind === "connect" && (
-                  <Button ref={connectNext} kind="primary" disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
-                    {t("setupFlow.next")}
-                  </Button>
-                )}
-              </>
-            ) : (
-              <>
-                {/* The profile step: Cancel when it was opened by "Add", else Back to the engine. */}
-                {step === "profile" && (
-                  <>
-                    {/* Not while a create is on its way: its answer would move the flow on from wherever it went. */}
-                    {newProfile ? (
-                      <button disabled={creating} onClick={onCancel}>
-                        {t("setupFlow.cancel")}
-                      </button>
-                    ) : (
-                      <button disabled={creating} onClick={() => setStep("engine")}>
-                        {t("setupFlow.back")}
-                      </button>
-                    )}
-                    <Button type="submit" form={profileFormId} kind="primary" disabled={creating || stranded !== null}>
+            {/* The step's buttons follow it, in the same column (Marco, 2026-11-04): Cancel at the left, Back, Skip and
+                Next at the right. */}
+            <Rx.Flex className="hh-setup-actions" align="center" justify="end" gap="3" wrap="wrap">
+              {hasBack && (
+                // Not while a save or create is on its way: its answer would move the flow on from wherever it went.
+                <Rx.Button {...quiet} aria-label={t("setupFlow.cancelSetup")} disabled={busy || saving || creating} onClick={onCancel}>
+                  {t("setupFlow.cancel")}
+                </Rx.Button>
+              )}
+              {current ? (
+                <>
+                  {back ? (
+                    <Rx.Button {...secondary} disabled={busy} onClick={() => setStep(back)}>
+                      {t("setupFlow.back")}
+                    </Rx.Button>
+                  ) : (
+                    <Rx.Button {...quiet} disabled={busy} onClick={onCancel}>
+                      {t("setupFlow.cancel")}
+                    </Rx.Button>
+                  )}
+                  {/* The form draws no buttons of its own (it has a formId): Skip lives here, next to Next. */}
+                  {!current.required && (
+                    <Rx.Button {...quiet} disabled={waiting} onClick={() => skip(current.id)}>
+                      {t("setupSteps.skip")}
+                    </Rx.Button>
+                  )}
+                  {/* A form's Next submits it from here, like the folder step's; a component step ends itself (done()). */}
+                  {current.kind === "form" && (
+                    <Rx.Button type="submit" form={stepFormId} disabled={waiting}>
                       {t("setupFlow.next")}
-                    </Button>
-                  </>
-                )}
-                {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
-                {step !== "profile" && !hasBack && (
-                  <button disabled={saving} onClick={onCancel}>
-                    {t("setupFlow.cancel")}
-                  </button>
-                )}
-                {/* The engine step says nothing is final (UI refresh spec §5.6), next to the buttons that move on. */}
-                {step === "engine" && <p className="hh-caption hh-setup-reassure">{t("setupFlow.readyHint")}</p>}
-                {hasBack && step === "engine" && (
-                  <button disabled={saving} onClick={() => setStep("folder")}>
-                    {t("setupFlow.back")}
-                  </button>
-                )}
-                {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
-                {step === "folder" && (
-                  <Button type="submit" form={folderFormId} kind="primary">
-                    {t("setupFlow.next")}
-                  </Button>
-                )}
-                {/* With harness steps, it also waits for which of them this run goes through. */}
-                {step === "engine" && (
-                  <Button kind="primary" disabled={!selection?.ready || saving || queue === null} onClick={() => void next()}>
-                    {t("setupFlow.next")}
-                  </Button>
-                )}
-              </>
+                    </Rx.Button>
+                  )}
+                  {/* An interview's Next waits while its task is busy (a turn, the closing turn). */}
+                  {current.kind === "interview" && (
+                    <Rx.Button
+                      disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
+                      onClick={() => finishInterview(current)}
+                    >
+                      {t("setupFlow.next")}
+                    </Rx.Button>
+                  )}
+                  {/* A connect step's Next waits for every key it lists (tools spec §9). */}
+                  {current.kind === "connect" && (
+                    <Rx.Button ref={connectNext} disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
+                      {t("setupFlow.next")}
+                    </Rx.Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* The profile step: Cancel when it was opened by "Add", else Back to the engine. */}
+                  {step === "profile" && (
+                    <>
+                      {/* Not while a create is on its way: its answer would move the flow on from wherever it went. */}
+                      {newProfile ? (
+                        <Rx.Button {...quiet} disabled={creating} onClick={onCancel}>
+                          {t("setupFlow.cancel")}
+                        </Rx.Button>
+                      ) : (
+                        <Rx.Button {...secondary} disabled={creating} onClick={() => setStep("engine")}>
+                          {t("setupFlow.back")}
+                        </Rx.Button>
+                      )}
+                      <Rx.Button type="submit" form={profileFormId} disabled={creating || stranded !== null}>
+                        {t("setupFlow.next")}
+                      </Rx.Button>
+                    </>
+                  )}
+                  {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
+                  {step !== "profile" && !hasBack && (
+                    <Rx.Button {...quiet} disabled={saving} onClick={onCancel}>
+                      {t("setupFlow.cancel")}
+                    </Rx.Button>
+                  )}
+                  {hasBack && step === "engine" && (
+                    <Rx.Button {...secondary} disabled={saving} onClick={() => setStep("folder")}>
+                      {t("setupFlow.back")}
+                    </Rx.Button>
+                  )}
+                  {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
+                  {step === "folder" && (
+                    <Rx.Button type="submit" form={folderFormId}>
+                      {t("setupFlow.next")}
+                    </Rx.Button>
+                  )}
+                  {/* With harness steps, it also waits for which of them this run goes through. */}
+                  {step === "engine" && (
+                    <Rx.Button disabled={!selection?.ready || saving || queue === null} onClick={() => void next()}>
+                      {t("setupFlow.next")}
+                    </Rx.Button>
+                  )}
+                </>
+              )}
+            </Rx.Flex>
+            {/* The engine step says nothing is final (UI refresh spec §5.6), under the buttons that move on. */}
+            {step === "engine" && (
+              <Rx.Text as="p" size="1" color="gray" align="right">
+                {t("setupFlow.readyHint")}
+              </Rx.Text>
             )}
           </div>
-        </div>
+        </main>
       </div>
       <AppFooter mock={state.mock} />
     </div>
+  );
+}
+
+/** One line of the end's summary: its name on the left, the value on the right (a path breaks anywhere). */
+function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    // The label over its value, both from the start: a long folder path wraps as a block, not as a ragged right edge.
+    <Rx.Flex direction="column" gap="1" py="3" align="start">
+      <Rx.Text size="1" color="gray" align="left">
+        {label}
+      </Rx.Text>
+      <Rx.Text size="2" align="left" className="hh-gd-path">
+        {children}
+      </Rx.Text>
+    </Rx.Flex>
   );
 }
 
@@ -530,6 +598,6 @@ function ComponentStep({
   const { t } = useTranslation();
   const name = step.component ?? "";
   const Component = Object.hasOwn(components, name) ? components[name] : undefined;
-  if (!Component) return <p className="hh-caption" role="alert">{t("setupSteps.missingComponent")}</p>;
+  if (!Component) return <Problem>{t("setupSteps.missingComponent")}</Problem>;
   return <Component client={client} profile={profile} done={done} skip={skip} />;
 }

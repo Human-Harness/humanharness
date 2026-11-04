@@ -225,7 +225,7 @@ describe("the connect step in the setup frame (UI refresh spec §5.6)", () => {
     await screen.findByRole("group", { name: "Jira API token" });
     const nav = screen.getByRole("list", { name: "Steps" });
     const items = within(nav).getAllByRole("listitem");
-    expect(items.map((li) => li.querySelector("[aria-current]")?.getAttribute("aria-current") ?? null)).toEqual([null, null, "step"]);
+    expect(items.map((li) => li.getAttribute("aria-current"))).toEqual([null, null, "step"]);
     expect(within(items[0]).getByText("/Users/me/Documents/Demo")).toBeTruthy();
     expect(within(items[1]).getByText("Claude")).toBeTruthy();
     expect(within(items[2]).getByText("Step 3 of 3")).toBeTruthy();

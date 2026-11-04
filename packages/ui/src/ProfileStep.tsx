@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, InputIssue } from "./client";
 import { InputForm } from "./InputForm";
 import { refusalKey } from "./ProfileSwitcher";
+import { Rx } from "./guide";
 
 /**
  * The profile step's body (profiles spec §5 "Creating a profile"): the `profiles.fields` form; its submit creates the
@@ -58,7 +59,11 @@ export function ProfileStep({
   };
   return (
     <>
-      {others === 1 && <p className="hh-caption">{t("profiles.privacy")}</p>}
+      {others === 1 && (
+        <Rx.Text as="p" size="1" color="gray">
+          {t("profiles.privacy")}
+        </Rx.Text>
+      )}
       <InputForm
         spec={state.profiles.form}
         data={null}
@@ -69,9 +74,9 @@ export function ProfileStep({
         submit={(v) => void submit(v)}
       />
       {stranded !== null && (
-        <p className="hh-save-error" role="alert">
-          {t("profiles.addedNotOpened", { title: stranded })}
-        </p>
+        <Rx.Callout.Root color="red" role="alert">
+          <Rx.Callout.Text>{t("profiles.addedNotOpened", { title: stranded })}</Rx.Callout.Text>
+        </Rx.Callout.Root>
       )}
     </>
   );

@@ -114,6 +114,20 @@ describe("Checkbox (style guide §5 Checkbox, row 56)", () => {
   });
 });
 
+describe("effective layout", () => {
+  it("no broader rule turns a toggle row back into a block", () => {
+    // `.hh-sk-scope label` used to set display:block on every label, including the toggle row.
+    expect(css).not.toMatch(/\.hh-sk-scope label\s*\{/);
+    expect(rule(".hh-sk-scope label:not(.hh-toggle-row)").display).toBe("block");
+    expect(rule(".hh-toggle-row").display).toBe("flex");
+    expect(rule(".hh-toggle-row")["align-items"]).toBe("center");
+  });
+  it("the Markdown task box keeps its outdent and gap on the static checkbox", () => {
+    expect(rule(".hh-md-task > .hh-checkbox").margin).toBe("0 6px 0 -18px");
+    expect(css).not.toMatch(/\.hh-md-task > input/);
+  });
+});
+
 describe("multiChoice in InputForm", () => {
   it("renders one Toggle per row and no checkbox", async () => {
     const spec: InputSpec = { fields: [{ name: "tags", kind: "multiChoice", label: "Tags", optional: false, options: ["a", "b", "c"] }] };
@@ -147,6 +161,9 @@ describe("source scan", () => {
   });
   it('has no role="switch" outside guide/Toggle.tsx', () => {
     expect(outside(/role=["{]+switch/, "guide/Toggle.tsx")).toEqual([]);
+  });
+  it('has no role="checkbox" outside guide/Checkbox.tsx (StaticCheckbox lives there)', () => {
+    expect(outside(/role=["{]+checkbox/, "guide/Checkbox.tsx")).toEqual([]);
   });
   it("every Checkbox in use has purpose=accept (the type enforces it)", () => {
     expect(outside(/<Checkbox\b(?![^>]*purpose="accept")/, "guide/Checkbox.tsx")).toEqual([]);

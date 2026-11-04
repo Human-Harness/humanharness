@@ -431,7 +431,7 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-md-table .hh-num { text-align: right; font-variant-numeric: tabular-nums; }
 .hh-md-table .hh-align-center { text-align: center; }
 .hh-md-task { list-style: none; }
-.hh-md-task > input { margin: 0 6px 0 -18px; vertical-align: middle; }
+.hh-md-task > .hh-checkbox { margin: 0 6px 0 -18px; vertical-align: middle; }
 .hh-md-raw { white-space: pre-wrap; font-family: var(--hh-mono); font-size: 0.9em; color: var(--hh-muted); }
 .hh-md-alt { color: var(--hh-muted); font-style: italic; }
 .hh-md-quote { margin: 0.8em 0; padding: 0 0 0 12px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-muted); }
@@ -812,7 +812,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-mark-pick { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--hh-ink); }
 .hh-sk-mark-pick[aria-pressed="true"] { background: var(--hh-active); color: var(--hh-active-ink); }
 .hh-sk-editor textarea { width: 100%; box-sizing: border-box; }
-.hh-sk-scope label { display: block; }
+.hh-sk-scope label:not(.hh-toggle-row) { display: block; }
 .hh-sk-scope textarea { width: 100%; box-sizing: border-box; margin-top: 2px; }
 .hh-sk-custom { margin: 8px 0 0 22px; }
 .hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-rail); }

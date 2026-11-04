@@ -10,3 +10,5 @@ export * from "./Tile";
 export * from "./Toggle";
 export * from "./Checkbox";
 export * from "./Theme";
+// Radix pieces as a namespace: today's guide Button, IconButton, Tabs and Checkbox keep their names until stage 7.
+export * as Rx from "./radix";

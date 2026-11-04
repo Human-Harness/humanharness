@@ -1,0 +1,8 @@
+Human Harness includes third-party work, used under its original license.
+
+Impeccable
+  Source:  https://github.com/pbakaus/impeccable, tag skill-v4.8.0
+  Files:   .claude/skills/impeccable/
+  License: Apache License 2.0, see .claude/skills/impeccable/LICENSE
+  Its own notices: .claude/skills/impeccable/NOTICE.md
+  Updated only by a pull request that changes the tag above.

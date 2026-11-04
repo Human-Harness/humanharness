@@ -248,7 +248,7 @@ test("no key value or header appears in the page, the chat log or the trace", as
     // The refused peek never carried notes.md's text anywhere (the trace, the chat): only the note itself holds it.
     if (f.startsWith(s.folder) && f !== path.join(s.folder, "notes.md")) expect(text.includes(NOTE), f).toBe(false);
   }
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 });
 
 test("the tools window, its partition handler and its rpc channel exist with tools (the D0 control)", async () => {

@@ -97,7 +97,7 @@ async function turnOnOnThisDay(page: Page) {
   await expect(tab.getByText("Can propose agent tasks")).toBeVisible();
   await tab.getByRole("button", { name: "Turn on" }).click();
   await expect(tab.getByRole("switch", { name: OTD })).toBeChecked();
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 }
 
 const otdFrame = (page: Page): FrameLocator => page.frameLocator(`iframe[title="${OTD} · ${OTD}"]`);
@@ -160,7 +160,7 @@ test("the demo's On this day: off draws nothing; on, its panel, chip and inbox i
     await expect(row.getByText("Bundled")).toBeVisible();
     await expect(tab.getByRole("switch", { name: OTD })).not.toBeChecked();
     expect(await windowCount(app)).toBe(1);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     // On, after its review: the section's tab, 25 rows from the fixture, the chip, and an info item (no badge).
     await turnOnOnThisDay(page);

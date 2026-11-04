@@ -103,14 +103,55 @@ code { font-family: var(--hh-mono); font-size: 12px; overflow-wrap: anywhere; }
 :not(pre) > code { font-family: var(--hh-mono); font-size: calc(1em - 1px); background: var(--hh-surface-2); border-radius: 4px; }
 a { color: var(--hh-ink); }
 
-/* Radix bridge (Radix + Impeccable spec §3). Radix pieces read our fonts and background, in every Radix root,
- * including the ones its overlays open on <body>. :root raises the specificity above Radix's own `.radix-themes`. */
+/* Radix bridge (Radix + Impeccable spec §3, DESIGN.md "Radix pieces take our tokens"). Radix pieces read our fonts and
+ * every color from our tokens, in every Radix root, including the ones its overlays open on <body>. :root raises the
+ * specificity above Radix's own `.radix-themes` and its `.light`/`.dark` scales; the tokens switch light and dark
+ * themselves. Each Radix scale step (1 to 12, and its alpha twin) maps to one token: amber is the primary fill and the
+ * chosen state, sand our neutrals, and green, orange, blue, violet and red the tag colors. */
 :root .radix-themes {
   --default-font-family: var(--hh-font);
   --heading-font-family: var(--hh-display);
   --code-font-family: var(--hh-mono);
   --color-background: var(--hh-bg);
+  --color-panel-solid: var(--hh-surface);
+  --color-panel-translucent: var(--hh-surface);
+  --color-surface: var(--hh-surface);
+  --color-overlay: var(--hh-backdrop);
+  /* Three weights only: Radix's "bold" (titles, labels, tags) is our 600 (DESIGN.md "The Three Weights Rule"). */
+  --font-weight-bold: 600;
+  --sand-1: var(--hh-bg); --sand-2: var(--hh-column); --sand-3: var(--hh-surface-2); --sand-4: var(--hh-surface-2); --sand-5: var(--hh-line); --sand-6: var(--hh-line); --sand-7: var(--hh-line-strong); --sand-8: var(--hh-line-strong); --sand-9: var(--hh-faint); --sand-10: var(--hh-faint); --sand-11: var(--hh-muted); --sand-12: var(--hh-ink);
+  --sand-a1: var(--hh-bg); --sand-a2: var(--hh-column); --sand-a3: var(--hh-surface-2); --sand-a4: var(--hh-surface-2); --sand-a5: var(--hh-line); --sand-a6: var(--hh-line); --sand-a7: var(--hh-line-strong); --sand-a8: var(--hh-line-strong); --sand-a9: var(--hh-faint); --sand-a10: var(--hh-faint); --sand-a11: var(--hh-muted); --sand-a12: var(--hh-ink);
+  --sand-contrast: var(--hh-surface);
+  --amber-1: var(--hh-surface); --amber-2: var(--hh-surface); --amber-3: var(--hh-active); --amber-4: var(--hh-active); --amber-5: var(--hh-active); --amber-6: var(--hh-cta); --amber-7: var(--hh-cta); --amber-8: var(--hh-active-ink); --amber-9: var(--hh-cta); --amber-10: var(--hh-cta-hover); --amber-11: var(--hh-active-ink); --amber-12: var(--hh-active-ink);
+  --amber-a1: var(--hh-surface); --amber-a2: var(--hh-surface); --amber-a3: var(--hh-active); --amber-a4: var(--hh-active); --amber-a5: var(--hh-active); --amber-a6: var(--hh-cta); --amber-a7: var(--hh-cta); --amber-a8: var(--hh-active-ink); --amber-a9: var(--hh-cta); --amber-a10: var(--hh-cta-hover); --amber-a11: var(--hh-active-ink); --amber-a12: var(--hh-active-ink);
+  --amber-contrast: var(--hh-cta-ink);
+  --green-1: var(--hh-surface); --green-2: var(--hh-surface); --green-3: var(--hh-t-green); --green-4: var(--hh-t-green); --green-5: var(--hh-t-green); --green-6: var(--hh-t-green-ink); --green-7: var(--hh-t-green-ink); --green-8: var(--hh-t-green-ink); --green-9: var(--hh-t-green-ink); --green-10: var(--hh-t-green-ink); --green-11: var(--hh-t-green-ink); --green-12: var(--hh-t-green-ink);
+  --green-a1: var(--hh-surface); --green-a2: var(--hh-surface); --green-a3: var(--hh-t-green); --green-a4: var(--hh-t-green); --green-a5: var(--hh-t-green); --green-a6: var(--hh-t-green-ink); --green-a7: var(--hh-t-green-ink); --green-a8: var(--hh-t-green-ink); --green-a9: var(--hh-t-green-ink); --green-a10: var(--hh-t-green-ink); --green-a11: var(--hh-t-green-ink); --green-a12: var(--hh-t-green-ink);
+  --green-contrast: var(--hh-surface);
+  --orange-1: var(--hh-surface); --orange-2: var(--hh-surface); --orange-3: var(--hh-t-orange); --orange-4: var(--hh-t-orange); --orange-5: var(--hh-t-orange); --orange-6: var(--hh-t-orange-ink); --orange-7: var(--hh-t-orange-ink); --orange-8: var(--hh-t-orange-ink); --orange-9: var(--hh-t-orange-ink); --orange-10: var(--hh-t-orange-ink); --orange-11: var(--hh-t-orange-ink); --orange-12: var(--hh-t-orange-ink);
+  --orange-a1: var(--hh-surface); --orange-a2: var(--hh-surface); --orange-a3: var(--hh-t-orange); --orange-a4: var(--hh-t-orange); --orange-a5: var(--hh-t-orange); --orange-a6: var(--hh-t-orange-ink); --orange-a7: var(--hh-t-orange-ink); --orange-a8: var(--hh-t-orange-ink); --orange-a9: var(--hh-t-orange-ink); --orange-a10: var(--hh-t-orange-ink); --orange-a11: var(--hh-t-orange-ink); --orange-a12: var(--hh-t-orange-ink);
+  --orange-contrast: var(--hh-surface);
+  --blue-1: var(--hh-surface); --blue-2: var(--hh-surface); --blue-3: var(--hh-t-blue); --blue-4: var(--hh-t-blue); --blue-5: var(--hh-t-blue); --blue-6: var(--hh-t-blue-ink); --blue-7: var(--hh-t-blue-ink); --blue-8: var(--hh-t-blue-ink); --blue-9: var(--hh-t-blue-ink); --blue-10: var(--hh-t-blue-ink); --blue-11: var(--hh-t-blue-ink); --blue-12: var(--hh-t-blue-ink);
+  --blue-a1: var(--hh-surface); --blue-a2: var(--hh-surface); --blue-a3: var(--hh-t-blue); --blue-a4: var(--hh-t-blue); --blue-a5: var(--hh-t-blue); --blue-a6: var(--hh-t-blue-ink); --blue-a7: var(--hh-t-blue-ink); --blue-a8: var(--hh-t-blue-ink); --blue-a9: var(--hh-t-blue-ink); --blue-a10: var(--hh-t-blue-ink); --blue-a11: var(--hh-t-blue-ink); --blue-a12: var(--hh-t-blue-ink);
+  --blue-contrast: var(--hh-surface);
+  --violet-1: var(--hh-surface); --violet-2: var(--hh-surface); --violet-3: var(--hh-t-violet); --violet-4: var(--hh-t-violet); --violet-5: var(--hh-t-violet); --violet-6: var(--hh-t-violet-ink); --violet-7: var(--hh-t-violet-ink); --violet-8: var(--hh-t-violet-ink); --violet-9: var(--hh-t-violet-ink); --violet-10: var(--hh-t-violet-ink); --violet-11: var(--hh-t-violet-ink); --violet-12: var(--hh-t-violet-ink);
+  --violet-a1: var(--hh-surface); --violet-a2: var(--hh-surface); --violet-a3: var(--hh-t-violet); --violet-a4: var(--hh-t-violet); --violet-a5: var(--hh-t-violet); --violet-a6: var(--hh-t-violet-ink); --violet-a7: var(--hh-t-violet-ink); --violet-a8: var(--hh-t-violet-ink); --violet-a9: var(--hh-t-violet-ink); --violet-a10: var(--hh-t-violet-ink); --violet-a11: var(--hh-t-violet-ink); --violet-a12: var(--hh-t-violet-ink);
+  --violet-contrast: var(--hh-surface);
+  --red-1: var(--hh-surface); --red-2: var(--hh-surface); --red-3: var(--hh-t-red); --red-4: var(--hh-t-red); --red-5: var(--hh-t-red); --red-6: var(--hh-t-red-ink); --red-7: var(--hh-t-red-ink); --red-8: var(--hh-t-red-ink); --red-9: var(--hh-t-red-ink); --red-10: var(--hh-t-red-ink); --red-11: var(--hh-t-red-ink); --red-12: var(--hh-t-red-ink);
+  --red-a1: var(--hh-surface); --red-a2: var(--hh-surface); --red-a3: var(--hh-t-red); --red-a4: var(--hh-t-red); --red-a5: var(--hh-t-red); --red-a6: var(--hh-t-red-ink); --red-a7: var(--hh-t-red-ink); --red-a8: var(--hh-t-red-ink); --red-a9: var(--hh-t-red-ink); --red-a10: var(--hh-t-red-ink); --red-a11: var(--hh-t-red-ink); --red-a12: var(--hh-t-red-ink);
+  --red-contrast: var(--hh-surface);
 }
+/* The chosen segment is the chosen amber (DESIGN.md "Chosen amber"). */
+:root .radix-themes .rt-SegmentedControlRoot { --segmented-control-indicator-background-color: var(--hh-active); }
+:root .radix-themes .rt-SegmentedControlItem[data-state="on"] { color: var(--hh-active-ink); }
+/* Settings' wrappers (guide/settings.tsx): what Radix props cannot say. A loose list is bordered rows, no card. */
+.hh-gd-list { border: 1px solid var(--hh-line); border-radius: var(--hh-r-control); background: var(--hh-surface); }
+ul.hh-gd-list { list-style: none; margin: 0; }
+.hh-gd-list > li + li { border-top: 1px solid var(--hh-line); }
+.hh-gd-path { overflow-wrap: anywhere; }
+.rt-BaseButton.hh-gd-nav-item { margin: 0; width: 100%; justify-content: flex-start; }
+/* The app's old `h3 { color: muted }` must not reach a Radix heading: it is ink unless it asks for a color. */
+.rt-Heading:not([data-accent-color]) { color: var(--hh-ink); }
 /* The app's root draws no box and gives its children no text style: the screens look exactly as before. */
 .radix-themes.hh-theme { display: contents; font: inherit; line-height: inherit; letter-spacing: inherit; color: inherit; overflow-wrap: inherit; -webkit-font-smoothing: inherit; -moz-osx-font-smoothing: inherit; -webkit-text-size-adjust: inherit; text-size-adjust: inherit; }
 /* Soft-cards controls (UI refresh spec §3.2). Compact controls below override the height. */
@@ -246,12 +287,10 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-mock-badge { flex: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--hh-t-orange-ink); background: var(--hh-surface); color: var(--hh-t-orange-ink); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .hh-settings-page { display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; }
 .hh-settings-body { display: grid; grid-template-columns: minmax(220px, var(--hh-column-w)) minmax(0, 1fr); min-height: 0; }
-.hh-settings-nav { display: grid; align-content: start; gap: 2px; padding: 24px 14px; background: var(--hh-rail); border-right: 1px solid var(--hh-line); overflow-y: auto; }
-.hh-settings-nav h1 { margin: 0; font-size: 20px; font-weight: 600; padding: 0 14px 10px; }
-.hh-settings-tabs { display: grid; gap: 2px; }
-.hh-settings-main { overflow-y: auto; padding: 28px 32px 48px; display: grid; align-content: start; gap: 16px; }
-.hh-settings-main > * { max-width: 860px; }
-@media (max-width: 760px) { .hh-settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .hh-settings-nav { border-right: 0; border-bottom: 1px solid var(--hh-line); padding: 12px 14px; } .hh-settings-tabs { grid-auto-flow: column; overflow-x: auto; } .hh-settings-main { padding: 20px 16px 40px; } }
+.hh-settings-nav { display: grid; align-content: start; gap: 2px; padding: 24px 12px; background: var(--hh-rail); border-right: 1px solid var(--hh-line); overflow-y: auto; }
+.hh-settings-main { overflow-y: auto; padding: 24px 32px 32px; display: grid; align-content: start; }
+.hh-settings-main > * { max-width: var(--hh-read-w); }
+@media (max-width: 760px) { .hh-settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .hh-settings-nav { border-right: 0; border-bottom: 1px solid var(--hh-line); padding: 12px 14px; } .hh-settings-nav [role="tablist"] { flex-direction: row; overflow-x: auto; } .hh-settings-nav .rt-BaseButton.hh-gd-nav-item { width: auto; flex: none; } .hh-settings-main { padding: 24px 16px 32px; } }
 /* A section's head and its cards of rows (UI refresh spec §5.5). */
 .hh-section-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
 .hh-section-head > div { flex: 1 1 320px; display: grid; gap: 4px; }
@@ -288,8 +327,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-secret > .hh-row-label { flex: 1 1 160px; color: var(--hh-ink); font-weight: 500; }
 .hh-letter-tile { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-weight: 600; }
 .hh-manual ol { margin: 0 0 8px; padding-left: 20px; }
-.hh-settings-running { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.hh-settings-running p { margin: 0; color: var(--hh-muted); }
 .hh-tab { display: grid; gap: 20px; }
 .hh-tab > section { display: grid; gap: 20px; }
 .hh-rows { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
@@ -336,9 +373,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-backend-card p { margin: 0; }
 .hh-backend-card button { justify-self: start; }
 /* Motor, Modelos and Uso before setup: one empty state that leads to the setup flow. */
-.hh-not-configured { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; text-align: center; color: var(--hh-muted); }
-.hh-not-configured h2 { margin: 0; color: var(--hh-ink); }
-.hh-not-configured p { margin: 0 0 8px; max-width: 36ch; }
 select { font: inherit; height: var(--hh-control-h); padding: 0 10px; border-radius: var(--hh-control-r); border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); }
 select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
@@ -1084,11 +1118,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langpick-reason, .hh-langpick-none, .hh-langpick-progress { margin: 0; }
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-langpick-actions, .hh-langnotice-actions, .hh-langoffer-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.hh-langrow-name { display: inline-flex; gap: 6px; align-items: baseline; flex: 1 1 auto; }
-.hh-settings-card .hh-row-label.hh-langrow-label { flex: 0 0 auto; }
-.hh-langrow-label::after { content: ":"; }
-.hh-langrow-progress, .hh-langrow-stopped, .hh-langrow-new { gap: 8px; }
-.hh-langrow-reason { margin: 0; padding: 10px 12px; border-top: 1px solid var(--hh-line); }
 .hh-langoffer { display: flex; flex-direction: column; gap: 6px; min-width: min(320px, 100%); max-width: 460px; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-rail); text-align: left; }
 .hh-langoffer h2 { margin: 0; font-size: 15px; }
 .hh-langoffer p { margin: 0; }

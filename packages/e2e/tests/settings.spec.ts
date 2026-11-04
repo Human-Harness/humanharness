@@ -54,7 +54,7 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     await expect.poll(() => (fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, "utf8")) : null)).toEqual({ tone: "demanding" });
     // The status line stays mounted (a live region), empty while no task is open.
     await expect(tab.getByRole("status")).toHaveText("");
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     // The first task's runtime writes AGENTS.md with the current settings.
     await page.getByRole("button", { name: "Start Tutor" }).click();
@@ -74,7 +74,7 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     await expect(tab.getByText("Pending")).toBeVisible();
     await expect.poll(() => JSON.parse(fs.readFileSync(settingsFile, "utf8"))).toEqual({ tone: "demanding", hintAfter: 4 });
     expect(agents()).toContain("after 2 failed tries");
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
     // Still the old text just before the task ends.
     expect(agents()).toContain("after 2 failed tries");
 

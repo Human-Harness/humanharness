@@ -129,7 +129,7 @@ test("a plugin added from a folder: review, on, its data and inbox item; the age
     // Its source ran in a hidden backend window: the record, then the inbox item.
     await expect.poll(() => records(pluginData(s, "hello", "greetings"))).toEqual([expect.objectContaining({ id: "today", text: "Hello" })]);
     expect(await backendWindows(app)).toEqual([expect.objectContaining({ url: "hh-plugin://hello/_hh/host.html", visible: false })]);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     // The chat's top bar has the inbox (some plugin is on), with the item unread.
     await page.getByRole("button", { name: "Start Demo" }).click();
@@ -160,7 +160,7 @@ test("a plugin added from a folder: review, on, its data and inbox item; the age
     await page.getByRole("switch", { name: "Hello" }).click();
     await expect(page.getByRole("switch", { name: "Hello" })).not.toBeChecked();
     await expect.poll(async () => (await backendWindows(app)).length).toBe(0);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
     await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
     const next = readJsonl<Run>(s.claudePrompts).find((r) => r.prompt.includes("# Topic: engines"));
@@ -276,7 +276,7 @@ test("a run over the limit reloads the backend; five crashes in an hour turn the
     await expect(tab.getByRole("switch", { name: "Probe" })).not.toBeChecked();
     await page.waitForTimeout(1_000);
     expect(await backendWindows(app)).toEqual([]);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
     await page.getByRole("button", { name: "Start Demo" }).click();
     const inbox = page.getByRole("button", { name: "Attention" });
     await expect(inbox.locator(".hh-pl-badge")).toHaveText("1");

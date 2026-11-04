@@ -117,7 +117,7 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await page.getByRole("tab", { name: "Engine" }).click();
     await page.getByRole("radio", { name: /Codex/ }).first().click();
     await page.getByRole("button", { name: "Use Codex" }).click();
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     await expect(page.getByRole("main").getByText(/You're now using Codex/)).toBeVisible();
     await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();

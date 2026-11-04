@@ -88,7 +88,7 @@ describe("a setting from search opens Settings at the field (§6)", () => {
     expect(within(sheet).getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() => expect(sheet.querySelector('[data-setting="models.levels"]')?.contains(document.activeElement)).toBe(true));
     // The same field again is a new focus: it gets focus back after the person moved on.
-    within(sheet).getByRole("button", { name: "Done" }).focus();
+    within(sheet).getByRole("button", { name: /^Back to (?!recommended|the )/ }).focus();
     sheet = await openFirst(client, "levels");
     await waitFor(() => expect(sheet.querySelector('[data-setting="models.levels"]')?.contains(document.activeElement)).toBe(true));
   });
@@ -102,13 +102,13 @@ describe("a setting from search opens Settings at the field (§6)", () => {
     expect(document.activeElement).toBe(start);
     const sheet = await openFirst(client, "appear");
     await waitFor(() => expect(sheet.querySelector('[data-setting="general.appearance"]')!.contains(document.activeElement)).toBe(true));
-    fireEvent.click(within(sheet).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());
     expect(document.activeElement).toBe(start);
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     const again = await screen.findByRole("main", { name: "Settings" });
     await new Promise((r) => setTimeout(r, 50));
-    expect(document.activeElement).toBe(within(again).getByRole("button", { name: "Done" }));
+    expect(document.activeElement).toBe(within(again).getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     expect(again.querySelector(".hh-search-flash")).toBeNull();
   });
 });

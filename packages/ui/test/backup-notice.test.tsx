@@ -30,7 +30,7 @@ function Notice({ client }: { client: FakeClient }) {
 
 describe("BackupNotice", () => {
   it("shows for a local folder: move to each synced place, choose another place, or say there is a copy", async () => {
-    await renderIn("en", <Notice client={localClient()} />);
+    await renderIn("en", <Notice client={localClient()} />, { theme: true });
     expect(screen.getByRole("region", { name: "Backup" }).textContent).toContain("Your folder is only on this computer.");
     expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Choose another place…" })).toBeTruthy();
@@ -47,7 +47,7 @@ describe("BackupNotice", () => {
         { provider: "google-drive", path: work, account: "ana@work.com", suggested: `${work}/Demo` },
       ],
     };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive (ana@work.com)" }));
     await waitFor(() => expect(client.moved).toEqual([`${work}/Demo`]));
     expect(screen.getByRole("button", { name: "Move to Google Drive (me@example.com)" })).toBeTruthy();
@@ -56,7 +56,7 @@ describe("BackupNotice", () => {
   it("moves the folder, keeping its name, and goes away once it is synced", async () => {
     const client = localClient();
     client.moveResult = { ok: true, state: { ...client.state, config: { ...ready, folder: `${drive}/Demo` }, backup: { status: { kind: "synced", provider: "google-drive" }, locations: [] } } };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     await waitFor(() => expect(client.moved).toEqual([`${drive}/Demo`]));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Backup" })).toBeNull());
@@ -71,7 +71,7 @@ describe("BackupNotice", () => {
       await gate;
       return move(to);
     };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     // One status region, there from the start: its text changes.
     const status = screen.getByRole("status");
     expect(status.textContent).toBe("");
@@ -95,7 +95,7 @@ describe("BackupNotice", () => {
       historyLeftBehind: true,
       state: { ...client.state, config: { ...ready, folder: "/Volumes/Disk/Demo" } },
     };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Choose another place…" }));
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toBe(
@@ -111,7 +111,7 @@ describe("BackupNotice", () => {
   it("gives focus back to the button that started a failed move", async () => {
     const client = localClient();
     client.moveResult = { ok: false, error: "no-space" };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     const button = screen.getByRole("button", { name: "Move to Google Drive" });
     button.focus();
     fireEvent.click(button);
@@ -122,7 +122,7 @@ describe("BackupNotice", () => {
   it("moves focus to the alert when the button that started a failed move is gone", async () => {
     const client = localClient();
     client.moveResult = { ok: false, error: "failed", state: { ...client.state, backup: { status: { kind: "local" }, locations: [] } } };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     const button = screen.getByRole("button", { name: "Move to Google Drive" });
     button.focus();
     fireEvent.click(button);
@@ -133,7 +133,7 @@ describe("BackupNotice", () => {
   it("says so when the place picker can't open", async () => {
     const client = localClient();
     client.pickFolder = async () => Promise.reject(new Error("ipc"));
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Choose another place…" }));
     expect((await screen.findByRole("alert")).textContent).toBe("I couldn't open the window to choose a place. Try again.");
     expect(client.moved).toEqual([]);
@@ -142,7 +142,7 @@ describe("BackupNotice", () => {
   it("moves into another place the person picks", async () => {
     const client = localClient();
     client.pickResult = { folder: "/Volumes/Disk", problem: "too-broad" };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Choose another place…" }));
     await waitFor(() => expect(client.moved).toEqual(["/Volumes/Disk/Demo"]));
   });
@@ -150,7 +150,7 @@ describe("BackupNotice", () => {
   it("does nothing when the person closes the picker", async () => {
     const client = localClient();
     client.pickResult = null;
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Choose another place…" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(client.moved).toEqual([]);
@@ -159,7 +159,7 @@ describe("BackupNotice", () => {
   it("shows each failure in plain language and keeps the buttons", async () => {
     const client = localClient();
     client.moveResult = { ok: false, error: "no-space" };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     expect((await screen.findByRole("alert")).textContent).toBe("There isn't enough space there. Free some space or choose another place.");
     expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
@@ -168,7 +168,7 @@ describe("BackupNotice", () => {
   it("a busy app's message names more than the AI", async () => {
     const client = localClient();
     client.moveResult = { ok: false, error: "busy" };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Something else is running (an answer, going back to an earlier point, or moving the folder). Try again when it finishes.",
@@ -181,7 +181,7 @@ describe("BackupNotice", () => {
     for (const error of errors) {
       const client = localClient();
       client.moveResult = { ok: false, error };
-      await renderIn("en", <Notice client={client} />);
+      await renderIn("en", <Notice client={client} />, { theme: true });
       fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
       const text = (await screen.findByRole("alert")).textContent ?? "";
       expect(text).not.toContain("backup.");
@@ -194,7 +194,7 @@ describe("BackupNotice", () => {
   it("a move that throws reads as a failed move", async () => {
     const client = localClient();
     client.moveFolder = async () => Promise.reject(new Error("ipc"));
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     expect((await screen.findByRole("alert")).textContent).toBe("I couldn't move your folder. It's still where it was.");
   });
@@ -202,7 +202,7 @@ describe("BackupNotice", () => {
   it("says where the old folder stayed when it was kept", async () => {
     const client = localClient();
     client.moveResult = { ok: true, leftBehind: folder, state: { ...client.state, backup: { status: { kind: "synced", provider: "google-drive" }, locations: [] } } };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     // "Moving your folder…" is a status too while the move runs.
     await waitFor(() =>
@@ -220,7 +220,7 @@ describe("BackupNotice", () => {
       historyLeftBehind: true,
       state: { ...client.state, backup: { status: { kind: "synced", provider: "google-drive" }, locations: [] } },
     };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toBe(
@@ -233,7 +233,7 @@ describe("BackupNotice", () => {
   it("takes the state a failed move sends back, and still shows why it failed", async () => {
     const client = localClient();
     client.moveResult = { ok: false, error: "failed", state: { ...client.state, backup: { status: { kind: "local" }, locations: [] } } };
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
     expect((await screen.findByRole("alert")).textContent).toBe("I couldn't move your folder. It's still where it was.");
     await waitFor(() => expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull());
@@ -241,7 +241,7 @@ describe("BackupNotice", () => {
 
   it("hides when the person already has a copy", async () => {
     const client = localClient();
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "I already have a copy" }));
     await waitFor(() => expect(client.state.config.backupDismissed).toBe(true));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Backup" })).toBeNull());
@@ -254,7 +254,7 @@ describe("BackupNotice", () => {
   it("says so when saving 'I already have a copy' fails, and keeps the notice", async () => {
     const client = localClient();
     client.saveConfig = async () => Promise.reject(new Error("disk"));
-    await renderIn("en", <Notice client={client} />);
+    await renderIn("en", <Notice client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "I already have a copy" }));
     expect((await screen.findByRole("alert")).textContent).toBe("I couldn't save that. Try again.");
     expect(screen.getByRole("region", { name: "Backup" })).toBeTruthy();
@@ -274,6 +274,7 @@ describe("BackupNotice", () => {
     await renderIn(
       "en",
       <Home state={client.state} client={client} onChange={() => {}} status={null} limits={null} onStart={() => {}} onSetup={() => {}} onSettings={() => {}} onEngine={() => {}} />,
+      { theme: true },
     );
     expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
   });
@@ -298,7 +299,7 @@ describe("A move in progress, across views", () => {
     fireEvent.click(within(sheet).getByRole("tab", { name: "Usage" }));
     fireEvent.click(within(sheet).getByRole("tab", { name: "General" }));
     expect(within(sheet).getByRole("status").textContent).toBe("Moving your folder… Don't close the app.");
-    fireEvent.click(within(sheet).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());
     expect(screen.getByRole("status").textContent).toBe("Moving your folder… Don't close the app.");
     expect((screen.getByRole("button", { name: "Move to Google Drive" }) as HTMLButtonElement).disabled).toBe(true);
@@ -317,7 +318,7 @@ describe("Settings › General backup row", () => {
   it("shows the status and the notice, and brings a dismissed notice back", async () => {
     const client = localClient();
     client.state.config = { ...client.state.config, backupDismissed: true };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getByText("You keep your own copy")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remind me again" }));
@@ -328,14 +329,14 @@ describe("Settings › General backup row", () => {
   it("names the provider of a synced folder", async () => {
     const client = new FakeClient(ready);
     client.state.backup = { status: { kind: "synced", provider: "icloud" }, locations: [] };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getByText("Kept in iCloud Drive")).toBeTruthy();
   });
 
   it("always offers to move the folder, also when it is already synced", async () => {
     const client = new FakeClient(ready);
     client.state.backup = { status: { kind: "synced", provider: "icloud" }, locations: [{ provider: "google-drive", path: drive, suggested: `${drive}/Demo` }] };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     const toggle = screen.getByRole("button", { name: "Move folder…" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull();
@@ -349,7 +350,7 @@ describe("Settings › General backup row", () => {
   it("doesn't offer the place the folder is already in", async () => {
     const client = new FakeClient({ ...ready, folder: `${drive}/Demo` });
     client.state.backup = { status: { kind: "synced", provider: "google-drive" }, locations: [{ provider: "google-drive", path: drive, suggested: `${drive}/Demo` }] };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move folder…" }));
     expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull();
     expect(screen.getByRole("button", { name: "Choose another place…" })).toBeTruthy();
@@ -366,7 +367,7 @@ describe("Settings › General backup row", () => {
         { provider: "onedrive", path: drive.slice(0, -1), suggested: `${drive.slice(0, -1)}/Demo` },
       ],
     };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Move folder…" }));
     expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull();
     expect(screen.getByRole("button", { name: "Move to Dropbox" })).toBeTruthy();
@@ -377,7 +378,7 @@ describe("Settings › General backup row", () => {
     const client = new FakeClient(ready);
     client.state.backup = { status: { kind: "git-remote" }, locations: [] };
     client.moveResult = { ok: false, error: "exists" };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getByText("Kept in a git repository that's copied online")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Move folder…" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose another place…" }));
@@ -385,7 +386,7 @@ describe("Settings › General backup row", () => {
   });
 
   it("shows a local folder's status and offers the move", async () => {
-    await renderIn("en", <Sheet client={localClient()} />);
+    await renderIn("en", <Sheet client={localClient()} />, { theme: true });
     expect(screen.getByText("Only on this computer")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
   });

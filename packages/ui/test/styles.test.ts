@@ -209,9 +209,8 @@ describe("control size tokens and top bar overrides", () => {
     expect(css).toMatch(/\.hh-topbar\s*\{[^}]*--hh-control-h:\s*var\(--hh-h-compact\);[^}]*--hh-control-r:\s*var\(--hh-r-compact\)/);
   });
 
-  it("has rules for the top bar icon button and the language row label", () => {
+  it("has a rule for the top bar icon button", () => {
     expect(css).toMatch(/\.hh-icon-btn\[data-size="compact"\]\s*\{/);
-    expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
     const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
     expect(tsx).toMatch(/<IconButton[^>]*size="compact"/);
   });

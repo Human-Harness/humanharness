@@ -1,9 +1,9 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk/parallel";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { Tag, TopBar } from "./chrome";
-import { Segmented } from "./guide/Segmented";
+import { TopBar } from "./chrome";
+import { Group, Row, Rx, SectionHead as GuideSectionHead, SettingsNav } from "./guide";
 import { Icon } from "./guide/icons";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
@@ -21,16 +21,12 @@ import { PluginsTab } from "./plugins/PluginsTab";
 import { usePluginsView } from "./plugins/usePlugins";
 import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
-import { SectionHead, SettingsCard } from "./settings-parts";
+import { SectionHead } from "./settings-parts";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
-import { Button } from "./guide/Button";
-import { IconButton } from "./guide/IconButton";
-import { NavItem } from "./guide/NavItem";
-import { Toggle } from "./guide/Toggle";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 
@@ -39,8 +35,8 @@ const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
 /**
- * Settings as a page (UI refresh spec §5.5): in place of the screen (which stays mounted, hidden), its own top bar
- * with the breadcrumb and Done, the section list on the left and the section on the right.
+ * Settings as a page (DESIGN.md "Settings", template 5): in place of the screen (which stays mounted, hidden), its own
+ * top bar with only Volver on the left, the section nav on the left and the section on the right.
  */
 export function SettingsPage({
   client,
@@ -49,6 +45,7 @@ export function SettingsPage({
   onTab,
   onChange,
   onClose,
+  from,
   onSetup,
   move: shared,
   onStartAction,
@@ -61,6 +58,8 @@ export function SettingsPage({
   onTab: (tab: SettingsTab) => void;
   onChange: (state: AppState) => void;
   onClose: () => void;
+  /** The name of the place Settings opened over: Volver says it. Absent: "Tasks". */
+  from?: string;
   /**
    * Opens the setup flow (the empty state of the harness's tab, Engine, Models and Usage before the app is configured);
    * at a harness step when one is given (the Setup list's Do it again / Do it now).
@@ -98,6 +97,7 @@ export function SettingsPage({
     plugins: plugins?.plugins.filter((p) => p.status === "review" || p.status === "crashed").length ?? 0,
   };
   const titleId = useId();
+  const back = from ?? t("rail.tasks");
   const doneRef = useRef<HTMLButtonElement>(null);
   const pageRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -138,18 +138,6 @@ export function SettingsPage({
     // Only when a step starts (or is found running); the tab is read as it is then.
   }, [isRunning]);
 
-  /** Arrow keys (and Home/End) move between tabs, as in any tab list; the list is vertical, so Up/Down too. */
-  const onTabKey = (e: ReactKeyboardEvent<HTMLButtonElement>, id: SettingsTab) => {
-    const i = tabs.indexOf(id);
-    const forward = e.key === "ArrowRight" || e.key === "ArrowDown";
-    const back = e.key === "ArrowLeft" || e.key === "ArrowUp";
-    const next = forward ? tabs[(i + 1) % tabs.length] : back ? tabs[(i - 1 + tabs.length) % tabs.length] : e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : null;
-    if (!next) return;
-    e.preventDefault();
-    onTab(next);
-    document.getElementById(tabId(next))?.focus();
-  };
-
   // Whatever opened the page (the gear, the engine pill) gets focus back when it closes. Read before the browser moves
   // focus off the screen the page hides; given back once that screen shows again (a passive cleanup runs after it).
   const openerRef = useRef<HTMLElement | null>(null);
@@ -187,42 +175,47 @@ export function SettingsPage({
   return (
     <main ref={pageRef} className="hh-settings-page" aria-labelledby={titleId}>
       <TopBar
-        trailing={
-          <IconButton ref={doneRef} icon="back" label={t("settings.done")} size="compact" className="hh-settings-done" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close} />
+        leading={
+          <Rx.Button
+            ref={doneRef}
+            variant="ghost"
+            color="gray"
+            size="1"
+            className="hh-settings-done"
+            aria-label={t("settings.backTo", { place: back })}
+            disabled={running !== null}
+            aria-describedby={running ? runningId : undefined}
+            onClick={close}
+          >
+            <Icon name="back" size={18} />
+            {back}
+          </Rx.Button>
         }
       />
       <div className="hh-settings-body">
-        <nav className="hh-settings-nav" aria-label={t("settings.sections")}>
-          <h1 id={titleId}>{t("settings.title")}</h1>
-          <div className="hh-settings-tabs" role="tablist" aria-label={t("settings.title")} aria-orientation="vertical">
-            {tabs.map((id) => (
-              <NavItem
-                key={id}
-                id={tabId(id)}
-                role="tab"
-                selected={tab === id}
-                current="page"
-                aria-selected={tab === id}
-                aria-controls={panelId}
-                tabIndex={tab === id ? 0 : -1}
-                trail={attention[id] ? <Tag tone="orange">{attention[id]}</Tag> : null}
-                onClick={() => onTab(id)}
-                onKeyDown={(e) => onTabKey(e, id)}
-              >
-                {tabLabel(t, state, id, sidekickTab)}
-              </NavItem>
-            ))}
-          </div>
-        </nav>
+        <SettingsNav
+          title={t("settings.title")}
+          titleId={titleId}
+          label={t("settings.sections")}
+          items={tabs.map((id) => ({ id, label: tabLabel(t, state, id, sidekickTab), count: attention[id] ?? 0 }))}
+          current={tab}
+          onPick={onTab}
+          tabId={tabId}
+          panelId={panelId}
+        />
         <div className="hh-settings-main">
           {running && (
-            <div className="hh-settings-running">
-              <p id={runningId} role="status">
-                {t(`settings.running.${running.step}`, { engine: state.engines.find((e) => e.id === running.engineId)?.name ?? running.engineId })}{" "}
-                {t("settings.runningWait")}
-              </p>
-              <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
-            </div>
+            <Rx.Callout.Root color="gray" mb="5">
+              <Rx.Flex align="center" justify="between" gap="3">
+                <Rx.Callout.Text id={runningId} role="status">
+                  {t(`settings.running.${running.step}`, { engine: state.engines.find((e) => e.id === running.engineId)?.name ?? running.engineId })}{" "}
+                  {t("settings.runningWait")}
+                </Rx.Callout.Text>
+                <Rx.Button size="1" variant="outline" color="gray" onClick={() => void client.cancelSetup().catch(() => {})}>
+                  {t("settings.runningCancel")}
+                </Rx.Button>
+              </Rx.Flex>
+            </Rx.Callout.Root>
           )}
           <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
             {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
@@ -258,6 +251,23 @@ export function SettingsPage({
 /** English and its variants (en-GB) show the bundled English: nothing to translate. */
 const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
 
+/** A row's small action (DESIGN.md "Settings": Editar, Reactivar, Restaurar todo are quiet buttons). */
+function Quiet(props: Omit<ComponentProps<typeof Rx.Button>, "variant" | "color" | "size">) {
+  return <Rx.Button variant="ghost" color="gray" size="1" {...props} />;
+}
+
+/** A line under a row: what is happening now, and its one action (DESIGN.md "Status line"). */
+function StatusLine({ text, role, action }: { text: string; role?: "status"; action?: ReactNode }) {
+  return (
+    <Rx.Flex align="center" justify="between" gap="3">
+      <Rx.Text size="1" color="gray" role={role}>
+        {text}
+      </Rx.Text>
+      {action}
+    </Rx.Flex>
+  );
+}
+
 /**
  * Settings › General › Language (spec §3, §5, §6): the language by its own name and its English name, Change…, a run's
  * progress and Cancel, Try again after a stopped run (it resumes, Q6), and Translate when texts are missing (new texts,
@@ -282,59 +292,72 @@ function LanguageRow({ state, language }: { state: AppState; language?: Language
   const notice = (tag: Language) => {
     if (can) setOpen({ notice: tag });
   };
-  return (
+  const lines = (
     <>
-      <div className="hh-row hh-row-wrap" data-setting="general.language">
-        <span className="hh-row-label hh-langrow-label">{t("settings.language")}</span>
-        <span className="hh-langrow-name">
-          <span lang={lang}>{ownName(lang)}</span>
-          {!isEnglish(lang) && (
-            <span className="hh-caption" lang="en">
-              {languageName(lang)}
-            </span>
-          )}
-        </span>
-        {language && view && (
-          <button type="button" onClick={() => setOpen({})} disabled={running}>
-            {t("language.change")}
-          </button>
-        )}
-        <p className="hh-caption hh-row-note">{t("settings.languageHint")}</p>
-      </div>
       {language && (running || stopped) && (
-        // One row and one live region for a run's progress and its stop, so the change from one to the other is
-        // announced. While the chooser is open its own progress dialog speaks: the row has no role then.
-        <div className={`hh-row ${running ? "hh-langrow-progress" : "hh-langrow-stopped"}`}>
-          <span role={open ? undefined : "status"}>{running ? t("language.progress", { done: run.done, total: run.total }) : stopped?.reason === "quota" ? t("language.stoppedQuota") : t("language.stopped")}</span>
-          {running ? (
-            <button type="button" onClick={() => language.cancel()}>
-              {t("language.cancel")}
-            </button>
-          ) : (
-            stopped && (
-              <button type="button" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(stopped.tag)}>
-                {t("language.tryAgain")}
-              </button>
+        // One line and one live region for a run's progress and its stop, so the change from one to the other is
+        // announced. While the chooser is open its own progress dialog speaks: the line has no role then.
+        <StatusLine
+          text={running ? t("language.progress", { done: run.done, total: run.total }) : stopped?.reason === "quota" ? t("language.stoppedQuota") : t("language.stopped")}
+          {...(open ? {} : { role: "status" as const })}
+          action={
+            running ? (
+              <Rx.Button size="1" variant="outline" color="gray" onClick={() => language.cancel()}>
+                {t("language.cancel")}
+              </Rx.Button>
+            ) : (
+              stopped && (
+                <Rx.Button size="1" variant="outline" color="gray" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(stopped.tag)}>
+                  {t("language.tryAgain")}
+                </Rx.Button>
+              )
             )
-          )}
-        </div>
+          }
+        />
       )}
       {language && !stopped && untranslated && (
-        <div className="hh-row hh-langrow-new">
-          <span>{none ? t("language.notYet", { language: ownName(lang) }) : t("language.newTexts")}</span>
-          <button type="button" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(lang)}>
-            {t("language.translate")}
-          </button>
-        </div>
+        <StatusLine
+          text={none ? t("language.notYet", { language: ownName(lang) }) : t("language.newTexts")}
+          action={
+            <Rx.Button size="1" variant="outline" color="gray" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(lang)}>
+              {t("language.translate")}
+            </Rx.Button>
+          }
+        />
       )}
       {language && view && !can && (stopped || untranslated) && (
-        <p id={reasonId} className="hh-caption hh-langrow-reason">
+        <Rx.Text as="p" size="1" color="gray" id={reasonId} mt="2">
           {t("language.needsEngine")}
-        </p>
+        </Rx.Text>
       )}
+    </>
+  );
+  const hasLines = language !== undefined && (running || stopped !== null || untranslated);
+  return (
+    <>
+      <Row label={t("settings.language")} hint={t("settings.languageHint")} data-setting="general.language" {...(hasLines ? { below: lines } : {})}>
+        <Rx.Text size="2">
+          <span lang={lang}>{ownName(lang)}</span>
+          {!isEnglish(lang) && (
+            <Rx.Text size="1" color="gray" lang="en" ml="2">
+              {languageName(lang)}
+            </Rx.Text>
+          )}
+        </Rx.Text>
+        {language && view && (
+          <Quiet onClick={() => setOpen({})} disabled={running}>
+            {t("language.change")}
+          </Quiet>
+        )}
+      </Row>
       {language && open && <LanguageChooser control={language} start={open} harnessName={state.harness.name} onClose={() => setOpen(null)} />}
     </>
   );
+}
+
+/** Backup state as a badge (DESIGN.md "Status as a badge"): green kept online, orange only here, gray you keep your own. */
+function backupColor(kind: "synced" | "git-remote" | "local", dismissed: boolean): "green" | "orange" | "gray" {
+  return kind === "local" ? (dismissed ? "gray" : "orange") : "green";
 }
 
 function GeneralTab({
@@ -368,11 +391,6 @@ function GeneralTab({
   /** Rejects when the save fails (ParallelSection says so); `save` swallows it. */
   const saveOrFail = (patch: AppConfig) => client.saveConfig(patch).then(onChange);
   const save = (patch: AppConfig) => saveOrFail(patch).catch(() => {});
-  const appearances: { value: Appearance; label: string }[] = [
-    { value: "system", label: t("settings.appearanceSystem") },
-    { value: "light", label: t("settings.appearanceLight") },
-    { value: "dark", label: t("settings.appearanceDark") },
-  ];
   const backup = state.backup?.status;
   const dismissed = backup?.kind === "local" && state.config.backupDismissed === true;
   const backupText = !backup
@@ -382,77 +400,84 @@ function GeneralTab({
       : dismissed
         ? t("backup.status.dismissed")
         : t(`backup.status.${backup.kind}`);
+  const folder = state.config.folder;
 
   return (
     <div className="hh-tab">
-      <SectionHead title={t("settings.tabs.general")} line={t("settings.line.general")} />
-      <SettingsCard>
-      <div className="hh-rows">
+      <GuideSectionHead line={t("settings.line.general")} />
+      <Group>
         <LanguageRow state={state} language={language} />
-        <div className="hh-row" data-setting="general.appearance">
-          <span className="hh-row-label">{t("settings.appearance")}</span>
-          <Segmented label={t("settings.appearance")} value={state.config.appearance ?? "system"} onChange={(appearance) => void save({ appearance })} options={appearances} />
-        </div>
-        <div className="hh-row hh-row-wrap" data-setting="general.textSize">
-          <span className="hh-row-label">{t("settings.textSize")}</span>
-          <Segmented
-            label={t("settings.textSize")}
-            describedBy={`${sizeId}-hint`}
-            value={state.config.textSize ?? "normal"}
-            onChange={(textSize) => void save({ textSize })}
-            options={TEXT_SIZE_KEYS.map((textSize) => ({ value: textSize, label: t(`settings.textSizes.${textSize}`) }))}
-          />
-          <p className="hh-caption hh-row-note" id={`${sizeId}-hint`}>
-            {t("settings.textSizeHint", { mod: ZOOM_KEY })}
-          </p>
-        </div>
-        {state.config.folder && (
-          <div className="hh-row" data-setting="general.folder">
-            <span className="hh-row-label">{t("settings.folder")}</span>
-            <code>{state.config.folder}</code>
-            <button onClick={() => void client.revealFolder()}>{t("settings.reveal")}</button>
+        <Row label={t("settings.appearance")} data-setting="general.appearance">
+          <Rx.SegmentedControl.Root value={state.config.appearance ?? "system"} onValueChange={(v) => void save({ appearance: v as Appearance })} aria-label={t("settings.appearance")}>
+            <Rx.SegmentedControl.Item value="system">{t("settings.appearanceSystem")}</Rx.SegmentedControl.Item>
+            <Rx.SegmentedControl.Item value="light">{t("settings.appearanceLight")}</Rx.SegmentedControl.Item>
+            <Rx.SegmentedControl.Item value="dark">{t("settings.appearanceDark")}</Rx.SegmentedControl.Item>
+          </Rx.SegmentedControl.Root>
+        </Row>
+        <Row label={t("settings.textSize")} hint={t("settings.textSizeHint", { mod: ZOOM_KEY })} hintId={`${sizeId}-hint`} data-setting="general.textSize">
+          <Rx.SegmentedControl.Root value={state.config.textSize ?? "normal"} onValueChange={(v) => void save({ textSize: v as TextSize })} aria-label={t("settings.textSize")} aria-describedby={`${sizeId}-hint`}>
+            {TEXT_SIZE_KEYS.map((size) => (
+              <Rx.SegmentedControl.Item key={size} value={size}>
+                {t(`settings.textSizes.${size}`)}
+              </Rx.SegmentedControl.Item>
+            ))}
+          </Rx.SegmentedControl.Root>
+        </Row>
+        {folder && (
+          <Row
+            label={t("settings.folder")}
+            hint={
+              <>
+                {/* Plain hint text (Marco, 2026-11-04): breaks anywhere, no code chip. */}
+                <span className="hh-gd-path">{folder}</span>
+                <br />
+                {t("settings.folderFixed")}
+              </>
+            }
+            data-setting="general.folder"
+            {...(offerMove && moveOpen
+              ? {
+                  below: (
+                    <div id={placesId}>
+                      <MovePlaces state={state} move={move} />
+                    </div>
+                  ),
+                }
+              : {})}
+          >
+            <Quiet onClick={() => void client.revealFolder()}>{t("settings.reveal")}</Quiet>
             {offerMove && (
-              <button ref={toggleRef} aria-expanded={moveOpen} aria-controls={placesId} onClick={() => setMoveOpen((o) => !o)}>
+              <Quiet ref={toggleRef} aria-expanded={moveOpen} aria-controls={placesId} onClick={() => setMoveOpen((o) => !o)}>
                 {t("backup.moveFolder")}
-              </button>
+              </Quiet>
             )}
-          </div>
+          </Row>
         )}
-        {state.config.folder && offerMove && moveOpen && (
-          <div id={placesId} className="hh-row">
-            <MovePlaces state={state} move={move} />
-          </div>
+        {folder && backup && backupText && (
+          <Row label={t("backup.title")} data-setting="general.backup">
+            <Rx.Badge color={backupColor(backup.kind, dismissed)}>{backupText}</Rx.Badge>
+            {dismissed && <Quiet onClick={() => void save({ backupDismissed: false })}>{t("backup.showAgain")}</Quiet>}
+          </Row>
         )}
-        {state.config.folder && backupText && (
-          <div className="hh-row" data-setting="general.backup">
-            <span className="hh-row-label">{t("backup.title")}</span>
-            <span>{backupText}</span>
-            {dismissed && <button onClick={() => void save({ backupDismissed: false })}>{t("backup.showAgain")}</button>}
-          </div>
-        )}
-      </div>
-      {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
-      </SettingsCard>
+      </Group>
       {state.parallel && <ParallelSection state={state} save={saveOrFail} />}
       {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
-      <SettingsCard title={t("settings.about")}>
-      <div className="hh-rows">
-        <div className="hh-row">
-          <span className="hh-display">{state.harness.name}</span>
-          <span className="hh-caption">{t("settings.version", { version: state.harness.version })}</span>
-        </div>
-        <div className="hh-row">
-          <span>{t("settings.madeBy", { author: state.harness.author })}</span>
+      <Group title={t("settings.about")}>
+        <Row label={state.harness.name}>
+          <Rx.Badge color="gray">{t("settings.version", { version: state.harness.version })}</Rx.Badge>
+        </Row>
+        <Row label={t("settings.madeBy", { author: state.harness.author })}>
           {state.harness.donate && (
-            <Button href={state.harness.donate} target="_blank" rel="noreferrer">
-              {t("settings.support")}
-            </Button>
+            <Rx.Button asChild size="1" variant="outline" color="gray">
+              <a href={state.harness.donate} target="_blank" rel="noreferrer">
+                {t("settings.support")}
+              </a>
+            </Rx.Button>
           )}
-        </div>
-      </div>
-      </SettingsCard>
+        </Row>
+      </Group>
     </div>
   );
 }
@@ -468,7 +493,7 @@ const CAP_CHOICES = Array.from({ length: PARALLEL_MAX }, (_, i) => i + 1);
 function ParallelSection({ state, save }: { state: AppState; save: (patch: AppConfig) => Promise<unknown> }) {
   const { t } = useTranslation();
   const id = useId();
-  // A failed save says so (as Settings › Jobs does) and rejects inside `latest.save`, so its value is dropped.
+  // A failed save says so above the card (DESIGN.md "Settings") and rejects inside `latest.save`, so its value is dropped.
   const [saveFailed, setSaveFailed] = useState(false);
   const said = (saving: Promise<unknown>) =>
     void saving.then(
@@ -480,50 +505,37 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
   const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
   // The other cap may still be on its way to main: each save builds on the last one asked for, not on `state`.
   const latest = useLatestConfig(state.config.parallel);
-  // Each row writes its data-setting itself: the registry test reads them as written.
+  // A number in a small range is a select (DESIGN.md "Control per kind of setting").
   const cap = (key: "tasks" | "jobs", label: string) => (
-    <>
-      <label className="hh-row-label" htmlFor={`${id}-${key}`}>
-        {label}
-      </label>
-      <select
-        id={`${id}-${key}`}
-        value={info.caps[key]}
-        disabled={held}
-        aria-describedby={held ? `${id}-held` : undefined}
-        onChange={(e) => said(latest.save({ ...latest.get(), [key]: Number(e.target.value) }, (parallel) => save({ parallel })))}
-      >
+    <Rx.Select.Root value={String(info.caps[key])} disabled={held} onValueChange={(v) => said(latest.save({ ...latest.get(), [key]: Number(v) }, (parallel) => save({ parallel })))}>
+      <Rx.Select.Trigger id={`${id}-${key}`} aria-label={label} aria-describedby={held ? `${id}-held` : undefined} />
+      <Rx.Select.Content position="popper">
         {CAP_CHOICES.map((n) => (
-          <option key={n} value={n}>
+          <Rx.Select.Item key={n} value={String(n)}>
             {n}
-          </option>
+          </Rx.Select.Item>
         ))}
-      </select>
-    </>
+      </Rx.Select.Content>
+    </Rx.Select.Root>
   );
   return (
     <>
-      <SettingsCard title={t("parallel.parallelSection")}>
-      <div className="hh-rows">
-        <div className="hh-row" data-setting="general.tasksAtOnce">
+      {saveFailed && (
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{t("parallel.saveFailed")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      <Group title={t("parallel.parallelSection")}>
+        <Row label={t("parallel.tasksAtOnce")} htmlFor={`${id}-tasks`} {...(held ? { hint: t("parallel.engineHeld", { engine }), hintId: `${id}-held` } : {})} data-setting="general.tasksAtOnce">
           {cap("tasks", t("parallel.tasksAtOnce"))}
-        </div>
-        <div className="hh-row" data-setting="general.jobsAtOnce">
+        </Row>
+        <Row label={t("parallel.jobsAtOnce")} htmlFor={`${id}-jobs`} data-setting="general.jobsAtOnce">
           {cap("jobs", t("parallel.jobsAtOnce"))}
-        </div>
-        {held && (
-          <p className="hh-caption hh-row-note" id={`${id}-held`}>
-            {t("parallel.engineHeld", { engine })}
-          </p>
-        )}
-        <div className="hh-row" data-setting="general.notifyWaiting">
-          <Toggle checked={info.notifyWaiting} onChange={(on) => said(save({ notifyWaiting: on }))}>
-            {t("parallel.notifyWaiting")}
-          </Toggle>
-        </div>
-      </div>
-      </SettingsCard>
-      {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
+        </Row>
+        <Row label={t("parallel.notifyWaiting")} htmlFor={`${id}-notify`} data-setting="general.notifyWaiting">
+          <Rx.Switch id={`${id}-notify`} checked={info.notifyWaiting} onCheckedChange={(on) => said(save({ notifyWaiting: on }))} />
+        </Row>
+      </Group>
     </>
   );
 }
@@ -533,14 +545,21 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
   const { t } = useTranslation();
   const name = state.harness.name;
   return (
-    <div className="hh-tab hh-not-configured">
-      <Icon name="engine" size={32} />
-      <h2>{t("setupFlow.notConfiguredTitle")}</h2>
-      <p>{t("setupFlow.notConfiguredText")}</p>
-      {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
-      <Button kind="primary" onClick={() => onSetup()}>
-        {t("setupFlow.configure", { name })}
-      </Button>
-    </div>
+    <Rx.Card size="3">
+      <Rx.Flex direction="column" gap="3">
+        <Rx.Heading as="h2" size="3">
+          {t("setupFlow.notConfiguredTitle")}
+        </Rx.Heading>
+        <Rx.Text as="p" size="2" color="gray">
+          {t("setupFlow.notConfiguredText")}
+        </Rx.Text>
+        <Rx.Flex justify="end">
+          {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
+          <Rx.Button size="2" onClick={() => onSetup()}>
+            {t("setupFlow.configure", { name })}
+          </Rx.Button>
+        </Rx.Flex>
+      </Rx.Flex>
+    </Rx.Card>
   );
 }

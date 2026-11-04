@@ -149,7 +149,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.screenshot({ path: path.join(lookDir, `settings-usage-${theme}.png`) });
 
       // Done returns to the screen the person was on: the task's chat, as they left it.
-      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
       await expect(settings).toHaveCount(0);
       await expect(answer).toBeVisible();
     } finally {

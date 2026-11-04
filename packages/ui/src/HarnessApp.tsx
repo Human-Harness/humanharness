@@ -558,6 +558,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           }}
           onChange={setState}
           onClose={closeSettings}
+          from={screen === "home" ? i18n.t("rail.home") : view.kind === "inbox" ? i18n.t("inbox.title") : screenTitle}
           onSetup={(step?: string) => {
             const back = settings;
             setSettings(null);

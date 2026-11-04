@@ -28,7 +28,7 @@ test("D0: an English app on an English system shows no offer, no new line and wr
     await page.getByRole("tab", { name: "Engine" }).click();
     await expect(page.getByText(/this app is not responsible for what the AI writes/)).toBeVisible();
     await expect(page.getByText("Legal texts are shown in English.")).toHaveCount(0);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
     await expect(page.getByRole("region", { name: /in another language/ })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.lang)).toBe("en");
     expect(fs.existsSync(path.join(s.userData, "locales"))).toBe(false);

@@ -315,7 +315,7 @@ test("at one task at a time, the second waits in the queue and the commits are t
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tabpanel", { name: "General" }).getByLabel("Tasks at once").selectOption("1");
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(s.userData, "config.json"), "utf8")).parallel).toEqual({ tasks: 1 });
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     await topic(page, "Write A").click();
     await expect.poll(() => laneOf(s.folder, "write-a")?.status).toBe("running");

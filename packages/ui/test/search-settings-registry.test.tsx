@@ -32,7 +32,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
   it("General renders its rows for the state given (folder set, no parallel, no profiles)", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     const state = client.state;
-    await renderIn("en", <SettingsPage client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    await renderIn("en", <SettingsPage client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
     await waitFor(() => expect(shown()).toContain("general.appearance"));
     expect(shown().sort()).toEqual(["general.appearance", "general.folder", "general.language", "general.textSize", ...(state.backup?.status ? ["general.backup"] : [])].sort());
   });
@@ -41,7 +41,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     client.sidekickState = SK_ON;
-    await renderIn("en", <SettingsPage client={client} state={client.state} tab="sidekick" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    await renderIn("en", <SettingsPage client={client} state={client.state} tab="sidekick" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
     await waitFor(() => expect(shown()).toContain("sidekick.on"));
     expect(shown().sort()).toEqual(SEARCHABLE_SETTINGS.filter((s) => s.tab === "sidekick").map((s) => s.id).sort());
   });
@@ -57,7 +57,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
   async function rowsOf(tab: SearchSettingsTab, setup: (c: FakeClient, state: AppState) => void) {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     setup(client, client.state);
-    await renderIn("en", <SettingsPage client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />);
+    await renderIn("en", <SettingsPage client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
     return client;
   }
 

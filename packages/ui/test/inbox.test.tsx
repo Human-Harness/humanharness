@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { HhTheme } from "../src/guide";
 import { HarnessApp } from "../src";
 import { InboxPill } from "../src/parallel/Inbox";
 import type { JobSummary, ParallelInfo, TaskSummary, TasksState } from "../src/client";
@@ -36,7 +37,12 @@ function client(info?: ParallelInfo, tasks?: TasksState) {
 }
 /** The work screen with its top bar up. */
 async function open(c: FakeClient) {
-  render(<HarnessApp client={c} />);
+  // Settings shows Radix pieces that read the theme: mount inside the app's Radix root, as the shell does.
+  render(
+    <HhTheme>
+      <HarnessApp client={c} />
+    </HhTheme>,
+  );
   const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);

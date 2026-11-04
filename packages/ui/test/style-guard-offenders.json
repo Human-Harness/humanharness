@@ -998,7 +998,6 @@
   "packages/ui/src/styles.css|space|.hh-md-list|6px",
   "packages/ui/src/styles.css|space|.hh-md-table th, .hh-md-table td|10px",
   "packages/ui/src/styles.css|space|.hh-md-table th, .hh-md-table td|6px",
-  "packages/ui/src/styles.css|space|.hh-md-task > .hh-checkbox|6px",
   "packages/ui/src/styles.css|space|.hh-message :not(pre) > code|2px",
   "packages/ui/src/styles.css|space|.hh-message :not(pre) > code|5px",
   "packages/ui/src/styles.css|space|.hh-message.assistant > p|14px",

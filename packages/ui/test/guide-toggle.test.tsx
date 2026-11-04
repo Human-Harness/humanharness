@@ -8,7 +8,7 @@ import { GUIDE_CLASSES } from "../src/guide/classes";
 import { Checkbox, StaticCheckbox } from "../src/guide/Checkbox";
 import { Toggle } from "../src/guide/Toggle";
 import { InputForm } from "../src/InputForm";
-import { css, rule } from "./guide-css";
+import { css, lengths, rule } from "./guide-css";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -122,8 +122,11 @@ describe("effective layout", () => {
     expect(rule(".hh-toggle-row").display).toBe("flex");
     expect(rule(".hh-toggle-row")["align-items"]).toBe("center");
   });
-  it("the Markdown task box keeps its outdent and gap on the static checkbox", () => {
-    expect(rule(".hh-md-task > .hh-checkbox").margin).toBe("0 6px 0 -18px");
+  it("C9: the Markdown task box is 8 from its text, outdented 20 so the text stays put and the box stays in the gutter", () => {
+    const m = lengths(rule(".hh-md-task > .hh-checkbox").margin);
+    expect(m).toEqual([0, 8, 0, -20]);
+    // The box is 18 wide: its left edge stays left of the list content, in the gutter.
+    expect(m[3] + 18).toBeLessThanOrEqual(0);
     expect(css).not.toMatch(/\.hh-md-task > input/);
   });
 });
@@ -167,5 +170,76 @@ describe("source scan", () => {
   });
   it("every Checkbox in use has purpose=accept (the type enforces it)", () => {
     expect(outside(/<Checkbox\b(?![^>]*purpose="accept")/, "guide/Checkbox.tsx")).toEqual([]);
+  });
+});
+
+describe("answers C1, C3, C4, C5, C8", () => {
+  it("C1: the switch is ink when on, line-strong when off, and the knob stays the surface", () => {
+    expect(rule('.hh-toggle[aria-checked="true"]').background).toBe("var(--hh-ink)");
+    expect(rule(".hh-toggle").background).toBe("var(--hh-line-strong)");
+    expect(rule(".hh-toggle::after").background).toBe("var(--hh-surface)");
+  });
+
+  it("C3: a checked checkbox is an ink fill with the check icon at 14 in the surface color, radius 4", () => {
+    const on = rule('.hh-checkbox[aria-checked="true"]');
+    expect(on.background).toBe("var(--hh-ink)");
+    expect(on["box-shadow"]).toBeUndefined();
+    expect(rule(".hh-checkbox")["border-radius"]).toBe("var(--hh-s-1)");
+    expect(token("--hh-s-1")).toBe("4px");
+    expect(css).toMatch(/\.hh-checkbox:checked \+ \.hh-icon[^{]*\{[^}]*color:\s*var\(--hh-surface\)/);
+    expect(css).toMatch(/\.hh-checkbox\[aria-checked="true"\][^{]*\{[^}]*color:\s*var\(--hh-surface\)/);
+  });
+
+  it("C3: the accept checkbox draws a check at 14 beside the input, shown only when checked", () => {
+    const { container, rerender } = render(<Checkbox purpose="accept" checked={false} onChange={() => {}} aria-label="ok" />);
+    const input = screen.getByRole("checkbox", { name: "ok" });
+    const icon = container.querySelector("svg.hh-icon-check");
+    expect(icon?.getAttribute("width")).toBe("14");
+    expect(input.nextElementSibling).toBe(icon);
+    rerender(<Checkbox purpose="accept" checked onChange={() => {}} aria-label="ok" />);
+    expect((screen.getByRole("checkbox", { name: "ok" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("C3: the static checkbox holds the check at 14 only when it is checked", () => {
+    const { container, rerender } = render(<StaticCheckbox checked label="done" />);
+    expect(container.querySelector("svg.hh-icon-check")?.getAttribute("width")).toBe("14");
+    rerender(<StaticCheckbox checked={false} label="done" />);
+    expect(container.querySelector("svg")).toBeNull();
+  });
+
+  it("C4: the label comes first and the switch is at the end of a full-width row", () => {
+    render(
+      <Toggle checked={false} onChange={() => {}}>
+        Notify me
+      </Toggle>,
+    );
+    const row = document.querySelector(".hh-toggle-row");
+    expect(row?.firstElementChild?.textContent).toBe("Notify me");
+    expect(row?.lastElementChild?.getAttribute("role")).toBe("switch");
+    expect(screen.getByRole("switch", { name: "Notify me" })).toBeTruthy();
+    const r = rule(".hh-toggle-row");
+    expect(r["justify-content"]).toBe("space-between");
+    expect(r.width).toBe("100%");
+    expect(r.display).toBe("flex");
+  });
+
+  it("C4: every place with a toggle row gets that layout, none overrides it", () => {
+    expect(css).not.toMatch(/\.hh-toggle-row[^{]*\{[^}]*(?:justify-content:\s*flex-start|width:\s*auto)/);
+    const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
+    for (const f of ["parallel/JobsTab.tsx", "SettingsPage.tsx", "sidekick/ScopeSidekicks.tsx", "sidekick/SidekickEditor.tsx", "InputForm.tsx", "search/SearchPalette.tsx"]) {
+      expect(src(f), f).toMatch(/<Toggle[^>]*>\s*[\s\S]*?<\/Toggle>/);
+    }
+  });
+
+  it("C5: the search filter toggle rows are 12 in the muted color", () => {
+    const r = rule(".hh-search-filters .hh-toggle-row");
+    expect(r["font-size"]).toBe("12px");
+    expect(r.color).toBe("var(--hh-muted)");
+  });
+
+  it("C8: the sidekick editor toggle lists have 8 between rows", () => {
+    const r = rule(".hh-sk-fieldset .hh-toggle-row + .hh-toggle-row");
+    expect(r["margin-top"]).toBe("var(--hh-s-2)");
+    expect(token("--hh-s-2")).toBe("8px");
   });
 });

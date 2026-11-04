@@ -1276,9 +1276,13 @@ input.hh-search-input {
 .hh-btn[data-kind="primary"], .hh-btn[data-kind="large"] { border-color: transparent; background: var(--hh-cta); color: var(--hh-cta-ink); }
 .hh-btn[data-kind="primary"]:hover:not(:disabled), .hh-btn[data-kind="large"]:hover:not(:disabled) { background: var(--hh-cta-hover); border-color: transparent; }
 .hh-btn[data-kind="primary"]:focus-visible, .hh-btn[data-kind="large"]:focus-visible { outline: 2px solid var(--hh-cta-ink); outline-offset: -4px; }
-/* Secondary is the base. Quiet has no border and no fill. Danger looks like secondary until its look is decided (Questions for Marco). */
+/* Secondary is the base. Quiet has no border and no fill. Danger is the red tint (answer B6); it still ignores clicks until Task 31. */
 .hh-btn[data-kind="quiet"] { border: 0; background: transparent; }
 .hh-btn[data-kind="quiet"]:hover:not(:disabled) { background: var(--hh-surface-2); }
+.hh-btn[data-kind="primary"], .hh-btn[data-kind="quiet"] { font-weight: 600; }
+.hh-btn[data-kind="danger"], .hh-btn[data-kind="danger"]:hover:not(:disabled) { border-color: transparent; background: var(--hh-t-red); color: var(--hh-t-red-ink); box-shadow: inset 0 0 0 1px var(--hh-t-red-ink); }
+/* 6 is Marco's value (B9); it is no step of the scale, so it is half of --hh-s-3. */
+.hh-tk-cancel { flex: none; margin: calc(var(--hh-s-3) / 2) calc(var(--hh-s-3) / 2) 0 0; }
 .hh-btn[data-kind="link"] { height: auto; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; text-decoration: underline; }
 .hh-icon-btn { font: inherit; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 0; border: 0; background: transparent; color: var(--hh-muted); cursor: default; }
 .hh-icon-btn[data-size="normal"] { width: var(--hh-h-normal); height: var(--hh-h-normal); border-radius: var(--hh-r-control); }

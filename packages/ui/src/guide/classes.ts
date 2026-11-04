@@ -17,6 +17,8 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   // Button and IconButton (§3)
   "hh-btn",
   "hh-icon-btn",
+  // The row buttons of a task keep their own margin (answer B9)
+  "hh-tk-cancel",
   // Segmented (§3)
   "hh-segmented",
   // Tabs (§3)

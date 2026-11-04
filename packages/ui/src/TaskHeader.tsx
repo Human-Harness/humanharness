@@ -37,7 +37,7 @@ export function TaskHeader({
       {meters}
       {sidekick}
       {chips}
-      <Button type="button" size="compact" onClick={onHistory}>
+      <Button type="button" size="compact" icon="history" onClick={onHistory}>
         {t("history.title")}
       </Button>
       {onNewTask && (

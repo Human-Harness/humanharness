@@ -182,6 +182,30 @@ describe("Button and IconButton CSS (style guide §2, §3)", () => {
     expect(r["font-size"]).toBe("13px");
     expect(r["font-weight"]).toBe("500");
   });
+  it("primary and quiet are weight 600, secondary and danger stay 500 (answer B4)", () => {
+    expect(rule(".hh-btn")["font-weight"]).toBe("500");
+    expect(rule('.hh-btn[data-size="compact"]')["font-weight"]).toBe("500");
+    const m = css.match(/\.hh-btn\[data-kind="primary"\],\s*\.hh-btn\[data-kind="quiet"\]\s*\{([^}]*)\}/);
+    expect(m?.[1]).toMatch(/font-weight:\s*600/);
+    // It must win over the compact rule (same specificity), so it comes later.
+    expect(css.indexOf('.hh-btn[data-kind="primary"], .hh-btn[data-kind="quiet"]')).toBeGreaterThan(css.indexOf('.hh-btn[data-size="compact"]'));
+    expect(css).not.toMatch(/\.hh-btn\[data-kind="danger"\][^{]*\{[^}]*font-weight/);
+  });
+  it("danger has its red tint: tint fill, red ink, a 1px inset line in that ink (answer B6)", () => {
+    const r = rule('.hh-btn[data-kind="danger"]');
+    expect(r.background).toBe("var(--hh-t-red)");
+    expect(r.color).toBe("var(--hh-t-red-ink)");
+    expect(r["box-shadow"]).toBe("inset 0 0 0 1px var(--hh-t-red-ink)");
+    expect(r["border-color"]).toBe("transparent");
+  });
+  it("the cancel and start buttons of a running task keep their own margin and do not shrink (answer B9)", () => {
+    const r = rule(".hh-tk-cancel");
+    expect(r.flex).toBe("none");
+    // 6 is no step of the scale: half of --hh-s-3 (12), so the guard stays strict.
+    expect(r.margin).toBe("calc(var(--hh-s-3) / 2) calc(var(--hh-s-3) / 2) 0 0");
+    expect(token("--hh-s-3")).toBe("12px");
+    expect(r["font-size"]).toBeUndefined();
+  });
   it("large is 52 high with radius 14", () => {
     const r = rule('.hh-btn[data-kind="large"]');
     expect(px(r.height)).toBe("52px");
@@ -272,5 +296,16 @@ describe("Link placement (style guide §3: only inside running text)", () => {
       }
     }
     expect(bad).toEqual([]);
+  });
+});
+
+describe("Cancel, Start and Run now on a task row (answer B9)", () => {
+  it.each([
+    ["parallel/Inbox.tsx", 3],
+    ["parallel/JobsTab.tsx", 2],
+  ])("%s gives each compact row button the hh-tk-cancel layout class", (file, count) => {
+    const src = readFileSync(join(import.meta.dirname, "../src", file), "utf8");
+    expect(src.match(/className="hh-tk-cancel"/g)?.length).toBe(count);
+    expect(src).not.toMatch(/<Button\s+size="compact"\s+aria-describedby/);
   });
 });

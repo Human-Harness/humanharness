@@ -116,6 +116,7 @@ export function JobsTab({
         {action && (
           <Button
             size="compact"
+            className="hh-tk-cancel"
             aria-describedby={labelId}
             onClick={() => {
               setProblem(null);
@@ -126,7 +127,7 @@ export function JobsTab({
           </Button>
         )}
         {j.manual && !j.running && j.paused !== "off" && (
-          <Button size="compact" aria-describedby={labelId} onClick={() => runNow(j)}>
+          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
             {t("parallel.runNow")}
           </Button>
         )}

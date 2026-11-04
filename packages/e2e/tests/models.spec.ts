@@ -70,7 +70,7 @@ test("Settings › Modelos: a level picked for a topic applies to its next task"
     await page.getByRole("button", { name: "Start Demo" }).click();
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "Models" }).click();
-    await page.getByRole("region", { name: "Tasks" }).getByRole("group", { name: "The manifest" }).getByRole("button", { name: "Light" }).click();
+    await page.getByRole("region", { name: "Tasks" }).getByRole("group", { name: "The manifest" }).getByRole("radio", { name: "Light" }).click();
     await expect(page.getByText("Changed · recommended: Standard")).toBeVisible();
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(s.userData, "config.json"), "utf8")).models).toEqual({ tasks: { manifest: "light" } });
     await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();

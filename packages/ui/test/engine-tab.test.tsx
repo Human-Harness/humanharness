@@ -7,6 +7,7 @@ import { createI18n } from "@humanharness/i18n";
 import type { AppState } from "../src/client";
 import { EngineTab } from "../src/EngineTab";
 import { FakeClient } from "./fake-client";
+import { HhTheme } from "../src/guide";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -18,6 +19,12 @@ function Tab({ client }: { client: FakeClient }) {
 }
 
 const withFolder = () => new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
+/** Signing out asks first, under the engine's row: Sign out, then Sign out again in the question. */
+async function signOut() {
+  fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+  expect(screen.getByText(/^Sign out of .*\?/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+}
 const addCodex = (client: FakeClient) => {
   client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
 };
@@ -26,20 +33,17 @@ describe("EngineTab", () => {
   it("shows a test engine with its own details: no sign out, plan, version or legal line", async () => {
     const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     client.state.engines = [{ ...client.state.engines[0], name: "IA simulada (mock)", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }];
-    const { container } = await renderIn("en", <Tab client={client} />);
+    const { container } = await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByText("Recorded in the harness's mock/ folder");
-    const rows = [...container.querySelectorAll(".hh-row")].map((r) => [...r.children].map((c) => c.textContent));
-    expect(rows).toEqual([
-      ["Model", "Test model"],
-      ["Answers", "Recorded in the harness's mock/ folder"],
-      ["Your data", "Never leaves this computer"],
-      ["Your plan", "Uses nothing"],
-    ]);
+    const card = screen.getByRole("region", { name: "IA simulada (mock)" });
+    expect(card.textContent).toBe(
+      "IA simulada (mock)In use" + "ModelTest model" + "AnswersRecorded in the harness's mock/ folder" + "Your dataNever leaves this computer" + "Your planUses nothing",
+    );
     expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
-    expect(container.querySelector(".hh-tab > .hh-caption")).toBeNull();
-    // No logo: the tile draws the generic screen icon instead.
-    const tile = screen.getByRole("radio", { name: /IA simulada \(mock\)/ });
+    expect(container.querySelector("[lang]")).toBeNull();
+    // No logo: the option draws the generic engine icon instead (in its label, beside the radio).
+    const tile = screen.getByRole("radio", { name: /IA simulada \(mock\)/ }).closest("label") as HTMLElement;
     expect(tile.querySelector("img")).toBeNull();
     expect(tile.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
@@ -69,7 +73,7 @@ describe("EngineTab", () => {
   it("walks a new engine through the notice, install, sign-in and the test prompt", async () => {
     const client = withFolder();
     client.status = { ...client.status, noticeAccepted: false, installed: false, loggedIn: false, verified: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
 
     await screen.findByRole("heading", { name: "Before using Claude" });
     expect(screen.getByRole("radio", { name: /Claude/ }).getAttribute("aria-checked")).toBe("true");
@@ -100,7 +104,7 @@ describe("EngineTab", () => {
     client.status = { ...client.status, loggedIn: false };
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
     await screen.findByText(/Finish signing in using your browser/);
     act(() => {
@@ -120,7 +124,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
     client.testResult = { ok: false, error: { code: "agent-crashed" } };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     expect((await screen.findByRole("alert")).textContent).toBe("Something failed and I didn't change anything.");
     client.testResult = { ok: true };
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -130,13 +134,17 @@ describe("EngineTab", () => {
 
   it("shows the engine in use with its details, and signs out on request", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByText("Claude is ready ✓");
     expect(screen.getByText("Pro plan")).toBeTruthy();
     expect(screen.getByText("USA")).toBeTruthy();
     expect(screen.getByText("2.1.296")).toBeTruthy();
     expect(screen.getByRole("radio", { name: /Claude.*Connected.*In use/ })).toBeTruthy();
+    // The question can be taken back: nothing runs until the second Sign out.
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(client.setupRuns).toEqual([]);
+    await signOut();
     await screen.findByRole("heading", { name: "Sign in to Claude" });
     expect(client.setupRuns).toEqual([{ engineId: "claude", step: "logout" }]);
   });
@@ -144,21 +152,21 @@ describe("EngineTab", () => {
   it("shows the engine in use as a card tagged In use; another engine's card has no such tag", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     addCodex(client);
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     const ready = await screen.findByText("Claude is ready ✓");
-    const card = ready.closest(".hh-settings-card") as HTMLElement;
+    const card = ready.closest("section") as HTMLElement;
     expect(within(card).getByRole("heading", { name: "Claude" })).toBeTruthy();
-    expect(within(card).getByText("In use").className).toContain("hh-tag-green");
+    expect(within(card).getByText("In use").getAttribute("data-accent-color")).toBe("green");
     fireEvent.click(screen.getByRole("radio", { name: /Codex/ }));
     await screen.findByRole("button", { name: "Use Codex" });
-    const other = screen.getByRole("heading", { name: "Codex" }).closest(".hh-settings-card") as HTMLElement;
+    const other = screen.getByRole("heading", { name: "Codex" }).closest("section") as HTMLElement;
     expect(within(other).queryByText("In use")).toBeNull();
   });
 
   it("switches to another ready engine and shows the coming-soon tile", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     addCodex(client);
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     expect(screen.getByText("More engines · coming soon")).toBeTruthy();
     fireEvent.click(await screen.findByRole("radio", { name: /Codex/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
@@ -169,7 +177,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, noticeAccepted: false };
     client.acceptError = new Error("engines.json has an unknown format; not overwriting it");
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("heading", { name: "Before using Claude" });
     fireEvent.click(screen.getByRole("checkbox", { name: "I understand and accept" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -182,7 +190,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
     client.testUnrecorded = true;
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     expect((await screen.findByRole("alert")).textContent).toMatch(/I couldn't save this computer's AI engine settings/);
     client.testUnrecorded = false;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -195,7 +203,7 @@ describe("EngineTab", () => {
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
     client.setupResult = { ok: false, timedOut: true };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Install" }));
     await screen.findByText("Installing… this can take a minute.");
     act(() => client.emitSetup({ kind: "line", text: "Downloading…" }));
@@ -213,7 +221,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
     client.testResult = { ok: false, error: { code: "out-of-quota" } };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     expect((await screen.findByRole("alert")).textContent).toMatch(/You've reached your plan's limit/);
     expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
   });
@@ -222,7 +230,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false, loggedIn: null };
     client.testResult = { ok: false, error: { code: "session-expired" } };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     expect((await screen.findByRole("alert")).textContent).toBe("Your Claude session ended. Sign in again to continue.");
     client.testResult = { ok: true };
     fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
@@ -233,7 +241,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
     client.testError = new Error("ipc closed");
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     expect((await screen.findByRole("alert")).textContent).toBe("Something failed and I didn't change anything.");
   });
 
@@ -241,7 +249,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
     client.testUnrecorded = true;
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
     await waitFor(() => expect(client.sharedRevealed).toBe(1));
@@ -262,7 +270,7 @@ describe("EngineTab", () => {
   it("offers to install by hand: copy the command, open Terminal, then check again", async () => {
     const client = withFolder();
     client.status = { ...client.status, installed: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("heading", { name: "Install Claude" });
     const steps = screen.getByRole("list", { name: "Install it yourself" });
     expect([...steps.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
@@ -288,7 +296,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, installed: false };
     client.setupResult = { ok: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Install" }));
     expect((await screen.findByRole("alert")).textContent).toBe("The automatic install didn't work. You can install it yourself in a minute:");
     expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
@@ -301,7 +309,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, installed: false };
     client.copyError = new Error("clipboard");
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Copy command" }));
     await screen.findByText("I couldn't copy it. Select the command above and copy it.");
   });
@@ -310,7 +318,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.state.engines = [{ ...client.state.engines[0], installCommand: undefined }];
     client.status = { ...client.status, installed: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByText(/I can't install Claude myself/);
     expect(screen.getByRole("link", { name: "Official instructions" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy command" })).toBeNull();
@@ -323,7 +331,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, installed: false };
     client.setupResult = { ok: false, cancelled: true };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Install" }));
     await waitFor(() => expect(client.setupRuns).toHaveLength(1));
     await screen.findByRole("button", { name: "Install" });
@@ -336,7 +344,7 @@ describe("EngineTab", () => {
     client.testUnrecorded = true;
     let finish!: () => void;
     client.resetGate = new Promise((r) => (finish = r));
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Start over" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -358,7 +366,7 @@ describe("EngineTab", () => {
     client.status = { ...client.status, verified: false };
     client.testUnrecorded = true;
     client.resetError = new Error("EACCES");
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Start over" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, start over" }));
@@ -375,7 +383,7 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false, loggedIn: true };
     client.testResult = { ok: false, error: { code: "session-expired" } };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
     await waitFor(() => expect(client.setupRuns).toEqual([{ engineId: "claude", step: "login" }]));
@@ -387,7 +395,7 @@ describe("EngineTab", () => {
     client.running = { engineId: "claude", step: "login" };
     let answer!: () => void;
     client.getSetupGate = new Promise((r) => (answer = r));
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("heading", { name: "One last check" });
     await act(async () => {});
     expect(client.tested).toEqual([]);
@@ -403,7 +411,7 @@ describe("EngineTab", () => {
   it("says when checking an engine failed, with the reason and a way to check again", async () => {
     const client = withFolder();
     client.statusError = new Error("Error invoking remote method 'hh:engineStatus': Error: spawn EACCES");
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/I couldn't check Claude on this computer\./);
     // The raw reason, without Electron's English wrapper, is under Details.
@@ -441,7 +449,7 @@ describe("EngineTab: OpenCode", () => {
     const client = withFolder();
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", noticeAccepted: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     await screen.findByRole("heading", { name: "Before using OpenCode" });
     expect(screen.getByText("You choose the provider in OpenCode. Its terms and privacy rules apply between you and that provider.")).toBeTruthy();
@@ -450,7 +458,7 @@ describe("EngineTab: OpenCode", () => {
   it("keeps Claude's notice and sign-in as before (D0)", async () => {
     const client = withFolder();
     client.status = { ...client.status, noticeAccepted: false, loggedIn: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("heading", { name: "Before using Claude" });
     expect(screen.queryByText(/You choose the provider/)).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "I understand and accept" }));
@@ -463,7 +471,7 @@ describe("EngineTab: OpenCode", () => {
     const client = withFolder();
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     await screen.findByRole("heading", { name: "Choose a provider in OpenCode" });
     expect(screen.getByText("opencode auth login")).toBeTruthy();
@@ -479,7 +487,7 @@ describe("EngineTab: OpenCode", () => {
     const client = withFolder();
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Test my local model" }));
     await waitFor(() => expect(client.tested).toEqual(["opencode"]));
@@ -489,7 +497,7 @@ describe("EngineTab: OpenCode", () => {
     const client = withFolder();
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Check again" }));
     await screen.findByText("OpenCode still has no provider. Finish the steps in Terminal, then check again.");
@@ -507,7 +515,7 @@ describe("EngineTab: OpenCode", () => {
       await gate;
       return testEngine(id);
     };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Test my local model" }));
     await screen.findByText("Sending OpenCode a tiny test message…");
@@ -519,7 +527,7 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: null, verified: false };
     client.testResult = { ok: false, error: { code: "session-expired" } };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
     await waitFor(() => expect(client.terminalOpened).toBe(1));
@@ -540,9 +548,9 @@ describe("EngineTab: OpenCode", () => {
       await gate;
       client.terminalOpened++;
     };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await signOut();
     await screen.findByText("Signing out…");
     await act(async () => release());
     await screen.findByText("Finish signing out in Terminal, then press Check again.");
@@ -553,9 +561,9 @@ describe("EngineTab: OpenCode", () => {
     const client = withFolder();
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode" };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await signOut();
     await screen.findByText("Finish signing out in Terminal, then press Check again.");
     expect((screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement).disabled).toBe(false);
     expect(client.setupCopied).toEqual(["opencode:logout"]);
@@ -570,9 +578,9 @@ describe("EngineTab: OpenCode", () => {
     client.openTerminal = async () => {
       throw new Error("no Terminal");
     };
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await signOut();
     await screen.findByText("The sign-out command is copied, but Terminal didn't open. Open Terminal yourself, paste the command, then press Check again.");
     expect(client.setupCopied).toEqual(["opencode:logout"]);
     expect(screen.queryByRole("alert")).toBeNull();
@@ -584,9 +592,9 @@ describe("EngineTab: OpenCode", () => {
     addOpenCode(client);
     client.statusFor.opencode = { ...client.status, engineId: "opencode" };
     client.copyError = new Error("copy failed");
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     fireEvent.click(await screen.findByRole("radio", { name: /OpenCode/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await signOut();
     await screen.findByRole("alert");
     expect(client.terminalOpened).toBe(0);
   });
@@ -596,7 +604,11 @@ describe("EngineTab: legal texts in another language", () => {
   /** Spanish with a cached translation, as HarnessApp builds it after a switch; legal keys never come from the cache. */
   const renderEs = async (ui: ReactElement) => {
     const i18n = await createI18n("es", {}, { "core:language.legalEnglish": "Los textos legales se muestran en inglés.", "core:engine.data": "Datos" });
-    return render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <HhTheme>{ui}</HhTheme>
+      </I18nextProvider>,
+    );
   };
 
   it("in another language, legal text stays English with a line saying so (spec §8)", async () => {
@@ -604,23 +616,23 @@ describe("EngineTab: legal texts in another language", () => {
     await renderEs(<Tab client={client} />);
     await screen.findByText("Datos");
     expect(screen.getByText(/this app is not responsible for what the AI writes/).getAttribute("lang")).toBe("en");
-    expect(screen.getByText("Los textos legales se muestran en inglés.").className).toBe("hh-caption hh-legal-english");
+    expect(screen.getByText("Los textos legales se muestran en inglés.").hasAttribute("lang")).toBe(false);
   });
 
   it("D0: in English there is no legal line", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
-    const { container } = await renderIn("en", <Tab client={client} />);
+    const { container } = await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByText("Claude is ready ✓");
     expect(screen.getByText(/this app is not responsible for what the AI writes/).hasAttribute("lang")).toBe(false);
     expect(screen.queryByText("Legal texts are shown in English.")).toBeNull();
-    expect(container.querySelector(".hh-legal-english")).toBeNull();
+    expect(container.querySelector("[lang]")).toBeNull();
   });
 
   it("D0: a saved language with no translation shows English, with no legal line", async () => {
     const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
-    const { container } = await renderIn("es", <Tab client={client} />);
+    const { container } = await renderIn("es", <Tab client={client} />, { theme: true });
     await screen.findByText("Claude is ready ✓");
-    expect(container.querySelector(".hh-legal-english")).toBeNull();
+    expect(container.querySelector("[lang]")).toBeNull();
   });
 
   it("an empty or legal-only es set translates nothing, so there is no legal line on an all-English screen", async () => {
@@ -629,11 +641,15 @@ describe("EngineTab: legal texts in another language", () => {
       const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
       const i18n = await createI18n("es", {}, generated);
       expect(i18n.resolvedLanguage).toBe("en");
-      const { container, unmount } = render(<I18nextProvider i18n={i18n}>
-          <Tab client={client} />
-        </I18nextProvider>);
+      const { container, unmount } = render(
+        <I18nextProvider i18n={i18n}>
+          <HhTheme>
+            <Tab client={client} />
+          </HhTheme>
+        </I18nextProvider>,
+      );
       await screen.findByText("Claude is ready ✓");
-      expect(container.querySelector(".hh-legal-english")).toBeNull();
+      expect(container.querySelector("[lang]")).toBeNull();
       expect(screen.getByText(/this app is not responsible for what the AI writes/).hasAttribute("lang")).toBe(false);
       unmount();
     }
@@ -658,7 +674,7 @@ describe("EngineTab: legal texts in another language", () => {
   it("D0: the engine notice in English has no legal line", async () => {
     const client = withFolder();
     client.status = { ...client.status, noticeAccepted: false };
-    const { container } = await renderIn("en", <Tab client={client} />);
+    const { container } = await renderIn("en", <Tab client={client} />, { theme: true });
     await screen.findByRole("heading", { name: "Before using Claude" });
     expect(container.querySelector(".hh-legal-english")).toBeNull();
     expect(container.querySelector("[lang]")).toBeNull();
@@ -687,10 +703,11 @@ describe("EngineTab: legal texts in another language", () => {
   it("in Settings, the arrows move the focus between engines", async () => {
     const client = withFolder();
     addCodex(client);
-    await renderIn("en", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />, { theme: true });
     const radios = within(await screen.findByRole("radiogroup", { name: "AI engines" })).getAllByRole("radio");
     radios[0].focus();
     fireEvent.keyDown(radios[0], { key: "ArrowDown" });
-    expect(document.activeElement).toBe(radios[1]);
+    // Radix moves the focus on the next tick.
+    await waitFor(() => expect(document.activeElement).toBe(radios[1]));
   });
 });

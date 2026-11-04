@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { HhTheme } from "../src/guide";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../src";
 import type { ModelsView, SettingsView } from "../src/client";
@@ -38,7 +39,7 @@ describe("a second search while Settings is open keeps the tab as it was (§6)",
     client.state.settings = HARNESS;
     client.settingsState = { values: { nickname: "", hintAfter: 2 }, pending: [] };
     client.settingsFailure = { ok: false, message: "Not that name." };
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     await screen.findByRole("button", { name: "Start Demo" });
     let sheet = await openFirst(client, "what the app");
     const box = within(sheet).getByRole("textbox", { name: "What the app calls you" });
@@ -54,7 +55,7 @@ describe("a second search while Settings is open keeps the tab as it was (§6)",
   it("Models moves to the part of the field searched, without starting over", async () => {
     const client = new FakeClient(ready);
     client.state.models = MODELS;
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     await screen.findByRole("button", { name: "Start Demo" });
     let sheet = await openFirst(client, "levels");
     await waitFor(() => expect(sheet.querySelector('[data-setting="models.levels"]')?.contains(document.activeElement)).toBe(true));

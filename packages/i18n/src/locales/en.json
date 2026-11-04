@@ -163,6 +163,7 @@
     "version": "Installed version",
     "signOut": "Sign out",
     "signingOut": "Signing out…",
+    "signOutAsk": "Sign out of {{engine}}? Tasks can't run on it until you sign in again.",
     "terms": "{{provider}} terms",
     "privacy": "{{provider}} privacy policy",
     "continue": "Continue",

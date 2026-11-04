@@ -54,13 +54,29 @@ function Tab({ client }: { client: FakeClient }) {
 const tasksRegion = () => screen.getByRole("region", { name: "Tasks" });
 const row = (name: string) => within(tasksRegion()).getByRole("group", { name });
 const saved = (c: FakeClient) => c.state.config.models;
+/** A level in a task's control (a Radix segmented control: radios). */
+const level = (scope: HTMLElement, name: string) => within(scope).getByRole("radio", { name });
+const on = (el: HTMLElement) => el.getAttribute("aria-checked");
+/** Picks `name` in a Radix select: open it, then choose the option (both by keyboard, as happy-dom has no pointer). */
+async function pick(combo: HTMLElement, name: string) {
+  fireEvent.keyDown(combo, { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name }), { key: "Enter" });
+}
+/** A Radix select's options, read with the list open, then closed again. */
+async function optionsOf(combo: HTMLElement) {
+  fireEvent.keyDown(combo, { key: "Enter" });
+  const names = (await screen.findAllByRole("option")).map((o) => o.textContent);
+  fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  return names;
+}
 
 describe("ModelsTab › Tasks", () => {
   it("lists every action in path order, then free questions, each on its recommended level", async () => {
-    await renderIn("en", <Tab client={modelsClient()} />);
+    await renderIn("en", <Tab client={modelsClient()} />, { theme: true });
     expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["The manifest", "A turn", "Free question"]);
-    expect(within(row("A turn")).getByRole("button", { name: "Deep" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(row("Free question")).getByRole("button", { name: "Light" }).getAttribute("aria-pressed")).toBe("true");
+    expect(on(level(row("A turn"), "Deep"))).toBe("true");
+    expect(on(level(row("Free question"), "Light"))).toBe("true");
     expect(screen.queryByText(/Changed/)).toBeNull();
   });
 
@@ -68,7 +84,7 @@ describe("ModelsTab › Tasks", () => {
     const c = modelsClient();
     c.state.material = { accepts: ["text"], items: false, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 };
     c.state.models = { ...c.state.models!, recommended: { ...c.state.models!.recommended, "material-review": "standard", "material-repair": "light", "material-label": "light", "material-sheet": "light" } };
-    await renderIn("en", <Tab client={c} />);
+    await renderIn("en", <Tab client={c} />, { theme: true });
     expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual([
       "The manifest",
       "A turn",
@@ -78,14 +94,14 @@ describe("ModelsTab › Tasks", () => {
       "Material: labelling",
       "Material: the summary sheet",
     ]);
-    fireEvent.click(within(row("Material: labelling")).getByRole("button", { name: "Standard" }));
+    fireEvent.click(level(row("Material: labelling"), "Standard"));
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { "material-label": "standard" } }));
   });
 
   it("saves a changed level, marks it changed with the recommendation, and restores it", async () => {
     const c = modelsClient();
-    await renderIn("en", <Tab client={c} />);
-    fireEvent.click(within(row("The manifest")).getByRole("button", { name: "Deep" }));
+    await renderIn("en", <Tab client={c} />, { theme: true });
+    fireEvent.click(level(row("The manifest"), "Deep"));
     await screen.findByText("Changed · recommended: Standard");
     expect(saved(c)).toEqual({ tasks: { manifest: "deep" } });
     fireEvent.click(within(tasksRegion()).getByRole("button", { name: "Restore" }));
@@ -93,62 +109,62 @@ describe("ModelsTab › Tasks", () => {
     expect(saved(c)).toEqual({});
   });
 
-  it("shows Changed · recommended in orange with Restore on a changed task", async () => {
-    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: "deep" } })} />);
-    expect(screen.getByText("Changed · recommended: Standard").className).toBe("hh-model-changed");
-    expect(within(tasksRegion()).getByRole("button", { name: "Restore" })).toBeTruthy();
+  it("shows Changed · recommended with Restore under a changed task", async () => {
+    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: "deep" } })} />, { theme: true });
+    expect(within(row("The manifest")).getByText("Changed · recommended: Standard")).toBeTruthy();
+    expect(within(row("The manifest")).getByRole("button", { name: "Restore" })).toBeTruthy();
   });
 
   it("makes a task custom from its level's settings, edits it and goes back to the recommendation", async () => {
     const c = modelsClient();
-    await renderIn("en", <Tab client={c} />);
-    fireEvent.click(within(row("A turn")).getByRole("button", { name: "Custom" }));
+    await renderIn("en", <Tab client={c} />, { theme: true });
+    fireEvent.click(level(row("A turn"), "Custom"));
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } }));
     expect(await screen.findByText(/opus · high effort · 400k cap/)).toBeTruthy();
     const tasks = within(tasksRegion());
-    fireEvent.change(tasks.getByRole("combobox", { name: "Effort" }), { target: { value: "max" } });
+    await pick(tasks.getByRole("combobox", { name: "Effort" }), "Max");
     await waitFor(() => expect(saved(c)).toMatchObject({ tasks: { turn: { custom: { effort: "max" } } } }));
-    fireEvent.change(tasks.getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
+    await pick(tasks.getByRole("combobox", { name: "Context cap" }), "1M");
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
-    fireEvent.change(tasks.getByRole("combobox", { name: "Model" }), { target: { value: "" } });
+    await pick(tasks.getByRole("combobox", { name: "Model" }), "Engine default");
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", effort: "max", cap: 1_000_000 } } } }));
     fireEvent.click(tasks.getByRole("button", { name: "Back to recommended (Deep)" }));
     await waitFor(() => expect(saved(c)).toEqual({}));
-    expect(within(row("A turn")).getByRole("button", { name: "Deep" }).getAttribute("aria-pressed")).toBe("true");
+    expect(on(level(row("A turn"), "Deep"))).toBe("true");
   });
 
   it("shows a saved custom task folded, with a toggle for its fields", async () => {
-    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: { custom: { engine: "claude", model: "haiku", effort: "low", cap: 100_000 } } } })} />);
+    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: { custom: { engine: "claude", model: "haiku", effort: "low", cap: 100_000 } } } })} />, { theme: true });
     expect(screen.getByText(/haiku · low effort · 100k cap/)).toBeTruthy();
     expect(within(tasksRegion()).queryByRole("combobox", { name: "Model" })).toBeNull();
     const adjust = screen.getByRole("button", { name: "Edit" });
     expect(adjust.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(adjust);
-    expect((within(tasksRegion()).getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("haiku");
+    expect(within(tasksRegion()).getByRole("combobox", { name: "Model" }).textContent).toBe("haiku");
   });
 
   it("names the efforts and caps in its selects as the mockups do", async () => {
-    await renderIn("en", <Tab client={modelsClient({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } })} />);
+    await renderIn("en", <Tab client={modelsClient({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } })} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const tasks = within(tasksRegion());
-    expect(within(tasks.getByRole("combobox", { name: "Effort" })).getAllByRole("option").map((o) => o.textContent)).toEqual(["Low", "Medium", "High", "Very high", "Max"]);
-    expect(within(tasks.getByRole("combobox", { name: "Context cap" })).getAllByRole("option").map((o) => o.textContent)).toEqual(["100k", "200k", "400k", "1M"]);
+    expect(await optionsOf(tasks.getByRole("combobox", { name: "Effort" }))).toEqual(["Low", "Medium", "High", "Very high", "Max"]);
+    expect(await optionsOf(tasks.getByRole("combobox", { name: "Context cap" }))).toEqual(["100k", "200k", "400k", "1M"]);
   });
 
   it("says so when a change couldn't be saved, and shows what config.json holds", async () => {
     const c = modelsClient();
     c.saveConfig = () => Promise.reject(new Error("disk full"));
-    await renderIn("en", <Tab client={c} />);
-    fireEvent.click(within(row("The manifest")).getByRole("button", { name: "Deep" }));
+    await renderIn("en", <Tab client={c} />, { theme: true });
+    fireEvent.click(level(row("The manifest"), "Deep"));
     expect((await screen.findByRole("alert")).textContent).toBe("Couldn't save. Try again.");
-    expect(within(row("The manifest")).getByRole("button", { name: "Standard" }).getAttribute("aria-pressed")).toBe("true");
+    expect(on(level(row("The manifest"), "Standard"))).toBe("true");
   });
 
   it("an edited custom task runs on the current engine, even when it was saved for another", async () => {
     const c = modelsClient({ tasks: { turn: { custom: { engine: "codex", effort: "high", cap: 400_000 } } } });
-    await renderIn("en", <Tab client={c} />);
+    await renderIn("en", <Tab client={c} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(within(tasksRegion()).getByRole("combobox", { name: "Model" }), { target: { value: "sonnet" } });
+    await pick(within(tasksRegion()).getByRole("combobox", { name: "Model" }), "sonnet");
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "sonnet", effort: "high", cap: 400_000 } } } }));
   });
 
@@ -156,9 +172,9 @@ describe("ModelsTab › Tasks", () => {
     // config.json merges a save shallowly: a partial `models` would drop the other settings.
     const c = modelsClient({ tiers: { claude: { light: { model: "sonnet", effort: "low", cap: 100_000 } } } });
     const patches = recordPatches(c);
-    await renderIn("en", <Tab client={c} />);
-    fireEvent.click(within(row("The manifest")).getByRole("button", { name: "Deep" }));
-    fireEvent.click(within(row("A turn")).getByRole("button", { name: "Light" }));
+    await renderIn("en", <Tab client={c} />, { theme: true });
+    fireEvent.click(level(row("The manifest"), "Deep"));
+    fireEvent.click(level(row("A turn"), "Light"));
     const whole = { tasks: { manifest: "deep", turn: "light" }, tiers: { claude: { light: { model: "sonnet", effort: "low", cap: 100_000 } } } };
     await waitFor(() => expect(saved(c)).toEqual(whole));
     expect(patches.every((p) => Object.keys(p).join() === "models")).toBe(true);
@@ -174,36 +190,35 @@ describe("ModelsTab › Tasks", () => {
       await gate;
       return save(patch);
     };
-    await renderIn("en", <Tab client={c} />);
+    await renderIn("en", <Tab client={c} />, { theme: true });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const tasks = within(tasksRegion());
-    fireEvent.change(tasks.getByRole("combobox", { name: "Effort" }), { target: { value: "max" } });
-    expect((tasks.getByRole("combobox", { name: "Effort" }) as HTMLSelectElement).value).toBe("max");
-    fireEvent.change(tasks.getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
+    await pick(tasks.getByRole("combobox", { name: "Effort" }), "Max");
+    expect(tasks.getByRole("combobox", { name: "Effort" }).textContent).toBe("Max");
+    await pick(tasks.getByRole("combobox", { name: "Context cap" }), "1M");
     release();
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
   });
 
   it("sets the pinned files budget; the harness's suggestion drops the key (context-panel spec §4.2)", async () => {
     const c = modelsClient({ tasks: { manifest: "deep" } });
-    await renderIn("en", <Tab client={c} />);
-    const select = within(tasksRegion()).getByRole("combobox", { name: "Pinned files budget", description: /every new task gets whole/ }) as HTMLSelectElement;
-    expect(select.value).toBe("3000");
-    expect([...select.options].map((o) => o.value)).toEqual(["1000", "3000", "6000", "12000"]);
-    expect(select.options[1].textContent).toBe("3,000 tokens (suggested)");
-    fireEvent.change(select, { target: { value: "6000" } });
+    await renderIn("en", <Tab client={c} />, { theme: true });
+    const select = screen.getByRole("combobox", { name: "Pinned files budget", description: /every new task gets whole/ });
+    expect(select.textContent).toBe("3,000 tokens (suggested)");
+    expect(await optionsOf(select)).toEqual(["1,000 tokens", "3,000 tokens (suggested)", "6,000 tokens", "12,000 tokens"]);
+    await pick(select, "6,000 tokens");
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { manifest: "deep" }, pinnedTokens: 6000 }));
-    fireEvent.change(select, { target: { value: "3000" } });
+    await pick(select, "3,000 tokens (suggested)");
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { manifest: "deep" } }));
   });
 
   it("offers the harness's suggested budget and a saved one even when they are not in the list", async () => {
     const c = modelsClient({ pinnedTokens: 2000 });
     c.state.models = { ...c.state.models!, pinnedTokens: 4500 };
-    await renderIn("en", <Tab client={c} />);
-    const select = within(tasksRegion()).getByRole("combobox", { name: "Pinned files budget" }) as HTMLSelectElement;
-    expect(select.value).toBe("2000");
-    expect([...select.options].map((o) => o.value)).toEqual(["1000", "2000", "3000", "4500", "6000", "12000"]);
+    await renderIn("en", <Tab client={c} />, { theme: true });
+    const select = screen.getByRole("combobox", { name: "Pinned files budget" });
+    expect(select.textContent).toBe("2,000 tokens");
+    expect(await optionsOf(select)).toEqual(["1,000 tokens", "2,000 tokens", "3,000 tokens", "4,500 tokens (suggested)", "6,000 tokens", "12,000 tokens"]);
   });
 });
 
@@ -230,22 +245,22 @@ describe("taskRows", () => {
 
 describe("ModelsTab › Levels", () => {
   const levels = () => screen.getByRole("region", { name: "Levels" });
-  const card = (tier: string) => within(levels()).getByRole("region", { name: tier });
-  const showLevels = () => fireEvent.click(within(screen.getByRole("group", { name: "Models" })).getByRole("button", { name: "Levels" }));
+  const card = (tier: string) => within(levels()).getByRole("group", { name: tier });
+  const showLevels = () => fireEvent.click(within(screen.getByRole("radiogroup", { name: "Models" })).getByRole("radio", { name: "Levels" }));
 
   it("switches between Tasks and Levels", async () => {
-    await renderIn("en", <Tab client={modelsClient()} />);
+    await renderIn("en", <Tab client={modelsClient()} />, { theme: true });
     expect(screen.queryByRole("region", { name: "Levels" })).toBeNull();
     showLevels();
     expect(screen.queryByRole("region", { name: "Tasks" })).toBeNull();
-    expect(within(screen.getByRole("group", { name: "Models" })).getByRole("button", { name: "Levels" }).getAttribute("aria-pressed")).toBe("true");
+    expect(on(within(screen.getByRole("radiogroup", { name: "Models" })).getByRole("radio", { name: "Levels" }))).toBe("true");
   });
 
   it("shows the current engine's three levels with the tasks that use each", async () => {
-    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: "light" } })} />);
+    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: "light" } })} />, { theme: true });
     showLevels();
-    expect(within(levels()).getByRole("button", { name: "Claude" }).getAttribute("aria-pressed")).toBe("true");
-    expect((within(card("Deep")).getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("opus");
+    expect(on(within(levels()).getByRole("radio", { name: "Claude" }))).toBe("true");
+    expect(within(card("Deep")).getByRole("combobox", { name: "Model" }).textContent).toBe("opus");
     expect(within(card("Deep")).getByRole("list", { name: "Used by" }).textContent).toBe("A turn");
     expect(within(card("Light")).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["The manifest", "Free question"]);
     expect(within(card("Standard")).getByText("No task")).toBeTruthy();
@@ -253,12 +268,12 @@ describe("ModelsTab › Levels", () => {
 
   it("saves a level's settings for the engine shown and restores the recommended tables", async () => {
     const c = modelsClient();
-    await renderIn("en", <Tab client={c} />);
+    await renderIn("en", <Tab client={c} />, { theme: true });
     showLevels();
-    fireEvent.click(within(levels()).getByRole("button", { name: "Codex" }));
-    expect((within(card("Deep")).getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("");
-    expect(within(card("Deep")).getAllByRole("option").map((o) => o.textContent).slice(0, 1)).toEqual(["Engine default"]);
-    fireEvent.change(within(card("Deep")).getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
+    fireEvent.click(within(levels()).getByRole("radio", { name: "Codex" }));
+    expect(within(card("Deep")).getByRole("combobox", { name: "Model" }).textContent).toBe("Engine default");
+    expect(await optionsOf(within(card("Deep")).getByRole("combobox", { name: "Model" }))).toEqual(["Engine default"]);
+    await pick(within(card("Deep")).getByRole("combobox", { name: "Context cap" }), "1M");
     await waitFor(() => expect(saved(c)).toEqual({ tiers: { codex: { deep: { effort: "high", cap: 1_000_000 } } } }));
     expect(within(levels()).getByText("If your plan doesn't include a model, the task uses the level below and tells you.")).toBeTruthy();
     fireEvent.click(within(levels()).getByRole("button", { name: "Restore recommended" }));
@@ -268,9 +283,9 @@ describe("ModelsTab › Levels", () => {
   it("keeps the tasks' settings and the other engines' levels when it saves a level", async () => {
     const c = modelsClient({ tasks: { manifest: "deep" }, tiers: { codex: { light: { effort: "medium", cap: 100_000 } } } });
     const patches = recordPatches(c);
-    await renderIn("en", <Tab client={c} />);
+    await renderIn("en", <Tab client={c} />, { theme: true });
     showLevels();
-    fireEvent.change(within(card("Light")).getByRole("combobox", { name: "Model" }), { target: { value: "sonnet" } });
+    await pick(within(card("Light")).getByRole("combobox", { name: "Model" }), "sonnet");
     const whole = { tasks: { manifest: "deep" }, tiers: { codex: { light: { effort: "medium", cap: 100_000 } }, claude: { light: { model: "sonnet", effort: "low", cap: 100_000 } } } };
     await waitFor(() => expect(saved(c)).toEqual(whole));
     expect(patches).toEqual([{ models: whole }]);
@@ -287,11 +302,11 @@ describe("Sidekick row (sidekick spec §5)", () => {
 
   it("is listed in Tasks only while main sends Sidekick (D0)", async () => {
     const c = modelsClient();
-    const first = await renderIn("en", <Tab client={c} />);
+    const first = await renderIn("en", <Tab client={c} />, { theme: true });
     expect(within(tasksRegion()).queryByRole("group", { name: "Sidekick" })).toBeNull();
     first.unmount();
     c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
-    await renderIn("en", <Tab client={c} />);
+    await renderIn("en", <Tab client={c} />, { theme: true });
     expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["The manifest", "A turn", "Free question", "Sidekick"]);
     expect(screen.getByText("Reviews your prompts before they go out")).toBeTruthy();
   });

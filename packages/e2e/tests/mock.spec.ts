@@ -81,11 +81,11 @@ test("a fresh mock app walks the setup flow, then starts the demo on the test en
     // Settings › Modelos shows the test model.
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "Models" }).click();
-    await page.getByRole("group", { name: "Models" }).getByRole("button", { name: "Levels" }).click();
+    await page.getByRole("radiogroup", { name: "Models" }).getByRole("radio", { name: "Levels" }).click();
     // Every level runs on the test model.
     const models = page.getByRole("tabpanel", { name: "Models" }).getByRole("combobox", { name: "Model" });
     await expect(models).toHaveCount(3);
-    for (const model of await models.all()) await expect(model.locator("option:checked")).toHaveText("Test model");
+    for (const model of await models.all()) await expect(model).toHaveText("Test model");
   } finally {
     await closeAndClean(app, s);
   }

@@ -1,11 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "../guide/Segmented";
 import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "../client";
-import { ICON_NAMES, Icon } from "../guide/icons";
+import { ICON_NAMES, Icon, Row, Rx } from "../guide";
 import { markIcon } from "./mark";
-import { Button } from "../guide/Button";
-import { Toggle } from "../guide/Toggle";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */
 const CORE = ["prompt-coach", "focus", "process-guard", "mentor", "daily-summary"] as const;
@@ -24,6 +21,9 @@ type Tier = "default" | NonNullable<SidekickDraftDef["tier"]>;
  * Create or edit a sidekick (spec §8): name, mark, personality, purposes and, for a custom purpose, its text and
  * moments (the harness's places too), and its model tier. Save sends the full definition: the store replaces every
  * field, so what the editor doesn't show (source, preset, defaultOn, a second custom purpose) goes back as it was.
+ *
+ * Radix stage 2d: one card of rows (DESIGN.md "an editor goes inside a card"); the mark is a grid of icon buttons, the
+ * chosen one soft; purposes and moments are switches in columns; Save is the primary and Cancel the secondary, at the end.
  */
 export function SidekickEditor({
   client,
@@ -107,102 +107,144 @@ export function SidekickEditor({
     { value: "standard", label: t("sidekick.tiers.standard") },
     { value: "deep", label: t("sidekick.tiers.deep") },
   ];
+  // A new sidekick's editor stands below the list in its own card; an edit opens inside its row, which the list
+  // already frames, so it gets no second card.
+  const Frame = initial ? Rx.Box : Rx.Card;
   const momentChoices = [...MOMENTS.map((m) => ({ id: m as string, label: t(`sidekick.moments.${m}`) })), ...places.map((p) => ({ id: `place:${p.id}`, label: p.label }))];
 
   return (
-    <section aria-label={initial ? t("sidekick.list.edit", { name: initial.name }) : t("sidekick.list.new")} className="hh-sk-editor">
-      <div className="hh-rows">
-        <div className="hh-row">
-          <label className="hh-row-label" htmlFor={`${ids}-name`}>
-            {t("sidekick.editor.name")}
-          </label>
-          <input ref={nameRef} id={`${ids}-name`} type="text" value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="hh-row">
-          <span className="hh-row-label" id={`${ids}-mark`}>
-            {t("sidekick.editor.mark")}
-          </span>
-          <div className="hh-sk-mark-grid" role="group" aria-labelledby={`${ids}-mark`}>
-            {ICON_NAMES.map((n) => (
-              <button key={n} type="button" className="hh-sk-mark-pick" aria-label={n} aria-pressed={mark === n} onClick={() => setMark(n)}>
-                <Icon name={n} size={18} />
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="hh-row hh-row-wrap">
-          <label className="hh-row-label" htmlFor={`${ids}-personality`}>
-            {t("sidekick.editor.personality")}
-          </label>
-          <textarea
-            id={`${ids}-personality`}
-            value={personality}
-            maxLength={PERSONALITY_MAX}
-            rows={4}
-            aria-describedby={`${ids}-personality-hint`}
-            onChange={(e) => setPersonality(e.target.value)}
-          />
-          <p className="hh-caption hh-row-note" id={`${ids}-personality-hint`}>
-            {t("sidekick.editor.personalityHint")} {t("sidekick.editor.count", { count: personality.length, max: PERSONALITY_MAX })}
-          </p>
-        </div>
-      </div>
-      <fieldset className="hh-sk-fieldset">
-        <legend>{t("sidekick.editor.purposes")}</legend>
-        {tooMany && (
-          <p className="hh-caption" id={`${ids}-too-many`}>
-            {t("sidekick.editor.tooMany", { max: PURPOSES_MAX })}
-          </p>
-        )}
-        {CORE.map((id) => (
-          <Toggle key={id} checked={core.includes(id)} onChange={(on) => setCore(toggle(core, id, on))}>
-            {t(`sidekick.purposes.${id}`)}
-          </Toggle>
-        ))}
-        <Toggle checked={custom} onChange={setCustom}>
-          {t("sidekick.purposes.custom")}
-        </Toggle>
-        {custom && (
-          <div className="hh-sk-custom">
-            <label htmlFor={`${ids}-custom`}>{t("sidekick.editor.customText")}</label>
-            <textarea id={`${ids}-custom`} value={customText} maxLength={CUSTOM_MAX} rows={3} onChange={(e) => setCustomText(e.target.value)} />
-            <fieldset className="hh-sk-fieldset">
-              <legend>{t("sidekick.editor.moments")}</legend>
-              {tooManyMoments && (
-                <p className="hh-caption" id={`${ids}-too-many-moments`}>
-                  {t("sidekick.editor.tooManyMoments", { max: MOMENTS_MAX })}
-                </p>
-              )}
-              {momentChoices.map((m) => (
-                <Toggle key={m.id} checked={moments.includes(m.id)} onChange={(on) => setMoments(toggle(moments, m.id, on))}>
-                  {m.label}
-                </Toggle>
+    <section aria-label={initial ? t("sidekick.list.edit", { name: initial.name }) : t("sidekick.list.new")}>
+      <Frame {...(initial ? { mt: "2" } : { size: "2" })}>
+        <Row label={t("sidekick.editor.name")} htmlFor={`${ids}-name`}>
+          <Rx.TextField.Root ref={nameRef} id={`${ids}-name`} value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
+        </Row>
+        <Rx.Separator size="4" />
+        <Row
+          label={<span id={`${ids}-mark`}>{t("sidekick.editor.mark")}</span>}
+          below={
+            <Rx.Flex wrap="wrap" gap="1" role="group" aria-labelledby={`${ids}-mark`}>
+              {ICON_NAMES.map((n) => (
+                <Rx.IconButton key={n} type="button" size="2" variant={mark === n ? "soft" : "ghost"} color={mark === n ? undefined : "gray"} aria-label={n} aria-pressed={mark === n} onClick={() => setMark(n)}>
+                  <Icon name={n} size={18} />
+                </Rx.IconButton>
               ))}
-            </fieldset>
-          </div>
+            </Rx.Flex>
+          }
+        />
+        <Rx.Separator size="4" />
+        <Row
+          label={t("sidekick.editor.personality")}
+          htmlFor={`${ids}-personality`}
+          hint={`${t("sidekick.editor.personalityHint")} ${t("sidekick.editor.count", { count: personality.length, max: PERSONALITY_MAX })}`}
+          hintId={`${ids}-personality-hint`}
+          below={
+            <Rx.TextArea
+              id={`${ids}-personality`}
+              value={personality}
+              maxLength={PERSONALITY_MAX}
+              rows={4}
+              aria-describedby={`${ids}-personality-hint`}
+              onChange={(e) => setPersonality(e.target.value)}
+            />
+          }
+        />
+        <Rx.Separator size="4" />
+        <Row
+          label={<span id={`${ids}-purposes`}>{t("sidekick.editor.purposes")}</span>}
+          {...(tooMany ? { hint: t("sidekick.editor.tooMany", { max: PURPOSES_MAX }), hintId: `${ids}-too-many` } : {})}
+          below={
+            <Rx.Box role="group" aria-labelledby={`${ids}-purposes`}>
+              <Switches>
+                {CORE.map((id) => (
+                  <SwitchLine key={id} checked={core.includes(id)} onChange={(on) => setCore(toggle(core, id, on))}>
+                    {t(`sidekick.purposes.${id}`)}
+                  </SwitchLine>
+                ))}
+                <SwitchLine checked={custom} onChange={setCustom}>
+                  {t("sidekick.purposes.custom")}
+                </SwitchLine>
+              </Switches>
+              {custom && (
+                <Rx.Flex direction="column" gap="2" mt="3">
+                  <Rx.Text as="label" size="2" htmlFor={`${ids}-custom`}>
+                    {t("sidekick.editor.customText")}
+                  </Rx.Text>
+                  <Rx.TextArea id={`${ids}-custom`} value={customText} maxLength={CUSTOM_MAX} rows={3} onChange={(e) => setCustomText(e.target.value)} />
+                  <Rx.Text as="p" size="1" color="gray" weight="bold" mt="2" id={`${ids}-moments`}>
+                    {t("sidekick.editor.moments")}
+                  </Rx.Text>
+                  {tooManyMoments && (
+                    <Rx.Text as="p" size="1" color="gray" id={`${ids}-too-many-moments`}>
+                      {t("sidekick.editor.tooManyMoments", { max: MOMENTS_MAX })}
+                    </Rx.Text>
+                  )}
+                  <Rx.Box role="group" aria-labelledby={`${ids}-moments`}>
+                    <Switches>
+                      {momentChoices.map((m) => (
+                        <SwitchLine key={m.id} checked={moments.includes(m.id)} onChange={(on) => setMoments(toggle(moments, m.id, on))}>
+                          {m.label}
+                        </SwitchLine>
+                      ))}
+                    </Switches>
+                  </Rx.Box>
+                </Rx.Flex>
+              )}
+            </Rx.Box>
+          }
+        />
+        <Rx.Separator size="4" />
+        <Row label={t("sidekick.editor.tier")}>
+          <Rx.SegmentedControl.Root value={tier} onValueChange={(v) => setTier(v as Tier)} aria-label={t("sidekick.editor.tier")}>
+            {tiers.map((o) => (
+              <Rx.SegmentedControl.Item key={o.value} value={o.value}>
+                {o.label}
+              </Rx.SegmentedControl.Item>
+            ))}
+          </Rx.SegmentedControl.Root>
+        </Row>
+        {failed !== null && (
+          <Rx.Callout.Root color="red" role="alert" size="1" mt="3">
+            <Rx.Callout.Text>{t("sidekick.settings.failed", { message: failed })}</Rx.Callout.Text>
+          </Rx.Callout.Root>
         )}
-      </fieldset>
-      <div className="hh-row">
-        <span className="hh-row-label">{t("sidekick.editor.tier")}</span>
-        <Segmented label={t("sidekick.editor.tier")} options={tiers} value={tier} onChange={setTier} />
-      </div>
-      {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
-      <div className="hh-sk-actions">
-        {/* disabled until the sidekick is complete; aria-disabled while it saves, so the button keeps focus. */}
-        <Button
-          type="button"
-          kind="primary"
-          disabled={!ready}
-          aria-disabled={busy}
-          {...(tooMany || tooManyMoments ? { "aria-describedby": tooMany ? `${ids}-too-many` : `${ids}-too-many-moments` } : {})}
-          onClick={() => void save()}
-        >
-          {t("sidekick.editor.save")}
-        </Button>
-        <button type="button" onClick={() => onDone(false)}>
-          {t("sidekick.editor.cancel")}
-        </button>
-      </div>
+        <Rx.Flex justify="end" gap="2" mt="3">
+          <Rx.Button type="button" variant="outline" color="gray" onClick={() => onDone(false)}>
+            {t("sidekick.editor.cancel")}
+          </Rx.Button>
+          {/* disabled until the sidekick is complete; aria-disabled while it saves, so the button keeps focus. */}
+          <Rx.Button
+            type="button"
+            variant="solid"
+            disabled={!ready}
+            aria-disabled={busy}
+            {...(tooMany || tooManyMoments ? { "aria-describedby": tooMany ? `${ids}-too-many` : `${ids}-too-many-moments` } : {})}
+            onClick={() => void save()}
+          >
+            {t("sidekick.editor.save")}
+          </Rx.Button>
+        </Rx.Flex>
+      </Frame>
     </section>
+  );
+}
+
+/** Switches in two columns (one on a narrow card). */
+function Switches({ children }: { children: ReactNode }) {
+  return (
+    <Rx.Grid columns={{ initial: "1", sm: "2" }} gapX="4" gapY="2">
+      {children}
+    </Rx.Grid>
+  );
+}
+
+/** One on/off choice: a small switch named by the text next to it. */
+function SwitchLine({ checked, onChange, children }: { checked: boolean; onChange: (on: boolean) => void; children: ReactNode }) {
+  return (
+    <Rx.Text as="label" size="2">
+      <Rx.Flex gap="2" align="center">
+        <Rx.Switch size="1" checked={checked} onCheckedChange={onChange} />
+        {children}
+      </Rx.Flex>
+    </Rx.Text>
   );
 }

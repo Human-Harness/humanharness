@@ -1,16 +1,13 @@
-import { useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "../guide/Segmented";
-import { Toggle } from "../guide/Toggle";
 import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "../client";
+import { Group, Hidden, Row, Rx, SectionHead } from "../guide";
 import { shownLanguage } from "../language";
 import { LearnedList } from "./LearnedList";
 import { PresetOffer } from "./PresetOffer";
 import { ScopeSidekicks } from "./ScopeSidekicks";
 import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
-import { SectionHead, SettingRow, SettingsCard } from "../settings-parts";
-import { Button } from "../guide/Button";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
@@ -48,6 +45,9 @@ function useOpenScope(client: HarnessClient, enabled: boolean): { id: string; la
  * Settings › Sidekick(s) (spec §8, mockup board 6): on/off and the moments, the share used, the muted kinds, the
  * harness's presets (while any is not adopted, spec §2a.7), the sidekicks, the sidekicks in the open scope (harnesses
  * with scopes, Decision 8), and what they learned. Each change saves at once.
+ *
+ * Radix stage 2d: one page in the same order; the main switch in the section head, three stat cards, the moments in a
+ * card of rows, and the lists below as loose groups or cards.
  */
 /** The section's and the tab's title (spec §8): "Sidekicks" once there are two or more, else "Sidekick". */
 export function sidekickTitleKey(sidekicks: readonly unknown[] | undefined): "sidekick.list.title" | "sidekick.tab" {
@@ -74,7 +74,6 @@ export function SidekickTab({
   const preSendHint = useId();
   const afterHint = useId();
   const headsUpHint = useId();
-  const mutedHead = useId();
   if (!state) return null;
   const s = state.settings;
   // One row per muted kind; with several sidekicks the same kind can show twice (part 1 has only one).
@@ -102,113 +101,126 @@ export function SidekickTab({
     { value: "none", label: t("sidekick.settings.capNone") },
   ];
   const tokens = state.week.toLocaleString(shownLanguage(i18n));
-  const parseWait = (v: Wait): SidekickSettings["wait"] => (v === "always" ? "always" : v === "10" ? 10 : 6);
-  const parseCap = (v: Cap): SidekickSettings["cap"] => (v === "none" ? "none" : v === "50000" ? 50_000 : 20_000);
+  const parseWait = (v: string): SidekickSettings["wait"] => (v === "always" ? "always" : v === "10" ? 10 : 6);
+  const parseCap = (v: string): SidekickSettings["cap"] => (v === "none" ? "none" : v === "50000" ? 50_000 : 20_000);
+  // Off: the rest stays visible but can't be changed (spec §8).
+  const off = !s.on;
+  // A moment's row: its switch, labelled by the row and described by the hint.
+  const moment = (key: "preSend" | "afterReply" | "headsUps", id: string) => (
+    <Rx.Switch id={`${id}-on`} checked={s[key]} disabled={off} aria-describedby={id} onCheckedChange={(on) => save({ [key]: on })} />
+  );
   return (
-    <div className="hh-tab">
+    <div>
       <SectionHead
-        title={t(sidekickTitleKey(state.sidekicks))}
         line={t("settings.line.sidekick")}
         lineId={onHint}
         aside={
-          <div className="hh-sk-main" data-setting="sidekick.on">
-            <Toggle checked={s.on} aria-label={t("sidekick.settings.on")} aria-describedby={onHint} onChange={(on) => save({ on })} />
+          <div data-setting="sidekick.on">
+            <Rx.Switch checked={s.on} aria-label={t("sidekick.settings.on")} aria-describedby={onHint} onCheckedChange={(on) => save({ on })} />
           </div>
         }
       />
-      <div className="hh-stats">
-        <div className="hh-card hh-stat">
-          <span className="hh-sr-only">{t("sidekick.settings.week", { tokens })}</span>
-          <span className="hh-stat-label" aria-hidden="true">
-            {t("sidekick.settings.statWeek")}
-          </span>
-          <span className="hh-stat-value" aria-hidden="true">
-            {t("sidekick.settings.statTokens", { tokens })}
-          </span>
-        </div>
-        <div className="hh-card hh-stat">
-          {state.used.of > 0 && <span className="hh-sr-only">{t("sidekick.settings.usedShare", state.used)}</span>}
-          <span className="hh-stat-label" aria-hidden={state.used.of > 0 ? "true" : undefined}>
-            {t("sidekick.settings.statUsed")}
-          </span>
-          <span className="hh-stat-value" aria-hidden={state.used.of > 0 ? "true" : undefined}>
-            {state.used.of > 0 ? t("sidekick.settings.statUsedValue", state.used) : t("sidekick.settings.statUsedNone")}
-          </span>
-        </div>
-        <div className="hh-card hh-stat" data-setting="sidekick.tier">
-          <span className="hh-stat-label">{t("sidekick.settings.tier")}</span>
-          <span className="hh-stat-value">{t(`sidekick.tiers.${state.tier}`, { defaultValue: state.tier })}</span>
-          {/* Off: it can't be changed, as the rows below (spec §8). */}
-          <fieldset className="hh-sk-fieldset hh-stat-action" disabled={!s.on}>
-            <Button type="button" kind="quiet" size="compact" onClick={onModels}>
-              {t("sidekick.settings.changeTier")}
-            </Button>
-          </fieldset>
-        </div>
-      </div>
-      {/* Off: the rest stays visible but can't be changed (spec §8). */}
-      <fieldset className="hh-sk-fieldset" disabled={!s.on}>
-        <SettingsCard>
-          <SettingRow
-            data-setting="sidekick.preSend"
-            label={t("sidekick.settings.preSend")}
-            labelFor={`${preSendHint}-on`}
-            hint={t("sidekick.settings.preSendHint")}
-            hintId={preSendHint}
-          >
-            <Toggle id={`${preSendHint}-on`} checked={s.preSend} aria-describedby={preSendHint} onChange={(preSend) => save({ preSend })} />
-          </SettingRow>
-          <SettingRow
-            data-setting="sidekick.afterReply"
-            label={t("sidekick.settings.afterReply")}
-            labelFor={`${afterHint}-on`}
-            hint={t("sidekick.settings.afterReplyHint")}
-            hintId={afterHint}
-          >
-            <Toggle id={`${afterHint}-on`} checked={s.afterReply} aria-describedby={afterHint} onChange={(afterReply) => save({ afterReply })} />
-          </SettingRow>
-          <SettingRow
-            data-setting="sidekick.headsUps"
-            label={t("sidekick.settings.headsUps")}
-            labelFor={`${headsUpHint}-on`}
-            hint={t("sidekick.settings.headsUpsHint")}
-            hintId={headsUpHint}
-          >
-            <Toggle id={`${headsUpHint}-on`} checked={s.headsUps} aria-describedby={headsUpHint} onChange={(headsUps) => save({ headsUps })} />
-          </SettingRow>
-          <SettingRow data-setting="sidekick.wait" label={t("sidekick.settings.wait")}>
-            <Segmented label={t("sidekick.settings.wait")} options={waits} value={String(s.wait) as Wait} onChange={(v) => save({ wait: parseWait(v) })} />
-          </SettingRow>
-          <SettingRow data-setting="sidekick.cap" label={t("sidekick.settings.cap")}>
-            <Segmented label={t("sidekick.settings.cap")} options={caps} value={String(s.cap) as Cap} onChange={(v) => save({ cap: parseCap(v) })} />
-          </SettingRow>
-        </SettingsCard>
-      </fieldset>
+      {/* A save error is a red notice above what it affects (DESIGN.md "Settings"). */}
+      {failed !== null && (
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{t("sidekick.settings.failed", { message: failed })}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      {/* Stats: a card each, a 12 label and a 20 value (DESIGN.md "Settings"). */}
+      <Rx.Grid columns="3" gap="3" mb="5">
+        <Stat label={t("sidekick.settings.statWeek")} value={t("sidekick.settings.statTokens", { tokens })} said={t("sidekick.settings.week", { tokens })} />
+        <Stat
+          label={t("sidekick.settings.statUsed")}
+          value={state.used.of > 0 ? t("sidekick.settings.statUsedValue", state.used) : t("sidekick.settings.statUsedNone")}
+          {...(state.used.of > 0 ? { said: t("sidekick.settings.usedShare", state.used) } : {})}
+        />
+        {/* A value chosen elsewhere: the value plus a Change… button (DESIGN.md "Control per kind of setting"). */}
+        <Stat label={t("sidekick.settings.tier")} value={t(`sidekick.tiers.${state.tier}`, { defaultValue: state.tier })} data-setting="sidekick.tier">
+          <Rx.Button variant="ghost" color="gray" size="1" onClick={onModels}>
+            {t("sidekick.settings.changeTier")}
+          </Rx.Button>
+        </Stat>
+      </Rx.Grid>
+      <Group>
+        <Row data-setting="sidekick.preSend" label={t("sidekick.settings.preSend")} htmlFor={`${preSendHint}-on`} hint={t("sidekick.settings.preSendHint")} hintId={preSendHint}>
+          {moment("preSend", preSendHint)}
+        </Row>
+        <Row data-setting="sidekick.afterReply" label={t("sidekick.settings.afterReply")} htmlFor={`${afterHint}-on`} hint={t("sidekick.settings.afterReplyHint")} hintId={afterHint}>
+          {moment("afterReply", afterHint)}
+        </Row>
+        <Row data-setting="sidekick.headsUps" label={t("sidekick.settings.headsUps")} htmlFor={`${headsUpHint}-on`} hint={t("sidekick.settings.headsUpsHint")} hintId={headsUpHint}>
+          {moment("headsUps", headsUpHint)}
+        </Row>
+        <Row data-setting="sidekick.wait" label={t("sidekick.settings.wait")}>
+          <Rx.SegmentedControl.Root value={String(s.wait)} onValueChange={(v) => save({ wait: parseWait(v) })} aria-label={t("sidekick.settings.wait")} {...disabled(off)}>
+            {waits.map((w) => (
+              <Rx.SegmentedControl.Item key={w.value} value={w.value}>
+                {w.label}
+              </Rx.SegmentedControl.Item>
+            ))}
+          </Rx.SegmentedControl.Root>
+        </Row>
+        <Row data-setting="sidekick.cap" label={t("sidekick.settings.cap")}>
+          <Rx.SegmentedControl.Root value={String(s.cap)} onValueChange={(v) => save({ cap: parseCap(v) })} aria-label={t("sidekick.settings.cap")} {...disabled(off)}>
+            {caps.map((c) => (
+              <Rx.SegmentedControl.Item key={c.value} value={c.value}>
+                {c.label}
+              </Rx.SegmentedControl.Item>
+            ))}
+          </Rx.SegmentedControl.Root>
+        </Row>
+      </Group>
       {muted.length > 0 && (
-        <section aria-labelledby={mutedHead}>
-          <h3 id={mutedHead}>{t("sidekick.settings.muted")}</h3>
-          <ul className="hh-rows hh-sk-muted">
-            {muted.map(([sidekick, kind]) => (
-              <li key={`${sidekick}/${kind}`} className="hh-row">
-                <span className="hh-row-label">{t("sidekick.mutedRow", { name: nameOf(sidekick), kind: kindLabel(kind) })}</span>
-                <Button
-                  type="button"
-                  kind="quiet" size="compact"
+        <Group loose title={t("sidekick.settings.muted")}>
+          {muted.map(([sidekick, kind]) => {
+            const text = t("sidekick.mutedRow", { name: nameOf(sidekick), kind: kindLabel(kind) });
+            return (
+              <Row key={`${sidekick}/${kind}`} as="li" aria-label={text} label={text}>
+                <Rx.Button
+                  variant="ghost"
+                  color="gray"
+                  size="1"
                   onClick={() => void client.sidekick.unmute(sidekick, kind).catch((err: unknown) => setFailed(err instanceof Error ? err.message : String(err)))}
                 >
                   {t("sidekick.settings.unmute", { kind: kindLabel(kind) })}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
+                </Rx.Button>
+              </Row>
+            );
+          })}
+        </Group>
       )}
-      {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
       {/* Always offered here while one is not adopted; `presetsOffered` only gates the panel's one-time offer. */}
       {!presetsHidden && <PresetOffer client={client} onDone={() => setPresetsHidden(true)} />}
       <SidekickList client={client} places={state.places} />
       {scopes && openScope && <ScopeSidekicks key={openScope.id} client={client} scope={openScope} scopeNoun={scopes.label} />}
       <LearnedList client={client} />
     </div>
+  );
+}
+
+/**
+ * SegmentedControl.Root takes `disabled` (Radix passes it to its toggle group) though its type, built on a div's
+ * props, does not list it.
+ */
+const disabled = (off: boolean) => ({ disabled: off }) as Record<string, unknown>;
+
+/**
+ * One stat (DESIGN.md "Settings"): a card with a 12 grey label and a 20 value. `said` is the whole sentence a screen
+ * reader gets instead of the two parts; `children` is an action at the card's end.
+ */
+function Stat({ label, value, said, children, "data-setting": setting }: { label: string; value: string; said?: string; children?: ReactNode; "data-setting"?: string }) {
+  return (
+    <Rx.Card size="2" data-setting={setting}>
+      <Rx.Flex direction="column" gap="1" align="start" height="100%">
+        {said && <Hidden>{said}</Hidden>}
+        <Rx.Text size="1" color="gray" aria-hidden={said ? "true" : undefined}>
+          {label}
+        </Rx.Text>
+        <Rx.Text size="5" weight="bold" aria-hidden={said ? "true" : undefined}>
+          {value}
+        </Rx.Text>
+        {children && <Rx.Box mt="auto" pt="2">{children}</Rx.Box>}
+      </Rx.Flex>
+    </Rx.Card>
   );
 }

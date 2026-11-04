@@ -104,8 +104,12 @@ test("Settings › Connections shows it set, and Delete makes it Not set", async
   await expect(key.getByRole("button", { name: "Replace" })).toBeVisible();
   expect(await page.content()).not.toContain(TOKEN);
 
-  await key.getByRole("button", { name: "Delete" }).click();
+  // Delete lives in the key's ⋯ menu (Radix stage 2d) and asks once, inline.
+  await key.getByRole("button", { name: "More for Jira API token" }).click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await key.getByRole("button", { name: "Delete the key" }).click();
   await expect(key.getByText("Not set · paste the key to use it", { exact: true })).toBeVisible();
-  await expect(key.getByRole("button", { name: "Delete" })).toHaveCount(0);
+  // Nothing to delete and no test for this key: the menu is gone.
+  await expect(key.getByRole("button", { name: "More for Jira API token" })).toHaveCount(0);
   await expect.poll(() => fs.existsSync(keyFile())).toBe(false);
 });

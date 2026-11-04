@@ -1,5 +1,5 @@
 import { Badge, Box, Button, Card, Flex, Heading, Separator, Text } from "@radix-ui/themes";
-import { Children, Fragment, type KeyboardEvent, type ReactNode, useId } from "react";
+import { Children, Fragment, type KeyboardEvent, type ReactNode, type Ref, useId } from "react";
 
 /*
  * Settings' own wrappers (DESIGN.md "Card and settings rows", "Inicio, Assistant and Settings"): built only from Radix
@@ -31,12 +31,21 @@ export function Group({
   tag,
   loose,
   titleId,
+  titleRef,
+  hint,
+  after,
   children,
   "data-setting": setting,
 }: {
   title?: ReactNode;
   /** The title's id, when something in the group is described by it. */
   titleId?: string;
+  /** Loose only: the title as a focus target (tabIndex -1), for focus to land on once a row it named is gone. */
+  titleRef?: Ref<HTMLParagraphElement>;
+  /** Loose only: a 12 grey line under the title, about the whole list (its order, say). */
+  hint?: ReactNode;
+  /** Loose only: what follows the list inside the same section (its add buttons, an editor that opens). */
+  after?: ReactNode;
   tag?: ReactNode;
   loose?: boolean;
   children: ReactNode;
@@ -50,14 +59,20 @@ export function Group({
       <Box asChild mb="5">
         <section aria-labelledby={title ? id : undefined} data-setting={setting}>
           {title && (
-            <Text as="p" size="1" color="gray" weight="bold" mb="2" id={id}>
+            <Text as="p" size="1" color="gray" weight="bold" mb={hint ? "1" : "2"} id={id} ref={titleRef} tabIndex={titleRef ? -1 : undefined}>
               {title}
+            </Text>
+          )}
+          {hint && (
+            <Text as="p" size="1" color="gray" mb="2">
+              {hint}
             </Text>
           )}
           {/* A list: each child is a `Row as="li"` with its own name; the hairline between items comes from the CSS. */}
           <Box asChild px="5" className="hh-gd-list">
             <ul aria-labelledby={title ? id : undefined}>{kids}</ul>
           </Box>
+          {after}
         </section>
       </Box>
     );
@@ -101,6 +116,7 @@ export function Row({
   children,
   below,
   as,
+  busy,
   "aria-label": name,
   "data-setting": setting,
 }: {
@@ -112,6 +128,8 @@ export function Row({
   below?: ReactNode;
   /** `li` inside a loose group, named by `aria-label`; a `div` with `aria-label` is a named group. */
   as?: "div" | "li";
+  /** A change of this row is being saved (`aria-busy`). */
+  busy?: boolean;
   "aria-label"?: string;
   "data-setting"?: string;
 }) {
@@ -119,12 +137,14 @@ export function Row({
   if (as === "li") {
     return (
       <Box asChild py="3" data-setting={setting}>
-        <li aria-label={name}>{inner}</li>
+        <li aria-label={name} aria-busy={busy}>
+          {inner}
+        </li>
       </Box>
     );
   }
   return (
-    <Box py="3" data-setting={setting} role={name ? "group" : undefined} aria-label={name}>
+    <Box py="3" data-setting={setting} role={name ? "group" : undefined} aria-label={name} aria-busy={busy}>
       {inner}
     </Box>
   );

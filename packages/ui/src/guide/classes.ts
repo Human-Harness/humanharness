@@ -20,8 +20,6 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   // SidekickMark (§4)
   "hh-sk-mark",
   "hh-sk-mark-off",
-  "hh-sk-mark-grid",
-  "hh-sk-mark-pick",
   // Button and IconButton (§3)
   "hh-btn",
   "hh-icon-btn",

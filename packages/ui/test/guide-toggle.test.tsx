@@ -116,9 +116,9 @@ describe("Checkbox (style guide §5 Checkbox, row 56)", () => {
 
 describe("effective layout", () => {
   it("no broader rule turns a toggle row back into a block", () => {
-    // `.hh-sk-scope label` used to set display:block on every label, including the toggle row.
+    // `.hh-sk-scope label` used to set display:block on every label, including the toggle row (the scope list is
+    // Radix since stage 2d, so the rule is gone).
     expect(css).not.toMatch(/\.hh-sk-scope label\s*\{/);
-    expect(rule(".hh-sk-scope label:not(.hh-toggle-row)").display).toBe("block");
     expect(rule(".hh-toggle-row").display).toBe("flex");
     expect(rule(".hh-toggle-row")["align-items"]).toBe("center");
   });
@@ -173,7 +173,7 @@ describe("source scan", () => {
   });
 });
 
-describe("answers C1, C3, C4, C5, C8", () => {
+describe("answers C1, C3, C4, C5", () => {
   it("C1: the switch is ink when on, line-strong when off, and the knob stays the surface", () => {
     expect(rule('.hh-toggle[aria-checked="true"]').background).toBe("var(--hh-ink)");
     expect(rule(".hh-toggle").background).toBe("var(--hh-line-strong)");
@@ -226,8 +226,8 @@ describe("answers C1, C3, C4, C5, C8", () => {
   it("C4: every place with a toggle row gets that layout, none overrides it", () => {
     expect(css).not.toMatch(/\.hh-toggle-row[^{]*\{[^}]*(?:justify-content:\s*flex-start|width:\s*auto)/);
     const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
-    // Settings › General and Jobs moved to Radix (stage 2): their switches are Radix Switches in settings Rows.
-    for (const f of ["sidekick/ScopeSidekicks.tsx", "sidekick/SidekickEditor.tsx", "InputForm.tsx", "search/SearchPalette.tsx"]) {
+    // Settings › General, Jobs and Sidekick moved to Radix (stage 2): their switches are Radix Switches in settings Rows.
+    for (const f of ["InputForm.tsx", "search/SearchPalette.tsx"]) {
       expect(src(f), f).toMatch(/<Toggle[^>]*>\s*[\s\S]*?<\/Toggle>/);
     }
   });
@@ -238,9 +238,4 @@ describe("answers C1, C3, C4, C5, C8", () => {
     expect(r.color).toBe("var(--hh-muted)");
   });
 
-  it("C8: the sidekick editor toggle lists have 8 between rows", () => {
-    const r = rule(".hh-sk-fieldset .hh-toggle-row + .hh-toggle-row");
-    expect(r["margin-top"]).toBe("var(--hh-s-2)");
-    expect(token("--hh-s-2")).toBe("8px");
-  });
 });

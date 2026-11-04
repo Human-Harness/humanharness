@@ -1,19 +1,22 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickPurposeView, SidekickView } from "../client";
+import { Group, Icon, Row, Rx } from "../guide";
 import { ImportSidekick } from "./ImportSidekick";
 import { SidekickMark, markIcon } from "./mark";
 import { SidekickEditor } from "./SidekickEditor";
-import { Button } from "../guide/Button";
 
 /** Where focus goes once a view closes or the list changes under it. */
-type Back = { kind: "new" } | { kind: "import" } | { kind: "head" } | { kind: "edit" | "remove" | "up" | "down"; id: string };
+type Back = { kind: "new" } | { kind: "import" } | { kind: "head" } | { kind: "edit" | "more"; id: string };
 
 /**
  * Settings › Sidekicks (spec §8): the person's sidekicks by order (the higher one speaks when two could), each with
  * its purposes, Edit, Move up / down and Remove (with more than one; Remove asks first), "New sidekick" and "Import".
  * A sidekick imported from files shows "The original changed · Bring the changes" when its files changed since.
  * The list is read again after every change and whenever main sends a new Sidekick state (an adopted preset).
+ *
+ * Radix stage 2d: a loose list; a row is the mark, the name and the purposes, with Edit as a quiet action and More (⋯)
+ * holding Move up, Move down and Remove (danger last). Remove asks inline under its row; an editor opens in a card.
  */
 export function SidekickList({ client, places = [] }: { client: HarnessClient; places?: { id: string; label: string }[] }) {
   const { t } = useTranslation();
@@ -30,14 +33,15 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
   const running = useRef(false);
   const [loads, setLoads] = useState(0);
   const reload = useCallback(() => setLoads((n) => n + 1), []);
-  const ids = useId();
-  const head = useRef<HTMLHeadingElement>(null);
+  const head = useRef<HTMLParagraphElement>(null);
   const newRef = useRef<HTMLButtonElement>(null);
   const importRef = useRef<HTMLButtonElement>(null);
   const yesRef = useRef<HTMLButtonElement>(null);
   /** Row buttons by `<kind>/<id>`, to give focus back after a view closes or a reorder moves the row. */
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
   const back = useRef<Back | null>(null);
+  /** A menu item chose where focus goes: the menu must not hand it back to its button when it closes. */
+  const placed = useRef(false);
   /** Bumped by every read: an older answer never replaces a newer one. */
   const reads = useRef(0);
 
@@ -58,7 +62,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
   // A preset adopted, an import saved elsewhere: main pushes its state, and the list is read again.
   useEffect(() => client.sidekick.onChange(() => reload()), [client, reload]);
 
-  // Focus: into the confirmation when it opens; back to the opener (or the moved row's button) when a view closes.
+  // Focus: into the confirmation when it opens; back to the opener (or the moved row's More) when a view closes.
   useEffect(() => {
     if (confirm) {
       yesRef.current?.focus();
@@ -71,9 +75,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
     if (b.kind === "new") target = newRef.current;
     else if (b.kind === "import") target = importRef.current;
     else if (b.kind === "head") target = head.current;
-    // A moved row keeps focus on the same button; at the top or bottom that button is gone, so the other one.
-    else if (b.kind === "up" || b.kind === "down") target = row(b.kind, b.id) ?? row(b.kind === "up" ? "down" : "up", b.id) ?? row("edit", b.id);
-    else target = row(b.kind, b.id) ?? head.current;
+    else target = row(b.kind, b.id) ?? row("edit", b.id) ?? head.current;
     if (target) {
       back.current = null;
       target.focus();
@@ -107,7 +109,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
       if (at < 0 || to < 0 || to >= list.length) return;
       const next = list.map((k) => k.id);
       [next[at], next[to]] = [next[to]!, next[at]!];
-      back.current = { kind: dir, id };
+      back.current = { kind: "more", id };
       await client.sidekick.reorder(next);
     });
   const remove = (id: string) =>
@@ -116,7 +118,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
       back.current = { kind: "head" };
       const r = await client.sidekick.remove(id);
       if (!r.ok) {
-        back.current = { kind: "remove", id };
+        back.current = { kind: "more", id };
         throw new Error(r.message ?? "");
       }
     });
@@ -130,84 +132,41 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
     if (el) rowButtons.current.set(`${kind}/${id}`, el);
     else rowButtons.current.delete(`${kind}/${id}`);
   };
+  /** A menu item that moves focus itself (a reorder, the Remove question). */
+  const chose = (act: () => void) => () => {
+    placed.current = true;
+    act();
+  };
   /** A daily-summary sidekick off by default never speaks at daily (the app has no scope records to turn it on). */
   const dailyOff = (k: SidekickView) => k.defaultOn === false && k.purposes.some((p) => p.id === "daily-summary" || (p.id === "custom" && p.moments?.includes("daily")));
   const editingOne = editing !== null && editing !== "new" ? list.find((k) => k.id === editing) : undefined;
 
-  return (
-    <section aria-labelledby={`${ids}-head`} className="hh-sk-list">
-      <h3 id={`${ids}-head`} ref={head} tabIndex={-1}>
-        {t("sidekick.list.title")}
-      </h3>
-      <p className="hh-caption">{t("sidekick.list.orderHint")}</p>
-      <ul className="hh-sk-list-rows">
-        {list.map((k, i) => (
-          <li key={k.id}>
-            <div className="hh-sk-list-row">
-              <SidekickMark icon={markIcon(k.mark)} />
-              <div className="hh-sk-list-text">
-                <strong>{k.name}</strong>
-                <p className="hh-caption">{k.purposes.map(purpose).join(" · ")}</p>
-                {dailyOff(k) && <p className="hh-caption">{t("sidekick.list.dailyOff")}</p>}
-              </div>
-              <div className="hh-sk-actions">
-                <Button type="button" kind="quiet" size="compact" ref={ref("edit", k.id)} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing(k.id))}>
-                  {t("sidekick.list.edit", { name: k.name })}
-                </Button>
-                {i > 0 && (
-                  <Button type="button" kind="quiet" size="compact" ref={ref("up", k.id)} aria-disabled={busy} onClick={() => void move(k.id, "up")}>
-                    {t("sidekick.list.up", { name: k.name })}
-                  </Button>
-                )}
-                {i < list.length - 1 && (
-                  <Button type="button" kind="quiet" size="compact" ref={ref("down", k.id)} aria-disabled={busy} onClick={() => void move(k.id, "down")}>
-                    {t("sidekick.list.down", { name: k.name })}
-                  </Button>
-                )}
-                {list.length > 1 && (
-                  <Button type="button" kind="quiet" size="compact" ref={ref("remove", k.id)} aria-disabled={busy} onClick={() => !busy && setConfirm(k.id)}>
-                    {t("sidekick.list.remove", { name: k.name })}
-                  </Button>
-                )}
-              </div>
-            </div>
-            {confirm === k.id && (
-              <div className="hh-sk-actions">
-                <p id={`${ids}-confirm`}>{t("sidekick.list.confirmRemove", { name: k.name })}</p>
-                <button ref={yesRef} type="button" aria-describedby={`${ids}-confirm`} aria-disabled={busy} onClick={() => void remove(k.id)}>
-                  {t("sidekick.list.confirmYes")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    back.current = { kind: "remove", id: k.id };
-                    setConfirm(null);
-                  }}
-                >
-                  {t("sidekick.editor.cancel")}
-                </button>
-              </div>
-            )}
-            {k.source?.kind === "files" && (
-              <ImportSidekick
-                client={client}
-                original={{ id: k.id, ...(k.tier ? { tier: k.tier } : {}), ...(k.preset !== undefined ? { preset: k.preset } : {}), ...(k.defaultOn !== undefined ? { defaultOn: k.defaultOn } : {}) }}
-                onSaved={reload}
-              />
-            )}
-            {editingOne?.id === k.id && <SidekickEditor key={k.id} client={client} initial={editingOne} places={places} onDone={closeEditor} />}
-          </li>
-        ))}
-      </ul>
-      {editing === "new" && <SidekickEditor key="new" client={client} places={places} onDone={closeEditor} />}
-      {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
-      {readFailed && <p role="alert">{t("sidekick.list.readFailed")}</p>}
-      <div className="hh-sk-actions">
-        <button type="button" ref={newRef} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing("new"))}>
+  const after = (
+    <>
+      {editing === "new" && (
+        <Rx.Box mt="3">
+          <SidekickEditor key="new" client={client} places={places} onDone={closeEditor} />
+        </Rx.Box>
+      )}
+      {failed !== null && (
+        <Rx.Callout.Root color="red" role="alert" mt="3">
+          <Rx.Callout.Text>{t("sidekick.settings.failed", { message: failed })}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      {readFailed && (
+        <Rx.Callout.Root color="red" role="alert" mt="3">
+          <Rx.Callout.Text>{t("sidekick.list.readFailed")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      <Rx.Flex gap="2" mt="3">
+        <Rx.Button size="1" variant="outline" color="gray" ref={newRef} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing("new"))}>
+          <Icon name="add" size={14} />
           {t("sidekick.list.new")}
-        </button>
-        <button
-          type="button"
+        </Rx.Button>
+        <Rx.Button
+          size="1"
+          variant="outline"
+          color="gray"
           ref={importRef}
           aria-expanded={importing}
           onClick={() => {
@@ -217,18 +176,128 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
           }}
         >
           {t("sidekick.import.title")}
-        </button>
-      </div>
+        </Rx.Button>
+      </Rx.Flex>
       {importing && (
-        <ImportSidekick
-          client={client}
-          onSaved={() => {
-            back.current = { kind: "import" };
-            setImporting(false);
-            reload();
-          }}
-        />
+        <Rx.Box mt="3">
+          <ImportSidekick
+            client={client}
+            onSaved={() => {
+              back.current = { kind: "import" };
+              setImporting(false);
+              reload();
+            }}
+          />
+        </Rx.Box>
       )}
-    </section>
+    </>
+  );
+
+  return (
+    <Group loose title={t("sidekick.list.title")} titleRef={head} hint={t("sidekick.list.orderHint")} after={after}>
+      {list.map((k, i) => {
+        const canMove = list.length > 1;
+        const below = (
+          <>
+            {confirm === k.id && (
+              <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
+                <Rx.Text as="p" size="2" id={`sk-confirm-${k.id}`}>
+                  {t("sidekick.list.confirmRemove", { name: k.name })}
+                </Rx.Text>
+                <Rx.Flex gap="2">
+                  <Rx.Button ref={yesRef} variant="soft" color="red" size="1" aria-describedby={`sk-confirm-${k.id}`} aria-disabled={busy} onClick={() => void remove(k.id)}>
+                    {t("sidekick.list.confirmYes")}
+                  </Rx.Button>
+                  <Rx.Button
+                    variant="outline"
+                    color="gray"
+                    size="1"
+                    onClick={() => {
+                      back.current = { kind: "more", id: k.id };
+                      setConfirm(null);
+                    }}
+                  >
+                    {t("sidekick.editor.cancel")}
+                  </Rx.Button>
+                </Rx.Flex>
+              </Rx.Flex>
+            )}
+            {k.source?.kind === "files" && (
+              <ImportSidekick
+                client={client}
+                original={{ id: k.id, ...(k.tier ? { tier: k.tier } : {}), ...(k.preset !== undefined ? { preset: k.preset } : {}), ...(k.defaultOn !== undefined ? { defaultOn: k.defaultOn } : {}) }}
+                onSaved={reload}
+              />
+            )}
+            {editingOne?.id === k.id && <SidekickEditor key={k.id} client={client} initial={editingOne} places={places} onDone={closeEditor} />}
+          </>
+        );
+        const hasBelow = confirm === k.id || k.source?.kind === "files" || editingOne?.id === k.id;
+        return (
+          <Row
+            key={k.id}
+            as="li"
+            aria-label={k.name}
+            label={
+              <Rx.Flex as="span" align="center" gap="2" minWidth="0">
+                <SidekickMark icon={markIcon(k.mark)} />
+                <Rx.Text weight="bold" truncate>
+                  <bdi dir="auto">{k.name}</bdi>
+                </Rx.Text>
+              </Rx.Flex>
+            }
+            hint={
+              <>
+                {k.purposes.map(purpose).join(" · ")}
+                {dailyOff(k) && (
+                  <Rx.Box as="span" display="block">
+                    {t("sidekick.list.dailyOff")}
+                  </Rx.Box>
+                )}
+              </>
+            }
+            {...(hasBelow ? { below } : {})}
+          >
+            <Rx.Button variant="ghost" color="gray" size="1" ref={ref("edit", k.id)} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing(k.id))}>
+              {t("sidekick.list.edit", { name: k.name })}
+            </Rx.Button>
+            {canMove && (
+              <Rx.DropdownMenu.Root>
+                <Rx.DropdownMenu.Trigger>
+                  <Rx.IconButton ref={ref("more", k.id)} variant="ghost" color="gray" size="1" aria-label={t("sidekick.list.more", { name: k.name })}>
+                    <Icon name="more" size={14} />
+                  </Rx.IconButton>
+                </Rx.DropdownMenu.Trigger>
+                <Rx.DropdownMenu.Content
+                  align="end"
+                  onCloseAutoFocus={(e) => {
+                    if (!placed.current) return;
+                    placed.current = false;
+                    e.preventDefault();
+                    // The menu kept focus inside it until now: the Remove question, opened meanwhile, takes it.
+                    yesRef.current?.focus();
+                  }}
+                >
+                  {i > 0 && (
+                    <Rx.DropdownMenu.Item disabled={busy} onSelect={chose(() => void move(k.id, "up"))}>
+                      {t("sidekick.list.up", { name: k.name })}
+                    </Rx.DropdownMenu.Item>
+                  )}
+                  {i < list.length - 1 && (
+                    <Rx.DropdownMenu.Item disabled={busy} onSelect={chose(() => void move(k.id, "down"))}>
+                      {t("sidekick.list.down", { name: k.name })}
+                    </Rx.DropdownMenu.Item>
+                  )}
+                  <Rx.DropdownMenu.Separator />
+                  <Rx.DropdownMenu.Item color="red" disabled={busy} onSelect={chose(() => setConfirm(k.id))}>
+                    {t("sidekick.list.remove", { name: k.name })}
+                  </Rx.DropdownMenu.Item>
+                </Rx.DropdownMenu.Content>
+              </Rx.DropdownMenu.Root>
+            )}
+          </Row>
+        );
+      })}
+    </Group>
   );
 }

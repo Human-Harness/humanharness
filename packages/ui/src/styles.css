@@ -309,13 +309,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-settings-card > h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--hh-ink); }
 .hh-settings-card-head + .hh-rows > .hh-row:first-child { border-top: 0; }
 .hh-danger { color: var(--hh-t-red-ink); }
-/* Three numbers on top of a section (Sidekick). */
-.hh-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-.hh-stat { padding: 16px; display: grid; gap: 4px; align-content: start; }
-.hh-stat-label { color: var(--hh-muted); font-size: 12px; }
-.hh-stat-value { font-size: 20px; font-weight: 600; }
-.hh-stats .hh-stat-action { margin: 0; }
-@media (max-width: 760px) { .hh-stats { grid-template-columns: minmax(0, 1fr); } }
 /* A list with the selected item's detail beside it (Plugins). */
 .hh-master-detail { display: grid; grid-template-columns: var(--hh-column-w) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 760px) { .hh-master-detail { grid-template-columns: minmax(0, 1fr); } }
@@ -323,9 +316,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-progress { display: block; height: 6px; border-radius: 4px; background: var(--hh-surface-2); overflow: hidden; }
 .hh-progress > i { display: block; height: 100%; background: var(--hh-t-blue-ink); }
 .hh-progress.warn > i { background: var(--hh-t-orange-ink); }
-/* A key's letter tile and name (Connections). */
-.hh-secret > .hh-row-label { flex: 1 1 160px; color: var(--hh-ink); font-weight: 500; }
-.hh-letter-tile { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-weight: 600; }
 .hh-manual ol { margin: 0 0 8px; padding-left: 20px; }
 .hh-tab { display: grid; gap: 20px; }
 .hh-tab > section { display: grid; gap: 20px; }
@@ -791,45 +781,17 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-issues { margin: 0; padding-left: 18px; }
 .hh-sk-past { list-style: none; margin: 12px 0 0; padding: 0; }
 .hh-sk-muted { list-style: none; margin: 0; padding: 0; }
-.hh-sk-learned { margin-top: 20px; }
-.hh-sk-learned-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-.hh-sk-learned-col h4 { margin: 0 0 6px; font-size: 12px; color: var(--hh-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.hh-sk-learned-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.hh-sk-learned-items input { width: 100%; box-sizing: border-box; }
 .hh-sk-rewrite ins { text-decoration: none; background: var(--hh-active); border-radius: 4px; }
 .hh-sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .hh-sk-foot { border-top: 1px solid var(--hh-line); padding: 10px 14px; font-size: 12px; }
 .hh-sk-foot progress { width: 100%; height: 4px; accent-color: var(--hh-ink); }
 .hh-sk-speaker { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hh-muted); margin-bottom: 6px; overflow-wrap: anywhere; }
 .hh-sk-daily { white-space: pre-wrap; }
-.hh-sk-presets { margin-bottom: 20px; }
-.hh-sk-presets h3 { margin: 0 0 8px; font-size: 13px; }
-.hh-sk-presets-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.hh-sk-presets-list li { display: flex; align-items: flex-start; gap: 10px; }
-.hh-sk-presets-list li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.hh-sk-import button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
-.hh-sk-personality { white-space: pre-wrap; }
-.hh-sk-list { margin-bottom: 20px; }
 /* Sidekick in the soft-cards look (UI refresh spec §5.1): the side column's ground, cards that open with their tag, pill actions. */
 .hh-sk-panel { background: var(--hh-rail); }
 .hh-sk-body { display: grid; gap: 12px; align-content: start; }
 .hh-sk-card { border-radius: 14px; padding: 16px; }
 .hh-sk-card h3 .hh-tag, .hh-sk-card h4 .hh-tag { text-transform: none; letter-spacing: 0; }
-.hh-sk-list h3 { margin: 0 0 4px; font-size: 13px; }
-.hh-sk-list-rows { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.hh-sk-list-row { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-.hh-sk-list-row .hh-sk-actions { margin-top: 0; }
-.hh-sk-list-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.hh-sk-list-text p { margin: 2px 0 0; }
-.hh-sk-list button[aria-disabled="true"], .hh-sk-editor button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
-.hh-sk-editor { border: 1px solid var(--hh-line); border-radius: 12px; padding: 12px; margin-top: 8px; }
-.hh-sk-mark-grid { display: flex; flex-wrap: wrap; gap: 4px; }
-.hh-sk-mark-pick { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--hh-ink); }
-.hh-sk-mark-pick[aria-pressed="true"] { background: var(--hh-active); color: var(--hh-active-ink); }
-.hh-sk-editor textarea { width: 100%; box-sizing: border-box; }
-.hh-sk-scope label:not(.hh-toggle-row) { display: block; }
-.hh-sk-scope textarea { width: 100%; box-sizing: border-box; margin-top: 2px; }
-.hh-sk-custom { margin: 8px 0 0 22px; }
 .hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-rail); }
 .hh-sk-rail button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .hh-sk-rail .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
@@ -842,7 +804,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-sk-backdrop mark { color: transparent; background: none; text-decoration: underline wavy var(--hh-t-orange-ink); text-underline-offset: 3px; }
 /* `useNarrow` (sidekick/useNarrow.ts) mirrors this width: no review, and the harness side panel shows as before. */
 @media (max-width: 720px) { .hh-sk-panel, .hh-sk-rail { display: none; } }
-.hh-sk-fieldset { border: none; margin: 12px 0 0; padding: 0; min-width: 0; }
 /* Plugins */
 .hh-pl-inbox { position: relative; display: flex; }
 .hh-pl-inbox > .hh-icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; }
@@ -1380,7 +1341,6 @@ input.hh-search-input {
 .hh-toggle-row { display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box; gap: var(--hh-s-2); }
 .hh-toggle-row .hh-caption { margin-inline-start: auto; }
 .hh-search-filters .hh-toggle-row { font-size: 12px; color: var(--hh-muted); }
-.hh-sk-fieldset .hh-toggle-row + .hh-toggle-row { margin-top: var(--hh-s-2); }
 .hh-checkbox { flex: none; box-sizing: border-box; -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; width: var(--hh-h-counter); height: var(--hh-h-counter); margin: 0; border: 1px solid var(--hh-line-strong); border-radius: var(--hh-s-1); background: var(--hh-surface); color: var(--hh-ink); font: inherit; }
 .hh-checkbox:checked, .hh-checkbox[aria-checked="true"] { border-color: var(--hh-ink); background: var(--hh-ink); }
 .hh-checkbox[aria-checked="true"] { color: var(--hh-surface); }

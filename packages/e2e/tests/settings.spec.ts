@@ -50,7 +50,7 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     await expect(page.getByRole("tab")).toHaveText(["General", "How I learn", "Engine", "Models", "Sidekick", "Usage"]);
     await page.getByRole("tab", { name: "How I learn" }).click();
     const tab = page.getByRole("tabpanel", { name: "How I learn" });
-    await tab.getByRole("group", { name: "Tone" }).getByRole("button", { name: "Demanding" }).click();
+    await tab.getByRole("radiogroup", { name: "Tone" }).getByRole("radio", { name: "Demanding" }).click();
     await expect.poll(() => (fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, "utf8")) : null)).toEqual({ tone: "demanding" });
     // The status line stays mounted (a live region), empty while no task is open.
     await expect(tab.getByRole("status")).toHaveText("");

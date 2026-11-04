@@ -38,7 +38,7 @@ const defaults = { nickname: "", tone: "patient", level: "6", examples: true, hi
 async function draw(client = new FakeClient()) {
   client.state.settings = view;
   client.settingsState = { values: { ...defaults }, pending: [] };
-  await renderIn("en", <HarnessSettingsTab client={client} view={view} />);
+  await renderIn("en", <HarnessSettingsTab client={client} view={view} />, { theme: true });
   await screen.findByRole("group", { name: "Tone" });
   return client;
 }
@@ -50,12 +50,18 @@ const descriptions = (el: HTMLElement) =>
     .filter(Boolean)
     .map((id) => document.getElementById(id)?.textContent);
 
+/** Picks `name` in a Radix Select (its combobox, then the option in the portal). */
+async function pick(combobox: HTMLElement, name: string) {
+  fireEvent.keyDown(combobox, { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name }), { key: "Enter" });
+}
+
 describe("HarnessSettingsTab", () => {
   it("draws the unsectioned fields first, then each section with its controls", async () => {
     await draw();
     expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["How the AI talks", "Help"]);
-    expect(within(screen.getByRole("group", { name: "Tone" })).getByRole("button", { name: "Patient" }).getAttribute("aria-pressed")).toBe("true");
-    expect((screen.getByLabelText("Level") as HTMLSelectElement).value).toBe("6");
+    expect(within(screen.getByRole("radiogroup", { name: "Tone" })).getByRole("radio", { name: "Patient" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("combobox", { name: "Level" }).textContent).toBe("6th grade");
     expect(screen.getByRole("switch", { name: "Show worked examples" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("Only the app's screens use it.")).toBeTruthy();
     expect(descriptions(screen.getByLabelText("What the app calls you"))).toEqual(["Only the app's screens use it."]);
@@ -63,8 +69,8 @@ describe("HarnessSettingsTab", () => {
 
   it("saves segmented, select and switch changes at once", async () => {
     const client = await draw();
-    fireEvent.click(screen.getByRole("button", { name: "Demanding" }));
-    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Demanding" }));
+    await pick(screen.getByRole("combobox", { name: "Level" }), "5th grade");
     fireEvent.click(screen.getByRole("switch", { name: "Show worked examples" }));
     await screen.findByRole("button", { name: "Back to the app's defaults" });
     expect(client.settingsSets).toEqual([
@@ -72,7 +78,7 @@ describe("HarnessSettingsTab", () => {
       { field: "level", value: "5" },
       { field: "examples", value: false },
     ]);
-    expect(screen.getByRole("button", { name: "Demanding" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Demanding" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("keeps advanced fields under More options; a number saves on blur, as a number", async () => {
@@ -115,9 +121,9 @@ describe("HarnessSettingsTab", () => {
     const client = new FakeClient();
     client.settingsFailure = { ok: false, message: "Too big: expected number to be <=5" };
     await draw(client);
-    fireEvent.click(screen.getByRole("button", { name: "Demanding" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Demanding" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Too big: expected number to be <=5");
-    expect(descriptions(screen.getByRole("group", { name: "Tone" }))).toEqual(["Too big: expected number to be <=5"]);
+    expect(descriptions(screen.getByRole("radiogroup", { name: "Tone" }))).toEqual(["Too big: expected number to be <=5"]);
     client.settingsFailure = { ok: false };
     const examples = screen.getByRole("switch", { name: "Show worked examples" });
     fireEvent.click(examples);
@@ -130,7 +136,7 @@ describe("HarnessSettingsTab", () => {
     const client = new FakeClient();
     client.settingsFailure = { ok: false, message: "No" };
     await draw(client);
-    fireEvent.click(screen.getByRole("button", { name: "Demanding" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Demanding" }));
     await screen.findByRole("alert");
     // Another field's change leaves it; this field's change (another window, a restore) clears it.
     act(() => client.emitSettings({ values: { ...defaults, level: "5" }, pending: [] }));
@@ -170,7 +176,7 @@ describe("HarnessSettingsTab", () => {
     expect(screen.getByRole("status").textContent).toBe("Changes apply from the next task.");
     act(() => client.emitSettings({ values: { ...defaults, tone: "demanding" }, pending: ["tone"] }));
     expect(screen.getByText("Pending")).toBeTruthy();
-    expect(descriptions(screen.getByRole("group", { name: "Tone" }))).toEqual(["Pending"]);
+    expect(descriptions(screen.getByRole("radiogroup", { name: "Tone" }))).toEqual(["Pending"]);
     act(() => client.emitTasks({ current: null, actions: {}, notes: [] }));
     act(() => client.emitSettings({ values: { ...defaults, tone: "demanding" }, pending: [] }));
     // The live region stays mounted, so a screen reader hears the line when it comes back.
@@ -183,11 +189,11 @@ describe("HarnessSettingsTab", () => {
   it("offers the reset only when something differs from its default", async () => {
     const client = await draw();
     expect(screen.queryByRole("button", { name: "Back to the app's defaults" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Demanding" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Demanding" }));
     fireEvent.click(await screen.findByRole("button", { name: "Back to the app's defaults" }));
     await screen.findByRole("group", { name: "Tone" });
     expect(client.settingsResets).toBe(1);
-    expect(screen.getByRole("button", { name: "Patient" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Patient" }).getAttribute("aria-checked")).toBe("true");
   });
 });
 
@@ -215,10 +221,10 @@ describe("HarnessSettingsTab: mode settings (harness-settings spec §6)", () => 
     };
     client.state.settings = withModes;
     client.settingsState = { values: { ...defaults, "socratic.questions": "few" }, pending: [] };
-    await renderIn("en", <HarnessSettingsTab client={client} view={withModes} />);
+    await renderIn("en", <HarnessSettingsTab client={client} view={withModes} />, { theme: true });
     await screen.findByRole("group", { name: "Questions" });
     expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["How the AI talks", "Help", "Socratic"]);
-    fireEvent.click(within(screen.getByRole("group", { name: "Questions" })).getByRole("button", { name: "Many" }));
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Questions" })).getByRole("radio", { name: "Many" }));
     expect(client.settingsSets).toEqual([{ field: "socratic.questions", value: "many" }]);
   });
 });

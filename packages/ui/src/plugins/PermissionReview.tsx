@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { PluginLine, PluginReview } from "../client";
-import { Button } from "../guide/Button";
+import { Group, Row, Rx } from "../guide";
 
 /** Plugin text: plain, and isolated so a right-to-left or mixed string can't reorder what is around it (B12). */
 export function Plain({ children }: { children: string }) {
@@ -64,27 +64,27 @@ export function PermissionText({ line }: { line: PluginLine }) {
 }
 
 /**
- * The permission lines of a review, as a list. With no permission at all, one line says so; what is searchable is about
- * the plugin's own data, so it doesn't count as one and is listed after that line.
+ * The permission lines of a review, as a loose list under `title` (DESIGN.md "Settings rows": a list is loose). With no
+ * permission at all, a line says so; what is searchable is about the plugin's own data, so it doesn't count as one and
+ * is listed after that line.
  */
-export function PermissionList({ lines, labelledBy }: { lines: PluginLine[]; labelledBy?: string }) {
+export function PermissionList({ lines, title }: { lines: PluginLine[]; title: ReactNode }) {
   const { t } = useTranslation();
   const none = lines.every((l) => l.kind === "searchable");
-  const list = lines.length > 0 && (
-    <ul className="hh-pl-perms" aria-labelledby={labelledBy}>
-      {lines.map((line, i) => (
-        <li key={i}>
-          <PermissionText line={line} />
-        </li>
-      ))}
-    </ul>
-  );
-  if (!none) return list;
+  const noneLine = t("plugins.review.none");
+  if (lines.length === 0) {
+    return (
+      <Group loose title={title}>
+        <Row as="li" label={<Rx.Text color="gray">{noneLine}</Rx.Text>} />
+      </Group>
+    );
+  }
   return (
-    <>
-      <p className="hh-caption">{t("plugins.review.none")}</p>
-      {list}
-    </>
+    <Group loose title={title} hint={none ? noneLine : undefined}>
+      {lines.map((line, i) => (
+        <Row key={i} as="li" label={<PermissionText line={line} />} />
+      ))}
+    </Group>
   );
 }
 
@@ -93,6 +93,10 @@ const ADDED_KINDS = new Set(["host", "exec", "secret", "tasks"]);
 /**
  * The permission review (plugins spec §7): exactly what Turn on approves. Turn on hands the review back to the caller,
  * which approves this review's `distHash` (main refuses it if the plugin changed since).
+ *
+ * Radix stage 2e: it takes the list's place in Settings › Plugins (the top bar's Volver reads "Plugins"). The name, the
+ * version line, what this version adds as an orange notice, the permissions as a loose list, then Cancel and Turn on at
+ * the end, right-aligned, Turn on rightmost (DESIGN.md "Card": primary rightmost).
  */
 export function PermissionReview({
   review,
@@ -113,25 +117,26 @@ export function PermissionReview({
   useEffect(() => head.current?.focus(), [review.id]);
   const added = (review.added ?? []).filter((a) => ADDED_KINDS.has(a.kind));
   return (
-    <section className="hh-tab hh-pl-review" aria-labelledby={`${id}-name`}>
-      <h3 id={`${id}-name`} ref={head} tabIndex={-1}>
+    <section aria-labelledby={`${id}-name`}>
+      <Rx.Heading as="h2" size="5" id={`${id}-name`} ref={head} tabIndex={-1} mb="1">
         <Plain>{review.name}</Plain>
-      </h3>
-      <p className="hh-caption hh-pl-meta">
+      </Rx.Heading>
+      <Rx.Text as="p" size="1" color="gray" mb="5">
         {t("plugins.version", { version: review.version })}
         {review.folder && (
           <>
             {" · "}
-            {t("plugins.review.from")} <Plain>{review.folder}</Plain>
+            {t("plugins.review.from")} <span className="hh-gd-path">{review.folder}</span>
           </>
         )}
-      </p>
+      </Rx.Text>
       {added.length > 0 && (
-        <div className="hh-pl-added">
-          <p id={`${id}-more`}>{t("plugins.review.more")}</p>
-          <ul aria-labelledby={`${id}-more`}>
+        <Rx.Callout.Root color="orange" mb="5">
+          {/* One line per addition: the notice has room for a few, and a bullet would need a class of its own. */}
+          <Rx.Box>
+            <Rx.Callout.Text weight="bold">{t("plugins.review.more")}</Rx.Callout.Text>
             {added.map((a, i) => (
-              <li key={i}>
+              <Rx.Callout.Text key={i}>
                 {t(`plugins.review.added.${a.kind}`)}
                 {a.kind !== "tasks" && (
                   <>
@@ -139,27 +144,26 @@ export function PermissionReview({
                     <Plain>{a.value}</Plain>
                   </>
                 )}
-              </li>
+              </Rx.Callout.Text>
             ))}
-          </ul>
-        </div>
+          </Rx.Box>
+        </Rx.Callout.Root>
       )}
-      <p id={`${id}-intro`}>{t("plugins.review.intro")}</p>
-      <PermissionList lines={review.lines} labelledBy={`${id}-intro`} />
+      <PermissionList lines={review.lines} title={t("plugins.review.intro")} />
       {error && (
-        <p className="hh-field-error" role="alert">
-          {error}
-        </p>
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{error}</Rx.Callout.Text>
+        </Rx.Callout.Root>
       )}
-      <div className="hh-pl-actions">
-        <Button type="button" kind="primary" aria-disabled={busy} onClick={() => !busy && onTurnOn()}>
-          {t("plugins.review.turnOn")}
-        </Button>
+      <Rx.Flex justify="end" gap="2">
         {/* Not while Turn on is in flight: it could still end with the plugin on. */}
-        <button type="button" aria-disabled={busy} onClick={() => !busy && onCancel()}>
+        <Rx.Button variant="outline" color="gray" aria-disabled={busy} onClick={() => !busy && onCancel()}>
           {t("plugins.review.cancel")}
-        </button>
-      </div>
+        </Rx.Button>
+        <Rx.Button aria-disabled={busy} onClick={() => !busy && onTurnOn()}>
+          {t("plugins.review.turnOn")}
+        </Rx.Button>
+      </Rx.Flex>
     </section>
   );
 }

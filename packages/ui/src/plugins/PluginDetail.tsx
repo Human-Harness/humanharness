@@ -1,29 +1,66 @@
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, PluginDetail as Detail, PluginResult, PluginRow, PluginTestResult, PluginWorkHours, SettingFieldView } from "../client";
+import type {
+  ConnectionResult,
+  HarnessClient,
+  PluginDetail as Detail,
+  PluginResult,
+  PluginRow,
+  PluginTestResult,
+  PluginWorkHours,
+  SettingFieldView,
+} from "../client";
+import { SecretField } from "../connections/SecretField";
+import { Group, Row, Rx } from "../guide";
 import { groups, HarnessFieldRow } from "../HarnessSettingsTab";
-import { Icon } from "../guide/icons";
 import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
-import { Button } from "../guide/Button";
-import { Segmented } from "../guide/Segmented";
-import { Toggle } from "../guide/Toggle";
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const message = (r: PluginResult, failed: string) => (r.ok ? null : "message" in r && r.message ? r.message : failed);
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
+const message = (r: PluginResult, failed: string) =>
+  r.ok ? null : "message" in r && r.message ? r.message : failed;
 
 /** "28 Oct, 10:42" in the shown language; the raw text when it doesn't parse. */
 export function when(iso: string, language: string): string {
   const at = Date.parse(iso);
-  return Number.isNaN(at) ? iso : new Date(at).toLocaleString(language, { dateStyle: "medium", timeStyle: "short" });
+  return Number.isNaN(at)
+    ? iso
+    : new Date(at).toLocaleString(language, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+}
+
+/** A save error: a red notice above the card it is about (DESIGN.md "Settings": "A save error is a red notice above the card"). */
+function Refused({ text }: { text: string | undefined }) {
+  if (!text) return null;
+  return (
+    <Rx.Callout.Root color="red" role="alert" mb="3">
+      <Rx.Callout.Text>{text}</Rx.Callout.Text>
+    </Rx.Callout.Root>
+  );
 }
 
 /**
  * One plugin's detail (plugins spec §7): what it may do, its settings, work hours, keys, a connection test, its last
  * errors, notifications and (local only) Remove. Everything a plugin wrote is plain, isolated text (B12); a key's value
  * goes only to `setSecret` and is never kept or shown (B6).
+ *
+ * Radix stage 2e (DESIGN.md "Settings": plugins as list and detail): it takes the list's place, and the top bar's
+ * Volver turns into "← Plugins" (the caller's). The name and a version line, then the permissions as a loose list, the
+ * settings and work hours as cards, the keys as Connections' secret rows, Test connection, the last errors as a loose
+ * list, Notify me, and Remove as a danger row that asks inline.
  */
-export function PluginDetail({ client, row, onBack, onRemoved }: { client: HarnessClient; row: PluginRow; onBack: () => void; onRemoved: () => void }) {
+export function PluginDetail({
+  client,
+  row,
+  onRemoved,
+}: {
+  client: HarnessClient;
+  row: PluginRow;
+  onRemoved: () => void;
+}) {
   const { t, i18n } = useTranslation();
   const language = shownLanguage(i18n);
   const id = useId();
@@ -36,6 +73,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   const [testing, setTesting] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
   const failed = t("plugins.failed");
 
   const loaded = (d: Detail | null) => {
@@ -67,7 +105,9 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
     call().then(
       (r) => {
         const m = message(r, failed);
-        setErrors(({ [key]: _gone, ...rest }) => (m === null ? rest : { ...rest, [key]: m }));
+        setErrors(({ [key]: _gone, ...rest }) =>
+          m === null ? rest : { ...rest, [key]: m },
+        );
         if (m === null) void load();
         return m === null;
       },
@@ -76,6 +116,14 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
         return false;
       },
     );
+  /** The same change, answered the way Connections' secret row reads it. */
+  const keyChange = (
+    key: string,
+    call: () => Promise<PluginResult>,
+  ): Promise<ConnectionResult> =>
+    change(key, call).then((ok) =>
+      ok ? { ok: true } : { ok: false, message: failed },
+    );
 
   const test = () => {
     if (testing) return;
@@ -83,6 +131,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
     client.plugins.test(row.id).then(
       (r) => {
         setTests(r);
+        setErrors(({ test: _gone, ...rest }) => rest);
         setTesting(false);
       },
       () => {
@@ -100,227 +149,332 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
       },
       () => setRemoveError(failed),
     );
+  // Cancel puts focus back on Remove…, which only comes back once the question is gone.
+  const focusRemove = useRef(false);
+  useEffect(() => {
+    if (confirm || !focusRemove.current) return;
+    focusRemove.current = false;
+    removeRef.current?.focus();
+  }, [confirm]);
+  const cancelRemove = () => {
+    focusRemove.current = true;
+    setConfirm(false);
+    setRemoveError(null);
+  };
 
-  const err = (key: string) => (Object.hasOwn(errors, key) ? errors[key] : undefined);
+  const err = (key: string) =>
+    Object.hasOwn(errors, key) ? errors[key] : undefined;
   const settings = detail?.settings;
-  const valueOf = (f: SettingFieldView) => (detail && Object.hasOwn(detail.values, f.name) ? detail.values[f.name] : f.default);
+  const valueOf = (f: SettingFieldView) =>
+    detail && Object.hasOwn(detail.values, f.name)
+      ? detail.values[f.name]
+      : f.default;
+  const keyError = detail?.secrets
+    .map((s) => err(`key:${s.id}`))
+    .find((e) => e !== undefined);
 
   return (
-    <section className="hh-tab hh-card hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
-      <div>
-        <Button type="button" kind="quiet" size="compact" icon="back" onClick={onBack}>
-          {t("plugins.detail.back")}
-        </Button>
-      </div>
-      <h3 id={`${id}-name`} ref={head} tabIndex={-1}>
-        <Plain>{row.name}</Plain>
-      </h3>
-      <p className="hh-caption hh-pl-meta">
-        {row.version && t("plugins.version", { version: row.version })}
-        {row.folder && (
-          <>
-            {" · "}
-            <Plain>{row.folder}</Plain>
-          </>
+    <section
+      aria-labelledby={`${id}-name`}
+      aria-busy={detail === null && !loadFailed}
+    >
+      <Rx.Flex justify="between" align="start" gap="4" mb="5">
+        <Rx.Box minWidth="0">
+          <Rx.Heading
+            as="h2"
+            size="5"
+            id={`${id}-name`}
+            ref={head}
+            tabIndex={-1}
+            mb="1"
+          >
+            <Plain>{row.name}</Plain>
+          </Rx.Heading>
+          <Rx.Text as="p" size="1" color="gray">
+            {row.version && t("plugins.version", { version: row.version })}
+            {row.folder && (
+              <>
+                {row.version && " · "}
+                <span className="hh-gd-path">{row.folder}</span>
+              </>
+            )}
+          </Rx.Text>
+          {detail && (
+            <Rx.Box mt="2">
+              <div aria-live="polite">
+                {err("test") && (
+                  <Rx.Text as="p" size="1" color="red" role="alert">
+                    {err("test")}
+                  </Rx.Text>
+                )}
+                {tests && tests.length === 0 && (
+                  <Rx.Text as="p" size="1" color="gray">
+                    {t("plugins.test.none")}
+                  </Rx.Text>
+                )}
+                {tests && tests.length > 0 && (
+                  // A flex list: its items lose their bullets; one status line per source, green or red.
+                  <Rx.Flex asChild direction="column" gap="1" m="0" p="0">
+                    <ul aria-label={t("plugins.test.button")}>
+                      {tests.map((r, i) => (
+                        <li key={i}>
+                          <Rx.Text size="1" color={r.ok ? "green" : "red"}>
+                            <Plain>{r.source}</Plain>
+                            {": "}
+                            {r.ok ? (
+                              r.writes !== undefined ? (
+                                t("plugins.test.records", { count: r.writes })
+                              ) : (
+                                t("plugins.test.ok")
+                              )
+                            ) : (
+                              <Plain>{r.error ?? failed}</Plain>
+                            )}
+                          </Rx.Text>
+                        </li>
+                      ))}
+                    </ul>
+                  </Rx.Flex>
+                )}
+              </div>
+            </Rx.Box>
+          )}
+        </Rx.Box>
+        {detail && (
+          <Rx.Button
+            variant="outline"
+            color="gray"
+            size="1"
+            aria-disabled={testing}
+            onClick={test}
+          >
+            {testing ? t("plugins.test.running") : t("plugins.test.button")}
+          </Rx.Button>
         )}
-      </p>
-      {detail === null && loadFailed && (
-        <p className="hh-field-error" role="alert">
-          {failed}
-        </p>
-      )}
+      </Rx.Flex>
+      {detail === null && loadFailed && <Refused text={failed} />}
       {detail && (
         <>
-          <h4 id={`${id}-perms`}>{t("plugins.detail.permissions")}</h4>
-          <PermissionList lines={detail.review.lines} labelledBy={`${id}-perms`} />
+          <PermissionList
+            lines={detail.review.lines}
+            title={t("plugins.detail.permissions")}
+          />
 
           {settings && settings.fields.length > 0 && (
             <>
-              <h4>{t("plugins.detail.settings")}</h4>
               {groups(settings, settings.fields).map((g) => (
-                <section key={g.id ?? ""} className="hh-settings-group">
-                  {g.label && (
-                    <h4 dir="auto">
-                      {g.label}
-                    </h4>
-                  )}
-                  <div className="hh-rows">
-                    {g.fields.map((f) => (
-                      <HarnessFieldRow
-                        key={f.name}
-                        field={f}
-                        value={valueOf(f)}
-                        error={err(`setting:${f.name}`)}
-                        pending={false}
-                        onSave={(v) => {
-                          if (!same(valueOf(f), v)) void change(`setting:${f.name}`, () => client.plugins.setSetting(row.id, f.name, v));
-                        }}
-                        onDrop={() => setErrors(({ [`setting:${f.name}`]: _gone, ...rest }) => rest)}
-                      />
-                    ))}
-                  </div>
-                </section>
+                // The fields with no section of their own go under "Settings"; a section keeps the plugin's name for it.
+                <Group
+                  key={g.id ?? ""}
+                  title={
+                    g.label !== undefined ? (
+                      <bdi dir="auto">{g.label}</bdi>
+                    ) : (
+                      t("plugins.detail.settings")
+                    )
+                  }
+                >
+                  {g.fields.map((f) => (
+                    <HarnessFieldRow
+                      key={f.name}
+                      field={f}
+                      value={valueOf(f)}
+                      error={err(`setting:${f.name}`)}
+                      pending={false}
+                      onSave={(v) => {
+                        if (!same(valueOf(f), v))
+                          void change(`setting:${f.name}`, () =>
+                            client.plugins.setSetting(row.id, f.name, v),
+                          );
+                      }}
+                      onDrop={() =>
+                        setErrors(
+                          ({ [`setting:${f.name}`]: _gone, ...rest }) => rest,
+                        )
+                      }
+                    />
+                  ))}
+                </Group>
               ))}
               {settings.fields.some((f) => !same(valueOf(f), f.default)) && (
-                <div>
-                  <button type="button" onClick={() => void change("reset", () => client.plugins.resetSettings(row.id))}>
+                <Rx.Flex direction="column" align="start" gap="3" mb="5">
+                  <Refused text={err("reset")} />
+                  <Rx.Button
+                    variant="ghost"
+                    color="gray"
+                    size="1"
+                    onClick={() =>
+                      void change("reset", () =>
+                        client.plugins.resetSettings(row.id),
+                      )
+                    }
+                  >
                     {t("plugins.detail.reset")}
-                  </button>
-                  {err("reset") && (
-                    <p className="hh-field-error" role="alert">
-                      {err("reset")}
-                    </p>
-                  )}
-                </div>
+                  </Rx.Button>
+                </Rx.Flex>
               )}
             </>
           )}
 
           {detail.workHours && (
-            <WorkHours
-              value={detail.workHours}
-              language={language}
-              error={err("workHours")}
-              onSave={(wh) => void change("workHours", () => client.plugins.setWorkHours(row.id, wh))}
-            />
+            <>
+              <Refused text={err("workHours")} />
+              <WorkHours
+                value={detail.workHours}
+                language={language}
+                onSave={(wh) =>
+                  void change("workHours", () =>
+                    client.plugins.setWorkHours(row.id, wh),
+                  )
+                }
+              />
+            </>
           )}
 
           {detail.secrets.length > 0 && (
-            <div role="group" aria-labelledby={`${id}-keys`} className="hh-pl-keys">
-              <h4 id={`${id}-keys`}>{t("plugins.keys.title")}</h4>
-              <p className="hh-caption">{t("plugins.keys.note")}</p>
-              <div className="hh-rows">
+            <>
+              <Refused text={keyError} />
+              <Group title={t("plugins.keys.title")}>
+                <Rx.Text as="p" size="1" color="gray" mb="3">
+                  {t("plugins.keys.note")}
+                </Rx.Text>
                 {detail.secrets.map((s) => (
-                  <KeyRow
+                  <SecretField
                     key={s.id}
-                    secret={s}
-                    plugin={row.name}
-                    error={err(`key:${s.id}`)}
-                    onSave={(value) => change(`key:${s.id}`, () => client.plugins.setSecret(row.id, s.id, value))}
-                    onDelete={() => void change(`key:${s.id}`, () => client.plugins.deleteSecret(row.id, s.id))}
+                    connection={{
+                      id: s.id,
+                      label: s.label,
+                      ...(s.help ? { help: s.help } : {}),
+                      set: s.stored,
+                    }}
+                    onSave={(value) =>
+                      keyChange(`key:${s.id}`, () =>
+                        client.plugins.setSecret(row.id, s.id, value),
+                      )
+                    }
+                    onDelete={() =>
+                      keyChange(`key:${s.id}`, () =>
+                        client.plugins.deleteSecret(row.id, s.id),
+                      )
+                    }
                   />
                 ))}
-              </div>
-            </div>
+              </Group>
+            </>
           )}
 
-          <div className="hh-pl-test">
-            <div>
-              <button type="button" aria-disabled={testing} onClick={test}>
-                {testing ? t("plugins.test.running") : t("plugins.test.button")}
-              </button>
-            </div>
-            <div aria-live="polite">
-              {err("test") && (
-                <p className="hh-field-error" role="alert">
-                  {err("test")}
-                </p>
-              )}
-              {tests && tests.length === 0 && <p className="hh-caption">{t("plugins.test.none")}</p>}
-              {tests && tests.length > 0 && (
-                <ul className="hh-pl-plain">
-                  {tests.map((r, i) => (
-                    <li key={i}>
-                      <Plain>{r.source}</Plain>
-                      {": "}
-                      {r.ok ? (
-                        r.writes !== undefined ? (
-                          t("plugins.test.records", { count: r.writes })
-                        ) : (
-                          t("plugins.test.ok")
-                        )
-                      ) : (
-                        <Plain>{r.error ?? failed}</Plain>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          <h4 id={`${id}-errors`}>{t("plugins.errors.title")}</h4>
-          {detail.errors.length === 0 ? (
-            <p className="hh-caption">{t("plugins.errors.empty")}</p>
-          ) : (
-            <ul className="hh-pl-plain hh-pl-errors" aria-labelledby={`${id}-errors`}>
-              {[...detail.errors]
+          <Group loose title={t("plugins.errors.title")}>
+            {detail.errors.length === 0 ? (
+              <Row
+                as="li"
+                label={
+                  <Rx.Text color="gray">{t("plugins.errors.empty")}</Rx.Text>
+                }
+              />
+            ) : (
+              [...detail.errors]
                 .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
                 .slice(0, 50)
                 .map((e, i) => (
-                  <li key={i}>
-                    <span className="hh-caption">
-                      {when(e.at, language)}
-                      {e.source && (
-                        <>
-                          {" · "}
-                          <Plain>{e.source}</Plain>
-                        </>
-                      )}
-                    </span>
-                    <span className="hh-pl-error-text" dir="auto">
-                      {e.message}
-                    </span>
-                  </li>
-                ))}
-            </ul>
-          )}
+                  <Row
+                    key={i}
+                    as="li"
+                    label={<bdi dir="auto">{e.message}</bdi>}
+                    hint={
+                      <>
+                        {when(e.at, language)}
+                        {e.source && (
+                          <>
+                            {" · "}
+                            <Plain>{e.source}</Plain>
+                          </>
+                        )}
+                      </>
+                    }
+                  />
+                ))
+            )}
+          </Group>
 
-          <div className="hh-rows">
-            <div className="hh-row hh-row-wrap">
-              <label className="hh-row-label" htmlFor={`${id}-notify`}>
-                {t("plugins.notify")}
-              </label>
-              <Toggle
+          <Refused text={err("notify")} />
+          <Group>
+            <Row
+              label={t("plugins.notify")}
+              htmlFor={`${id}-notify`}
+              hint={t("plugins.notifyHelp")}
+              hintId={`${id}-notify-help`}
+            >
+              <Rx.Switch
                 id={`${id}-notify`}
                 checked={detail.notify}
                 aria-describedby={`${id}-notify-help`}
-                onChange={(on) => void change("notify", () => client.plugins.setNotify(row.id, on))}
+                onCheckedChange={(on) =>
+                  void change("notify", () =>
+                    client.plugins.setNotify(row.id, on),
+                  )
+                }
               />
-              <p className="hh-caption hh-row-note" id={`${id}-notify-help`}>
-                {t("plugins.notifyHelp")}
-              </p>
-              {err("notify") && (
-                <p className="hh-field-error hh-row-note" role="alert">
-                  {err("notify")}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {row.origin === "local" && (
-            <div className="hh-pl-remove">
-              {confirm ? (
-                <div role="group" aria-labelledby={`${id}-rm-title`} aria-describedby={`${id}-rm-text`}>
-                  <p id={`${id}-rm-title`}>
-                    <strong>{t("plugins.remove.title")}</strong>
-                  </p>
-                  <p id={`${id}-rm-text`}>{t("plugins.remove.text")}</p>
-                  {removeError && (
-                    <p className="hh-field-error" role="alert">
-                      {removeError}
-                    </p>
-                  )}
-                  <div className="hh-pl-actions">
-                    <ConfirmYes label={t("plugins.remove.yes")} onClick={() => void remove()} />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfirm(false);
-                        setRemoveError(null);
-                      }}
-                    >
-                      {t("plugins.remove.no")}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button type="button" className="hh-danger" onClick={() => setConfirm(true)}>
-                  {t("plugins.remove.button")}
-                </button>
-              )}
-            </div>
-          )}
+            </Row>
+            {row.origin === "local" && (
+              <Row
+                label={t("plugins.remove.text")}
+                below={
+                  confirm && (
+                    <Rx.Flex direction="column" gap="2">
+                      <Rx.Flex
+                        align="center"
+                        justify="between"
+                        gap="3"
+                        wrap="wrap"
+                        role="group"
+                        aria-labelledby={`${id}-rm-title`}
+                      >
+                        <Rx.Text
+                          as="p"
+                          size="2"
+                          weight="bold"
+                          id={`${id}-rm-title`}
+                        >
+                          {t("plugins.remove.title")}
+                        </Rx.Text>
+                        <Rx.Flex gap="2">
+                          <ConfirmYes
+                            label={t("plugins.remove.yes")}
+                            onClick={() => void remove()}
+                          />
+                          <Rx.Button
+                            variant="outline"
+                            color="gray"
+                            size="1"
+                            onClick={cancelRemove}
+                          >
+                            {t("plugins.remove.no")}
+                          </Rx.Button>
+                        </Rx.Flex>
+                      </Rx.Flex>
+                      {removeError && (
+                        <Rx.Text as="p" size="1" color="red" role="alert">
+                          {removeError}
+                        </Rx.Text>
+                      )}
+                    </Rx.Flex>
+                  )
+                }
+              >
+                {!confirm && (
+                  <Rx.Button
+                    ref={removeRef}
+                    variant="soft"
+                    color="red"
+                    size="1"
+                    onClick={() => setConfirm(true)}
+                  >
+                    {t("plugins.remove.button")}
+                  </Rx.Button>
+                )}
+              </Row>
+            )}
+          </Group>
         </>
       )}
     </section>
@@ -328,101 +482,19 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
 }
 
 /** The confirmation's Remove takes focus when it shows. */
-function ConfirmYes({ label, onClick }: { label: string; onClick: () => void }) {
+function ConfirmYes({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => ref.current?.focus(), []);
   return (
-    <button ref={ref} type="button" onClick={onClick}>
+    <Rx.Button ref={ref} variant="soft" color="red" size="1" onClick={onClick}>
       {label}
-    </button>
-  );
-}
-
-/**
- * One key: whether it is stored, never its value. The typed value lives only in this input until Save, which clears it
- * before the answer comes (B6).
- */
-function KeyRow({
-  secret,
-  plugin,
-  error,
-  onSave,
-  onDelete,
-}: {
-  secret: Detail["secrets"][number];
-  /** The plugin's name: a missing key says what it's for. */
-  plugin: string;
-  error: string | undefined;
-  onSave: (value: string) => Promise<boolean>;
-  onDelete: () => void;
-}) {
-  const { t } = useTranslation();
-  const id = useId();
-  const [replacing, setReplacing] = useState(false);
-  const [value, setValue] = useState("");
-  const editing = !secret.stored || replacing;
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const v = value;
-    setValue("");
-    if (v.trim() === "") return;
-    void onSave(v).then((ok) => {
-      if (ok) setReplacing(false);
-    });
-  };
-  const describedBy = [secret.help ? `${id}-help` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
-  return (
-    <div className="hh-row hh-row-wrap">
-      <span className="hh-row-label" id={`${id}-label`} dir="auto">
-        {secret.label}
-      </span>
-      <span className="hh-caption">{secret.stored ? t("plugins.keys.stored") : t("plugins.keys.notStored", { plugin })}</span>
-      {editing ? (
-        <form className="hh-pl-key-form" onSubmit={submit}>
-          <input
-            type="password"
-            value={value}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={t("plugins.keys.input")}
-            aria-labelledby={`${id}-label`}
-            aria-describedby={describedBy}
-            onChange={(e) => setValue(e.target.value)}
-          />
-          <button type="submit">{t("plugins.keys.save")}</button>
-          {replacing && (
-            <button
-              type="button"
-              onClick={() => {
-                setValue("");
-                setReplacing(false);
-              }}
-            >
-              {t("plugins.keys.cancel")}
-            </button>
-          )}
-        </form>
-      ) : (
-        <span className="hh-pl-actions">
-          <button type="button" onClick={() => setReplacing(true)}>
-            {t("plugins.keys.replace")}
-          </button>
-          <button type="button" onClick={onDelete}>
-            {t("plugins.keys.delete")}
-          </button>
-        </span>
-      )}
-      {secret.help && (
-        <p className="hh-caption hh-row-note" id={`${id}-help`} dir="auto">
-          {secret.help}
-        </p>
-      )}
-      {error && (
-        <p className="hh-field-error hh-row-note" id={`${id}-error`} role="alert">
-          {error}
-        </p>
-      )}
-    </div>
+    </Rx.Button>
   );
 }
 
@@ -432,15 +504,30 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 function timeZones(current: string): string[] {
   let all: string[] = [];
   try {
-    all = (Intl as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+    all =
+      (
+        Intl as { supportedValuesOf?: (k: string) => string[] }
+      ).supportedValuesOf?.("timeZone") ?? [];
   } catch {
     all = [];
   }
   return all.includes(current) ? all : [current, ...all];
 }
 
-/** Work hours (plugins Decision 4): seven day toggles (Sunday first), from/to and a time zone; each change saves. */
-function WorkHours({ value, language, error, onSave }: { value: PluginWorkHours; language: string; error: string | undefined; onSave: (wh: PluginWorkHours) => void }) {
+/**
+ * Work hours (plugins Decision 4): seven day toggles (Sunday first), from/to and a time zone; each change saves. A card
+ * of rows; the days are seven toggle buttons (Marco, 2026-11-04: a SegmentedControl picks one, the days are several),
+ * soft when chosen and outline gray when not, each named by the whole day.
+ */
+function WorkHours({
+  value,
+  language,
+  onSave,
+}: {
+  value: PluginWorkHours;
+  language: string;
+  onSave: (wh: PluginWorkHours) => void;
+}) {
   const { t } = useTranslation();
   const id = useId();
   const [from, setFrom] = useState(value.from);
@@ -448,9 +535,15 @@ function WorkHours({ value, language, error, onSave }: { value: PluginWorkHours;
   useEffect(() => setFrom(value.from), [value.from]);
   useEffect(() => setTo(value.to), [value.to]);
   // 2023-01-01 was a Sunday: day i's name is that date plus i days.
-  const dayName = (i: number, style: "short" | "long") => new Date(Date.UTC(2023, 0, 1 + i)).toLocaleDateString(language, { weekday: style, timeZone: "UTC" });
+  const dayName = (i: number, style: "short" | "long") =>
+    new Date(Date.UTC(2023, 0, 1 + i)).toLocaleDateString(language, {
+      weekday: style,
+      timeZone: "UTC",
+    });
   const toggle = (d: number) => {
-    const days = value.days.includes(d) ? value.days.filter((x) => x !== d) : [...value.days, d].sort((a, b) => a - b);
+    const days = value.days.includes(d)
+      ? value.days.filter((x) => x !== d)
+      : [...value.days, d].sort((a, b) => a - b);
     onSave({ ...value, days });
   };
   const time = (key: "from" | "to", v: string, set: (v: string) => void) => {
@@ -458,51 +551,71 @@ function WorkHours({ value, language, error, onSave }: { value: PluginWorkHours;
     if (TIME.test(v) && v !== value[key]) onSave({ ...value, [key]: v });
   };
   return (
-    <div role="group" aria-labelledby={`${id}-title`} aria-describedby={`${id}-help`} className="hh-pl-hours">
-      <h4 id={`${id}-title`}>{t("plugins.workHours.title")}</h4>
-      <p className="hh-caption" id={`${id}-help`}>
-        {t("plugins.workHours.help")}
-      </p>
-      <div className="hh-rows">
-        <div className="hh-row hh-row-wrap">
-          <span className="hh-row-label">{t("plugins.workHours.days")}</span>
-          <Segmented
-            label={t("plugins.workHours.days")}
-            value={value.days.map(String)}
-            onChange={(d) => toggle(Number(d))}
-            options={[0, 1, 2, 3, 4, 5, 6].map((d) => ({ value: String(d), label: dayName(d, "short"), ariaLabel: dayName(d, "long") }))}
+    <Group title={t("plugins.workHours.title")}>
+      <Row
+        label={t("plugins.workHours.days")}
+        hint={t("plugins.workHours.help")}
+        hintId={`${id}-help`}
+      >
+        <Rx.Flex
+          gap="1"
+          wrap="wrap"
+          role="group"
+          aria-label={t("plugins.workHours.days")}
+          aria-describedby={`${id}-help`}
+        >
+          {[0, 1, 2, 3, 4, 5, 6].map((d) => {
+            const on = value.days.includes(d);
+            return (
+              <Rx.Button
+                key={d}
+                size="1"
+                variant={on ? "soft" : "outline"}
+                color={on ? undefined : "gray"}
+                aria-pressed={on}
+                aria-label={dayName(d, "long")}
+                onClick={() => toggle(d)}
+              >
+                {dayName(d, "short")}
+              </Rx.Button>
+            );
+          })}
+        </Rx.Flex>
+      </Row>
+      <Row label={t("plugins.workHours.from")} htmlFor={`${id}-from`}>
+        <Rx.TextField.Root
+          id={`${id}-from`}
+          type="time"
+          value={from}
+          onChange={(e) => time("from", e.target.value, setFrom)}
+        />
+      </Row>
+      <Row label={t("plugins.workHours.to")} htmlFor={`${id}-to`}>
+        <Rx.TextField.Root
+          id={`${id}-to`}
+          type="time"
+          value={to}
+          onChange={(e) => time("to", e.target.value, setTo)}
+        />
+      </Row>
+      <Row label={t("plugins.workHours.timezone")} htmlFor={`${id}-tz`}>
+        <Rx.Select.Root
+          value={value.timezone}
+          onValueChange={(z) => onSave({ ...value, timezone: z })}
+        >
+          <Rx.Select.Trigger
+            id={`${id}-tz`}
+            aria-label={t("plugins.workHours.timezone")}
           />
-        </div>
-        <div className="hh-row">
-          <label className="hh-row-label" htmlFor={`${id}-from`}>
-            {t("plugins.workHours.from")}
-          </label>
-          <input id={`${id}-from`} type="time" value={from} onChange={(e) => time("from", e.target.value, setFrom)} />
-        </div>
-        <div className="hh-row">
-          <label className="hh-row-label" htmlFor={`${id}-to`}>
-            {t("plugins.workHours.to")}
-          </label>
-          <input id={`${id}-to`} type="time" value={to} onChange={(e) => time("to", e.target.value, setTo)} />
-        </div>
-        <div className="hh-row">
-          <label className="hh-row-label" htmlFor={`${id}-tz`}>
-            {t("plugins.workHours.timezone")}
-          </label>
-          <select id={`${id}-tz`} value={value.timezone} onChange={(e) => onSave({ ...value, timezone: e.target.value })}>
+          <Rx.Select.Content position="popper">
             {timeZones(value.timezone).map((z) => (
-              <option key={z} value={z}>
+              <Rx.Select.Item key={z} value={z}>
                 {z}
-              </option>
+              </Rx.Select.Item>
             ))}
-          </select>
-        </div>
-      </div>
-      {error && (
-        <p className="hh-field-error" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
+          </Rx.Select.Content>
+        </Rx.Select.Root>
+      </Row>
+    </Group>
   );
 }

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, PluginDetail, PluginReview, PluginRow } from "../src/client";
+import { PluginsTab, type SettingsSub } from "../src/plugins/PluginsTab";
 import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -63,7 +64,7 @@ function client(plugins: PluginRow[] = [], local = true) {
   return c;
 }
 async function draw(c: FakeClient, initialTab: SettingsTab = "plugins") {
-  return renderIn("en", <Sheet client={c} initialTab={initialTab} />);
+  return renderIn("en", <Sheet client={c} initialTab={initialTab} />, { theme: true });
 }
 
 describe("Settings › Plugins", () => {
@@ -207,16 +208,29 @@ describe("Settings › Plugins", () => {
       return region;
     }
 
-    it("I13: the back is a quiet compact Button with the back icon at 18", async () => {
+    it("hands Settings the way back: Plugins while a detail is open, nothing on the list; back focuses the row", async () => {
       const c = client([row()]);
       c.pluginDetails = { oncall: detail() };
-      const region = await openDetail(c);
-      const back = within(region).getAllByRole("button")[0];
-      expect(back.getAttribute("data-kind")).toBe("quiet");
-      expect(back.getAttribute("data-size")).toBe("compact");
-      const icon = back.querySelector("svg.hh-icon-back");
-      expect(icon?.getAttribute("width")).toBe("18");
-      expect(back.querySelectorAll("svg")).toHaveLength(1);
+      const onSub = vi.fn<(sub: SettingsSub | null) => void>();
+      await renderIn("en", <PluginsTab client={c} onSub={onSub} />, { theme: true });
+      await screen.findByRole("switch", { name: "On-call" });
+      expect(onSub.mock.calls.every(([sub]) => sub === null)).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "On-call" }));
+      await screen.findByRole("region", { name: /On-call/ });
+      const sub = onSub.mock.calls.at(-1)?.[0];
+      expect(sub?.label).toBe("Plugins");
+      act(() => sub?.back());
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "On-call" })));
+      expect(onSub.mock.calls.at(-1)?.[0]).toBeNull();
+    });
+
+    it("the top bar reads Back to Plugins on a detail and goes back to the list", async () => {
+      const c = client([row()]);
+      c.pluginDetails = { oncall: detail() };
+      await openDetail(c);
+      fireEvent.click(screen.getByRole("button", { name: "Back to Plugins" }));
+      expect(await screen.findByRole("switch", { name: "On-call" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Back to Plugins" })).toBeNull();
     });
 
     it("draws settings with SettingRow and shows a refusal under the field", async () => {
@@ -235,7 +249,7 @@ describe("Settings › Plugins", () => {
       const c = client([row()]);
       c.pluginDetails = { oncall: detail() };
       const region = await openDetail(c);
-      expect(within(region).queryByRole("group", { name: "Work hours" })).toBeNull();
+      expect(within(region).queryByRole("region", { name: "Work hours" })).toBeNull();
       cleanup();
 
       const c2 = client([row()]);
@@ -243,9 +257,8 @@ describe("Settings › Plugins", () => {
       c2.pluginDetails = { oncall: detail({ workHours: wh }) };
       c2.pluginResults = [{ ok: true }, { ok: true }];
       const r2 = await openDetail(c2);
-      const group = within(r2).getByRole("group", { name: "Work hours" });
+      const group = within(r2).getByRole("region", { name: "Work hours" });
       const week = within(group).getByRole("group", { name: "Days" });
-      expect(week.classList.contains("hh-segmented")).toBe(true);
       const days = within(week).getAllByRole("button");
       expect(days).toHaveLength(7);
       expect(days[0].getAttribute("aria-label")).toBe("Sunday");
@@ -254,7 +267,11 @@ describe("Settings › Plugins", () => {
       await waitFor(() => expect(c2.pluginCalls).toContainEqual(["setWorkHours", "oncall", { ...wh, days: [1, 2, 3, 4, 5, 6] }]));
       fireEvent.change(within(group).getByLabelText("From"), { target: { value: "08:30" } });
       await waitFor(() => expect(c2.pluginCalls).toContainEqual(["setWorkHours", "oncall", { ...wh, from: "08:30" }]));
-      expect((within(group).getByLabelText("Time zone") as HTMLSelectElement).value).toBe("Europe/Madrid");
+      const tz = within(group).getByRole("combobox", { name: "Time zone" });
+      expect(tz.textContent).toBe("Europe/Madrid");
+      fireEvent.keyDown(tz, { key: "Enter" });
+      fireEvent.keyDown(await screen.findByRole("option", { name: "Europe/Paris" }), { key: "Enter" });
+      await waitFor(() => expect(c2.pluginCalls).toContainEqual(["setWorkHours", "oncall", { ...wh, timezone: "Europe/Paris" }]));
     });
 
     it("B6: a saved key is sent to setSecret only, the input clears and the value is never in the DOM", async () => {
@@ -262,22 +279,26 @@ describe("Settings › Plugins", () => {
       c.pluginDetails = { oncall: detail() };
       c.pluginResults = [{ ok: true }];
       const region = await openDetail(c);
-      const keys = within(region).getByRole("group", { name: "Keys" });
-      expect(keys.textContent).toContain("Jira token");
-      expect(keys.textContent).toContain("From id.atlassian.com");
-      expect(keys.textContent).toContain("Not stored · paste the key to use On-call");
-      expect(keys.textContent).toContain("Stored");
-      const input = keys.querySelector('input[type="password"]') as HTMLInputElement;
+      const keys = within(region).getByRole("region", { name: "Keys" });
+      const jira = within(keys).getByRole("group", { name: "Jira token" });
+      const fh = within(keys).getByRole("group", { name: "FireHydrant key" });
+      expect(jira.textContent).toContain("From id.atlassian.com");
+      expect(within(jira).getByText("Not set · paste the key to use it")).toBeTruthy();
+      expect(within(fh).getByText("Set")).toBeTruthy();
+      const input = within(jira).getByLabelText("Jira token") as HTMLInputElement;
+      expect(input.type).toBe("password");
       fireEvent.change(input, { target: { value: "s3cret-value-XYZ" } });
-      fireEvent.click(within(keys).getByRole("button", { name: "Save" }));
+      fireEvent.click(within(jira).getByRole("button", { name: "Save" }));
       await waitFor(() => expect(c.pluginCalls).toContainEqual(["setSecret", "oncall", "jira", "s3cret-value-XYZ"]));
       expect(input.value).toBe("");
       expect(document.body.innerHTML).not.toContain("s3cret-value-XYZ");
-      // A stored key offers Replace and Delete.
+      // A stored key offers Replace, and Delete in its More menu (asked inline first).
+      expect(within(fh).getByRole("button", { name: "Replace" })).toBeTruthy();
       c.pluginResults = [{ ok: true }];
-      fireEvent.click(within(keys).getByRole("button", { name: "Delete" }));
+      fireEvent.pointerDown(within(fh).getByRole("button", { name: "More for FireHydrant key" }), { button: 0, ctrlKey: false, pointerType: "mouse" });
+      fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Delete" }));
+      fireEvent.click(await within(fh).findByRole("button", { name: "Delete the key" }));
       await waitFor(() => expect(c.pluginCalls).toContainEqual(["deleteSecret", "oncall", "fh"]));
-      expect(within(keys).getByRole("button", { name: "Replace" })).toBeTruthy();
     });
 
     it("Test connection shows one line per source; last errors newest first; Notify me", async () => {
@@ -354,15 +375,13 @@ describe("Settings › Plugins", () => {
       expect(document.querySelector("img")).toBeNull();
     });
 
-    it("is a list with the selected plugin's detail beside it", async () => {
+    it("the detail takes the list's place", async () => {
       const c = client([row(), row({ id: "jira", name: "Jira", origin: "bundled", folder: undefined, status: "off" })]);
       c.pluginDetails = { oncall: detail() };
       const region = await openDetail(c);
-      const both = document.querySelector(".hh-master-detail")!;
-      expect(both.contains(region)).toBe(true);
-      expect(within(both as HTMLElement).getAllByRole("listitem").length).toBeGreaterThanOrEqual(2);
       expect(within(region).getByRole("heading", { name: "On-call" })).toBeTruthy();
-      expect(screen.getByRole("switch", { name: "Jira" })).toBeTruthy();
+      expect(screen.queryByRole("switch", { name: "Jira" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Add from folder…" })).toBeNull();
     });
 
     it("a bundled plugin has no Remove", async () => {

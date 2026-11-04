@@ -146,17 +146,17 @@ test("a harness's setup steps: Home waits for the interview, then forms, a compo
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "How I learn" }).click();
     const list = page.getByRole("tabpanel");
-    await expect(list.getByRole("listitem", { name: "Get to know you" })).toContainText("Done");
-    await expect(list.getByRole("listitem", { name: "How the AI talks" })).toContainText("Skipped. You can do it now.");
+    await expect(list.getByRole("group", { name: "Get to know you" })).toContainText("Done");
+    await expect(list.getByRole("group", { name: "How the AI talks" })).toContainText("Skipped. You can do it now.");
 
     // A settings form edited from the list: the harness's own fields below follow at once.
-    const estilo = list.getByRole("listitem", { name: "How the AI talks" });
+    const estilo = list.getByRole("group", { name: "How the AI talks" });
     await estilo.getByRole("button", { name: "Edit" }).click();
     await estilo.getByRole("radio", { name: "Demanding" }).check();
     await estilo.getByRole("button", { name: "Save" }).click();
     await expect(estilo).toContainText("Done");
     await expect.poll(() => json(path.join(harnessDir, "data", "_app", "settings.json"))).toEqual({ tone: "demanding" });
-    await expect(list.getByRole("group", { name: "Tone" }).getByRole("button", { name: "Demanding" })).toHaveAttribute("aria-pressed", "true");
+    await expect(list.getByRole("radiogroup", { name: "Tone" }).getByRole("radio", { name: "Demanding" })).toHaveAttribute("aria-checked", "true");
   } finally {
     try {
       if (app) await closeAndClean(app, s);

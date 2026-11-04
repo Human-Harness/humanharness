@@ -7,6 +7,14 @@ import { HarnessApp } from "../src";
 import type { PluginPanelView, PluginSurfaceView, SearchAnswer, SearchHitView } from "../src/client";
 import { FakeClient } from "./fake-client";
 
+/**
+ * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
+ * happy-dom has no CSS to drop the hidden one from the accessible name.
+ */
+const tab = (label: string) => ({ name: (_: string, el: Element) => el.querySelector(".rt-TabsTriggerInner")?.textContent === label });
+/** Radix tabs select on mouse down, not on click. */
+const pick = (el: Element) => fireEvent.mouseDown(el, { button: 0, ctrlKey: false });
+
 afterEach(cleanup);
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -58,14 +66,14 @@ describe("a plugin record picked away from the work screen (search spec §3 Data
   it("opens its panel once the plugin surface has loaded", async () => {
     const release = await pickFromHome(surface([DIGEST, QUEUE]));
     await act(async () => release());
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("tab", tab("Queue")).getAttribute("aria-selected")).toBe("true"));
   });
 
   it("opens nothing when the loaded surface doesn't have its panel", async () => {
     const release = await pickFromHome(surface([DIGEST]));
     await act(async () => release());
-    await screen.findByRole("tab", { name: "Digest" });
+    await screen.findByRole("tab", tab("Digest"));
     await act(async () => {});
-    expect(screen.getByRole("tab", { name: "Digest" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", tab("Digest")).getAttribute("aria-selected")).toBe("true");
   });
 });

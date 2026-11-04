@@ -43,7 +43,7 @@ test("two sidekicks: Sidekick reviews before sending, a muted kind stays quiet, 
     const tab = page.getByRole("tabpanel", { name: "Sidekick" });
     await tab.getByRole("region", { name: "Suggested by the harness" }).getByRole("button", { name: "Add Guard" }).click();
     await expect(page.getByRole("tab", { name: "Sidekicks" })).toBeVisible();
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     await page.getByRole("button", { name: /Report/ }).first().click();
     await expect(page.getByRole("main").getByText("Listo.").first()).toBeVisible();

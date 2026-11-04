@@ -27,6 +27,7 @@ export interface Crumb {
 export function TopBar({
   crumbs = [],
   title,
+  leading,
   mock,
   center,
   trailing,
@@ -34,6 +35,8 @@ export function TopBar({
 }: {
   crumbs?: Crumb[];
   title?: ReactNode;
+  /** In place of crumbs or title: Settings' Volver (DESIGN.md "Settings"). */
+  leading?: ReactNode;
   mock?: boolean;
   center?: ReactNode;
   trailing?: ReactNode;
@@ -65,6 +68,8 @@ export function TopBar({
             </Fragment>
           ))}
         </nav>
+      ) : leading !== undefined ? (
+        leading
       ) : (
         title !== undefined && <h1 className="hh-title">{title}</h1>
       )}

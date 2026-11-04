@@ -66,7 +66,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   it("D0: without state.jobs there is no Jobs tab and no jobs call", async () => {
     const c = client(rows(), false);
     const list = vi.spyOn(c.jobs, "list");
-    await renderIn("en", <Sheet c={c} tab="general" />);
+    await renderIn("en", <Sheet c={c} tab="general" />, { theme: true });
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
     expect(tabs).not.toContain("Jobs");
     expect(list).not.toHaveBeenCalled();
@@ -74,7 +74,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
 
   it("with jobs the tab sits before Usage and lists each declared job", async () => {
     const c = client();
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
     expect(tabs.indexOf("Jobs")).toBeGreaterThan(-1);
     expect(tabs.indexOf("Jobs")).toBe(tabs.indexOf("Usage") - 1);
@@ -87,7 +87,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     const c = client();
     c.state.config = { ...c.state.config, jobs: { digest: { dailyTokens: 20_000 } } };
     const save = vi.spyOn(c, "saveConfig");
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const on = within(group("Sync inbox")).getByRole("switch", { name: "On" });
     expect(on.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(on);
@@ -100,7 +100,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
 
   it("C13: the every caption comes before the switch, and the switch ends the row", async () => {
     const c = client();
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const digest = group("Digest");
     const caption = within(digest).getByText("Every 1h");
     const sw = within(digest).getByRole("switch", { name: "On" });
@@ -114,7 +114,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     const c = client();
     c.state.config = { ...c.state.config, jobs: { digest: { off: true } } };
     const save = vi.spyOn(c, "saveConfig");
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const digest = group("Digest");
     expect(within(digest).getByText("Every 1h")).toBeTruthy();
     const cap = within(digest).getByLabelText("Daily token cap") as HTMLInputElement;
@@ -132,7 +132,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   it("a cap under 1,000 (or not a whole number) is not saved and the field says why", async () => {
     const c = client();
     const save = vi.spyOn(c, "saveConfig");
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const cap = within(group("Digest")).getByLabelText("Daily token cap") as HTMLInputElement;
     fireEvent.change(cap, { target: { value: "500" } });
     fireEvent.keyDown(cap, { key: "Enter" });
@@ -150,7 +150,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   it("two changes saved before the first comes back both stay (main merges only the top level)", async () => {
     const c = client();
     const release = gateSaves(c);
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const cap = within(group("Digest")).getByLabelText("Daily token cap");
     fireEvent.change(cap, { target: { value: "20000" } });
     fireEvent.blur(cap);
@@ -166,7 +166,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   it("a save that fails says so", async () => {
     const c = client();
     c.saveError = new Error("disk full");
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     fireEvent.click(within(group("Sync inbox")).getByRole("switch", { name: "On" }));
     expect(await screen.findByText("Couldn't save the change.")).toHaveProperty("role", "alert");
   });
@@ -175,7 +175,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     const c = client();
     c.state.config = { ...c.state.config, jobs: { digest: { dailyTokens: 500 } } };
     const save = vi.spyOn(c, "saveConfig");
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const cap = within(group("Digest")).getByLabelText("Daily token cap") as HTMLInputElement;
     expect(cap.value).toBe("500");
     fireEvent.focus(cap);
@@ -194,7 +194,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
       { id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: false },
       { id: "digest", label: "Digest", scope: null, manual: false, running: false },
     ]);
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     const run = await within(group("Sync inbox")).findByRole("button", { name: "Run now" });
     expect(within(group("Digest")).queryByRole("button", { name: "Run now" })).toBeNull();
     fireEvent.click(run);
@@ -210,7 +210,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   it("a Run now main refuses says so", async () => {
     const c = client([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }]);
     c.jobs.run.mockResolvedValueOnce(false);
-    await renderIn("en", <Sheet c={c} />);
+    await renderIn("en", <Sheet c={c} />, { theme: true });
     fireEvent.click(await within(group("Sync inbox")).findByRole("button", { name: "Run now" }));
     expect(await within(group("Sync inbox")).findByRole("alert")).toHaveProperty("textContent", "Couldn't run it now.");
   });
@@ -218,7 +218,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   it("a needs-you run shows its status and summary, and Start names the declared action", async () => {
     const c = client();
     const start = vi.fn(() => true);
-    await renderIn("en", <Sheet c={c} onStartAction={start} />);
+    await renderIn("en", <Sheet c={c} onStartAction={start} />, { theme: true });
     const sync = group("Sync inbox");
     expect(await within(sync).findByText("Needs you")).toBeTruthy();
     expect(within(sync).getByText("Two conflicts need you")).toBeTruthy();
@@ -231,17 +231,17 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
 
   it("no Start for an action the harness doesn't declare, or without a start path", async () => {
     const c = client([{ id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Look", at, action: "toString" }, manual: false, running: false }]);
-    await renderIn("en", <Sheet c={c} onStartAction={() => true} />);
+    await renderIn("en", <Sheet c={c} onStartAction={() => true} />, { theme: true });
     await within(group("Sync inbox")).findByText("Needs you");
     expect(within(group("Sync inbox")).queryByRole("button", { name: "Start" })).toBeNull();
     cleanup();
-    await renderIn("en", <Sheet c={client()} />);
+    await renderIn("en", <Sheet c={client()} />, { theme: true });
     await within(group("Sync inbox")).findByText("Needs you");
     expect(within(group("Sync inbox")).queryByRole("button", { name: "Start" })).toBeNull();
   });
 
   it("a Start that can't go through says so", async () => {
-    await renderIn("en", <Sheet c={client()} onStartAction={() => false} />);
+    await renderIn("en", <Sheet c={client()} onStartAction={() => false} />, { theme: true });
     fireEvent.click(await within(group("Sync inbox")).findByRole("button", { name: "Start" }));
     expect(await within(group("Sync inbox")).findByRole("alert")).toHaveProperty("textContent", "Couldn't start it now.");
   });
@@ -263,14 +263,20 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
   });
 });
 
+/** Picks `value` in the Radix select named `name`, from the keyboard. */
+async function pick(name: string, value: string) {
+  fireEvent.keyDown(screen.getByRole("combobox", { name }), { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name: value }), { key: "Enter" });
+}
+
 describe("Settings › General's parallel caps (part 2), saved twice before a reply", () => {
   it("the tasks cap and then the jobs cap both stay", async () => {
     const c = new FakeClient(ready);
     c.state.parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
     const release = gateSaves(c);
-    await renderIn("en", <Sheet c={c} tab="general" />);
-    fireEvent.change(screen.getByLabelText("Tasks at once"), { target: { value: "3" } });
-    fireEvent.change(screen.getByLabelText("Jobs at once"), { target: { value: "2" } });
+    await renderIn("en", <Sheet c={c} tab="general" />, { theme: true });
+    await pick("Tasks at once", "3");
+    await pick("Jobs at once", "2");
     await waitFor(() => expect(c.saveConfig).toHaveBeenCalledTimes(2));
     release();
     await waitFor(() => expect(c.state.config.parallel).toEqual({ tasks: 3, jobs: 2 }));
@@ -285,11 +291,11 @@ describe("Settings › General's parallel caps (part 2), saved twice before a re
       if (fail) throw new Error("disk full");
       return save(patch);
     });
-    await renderIn("en", <Sheet c={c} tab="general" />);
-    fireEvent.change(screen.getByLabelText("Tasks at once"), { target: { value: "3" } });
+    await renderIn("en", <Sheet c={c} tab="general" />, { theme: true });
+    await pick("Tasks at once", "3");
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Couldn't save the change.");
     fail = false;
-    fireEvent.change(screen.getByLabelText("Jobs at once"), { target: { value: "2" } });
+    await pick("Jobs at once", "2");
     await waitFor(() => expect(c.state.config.parallel).toEqual({ jobs: 2 }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });

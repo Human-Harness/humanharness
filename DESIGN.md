@@ -133,7 +133,7 @@ Special uses take only the tag colors (guide §2):
 **The Token Rule.** Every color is a token. No hex or rgb value appears outside the token definitions (guide §2, §15).
 
 ### Radix pieces take our tokens
-Radix draws its pieces from accent amber and gray sand. The bridge in `styles.css` maps all of those colors to our tokens, so a Radix piece looks like the rest of the app (Marco, 2026-11-04). Today the bridge maps only fonts and the background; the color mapping arrives with stage 2, before the first screen moves:
+Radix draws its pieces from accent amber and gray sand. The bridge in `styles.css` maps all of those colors to our tokens, so a Radix piece looks like the rest of the app (Marco, 2026-11-04). The color mapping landed with stage 2a, before the first screen moved:
 - Radix's amber fill and its text become `hh-cta`, `hh-cta-ink` and `hh-cta-hover`.
 - Radix's chosen and soft accent states become `hh-active` and `hh-active-ink`.
 - Radix's grays become our neutrals: panels `hh-surface`, subtle fills `hh-surface-2`, borders `hh-line` and `hh-line-strong`, text `hh-ink`, `hh-muted` and `hh-faint`.
@@ -260,6 +260,10 @@ All use template 3. The rail is visible with the page's entry selected. Volver i
 - **Field error:** a red status line under the label (guide §5).
 - **One highlighted band per page at most**, for the one thing that needs the person (spec §2).
 - **Narrow panels:** a plugin panel works at 240 px with no horizontal scroll (spec §6).
+- **Measures (Marco, 2026-11-04):** the Settings body is one column at most 680 wide. A row has 12 above and below; groups have 24 between them. A row's name is 14 and its hint 12 grey.
+- **Wrappers (`packages/ui/src/guide/settings.tsx`):** `SectionHead` (the sentence and an optional control), `Group` (a card; `loose` is a `ul` list with a 24 side padding, the same as the cards), `Row` (`as="li"` inside a loose group, named by `aria-label`), `SettingsNav` (a vertical tab list; in a narrow window it becomes a row of tabs above the body).
+- **Row actions (Marco, 2026-11-04):** ghost gray size 1 buttons; a destructive one is ghost red. Deleting a profile asks twice inline under its row, not in a dialog.
+- **A file path in a hint** is plain hint text that breaks anywhere, with no code chip (Marco, 2026-11-04).
 
 ## Elevation & Depth
 

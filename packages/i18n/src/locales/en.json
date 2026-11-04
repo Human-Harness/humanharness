@@ -63,6 +63,7 @@
   "settings": {
     "title": "Settings",
     "done": "Done",
+    "backTo": "Back to {{place}}",
     "sections": "Settings sections",
     "tabs": { "general": "General", "setup": "Setup", "engine": "Engine", "models": "Models", "usage": "Usage" },
     "line": {

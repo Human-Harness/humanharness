@@ -36,13 +36,13 @@ describe("SettingsSheet", () => {
   it("is a dialog with General, Engine and Usage tabs; Done and Escape close it", async () => {
     const client = new FakeClient(ready);
     const onClose = vi.fn();
-    await renderIn("en", <Sheet client={client} onClose={onClose} />);
+    await renderIn("en", <Sheet client={client} onClose={onClose} />, { theme: true });
     const dialog = screen.getByRole("main", { name: "Settings" });
     expect(within(dialog).getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
     expect(screen.getByRole("tab", { name: "Engine" }).getAttribute("aria-selected")).toBe("true");
     await screen.findByRole("radiogroup", { name: "AI engines" });
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     // Handled: a listener further out (focus mode's) leaves this Escape alone.
     expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(2);
@@ -56,7 +56,7 @@ describe("SettingsSheet", () => {
       offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] } },
       pinnedTokens: 3000,
     };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Models" }));
     expect(screen.getByRole("region", { name: "Tasks" })).toBeTruthy();
@@ -70,12 +70,12 @@ describe("SettingsSheet", () => {
       offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] } },
       pinnedTokens: 3000,
     };
-    const first = await renderIn("en", <Sheet client={client} />);
+    const first = await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
     first.unmount();
     client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     client.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, on: false }, status: "off" };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Sidekick", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Sidekick" }));
     expect(await screen.findByRole("switch", { name: "Sidekick" })).toBeTruthy();
@@ -85,7 +85,7 @@ describe("SettingsSheet", () => {
   });
 
   it("keeps Tab inside the sheet", async () => {
-    await renderIn("en", <Sheet client={new FakeClient(ready)} />);
+    await renderIn("en", <Sheet client={new FakeClient(ready)} />, { theme: true });
     const dialog = screen.getByRole("main", { name: "Settings" });
     const focusable = [...dialog.querySelectorAll<HTMLElement>("button, a[href], input, textarea, select")];
     const [first, last] = [focusable[0], focusable.at(-1)!];
@@ -102,7 +102,7 @@ describe("SettingsSheet", () => {
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
     const onClose = vi.fn();
-    await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
+    await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
     await screen.findByText(/Finish signing in using your browser/);
     fireEvent.keyDown(document, { key: "Escape" });
@@ -119,14 +119,14 @@ describe("SettingsSheet", () => {
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
     const onClose = vi.fn();
-    await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
+    await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
     await screen.findByText(/Finish signing in using your browser/);
     act(() => client.emitSetup({ kind: "url", url: "https://claude.ai/oauth/authorize?x=1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     fireEvent.keyDown(document, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
     await screen.findByText(/Finish signing in using your browser/);
@@ -136,7 +136,7 @@ describe("SettingsSheet", () => {
     await waitFor(() => expect(client.setupCancelled).toBe(1));
     await act(async () => finish());
     await screen.findByText("Claude is ready ✓");
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -146,11 +146,11 @@ describe("SettingsSheet", () => {
     client.statusFor.claude = { ...client.status, installed: false };
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
-    await renderIn("en", <Sheet client={client} initialTab="engine" />);
+    await renderIn("en", <Sheet client={client} initialTab="engine" />, { theme: true });
     fireEvent.click(await screen.findByRole("button", { name: "Install" }));
     const line = await screen.findByText(/Installing Claude…/);
     expect(line.textContent).toBe("Installing Claude… Settings stays open until it finishes.");
-    const done = screen.getByRole("button", { name: "Done" }) as HTMLButtonElement;
+    const done = screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }) as HTMLButtonElement;
     expect(done.disabled).toBe(true);
     expect(document.getElementById(done.getAttribute("aria-describedby")!)).toBe(line);
     expect((screen.getByRole("radio", { name: /Codex/ }) as HTMLButtonElement).disabled).toBe(true);
@@ -165,7 +165,7 @@ describe("SettingsSheet", () => {
   });
 
   it("moves between tabs with the arrow keys; each tab controls its panel", async () => {
-    await renderIn("en", <Sheet client={new FakeClient(ready)} />);
+    await renderIn("en", <Sheet client={new FakeClient(ready)} />, { theme: true });
     const general = screen.getByRole("tab", { name: "General" });
     const panel = screen.getByRole("tabpanel");
     expect(general.getAttribute("aria-controls")).toBe(panel.id);
@@ -185,7 +185,7 @@ describe("SettingsSheet", () => {
     const client = new FakeClient(ready);
     client.running = { engineId: "claude", step: "login" };
     client.statusGates.claude = new Promise(() => {});
-    await renderIn("en", <Sheet client={client} initialTab="engine" />);
+    await renderIn("en", <Sheet client={client} initialTab="engine" />, { theme: true });
     await screen.findByText(/Signing in to Claude…/);
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Engine" }));
     // The engine's status is still loading: the sheet's Cancel is the way out.
@@ -195,8 +195,8 @@ describe("SettingsSheet", () => {
 
   it("General: changes appearance, shows the fixed folder and the About card", async () => {
     const client = new FakeClient(ready);
-    await renderIn("en", <Sheet client={client} />);
-    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    await renderIn("en", <Sheet client={client} />, { theme: true });
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await waitFor(() => expect(client.state.config.appearance).toBe("dark"));
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
     expect(screen.getByText("Don't move or rename it by hand: the app moves it for you, with its history.")).toBeTruthy();
@@ -209,7 +209,7 @@ describe("SettingsSheet", () => {
 
   it("shows the saved language by its own name, with the AI-thinks-in-English hint", async () => {
     const client = new FakeClient({ ...ready, language: "es" });
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getByText("Español")).toBeTruthy();
     expect(screen.getByText("The AI always thinks in English and writes to you in this language.")).toBeTruthy();
     expect(screen.queryByRole("group", { name: "Language" })).toBeNull();
@@ -218,28 +218,28 @@ describe("SettingsSheet", () => {
 
   it("General: picks a text size, says which one is on and how to change it from the keyboard", async () => {
     const client = new FakeClient(ready);
-    await renderIn("en", <Sheet client={client} />);
-    const sizes = screen.getByRole("group", { name: "Text size" });
-    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["Normal", "Large", "Larger", "Largest"]);
-    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
+    await renderIn("en", <Sheet client={client} />, { theme: true });
+    const sizes = screen.getByRole("radiogroup", { name: "Text size" });
+    expect(within(sizes).getAllByRole("radio").map((b) => b.getAttribute("aria-checked"))).toEqual(["true", "false", "false", "false"]);
+    expect(within(sizes).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("true");
     expect(sizes.getAttribute("aria-describedby")).toBe(screen.getByText(/0 goes back to Normal\.$/).id);
-    expect(sizes.classList.contains("hh-segmented")).toBe(true);
-    fireEvent.click(within(sizes).getByRole("button", { name: "Larger" }));
+    for (const name of ["Large", "Larger", "Largest"]) expect(within(sizes).getByRole("radio", { name })).toBeTruthy();
+    fireEvent.click(within(sizes).getByRole("radio", { name: "Larger" }));
     await waitFor(() => expect(client.state.config.textSize).toBe("larger"));
-    expect(within(sizes).getByRole("button", { name: "Larger" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("false");
+    expect(within(sizes).getByRole("radio", { name: "Larger" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(sizes).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("General without a folder: only language, appearance, text size and About, no folder picker or welcome", async () => {
     const client = new FakeClient({});
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getByText("Language")).toBeTruthy();
     expect(screen.getByText(ownName(systemLanguage()))).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Appearance" })).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Text size" })).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "Appearance" })).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "Text size" })).toBeTruthy();
     expect(screen.getByText("Version 0.1.0")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Choose another folder" })).toBeNull();
-    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getAllByRole("radiogroup")).toHaveLength(2);
     expect(screen.queryByText("Show in Finder")).toBeNull();
     expect(screen.queryByText(/works with an AI plan/)).toBeNull();
   });
@@ -253,7 +253,7 @@ describe("SettingsSheet", () => {
       pinnedTokens: 3000,
     };
     const onSetup = vi.fn();
-    await renderIn("en", <Sheet client={client} initialTab={tab} onSetup={onSetup} />);
+    await renderIn("en", <Sheet client={client} initialTab={tab} onSetup={onSetup} />, { theme: true });
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
     expect(screen.getByRole("heading", { name: "You haven't chosen an engine yet" })).toBeTruthy();
     expect(screen.getByText("First choose where your work is kept, then connect the AI. It takes two steps.")).toBeTruthy();
@@ -264,7 +264,7 @@ describe("SettingsSheet", () => {
 
   it("General shows caps and the notification toggle only with state.parallel (D7); each saves the person's whole caps", async () => {
     const plain = new FakeClient(ready);
-    const { unmount } = await renderIn("en", <Sheet client={plain} />);
+    const { unmount } = await renderIn("en", <Sheet client={plain} />, { theme: true });
     expect(screen.queryByRole("heading", { name: "Parallel tasks" })).toBeNull();
     expect(screen.queryByLabelText("Tasks at once")).toBeNull();
     unmount();
@@ -272,15 +272,16 @@ describe("SettingsSheet", () => {
     const client = new FakeClient({ ...ready, parallel: { jobs: 2 } });
     client.state.parallel = { caps: { tasks: 2, jobs: 2 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
     const save = vi.spyOn(client, "saveConfig");
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getByRole("heading", { name: "Parallel tasks" })).toBeTruthy();
-    const tasks = screen.getByLabelText("Tasks at once") as HTMLSelectElement;
-    expect([...tasks.options].map((o) => o.value)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
-    expect(tasks.value).toBe("2");
-    expect((screen.getByLabelText("Jobs at once") as HTMLSelectElement).value).toBe("2");
+    const tasks = screen.getByRole("combobox", { name: "Tasks at once" });
+    expect(tasks.textContent).toBe("2");
+    expect(screen.getByRole("combobox", { name: "Jobs at once" }).textContent).toBe("2");
     const notify = screen.getByRole("switch", { name: "Notify me when a task waits" });
     expect(notify.getAttribute("aria-checked")).toBe("false");
-    fireEvent.change(tasks, { target: { value: "4" } });
+    fireEvent.keyDown(tasks, { key: "Enter" });
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+    fireEvent.keyDown(screen.getByRole("option", { name: "4" }), { key: "Enter" });
     // The jobs cap the person set goes with it: the store merges the top level only.
     await waitFor(() => expect(save).toHaveBeenCalledWith({ parallel: { jobs: 2, tasks: 4 } }));
     fireEvent.click(notify);
@@ -291,16 +292,16 @@ describe("SettingsSheet", () => {
     const client = new FakeClient({ ...ready, engineId: "opencode" });
     client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "opencode", name: "OpenCode" }];
     client.state.parallel = { caps: { tasks: 1, jobs: 1 }, suggested: { tasks: 3, jobs: 1 }, inbox: true, notifyWaiting: true, heldReason: "engine" };
-    await renderIn("en", <Sheet client={client} />);
-    const tasks = screen.getByLabelText("Tasks at once") as HTMLSelectElement;
+    await renderIn("en", <Sheet client={client} />, { theme: true });
+    const tasks = screen.getByRole("combobox", { name: "Tasks at once" }) as HTMLButtonElement;
     expect(tasks.disabled).toBe(true);
-    expect((screen.getByLabelText("Jobs at once") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("combobox", { name: "Jobs at once" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/not yet checked with OpenCode/).id).toBe(tasks.getAttribute("aria-describedby"));
     expect(screen.getByRole("switch", { name: "Notify me when a task waits" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("D0: no harness tab when the harness declares no settings", async () => {
-    await renderIn("en", <Sheet client={new FakeClient(ready)} />);
+    await renderIn("en", <Sheet client={new FakeClient(ready)} />, { theme: true });
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
   });
 
@@ -312,7 +313,7 @@ describe("SettingsSheet", () => {
       fields: [{ name: "tone", control: "segmented", label: "Tone", default: "patient", options: [{ value: "patient", label: "Patient" }], agent: true }],
     };
     client.settingsState = { values: { tone: "patient" }, pending: [] };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "How I learn", "Engine", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "How I learn" }));
     const panel = screen.getByRole("tabpanel", { name: "How I learn" });
@@ -322,7 +323,7 @@ describe("SettingsSheet", () => {
   it("ArrowRight from General goes to the harness's tab", async () => {
     const client = new FakeClient(ready);
     client.state.settings = { tab: "How I learn", sections: [], fields: [] };
-    await renderIn("en", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />, { theme: true });
     const general = screen.getByRole("tab", { name: "General" });
     general.focus();
     fireEvent.keyDown(general, { key: "ArrowRight" });
@@ -334,7 +335,7 @@ describe("SettingsSheet", () => {
   it("before the app is set up, the harness's tab leads to the setup flow", async () => {
     const client = new FakeClient({});
     client.state.settings = { tab: "How I learn", sections: [], fields: [] };
-    await renderIn("en", <Sheet client={client} initialTab="harness" />);
+    await renderIn("en", <Sheet client={client} initialTab="harness" />, { theme: true });
     expect(screen.getByRole("heading", { name: "You haven't chosen an engine yet" })).toBeTruthy();
     expect(screen.queryByRole("group", { name: "Tone" })).toBeNull();
   });
@@ -344,7 +345,7 @@ describe("SettingsSheet", () => {
     client.state.settings = { tab: "How I learn", sections: [], fields: [{ name: "nickname", control: "text", label: "Nickname", default: "" }] };
     client.settingsState = { values: { nickname: "Ada" }, pending: [] };
     const onClose = vi.fn();
-    await renderIn("en", <Sheet client={client} initialTab="harness" onClose={onClose} />);
+    await renderIn("en", <Sheet client={client} initialTab="harness" onClose={onClose} />, { theme: true });
     const input = await screen.findByLabelText<HTMLInputElement>("Nickname");
     await waitFor(() => expect(input.value).toBe("Ada"));
     fireEvent.change(input, { target: { value: "Grace" } });
@@ -366,7 +367,7 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
     cancel: vi.fn(),
   });
   const renderSettings = (opts: { language?: LanguageControl; onClose?: () => void }) =>
-    renderIn("en", <Sheet client={new FakeClient(ready)} language={opts.language} onClose={opts.onClose} />);
+    renderIn("en", <Sheet client={new FakeClient(ready)} language={opts.language} onClose={opts.onClose} />, { theme: true });
 
   it("shows the language by its own name and English name, with Change…; asks for the state once when shown", async () => {
     const c = control({ cached: [{ tag: "es", complete: true }] });
@@ -432,7 +433,7 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
     await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "engine" } }) });
     const stopped = screen.getByText("The translation stopped. What it finished is kept.");
     expect(stopped.getAttribute("role")).toBe("status");
-    expect(document.querySelectorAll(".hh-langrow-progress, .hh-langrow-stopped")).toHaveLength(1);
+    expect(document.querySelectorAll('[data-setting="general.language"] [role="status"]')).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await screen.findByRole("alertdialog");
     expect(screen.getByText("The translation stopped. What it finished is kept.").hasAttribute("role")).toBe(false);
@@ -478,28 +479,28 @@ describe("SettingsPage (UI refresh spec §5.5)", () => {
       const row = (id: string, status: "on" | "review" | "crashed") => ({ id, name: id, version: "1.0.0", origin: "local" as const, status });
       client.pluginsView = { local: true, plugins: [row("on-one", "on"), ...Array.from({ length: opts.pluginsNeedingReview }, (_, i) => row(`p${i}`, i % 2 ? "crashed" : "review"))] };
     }
-    return renderIn("en", <Sheet client={client} initialTab={opts.tab} onClose={opts.onClose} />);
+    return renderIn("en", <Sheet client={client} initialTab={opts.tab} onClose={opts.onClose} />, { theme: true });
   };
 
-  it("is a full page: no breadcrumb or badge in the top bar, a section list, and Done as a save icon in the top bar", async () => {
+  it("is a full page: no breadcrumb or badge in the top bar, a section list, and a way back that names where it goes", async () => {
     await renderSettings({ tab: "models" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
-    expect(document.querySelector(".hh-topbar")!.textContent).toBe("");
+    expect(document.querySelector(".hh-topbar")!.textContent).toBe("Tasks");
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     expect(within(nav).getByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
     expect(within(nav).getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
-    const done = screen.getByRole("button", { name: "Done" });
+    const done = screen.getByRole("button", { name: "Back to Tasks" });
     expect(done.className).toContain("hh-settings-done");
     expect(document.querySelector(".hh-topbar")!.contains(done)).toBe(true);
-    expect(done.textContent).toBe("");
+    expect(done.textContent).toBe("Tasks");
   });
 
   it("Done and Escape go back to where the person was", async () => {
     const onClose = vi.fn();
     await renderSettings({ tab: "models", onClose });
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
@@ -507,12 +508,12 @@ describe("SettingsPage (UI refresh spec §5.5)", () => {
   it("a section that needs attention carries an orange count", async () => {
     await renderSettings({ tab: "general", pluginsNeedingReview: 2 });
     const plugins = await screen.findByRole("tab", { name: /Plugins/ });
-    expect((await within(plugins).findByText("2")).className).toContain("hh-tag-orange");
+    expect((await within(plugins).findByText("2")).getAttribute("data-accent-color")).toBe("orange");
     // No count when nothing needs the person.
     cleanup();
     await renderSettings({ tab: "general", pluginsNeedingReview: 0 });
     await new Promise((r) => setTimeout(r, 20));
-    expect(screen.getByRole("tab", { name: "Plugins" }).querySelector(".hh-tag")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Plugins" }).querySelector(".rt-Badge")).toBeNull();
   });
 
   it("ArrowDown and ArrowUp move along the section list", async () => {

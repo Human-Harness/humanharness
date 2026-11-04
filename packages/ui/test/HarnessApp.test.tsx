@@ -40,7 +40,7 @@ async function breakEngine(client: FakeClient, status: Partial<FakeClient["statu
   await screen.findByPlaceholderText(/Write a message…/);
   client.status = { ...client.status, ...status };
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
 }
 
 describe("HarnessApp", () => {
@@ -48,11 +48,11 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     render(<HarnessApp client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const sizes = await screen.findByRole("group", { name: "Text size" });
-    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
+    const sizes = await screen.findByRole("radiogroup", { name: "Text size" });
+    expect(within(sizes).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("true");
     act(() => client.emitTextSize("larger"));
-    expect(within(sizes).getByRole("button", { name: "Larger" }).getAttribute("aria-pressed")).toBe("true");
-    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("false");
+    expect(within(sizes).getByRole("radio", { name: "Larger" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(sizes).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("shows the test-mode badge only in mock mode", async () => {
@@ -477,7 +477,7 @@ describe("HarnessApp", () => {
     render(<HarnessApp client={new FakeClient(ready)} />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Start Demo" })).toBeTruthy();
   });
@@ -487,8 +487,8 @@ describe("HarnessApp", () => {
     const gear = await screen.findByRole("button", { name: "Settings" });
     gear.focus();
     fireEvent.click(gear);
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Done" }));
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     expect(document.activeElement).toBe(gear);
   });
 
@@ -505,7 +505,7 @@ describe("HarnessApp", () => {
     fireEvent.click(await screen.findByRole("radio", { name: /Codex/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
     await waitFor(() => expect(client.state.config.engineId).toBe("codex"));
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     await screen.findByRole("button", { name: /Codex.*Connected/ });
     await act(async () => release());
     expect(screen.getByRole("button", { name: /Codex.*Connected/ })).toBeTruthy();
@@ -548,7 +548,7 @@ describe("HarnessApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     // The sheet hangs under Home's top bar, which stays in place.
     expect(dragStrip(container)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     await clickStart();
     await screen.findByPlaceholderText("Write a message…");
     expect(dragStrip(container)?.textContent).toContain("Demo");
@@ -749,7 +749,7 @@ describe("HarnessApp", () => {
     fireEvent.click(gear);
     await screen.findByRole("main", { name: "Settings" });
     expect(document.querySelector(".hh-topbar")!.closest("[inert]")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     expect(document.querySelector(".hh-topbar")!.closest("[inert]")).toBeNull();
   });
 
@@ -786,7 +786,7 @@ describe("HarnessApp", () => {
     fireEvent.click(await screen.findByRole("radio", { name: /Codex/ }));
     client.switchedFrom = "claude";
     fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     await screen.findByText("You're now using Codex, so I started a new conversation. The earlier one is saved in your folder.");
     expect(client.state.config.engineId).toBe("codex");
   });
@@ -876,7 +876,7 @@ describe("HarnessApp", () => {
     expect(within(rail).queryByRole("button", { name: "Settings" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Home" }));
     expect(await screen.findByRole("button", { name: /Start/ })).toBeTruthy();
   });
@@ -944,7 +944,7 @@ describe("HarnessApp language on demand (plan 5b)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Change…" }));
     expect(screen.getByRole("dialog", { name: "Language" })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Language" }), { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     act(() => client.pushLanguage({ language: "es", run: { tag: "es", done: 0, total: 1, status: "running" } }));
     act(() => client.pushLanguage({ language: "es", cached: [{ tag: "es", complete: true }], run: { tag: "es", done: 1, total: 1, status: "done" } }));
     expect(await screen.findByRole("button", { name: "Empezar Demo" })).toBeTruthy();
@@ -976,7 +976,7 @@ describe("HarnessApp language on demand (plan 5b)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use" }));
     // The window's own state says the offer is answered (main saved it too), so Home, still under the sheet, doesn't ask.
     expect(await screen.findByRole("button", { name: "Démarrer Demo", hidden: true })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
     await screen.findByRole("button", { name: "Démarrer Demo" });
     expect(client.languageCalls.map((c) => c.op)).toEqual(["choose"]);
     expect(document.querySelector(".hh-langoffer")).toBeNull();

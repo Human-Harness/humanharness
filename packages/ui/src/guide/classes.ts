@@ -11,6 +11,12 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-icon-chevron",
   // HhTheme: the Radix Themes root (Radix + Impeccable spec §3)
   "hh-theme",
+  // SettingsNav: Settings' left column (Radix + Impeccable spec §7, stage 2)
+  "hh-settings-nav",
+  "hh-gd-nav-item",
+  // Group's loose list and a file path in a Row's hint (guide/settings.tsx)
+  "hh-gd-list",
+  "hh-gd-path",
   // SidekickMark (§4)
   "hh-sk-mark",
   "hh-sk-mark-off",

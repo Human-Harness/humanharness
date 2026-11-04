@@ -33,13 +33,13 @@ function Sheet({ client, tab: first }: { client: FakeClient; tab: SettingsTab })
 
 describe("Settings › General › People (profiles spec §5)", () => {
   it("D0: no People section without profiles", async () => {
-    await renderIn("en", <Sheet client={new FakeClient(configured)} tab="general" />);
+    await renderIn("en", <Sheet client={new FakeClient(configured)} tab="general" />, { theme: true });
     expect(screen.queryByRole("heading", { name: "People" })).toBeNull();
   });
 
   it("lists every profile; the active one says so and can be edited, never archived or deleted", async () => {
     const client = family();
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     const sofi = await screen.findByRole("listitem", { name: "Sofi" });
     expect(within(sofi).getByText("In use now")).toBeTruthy();
     expect(within(sofi).queryByRole("button", { name: "Archive" })).toBeNull();
@@ -52,7 +52,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
 
   it("a blank name is refused next to Name, and nothing is saved", async () => {
     const client = family();
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     const sofi = await screen.findByRole("listitem", { name: "Sofi" });
     fireEvent.click(within(sofi).getByRole("button", { name: "Edit" }));
     fireEvent.change(await within(sofi).findByLabelText("Name"), { target: { value: "   " } });
@@ -64,7 +64,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
 
   it("archives another profile and brings it back", async () => {
     const client = family();
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     fireEvent.click(within(await screen.findByRole("listitem", { name: "Tomás" })).getByRole("button", { name: "Archive" }));
     fireEvent.click(await within(screen.getByRole("listitem", { name: "Tomás" })).findByRole("button", { name: "Bring back" }));
     await waitFor(() => expect(client.profileCalls).toEqual(["archive:tomas", "unarchive:tomas"]));
@@ -72,7 +72,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
 
   it("deletes only after asking twice", async () => {
     const client = family();
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     const tomas = await screen.findByRole("listitem", { name: "Tomás" });
     fireEvent.click(within(tomas).getByRole("button", { name: "Delete…" }));
     expect(within(tomas).getByText("Delete Tomás? This can't be undone from the app.")).toBeTruthy();
@@ -85,7 +85,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
 
   it("Cancel at either question deletes nothing", async () => {
     const client = family();
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     const tomas = await screen.findByRole("listitem", { name: "Tomás" });
     fireEvent.click(within(tomas).getByRole("button", { name: "Delete…" }));
     fireEvent.click(within(tomas).getByRole("button", { name: "Cancel" }));
@@ -100,7 +100,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
   it("a refused delete says so and keeps the profile", async () => {
     const client = family();
     client.profiles.delete = async (id) => (client.profileCalls.push(`delete:${id}`), { ok: false, reason: "failed" });
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     const tomas = await screen.findByRole("listitem", { name: "Tomás" });
     fireEvent.click(within(tomas).getByRole("button", { name: "Delete…" }));
     fireEvent.click(within(tomas).getByRole("button", { name: "Delete" }));
@@ -111,7 +111,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
   it("a refusal says why in one line: busy waits for the AI", async () => {
     const client = family();
     client.profiles.archive = async () => ({ ok: false, reason: "busy" });
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     fireEvent.click(within(await screen.findByRole("listitem", { name: "Tomás" })).getByRole("button", { name: "Archive" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Wait until the AI finishes, then try again.");
   });
@@ -119,7 +119,7 @@ describe("Settings › General › People (profiles spec §5)", () => {
   it("a long title with line breaks is drawn and asked about on one line", async () => {
     const client = family();
     client.profileList = [...client.profileList, { id: "max", title: "  Max\nthe   Second  ", createdAt: "", archived: false }];
-    await renderIn("en", <Sheet client={client} tab="general" />);
+    await renderIn("en", <Sheet client={client} tab="general" />, { theme: true });
     const max = await screen.findByRole("listitem", { name: "Max the Second" });
     fireEvent.click(within(max).getByRole("button", { name: "Delete…" }));
     expect(within(max).getByText("Delete Max the Second? This can't be undone from the app.")).toBeTruthy();
@@ -130,7 +130,7 @@ describe("Settings › Usage by person (profiles spec §4 'Usage')", () => {
   it("lists tokens per profile, most first", async () => {
     const client = family();
     client.usage = { limits: null, estimates: {}, tokens: {}, profiles: { sofi: 1200, tomas: 3400 } };
-    await renderIn("en", <Sheet client={client} tab="usage" />);
+    await renderIn("en", <Sheet client={client} tab="usage" />, { theme: true });
     const list = await screen.findByRole("list", { name: "Usage by person" });
     expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([expect.stringContaining("Tomás"), expect.stringContaining("Sofi")]);
   });
@@ -139,7 +139,7 @@ describe("Settings › Usage by person (profiles spec §4 'Usage')", () => {
     const client = family();
     client.profileList = [...client.profileList, { id: "ana", title: "Ana", createdAt: "", archived: true }, { id: "leo", title: "Leo", createdAt: "", archived: false }];
     client.usage = { limits: null, estimates: {}, tokens: {}, profiles: { ana: 50, ghost: 10, sofi: 1200 } };
-    await renderIn("en", <Sheet client={client} tab="usage" />);
+    await renderIn("en", <Sheet client={client} tab="usage" />, { theme: true });
     const list = await screen.findByRole("list", { name: "Usage by person" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(5));
     const names = within(list).getAllByRole("listitem").map((li) => li.firstElementChild?.textContent);
@@ -149,7 +149,7 @@ describe("Settings › Usage by person (profiles spec §4 'Usage')", () => {
 
   it("D0: nothing per person without profiles", async () => {
     const client = new FakeClient(configured);
-    await renderIn("en", <Sheet client={client} tab="usage" />);
+    await renderIn("en", <Sheet client={client} tab="usage" />, { theme: true });
     await screen.findByRole("tabpanel");
     expect(screen.queryByRole("list", { name: "Usage by person" })).toBeNull();
   });

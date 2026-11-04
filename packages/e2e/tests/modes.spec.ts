@@ -63,7 +63,7 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     await expect(tab.getByRole("heading", { name: "Socratic" })).toBeVisible();
     await tab.getByRole("group", { name: "Questions" }).getByRole("button", { name: "Many" }).click();
     await expect.poll(storedSettings).toEqual({ modes: { socratic: { questions: "many" } } });
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     // The task starts asking for a recommendation; the block draws it.
     await page.getByRole("button", { name: "Start Coach" }).click();
@@ -99,7 +99,7 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     // Back to the default: nothing of it stays stored.
     await expect.poll(() => storedSettings()?.modes).toBeUndefined();
     await expect(tab.getByText("Pending")).toHaveCount(0);
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     // Worked examples asks for the deep tier; the task runs at standard: the question comes first.
     await bar.getByRole("button", { name: "Change mode" }).click();

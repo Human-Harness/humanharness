@@ -3059,7 +3059,7 @@ function registerIpc() {
   handle("hh:jobsRun", (id: unknown, scope: unknown) => jobsChannels.run(id, scope));
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
-    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
+    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id), hooks.engineProblem);
     return detectEngine(engine, commandDeps, shared);
   });
   handle("hh:acceptNotice", async (engineId: string) => {

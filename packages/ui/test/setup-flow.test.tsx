@@ -419,16 +419,18 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(screen.queryByRole("button", { name: /^Cancel/ })).toBeNull();
   });
 
-  it("shows engines as radio tiles with what they need and the next step", async () => {
+  it("shows engines as a radio choice with what they need and the next step", async () => {
     const client = withCodex(new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" }));
     client.statusFor.codex = { ...client.status, engineId: "codex", installed: false };
     await renderIn("en", <Flow client={client} />);
     const group = screen.getByRole("radiogroup", { name: "AI engines" });
     const claude = within(group).getByRole("radio", { name: /Claude/ });
     expect(claude.getAttribute("aria-checked")).toBe("true");
-    expect(claude.textContent).toContain("Anthropic");
-    expect(claude.textContent).toContain("Requires: Pro plan");
-    expect(await within(group).findByText("Not on this computer yet · we install it next")).toBeTruthy();
+    // Radix puts the radio's text in its label.
+    const label = claude.closest("label") as HTMLElement;
+    expect(label.textContent).toContain("Anthropic");
+    expect(label.textContent).toContain("Requires: Pro plan");
+    expect(await within(group).findByText("Not installed")).toBeTruthy();
     await within(group).findByRole("radio", { name: /Claude.*Connected/ });
     // Settings' button tiles aren't shown here.
     expect(screen.queryByRole("group", { name: "AI engines" })).toBeNull();
@@ -444,25 +446,23 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     await renderIn("en", <Flow client={client} />);
     const group = screen.getByRole("radiogroup", { name: "AI engines" });
     const [claude, codex] = within(group).getAllByRole("radio");
-    expect([claude.tabIndex, codex.tabIndex]).toEqual([0, -1]);
+    // Radix keeps the one tab stop on the group, then roves the focus (on the next tick).
+    expect(group.tabIndex).toBe(0);
     claude.focus();
-    fireEvent.keyDown(claude, { key: "ArrowRight" });
-    expect(codex.getAttribute("aria-checked")).toBe("true");
-    expect(document.activeElement).toBe(codex);
-    expect([claude.tabIndex, codex.tabIndex]).toEqual([-1, 0]);
+    fireEvent.keyDown(claude, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(codex));
+    await waitFor(() => expect(codex.getAttribute("aria-checked")).toBe("true"));
     // It wraps around.
     fireEvent.keyDown(codex, { key: "ArrowDown" });
-    expect(claude.getAttribute("aria-checked")).toBe("true");
-    expect(document.activeElement).toBe(claude);
-    fireEvent.keyDown(claude, { key: "ArrowUp" });
-    expect(codex.getAttribute("aria-checked")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(claude));
+    await waitFor(() => expect(claude.getAttribute("aria-checked")).toBe("true"));
   });
 
   it("checks a ready engine in a One last check card, with the reassurance line, Back and Next in the footer", async () => {
     await renderIn("en", <Flow client={new FakeClient()} />);
     fireEvent.click(next());
     await screen.findByRole("heading", { name: "Which AI does Demo use?" });
-    const card = (await screen.findByRole("heading", { name: "One last check" })).closest(".hh-settings-card") as HTMLElement;
+    const card = (await screen.findByRole("heading", { name: "One last check" })).closest("section") as HTMLElement;
     expect(within(card).getByText("Claude is ready ✓")).toBeTruthy();
     expect(within(card).getByText("Pro plan")).toBeTruthy();
     expect(within(card).getByText("USA")).toBeTruthy();

@@ -30,6 +30,7 @@ export function Group({
   title,
   tag,
   loose,
+  flush,
   titleId,
   titleRef,
   hint,
@@ -48,6 +49,8 @@ export function Group({
   after?: ReactNode;
   tag?: ReactNode;
   loose?: boolean;
+  /** A card with no space of its own under it, for a column that spaces its parts itself (the Assistant's step). */
+  flush?: boolean;
   children: ReactNode;
   "data-setting"?: string;
 }) {
@@ -78,7 +81,7 @@ export function Group({
     );
   }
   return (
-    <Box asChild mb="5">
+    <Box asChild mb={flush ? undefined : "5"}>
       <section aria-labelledby={title ? id : undefined} data-setting={setting}>
         <Card size="3">
           {(title || tag) && (

@@ -2,9 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "./guide/icons";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
-import { EngineOnboarding, LegalInEnglish, useLegalLang } from "./EngineOnboarding";
-import { SettingsCard } from "./settings-parts";
-import { Option, OptionGroup } from "./guide/Option";
+import { EngineOnboarding, useLegalLang } from "./EngineOnboarding";
 import { Group, Row, Rx, SectionHead } from "./guide";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
@@ -128,365 +126,255 @@ export function EngineTab({
     if (!result.ok) setFailed(true);
   };
 
-  // Settings › Engine (Radix + Impeccable stage 2b). The setup flow's step below keeps its old pieces until stage 3.
-  if (!setup) {
-    const badge = (e: (typeof state.engines)[number]) => {
-      const s = statuses[e.id];
-      const ok = checkErrors[e.id] === undefined && s !== undefined && engineProblem(s) === null;
-      const label = checkErrors[e.id] !== undefined ? t("home.notConnected") : !s ? t("home.checking") : ok ? t("home.connected") : t("home.notConnected");
-      return (
-        <Rx.Badge color={ok ? "green" : "gray"} variant="soft">
-          {label}
-        </Rx.Badge>
-      );
-    };
-    // Read-only data: the row with its value as a grey tag (DESIGN.md "Settings rows").
-    const readOnly = (key: string, label: string, value: string | null) => (
-      <Row key={key} label={label}>
-        <Rx.Badge color="gray" variant="soft">
-          {value}
-        </Rx.Badge>
-      </Row>
-    );
+  /**
+   * An engine's state as a badge. In the Assistant a missing step is orange, what comes next (DESIGN.md tag colors);
+   * Settings keeps it gray, as stage 2b set it.
+   */
+  const badge = (e: (typeof state.engines)[number]) => {
+    const s = statuses[e.id];
+    const problem = s ? engineProblem(s) : undefined;
+    const off = checkErrors[e.id] !== undefined;
+    const ok = !off && s !== undefined && problem === null;
+    const next = setup && !off && problem !== undefined && problem !== null;
+    const label = off ? t("home.notConnected") : !s ? t("home.checking") : ok ? t("home.connected") : next ? t(`setupFlow.tileBadge.${problem}`) : t("home.notConnected");
     return (
-      <div>
-        <SectionHead line={t("settings.line.engine", { name: state.harness.name })} />
-        {failed && (
-          <Rx.Callout.Root color="red" role="alert" mb="3">
-            <Rx.Callout.Text>{t("engine.failed")}</Rx.Callout.Text>
-          </Rx.Callout.Root>
-        )}
-        {/* A choice with a description (DESIGN.md "Field and form controls"): logo, name, then its state as badges. */}
-        <Rx.Box asChild mb="5">
-          <section data-setting="engine.engine">
-            <Rx.Card size="3">
-              <Rx.RadioGroup.Root value={selected ?? ""} onValueChange={setSelected} aria-label={t("engine.tilesLabel")}>
-                <Rx.Flex direction="column" gap="4">
-                  {state.engines.map((e) => (
-                    <Rx.RadioGroup.Item key={e.id} value={e.id} disabled={setupEngine !== undefined && e.id !== setupEngine}>
-                      <Rx.Flex align="center" gap="3">
-                        {e.logo ? <img src={e.logo} alt="" width={24} height={24} /> : <Icon name="engine" size={18} />}
-                        <Rx.Flex direction="column" gap="1">
-                          <Rx.Text size="2" weight="medium">
-                            {e.name}
-                          </Rx.Text>
-                          <Rx.Flex gap="2" wrap="wrap" align="center">
-                            {badge(e)}
-                            {e.id === current && (
-                              <Rx.Badge color="green" variant="soft">
-                                {t("engine.current")}
-                              </Rx.Badge>
-                            )}
-                            {e.status === "pending" && (
-                              <Rx.Text size="1" color="gray">
-                                {t("setup.enginePending")}
-                              </Rx.Text>
-                            )}
-                          </Rx.Flex>
-                        </Rx.Flex>
-                      </Rx.Flex>
-                    </Rx.RadioGroup.Item>
-                  ))}
-                </Rx.Flex>
-              </Rx.RadioGroup.Root>
-              {/* The card's end: a caption, and on the right the one action (DESIGN.md "Card and settings rows"). */}
-              <Rx.Flex align="center" justify="between" gap="3" mt="4" wrap="wrap">
-                <Rx.Text as="p" size="1" color="gray">
-                  {t("engine.moreSoon")}
-                </Rx.Text>
-                {engine && status && ready && selected !== current && (
-                  <Rx.Button size="1" disabled={busy !== null} onClick={() => void use()}>
-                    {t("engine.use", { engine: engine.name })}
-                  </Rx.Button>
-                )}
-              </Rx.Flex>
-            </Rx.Card>
-          </section>
-        </Rx.Box>
-
-        {engine && checkError !== undefined && (
-          <Rx.Callout.Root color="red" mb="5">
-            <Rx.Flex direction="column" gap="2" role="alert">
-              <Rx.Callout.Text>{t("engine.checkFailed", { engine: engine.name })}</Rx.Callout.Text>
-              {checkError && (
-                <details>
-                  <Rx.Text size="1" asChild>
-                    <summary>{t("engine.details")}</summary>
-                  </Rx.Text>
-                  <Rx.Text as="p" size="1" className="hh-gd-path">
-                    {checkError}
-                  </Rx.Text>
-                </details>
-              )}
-            </Rx.Flex>
-            <Rx.Box>
-              <Rx.Button size="1" variant="outline" color="gray" onClick={() => void refresh(engine.id)}>
-                {t("engine.recheck")}
-              </Rx.Button>
-            </Rx.Box>
-          </Rx.Callout.Root>
-        )}
-        {engine && checkError === undefined && !status && (
-          <Rx.Text as="p" size="2" color="gray" role="status">
-            {t("engine.checking", { engine: engine.name })}
-          </Rx.Text>
-        )}
-        {/* Not ready: the install and sign-in steps keep their old pieces until the Assistant moves (Marco, 2026-11-04). */}
-        {engine && status && !ready && <EngineOnboarding key={engine.id} client={client} engine={engine} status={status} refresh={() => refresh(engine.id)} />}
-        {engine && status && ready && (
-          <Group
-            title={engine.name}
-            tag={
-              selected === current && (
-                <Rx.Badge color="green" variant="soft">
-                  {t("engine.current")}
-                </Rx.Badge>
-              )
-            }
-          >
-            {engine.mock
-              ? // The test engine: nothing to sign out of, no plan, no provider to disclose.
-                [
-                  readOnly("model", t("mock.model"), t("mock.modelName")),
-                  readOnly("answers", t("mock.answers"), t("mock.answersValue")),
-                  readOnly("data", t("mock.data"), t("mock.dataValue")),
-                  readOnly("plan", t("mock.plan"), t("mock.planValue")),
-                ]
-              : [
-                  <Row
-                    key="ready"
-                    label={t("engine.ready", { engine: engine.name })}
-                    below={
-                      askSignOut && (
-                        <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
-                          <Rx.Text as="p" size="2">
-                            {t("engine.signOutAsk", { engine: engine.name })}
-                          </Rx.Text>
-                          <Rx.Flex gap="2">
-                            <Rx.Button
-                              size="1"
-                              variant="soft"
-                              color="red"
-                              onClick={() => {
-                                setAskSignOut(false);
-                                void signOut();
-                              }}
-                            >
-                              {t("engine.signOut")}
-                            </Rx.Button>
-                            <Rx.Button size="1" variant="outline" color="gray" onClick={() => setAskSignOut(false)}>
-                              {t("engine.cancel")}
-                            </Rx.Button>
-                          </Rx.Flex>
-                        </Rx.Flex>
-                      )
-                    }
-                  >
-                    {busy === "logout" ? (
-                      <Rx.Text size="1" color="gray" role="status">
-                        {t("engine.signingOut")}
-                      </Rx.Text>
-                    ) : (
-                      !askSignOut && (
-                        <Rx.Button size="1" variant="soft" color="red" disabled={busy !== null} onClick={() => setAskSignOut(true)}>
-                          {t("engine.signOut")}
-                        </Rx.Button>
-                      )
-                    )}
-                  </Row>,
-                  signOutHint && (
-                    <Row key="hint" label={<span role="status">{t(signOutHint === "manual" ? "engine.signOutManual" : "engine.signOutTerminal")}</span>}>
-                      <Rx.Button size="1" variant="outline" color="gray" onClick={() => void refresh(engine.id).then(() => setSignOutHint(false))}>
-                        {t("engine.providerRecheck")}
-                      </Rx.Button>
-                    </Row>
-                  ),
-                  readOnly("plan", t("engine.plan"), engine.requires),
-                  readOnly("data", t("engine.data"), engine.dataLocation),
-                  readOnly("version", t("engine.version"), status.version),
-                  <Rx.Box key="legal" pt="3">
-                    <Rx.Text as="p" size="1" color="gray" lang={legalLang}>
-                      {t("legal.engine.noticeContent", { provider: engine.provider })}
-                    </Rx.Text>
-                    {legalLang && (
-                      <Rx.Text as="p" size="1" color="gray" mt="1">
-                        {t("language.legalEnglish")}
-                      </Rx.Text>
-                    )}
-                  </Rx.Box>,
-                ]}
-          </Group>
-        )}
-      </div>
+      <Rx.Badge color={ok ? "green" : next ? "orange" : "gray"} variant="soft">
+        {label}
+      </Rx.Badge>
     );
-  }
+  };
+  // Read-only data: the row with its value as a grey tag (DESIGN.md "Settings rows").
+  const readOnly = (key: string, label: string, value: string | null) => (
+    <Row key={key} label={label}>
+      <Rx.Badge color="gray" variant="soft">
+        {value}
+      </Rx.Badge>
+    </Row>
+  );
+  const link = (href: string, text: string) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {text}
+    </a>
+  );
 
-  return (
-    <div className="hh-tab">
-      {/* The setup flow's engine step (the Assistant, old pieces until stage 3). */}
-      <SetupTiles state={state} statuses={statuses} checkErrors={checkErrors} selected={selected} setupEngine={setupEngine} onSelect={setSelected} />
+  /**
+   * The engines as a choice with a description (DESIGN.md "Engine choice"): logo, name, then its state as badges. The
+   * Assistant adds the maker and what it needs, in 12 grey, since the person has not seen them yet.
+   */
+  const choice = (
+    <Rx.Box asChild mb={setup ? undefined : "5"}>
+      <section data-setting="engine.engine">
+        <Rx.Card size="3">
+          <Rx.RadioGroup.Root value={selected ?? ""} onValueChange={setSelected} aria-label={t("engine.tilesLabel")}>
+            <Rx.Flex direction="column" gap="4">
+              {state.engines.map((e) => (
+                <Rx.RadioGroup.Item key={e.id} value={e.id} data-engine={e.id} disabled={setupEngine !== undefined && e.id !== setupEngine}>
+                  <Rx.Flex align="start" gap="3">
+                    {e.logo ? <img src={e.logo} alt="" width={24} height={24} /> : <Icon name="engine" size={18} />}
+                    <Rx.Flex direction="column" gap="1">
+                      <Rx.Text size="2" weight="medium">
+                        {e.name}
+                      </Rx.Text>
+                      {setup && (
+                        <Rx.Text size="1" color="gray">
+                          {e.provider} · {t("setup.engineRequires", { plan: e.requires })}
+                        </Rx.Text>
+                      )}
+                      <Rx.Flex gap="2" wrap="wrap" align="center">
+                        {badge(e)}
+                        {e.id === current && (
+                          <Rx.Badge color="green" variant="soft">
+                            {t("engine.current")}
+                          </Rx.Badge>
+                        )}
+                        {e.status === "pending" && (
+                          <Rx.Text size="1" color="gray">
+                            {t("setup.enginePending")}
+                          </Rx.Text>
+                        )}
+                      </Rx.Flex>
+                    </Rx.Flex>
+                  </Rx.Flex>
+                </Rx.RadioGroup.Item>
+              ))}
+            </Rx.Flex>
+          </Rx.RadioGroup.Root>
+          {/* The card's end: a caption, and on the right the one action (DESIGN.md "Card and settings rows"). The
+              Assistant saves the engine itself, with its Next. */}
+          <Rx.Flex align="center" justify="between" gap="3" mt="4" wrap="wrap">
+            <Rx.Text as="p" size="1" color="gray">
+              {t("engine.moreSoon")}
+            </Rx.Text>
+            {!setup && engine && status && ready && selected !== current && (
+              <Rx.Button size="1" disabled={busy !== null} onClick={() => void use()}>
+                {t("engine.use", { engine: engine.name })}
+              </Rx.Button>
+            )}
+          </Rx.Flex>
+        </Rx.Card>
+      </section>
+    </Rx.Box>
+  );
 
-      {engine && checkError !== undefined && (
-        <div className="hh-onboarding">
-          <div role="alert">
-            <p>{t("engine.checkFailed", { engine: engine.name })}</p>
+  const failedNotice = failed && (
+    <Rx.Callout.Root color="red" role="alert" mb={setup ? undefined : "3"}>
+      <Rx.Callout.Text>{t("engine.failed")}</Rx.Callout.Text>
+    </Rx.Callout.Root>
+  );
+
+  const checking = engine && (
+    <>
+      {checkError !== undefined && (
+        <Rx.Callout.Root color="red" mb={setup ? undefined : "5"}>
+          <Rx.Flex direction="column" gap="2" role="alert">
+            <Rx.Callout.Text>{t("engine.checkFailed", { engine: engine.name })}</Rx.Callout.Text>
             {checkError && (
               <details>
-                <summary>{t("engine.details")}</summary>
-                <pre>{checkError}</pre>
+                <Rx.Text size="1" asChild>
+                  <summary>{t("engine.details")}</summary>
+                </Rx.Text>
+                <Rx.Text as="p" size="1" className="hh-gd-path">
+                  {checkError}
+                </Rx.Text>
               </details>
             )}
-          </div>
-          <button onClick={() => void refresh(engine.id)}>{t("engine.recheck")}</button>
-        </div>
+          </Rx.Flex>
+          <Rx.Box>
+            <Rx.Button size="1" variant="outline" color="gray" onClick={() => void refresh(engine.id)}>
+              {t("engine.recheck")}
+            </Rx.Button>
+          </Rx.Box>
+        </Rx.Callout.Root>
       )}
-      {engine && checkError === undefined && !status && <p role="status">{t("engine.checking", { engine: engine.name })}</p>}
-      {engine && status && !ready && (
-        <EngineOnboarding key={engine.id} client={client} engine={engine} status={status} refresh={() => refresh(engine.id)} />
+      {checkError === undefined && !status && (
+        <Rx.Text as="p" size="2" color="gray" role="status">
+          {t("engine.checking", { engine: engine.name })}
+        </Rx.Text>
       )}
-      {engine && status && ready && (
-        <>
-          {/* The setup flow's engine step: the engine's card, as its "One last check" (UI refresh spec §5.6). */}
-          <SettingsCard title={t("setupFlow.lastCheck")}>
-          {engine.mock ? (
-            // The test engine: nothing to sign out of, no plan, no provider to disclose.
-            <div className="hh-rows">
-              <div className="hh-row">
-                <span className="hh-row-label">{t("mock.model")}</span>
-                <span>{t("mock.modelName")}</span>
-              </div>
-              <div className="hh-row">
-                <span className="hh-row-label">{t("mock.answers")}</span>
-                <span>{t("mock.answersValue")}</span>
-              </div>
-              <div className="hh-row">
-                <span className="hh-row-label">{t("mock.data")}</span>
-                <span>{t("mock.dataValue")}</span>
-              </div>
-              <div className="hh-row">
-                <span className="hh-row-label">{t("mock.plan")}</span>
-                <span>{t("mock.planValue")}</span>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="hh-rows">
-                <div className="hh-row">
-                  <span>{t("engine.ready", { engine: engine.name })}</span>
-                  {busy === "logout" ? (
-                    <span role="status">{t("engine.signingOut")}</span>
-                  ) : (
-                    <button disabled={busy !== null} onClick={() => void signOut()}>
-                      {t("engine.signOut")}
-                    </button>
-                  )}
-                </div>
-                {signOutHint && (
-                  <div className="hh-row">
-                    <span role="status">{t(signOutHint === "manual" ? "engine.signOutManual" : "engine.signOutTerminal")}</span>
-                    <button onClick={() => void refresh(engine.id).then(() => setSignOutHint(false))}>{t("engine.providerRecheck")}</button>
-                  </div>
-                )}
-                <div className="hh-row">
-                  <span className="hh-row-label">{t("engine.plan")}</span>
-                  <span>{engine.requires}</span>
-                </div>
-                <div className="hh-row">
-                  <span className="hh-row-label">{t("engine.data")}</span>
-                  <span>{engine.dataLocation}</span>
-                </div>
-                <div className="hh-row">
-                  <span className="hh-row-label">{t("engine.version")}</span>
-                  <span>{status.version}</span>
-                </div>
-              </div>
-              <p className="hh-caption" lang={legalLang}>{t("legal.engine.noticeContent", { provider: engine.provider })}</p>
-              <LegalInEnglish />
-              <p className="hh-caption">
-                <a href={engine.termsUrl} target="_blank" rel="noreferrer">
-                  {t("engine.terms", { provider: engine.provider })}
-                </a>{" "}
-                ·{" "}
-                <a href={engine.privacyUrl} target="_blank" rel="noreferrer">
-                  {t("engine.privacy", { provider: engine.provider })}
-                </a>
-              </p>
-            </>
-          )}
-          </SettingsCard>
-        </>
+      {/* Not ready: the step it still needs, in a card of its own (spec §9). */}
+      {status && !ready && (
+        <Rx.Box mb={setup ? undefined : "5"}>
+          <EngineOnboarding key={engine.id} client={client} engine={engine} status={status} refresh={() => refresh(engine.id)} />
+        </Rx.Box>
       )}
-      {failed && (
-        <p className="hh-save-error" role="alert">
-          {t("engine.failed")}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/**
- * The setup flow's engines as radio tiles (UI refresh spec §5.6): logo, name, maker, what it needs and a status line
- * that says what comes next. One tab stop for the group; the arrow keys move the choice, as in any radio group.
- */
-function SetupTiles({
-  state,
-  statuses,
-  checkErrors,
-  selected,
-  setupEngine,
-  onSelect,
-}: {
-  state: AppState;
-  statuses: Record<string, EngineStatus>;
-  checkErrors: Record<string, string>;
-  selected: string | undefined;
-  setupEngine?: string;
-  onSelect: (id: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <>
-      <OptionGroup followFocus label={t("engine.tilesLabel")} data-setting="engine.engine">
-        {state.engines.map((e) => {
-          const s = statuses[e.id];
-          const problem = s ? engineProblem(s) : undefined;
-          const tone = checkErrors[e.id] !== undefined ? "off" : !s ? "wait" : problem === null ? "ok" : "next";
-          const line =
-            checkErrors[e.id] !== undefined
-              ? t("home.notConnected")
-              : !s
-                ? t("home.checking")
-                : problem === null || problem === undefined
-                  ? t("home.connected")
-                  : t(`setupFlow.tileStatus.${problem}`);
-          const checked = selected === e.id;
-          return (
-            <Option
-              key={e.id}
-              data-engine={e.id}
-              checked={checked}
-              disabled={setupEngine !== undefined && e.id !== setupEngine}
-              onClick={() => onSelect(e.id)}
-              lead={e.logo ? <img src={e.logo} alt="" /> : <Icon name="engine" size={18} />}
-              title={e.name}
-              description={
-                <>
-                  <span>{e.provider}</span>
-                  <span>{t("setup.engineRequires", { plan: e.requires })}</span>
-                  <span className="hh-engine-radio-status" data-tone={tone}>
-                    <span className={tone === "ok" ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
-                    {line}
-                  </span>
-                  {e.id === state.config.engineId && <span>{t("engine.current")}</span>}
-                  {e.status === "pending" && <em>{t("setup.enginePending")}</em>}
-                </>
-              }
-            />
-          );
-        })}
-      </OptionGroup>
-      <p className="hh-caption hh-engine-more">{t("engine.moreSoon")}</p>
     </>
+  );
+
+  /**
+   * A ready engine: what it is, signing out, its plan, data and version. In the Assistant it is the step's
+   * "One last check" (UI refresh spec §5.6) and carries the provider's terms, read for the first time here.
+   */
+  const readyCard = engine && status && ready && (
+    <Group
+      flush={setup}
+      title={setup ? t("setupFlow.lastCheck") : engine.name}
+      tag={
+        selected === current && (
+          <Rx.Badge color="green" variant="soft">
+            {t("engine.current")}
+          </Rx.Badge>
+        )
+      }
+    >
+      {engine.mock
+        ? // The test engine: nothing to sign out of, no plan, no provider to disclose.
+          [
+            readOnly("model", t("mock.model"), t("mock.modelName")),
+            readOnly("answers", t("mock.answers"), t("mock.answersValue")),
+            readOnly("data", t("mock.data"), t("mock.dataValue")),
+            readOnly("plan", t("mock.plan"), t("mock.planValue")),
+          ]
+        : [
+            <Row
+              key="ready"
+              label={t("engine.ready", { engine: engine.name })}
+              below={
+                askSignOut && (
+                  <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
+                    <Rx.Text as="p" size="2">
+                      {t("engine.signOutAsk", { engine: engine.name })}
+                    </Rx.Text>
+                    <Rx.Flex gap="2">
+                      <Rx.Button
+                        size="1"
+                        variant="soft"
+                        color="red"
+                        onClick={() => {
+                          setAskSignOut(false);
+                          void signOut();
+                        }}
+                      >
+                        {t("engine.signOut")}
+                      </Rx.Button>
+                      <Rx.Button size="1" variant="outline" color="gray" onClick={() => setAskSignOut(false)}>
+                        {t("engine.cancel")}
+                      </Rx.Button>
+                    </Rx.Flex>
+                  </Rx.Flex>
+                )
+              }
+            >
+              {busy === "logout" ? (
+                <Rx.Text size="1" color="gray" role="status">
+                  {t("engine.signingOut")}
+                </Rx.Text>
+              ) : (
+                !askSignOut && (
+                  <Rx.Button size="1" variant="soft" color="red" disabled={busy !== null} onClick={() => setAskSignOut(true)}>
+                    {t("engine.signOut")}
+                  </Rx.Button>
+                )
+              )}
+            </Row>,
+            signOutHint && (
+              <Row key="hint" label={<span role="status">{t(signOutHint === "manual" ? "engine.signOutManual" : "engine.signOutTerminal")}</span>}>
+                <Rx.Button size="1" variant="outline" color="gray" onClick={() => void refresh(engine.id).then(() => setSignOutHint(false))}>
+                  {t("engine.providerRecheck")}
+                </Rx.Button>
+              </Row>
+            ),
+            readOnly("plan", t("engine.plan"), engine.requires),
+            readOnly("data", t("engine.data"), engine.dataLocation),
+            readOnly("version", t("engine.version"), status.version),
+            <Rx.Flex key="legal" direction="column" gap="1" pt="3">
+              <Rx.Text as="p" size="1" color="gray" lang={legalLang}>
+                {t("legal.engine.noticeContent", { provider: engine.provider })}
+              </Rx.Text>
+              {legalLang && (
+                <Rx.Text as="p" size="1" color="gray">
+                  {t("language.legalEnglish")}
+                </Rx.Text>
+              )}
+              {setup && (
+                <Rx.Text as="p" size="1" color="gray">
+                  {link(engine.termsUrl, t("engine.terms", { provider: engine.provider }))} ·{" "}
+                  {link(engine.privacyUrl, t("engine.privacy", { provider: engine.provider }))}
+                </Rx.Text>
+              )}
+            </Rx.Flex>,
+          ]}
+    </Group>
+  );
+
+  // The Assistant's engine step (stage 3c): the parts follow each other in the step's column, the save error last.
+  if (setup) {
+    return (
+      <Rx.Flex direction="column" gap="4">
+        {choice}
+        {checking}
+        {readyCard}
+        {failedNotice}
+      </Rx.Flex>
+    );
+  }
+  // Settings › Engine (stage 2b): the save error above the card it is about.
+  return (
+    <div>
+      <SectionHead line={t("settings.line.engine", { name: state.harness.name })} />
+      {failedNotice}
+      {choice}
+      {checking}
+      {readyCard}
+    </div>
   );
 }

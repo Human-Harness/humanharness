@@ -84,7 +84,10 @@ Cost per panel: about +270 KB JS and ~700 KB CSS raw (160 / 83 KB gzip). Accepte
 
 Each stage leaves the app working; old pieces render fine inside `<Theme>` (seen in the spike), so screens move one at a time.
 
-0. **Evaluate undoing the hand-built guide work** (Part 5 on `feat/sg-forms` and the merged Parts 1–4): what each part changed, what Radix replaces anyway, what is cheaper to revert than to migrate. Marco decides per part before stage 1.
+0. **Hand-built guide work: decided 2026-11-04, nothing is reverted.**
+   - Parts 1–3 stay: tokens (#116, #118), guard test (#117) and icons (#119). The spec keeps all three.
+   - Part 4 (#120, #121) stays in master. The migration replaces its pieces screen by screen, and stage 7 deletes them.
+   - Part 5 (`feat/sg-forms`, never merged) is discarded. Its decisions already live in section 5 of the guide spec, which DESIGN.md is built from.
 1. Theme + bridge stylesheet + barrel + guard test update; Impeccable, PRODUCT.md, DESIGN.md.
 2. Settings (General from spike commit 9d6782e9, then the other tabs).
 3. Inicio and Assistant.
@@ -103,7 +106,7 @@ Each stage leaves the app working; old pieces render fine inside `<Theme>` (seen
 Every section was approved as written. The open questions were answered:
 
 1. **Impeccable's launcher** may download and run its binary.
-2. **Part 5 (forms) on `feat/sg-forms` stops.** Before the migration starts, evaluate whether the hand-built guide work should be undone (reverted) rather than kept alongside Radix; the evaluation is the first step of the plan (section 7, stage 0).
+2. **Part 5 (forms) on `feat/sg-forms` stops** and is discarded. Merged Parts 1–4 are not reverted (section 7, stage 0).
 3. **Pieces with no Radix match** (Option, Tile, StepMark, EmptyState, InlineConfirm) are not rebuilt: the screens that use them are redesigned so they no longer need them.
 4. **Plugin bundle cost** (~430 KB raw per panel) is accepted; no shared CSS.
 5. **Measures:** adopt Radix's size scale (1–4); the guide's closed heights are dropped.

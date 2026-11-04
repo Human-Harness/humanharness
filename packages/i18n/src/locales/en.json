@@ -902,6 +902,7 @@
       "up": "Move {{name}} up",
       "down": "Move {{name}} down",
       "remove": "Remove {{name}}",
+      "more": "More for {{name}}",
       "confirmRemove": "Remove {{name}}? What it learned stays until you forget it.",
       "confirmYes": "Yes, remove it",
       "orderHint": "When two could speak, the higher one does.",
@@ -1509,7 +1510,12 @@
     "test": "Test connection",
     "works": "Works",
     "testFailed": "Didn't work: {{message}}",
-    "testCouldNotRun": "The test couldn't run."
+    "testCouldNotRun": "The test couldn't run.",
+    "testing": "Testing…",
+    "more": "More for {{name}}",
+    "deleteAsk": "Delete the key for {{name}}? The app can't use it until you paste it again.",
+    "deleteConfirm": "Delete the key",
+    "cancel": "Cancel"
   },
   "tools": {
     "contextPrepared": "Prepared · {{name}}",

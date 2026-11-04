@@ -213,7 +213,9 @@ test("Test connection without a key says 'Demo key is not set — Settings › C
   await page.getByRole("tab", { name: "Connections" }).click();
   const key = page.getByRole("tabpanel").getByRole("group", { name: "Demo key" });
   await expect(key.getByText("Not set · paste the key to use it", { exact: true })).toBeVisible();
-  await key.getByRole("button", { name: "Test connection" }).click();
+  // Test connection lives in the key's ⋯ menu (Radix stage 2d).
+  await key.getByRole("button", { name: "More for Demo key" }).click();
+  await page.getByRole("menuitem", { name: "Test connection" }).click();
   await expect(key.getByRole("status")).toHaveText("Didn't work: Demo key is not set — Settings › Connections");
 
   // It failed before any request: the UI call's trace entry reaches nothing, so api.example.invalid was never asked.

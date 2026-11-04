@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickInScope } from "../client";
-import { Toggle } from "../guide/Toggle";
+import { Group, Row, Rx } from "../guide";
 import { SidekickMark, markIcon } from "./mark";
 
 /** The longest purpose text (the SDK's SIDEKICK_PURPOSE_TEXT_MAX; the UI imports only types). */
@@ -10,6 +10,9 @@ const PURPOSE_MAX = 600;
 /**
  * "Sidekicks in this <scope>" (spec §2a.4, Decision 8): for the open scope, each sidekick on or off there and its
  * purpose text there (saved on blur). Nothing is written until the person changes something.
+ *
+ * Radix stage 2d: a loose list titled by the scope; a row is the mark and the name with its switch, and the purpose
+ * text full-width under it.
  */
 export function ScopeSidekicks({ client, scope, scopeNoun }: { client: HarnessClient; scope: { id: string; label: string }; scopeNoun: string }) {
   const { t } = useTranslation();
@@ -37,19 +40,28 @@ export function ScopeSidekicks({ client, scope, scopeNoun }: { client: HarnessCl
   }, [client, scope.id]);
 
   return (
-    <section aria-labelledby={`${ids}-head`} className="hh-sk-list hh-sk-scope">
-      <h3 id={`${ids}-head`}>{t("sidekick.scope.title", { noun: scopeNoun })}</h3>
-      <p className="hh-caption">{scope.label}</p>
-      <p className="hh-caption" id={`${ids}-hint`}>
-        {t("sidekick.scope.purposeHint", { noun: scopeNoun })}
-      </p>
-      <ul className="hh-sk-list-rows">
-        {rows.map((r) => (
-          <ScopeRow key={r.id} client={client} scope={scope.id} row={r} hintId={`${ids}-hint`} onFailed={setFailed} />
-        ))}
-      </ul>
-      {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
-    </section>
+    <Group
+      loose
+      title={t("sidekick.scope.title", { noun: scopeNoun })}
+      hint={
+        <>
+          <span>{scope.label}</span> · <span id={`${ids}-hint`}>{t("sidekick.scope.purposeHint", { noun: scopeNoun })}</span>
+        </>
+      }
+      {...(failed !== null
+        ? {
+            after: (
+              <Rx.Callout.Root color="red" role="alert" mt="3">
+                <Rx.Callout.Text>{t("sidekick.settings.failed", { message: failed })}</Rx.Callout.Text>
+              </Rx.Callout.Root>
+            ),
+          }
+        : {})}
+    >
+      {rows.map((r) => (
+        <ScopeRow key={r.id} client={client} scope={scope.id} row={r} hintId={`${ids}-hint`} onFailed={setFailed} />
+      ))}
+    </Group>
   );
 }
 
@@ -106,6 +118,7 @@ function ScopeRow({
     };
   }, []);
   const boxId = useId();
+  const switchId = useId();
 
   const flush = () => {
     if (running.current || !live.current) return;
@@ -139,24 +152,23 @@ function ScopeRow({
   };
 
   return (
-    <li aria-busy={busy}>
-      <div className="hh-sk-list-row">
-        <SidekickMark icon={markIcon(row.mark)} off={!on} />
-        <div className="hh-sk-list-text">
-          <Toggle
-            checked={on}
-            onChange={(next) => {
-              setOn(next);
-              wanted.current = { ...wanted.current, on: next };
-              flush();
-            }}
-          >
-            {row.name}
-          </Toggle>
-          <label className="hh-caption" htmlFor={boxId}>
+    <Row
+      as="li"
+      aria-label={row.name}
+      busy={busy}
+      htmlFor={switchId}
+      label={
+        <Rx.Flex as="span" align="center" gap="2">
+          <SidekickMark icon={markIcon(row.mark)} off={!on} />
+          <bdi dir="auto">{row.name}</bdi>
+        </Rx.Flex>
+      }
+      below={
+        <Rx.Flex direction="column" gap="1">
+          <Rx.Text as="label" size="1" color="gray" htmlFor={boxId}>
             {t("sidekick.scope.purpose", { name: row.name })}
-          </label>
-          <textarea
+          </Rx.Text>
+          <Rx.TextArea
             id={boxId}
             rows={2}
             maxLength={PURPOSE_MAX}
@@ -168,8 +180,18 @@ function ScopeRow({
               flush();
             }}
           />
-        </div>
-      </div>
-    </li>
+        </Rx.Flex>
+      }
+    >
+      <Rx.Switch
+        id={switchId}
+        checked={on}
+        onCheckedChange={(next) => {
+          setOn(next);
+          wanted.current = { ...wanted.current, on: next };
+          flush();
+        }}
+      />
+    </Row>
   );
 }

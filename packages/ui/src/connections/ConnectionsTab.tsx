@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionResult, ConnectionsView, HarnessClient } from "../client";
 import { SecretField } from "./SecretField";
-import { SectionHead, SettingsCard } from "../settings-parts";
+import { Group, Rx, SectionHead } from "../guide";
 
 export interface Connections {
   /** null until the first answer. */
@@ -99,13 +99,22 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
     if (!result.ok) setRefusals((n) => n + 1);
     return result;
   };
+  // Radix stage 2d: one card with a row per key; a refusal is a red notice above the card (DESIGN.md "Settings").
   return (
-    <div className="hh-tab" data-setting="connections.connections">
-      <SectionHead title={t("connections.tab")} line={t("settings.line.connections")} />
-      {unavailable && <p role="alert">{t("connections.unavailable")}</p>}
+    <div data-setting="connections.connections">
+      <SectionHead line={t("settings.line.connections")} />
+      {unavailable && (
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{t("connections.unavailable")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      {error && (
+        <Rx.Callout.Root key={refusals} color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{error}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
       {view && !unavailable && (
-        <SettingsCard>
-        <div className="hh-rows">
+        <Group>
           {view.connections.map((c) => (
             <SecretField
               key={c.id}
@@ -115,13 +124,7 @@ export function ConnectionsTab({ client }: { client: HarnessClient }) {
               {...(c.test ? { onTest: () => test(c.id) } : {})}
             />
           ))}
-        </div>
-        </SettingsCard>
-      )}
-      {error && (
-        <p key={refusals} className="hh-field-error" role="alert">
-          {error}
-        </p>
+        </Group>
       )}
     </div>
   );

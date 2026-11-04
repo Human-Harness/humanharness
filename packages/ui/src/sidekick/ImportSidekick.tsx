@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "../client";
+import { Rx } from "../guide";
 import { SidekickMark, markIcon } from "./mark";
-import { Button } from "../guide/Button";
-import { Checkbox } from "../guide/Checkbox";
 
 /** A stored sidekick imported from files: its id and the fields a new draft doesn't carry (Save replaces every field). */
 export interface ImportedSidekick {
@@ -22,6 +21,8 @@ type Ok = Extract<SidekickImportResult, { ok: true }>;
  * picked and read in main only: the renderer gets a token for the pick, never paths. With `original` it is the re-import instead: nothing unless that sidekick's files
  * changed, then "The original changed · Bring the changes", whose preview saves over the same sidekick.
  * Everything in a draft came from someone else's text: it is shown as plain text only.
+ *
+ * Radix stage 2d: the import is one card; the re-import is one line under its row, its preview in a card below.
  */
 export function ImportSidekick({ client, onSaved, onCancel, original }: { client: HarnessClient; onSaved(): void; onCancel?(): void; original?: ImportedSidekick }) {
   const { t } = useTranslation();
@@ -123,82 +124,144 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
   const purpose = (p: SidekickPurposeView) => (p.id === "custom" ? t("sidekick.purposes.customText", { text: p.text ?? "" }) : t(`sidekick.purposes.${p.id}`));
   const learnedAt = (level: "you" | "harness") => draft?.learned.filter((l) => l.level === level) ?? [];
 
-  return (
-    <section aria-label={t("sidekick.import.title")} className="hh-sk-import">
-      {original ? (
-        <p>
-          <span>{t("sidekick.import.changed")}</span> ·{" "}
-          <Button type="button" ref={buttons.bring} kind="quiet" size="compact" aria-disabled={busy || saving} onClick={() => void bring()}>
-            {t("sidekick.import.bring")}
-          </Button>
-        </p>
-      ) : (
-        <>
-          <h3>{t("sidekick.import.title")}</h3>
-          <textarea aria-label={t("sidekick.import.paste")} value={text} onChange={(e) => setText(e.target.value)} rows={6} />
-          <div className="hh-sk-actions">
-            {/* aria-disabled, not disabled: the pressed button keeps focus while the import runs. */}
-            <button type="button" ref={buttons.run} aria-disabled={busy || saving || !text.trim()} onClick={() => text.trim() && void run("run", async () => ({ kind: "paste", text }))}>
-              {t("sidekick.import.run")}
-            </button>
-            <button type="button" ref={buttons.choose} aria-disabled={busy || saving} onClick={() => void choose()}>
-              {t("sidekick.import.choose")}
-            </button>
-          </div>
-        </>
-      )}
-      {busy && (
-        <p className="hh-caption" role="status">
-          {t("sidekick.import.working")}
-        </p>
-      )}
-      {failure && (
-        <p role="alert">
-          {failure.reason === "too-big" && failure.file === undefined
-            ? t("sidekick.import.errors.too-big-paste")
-            : t(`sidekick.import.errors.${failure.reason}`, { file: failure.file ?? "" })}
-        </p>
-      )}
-      {draft && (
-        <section aria-label={t("sidekick.import.preview")} className="hh-sk-preview">
-          <h4 ref={head} tabIndex={-1}>
-            <SidekickMark icon={markIcon(draft.draft.mark)} /> <strong>{draft.draft.name}</strong>
-          </h4>
-          {draft.draft.personality && <p className="hh-sk-personality">{draft.draft.personality}</p>}
-          <ul className="hh-sk-purposes">
-            {draft.draft.purposes.map((p, i) => (
-              <li key={i}>{purpose(p)}</li>
-            ))}
-          </ul>
-          {(["you", "harness"] as const).map(
-            (level) =>
-              learnedAt(level).length > 0 && (
-                <div key={level}>
-                  <h5>{t(level === "you" ? "sidekick.import.learned" : "sidekick.import.learnedApp")}</h5>
+  const working = busy && (
+    <Rx.Text as="p" size="1" color="gray" role="status" mt="2">
+      {t("sidekick.import.working")}
+    </Rx.Text>
+  );
+  const failed = failure && (
+    <Rx.Callout.Root color="red" role="alert" size="1" mt="3">
+      <Rx.Callout.Text>
+        {failure.reason === "too-big" && failure.file === undefined ? t("sidekick.import.errors.too-big-paste") : t(`sidekick.import.errors.${failure.reason}`, { file: failure.file ?? "" })}
+      </Rx.Callout.Text>
+    </Rx.Callout.Root>
+  );
+  // Everything in a draft came from someone else's text: plain text only, `dir="auto"` for its own direction.
+  const preview = draft && (
+    <Rx.Box asChild mt="3">
+      <section aria-label={t("sidekick.import.preview")}>
+        <Rx.Heading as="h4" size="2" ref={head} tabIndex={-1} mb="2">
+          <Rx.Flex as="span" align="center" gap="2">
+            <SidekickMark icon={markIcon(draft.draft.mark)} />
+            <bdi dir="auto">{draft.draft.name}</bdi>
+          </Rx.Flex>
+        </Rx.Heading>
+        {draft.draft.personality && (
+          <Rx.Text as="p" size="2" dir="auto" mb="2">
+            {draft.draft.personality}
+          </Rx.Text>
+        )}
+        <Rx.Text as="p" size="1" color="gray">
+          {draft.draft.purposes.map(purpose).join(" · ")}
+        </Rx.Text>
+        {(["you", "harness"] as const).map(
+          (level) =>
+            learnedAt(level).length > 0 && (
+              <Rx.Box key={level} mt="3">
+                <Rx.Heading as="h5" size="1" color="gray" mb="1">
+                  {t(level === "you" ? "sidekick.import.learned" : "sidekick.import.learnedApp")}
+                </Rx.Heading>
+                <Rx.Box asChild pl="4">
                   <ul>
                     {learnedAt(level).map((l, i) => (
-                      <li key={i}>{l.text}</li>
+                      <li key={i} dir="auto">
+                        <Rx.Text size="2">{l.text}</Rx.Text>
+                      </li>
                     ))}
                   </ul>
-                </div>
-              ),
-          )}
-          {draft.skipped.length > 0 && <p className="hh-caption">{t("sidekick.import.skipped", { list: draft.skipped.join(", ") })}</p>}
-          <p>{t("sidekick.import.copy")}</p>
-          <label>
-            <Checkbox purpose="accept" checked={ack} onChange={(e) => setAck(e.target.checked)} /> {t("sidekick.import.ack")}
-          </label>
-          {saveFailed && <p role="alert">{t("sidekick.import.saveFailed", { name: draft.draft.name })}</p>}
-          <div className="hh-sk-actions">
-            <Button type="button" kind="primary" disabled={!ack} aria-disabled={saving} onClick={() => void save(draft)}>
-              {t("sidekick.import.save")}
-            </Button>
-            <button type="button" onClick={close}>
-              {t("sidekick.import.cancel")}
-            </button>
-          </div>
-        </section>
-      )}
+                </Rx.Box>
+              </Rx.Box>
+            ),
+        )}
+        {draft.skipped.length > 0 && (
+          <Rx.Text as="p" size="1" color="gray" mt="2">
+            {t("sidekick.import.skipped", { list: draft.skipped.join(", ") })}
+          </Rx.Text>
+        )}
+        <Rx.Text as="p" size="2" mt="3">
+          {t("sidekick.import.copy")}
+        </Rx.Text>
+        <Rx.Text as="label" size="2" mt="2">
+          <Rx.Flex gap="2" align="center" mt="2">
+            <Rx.Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} />
+            {t("sidekick.import.ack")}
+          </Rx.Flex>
+        </Rx.Text>
+        {saveFailed && (
+          <Rx.Callout.Root color="red" role="alert" size="1" mt="3">
+            <Rx.Callout.Text>{t("sidekick.import.saveFailed", { name: draft.draft.name })}</Rx.Callout.Text>
+          </Rx.Callout.Root>
+        )}
+        <Rx.Flex justify="end" gap="2" mt="3">
+          <Rx.Button type="button" variant="outline" color="gray" onClick={close}>
+            {t("sidekick.import.cancel")}
+          </Rx.Button>
+          <Rx.Button type="button" variant="solid" disabled={!ack} aria-disabled={saving} onClick={() => void save(draft)}>
+            {t("sidekick.import.save")}
+          </Rx.Button>
+        </Rx.Flex>
+      </section>
+    </Rx.Box>
+  );
+
+  // The re-import: one line under the sidekick's row; its preview opens in a card below it.
+  if (original) {
+    return (
+      <section aria-label={t("sidekick.import.title")}>
+        <Rx.Flex align="center" gap="2" wrap="wrap">
+          <Rx.Text size="1" color="orange">
+            {t("sidekick.import.changed")}
+          </Rx.Text>
+          <Rx.Button type="button" ref={buttons.bring} variant="ghost" color="gray" size="1" aria-disabled={busy || saving} onClick={() => void bring()}>
+            {t("sidekick.import.bring")}
+          </Rx.Button>
+        </Rx.Flex>
+        {working}
+        {failed}
+        {preview && (
+          // Inside the list's row: under a line, not a second card.
+          <Rx.Box mt="3">
+            <Rx.Separator size="4" mb="3" />
+            {preview}
+          </Rx.Box>
+        )}
+      </section>
+    );
+  }
+
+  // The import: one card (DESIGN.md "an editor goes inside a card").
+  return (
+    <section aria-label={t("sidekick.import.title")}>
+      <Rx.Card size="2">
+        <Rx.Heading as="h3" size="3" mb="3">
+          {t("sidekick.import.title")}
+        </Rx.Heading>
+        <Rx.TextArea aria-label={t("sidekick.import.paste")} value={text} onChange={(e) => setText(e.target.value)} rows={6} />
+        <Rx.Flex gap="2" mt="3">
+          {/* aria-disabled, not disabled: the pressed button keeps focus while the import runs. */}
+          <Rx.Button
+            type="button"
+            variant="outline"
+            color="gray"
+            ref={buttons.run}
+            aria-disabled={busy || saving || !text.trim()}
+            onClick={() => text.trim() && void run("run", async () => ({ kind: "paste", text }))}
+          >
+            {t("sidekick.import.run")}
+          </Rx.Button>
+          <Rx.Button type="button" variant="outline" color="gray" ref={buttons.choose} aria-disabled={busy || saving} onClick={() => void choose()}>
+            {t("sidekick.import.choose")}
+          </Rx.Button>
+        </Rx.Flex>
+        {working}
+        {failed}
+        {preview && (
+          <>
+            <Rx.Separator size="4" mt="3" />
+            {preview}
+          </>
+        )}
+      </Rx.Card>
     </section>
   );
 }

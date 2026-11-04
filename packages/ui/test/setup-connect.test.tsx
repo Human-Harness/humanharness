@@ -51,11 +51,11 @@ const save = (label: string, value: string) => {
 describe("the connect step (tools spec §9)", () => {
   it("shows each secret's label, help and field; Next is disabled until every one is set", async () => {
     const c = client();
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     expect(screen.getByRole("heading", { name: "Connect your tools" })).toBeTruthy();
     await screen.findByRole("group", { name: "Jira API token" });
     // Only the step's own keys, in the step's order; slack is declared but not listed here.
-    expect(screen.getAllByRole("group").map((g) => g.querySelector(".hh-row-label")?.textContent)).toEqual([
+    expect(screen.getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual([
       "Jira API token",
       "GitHub token",
     ]);
@@ -85,7 +85,7 @@ describe("the connect step (tools spec §9)", () => {
   it("a refused key shows the reason, and Next stays disabled", async () => {
     const c = client();
     c.connectionsSet.add("jira");
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await screen.findByRole("group", { name: "GitHub token" });
     save("GitHub token", "short");
     expect((await screen.findByRole("alert")).textContent).toBe("A key is at least 8 characters");
@@ -95,7 +95,7 @@ describe("the connect step (tools spec §9)", () => {
   it("the same refusal twice is a new alert each time", async () => {
     const c = client();
     c.connectionsSet.add("jira");
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await screen.findByRole("group", { name: "GitHub token" });
     save("GitHub token", "short");
     const first = await screen.findByRole("alert");
@@ -111,7 +111,7 @@ describe("the connect step (tools spec §9)", () => {
     const c = client();
     c.connectionsSet.add("jira").add("gh");
     c.connections.get = async () => null;
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     expect((await screen.findByRole("alert")).textContent).toBe("Your keys can't be read right now.");
     expect(screen.queryByRole("group")).toBeNull();
     expect(next().disabled).toBe(true);
@@ -120,7 +120,7 @@ describe("the connect step (tools spec §9)", () => {
   it("Next calls setupSteps.complete(id) and moves on", async () => {
     const c = client([KEYS, EXTRA]);
     c.connectionsSet.add("jira").add("gh");
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await waitFor(() => expect(next().disabled).toBe(false));
     // The next step's keys stay unknown until this test lets them through.
     const real = c.connections.get;
@@ -141,7 +141,7 @@ describe("the connect step (tools spec §9)", () => {
   it("a step that lists no key never enables Next", async () => {
     const c = client([{ ...EXTRA, secrets: [] }]);
     c.connectionsSet.add("jira").add("gh").add("slack");
-    await renderIn("en", <Flow c={c} startAt="extra" />);
+    await renderIn("en", <Flow c={c} startAt="extra" />, { theme: true });
     // The keys are known (the caption shows only then) and the step still isn't ready.
     await screen.findByText("Paste each key to go on.");
     expect(screen.queryByRole("group")).toBeNull();
@@ -151,7 +151,7 @@ describe("the connect step (tools spec §9)", () => {
   it("a step that lists an undeclared key never enables Next", async () => {
     const c = client([{ ...KEYS, secrets: [{ id: "jira", label: "Jira API token" }, { id: "nope", label: "Not declared" }] }]);
     c.connectionsSet.add("jira").add("gh").add("slack");
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await screen.findByRole("group", { name: "Jira API token" });
     expect(within(row("Jira API token")).getByText("Set")).toBeTruthy();
     expect(screen.queryByRole("group", { name: "Not declared" })).toBeNull();
@@ -163,7 +163,7 @@ describe("the connect step (tools spec §9)", () => {
     const c = client();
     c.connectionsSet.add("jira").add("gh");
     c.setupFailure = { ok: false, reason: "incomplete" };
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await waitFor(() => expect(next().disabled).toBe(false));
     fireEvent.click(next());
     // Worded for keys, not the interview's text.
@@ -173,13 +173,13 @@ describe("the connect step (tools spec §9)", () => {
 
   it("Skip works for an optional step and is absent for a required one", async () => {
     const c = client([KEYS, EXTRA]);
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await screen.findByRole("group", { name: "Jira API token" });
     const footer = actions();
     expect(within(footer).queryByRole("button", { name: "Skip" })).toBeNull();
     cleanup();
 
-    await renderIn("en", <Flow c={c} startAt="extra" />);
+    await renderIn("en", <Flow c={c} startAt="extra" />, { theme: true });
     await screen.findByRole("group", { name: "Slack token" });
     fireEvent.click(within(actions()).getByRole("button", { name: "Skip" }));
     await screen.findByRole("heading", { name: "All set" });
@@ -190,7 +190,7 @@ describe("the connect step (tools spec §9)", () => {
   it("a step whose keys are already set shows them as set and Next enabled", async () => {
     const c = client();
     c.connectionsSet.add("jira").add("gh");
-    await renderIn("en", <Flow c={c} startAt="keys" />);
+    await renderIn("en", <Flow c={c} startAt="keys" />, { theme: true });
     await waitFor(() => expect(next().disabled).toBe(false));
     expect(within(row("Jira API token")).getByText("Set")).toBeTruthy();
     expect(within(row("GitHub token")).getByText("Set")).toBeTruthy();
@@ -208,7 +208,7 @@ describe("the connect step (tools spec §9)", () => {
       const [tab, setTab] = useState<SettingsTab>("harness");
       return <SettingsPage client={c} state={c.state} tab={tab} onTab={setTab} onChange={() => {}} onClose={() => {}} onSetup={onSetup} />;
     }
-    await renderIn("en", <Sheet />);
+    await renderIn("en", <Sheet />, { theme: true });
     const item = screen.getByRole("listitem", { name: "Connect your tools" });
     await waitFor(() => expect(within(item).getByText("Skipped. You can do it now.")).toBeTruthy());
     expect(within(item).queryByRole("button", { name: "Do it now" })).toBeNull();
@@ -221,7 +221,7 @@ describe("the connect step (tools spec §9)", () => {
 
 describe("the connect step in the setup frame (UI refresh spec §5.6)", () => {
   it("shows the folder and the engine as done steps with their values, and where this step is", async () => {
-    await renderIn("en", <Flow c={client()} startAt="keys" />);
+    await renderIn("en", <Flow c={client()} startAt="keys" />, { theme: true });
     await screen.findByRole("group", { name: "Jira API token" });
     const nav = screen.getByRole("list", { name: "Steps" });
     const items = within(nav).getAllByRole("listitem");

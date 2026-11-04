@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Tag } from "../chrome";
 import type { HarnessClient, SidekickLearned } from "../client";
-import { Button } from "../guide/Button";
+import { Group, Row, Rx } from "../guide";
 
 type Level = SidekickLearned["level"];
 
 /**
- * "What Sidekick learned" (spec §6.4, mockup board 6): both levels in two columns, "Forget this" per item, "Edit" as
- * an editable list (edited items become the person's), and "Forget everything" after one confirmation.
+ * "What Sidekick learned" (spec §6.4, mockup board 6): both levels, "Forget this" per item, "Edit" as an editable
+ * list (edited items become the person's), and "Forget everything" after one confirmation.
+ *
+ * Radix stage 2d: the two levels are loose lists one under the other (a settings column is too narrow for two); Forget
+ * everything is the danger button and asks inline.
  */
 export function LearnedList({ client }: { client: HarnessClient }) {
   const { t } = useTranslation();
@@ -68,109 +70,145 @@ export function LearnedList({ client }: { client: HarnessClient }) {
     if (changes.length) run(() => client.sidekick.editLearned(changes));
   };
 
-  // The first input on screen: the "About you" column comes first.
+  // The first input on screen: the "About you" list comes first.
   const first = items.find((i) => i.level === "you") ?? items[0];
-  const column = (level: Level, label: string) => {
+  const list = (level: Level, label: string) => {
     const mine = items.filter((i) => i.level === level);
     return (
-      <section aria-label={label} className="hh-sk-learned-col">
-        <h4>{label}</h4>
-        {mine.length === 0 && <p className="hh-caption">{t("sidekick.learned.empty")}</p>}
-        <ul className="hh-sk-learned-items">
-          {mine.map((i) => (
-            <li key={i.id}>
-              {editing ? (
-                <input
+      <Group
+        loose
+        title={label}
+        {...(mine.length === 0
+          ? {
+              after: (
+                <Rx.Text as="p" size="1" color="gray">
+                  {t("sidekick.learned.empty")}
+                </Rx.Text>
+              ),
+            }
+          : {})}
+      >
+        {mine.map((i) =>
+          editing ? (
+            <Row
+              key={i.id}
+              as="li"
+              aria-label={i.text}
+              label={
+                <Rx.TextField.Root
                   ref={i === first ? firstInputRef : undefined}
-                  type="text"
                   value={editing[i.id] ?? i.text}
                   aria-label={i.text}
                   maxLength={300}
                   onChange={(e) => setEditing({ ...editing, [i.id]: e.target.value })}
                 />
-              ) : (
+              }
+            />
+          ) : (
+            <Row
+              key={i.id}
+              as="li"
+              aria-label={i.text}
+              label={
                 <>
                   {i.kind && (
-                    <>
-                      <Tag tone="blue">{t(`sidekick.kinds.${i.kind}`, { defaultValue: i.kind })}</Tag>{" "}
-                    </>
+                    <Rx.Badge color="blue" mr="2">
+                      {t(`sidekick.kinds.${i.kind}`, { defaultValue: i.kind })}
+                    </Rx.Badge>
                   )}
-                  <span id={`${ids}-${i.id}`}>{i.text}</span>
-                  {i.source === "person" && <span className="hh-caption"> · {t("sidekick.learned.yours")}</span>}{" "}
-                  <Button
-                    type="button"
-                    kind="quiet" size="compact"
-                    aria-describedby={`${ids}-${i.id}`}
-                    onClick={() => run(() => client.sidekick.forget(i.id))}
-                  >
-                    {t("sidekick.learned.forget")}
-                  </Button>
+                  <span id={`${ids}-${i.id}`} dir="auto">
+                    {i.text}
+                  </span>
+                  {i.source === "person" && (
+                    <Rx.Text color="gray" size="1">
+                      {" "}
+                      · {t("sidekick.learned.yours")}
+                    </Rx.Text>
+                  )}
                 </>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
+              }
+            >
+              <Rx.Button variant="ghost" color="gray" size="1" aria-describedby={`${ids}-${i.id}`} onClick={() => run(() => client.sidekick.forget(i.id))}>
+                {t("sidekick.learned.forget")}
+              </Rx.Button>
+            </Row>
+          ),
+        )}
+      </Group>
     );
   };
 
   return (
-    <div className="hh-sk-learned">
-      <h3>{t("sidekick.learned.title")}</h3>
-      <div className="hh-sk-learned-cols">
-        {column("you", t("sidekick.learned.you"))}
-        {column("harness", t("sidekick.learned.harness"))}
-      </div>
+    <div>
+      <Rx.Heading as="h3" size="3" mb="3">
+        {t("sidekick.learned.title")}
+      </Rx.Heading>
+      {/* A save error is a red notice above what it affects (DESIGN.md "Settings"). */}
+      {failed !== null && (
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{t("sidekick.settings.failed", { message: failed })}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      {list("you", t("sidekick.learned.you"))}
+      {list("harness", t("sidekick.learned.harness"))}
       {editing ? (
-        <div className="hh-sk-actions">
-          <Button type="button" kind="primary" onClick={save}>
-            {t("sidekick.learned.save")}
-          </Button>
-          <button
-            type="button"
+        <Rx.Flex gap="2" justify="end">
+          <Rx.Button
+            variant="outline"
+            color="gray"
             onClick={() => {
               back.current = "edit";
               setEditing(null);
             }}
           >
             {t("sidekick.learned.cancel")}
-          </button>
-        </div>
+          </Rx.Button>
+          <Rx.Button variant="solid" onClick={save}>
+            {t("sidekick.learned.save")}
+          </Rx.Button>
+        </Rx.Flex>
       ) : confirm ? (
-        <div className="hh-sk-actions">
-          <p id={confirmTextId}>{t("sidekick.learned.confirmAllText")}</p>
-          <button
-            ref={yesRef}
-            type="button"
-            aria-describedby={confirmTextId}
-            onClick={() => {
-              setConfirm(false);
-              run(() => client.sidekick.forgetAll());
-            }}
-          >
-            {t("sidekick.learned.confirmAll")}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              back.current = "forgetAll";
-              setConfirm(false);
-            }}
-          >
-            {t("sidekick.learned.cancel")}
-          </button>
-        </div>
+        <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
+          <Rx.Text as="p" size="2" id={confirmTextId}>
+            {t("sidekick.learned.confirmAllText")}
+          </Rx.Text>
+          <Rx.Flex gap="2">
+            <Rx.Button
+              ref={yesRef}
+              variant="soft"
+              color="red"
+              size="1"
+              aria-describedby={confirmTextId}
+              onClick={() => {
+                setConfirm(false);
+                run(() => client.sidekick.forgetAll());
+              }}
+            >
+              {t("sidekick.learned.confirmAll")}
+            </Rx.Button>
+            <Rx.Button
+              variant="outline"
+              color="gray"
+              size="1"
+              onClick={() => {
+                back.current = "forgetAll";
+                setConfirm(false);
+              }}
+            >
+              {t("sidekick.learned.cancel")}
+            </Rx.Button>
+          </Rx.Flex>
+        </Rx.Flex>
       ) : (
-        <div className="hh-sk-actions">
-          <button ref={editRef} type="button" onClick={() => setEditing({})} disabled={items.length === 0}>
+        <Rx.Flex gap="2">
+          <Rx.Button ref={editRef} size="1" variant="outline" color="gray" onClick={() => setEditing({})} disabled={items.length === 0}>
             {t("sidekick.learned.edit")}
-          </button>
-          <button ref={forgetAllRef} type="button" onClick={() => setConfirm(true)} disabled={items.length === 0}>
+          </Rx.Button>
+          <Rx.Button ref={forgetAllRef} size="1" variant="soft" color="red" onClick={() => setConfirm(true)} disabled={items.length === 0}>
             {t("sidekick.learned.forgetAll")}
-          </button>
-        </div>
+          </Rx.Button>
+        </Rx.Flex>
       )}
-      {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickPreset } from "../client";
+import { Rx } from "../guide";
 import { SidekickMark, markIcon } from "./mark";
-import { Button } from "../guide/Button";
 
 /** Clients whose harness has no presets: its manifest can't change while the app runs, so it isn't asked again. */
 const noPresets = new WeakSet<HarnessClient>();
@@ -91,30 +91,48 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
   // Busy buttons stay focusable (aria-disabled): the one pressed keeps focus while the answer comes.
   const wait = busy ? { "aria-disabled": true as const } : {};
 
+  // Radix stage 2d: one card, in Settings and in the Sidekick column alike: a title, a row per preset (mark, name,
+  // personality, Add as a secondary) and Not now as a quiet action at its end.
   return (
-    <section aria-label={t("sidekick.presets.title")} className="hh-sk-presets">
-      <h3 ref={head} tabIndex={-1}>
-        {t("sidekick.presets.title")}
-      </h3>
-      <ul className="hh-sk-presets-list">
-        {open.map((p) => (
-          <li key={p.name}>
-            <SidekickMark icon={markIcon(p.mark)} />
-            <div>
-              <strong>{p.name}</strong>
-              {p.personality && <p className="hh-caption">{p.personality}</p>}
-            </div>
-            <button type="button" {...wait} onClick={() => void adopt(p.name)}>
-              {t("sidekick.presets.add", { name: p.name })}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {failed !== null && <p role="alert">{failed ? t("sidekick.presets.failed", { name: failed }) : t("sidekick.presets.notNowFailed")}</p>}
-      <Button type="button" kind="quiet" size="compact" {...wait} onClick={() => void notNow()}>
-        {t("sidekick.presets.notNow")}
-      </Button>
-    </section>
+    <Rx.Box asChild mb="5">
+      <section aria-label={t("sidekick.presets.title")}>
+        <Rx.Card size="2">
+          <Rx.Heading as="h3" size="3" mb="3" ref={head} tabIndex={-1}>
+            {t("sidekick.presets.title")}
+          </Rx.Heading>
+          <Rx.Flex direction="column" gap="3" role="list">
+            {open.map((p) => (
+              <Rx.Flex key={p.name} role="listitem" align="start" gap="3">
+                <SidekickMark icon={markIcon(p.mark)} />
+                <Rx.Box flexGrow="1" minWidth="0">
+                  <Rx.Text as="p" size="2" weight="bold">
+                    <bdi dir="auto">{p.name}</bdi>
+                  </Rx.Text>
+                  {p.personality && (
+                    <Rx.Text as="p" size="1" color="gray" dir="auto">
+                      {p.personality}
+                    </Rx.Text>
+                  )}
+                </Rx.Box>
+                <Rx.Button size="1" variant="outline" color="gray" {...wait} onClick={() => void adopt(p.name)}>
+                  {t("sidekick.presets.add", { name: p.name })}
+                </Rx.Button>
+              </Rx.Flex>
+            ))}
+          </Rx.Flex>
+          {failed !== null && (
+            <Rx.Callout.Root color="red" role="alert" size="1" mt="3">
+              <Rx.Callout.Text>{failed ? t("sidekick.presets.failed", { name: failed }) : t("sidekick.presets.notNowFailed")}</Rx.Callout.Text>
+            </Rx.Callout.Root>
+          )}
+          <Rx.Flex justify="end" mt="3">
+            <Rx.Button size="1" variant="ghost" color="gray" {...wait} onClick={() => void notNow()}>
+              {t("sidekick.presets.notNow")}
+            </Rx.Button>
+          </Rx.Flex>
+        </Rx.Card>
+      </section>
+    </Rx.Box>
   );
 }
 

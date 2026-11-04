@@ -9,6 +9,8 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-icon",
   "hh-icon-loading",
   "hh-icon-chevron",
+  // HhTheme: the Radix Themes root (Radix + Impeccable spec §3)
+  "hh-theme",
   // SidekickMark (§4)
   "hh-sk-mark",
   "hh-sk-mark-off",

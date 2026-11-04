@@ -116,6 +116,7 @@ export function JobsTab({
         {action && (
           <Button
             size="compact"
+            className="hh-tk-cancel"
             aria-describedby={labelId}
             onClick={() => {
               setProblem(null);
@@ -126,7 +127,7 @@ export function JobsTab({
           </Button>
         )}
         {j.manual && !j.running && j.paused !== "off" && (
-          <Button size="compact" aria-describedby={labelId} onClick={() => runNow(j)}>
+          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
             {t("parallel.runNow")}
           </Button>
         )}
@@ -203,10 +204,11 @@ function JobGroup({
       </h3>
       <div className="hh-rows">
         <div className="hh-row">
-          <Toggle checked={entry.off !== true} aria-describedby={labelId} onChange={onOn}>
-            {t("parallel.jobOn")}
-          </Toggle>
-          {job.every && <span className="hh-caption">{t("parallel.every", { interval: job.every })}</span>}
+          <label className="hh-toggle-row">
+            <span id={`${id}-on`}>{t("parallel.jobOn")}</span>
+            {job.every && <span className="hh-caption">{t("parallel.every", { interval: job.every })}</span>}
+            <Toggle checked={entry.off !== true} aria-labelledby={`${id}-on`} aria-describedby={labelId} onChange={onOn} />
+          </label>
         </div>
         {job.every && (
           <div className="hh-row">

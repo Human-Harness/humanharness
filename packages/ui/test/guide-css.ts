@@ -8,3 +8,14 @@ export function rule(sel: string): Record<string, string> {
   if (!m) throw new Error(`no rule for ${sel}`);
   return Object.fromEntries(m[1].split(";").map((d) => d.split(":").map((x) => x.trim())).filter(([k, v]) => k && v));
 }
+/** Each value of a length list (`padding: calc(var(--hh-s-3) / 2) var(--hh-s-3)`) as pixels, with the `--hh-s-*` / `--hh-h-*` tokens and simple calc resolved. */
+export function lengths(value: string | undefined): number[] {
+  const root = rule(":root");
+  const resolved = (value ?? "").replace(/var\((--[\w-]+)\)/g, (_, name: string) => String(parseFloat(root[name])));
+  const out: number[] = [];
+  for (const m of resolved.matchAll(/calc\(([^()]*)\)|(-?[\d.]+)(?:px)?/g)) {
+    if (m[1] !== undefined) out.push(Function(`"use strict"; return (${m[1].replace(/px/g, "")});`)() as number);
+    else out.push(parseFloat(m[2]));
+  }
+  return out;
+}

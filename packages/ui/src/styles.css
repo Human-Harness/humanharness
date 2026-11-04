@@ -431,7 +431,7 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-md-table .hh-num { text-align: right; font-variant-numeric: tabular-nums; }
 .hh-md-table .hh-align-center { text-align: center; }
 .hh-md-task { list-style: none; }
-.hh-md-task > .hh-checkbox { margin: 0 6px 0 -18px; vertical-align: middle; }
+.hh-md-task > .hh-checkbox { margin: 0 var(--hh-s-2) 0 -20px; vertical-align: middle; }
 .hh-md-raw { white-space: pre-wrap; font-family: var(--hh-mono); font-size: 0.9em; color: var(--hh-muted); }
 .hh-md-alt { color: var(--hh-muted); font-style: italic; }
 .hh-md-quote { margin: 0.8em 0; padding: 0 0 0 12px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-muted); }
@@ -1276,9 +1276,13 @@ input.hh-search-input {
 .hh-btn[data-kind="primary"], .hh-btn[data-kind="large"] { border-color: transparent; background: var(--hh-cta); color: var(--hh-cta-ink); }
 .hh-btn[data-kind="primary"]:hover:not(:disabled), .hh-btn[data-kind="large"]:hover:not(:disabled) { background: var(--hh-cta-hover); border-color: transparent; }
 .hh-btn[data-kind="primary"]:focus-visible, .hh-btn[data-kind="large"]:focus-visible { outline: 2px solid var(--hh-cta-ink); outline-offset: -4px; }
-/* Secondary is the base. Quiet has no border and no fill. Danger looks like secondary until its look is decided (Questions for Marco). */
+/* Secondary is the base. Quiet has no border and no fill. Danger is the red tint (answer B6); it still ignores clicks until Task 31. */
 .hh-btn[data-kind="quiet"] { border: 0; background: transparent; }
 .hh-btn[data-kind="quiet"]:hover:not(:disabled) { background: var(--hh-surface-2); }
+.hh-btn[data-kind="primary"], .hh-btn[data-kind="quiet"] { font-weight: 600; }
+.hh-btn[data-kind="danger"], .hh-btn[data-kind="danger"]:hover:not(:disabled) { border-color: transparent; background: var(--hh-t-red); color: var(--hh-t-red-ink); box-shadow: inset 0 0 0 1px var(--hh-t-red-ink); }
+/* 6 is Marco's value (B9); it is no step of the scale, so it is half of --hh-s-3. */
+.hh-tk-cancel { flex: none; margin: calc(var(--hh-s-3) / 2) calc(var(--hh-s-3) / 2) 0 0; }
 .hh-btn[data-kind="link"] { height: auto; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; text-decoration: underline; }
 .hh-icon-btn { font: inherit; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 0; border: 0; background: transparent; color: var(--hh-muted); cursor: default; }
 .hh-icon-btn[data-size="normal"] { width: var(--hh-h-normal); height: var(--hh-h-normal); border-radius: var(--hh-r-control); }
@@ -1294,13 +1298,15 @@ input.hh-search-input {
 /* guide: Tabs */
 .hh-tabs { display: flex; align-items: stretch; gap: calc(var(--hh-s-1) / 2); min-width: 0; flex: 0 1 auto; overflow-x: auto; }
 .hh-tab-item { display: inline-flex; align-items: center; gap: var(--hh-s-2); box-sizing: border-box; flex: 0 1 auto; min-width: 0; max-width: 220px; height: var(--hh-h-normal); padding: 0 var(--hh-s-3); border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--hh-muted); font: inherit; font-size: 13px; }
+.hh-tabs[data-small="true"] .hh-tab-item { font-size: 12px; }
 .hh-tab-item:hover:not(:disabled) { color: var(--hh-ink); }
 .hh-tab-item[aria-selected="true"] { border-bottom-color: var(--hh-ink); color: var(--hh-ink); font-weight: 600; }
 .hh-tab-item:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: -2px; }
 .hh-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-tab-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-t-orange-ink); }
 /* guide: NavItem */
-.hh-nav-item { display: flex; align-items: center; justify-content: flex-start; height: auto; gap: var(--hh-s-2); box-sizing: border-box; width: 100%; min-height: var(--hh-h-normal); padding: 0 var(--hh-s-3); border: 0; border-radius: var(--hh-r-control); background: transparent; color: var(--hh-ink); font: inherit; text-align: start; }
+.hh-nav-item { display: flex; align-items: center; justify-content: flex-start; height: auto; gap: calc(var(--hh-s-2) + var(--hh-s-1) / 2); box-sizing: border-box; width: 100%; min-height: var(--hh-h-normal); padding: calc(var(--hh-s-3) / 2) var(--hh-s-3); border: 0; border-radius: var(--hh-r-control); background: transparent; color: var(--hh-ink); font: inherit; text-align: start; }
+.hh-nav-item[data-align="start"] { align-items: flex-start; }
 .hh-nav-item[data-selected="true"] { background: var(--hh-active); color: var(--hh-active-ink); font-weight: 600; }
 .hh-nav-item[data-tone="muted"] { color: var(--hh-muted); }
 .hh-nav-item[data-selected="true"][data-look="white"] { background: var(--hh-surface); color: var(--hh-ink); box-shadow: var(--hh-shadow); }
@@ -1322,7 +1328,7 @@ input.hh-search-input {
 .hh-option-text { flex: 1; min-width: 0; display: grid; gap: var(--hh-s-1); }
 .hh-option-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hh-s-2); }
 .hh-option-title { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.hh-option-desc { display: grid; gap: var(--hh-s-1); color: var(--hh-muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.hh-option-desc { display: grid; gap: var(--hh-s-1); color: var(--hh-muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 .hh-option-trail { flex: none; margin-inline-start: auto; font-size: 12px; color: var(--hh-muted); }
 /* guide: Tile */
 .hh-tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: var(--hh-s-3); margin: 0; padding: 0; list-style: none; }
@@ -1361,9 +1367,18 @@ input.hh-search-input {
 /* guide: Toggle and Checkbox (style guide §5) */
 .hh-toggle { position: relative; flex: none; box-sizing: border-box; display: inline-block; width: 34px; height: 20px; min-width: 34px; padding: 0; border: 0; border-radius: 999px; background: var(--hh-line-strong); }
 .hh-toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 999px; background: var(--hh-surface); }
-.hh-toggle[aria-checked="true"], .hh-toggle[aria-checked="true"]:hover:not(:disabled) { background: var(--hh-t-green-ink); }
+.hh-toggle[aria-checked="true"], .hh-toggle[aria-checked="true"]:hover:not(:disabled) { background: var(--hh-ink); }
 .hh-toggle[aria-checked="true"]::after { left: 17px; }
-.hh-toggle-row { display: flex; align-items: center; gap: var(--hh-s-2); }
+.hh-toggle-row { display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box; gap: var(--hh-s-2); }
+.hh-toggle-row .hh-caption { margin-inline-start: auto; }
+.hh-search-filters .hh-toggle-row { font-size: 12px; color: var(--hh-muted); }
+.hh-sk-fieldset .hh-toggle-row + .hh-toggle-row { margin-top: var(--hh-s-2); }
 .hh-checkbox { flex: none; box-sizing: border-box; -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; width: var(--hh-h-counter); height: var(--hh-h-counter); margin: 0; border: 1px solid var(--hh-line-strong); border-radius: var(--hh-s-1); background: var(--hh-surface); color: var(--hh-ink); font: inherit; }
-.hh-checkbox:checked, .hh-checkbox[aria-checked="true"] { border-color: var(--hh-ink); background: var(--hh-ink); box-shadow: inset 0 0 0 var(--hh-s-1) var(--hh-surface); }
+.hh-checkbox:checked, .hh-checkbox[aria-checked="true"] { border-color: var(--hh-ink); background: var(--hh-ink); }
+.hh-checkbox[aria-checked="true"] { color: var(--hh-surface); }
+/* The accept checkbox is an input, which cannot hold the icon: the check sits over it, in its own grid cell. */
+.hh-checkbox-box { flex: none; display: inline-grid; }
+.hh-checkbox-box > * { grid-area: 1 / 1; }
+.hh-checkbox-box > .hh-icon { place-self: center; visibility: hidden; pointer-events: none; }
+.hh-checkbox:checked + .hh-icon { visibility: visible; color: var(--hh-surface); }
 .hh-checkbox:disabled { opacity: 0.5; }

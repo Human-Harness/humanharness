@@ -1493,6 +1493,76 @@ Marco answered the "Questions for Marco" of Part 3 (icons). Applied in `feat/sg-
 | I16 | A | The mark circle: surface fill plus a line border. |
 | I17 | A | Import: the AI picks an icon name; unknown → `coach`. |
 
+## Decided after Part 4 (2026-11-04)
+
+Marco answered the 57 "Questions for Marco" of Part 4 (buttons and ways to choose) on a review page. Applied in `feat/sg-buttons-answers`. Every A is "keep today".
+
+| id | answer | meaning |
+|---|---|---|
+| B1 | A | keep: the old link buttons are quiet, compact (30). |
+| B2 | A | keep: off-scale paddings went to the nearest step (14 to 16 or 12, 18 to 16, 26 to 24). |
+| B3 | A | keep: Large has font 16 and the amber fill. |
+| B4 | B | Primary and quiet Button weight 600; secondary and danger stay 500. |
+| B5 | A | keep: the quiet Button is ink at rest, no underline. |
+| B6 | B | Danger has its red tint now: `--hh-t-red` fill, `--hh-t-red-ink` text and a 1px inset line; it still ignores clicks until Task 31. |
+| B7 | A | keep: Input "Saltar" is quiet. |
+| B8 | A | keep: Settings gear and Done are 30 x 30 IconButtons with a grey hover fill. |
+| B9 | B | `.hh-tk-cancel` gets its own margin `6px 6px 0 0` and `flex: none` back; still a compact secondary. |
+| B10 | B | The History button has the `history` icon at 18 now. |
+| S1 | A | keep: segments fill the 30, no padding around, no divider. |
+| S2 | A | keep: text size shows labels only, no "Aa" sample. |
+| S3 | A | keep: the seven weekdays stay on one row. |
+| S4 | B | own focus/hover style; design round pending. Today's look is kept until then. |
+| S5 | A | keep: the hand-made segmented in diffs and the reader move to the piece in Task 54. |
+| T1 | A | keep: plugin panel tabs use the underline style of the task tabs. |
+| T2 | A | keep: arrow keys on task tabs change the task at once. |
+| T3 | A | keep: the waiting dot is `--hh-t-orange-ink`. |
+| T4 | A | keep: many plugin tabs scroll sideways. |
+| T5 | B | Plugin panel tab font back to 12 (`small` Tabs); max-width stays 220; task tabs stay 13. |
+| T6 | A | keep: the tab focus ring sits inside the tab. |
+| N1 | A | keep: NavItem min-height 40, grows with two lines. |
+| N2 | A | keep: side padding 12. |
+| N3 | B | NavItem vertical padding 6 (min-height stays 40). |
+| N4 | B | NavItem gap between lead, label and trail is 10. |
+| N5 | A | keep: no border on the walkthrough current step. |
+| N6 | A | keep: walkthrough current step uses the active (amber) fill. |
+| N7 | A | keep: NavItem is 100% wide in narrow Settings. |
+| N8 | A | keep: long text wraps. |
+| N9 | A | keep: text aligned to the start. |
+| N10 | B | Assistant steps put the mark at the top (`align="start"`); Settings and the walkthrough stay centered. |
+| N11 | A | keep: no hover change. |
+| N12 | A | keep: Assistant steps that do nothing are not buttons. |
+| N13 | A | keep: Settings menu keeps the tab roles (arrows to move). |
+| O1 | A | keep: gap between Options 8. |
+| O2 | A | keep: Option padding 8 vertical, 16 at the sides. |
+| O3 | A | keep: 12 between the radio and the text. |
+| O4 | B | Option description is 12; the title stays 14 / 600. |
+| O5 | A | keep: engine icon without logo is 18 in Settings and the Assistant. |
+| O6 | A | keep: the chosen Tile shifts 1px (2px border). |
+| O7 | A | keep: Tiles in List view as they are. |
+| O8 | A | keep: "More engines" is a small caption under the Options. |
+| O9 | A | keep: focus ring on Options and Tiles as the other pieces. |
+| O10 | A | keep: arrows only move focus in action groups, and also choose in setting groups. |
+| O11 | A | keep: chat options are stacked rows of 52. |
+| O12 | A | keep: folder and language lists use the guide's radio mark. |
+| O13 | A | keep: recommended Tile has the border plus the inner ring. |
+| O14 | A | keep: done Tile has a muted title and the "Done" tag. |
+| C1 | B | Toggle on is `--hh-ink`; off stays `--hh-line-strong`; the knob stays surface. |
+| C2 | A | keep: toggle and checkbox use the general focus ring. |
+| C3 | C | Checked Checkbox: ink fill with the `check` icon at 14 in the surface color, radius 4; StaticCheckbox too. |
+| C4 | B | Toggle row: label first, switch at the end of a full-width row (space-between), like the Settings rows. |
+| C5 | B | Search (⌘K) filter toggle rows are 12 in `--hh-muted`. |
+| C6 | A | keep: every former checkbox is a Toggle. |
+| C7 | A | keep: Markdown task lists use the static checkbox. |
+| C8 | B | The sidekick editor toggle lists have 8 between rows. |
+| C9 | B | Markdown task box is 8 from its text; outdent -20 so the text stays put and the box stays in the gutter. |
+| B11 | B | Danger button stronger red on hover: no stronger red token exists (only `--hh-t-red`), so the look stays; nothing invented. |
+| B12 | A | keep `.hh-tk-cancel` on all three buttons (Cancel, Start, Run). |
+| C10 | A | keep: the check is in the surface color. |
+| C11 | A | keep: search filters full width, one per line. |
+| C12 | A | keep: Markdown box outdent -20 (the box moves 2px left). |
+| C13 | B | JobsTab row: the "every X" caption comes before the switch, and the switch ends the row. |
+
 ## Coverage
 
 ### Spec sections

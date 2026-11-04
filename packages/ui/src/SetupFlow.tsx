@@ -312,6 +312,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                   selected={i === at}
                   current="step"
                   look="white"
+                  align="start"
                   tone={i > at ? "muted" : undefined}
                   lead={<span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>}
                 >

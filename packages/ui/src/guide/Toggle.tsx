@@ -3,7 +3,7 @@ import { type ButtonHTMLAttributes, type ReactNode, useId } from "react";
 export interface ToggleProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "role" | "type" | "onChange" | "children"> {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  /** Visible text beside the switch. It names the switch, and clicking it flips the switch. Leave it out when a `label` element, `aria-label` or a settings row names the switch. */
+  /** Visible text before the switch, which sits at the end of the row (answer C4). It names the switch, and clicking it flips the switch. Leave it out when a `label` element, `aria-label` or a settings row names the switch. */
   children?: ReactNode;
 }
 
@@ -31,8 +31,8 @@ export function Toggle({ checked, onChange, children, className, onClick, ...res
   if (!labelled) return button;
   return (
     <label className="hh-toggle-row">
-      {button}
       <span id={textId}>{children}</span>
+      {button}
     </label>
   );
 }

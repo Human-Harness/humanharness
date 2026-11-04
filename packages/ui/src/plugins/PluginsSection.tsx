@@ -38,6 +38,7 @@ export function PluginsSection({ ctx }: { ctx: PluginSurfaceContextValue }) {
         {t("plugins.panels.section")}
       </h2>
       <Tabs
+        small
         id={baseId}
         label={t("plugins.panels.tabs")}
         value={keyOf(shown)}

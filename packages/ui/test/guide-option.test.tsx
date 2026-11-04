@@ -144,3 +144,11 @@ describe("Tile (style guide §3, row 'Tile')", () => {
     expect(screen.getByRole("button", { name: "Start" }).hasAttribute("aria-pressed")).toBe(false);
   });
 });
+
+describe("Option description (answer O4)", () => {
+  it("the description is 12, the title stays 14 at weight 600", () => {
+    expect(rule(".hh-option-desc")["font-size"]).toBe("12px");
+    expect(rule(".hh-option-title")["font-size"]).toBe("14px");
+    expect(rule(".hh-option-title")["font-weight"]).toBe("600");
+  });
+});

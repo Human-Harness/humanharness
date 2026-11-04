@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GUIDE_CLASSES } from "../src/guide/classes";
 import { NavItem } from "../src/guide/NavItem";
-import { css, rule } from "./guide-css";
+import { css, lengths, rule } from "./guide-css";
 
 afterEach(cleanup);
 
@@ -84,5 +86,35 @@ describe("NavItem (style guide §3, row 'Nav item')", () => {
   it("leaves no rule of the old nav items", () => {
     expect(css).not.toMatch(/\.hh-settings-navitem|\.hh-flow-step|\.hh-flow-label|\.hh-setup-steps li/);
     expect(GUIDE_CLASSES.has("hh-nav-item")).toBe(true);
+  });
+});
+
+describe("NavItem spacing and alignment (answers N3, N4, N10)", () => {
+  it("N3: 6 above and below, 12 at the sides; min-height stays 40", () => {
+    const item = rule(".hh-nav-item");
+    expect(lengths(item.padding)).toEqual([6, 12]);
+    expect(px(item["min-height"])).toBe("40px");
+  });
+  it("N4: 10 between lead, label and trail", () => {
+    expect(lengths(rule(".hh-nav-item").gap)).toEqual([10]);
+  });
+  it("N10: align=start puts the mark at the top; the default stays centered", () => {
+    render(
+      <>
+        <NavItem align="start">Top</NavItem>
+        <NavItem>Middle</NavItem>
+      </>,
+    );
+    const [top, middle] = [...document.querySelectorAll(".hh-nav-item")];
+    expect(top.getAttribute("data-align")).toBe("start");
+    expect(middle.getAttribute("data-align")).toBeNull();
+    expect(rule(".hh-nav-item")["align-items"]).toBe("center");
+    expect(rule('.hh-nav-item[data-align="start"]')["align-items"]).toBe("flex-start");
+  });
+  it("N10: only the Assistant steps ask for it", () => {
+    const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
+    expect(src("SetupFlow.tsx")).toMatch(/<NavItem[^>]*align="start"/);
+    expect(src("SettingsPage.tsx")).not.toMatch(/align="start"/);
+    expect(src("FlowSide.tsx")).not.toMatch(/align="start"/);
   });
 });

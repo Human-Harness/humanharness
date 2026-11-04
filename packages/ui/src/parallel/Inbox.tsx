@@ -214,7 +214,7 @@ export function InboxList({
           )}
         </button>
         {s.state === "queued" && (
-          <Button size="compact" aria-describedby={labelId} onClick={() => cancel(s)}>
+          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => cancel(s)}>
             {t("parallel.cancel")}
           </Button>
         )}
@@ -259,6 +259,7 @@ export function InboxList({
         {action && (
           <Button
             size="compact"
+            className="hh-tk-cancel"
             aria-describedby={labelId}
             onClick={() => {
               setJobProblem(null);
@@ -270,7 +271,7 @@ export function InboxList({
           </Button>
         )}
         {j.manual && !j.running && j.paused !== "off" && (
-          <Button size="compact" aria-describedby={labelId} onClick={() => runNow(j)}>
+          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
             {t("parallel.runNow")}
           </Button>
         )}

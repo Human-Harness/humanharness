@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GUIDE_CLASSES } from "../src/guide/classes";
@@ -96,5 +98,24 @@ describe("Tabs (style guide §3, row 23)", () => {
 
   it("leaves no rule of the old task and plugin tabs", () => {
     expect(css).not.toMatch(/\.hh-tk-tab\b|\.hh-tk-tabs\b|\.hh-tk-dot|\.hh-pl-tab\b|\.hh-pl-tabs\b/);
+  });
+});
+
+describe("Tabs size (answer T5)", () => {
+  it("task tabs are 13, the plugin panel tabs 12, and both stay at most 220 wide", () => {
+    expect(rule(".hh-tab-item")["font-size"]).toBe("13px");
+    expect(rule(".hh-tab-item")["max-width"]).toBe("220px");
+    expect(rule('.hh-tabs[data-small="true"] .hh-tab-item')["font-size"]).toBe("12px");
+    expect(rule('.hh-tabs[data-small="true"] .hh-tab-item')["max-width"]).toBeUndefined();
+  });
+  it("small marks the tab list, and only the plugin panels ask for it", () => {
+    render(<Tabs small label="Panels" items={items} value="a" onChange={() => {}} />);
+    expect(screen.getByRole("tablist").getAttribute("data-small")).toBe("true");
+    cleanup();
+    render(<Tabs label="Tasks" items={items} value="a" onChange={() => {}} />);
+    expect(screen.getByRole("tablist").getAttribute("data-small")).toBeNull();
+    const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
+    expect(src("plugins/PluginsSection.tsx")).toMatch(/<Tabs[^>]*\bsmall\b/);
+    expect(src("parallel/TaskStrip.tsx")).not.toMatch(/<Tabs[^>]*\bsmall\b/);
   });
 });

@@ -27,6 +27,14 @@ describe("TaskHeader", () => {
     expect(screen.getByRole("button", { name: "New task" }).getAttribute("data-kind")).toBe("primary");
   });
 
+  it("B10: the History button draws the history icon at 18 before its text", async () => {
+    await renderIn("en", <TaskHeader title="T" meters={null} sidekick={null} chips={null} onHistory={() => {}} />);
+    const b = screen.getByRole("button", { name: "History" });
+    const icon = b.querySelector("svg.hh-icon-history");
+    expect(icon?.getAttribute("width")).toBe("18");
+    expect(b.firstElementChild).toBe(icon);
+  });
+
   it("has no New task without onNewTask (plain mode, D0)", async () => {
     await renderIn("en", <TaskHeader title="Demo" onHistory={() => {}} />);
     expect(screen.queryByRole("button", { name: "New task" })).toBeNull();

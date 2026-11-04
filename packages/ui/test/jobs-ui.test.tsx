@@ -98,6 +98,18 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     await waitFor(() => expect(save).toHaveBeenLastCalledWith({ jobs: { digest: { dailyTokens: 20_000 } } }));
   });
 
+  it("C13: the every caption comes before the switch, and the switch ends the row", async () => {
+    const c = client();
+    await renderIn("en", <Sheet c={c} />);
+    const digest = group("Digest");
+    const caption = within(digest).getByText("Every 1h");
+    const sw = within(digest).getByRole("switch", { name: "On" });
+    const row = sw.closest("label") as HTMLElement;
+    expect(row.contains(caption)).toBe(true);
+    expect(row.lastElementChild).toBe(sw);
+    expect(caption.compareDocumentPosition(sw) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("an every job shows its interval and a Daily token cap that saves config.jobs[id].dailyTokens", async () => {
     const c = client();
     c.state.config = { ...c.state.config, jobs: { digest: { off: true } } };

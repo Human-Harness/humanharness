@@ -9,3 +9,4 @@ export * from "./Option";
 export * from "./Tile";
 export * from "./Toggle";
 export * from "./Checkbox";
+export * from "./Theme";

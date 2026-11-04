@@ -112,7 +112,7 @@ a { color: var(--hh-ink); }
   --color-background: var(--hh-bg);
 }
 /* The app's root draws no box and gives its children no text style: the screens look exactly as before. */
-.radix-themes.hh-theme { display: contents; font: inherit; line-height: inherit; letter-spacing: inherit; color: inherit; }
+.radix-themes.hh-theme { display: contents; font: inherit; line-height: inherit; letter-spacing: inherit; color: inherit; overflow-wrap: inherit; -webkit-font-smoothing: inherit; -moz-osx-font-smoothing: inherit; -webkit-text-size-adjust: inherit; text-size-adjust: inherit; }
 /* Soft-cards controls (UI refresh spec §3.2). Compact controls below override the height. */
 /* One height and one corner for every button, field and select, so no control is taller or rounder than its neighbour. */
 :root { --hh-control-h: var(--hh-h-normal); --hh-control-r: var(--hh-r-control); }

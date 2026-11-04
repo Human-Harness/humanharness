@@ -12,10 +12,11 @@ function fakeSystem(dark: boolean) {
     removeEventListener: (_: string, f: (e: { matches: boolean }) => void) => listeners.delete(f),
   };
   vi.spyOn(window, "matchMedia").mockImplementation(() => media as unknown as MediaQueryList);
-  return (next: boolean) => {
+  const flip = (next: boolean) => {
     media.matches = next;
     for (const f of listeners) f({ matches: next });
   };
+  return Object.assign(flip, { listenerCount: () => listeners.size });
 }
 
 describe("HhTheme (Radix + Impeccable spec §3)", () => {
@@ -41,5 +42,13 @@ describe("HhTheme (Radix + Impeccable spec §3)", () => {
     act(() => flip(false));
     expect(root().classList.contains("light")).toBe(true);
     expect(root().classList.contains("dark")).toBe(false);
+  });
+
+  it("stops listening to the system when it unmounts", () => {
+    const system = fakeSystem(false);
+    const { unmount } = render(<HhTheme><p>x</p></HhTheme>);
+    expect(system.listenerCount()).toBeGreaterThan(0);
+    unmount();
+    expect(system.listenerCount()).toBe(0);
   });
 });

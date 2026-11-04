@@ -1,6 +1,8 @@
 export * from "./client";
 export * from "./state";
 export * from "./usage";
+// The app's one Radix Themes root; the shell wraps the harness App in it (Radix + Impeccable spec §3).
+export { HhTheme } from "./guide/Theme";
 export { ScopePicker } from "./ScopePicker";
 export { ScopeSettings } from "./hatches/ScopeSettings";
 export { type UseBackend, useBackend } from "./hatches/useBackend";

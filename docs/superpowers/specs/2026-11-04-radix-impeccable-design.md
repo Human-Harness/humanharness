@@ -1,7 +1,7 @@
 # Radix Themes + Impeccable — design
 
 Date: 2026-11-04
-Status: written, waiting for Marco's review
+Status: approved by Marco on 2026-11-04 (answers in section 9)
 Decided by Marco on 2026-11-04: the app moves to Radix Themes for its pieces, and Impeccable joins the repo as the design skill every agent uses for UI work, with a DESIGN.md.
 Evidence: spike branch `worktree-spike-radix-themes` (commits 7f92c425, 7ffedf34, 9d6782e9) and the comparison page https://claude.ai/artifact/4FFL2gSjDUWeC6mSYWpRx1.
 Builds on: `2026-11-02-style-guide-design.md` (the closed-world guide), `2026-10-27-plugins-design.md`.
@@ -19,7 +19,7 @@ So: Radix gives the pieces, Impeccable gives the process, and DESIGN.md holds ou
 
 The guide's rules are still right; only who builds the pieces changes. These move, restated, into `DESIGN.md`:
 
-- Color, type, radius and spacing values (guide section 2), light and dark.
+- Color, type, radius and spacing values (guide section 2), light and dark. Heights are not kept: pieces use Radix's size scale 1–4 (section 9.5).
 - Screen templates and their fixed parts (section 9), the work screen zones and their closed contents (section 10), secondary pages, Inicio, Assistant and Settings (sections 11–12).
 - Action rules: one primary action per screen, card or dialog, last on the right; Volver on pages, Cerrar only in dialogs and split view; changes in Settings save themselves.
 - Closed world: a screen uses only pieces from DESIGN.md; a loose character never stands in for an icon; a new piece enters through a decision page and one PR (section 15).
@@ -49,7 +49,7 @@ New in DESIGN.md, taken from what the spike agent had to invent:
 | Dialog, Popover, Menu | `AlertDialog`/`Dialog`, `Popover`, `DropdownMenu` |
 | ProgressBar | `Progress` |
 | Avatar | `Avatar` |
-| Option, Tile, StepMark, EmptyState, InlineConfirm | ours, built from Radix primitives (see question 3) |
+| Option, Tile, StepMark, EmptyState, InlineConfirm | dropped; the screens that use them are redesigned without them (section 9.3) |
 
 Our wrappers stay few and closed: each is a piece in DESIGN.md. Screens import from one barrel (`packages/ui/src/guide`) that re-exports the allowed Radix pieces plus our wrappers, so the guard test (guide section 15) can keep checking "only allowed pieces".
 
@@ -78,12 +78,13 @@ Plugins get the same Radix pieces through the build toolchain (`toolchain().fold
 - **Overlays clipped by the iframe:** no Dialog/Popover/Menu inside panels; a panel asks the host to show one through the panel API.
 - **Radix's static `<style>` blocked by the panel CSP:** copy those few rules into the panel CSS at build time (or add their hashes to `PANEL_CSP`).
 
-Cost per panel: about +270 KB JS and ~700 KB CSS raw (160 / 83 KB gzip). See question 4.
+Cost per panel: about +270 KB JS and ~700 KB CSS raw (160 / 83 KB gzip). Accepted (section 9.4).
 
 ## 7. Migration order
 
 Each stage leaves the app working; old pieces render fine inside `<Theme>` (seen in the spike), so screens move one at a time.
 
+0. **Evaluate undoing the hand-built guide work** (Part 5 on `feat/sg-forms` and the merged Parts 1–4): what each part changed, what Radix replaces anyway, what is cheaper to revert than to migrate. Marco decides per part before stage 1.
 1. Theme + bridge stylesheet + barrel + guard test update; Impeccable, PRODUCT.md, DESIGN.md.
 2. Settings (General from spike commit 9d6782e9, then the other tabs).
 3. Inicio and Assistant.
@@ -97,10 +98,12 @@ Each stage leaves the app working; old pieces render fine inside `<Theme>` (seen
 - A separate, reusable "composition layer" project. The test showed most good decisions still came from the agent's own judgment; if DESIGN.md + Impeccable keep producing good screens, it may not be needed. Parked in the queue.
 - Specific harnesses (they adopt this in their own repos).
 
-## 9. Open questions for Marco
+## 9. Decided in review (Marco, 2026-11-04)
 
-1. **Impeccable's launcher** downloads and runs a binary on first use. Allow it, or always use its documented "launcher unavailable" path (read PRODUCT.md and DESIGN.md directly; what the spike agent did)?
-2. **Part 5 (forms) on `feat/sg-forms`**, 26 files in flight: stop it and port its decisions to Radix fields, or finish and merge it first?
-3. **Pieces with no Radix match** (Option, Tile, StepMark, EmptyState, InlineConfirm): keep them as our own wrappers, or redesign those screens to avoid them?
-4. **Plugin bundle cost** (~430 KB raw per panel): accept, or have the host serve one shared Radix CSS to every panel?
-5. **Measures:** keep the guide's closed heights (section 2) by mapping Radix sizes to them, or adopt Radix's size scale (1–4) and drop ours?
+Every section was approved as written. The open questions were answered:
+
+1. **Impeccable's launcher** may download and run its binary.
+2. **Part 5 (forms) on `feat/sg-forms` stops.** Before the migration starts, evaluate whether the hand-built guide work should be undone (reverted) rather than kept alongside Radix; the evaluation is the first step of the plan (section 7, stage 0).
+3. **Pieces with no Radix match** (Option, Tile, StepMark, EmptyState, InlineConfirm) are not rebuilt: the screens that use them are redesigned so they no longer need them.
+4. **Plugin bundle cost** (~430 KB raw per panel) is accepted; no shared CSS.
+5. **Measures:** adopt Radix's size scale (1–4); the guide's closed heights are dropped.

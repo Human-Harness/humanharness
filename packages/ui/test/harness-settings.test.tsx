@@ -56,7 +56,7 @@ describe("HarnessSettingsTab", () => {
     expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["How the AI talks", "Help"]);
     expect(within(screen.getByRole("group", { name: "Tone" })).getByRole("button", { name: "Patient" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByLabelText("Level") as HTMLSelectElement).value).toBe("6");
-    expect((screen.getByRole("switch", { name: "Show worked examples" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("switch", { name: "Show worked examples" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("Only the app's screens use it.")).toBeTruthy();
     expect(descriptions(screen.getByLabelText("What the app calls you"))).toEqual(["Only the app's screens use it."]);
   });

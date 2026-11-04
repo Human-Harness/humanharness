@@ -10,6 +10,7 @@ import { CitationContext, splitCitations } from "./citations";
 import { imageTarget, isAutolink, linkTarget } from "./doc-links";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { Icon } from "./guide/icons";
+import { StaticCheckbox } from "./guide/Checkbox";
 import { highlightCode } from "./highlight";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { fenceClosed } from "./mermaid-loader";
@@ -326,7 +327,7 @@ function renderHeading(n: Heading, ctx: Ctx, key: number): ReactNode {
 function renderList(n: List, ctx: Ctx, key: number): ReactNode {
   const items = n.children.map((item, j) => (
     <li key={j} className={item.checked === null || item.checked === undefined ? undefined : "hh-md-task"}>
-      {typeof item.checked === "boolean" && <input type="checkbox" checked={item.checked} disabled readOnly aria-label={textOf(item).trim()} />}
+      {typeof item.checked === "boolean" && <StaticCheckbox checked={item.checked} label={textOf(item).trim()} />}
       {renderBlocks(item.children, ctx, !n.spread && !item.spread)}
     </li>
   ));

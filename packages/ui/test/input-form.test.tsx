@@ -95,7 +95,7 @@ describe("InputForm", () => {
     fireEvent.change(screen.getByLabelText("Front 1"), { target: { value: "2+2" } });
     fireEvent.change(screen.getByLabelText("Back 1"), { target: { value: "4" } });
     fireEvent.click(screen.getByRole("button", { name: "Add a row" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sure" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Sure" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(submit).toHaveBeenCalledWith({ cards: [{ front: "2+2", back: "4" }], sure: true });
     cleanup();
@@ -114,12 +114,12 @@ describe("InputForm", () => {
     };
     const { submit, el } = form({ spec: grouped, blockId: "t1:0:8", errors: [{ path: "tags", message: "Pick one" }, { path: "cards.0.front", message: "Empty" }] });
     await renderIn("en", el);
-    for (const box of [screen.getByRole("checkbox", { name: "a" }), screen.getByLabelText("Front 1")]) {
+    for (const box of [screen.getByRole("switch", { name: "a" }), screen.getByLabelText("Front 1")]) {
       expect(box.getAttribute("aria-invalid")).toBe("true");
       expect(document.getElementById(box.getAttribute("aria-describedby")!)?.textContent).toBeTruthy();
     }
-    fireEvent.click(screen.getByRole("checkbox", { name: "c" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "a" }));
+    fireEvent.click(screen.getByRole("switch", { name: "c" }));
+    fireEvent.click(screen.getByRole("switch", { name: "a" }));
     fireEvent.change(screen.getByLabelText("Front 1"), { target: { value: "x" } });
     fireEvent.change(screen.getByLabelText("Back 1"), { target: { value: "y" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -177,7 +177,7 @@ describe("InputForm for a setup step (setup-steps spec §3 `form`)", () => {
     expect((screen.getByLabelText("Goal") as HTMLInputElement).value).toBe("Pass");
     expect((screen.getByLabelText(/^Age/) as HTMLInputElement).value).toBe("12");
     expect((screen.getByRole("radio", { name: "Demanding" }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("checkbox", { name: "Show examples" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("switch", { name: "Show examples" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("radio", { name: "Patient" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(submit).toHaveBeenCalledWith({ goal: "Pass", age: 12, tone: "patient", examples: true });

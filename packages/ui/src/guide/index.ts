@@ -7,3 +7,5 @@ export * from "./Tabs";
 export * from "./NavItem";
 export * from "./Option";
 export * from "./Tile";
+export * from "./Toggle";
+export * from "./Checkbox";

@@ -7,6 +7,7 @@ import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
 import { Button } from "../guide/Button";
 import { Segmented } from "../guide/Segmented";
+import { Toggle } from "../guide/Toggle";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const message = (r: PluginResult, failed: string) => (r.ok ? null : "message" in r && r.message ? r.message : failed);
@@ -270,13 +271,11 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
               <label className="hh-row-label" htmlFor={`${id}-notify`}>
                 {t("plugins.notify")}
               </label>
-              <input
+              <Toggle
                 id={`${id}-notify`}
-                type="checkbox"
-                role="switch"
                 checked={detail.notify}
                 aria-describedby={`${id}-notify-help`}
-                onChange={(e) => void change("notify", () => client.plugins.setNotify(row.id, e.target.checked))}
+                onChange={(on) => void change("notify", () => client.plugins.setNotify(row.id, on))}
               />
               <p className="hh-caption hh-row-note" id={`${id}-notify-help`}>
                 {t("plugins.notifyHelp")}

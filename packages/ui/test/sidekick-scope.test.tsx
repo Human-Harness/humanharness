@@ -18,7 +18,7 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
     expect(await screen.findByRole("region", { name: "Sidekicks in this project" })).toBeTruthy();
     expect(screen.getByText("Login project")).toBeTruthy();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Rulo" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Rulo" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["setScope", "login", "rulo", { on: true, purposeText: "No spec without AC." }]));
     fireEvent.change(screen.getByRole("textbox", { name: "Sidekick's purpose here" }), { target: { value: "Keep PRs small." } });
     fireEvent.blur(screen.getByRole("textbox", { name: "Sidekick's purpose here" }));
@@ -42,7 +42,7 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     let release!: () => void;
     c.sidekickScopeGate = new Promise<void>((r) => (release = r));
     await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
-    const box = await screen.findByRole("checkbox", { name: "Rulo" });
+    const box = await screen.findByRole("switch", { name: "Rulo" });
     fireEvent.click(box);
     await waitFor(() => expect(c.sidekickCalls).toHaveLength(1));
     expect(box.closest("li")?.getAttribute("aria-busy")).toBe("true");
@@ -60,10 +60,10 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     c.sidekickScope = [{ id: "rulo", name: "Rulo", mark: "mentor", on: false }];
     c.sidekickScopeFails = 'No sidekick "rulo"';
     await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
-    const box = (await screen.findByRole("checkbox", { name: "Rulo" })) as HTMLInputElement;
+    const box = await screen.findByRole("switch", { name: "Rulo" });
     fireEvent.click(box);
     expect((await screen.findByRole("alert")).textContent).toContain('No sidekick "rulo"');
-    expect(box.checked).toBe(false);
+    expect(box.getAttribute("aria-checked")).toBe("false");
   });
 
   it("a refused text goes back to the saved one", async () => {
@@ -84,7 +84,7 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     let release!: () => void;
     c.sidekickScopeGate = new Promise<void>((r) => (release = r));
     const { unmount } = await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
-    const box = await screen.findByRole("checkbox", { name: "Rulo" });
+    const box = await screen.findByRole("switch", { name: "Rulo" });
     fireEvent.click(box);
     await waitFor(() => expect(c.sidekickCalls).toHaveLength(1));
     fireEvent.click(box);
@@ -103,7 +103,7 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickScope = [{ id: "rulo", name: "Rulo", mark: "mentor", on: false }];
     const { unmount } = await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
-    await screen.findByRole("checkbox", { name: "Rulo" });
+    await screen.findByRole("switch", { name: "Rulo" });
     unmount();
     await new Promise((r) => setTimeout(r, 20));
     expect(c.sidekickCalls).toEqual([]);
@@ -114,10 +114,10 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     c.sidekickState = SK_ON;
     c.sidekickScope = [{ id: "sidekick", name: "Sidekick", mark: "coach", on: true }];
     await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
-    await screen.findByRole("checkbox", { name: "Sidekick" });
+    await screen.findByRole("switch", { name: "Sidekick" });
     c.sidekickScope = [...c.sidekickScope, { id: "rulo", name: "Rulo", mark: "mentor", on: true }];
     c.emitSidekick(SK_ON);
-    expect(await screen.findByRole("checkbox", { name: "Rulo" })).toBeTruthy();
+    expect(await screen.findByRole("switch", { name: "Rulo" })).toBeTruthy();
   });
 });
 
@@ -144,11 +144,11 @@ describe("the section in Settings › Sidekicks", () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
     await renderIn("en", <SidekickTab client={c} onModels={() => undefined} />);
-    await screen.findByRole("checkbox", { name: "Before you send" });
+    await screen.findByRole("switch", { name: "Before you send" });
     expect(screen.queryByText(/Sidekicks in this/)).toBeNull();
     cleanup();
     await renderIn("en", <SidekickTab client={c} onModels={() => undefined} scopes={{ label: "project" }} />);
-    await screen.findByRole("checkbox", { name: "Before you send" });
+    await screen.findByRole("switch", { name: "Before you send" });
     expect(screen.queryByText(/Sidekicks in this/)).toBeNull();
     expect(c.sidekickScopeReads).toBe(0);
     expect(c.sidekickCalls.filter((x) => x[0] === "setScope")).toEqual([]);

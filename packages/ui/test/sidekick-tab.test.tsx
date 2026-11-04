@@ -13,8 +13,8 @@ describe("Settings › Sidekick (spec §8)", () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
     await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
-    expect(await screen.findByRole("checkbox", { name: "Sidekick" })).toBeTruthy();
-    expect(screen.getByRole("checkbox", { name: "Before you send" })).toBeTruthy();
+    expect(await screen.findByRole("switch", { name: "Sidekick" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Before you send" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Longest wait" })).toBeTruthy();
     expect(screen.getByText("Light")).toBeTruthy();
     expect(screen.getByRole("group", { name: "Cap per task" })).toBeTruthy();
@@ -29,9 +29,9 @@ describe("Settings › Sidekick (spec §8)", () => {
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { wait: 10 }]));
     fireEvent.click(screen.getByRole("button", { name: "No cap" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { cap: "none" }]));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Before you send" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Before you send" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { preSend: false }]));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sidekick" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Sidekick" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { on: false }]));
   });
 
@@ -39,9 +39,9 @@ describe("Settings › Sidekick (spec §8)", () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
     await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "After the reply" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "After the reply" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { afterReply: false }]));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Heads-ups" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Heads-ups" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { headsUps: false }]));
   });
 
@@ -69,7 +69,7 @@ describe("Settings › Sidekick, look (UI refresh)", () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
     await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
-    const main = await screen.findByRole("checkbox", { name: "Sidekick" });
+    const main = await screen.findByRole("switch", { name: "Sidekick" });
     expect(main.closest(".hh-section-head")).toBeTruthy();
     const stats = document.querySelector(".hh-stats")!;
     expect(stats.querySelectorAll(".hh-card")).toHaveLength(3);
@@ -93,7 +93,7 @@ describe("Settings › Sidekick, learning (spec §6.3, §8)", () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
     await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
-    await screen.findByRole("checkbox", { name: "Sidekick" });
+    await screen.findByRole("switch", { name: "Sidekick" });
     expect(screen.queryByText(/suggestions used this week/)).toBeNull();
     expect(screen.queryByText("Not flagged")).toBeNull();
   });

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "../client";
 import { SidekickMark, markIcon } from "./mark";
 import { Button } from "../guide/Button";
+import { Checkbox } from "../guide/Checkbox";
 
 /** A stored sidekick imported from files: its id and the fields a new draft doesn't carry (Save replaces every field). */
 export interface ImportedSidekick {
@@ -185,7 +186,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
           {draft.skipped.length > 0 && <p className="hh-caption">{t("sidekick.import.skipped", { list: draft.skipped.join(", ") })}</p>}
           <p>{t("sidekick.import.copy")}</p>
           <label>
-            <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> {t("sidekick.import.ack")}
+            <Checkbox purpose="accept" checked={ack} onChange={(e) => setAck(e.target.checked)} /> {t("sidekick.import.ack")}
           </label>
           {saveFailed && <p role="alert">{t("sidekick.import.saveFailed", { name: draft.draft.name })}</p>}
           <div className="hh-sk-actions">

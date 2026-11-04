@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickInScope } from "../client";
+import { Toggle } from "../guide/Toggle";
 import { SidekickMark, markIcon } from "./mark";
 
 /** The longest purpose text (the SDK's SIDEKICK_PURPOSE_TEXT_MAX; the UI imports only types). */
@@ -142,18 +143,16 @@ function ScopeRow({
       <div className="hh-sk-list-row">
         <SidekickMark icon={markIcon(row.mark)} off={!on} />
         <div className="hh-sk-list-text">
-          <label>
-            <input
-              type="checkbox"
-              checked={on}
-              onChange={(e) => {
-                setOn(e.target.checked);
-                wanted.current = { ...wanted.current, on: e.target.checked };
-                flush();
-              }}
-            />{" "}
+          <Toggle
+            checked={on}
+            onChange={(next) => {
+              setOn(next);
+              wanted.current = { ...wanted.current, on: next };
+              flush();
+            }}
+          >
             {row.name}
-          </label>
+          </Toggle>
           <label className="hh-caption" htmlFor={boxId}>
             {t("sidekick.scope.purpose", { name: row.name })}
           </label>

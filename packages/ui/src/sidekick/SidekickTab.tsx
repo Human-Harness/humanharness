@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "../guide/Segmented";
+import { Toggle } from "../guide/Toggle";
 import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "../client";
 import { shownLanguage } from "../language";
 import { LearnedList } from "./LearnedList";
@@ -111,14 +112,7 @@ export function SidekickTab({
         lineId={onHint}
         aside={
           <div className="hh-sk-main" data-setting="sidekick.on">
-            <input
-              className="hh-switch"
-              type="checkbox"
-              checked={s.on}
-              aria-label={t("sidekick.settings.on")}
-              aria-describedby={onHint}
-              onChange={(e) => save({ on: e.target.checked })}
-            />
+            <Toggle checked={s.on} aria-label={t("sidekick.settings.on")} aria-describedby={onHint} onChange={(on) => save({ on })} />
           </div>
         }
       />
@@ -162,14 +156,7 @@ export function SidekickTab({
             hint={t("sidekick.settings.preSendHint")}
             hintId={preSendHint}
           >
-            <input
-              id={`${preSendHint}-on`}
-              className="hh-switch"
-              type="checkbox"
-              checked={s.preSend}
-              aria-describedby={preSendHint}
-              onChange={(e) => save({ preSend: e.target.checked })}
-            />
+            <Toggle id={`${preSendHint}-on`} checked={s.preSend} aria-describedby={preSendHint} onChange={(preSend) => save({ preSend })} />
           </SettingRow>
           <SettingRow
             data-setting="sidekick.afterReply"
@@ -178,14 +165,7 @@ export function SidekickTab({
             hint={t("sidekick.settings.afterReplyHint")}
             hintId={afterHint}
           >
-            <input
-              id={`${afterHint}-on`}
-              className="hh-switch"
-              type="checkbox"
-              checked={s.afterReply}
-              aria-describedby={afterHint}
-              onChange={(e) => save({ afterReply: e.target.checked })}
-            />
+            <Toggle id={`${afterHint}-on`} checked={s.afterReply} aria-describedby={afterHint} onChange={(afterReply) => save({ afterReply })} />
           </SettingRow>
           <SettingRow
             data-setting="sidekick.headsUps"
@@ -194,14 +174,7 @@ export function SidekickTab({
             hint={t("sidekick.settings.headsUpsHint")}
             hintId={headsUpHint}
           >
-            <input
-              id={`${headsUpHint}-on`}
-              className="hh-switch"
-              type="checkbox"
-              checked={s.headsUps}
-              aria-describedby={headsUpHint}
-              onChange={(e) => save({ headsUps: e.target.checked })}
-            />
+            <Toggle id={`${headsUpHint}-on`} checked={s.headsUps} aria-describedby={headsUpHint} onChange={(headsUps) => save({ headsUps })} />
           </SettingRow>
           <SettingRow data-setting="sidekick.wait" label={t("sidekick.settings.wait")}>
             <Segmented label={t("sidekick.settings.wait")} options={waits} value={String(s.wait) as Wait} onChange={(v) => save({ wait: parseWait(v) })} />

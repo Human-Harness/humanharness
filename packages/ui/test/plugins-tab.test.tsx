@@ -117,8 +117,8 @@ describe("Settings › Plugins", () => {
     expect(items[2].textContent).toContain("Needs review");
     expect(items[3].textContent).toContain("Turned off after crashes");
     expect(items[4].textContent).toContain("Error: dist is too large");
-    expect((screen.getByRole("switch", { name: "On-call" }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("switch", { name: "Jira" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("switch", { name: "On-call" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: "Jira" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("turning on a plugin that needs a review opens the review; Turn on approves the reviewed dist", async () => {

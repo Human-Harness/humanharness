@@ -25,12 +25,12 @@ export const PIECE_SIZES: Record<number, string[]> = {
   2: [], // active underline (Tabs, NavItem, active review mark)
   6: [], // ProgressBar
   8: [".hh-tab-dot"], // Dot (Tabs' waiting dot until Task 26 replaces it with Dot)
-  14: [],
+  14: [".hh-toggle::after"], // Toggle knob
   18: [],
   32: [".hh-sk-mark-pick"], // icon sizes (Icon piece selectors; 18 and 32 are also Counter and Avatar)
   16: [], // Ring
-  20: [],
-  34: [], // Toggle (20 high, 34 wide)
+  20: [".hh-toggle"],
+  34: [".hh-toggle"],// Toggle (20 high, 34 wide)
   84: [], // engine / harness logo
 };
 export const RADII = [8, 12, 14, 18]; // plus 4 only on inline code, plus round (999px or 50%) only on round pieces
@@ -38,7 +38,7 @@ export const SPACES = [0, 4, 8, 12, 16, 24, 32]; // plus 90 only as the top bar'
 export const FONT_SIZES = [12, 13, 14, 15, 16, 20, 28];
 export const WEIGHTS = [400, 500, 600];
 /** Selectors allowed a round radius (999px / 50%). Part 6 fills it with the round pieces. */
-export const ROUND_SELECTORS: string[] = [".hh-sk-mark", ".hh-tab-dot", ".hh-option-mark"]; // the sidekick mark, a 24 circle (§4, row 44); the Option's 18 radio (§3, row 52)
+export const ROUND_SELECTORS: string[] = [".hh-sk-mark", ".hh-tab-dot", ".hh-option-mark", ".hh-toggle", ".hh-toggle::after"]; // the Toggle and its knob (§5); the sidekick mark, a 24 circle (§4, row 44); the Option's 18 radio (§3, row 52)
 
 export type CssOptions = {
   /** The file defines the tokens: colors are allowed inside its `:root` / `[data-theme]` blocks. */

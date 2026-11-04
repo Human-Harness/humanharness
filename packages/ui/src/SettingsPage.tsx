@@ -30,6 +30,7 @@ import { UsageTab } from "./UsageTab";
 import { Button } from "./guide/Button";
 import { IconButton } from "./guide/IconButton";
 import { NavItem } from "./guide/NavItem";
+import { Toggle } from "./guide/Toggle";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 
@@ -516,9 +517,9 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
           </p>
         )}
         <div className="hh-row" data-setting="general.notifyWaiting">
-          <label>
-            <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => said(save({ notifyWaiting: e.target.checked }))} /> {t("parallel.notifyWaiting")}
-          </label>
+          <Toggle checked={info.notifyWaiting} onChange={(on) => said(save({ notifyWaiting: on }))}>
+            {t("parallel.notifyWaiting")}
+          </Toggle>
         </div>
       </div>
       </SettingsCard>

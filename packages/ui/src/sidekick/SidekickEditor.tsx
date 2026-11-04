@@ -5,6 +5,7 @@ import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView
 import { ICON_NAMES, Icon } from "../guide/icons";
 import { markIcon } from "./mark";
 import { Button } from "../guide/Button";
+import { Toggle } from "../guide/Toggle";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */
 const CORE = ["prompt-coach", "focus", "process-guard", "mentor", "daily-summary"] as const;
@@ -154,13 +155,13 @@ export function SidekickEditor({
           </p>
         )}
         {CORE.map((id) => (
-          <label key={id} className="hh-sk-check">
-            <input type="checkbox" checked={core.includes(id)} onChange={(e) => setCore(toggle(core, id, e.target.checked))} /> {t(`sidekick.purposes.${id}`)}
-          </label>
+          <Toggle key={id} checked={core.includes(id)} onChange={(on) => setCore(toggle(core, id, on))}>
+            {t(`sidekick.purposes.${id}`)}
+          </Toggle>
         ))}
-        <label className="hh-sk-check">
-          <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} /> {t("sidekick.purposes.custom")}
-        </label>
+        <Toggle checked={custom} onChange={setCustom}>
+          {t("sidekick.purposes.custom")}
+        </Toggle>
         {custom && (
           <div className="hh-sk-custom">
             <label htmlFor={`${ids}-custom`}>{t("sidekick.editor.customText")}</label>
@@ -173,9 +174,9 @@ export function SidekickEditor({
                 </p>
               )}
               {momentChoices.map((m) => (
-                <label key={m.id} className="hh-sk-check">
-                  <input type="checkbox" checked={moments.includes(m.id)} onChange={(e) => setMoments(toggle(moments, m.id, e.target.checked))} /> {m.label}
-                </label>
+                <Toggle key={m.id} checked={moments.includes(m.id)} onChange={(on) => setMoments(toggle(moments, m.id, on))}>
+                  {m.label}
+                </Toggle>
               ))}
             </fieldset>
           </div>

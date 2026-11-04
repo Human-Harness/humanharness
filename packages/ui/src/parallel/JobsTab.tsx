@@ -7,6 +7,7 @@ import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
 import { SectionHead } from "../settings-parts";
 import { Button } from "../guide/Button";
+import { Toggle } from "../guide/Toggle";
 
 /** The lowest daily cap the field takes: less would pause a periodic job after its first run. */
 export const DAILY_CAP_MIN = 1000;
@@ -202,9 +203,9 @@ function JobGroup({
       </h3>
       <div className="hh-rows">
         <div className="hh-row">
-          <label>
-            <input type="checkbox" checked={entry.off !== true} aria-describedby={labelId} onChange={(e) => onOn(e.target.checked)} /> {t("parallel.jobOn")}
-          </label>
+          <Toggle checked={entry.off !== true} aria-describedby={labelId} onChange={onOn}>
+            {t("parallel.jobOn")}
+          </Toggle>
           {job.every && <span className="hh-caption">{t("parallel.every", { interval: job.every })}</span>}
         </div>
         {job.every && (

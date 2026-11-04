@@ -49,6 +49,10 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-tile-title",
   "hh-tile-tags",
   "hh-tile-text",
+  // Toggle and Checkbox (§5)
+  "hh-toggle",
+  "hh-toggle-row",
+  "hh-checkbox",
   // Empty state line (§4: a 14 icon before the text)
   "hh-history-empty-line",
 ]);

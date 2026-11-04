@@ -8,6 +8,7 @@ import { usePluginsRescan } from "./usePlugins";
 import { Tag, type TagTone } from "../chrome";
 import { SectionHead } from "../settings-parts";
 import { Button } from "../guide/Button";
+import { Toggle } from "../guide/Toggle";
 
 /** Each state's tag colour (UI refresh spec): on green, needs review orange, off after crashes and errors red. */
 const STATUS_TONE: Record<PluginRow["status"], TagTone> = { on: "green", off: "gray", review: "orange", crashed: "red", error: "red" };
@@ -182,7 +183,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
                   </span>
                 )}
               </span>
-              <input className="hh-switch" type="checkbox" role="switch" aria-label={p.name} checked={p.status === "on"} onChange={(e) => setOn(p, e.target.checked)} />
+              <Toggle aria-label={p.name} checked={p.status === "on"} onChange={(on) => setOn(p, on)} />
             </li>
           ))}
         </ul>

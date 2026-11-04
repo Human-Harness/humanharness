@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next";
 import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupResult, type SetupStep, type TestResult, engineProblem } from "./client";
 import { Button } from "./guide/Button";
+import { Checkbox } from "./guide/Checkbox";
 
 type Busy = null | "notice" | "test" | SetupStep;
 
@@ -292,7 +293,7 @@ export function EngineOnboarding({
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
         </p>
         <label>
-          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> <span lang={legalLang}>{t("legal.engine.accept")}</span>
+          <Checkbox purpose="accept" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> <span lang={legalLang}>{t("legal.engine.accept")}</span>
         </label>
         {/* After the accept text, so the line covers every legal block of the notice. */}
         <LegalInEnglish />

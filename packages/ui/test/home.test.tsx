@@ -74,8 +74,8 @@ describe("Home", () => {
     const client = new FakeClient();
     const { onStart, onSetup } = await renderHome(client);
     const items = screen.getByRole("region", { name: "Two steps before you start" }).querySelectorAll("li");
-    expect([...items].map((li) => li.textContent)).toEqual(["1Choose where your work is kept", "2Connect the AI engine"]);
-    expect(items[0].querySelector("svg")).toBeNull();
+    // Each step is its label and a status badge (no StepMark): neither is done yet.
+    expect([...items].map((li) => li.textContent)).toEqual(["Choose where your work is keptTo do", "Connect the AI engineTo do"]);
     expect(screen.queryByRole("button", { name: "Start Demo" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
     expect(onSetup).toHaveBeenCalledOnce();
@@ -86,9 +86,9 @@ describe("Home", () => {
     const client = new FakeClient({ folder: "/Users/me/Documents/Demo" });
     await renderHome(client);
     const items = screen.getByRole("region", { name: "Two steps before you start" }).querySelectorAll("li");
-    expect(items[0].textContent).toBe("Choose where your work is kept");
+    expect(items[0].textContent).toBe("Choose where your work is keptDone");
     expect(items[0].querySelector("svg")).toBeTruthy();
-    expect(items[1].textContent).toBe("2Connect the AI engine");
+    expect(items[1].textContent).toBe("Connect the AI engineTo do");
     expect(screen.getByRole("button", { name: "Set up Demo" })).toBeTruthy();
   });
 

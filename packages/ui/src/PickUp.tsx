@@ -1,5 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { Tag, type TagTone } from "./chrome";
+import type { TagTone } from "./chrome";
+import { Rx } from "./guide";
+
+/** A tag tone as a Radix badge color; the bridge maps each to its hh-t-* pair. */
+const TONE = { green: "green", orange: "orange", blue: "blue", violet: "violet", red: "red", gray: "gray" } as const satisfies Record<TagTone, string>;
 
 export interface PickUpItem {
   id: string;
@@ -39,21 +43,31 @@ export function pickUpItems({ open, history }: { open: OpenTask[]; history: Past
 export function PickUp({ items, onOpen }: { items: PickUpItem[]; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
   if (items.length === 0) return null;
+  // Inicio's section titles are 12 uppercase grey labels (DESIGN.md "Inicio").
   return (
     <section className="hh-pickup" aria-labelledby="hh-pickup-h">
-      <div className="hh-pickup-head">
-        <h2 id="hh-pickup-h">{t("home.pickUp")}</h2>
-        <span className="hh-tag hh-tag-gray">{items.length}</span>
-      </div>
-      <div className="hh-pickup-grid">
+      <Rx.Heading as="h2" size="1" color="gray" className="hh-home-label" id="hh-pickup-h">
+        {t("home.pickUp")}
+      </Rx.Heading>
+      <ul className="hh-pickup-grid">
         {items.map((i) => (
-          <button key={i.id} className="hh-pickup-card" onClick={() => onOpen(i.id)}>
-            <Tag tone={i.tone}>{i.status}</Tag>
-            <span className="hh-pickup-title">{i.title}</span>
-            {i.where && <span className="hh-caption">{i.where}</span>}
-          </button>
+          <li key={i.id}>
+            <Rx.Card size="2" asChild>
+              <button type="button" className="hh-pickup-card" onClick={() => onOpen(i.id)}>
+                <Rx.Badge color={TONE[i.tone]}>{i.status}</Rx.Badge>
+                <Rx.Text as="span" size="3" weight="bold">
+                  {i.title}
+                </Rx.Text>
+                {i.where && (
+                  <Rx.Text as="span" size="1" color="gray">
+                    {i.where}
+                  </Rx.Text>
+                )}
+              </button>
+            </Rx.Card>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   );
 }

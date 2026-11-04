@@ -1,6 +1,7 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, MoveError, SyncLocationView } from "./client";
+import { Rx } from "./guide";
 
 /** The folder's own name (its last path segment): it keeps it when it moves. */
 const folderName = (folder: string) => folder.replace(/\/+$/, "").split("/").pop() || folder;
@@ -117,18 +118,19 @@ export function MovePlaces({ state, move, children }: { state: AppState; move: F
     return l.account ? t("backup.moveToAccount", { provider, account: l.account }) : t("backup.moveTo", { provider });
   };
   const places = (state.backup?.locations ?? []).filter((l) => !within(folder, l.path));
+  // A notice's buttons are secondaries with a border (DESIGN.md "Callout").
   return (
-    <div className="hh-backup-actions" aria-busy={move.moving}>
+    <Rx.Flex wrap="wrap" gap="2" aria-busy={move.moving}>
       {places.map((l) => (
-        <button key={l.path} disabled={move.moving} onClick={() => void move.move(inside(l.path, folderName(folder)))}>
+        <Rx.Button key={l.path} size="1" variant="outline" color="gray" disabled={move.moving} onClick={() => void move.move(inside(l.path, folderName(folder)))}>
           {moveLabel(l)}
-        </button>
+        </Rx.Button>
       ))}
-      <button disabled={move.moving} onClick={() => void move.chooseAnother(folder)}>
+      <Rx.Button size="1" variant="outline" color="gray" disabled={move.moving} onClick={() => void move.chooseAnother(folder)}>
         {t("backup.chooseAnother")}
-      </button>
+      </Rx.Button>
       {children}
-    </div>
+    </Rx.Flex>
   );
 }
 
@@ -199,22 +201,23 @@ export function BackupNotice({ client, state, onChange, move: shared }: { client
   return (
     <>
       {show && (
-        <section className="hh-backup-notice" aria-label={t("backup.title")}>
-          <p>{t("backup.notice")}</p>
+        // Callout.Root can't take asChild (its Slot lands on a context provider), so it is the region itself.
+        <Rx.Callout.Root color="gray" className="hh-home-box" role="region" aria-label={t("backup.title")}>
+          <Rx.Callout.Text>{t("backup.notice")}</Rx.Callout.Text>
           <MovePlaces state={state} move={move}>
-            <button disabled={move.moving} onClick={dismiss}>
+            <Rx.Button size="1" variant="outline" color="gray" disabled={move.moving} onClick={dismiss}>
               {t("backup.dismiss")}
-            </button>
+            </Rx.Button>
           </MovePlaces>
-        </section>
+        </Rx.Callout.Root>
       )}
-      <p ref={statusRef} className="hh-backup-status" role="status" tabIndex={-1}>
+      <Rx.Text as="p" size="1" color="gray" ref={statusRef} className="hh-backup-status" role="status" tabIndex={-1}>
         {status}
-      </p>
+      </Rx.Text>
       {problem && (
-        <div ref={alertRef} className="hh-error" role="alert" tabIndex={-1}>
-          <p>{problem}</p>
-        </div>
+        <Rx.Callout.Root color="red" className="hh-home-box" ref={alertRef} role="alert" tabIndex={-1}>
+          <Rx.Callout.Text>{problem}</Rx.Callout.Text>
+        </Rx.Callout.Root>
       )}
     </>
   );

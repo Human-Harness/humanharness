@@ -24,8 +24,8 @@ Two audiences appear in the docs.
 - **The person who uses a harness.** The docs call them non-technical. They already pay for an AI subscription. They do not want API keys, a terminal, Node or git.
 - **The harness author.** They build a harness in their own repository with `defineHarness()`, `defineBlock()` and the `/new-harness` guide. They never hold a user's key.
 
-Open: who is the primary user of the app today, and in what situation do they use it? The docs name the groups above but do not name a first user or a typical job.
-Open: is the harness author a user of the product, or only of the framework?
+The primary user today is the maintainer, using the app for his own work. The app is validated by daily use (decided 2026-11-04).
+The harness author is a user of the framework only: the CLI, the SDK and `/new-harness`. The app and its design think only of the person who uses a harness. A harness that builds other harnesses would be one more harness, with its own non-technical user (decided 2026-11-04).
 
 Sources: `README.md`, `site/index.html`, `docs/architecture/authoring.md`.
 
@@ -44,7 +44,7 @@ Three pillars:
 
 The goal: bring the person close to the best result for their task, with close to the best use of their resources.
 
-Open: how is success measured (adoption, tasks finished, cost per task, something else)? The docs give a goal but no measure.
+Deferred (2026-11-04): how success is measured. Any measure must respect "no telemetry".
 
 Sources: `README.md`, `site/index.html`, `docs/superpowers/specs/2026-10-10-humanharness-core-design.md`.
 
@@ -66,7 +66,7 @@ Other claims the docs make:
 - An engine is offered only if its terms allow it. Working technically is not enough.
 - The code is split by how fast each part ages, so a new engine or model replaces one module.
 
-Open: who are the neighbouring products to position against besides a generic chat? The docs name none.
+Deferred (2026-11-04): which neighbouring products to position against besides a generic chat.
 
 Sources: `site/index.html`, `README.md`, `docs/architecture/replaceable-parts.md`.
 
@@ -111,8 +111,8 @@ Sources: `README.md`, `docs/architecture/`, `docs/superpowers/specs/2026-10-25-*
 - The name is "Human Harness". The repository ships a logo and a logotype (`hh.logo.jpeg`, `hh.logotype.jpeg`).
 - The app name appears on Inicio.
 
-Open: what voice does the product use in its own copy (tone, formality, language of the examples)? The docs do not set one.
-Open: are the logo and logotype final, and is there a rule for where they may appear?
+- Voice: clear and calm. Short sentences, second person, no technical jargon, no jokes. Copy says what happened and what to do next. It is written for non-technical people (decided 2026-11-04).
+- The logo and logotype are final. The logo is the app icon and appears on Inicio. The logotype appears on the site and in the README. Neither appears anywhere else in the app (decided 2026-11-04).
 
 Sources: `README.md`, `hh.logo.jpeg`, `hh.logotype.jpeg`, `docs/superpowers/specs/2026-11-02-style-guide-design.md`.
 
@@ -142,6 +142,6 @@ Sources: `site/index.html`, `README.md`.
 - The loading icon is static under reduced motion.
 - The app is made for non-technical people.
 
-Open: is there a required standard (for example WCAG 2.2 AA)? The docs set the rules above but name no standard.
+- The required standard is WCAG 2.2 AA. Every critique checks it (decided 2026-11-04).
 
 Sources: `docs/superpowers/specs/2026-10-25-input-blocks-design.md`, `docs/superpowers/specs/2026-11-02-style-guide-design.md` (§4), `README.md`.

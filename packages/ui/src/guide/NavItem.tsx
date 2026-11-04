@@ -16,6 +16,8 @@ export interface NavItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElemen
    * which gives the Assistant its look (spec §12).
    */
   look?: "white";
+  /** `start`: the lead sits at the top, with the first line (the Assistant's steps). The default is centered. */
+  align?: "start";
   children?: ReactNode;
 }
 
@@ -24,7 +26,7 @@ export interface NavItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElemen
  * A `button` when it does something (`onClick`); without one (the Assistant's steps only show where you are)
  * it is a plain block, so no dead button enters the tab order.
  */
-export function NavItem({ selected = false, current, lead, trail, tone, look, className, children, ...rest }: NavItemProps) {
+export function NavItem({ selected = false, current, lead, trail, tone, look, align, className, children, ...rest }: NavItemProps) {
   const cls = className ? `hh-nav-item ${className}` : "hh-nav-item";
   const inner = (
     <>
@@ -36,13 +38,13 @@ export function NavItem({ selected = false, current, lead, trail, tone, look, cl
   const ariaCurrent = selected ? current : undefined;
   if (rest.onClick === undefined) {
     return (
-      <div className={cls} aria-current={ariaCurrent} data-selected={selected} data-tone={tone} data-look={look}>
+      <div className={cls} aria-current={ariaCurrent} data-selected={selected} data-tone={tone} data-look={look} data-align={align}>
         {inner}
       </div>
     );
   }
   return (
-    <button type="button" {...rest} className={cls} aria-current={ariaCurrent} data-selected={selected} data-tone={tone} data-look={look}>
+    <button type="button" {...rest} className={cls} aria-current={ariaCurrent} data-selected={selected} data-tone={tone} data-look={look} data-align={align}>
       {inner}
     </button>
   );

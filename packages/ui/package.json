@@ -8,6 +8,7 @@
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
     "@humanharness/protocol": "workspace:*",
+    "@radix-ui/themes": "3.3.0",
     "highlight.js": "~11.11.0",
     "i18next": "^26.4.3",
     "lowlight": "^3.3.0",

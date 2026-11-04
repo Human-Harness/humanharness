@@ -132,7 +132,13 @@ Special uses take only the tag colors (guide §2):
 ### Named Rules
 **The Token Rule.** Every color is a token. No hex or rgb value appears outside the token definitions (guide §2, §15).
 
-Open: Radix draws its own colors from accent amber and gray sand. The bridge in `styles.css` maps only fonts and the background to our tokens. Which tokens should a Radix piece's fill, border and text use? The guide's color table does not answer this for Radix pieces.
+### Radix pieces take our tokens
+Radix draws its pieces from accent amber and gray sand. The bridge in `styles.css` maps all of those colors to our tokens, so a Radix piece looks like the rest of the app (Marco, 2026-11-04). Today the bridge maps only fonts and the background; the color mapping arrives with stage 2, before the first screen moves:
+- Radix's amber fill and its text become `hh-cta`, `hh-cta-ink` and `hh-cta-hover`.
+- Radix's chosen and soft accent states become `hh-active` and `hh-active-ink`.
+- Radix's grays become our neutrals: panels `hh-surface`, subtle fills `hh-surface-2`, borders `hh-line` and `hh-line-strong`, text `hh-ink`, `hh-muted` and `hh-faint`.
+
+No screen sets a Radix color prop to reach a color the bridge does not map.
 
 ## Typography
 
@@ -143,23 +149,25 @@ Open: Radix draws its own colors from accent amber and gray sand. The bridge in 
 **Character:** One family for everything. Mono only where text is code (guide §2).
 
 ### Hierarchy
-- **App name** (600, 28): only the app name on Inicio (guide §2).
-- **Panel title** (600, 20): task title, secondary pages, dialogs, assistant steps, Settings nav (guide §2).
-- **Reading text** (400, 16): only the reader document (guide §2).
-- **Card title** (600, 15) and **chat reply** (400, 15) (guide §2).
-- **Body** (400, 14) (guide §2).
-- **Secondary text** (400, 13). Compact button (500, 13) (guide §2).
-- **Section label and caption** (12): the minimum size (guide §2).
+Every size is a step of Radix's text scale (`Text` and `Heading` `size`). The guide's 15 rose to 16 and its 13 fell to 12 (Marco, 2026-11-04).
+
+- **App name** (600, 28, size 7): only the app name on Inicio (guide §2).
+- **Panel title** (600, 20, size 5): task title, secondary pages, dialogs, assistant steps, Settings nav (guide §2).
+- **Reading text** (400, 16, size 3): only the reader document (guide §2).
+- **Card title** (600, 16, size 3) and **chat reply** (400, 16, size 3) (guide §2, was 15).
+- **Body** (400, 14, size 2) (guide §2).
+- **Secondary text** (400, 12, size 1). It differs from the caption by color, not size. Compact button text is the size 1 button's own (guide §2, was 13).
+- **Section label and caption** (12, size 1): the minimum size (guide §2).
+
+Sizes 4, 6, 8 and 9 are not used.
 - **Inline code** (DM Mono 400, one point below the sentence, `hh-surface-2` background, radius 4): commands, paths and file names inside a sentence (guide §2).
 
 ### Named Rules
 **The Three Weights Rule.** Weights are 400 for text, 500 for button and chip text, 600 for titles, labels and tags. No 700 (guide §2).
 
-Open: Radix has its own text scale (`Text` and `Heading` sizes). Which Radix size matches each role above? The guide gives px sizes, and the Radix scale is not mapped to them.
-
 ## Layout
 
-Spacing is 4, 8, 12, 16, 24 and 32. Nothing else (guide §2). The tokens are `hh-s-1` to `hh-s-6`.
+Spacing is 4, 8, 12, 16, 24 and 32. Nothing else (guide §2). The tokens are `hh-s-1` to `hh-s-6`. Radix's space steps 1 to 6 are exactly these values, so `gap`, `p` and `m` props use only 1 to 6. Steps 7, 8 and 9 (40, 48, 64) are not used in screens (Marco, 2026-11-04). Radix uses them inside its own pieces, such as button heights, and that is fine.
 
 Piece sizes follow Radix's scale 1 to 4. The guide's closed heights are dropped (spec §9.5).
 
@@ -172,7 +180,6 @@ Widths come from `styles.css` and are closed (guide §2):
 - Popover: 320 (`--hh-popover-w`).
 - Reader index: 200 (`--hh-index-w`).
 
-Open: Radix has its own space scale (`gap`, `p`, `m` props). Does it map to the six spacing steps above?
 
 ### Screen templates (guide §9)
 
@@ -203,7 +210,7 @@ Each zone has a closed list of contents, in order. What is not on the list does 
 3. **Task header.** One row: task title, and on the right Historial (compact secondary with icon) and Nueva tarea (compact primary, only with parallel work). The title stays whole.
 4. **Task tabs.** One tab per open task: name, orange dot if it waits for you, phase tag. Only with parallel work and more than one open task.
 5. **Phase and mode bar.** Phases as tags: done green with check, current orange, next ones as chips. On the right Terminar (compact secondary). Time: status line "quedan 12 min" with Pausar and Extender (compact quiet). Phase proposal: info notice with Ir (compact primary) and Ahora no. Mode: line "Modo: ..." with Cambiar modo (quiet). Each row appears if the task has phases, time or modes.
-6. **Chat (reading column).** Messages: yours as a bubble on the right with no label. The agent's as a card with what it read on top and the prose. System: a grey 13 line centered between two dividers. Agent work: a grey line with the loading icon and "Trabajando...", then a foldable row "Revisó N cosas". Tools: one grey 13 row per call with status icon, name and a chevron. Open shows data and result in a code block. A failed call starts open. Markdown: headings, paragraph, lists, static checkboxes, table, code block with Copiar, Mermaid diagram with Ver fuente, quote, callout, link, image, footnote, material citation. Documents: a chip that opens the Reader split view. Blocks: mode recommendation, annotate text, and a form inside a card (Saltar secondary, Enviar primary, bottom right). Notices: error with Reintentar and Arreglar bottom right. Confirmation before starting, level or time as an orange notice with two compact buttons.
+6. **Chat (reading column).** Messages: yours as a bubble on the right with no label. The agent's as a card with what it read on top and the prose. System: a grey 12 line centered between two dividers. Agent work: a grey line with the loading icon and "Trabajando...", then a foldable row "Revisó N cosas". Tools: one grey 12 row per call with status icon, name and a chevron. Open shows data and result in a code block. A failed call starts open. Markdown: headings, paragraph, lists, static checkboxes, table, code block with Copiar, Mermaid diagram with Ver fuente, quote, callout, link, image, footnote, material citation. Documents: a chip that opens the Reader split view. Blocks: mode recommendation, annotate text, and a form inside a card (Saltar secondary, Enviar primary, bottom right). Notices: error with Reintentar and Arreglar bottom right. Confirmation before starting, level or time as an orange notice with two compact buttons.
 7. **Composer.** Above, optional: a task prepared by a plugin, as a card with Empezar (compact primary) and Cancelar. The card holds the textarea. Inside, bottom right: Revisar (quiet, if Sidekick), Detener (secondary, while working), Enviar (compact secondary with border). The work screen has no fixed primary. Below, in 12 grey and outside the field: the context chip with ring, the caption, the harness caption. Inside the field only the typed text and the buttons.
 8. **Left column, Walkthrough.** The current question, the label "Recorrido · N/M" and nav items with a tag (Visto, Ahora, Sigue). Nothing else. It appears by itself when the harness works in walkthrough mode. Hidden below 640 px and with the reader full screen.
 9. **Right column.** Header: only the open panel's title and a chevron icon button to fold. Content is either the Sidekick or the harness panel. A harness panel is drawn with listed pieces only. It takes the column only if the harness has no Sidekick or it is off. Otherwise it gets a rail page. Folded, it shows the marks of the active sidekicks and an orange dot if cards wait. Hidden while a split view is open and below 720 px.
@@ -242,7 +249,7 @@ All use template 3. The rail is visible with the page's entry selected. Volver i
 
 - **Inicio.** Top bar: avatar, search, Settings. A centered column, in order: logo, name, sentence, card of missing steps or a problem notice, language notice (Más tarde, Elegir), large Empezar button or Configurar, engine chip (logo, name, dot, usage), Retomar (12 uppercase grey label and task cards; absent when empty), backup notice. Section titles on Inicio are 12 uppercase grey labels. Footer: brand and folder.
 - **Assistant.** Left: nav items with name and chosen value (12). The current step is a white fill with shadow and "Paso n de m". Body: title and sentence, then the step (form, connection rows or interview), engine install boxes (a card with numbered steps, a code block and secondary buttons), foldable details with the log, a status line. Action bar: Cancelar (left), Atrás (secondary), Saltar (quiet, next to Siguiente), Siguiente. Below, the caption "podés cambiarlo después". The end has summary rows and a large Empezar button with arrow, as on Inicio. Top: a notice "Configurando..." with Cancelar while a step runs.
-- **Settings.** Top bar: Volver on the left (compact quiet with arrow and the name of where you came from), nothing else. Left: title and nav items (General, Motor, Modelos, Uso, Conexiones, Sidekick, Plugins, the harness's own) with an optional counter. Body: a section header without a title, with a 13 grey sentence and, if needed, a control on the right. Cards with a 15 title and settings rows. Right of a card title only a tag. A control (the Sidekick toggle, the engine in Niveles) drops to the card's first row. Text size as segmented. Lists (profiles, plugins, usage) loose: a 13 grey group title and bordered rows, no card. Small actions in a row (Editar, Reactivar, Restaurar todo) as quiet buttons. A save error is a red notice above the card. Stats: a card with a 12 label and a 20 value. Table for usage. Plugins as list and detail: row with name, state tag and toggle; the detail uses the top-bar Volver, which turns into "← Plugins". An editor goes inside a card.
+- **Settings.** Top bar: Volver on the left (compact quiet with arrow and the name of where you came from), nothing else. Left: title and nav items (General, Motor, Modelos, Uso, Conexiones, Sidekick, Plugins, the harness's own) with an optional counter. Body: a section header without a title, with a 12 grey sentence and, if needed, a control on the right. Cards with a 16 title and settings rows. Right of a card title only a tag. A control (the Sidekick toggle, the engine in Niveles) drops to the card's first row. Text size as segmented. Lists (profiles, plugins, usage) loose: a 12 grey group title and bordered rows, no card. Small actions in a row (Editar, Reactivar, Restaurar todo) as quiet buttons. A save error is a red notice above the card. Stats: a card with a 12 label and a 20 value. Table for usage. Plugins as list and detail: row with name, state tag and toggle; the detail uses the top-bar Volver, which turns into "← Plugins". An editor goes inside a card.
 
 ### Settings rows (spec §2)
 
@@ -285,14 +292,16 @@ Search (guide §8): closes with Esc, ⌘K or a click outside, and traps focus. P
 
 ## Shapes
 
-Radii are tokens (guide §2):
-- **Compact** (`hh-r-compact`, 8): tag, chip, compact buttons, items inside a card.
-- **Control** (`hh-r-control`, 12): controls, grouped rows, notices.
-- **Card** (`hh-r-card`, 14): cards, large button.
-- **Dialog** (`hh-r-dialog`, 18): dialogs.
+**Radix pieces keep the root's `radius="large"`** (Marco, 2026-11-04). Radix sets each piece's radius from its size: size 1 button and badge 4.5, size 2 button and fields 6, size 3 button 9, card 12, dialog 18. No screen and no bridge rule overrides a Radix piece's radius.
+
+The four tokens apply only to what we draw ourselves, outside Radix pieces: zone frames, grouped rows, notices drawn by our wrappers, inline code (guide §2):
+- **Compact** (`hh-r-compact`, 8): items inside a card.
+- **Control** (`hh-r-control`, 12): grouped rows, our own notices.
+- **Card** (`hh-r-card`, 14): our own framed zones.
+- **Dialog** (`hh-r-dialog`, 18): our own layers.
 - **Round:** only dot, avatar, toggle, counter and progress bar.
 
-Open: the app root sets Radix `radius="large"`. Do Radix pieces keep that radius, or take the four tokens above?
+As wrappers move to Radix pieces, a token with no use left is removed.
 
 ## Components
 
@@ -313,7 +322,16 @@ Types (guide §3):
 
 States: normal, hover, focus, disabled, and busy ("Guardando..." with the loading icon) (guide §3).
 
-Open: which Radix variant and size is each type above (primary, secondary, quiet, danger), and what is "compact" and "normal" in Radix sizes 1 to 4? The spec says "variant + size" and no more.
+Variant per type (Marco, 2026-11-04):
+
+| Type | Radix |
+|---|---|
+| Primary | `variant="solid"` (amber, through the bridge) |
+| Secondary | `variant="outline" color="gray"` |
+| Quiet | `variant="ghost" color="gray"` |
+| Danger | `variant="soft" color="red"` |
+
+Sizes: **compact** is `size="1"` (24 high), **normal** is `size="2"` (32), **large** is `size="3"` (40). Size 4 is not used. An IconButton takes the size of the buttons beside it.
 
 ### SegmentedControl and Tabs
 `Rx.SegmentedControl`, `Rx.Tabs` (spec §3).
@@ -333,8 +351,8 @@ Open: which Radix variant and size is each type above (primary, secondary, quiet
 
 Label on top (guide §5):
 - **Label:** 14 / 600 above the field, 8 gap. Required fields get a red asterisk. Optional ones have no mark.
-- **Help:** 13 grey below the field, one line.
-- **Error:** 13 red with the attention icon, below its field. The field border turns red. Never an error list on top.
+- **Help:** 12 grey below the field, one line.
+- **Error:** 12 red with the attention icon, below its field. The field border turns red. Never an error list on top.
 - **Spacing:** 24 between fields. A field is full width up to 680.
 - The settings row keeps the label on the left.
 
@@ -363,7 +381,7 @@ Control per kind of setting (spec §2):
 
 Choosing rule (guide §5): 2 to 4 short values, segmented. More than 6, select. Yes or no, switch.
 
-Open: the guide used "options with a description" for choices such as the engine, and that piece is dropped (spec §9.3). What does a choice with a description use now? And where does `RadioGroup` belong, since the guide allowed radios only inside that piece?
+**Choice with a description** (Marco, 2026-11-04): when each option needs a line of explanation, such as the engine, use `Rx.RadioGroup` with the option name and one line of secondary text under it. 2 to 5 options. This is the only place `RadioGroup` belongs. A choice with no description follows the choosing rule above.
 
 ### Card and settings rows
 `Rx.Card` plus our `Group` and `Row` wrappers (spec §3).
@@ -371,14 +389,14 @@ Open: the guide used "options with a description" for choices such as the engine
 Card parts, in this order, skipping absent ones (guide §6):
 - **Frame:** padding 16 in lists, columns and chat. Padding 24 in Settings and the Assistant. 12 between parts.
 - **Eyebrow (optional):** section label 12 / 600, uppercase, grey. One or two words that place the card.
-- **Header:** title 15 / 600 on the left. On the right only a tag, the state. No button or segmented. A control drops to the card's first row.
+- **Header:** title 16 / 600 on the left. On the right only a tag, the state. No button or segmented. A control drops to the card's first row.
 - **Body:** text 14, rows, fields, tables.
 - **Actions (optional):** one line at the end, right-aligned, primary rightmost, always compact. Up to 2 buttons: one primary and one secondary. Anything else goes to More (⋯).
 
 ### Badge
 `Rx.Badge` with variants. Dot stays ours (spec §3).
 - **Tag:** a state, with color. Weight 600. Colors mean what the tag-color list says (guide §6).
-- **Status as a badge:** colored by state: green ok, amber needs attention, gray off. Not a sentence (spec §2).
+- **Status as a badge:** colored by state: green ok, orange needs attention (`hh-t-orange`), gray off. Not a sentence (spec §2; orange, not amber, by Marco 2026-11-04: amber means primary and chosen).
 - **Chip:** a thing, white with a border. Clickable when it opens what it names (document, context) or sends a ready question (FAQ) (guide §6).
 - **Counter:** on a rail or top-bar icon, or next to a nav item (guide §6).
 - **Dot (8):** ready, waiting, off, error. Next to a name (engine, Sidekick, tab, notice) (guide §6).

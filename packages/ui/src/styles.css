@@ -223,19 +223,18 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 /* Home */
 .hh-home { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--hh-topbar-h) minmax(0, 1fr) auto; background: var(--hh-rail); }
 .hh-home .hh-topbar { border-bottom: none; }
-.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 28px; overflow-y: auto; width: 100%; box-sizing: border-box; text-align: center; padding: 40px max(16px, calc((100% - 728px) / 2)) 32px; }
+/* One centered column (DESIGN.md "Inicio"), at most the reading width; 24 between its parts. */
+.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: var(--hh-s-5); overflow-y: auto; width: 100%; box-sizing: border-box; text-align: center; padding: var(--hh-s-6) max(var(--hh-s-4), calc((100% - var(--hh-read-w)) / 2)); }
 /* The scroller is the full-width area (scrollbar at the window edge); its children keep their size and scroll instead of squashing. */
 .hh-home-main > * { flex-shrink: 0; }
-.hh-home-id { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .hh-home-logo { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--hh-shadow); object-fit: contain; }
-svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-ink); color: var(--hh-bg); }
-.hh-home-name { font-family: var(--hh-display); font-weight: 600; font-size: 28px; letter-spacing: -1px; }
-.hh-home-tagline { color: var(--hh-muted); font-size: 15px; }
-/* Not ready yet (spec 3f §1): what is missing, above "Set up <name>". */
-.hh-missing { display: grid; gap: 8px; min-width: min(320px, 100%); max-width: 460px; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-surface); color: var(--hh-muted); text-align: left; }
-.hh-missing h2 { font-size: 13px; font-weight: 600; color: var(--hh-ink); }
-.hh-missing ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.hh-missing li { display: flex; align-items: center; gap: 10px; }
+svg.hh-home-logo { box-sizing: border-box; padding: var(--hh-s-4); background: var(--hh-ink); color: var(--hh-bg); }
+.hh-home-name { letter-spacing: -0.02em; }
+/* The cards and notices above Start: a dialog's width, text from the left. */
+.hh-home-main .hh-home-box { width: min(var(--hh-dialog-w), 100%); box-sizing: border-box; text-align: left; overflow-wrap: anywhere; }
+.hh-home-steps { list-style: none; margin: var(--hh-s-3) 0 0; padding: 0; display: grid; gap: var(--hh-s-2); }
+.hh-home-steps li { display: flex; align-items: center; justify-content: space-between; gap: var(--hh-s-3); }
+.hh-home-label { text-transform: uppercase; letter-spacing: 0.04em; }
 .hh-pill { padding: 0 14px; border-color: var(--hh-line); gap: 8px; }
 .hh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hh-muted); }
 .hh-dot.ok { background: var(--hh-t-green-ink); }
@@ -335,11 +334,8 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-drawer-body { flex: 1 1 auto; overflow: auto; padding: 16px 20px; display: grid; align-content: start; gap: 14px; }
 .hh-onboarding { display: grid; gap: 10px; justify-items: start; }
 .hh-onboarding pre { max-height: 160px; overflow: auto; font-size: 12px; color: var(--hh-muted); white-space: pre-wrap; }
-.hh-backup-notice { display: grid; gap: 8px; max-width: 460px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-surface); color: var(--hh-muted); font-size: 13px; overflow-wrap: anywhere; }
-.hh-backup-notice p { margin: 0; }
-.hh-backup-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 /* Always there for screen readers; while empty it takes no room (out of the flow, still in the tree). */
-.hh-backup-status { margin: 0; max-width: 460px; color: var(--hh-muted); font-size: 13px; overflow-wrap: anywhere; }
+.hh-backup-status { max-width: var(--hh-dialog-w); overflow-wrap: anywhere; }
 .hh-backup-status:empty { position: absolute; }
 /* Hatches §4.3: the harness's backend gave up; it floats over whichever screen is open. */
 .hh-backend-card { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: grid; gap: 8px; max-width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-surface); color: var(--hh-muted); font-size: 13px; overflow-wrap: anywhere; }
@@ -1011,10 +1007,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langpick-ready { color: var(--hh-t-green-ink); }
 .hh-langpick-reason, .hh-langpick-none, .hh-langpick-progress { margin: 0; }
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
-.hh-langpick-actions, .hh-langnotice-actions, .hh-langoffer-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.hh-langoffer { display: flex; flex-direction: column; gap: 6px; min-width: min(320px, 100%); max-width: 460px; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-rail); text-align: left; }
-.hh-langoffer h2 { margin: 0; font-size: 15px; }
-.hh-langoffer p { margin: 0; }
+.hh-langpick-actions, .hh-langnotice-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .hh-legal-english { margin-top: 4px; font-style: italic; }
 .hh-setup-language { margin-top: 4px; }
 
@@ -1179,13 +1172,10 @@ input.hh-search-input {
   background: var(--hh-active);
   transition: background 0.4s;
 }
-.hh-missing, .hh-langoffer, .hh-backup-notice { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
-.hh-pickup { width: 100%; display: grid; gap: 12px; }
-.hh-pickup-head { display: flex; align-items: center; gap: 8px; justify-content: center; }
-.hh-pickup-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
-.hh-pickup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 280px)); justify-content: center; gap: 12px; }
-.hh-pickup-card { min-width: 0; overflow-wrap: anywhere; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; border-radius: 14px; min-height: 44px; height: auto; text-align: left; }
-.hh-pickup-title { font-weight: 600; }
+/* Retomar: the label over up to three task cards, centered in the column. */
+.hh-pickup { width: 100%; display: grid; gap: var(--hh-s-3); }
+.hh-pickup-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 220px)); justify-content: center; gap: var(--hh-s-3); }
+.hh-pickup-card { width: 100%; height: 100%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--hh-s-2); text-align: left; overflow-wrap: anywhere; font: inherit; color: inherit; cursor: pointer; }
 
 /* guide: Icon */
 .hh-icon { flex: none; }

@@ -56,9 +56,13 @@ describe("Home look (UI refresh spec §5.2)", () => {
     expect(onEngine).toHaveBeenCalled();
   });
 
-  it("Start is the amber CTA", async () => {
+  it("Start is the screen's one primary, large (DESIGN.md Buttons: solid, size 3)", async () => {
     await renderHome(new FakeClient(configured));
-    expect(screen.getByRole("button", { name: /Start Demo/ }).getAttribute("data-kind")).toBe("large");
+    const start = screen.getByRole("button", { name: /Start Demo/ });
+    expect(start.classList.contains("rt-variant-solid")).toBe(true);
+    expect(start.classList.contains("rt-r-size-3")).toBe(true);
+    // Every other button on Inicio is secondary or quiet.
+    expect(document.querySelectorAll(".hh-home-main .rt-variant-solid")).toHaveLength(1);
   });
 
   it("I8: Start keeps the next arrow at 18, after the text", async () => {

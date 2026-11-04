@@ -14,6 +14,10 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   // SettingsNav: Settings' left column (Radix + Impeccable spec §7, stage 2)
   "hh-settings-nav",
   "hh-gd-nav-item",
+  // Inicio: the column's notices and cards, the missing-steps list, its 12 uppercase grey labels (spec §7, stage 3a)
+  "hh-home-box",
+  "hh-home-steps",
+  "hh-home-label",
   // Group's loose list and a file path in a Row's hint (guide/settings.tsx)
   "hh-gd-list",
   "hh-gd-path",

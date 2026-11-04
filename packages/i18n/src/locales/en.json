@@ -48,6 +48,8 @@
       "title": "Two steps before you start",
       "folder": "Choose where your work is kept",
       "engine": "Connect the AI engine",
+      "done": "Done",
+      "toDo": "To do",
       "one": "One step left: {{step}}",
       "addProfile": "add a {{label}}",
       "step": {

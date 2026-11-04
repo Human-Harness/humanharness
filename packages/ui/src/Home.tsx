@@ -26,7 +26,7 @@ import type { SearchIntent } from "./search/intent";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
-import { Button } from "./guide/Button";
+import { Hidden, Rx } from "./guide";
 
 /** English and its variants (en-GB) show the bundled English: nothing to offer (D0). */
 const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
@@ -219,6 +219,21 @@ export function Home({
     void client.saveConfig({ languageOffered: true }).then(onChange, () => undefined);
   };
 
+  // Set up but one thing missing: the engine's problem, a profile to add, or the first required setup step.
+  const oneStep = !configured
+    ? null
+    : missingStep
+      ? t(`home.missing.step.${missingStep}`, { engine: engineName })
+      : needsProfile && state.profiles
+        ? t("home.missing.addProfile", { label: state.profiles.label })
+        : blocking.length > 0
+          ? stepLabel(blocking[0])
+          : null;
+  const firstSteps = [
+    { label: t("home.missing.folder"), done: Boolean(state.config.folder) },
+    { label: t("home.missing.engine"), done: false },
+  ];
+
   return (
     <div className="hh-home">
       {/* Home shows the test-mode badge in the footer, not the top bar. */}
@@ -227,109 +242,123 @@ export function Home({
         <SettingsGear onClick={onSettings} />
       </TopBar>
       <main className="hh-home-main">
-        <div className="hh-home-id">
+        <Rx.Flex direction="column" align="center" gap="2">
           {state.harness.logo ? <img className="hh-home-logo" src={state.harness.logo} alt="" /> : <HHLogo className="hh-home-logo" />}
-          <h1 className="hh-home-name">{name}</h1>
-          {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline}</p>}
-        </div>
+          <Rx.Heading as="h1" size="7" className="hh-home-name">
+            {name}
+          </Rx.Heading>
+          {state.harness.tagline && (
+            <Rx.Text as="p" size="3" color="gray">
+              {state.harness.tagline}
+            </Rx.Text>
+          )}
+        </Rx.Flex>
         {!configured && (
-          <section className="hh-missing" aria-labelledby={missingId}>
-            <h2 id={missingId}>{t("home.missing.title")}</h2>
-            <ol>
-              <li>
-                <span className={state.config.folder ? "hh-step-mark done" : "hh-step-mark"}>{state.config.folder ? <Icon name="check" size={14} /> : 1}</span>
-                {t("home.missing.folder")}
-              </li>
-              <li>
-                <span className="hh-step-mark">2</span>
-                {t("home.missing.engine")}
-              </li>
-            </ol>
-          </section>
+          <Rx.Card size="2" className="hh-home-box" asChild>
+            <section aria-labelledby={missingId}>
+              <Rx.Heading as="h2" size="3" id={missingId}>
+                {t("home.missing.title")}
+              </Rx.Heading>
+              <ol className="hh-home-steps">
+                {firstSteps.map((step) => (
+                  <li key={step.label}>
+                    <Rx.Text size="2">{step.label}</Rx.Text>
+                    {step.done ? (
+                      <Rx.Badge color="green">
+                        <Icon name="check" size={14} />
+                        {t("home.missing.done")}
+                      </Rx.Badge>
+                    ) : (
+                      <Rx.Badge color="orange">{t("home.missing.toDo")}</Rx.Badge>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          </Rx.Card>
         )}
-        {configured && missingStep && (
-          <section className="hh-missing">
-            <p>{t("home.missing.one", { step: t(`home.missing.step.${missingStep}`, { engine: engineName }) })}</p>
-          </section>
-        )}
-        {configured && !missingStep && needsProfile && state.profiles && (
-          <section className="hh-missing">
-            <p>{t("home.missing.one", { step: t("home.missing.addProfile", { label: state.profiles.label }) })}</p>
-          </section>
-        )}
-        {configured && !missingStep && !needsProfile && blocking.length > 0 && (
-          <section className="hh-missing">
-            <p>{t("home.missing.one", { step: stepLabel(blocking[0]) })}</p>
-          </section>
+        {oneStep && (
+          <Rx.Callout.Root color="orange" className="hh-home-box">
+            <Rx.Callout.Text>{t("home.missing.one", { step: oneStep })}</Rx.Callout.Text>
+          </Rx.Callout.Root>
         )}
         {offer && (
-          <section className="hh-langoffer" aria-labelledby={offerId}>
-            <h2 id={offerId}>{t("language.offerTitle", { name })}</h2>
-            <p className="hh-caption">
+          // Callout.Root can't take asChild (its Slot lands on a context provider), so it is the region itself.
+          <Rx.Callout.Root color="gray" className="hh-home-box" role="region" aria-labelledby={offerId}>
+            <Rx.Heading as="h2" size="2" id={offerId}>
+              {t("language.offerTitle", { name })}
+            </Rx.Heading>
+            <Rx.Callout.Text size="1">
               {/* The language's own name is marked with its tag so a screen reader says it in that language. */}
               {t("language.offerSuggested", { language: NAME_MARK })
                 .split(NAME_MARK)
                 .flatMap((part, i) => (i === 0 ? [part] : [<span key={i} lang={offer}>{ownName(offer)}</span>, part]))}
-            </p>
-            <div className="hh-langoffer-actions">
-              <button
-                type="button"
+            </Rx.Callout.Text>
+            {/* A notice's buttons are secondaries, from the left like the backup notice's: the screen's one primary is Start, just below. */}
+            <Rx.Flex wrap="wrap" gap="2">
+              <Rx.Button
+                size="1"
+                variant="outline"
+                color="gray"
                 onClick={() => {
                   answerOffer();
                   setRefocus((n) => n + 1);
                 }}
               >
                 {t("language.offerLater")}
-              </button>
-              <Button
-                type="button"
-                kind="primary"
+              </Rx.Button>
+              <Rx.Button
+                size="1"
+                variant="outline"
+                color="gray"
                 onClick={() => {
                   setChoosing(true);
                   answerOffer();
                 }}
               >
                 {t("language.offerChoose")}
-              </Button>
-            </div>
-          </section>
+              </Rx.Button>
+            </Rx.Flex>
+          </Rx.Callout.Root>
         )}
         {ready || checking ? (
-          <Button ref={startRef} kind="large" arrow disabled={checking} onClick={onStart}>
+          <Rx.Button ref={startRef} size="3" disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
-          </Button>
+            <Icon name="next" size={18} />
+          </Rx.Button>
         ) : (
-          <Button
-            kind="large"
-            arrow
+          <Rx.Button
+            size="3"
             onClick={() => (!missingStep && needsProfile && onAddProfile ? onAddProfile() : onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined))}
           >
             {t("setupFlow.configure", { name })}
-          </Button>
+            <Icon name="next" size={18} />
+          </Rx.Button>
         )}
         {engine ? (
           <>
-            <Button size="compact" onClick={onEngine} aria-describedby={engineHintId}>
-              {engine.logo ? <img src={engine.logo} alt="" width={18} height={18} /> : <Icon name="engine" size={18} />}
+            {/* The engine chip: it opens what it names (DESIGN.md "Chip"). */}
+            <Rx.Button size="1" variant="outline" color="gray" onClick={onEngine} aria-describedby={engineHintId}>
+              {engine.logo ? <img src={engine.logo} alt="" width={14} height={14} /> : <Icon name="engine" size={14} />}
               <span>{engine.name}</span>
-              <span className="hh-sr-only">, </span>
+              <Hidden>, </Hidden>
               <span className={connected ? "hh-dot ok" : "hh-dot"} aria-hidden="true" />
               <span>{connected === null ? t("home.checking") : connected ? t("home.connected") : t("home.notConnected")}</span>
               {window && (
                 <>
-                  <span className="hh-sr-only">, </span>
-                  <span className={window.utilization >= WARN_AT ? "hh-warn" : "hh-caption"}>
+                  <Hidden>, </Hidden>
+                  <Rx.Text color={window.utilization >= WARN_AT ? "orange" : "gray"}>
                     {t("home.usage", { label: t("usage.five_hour"), percent: percent(window.utilization) })}
-                  </span>
+                  </Rx.Text>
                 </>
               )}
-            </Button>
-            <span id={engineHintId} className="hh-sr-only">
-              {t("home.engineHint")}
-            </span>
+            </Rx.Button>
+            <Hidden id={engineHintId}>{t("home.engineHint")}</Hidden>
           </>
         ) : (
-          <p className="hh-caption">{t("home.noEngine")}</p>
+          <Rx.Text as="p" size="1" color="gray">
+            {t("home.noEngine")}
+          </Rx.Text>
         )}
         {ready && <PickUp items={pickUp} onOpen={openPickUp} />}
         <BackupNotice client={client} state={state} onChange={onChange} move={move} />

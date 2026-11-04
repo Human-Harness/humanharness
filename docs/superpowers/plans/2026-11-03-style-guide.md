@@ -1556,6 +1556,12 @@ Marco answered the 57 "Questions for Marco" of Part 4 (buttons and ways to choos
 | C7 | A | keep: Markdown task lists use the static checkbox. |
 | C8 | B | The sidekick editor toggle lists have 8 between rows. |
 | C9 | B | Markdown task box is 8 from its text; outdent -20 so the text stays put and the box stays in the gutter. |
+| B11 | B | Danger button stronger red on hover: no stronger red token exists (only `--hh-t-red`), so the look stays; nothing invented. |
+| B12 | A | keep `.hh-tk-cancel` on all three buttons (Cancel, Start, Run). |
+| C10 | A | keep: the check is in the surface color. |
+| C11 | A | keep: search filters full width, one per line. |
+| C12 | A | keep: Markdown box outdent -20 (the box moves 2px left). |
+| C13 | B | JobsTab row: the "every X" caption comes before the switch, and the switch ends the row. |
 
 ## Coverage
 

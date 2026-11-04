@@ -78,8 +78,8 @@ describe("an interview step (setup-steps spec §3 `interview`)", () => {
     ];
     await renderIn("en", <Flow client={client} />);
     expect(await screen.findByRole("textbox")).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: "Something else" }));
-    fireEvent.click(screen.getByRole("button", { name: "Tell me more" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Something else" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tell me more" }));
     await waitFor(() => expect(client.chosen).toEqual([options[1]]));
   });
 

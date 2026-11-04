@@ -167,7 +167,7 @@ describe("the language offer card", () => {
     expect(card.querySelector('[lang="es"]')?.textContent).toBe("Español");
     fireEvent.click(screen.getByRole("button", { name: "Choose language" }));
     expect(screen.getByRole("dialog", { name: "Language" })).toBeTruthy();
-    expect((screen.getByRole("radio", { name: /Español/ }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("radio", { name: /Español/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.queryByRole("region", { name: title })).toBeNull();
     await waitFor(() => expect(client.state.config.languageOffered).toBe(true));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });

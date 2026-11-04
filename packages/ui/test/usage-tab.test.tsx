@@ -52,6 +52,8 @@ const rows = () =>
     .getAllByRole("row")
     .slice(1)
     .map((r) => [...r.querySelectorAll("th, td")].map(visible));
+/** The value of a row in "Apart from your tasks", or null when that row is missing. */
+const apart = (name: string) => screen.queryByRole("group", { name })?.textContent?.slice(name.length) ?? null;
 const headers = () => within(screen.getByRole("table")).getAllByRole("columnheader").map((c) => c.textContent);
 
 describe("Settings › Uso with an engine that reports limits", () => {
@@ -82,8 +84,8 @@ describe("Settings › Uso with an engine that reports limits", () => {
       ["Free question", "≈ 3% of 5 h", "about 33 times"],
     ]);
     // A heavy action's share is in the warning colour.
-    expect(screen.getByText("≈ 8% of 5 h").className).toBe("hh-warn");
-    expect(screen.getByText("≈ 1% of 5 h").className).toBe("");
+    expect(screen.getByText("≈ 8% of 5 h").getAttribute("data-accent-color")).toBe("orange");
+    expect(screen.getByText("≈ 1% of 5 h").hasAttribute("data-accent-color")).toBe(false);
     expect(screen.getByText("'Enough for' assumes a whole 5-hour window and your plan today. It recalculates on its own if the model or your plan changes.")).toBeTruthy();
     // Below WARN_AT the plans link stays out.
     expect(screen.queryByRole("link")).toBeNull();
@@ -128,7 +130,7 @@ describe("Settings › Uso with an engine that reports limits", () => {
       primary: "five_hour",
     };
     await renderIn("en", <Sheet client={client} />);
-    expect((await screen.findByText("85% used")).className).toBe("hh-warn");
+    expect((await screen.findByText("85% used")).getAttribute("data-accent-color")).toBe("orange");
     expect(headers()).toEqual(["Topic", "Each time", `Until ${formatReset(reset, "en")}`]);
     expect(rows().map((r) => r[2])).toEqual(["3 more times", "1 more time", undefined, "more than 50"]);
     expect(screen.getByText("If you often run short, Anthropic has plans with more use.")).toBeTruthy();
@@ -150,10 +152,10 @@ describe("Settings › Uso with an engine that reports limits", () => {
       primary: "five_hour",
     };
     await renderIn("en", <Sheet client={client} />);
-    const near = (await screen.findByText("85% used")).closest(".hh-usage-window") as HTMLElement;
-    expect(within(near).getByText("Close to your limit").className).toContain("hh-tag-orange");
-    expect(near.querySelector(".hh-progress > i")).toBeTruthy();
-    const week = screen.getByText("10% used").closest(".hh-usage-window") as HTMLElement;
+    const near = (await screen.findByText("85% used")).closest('[role="group"]') as HTMLElement;
+    expect(within(near).getByText("Close to your limit").getAttribute("data-accent-color")).toBe("orange");
+    expect(within(near).getByRole("progressbar").getAttribute("data-accent-color")).toBe("orange");
+    const week = screen.getByText("10% used").closest('[role="group"]') as HTMLElement;
     expect(within(week).queryByText("Close to your limit")).toBeNull();
   });
 
@@ -234,9 +236,9 @@ describe("Settings › Uso with an engine that reports no limits", () => {
     // The same detail reaches the keyboard and screen readers as hidden text.
     expect(cell.querySelector(".hh-sr-only")!.textContent).toBe(` (≈ ${compactTokens(2400, "en")} tokens each time)`);
     // The bar is relative to the largest topic.
-    const bar = (text: string) => (screen.getByText(text).closest("td")!.querySelector(".hh-usage-bar > span") as HTMLElement).style.width;
-    expect(bar("2.4 times the average")).toBe("100%");
-    expect(bar("about the average")).toBe("42%");
+    const bar = (text: string) => screen.getByText(text).closest("td")!.querySelector('[role="progressbar"]')!.getAttribute("aria-valuenow");
+    expect(bar("2.4 times the average")).toBe("100");
+    expect(bar("about the average")).toBe("42");
     expect(screen.getByText("From your last few times with each topic. Hover to see the tokens.")).toBeTruthy();
     expect(screen.getByText("If you often run short, OpenAI has plans with more use.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "See OpenAI plans" }).getAttribute("href")).toBe("https://chatgpt.com/pricing");
@@ -308,7 +310,7 @@ describe("usage per scope", () => {
     client.usage = { limits: null, estimates: {}, tokens: {}, scopes: { _app: 300, fracciones: 12_000 } };
     await renderIn("en", <UsageTab client={client} state={client.state} />);
     const list = await screen.findByRole("list", { name: "Usage by topics" });
-    await waitFor(() => expect([...list.querySelectorAll("li")].map((li) => li.firstChild?.textContent)).toEqual(["Fractions", "App-wide"]));
+    await waitFor(() => expect([...list.querySelectorAll("li")].map((li) => li.getAttribute("aria-label"))).toEqual(["Fractions", "App-wide"]));
   });
 });
 
@@ -317,13 +319,13 @@ describe("Settings › Usage with material (material spec §11)", () => {
     const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
     client.usage = { limits: null, estimates: {}, tokens: {}, material: 12000 };
     await renderIn("en", <UsageTab client={client} state={client.state} />);
-    expect(await screen.findByText("Material processing: about 12,000 tokens")).toBeTruthy();
+    await waitFor(() => expect(apart("Material processing")).toBe("about 12,000 tokens"));
     cleanup();
     const plain = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
     plain.usage = { limits: null, estimates: {}, tokens: {} };
     await renderIn("en", <UsageTab client={plain} state={plain.state} />);
     await screen.findByText("How much each topic uses");
-    expect(screen.queryByText(/Material processing/)).toBeNull();
+    expect(apart("Material processing")).toBeNull();
   });
 });
 
@@ -386,12 +388,12 @@ describe("Sidekick's line (sidekick spec §8)", () => {
     const client = claude();
     client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour", sidekick: 2440 };
     const first = await renderIn("en", <Sheet client={client} />);
-    expect(await screen.findByText("Sidekick: about 2,440 tokens")).toBeTruthy();
+    await waitFor(() => expect(apart("Sidekick")).toBe("about 2,440 tokens"));
     first.unmount();
     client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
     await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("tab", { name: "Usage" });
-    expect(screen.queryByText(/^Sidekick: about/)).toBeNull();
+    expect(apart("Sidekick")).toBeNull();
   });
 });
 
@@ -400,12 +402,12 @@ describe("Subagents' line (subagent slice 1, D4)", () => {
     const client = claude();
     client.usage = { limits: [], estimates: {}, tokens: { questions: 1100 }, primary: "five_hour", subagents: 218210 };
     const first = await renderIn("en", <Sheet client={client} />);
-    expect(await screen.findByText("Subagents: about 218,210 tokens")).toBeTruthy();
+    await waitFor(() => expect(apart("Subagents")).toBe("about 218,210 tokens"));
     first.unmount();
     client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
     await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("tab", { name: "Usage" });
-    expect(screen.queryByText(/Subagents/)).toBeNull();
+    expect(apart("Subagents")).toBeNull();
   });
 });
 
@@ -414,12 +416,12 @@ describe("Background jobs' line (parallel spec §10)", () => {
     const client = claude();
     client.usage = { limits: [], estimates: {}, tokens: { questions: 1100 }, primary: "five_hour", sidekick: 2440, jobs: 4880 };
     const first = await renderIn("en", <Sheet client={client} />);
-    expect(await screen.findByText("Background jobs: about 4,880 tokens")).toBeTruthy();
-    expect(screen.getByText("Sidekick: about 2,440 tokens")).toBeTruthy();
+    await waitFor(() => expect(apart("Background jobs")).toBe("about 4,880 tokens"));
+    expect(apart("Sidekick")).toBe("about 2,440 tokens");
     first.unmount();
     client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
     await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("tab", { name: "Usage" });
-    expect(screen.queryByText(/Background jobs/)).toBeNull();
+    expect(apart("Background jobs")).toBeNull();
   });
 });

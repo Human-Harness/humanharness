@@ -4,6 +4,6 @@
  */
 export {
   AlertDialog, Avatar, Badge, Box, Button, Callout, Card, Checkbox, Code, Dialog, DropdownMenu, Flex, Grid, Heading,
-  IconButton, Popover, Progress, RadioGroup, ScrollArea, SegmentedControl, Select, Separator, Switch, Tabs, Text,
-  TextArea, TextField,
+  IconButton, Popover, Progress, RadioGroup, ScrollArea, SegmentedControl, Select, Separator, Switch, Table, Tabs,
+  Text, TextArea, TextField,
 } from "@radix-ui/themes";

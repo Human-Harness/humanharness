@@ -161,6 +161,8 @@ describe("a job run's steps (tools spec §8.2)", () => {
     const trace = vi.spyOn(c.tools, "trace");
     await renderIn("en", <Sheet c={c} />);
     await screen.findByText("3 steps · 1 AI step");
+    // A run is a foldable row: its summary and Steps show once it is open.
+    screen.getAllByRole("button", { expanded: false }).forEach((b) => fireEvent.click(b));
     const buttons = screen.getAllByRole("button", { name: "Steps" });
     expect(buttons).toHaveLength(1);
     fireEvent.click(buttons[0]);
@@ -247,6 +249,7 @@ describe("a job run's steps when the row's run changes or the answer is odd (Tas
     cleanup();
     await renderIn("en", <Sheet c={c} />);
     await screen.findByText("2 steps");
+    screen.getAllByRole("button", { expanded: false }).forEach((b) => fireEvent.click(b));
     const inSettings = screen.getAllByRole("button", { name: "Steps" });
     expect(inSettings.map(described)).toEqual(["Sync inbox", "Digest"]);
   });

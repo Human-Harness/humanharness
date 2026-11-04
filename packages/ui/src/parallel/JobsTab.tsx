@@ -5,20 +5,21 @@ import { useLatestConfig } from "../latest-config";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
-import { SectionHead } from "../settings-parts";
-import { Button } from "../guide/Button";
-import { Toggle } from "../guide/Toggle";
+import { Group, Icon, Row, Rx, SectionHead } from "../guide";
 
 /** The lowest daily cap the field takes: less would pause a periodic job after its first run. */
 export const DAILY_CAP_MIN = 1000;
 const STATUS = { ok: "parallel.statusOk", "needs-you": "parallel.statusNeedsYou", failed: "parallel.statusFailed" } as const;
+/** A run's state as a badge (DESIGN.md colors): done green, your turn orange, error red, in progress blue. */
+const STATUS_COLOR = { ok: "green", "needs-you": "orange", failed: "red" } as const;
 
 /**
  * Settings › Jobs for a harness that declares jobs (parallel spec §8, §9): each job can be turned off, and an `every`
  * job's daily token cap changed (the person's over the manifest's). Under each job, its runs per scope as the inbox
  * shows them, with "Run now" and a needs-you result's "Start": a harness with jobs but no inbox (no `parallel`) has
  * only this place to see them. A change saves the person's whole `jobs` (the store merges the top level only), so the
- * other jobs' settings stay.
+ * other jobs' settings stay. Radix stage 2c: one card per job; each run a foldable row (scope, state badge, times),
+ * open for its summary and steps.
  */
 export function JobsTab({
   client,
@@ -32,8 +33,7 @@ export function JobsTab({
   /** Starts a needs-you run's action through the chat's start path; false when it couldn't. Absent: no Start. */
   onStartAction?: (action: string, scope: string | null) => boolean;
 }) {
-  const { t, i18n } = useTranslation();
-  const language = shownLanguage(i18n);
+  const { t } = useTranslation();
   const runs = useJobs(client, true);
   const [scopeTitles, setScopeTitles] = useState<Record<string, string>>({});
   /** Why the last Start or Run now didn't go through, by job id. */
@@ -71,12 +71,6 @@ export function JobsTab({
   const setCap = (id: string, cap: number | undefined) =>
     save(id, ({ dailyTokens: _cap, ...rest }) => (cap === undefined ? rest : { ...rest, dailyTokens: cap }));
 
-  /** A time today alone; another day with its weekday. */
-  const when = (iso: string): string => {
-    const at = new Date(iso);
-    const time = at.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
-    return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString(language, { weekday: "long" })} ${time}`;
-  };
   /** A needs-you result's action, when the harness declares it (the summary is the agent's; its action is checked here too). */
   const startable = (j: JobSummary): string | null => {
     const action = j.last?.status === "needs-you" ? j.last.action : undefined;
@@ -91,72 +85,162 @@ export function JobsTab({
       () => setProblem({ job: j.id, text: t("parallel.runFailed") }),
     );
   };
-
-  const runRow = (j: JobSummary, labelId: string) => {
-    const scope = j.scope !== null && Object.hasOwn(scopeTitles, j.scope) ? scopeTitles[j.scope] : null;
-    const action = startable(j);
-    return (
-      <li key={j.scope ?? "-"} className="hh-tk-item">
-        <div className="hh-tk-row">
-          <span className="hh-tk-meta">
-            {scope && <span dir="auto">{scope}</span>}
-            {j.running ? <span>{t("parallel.jobRunning")}</span> : j.last ? <span>{t(STATUS[j.last.status])}</span> : <span>{t("parallel.notRunYet")}</span>}
-            {j.last && <span>{t("parallel.lastRun", { time: when(j.last.at) })}</span>}
-            {j.paused === "daily-cap" && <span>{t("parallel.pausedTomorrow")}</span>}
-            {j.paused === "off" && <span>{t("parallel.jobOff")}</span>}
-            {!j.paused && j.next && <span>{t("parallel.nextRun", { time: when(j.next) })}</span>}
-          </span>
-          {j.last && (
-            <span className="hh-tk-summary" dir="auto">
-              {j.last.summary}
-            </span>
-          )}
-        </div>
-        {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
-        {action && (
-          <Button
-            size="compact"
-            className="hh-tk-cancel"
-            aria-describedby={labelId}
-            onClick={() => {
-              setProblem(null);
-              if (onStartAction?.(action, j.scope) === false) setProblem({ job: j.id, text: t("parallel.startFailed") });
-            }}
-          >
-            {t("parallel.start")}
-          </Button>
-        )}
-        {j.manual && !j.running && j.paused !== "off" && (
-          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
-            {t("parallel.runNow")}
-          </Button>
-        )}
-      </li>
-    );
+  const start = (j: JobSummary, action: string) => {
+    setProblem(null);
+    if (onStartAction?.(action, j.scope) === false) setProblem({ job: j.id, text: t("parallel.startFailed") });
   };
 
   return (
-    <div className="hh-tab" data-setting="jobs.jobs">
-      <SectionHead title={t("parallel.jobsTab")} line={t("settings.line.jobs")} />
+    <div data-setting="jobs.jobs">
+      <SectionHead line={t("settings.line.jobs")} />
+      {saveFailed && (
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{t("parallel.saveFailed")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
       {state.jobs!.jobs.map((job) => (
         <JobGroup key={job.id} job={job} entry={settings[job.id] ?? {}} onOn={(on) => setOn(job.id, on)} onCap={(cap) => setCap(job.id, cap)}>
-          {(labelId) => {
-            const own = runs.filter((r) => r.id === job.id);
-            return (
-              <>
-                {own.length > 0 && <ul className="hh-tk-list">{own.map((r) => runRow(r, labelId))}</ul>}
-                {problem?.job === job.id && <p role="alert">{problem.text}</p>}
-              </>
-            );
-          }}
+          {(labelId) => [
+            ...runs
+              .filter((r) => r.id === job.id)
+              .map((r) => {
+                const action = startable(r);
+                return (
+                  <RunRow
+                    key={r.scope ?? "-"}
+                    client={client}
+                    run={r}
+                    scope={r.scope !== null && Object.hasOwn(scopeTitles, r.scope) ? scopeTitles[r.scope] : null}
+                    labelId={labelId}
+                    onStart={action ? () => start(r, action) : undefined}
+                    onRunNow={r.manual && !r.running && r.paused !== "off" ? () => runNow(r) : undefined}
+                  />
+                );
+              }),
+            problem?.job === job.id && (
+              <Rx.Box key="problem" py="3">
+                <Rx.Callout.Root color="red" role="alert" size="1">
+                  <Rx.Callout.Text>{problem.text}</Rx.Callout.Text>
+                </Rx.Callout.Root>
+              </Rx.Box>
+            ),
+          ]}
         </JobGroup>
       ))}
-      {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
     </div>
   );
 }
 
-/** One job: its heading, the On switch, an `every` job's interval and cap, then its runs. */
+/**
+ * One job × scope: a foldable row. Folded it shows the scope, the state as a badge and the last and next run in grey;
+ * open, the agent's one-line summary and the run's steps. Start and Run now stay on the right, outside the fold.
+ * A job that has not run yet has nothing to open: the row has no fold.
+ */
+function RunRow({
+  client,
+  run: j,
+  scope,
+  labelId,
+  onStart,
+  onRunNow,
+}: {
+  client: HarnessClient;
+  run: JobSummary;
+  scope: string | null;
+  labelId: string;
+  onStart?: () => void;
+  onRunNow?: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const language = shownLanguage(i18n);
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  /** A time today alone; another day with its weekday. */
+  const when = (iso: string): string => {
+    const at = new Date(iso);
+    const time = at.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
+    return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString(language, { weekday: "long" })} ${time}`;
+  };
+  const badge = j.running ? (
+    <Rx.Badge color="blue" variant="soft">
+      {t("parallel.jobRunning")}
+    </Rx.Badge>
+  ) : j.last ? (
+    <Rx.Badge color={STATUS_COLOR[j.last.status]} variant="soft">
+      {t(STATUS[j.last.status])}
+    </Rx.Badge>
+  ) : (
+    <Rx.Badge color="gray" variant="soft">
+      {t("parallel.notRunYet")}
+    </Rx.Badge>
+  );
+  const times = [
+    j.last && t("parallel.lastRun", { time: when(j.last.at) }),
+    j.paused === "daily-cap" && t("parallel.pausedTomorrow"),
+    j.paused === "off" && t("parallel.jobOff"),
+    !j.paused && j.next && t("parallel.nextRun", { time: when(j.next) }),
+  ].filter(Boolean);
+  const name = (
+    <>
+      {scope && (
+        <Rx.Text size="2" weight="medium" dir="auto">
+          {scope}
+        </Rx.Text>
+      )}
+      {badge}
+    </>
+  );
+  return (
+    <Rx.Box py="3">
+      <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
+        <Rx.Flex align="center" gap="3" wrap="wrap" minWidth="0">
+          {j.last ? (
+            <Rx.Button variant="ghost" color="gray" highContrast size="1" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
+              <Icon name="chevron" size={14} />
+              {name}
+            </Rx.Button>
+          ) : (
+            <Rx.Flex align="center" gap="2">
+              {name}
+            </Rx.Flex>
+          )}
+          {times.length > 0 && (
+            <Rx.Text size="1" color="gray">
+              {times.join(" · ")}
+            </Rx.Text>
+          )}
+        </Rx.Flex>
+        {(onStart || onRunNow) && (
+          <Rx.Flex gap="2" flexShrink="0">
+            {onStart && (
+              <Rx.Button size="1" variant="outline" color="gray" aria-describedby={labelId} onClick={onStart}>
+                {t("parallel.start")}
+              </Rx.Button>
+            )}
+            {onRunNow && (
+              <Rx.Button size="1" variant="outline" color="gray" aria-describedby={labelId} onClick={onRunNow}>
+                {t("parallel.runNow")}
+              </Rx.Button>
+            )}
+          </Rx.Flex>
+        )}
+      </Rx.Flex>
+      {j.last && (
+        // A plain div holds `hidden`: a Radix Box's display: block would show the folded body anyway.
+        <div id={bodyId} hidden={!open}>
+          <Rx.Box pt="2" pl="5">
+            <Rx.Text as="p" size="2" dir="auto">
+              {j.last.summary}
+            </Rx.Text>
+            {j.last.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
+          </Rx.Box>
+        </div>
+      )}
+    </Rx.Box>
+  );
+}
+
+/** One job's card: its title, the On switch with an `every` job's interval, the daily cap, then its runs. */
 function JobGroup({
   job,
   entry,
@@ -169,7 +253,7 @@ function JobGroup({
   onOn: (on: boolean) => void;
   /** undefined: back to the manifest's cap. */
   onCap: (cap: number | undefined) => Promise<unknown>;
-  children: (labelId: string) => ReactNode;
+  children: (labelId: string) => ReactNode[];
 }) {
   const { t, i18n } = useTranslation();
   const id = useId();
@@ -198,29 +282,33 @@ function JobGroup({
     if (cap !== saved) void onCap(cap);
   };
   return (
-    <section aria-labelledby={labelId} className="hh-card hh-settings-card">
-      <h3 id={labelId} dir="auto">
-        {job.label}
-      </h3>
-      <div className="hh-rows">
-        <div className="hh-row">
-          <label className="hh-toggle-row">
-            <span id={`${id}-on`}>{t("parallel.jobOn")}</span>
-            {job.every && <span className="hh-caption">{t("parallel.every", { interval: job.every })}</span>}
-            <Toggle checked={entry.off !== true} aria-labelledby={`${id}-on`} aria-describedby={labelId} onChange={onOn} />
-          </label>
-        </div>
-        {job.every && (
-          <div className="hh-row">
-            <label className="hh-row-label" htmlFor={`${id}-cap`}>
-              {t("parallel.dailyCap")}
-            </label>
-            <input
+    <Group title={<span dir="auto">{job.label}</span>} titleId={labelId}>
+      <Row label={t("parallel.jobOn")} htmlFor={`${id}-on`} {...(job.every ? { hint: t("parallel.every", { interval: job.every }) } : {})}>
+        <Rx.Switch id={`${id}-on`} checked={entry.off !== true} aria-describedby={labelId} onCheckedChange={onOn} />
+      </Row>
+      {job.every && (
+        <Row
+          label={t("parallel.dailyCap")}
+          htmlFor={`${id}-cap`}
+          hintId={`${id}-cap-note`}
+          hint={
+            tooLow ? (
+              <Rx.Text color="red" role="alert">
+                {t("parallel.dailyCapMin", { min: DAILY_CAP_MIN.toLocaleString(shownLanguage(i18n)) })}
+              </Rx.Text>
+            ) : (
+              t("parallel.dailyCapHint")
+            )
+          }
+        >
+          <Rx.Box width="140px">
+            <Rx.TextField.Root
               id={`${id}-cap`}
               type="number"
               min={DAILY_CAP_MIN}
               step={1000}
               value={draft}
+              color={tooLow ? "red" : undefined}
               aria-invalid={tooLow || undefined}
               aria-describedby={`${id}-cap-note`}
               onChange={(e) => setDraft(e.target.value)}
@@ -229,19 +317,10 @@ function JobGroup({
                 if (e.key === "Enter") commit();
               }}
             />
-            {tooLow ? (
-              <p className="hh-caption hh-row-note" id={`${id}-cap-note`} role="alert">
-                {t("parallel.dailyCapMin", { min: DAILY_CAP_MIN.toLocaleString(shownLanguage(i18n)) })}
-              </p>
-            ) : (
-              <p className="hh-caption hh-row-note" id={`${id}-cap-note`}>
-                {t("parallel.dailyCapHint")}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+          </Rx.Box>
+        </Row>
+      )}
       {children(labelId)}
-    </section>
+    </Group>
   );
 }

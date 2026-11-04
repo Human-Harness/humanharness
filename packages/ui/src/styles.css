@@ -349,17 +349,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 .hh-drawer-titles { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .hh-drawer-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; overflow-wrap: anywhere; }
 .hh-drawer-body { flex: 1 1 auto; overflow: auto; padding: 16px 20px; display: grid; align-content: start; gap: 14px; }
-/* Settings › Uso: plan windows with a bar, and the topic table in the look of .hh-rows. */
-.hh-usage-windows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.hh-usage-window { padding: 16px; display: grid; gap: 8px; align-content: start; }
-.hh-usage-window-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
-.hh-usage-bar { display: inline-block; width: 64px; height: 4px; border-radius: 4px; background: var(--hh-line); overflow: hidden; flex-shrink: 0; }
-.hh-usage-bar > span { display: block; height: 100%; background: var(--hh-muted); }
-.hh-usage-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
-.hh-usage-table th, .hh-usage-table td { height: 44px; padding: 10px 12px; text-align: left; vertical-align: middle; border-top: 1px solid var(--hh-line); }
-.hh-usage-table thead th { border-top: none; color: var(--hh-muted); font-size: 12px; font-weight: 400; }
-.hh-usage-table tbody th { font-weight: 400; }
-.hh-usage-table td .hh-usage-bar { margin-right: 8px; vertical-align: middle; }
 .hh-onboarding { display: grid; gap: 10px; justify-items: start; }
 .hh-onboarding pre { max-height: 160px; overflow: auto; font-size: 12px; color: var(--hh-muted); white-space: pre-wrap; }
 .hh-backup-notice { display: grid; gap: 8px; max-width: 460px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-surface); color: var(--hh-muted); font-size: 13px; overflow-wrap: anywhere; }
@@ -743,8 +732,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-profile-switcher { display: flex; align-items: center; gap: 8px; }
 .hh-profile-name { font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-profile-switcher select { max-width: 160px; }
-/* Settings › People and Usage by person: the name takes the row's room, never more. */
-.hh-profile-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A refusal sits in the 52px bar: one line, cut short; the whole line stays in its tooltip. */
 .hh-profile-switcher [role="alert"] { max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--hh-t-orange-ink); }
 .hh-avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-surface-2); color: var(--hh-ink); font-size: 12px; font-weight: 600; flex: none; }

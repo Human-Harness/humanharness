@@ -142,7 +142,7 @@ describe("Settings › Usage by person (profiles spec §4 'Usage')", () => {
     await renderIn("en", <Sheet client={client} tab="usage" />, { theme: true });
     const list = await screen.findByRole("list", { name: "Usage by person" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(5));
-    const names = within(list).getAllByRole("listitem").map((li) => li.firstElementChild?.textContent);
+    const names = within(list).getAllByRole("listitem").map((li) => li.getAttribute("aria-label"));
     expect(names.slice(0, 3)).toEqual(["Sofi", "Ana", "ghost"]);
     expect(names.slice(3).sort()).toEqual(["Leo", "Tomás"]);
   });

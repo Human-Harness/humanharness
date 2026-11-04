@@ -12,7 +12,7 @@ const REPO = resolve(__dirname, "../../..");
 const ALLOWED = [
   "AlertDialog", "Avatar", "Badge", "Box", "Button", "Callout", "Card", "Checkbox", "Code", "Dialog",
   "DropdownMenu", "Flex", "Grid", "Heading", "IconButton", "Popover", "Progress", "RadioGroup", "ScrollArea",
-  "SegmentedControl", "Select", "Separator", "Switch", "Tabs", "Text", "TextArea", "TextField",
+  "SegmentedControl", "Select", "Separator", "Switch", "Table", "Tabs", "Text", "TextArea", "TextField",
 ];
 
 const RADIX_IMPORT = /(?:from\s+|import\s+|import\()\s*["']@radix-ui\/themes(?:\/[^"']*)?["']/;

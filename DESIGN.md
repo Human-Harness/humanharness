@@ -264,6 +264,12 @@ All use template 3. The rail is visible with the page's entry selected. Volver i
 - **Wrappers (`packages/ui/src/guide/settings.tsx`):** `SectionHead` (the sentence and an optional control), `Group` (a card; `loose` is a `ul` list with a 24 side padding, the same as the cards), `Row` (`as="li"` inside a loose group, named by `aria-label`), `SettingsNav` (a vertical tab list; in a narrow window it becomes a row of tabs above the body).
 - **Row actions (Marco, 2026-11-04):** ghost gray size 1 buttons; a destructive one is ghost red. Deleting a profile asks twice inline under its row, not in a dialog.
 - **A file path in a hint** is plain hint text that breaks anywhere, with no code chip (Marco, 2026-11-04).
+- **Engine choice (Marco, 2026-11-04):** each engine is a RadioGroup option with its logo, its name and its badges (status, In use). The card of the engine in use carries a green "In use" badge.
+- **Signing out (Marco, 2026-11-04):** a Danger button (soft red) that asks inline under its row first; nothing runs until the second Sign out.
+- **Custom model editor (Marco, 2026-11-04):** three selects on one line (one column when narrow), each with its label on top (14/600, gap 8).
+- **Levels (Marco, 2026-11-04):** one row per level inside one card, never cards inside a card; the tasks that use a level are outline gray badges in a list.
+- **Engine of the tasks (Marco, 2026-11-04):** a gray soft badge in the Tasks card's title, not text beside the Tasks/Levels control.
+- **A named row** (`Row` with `name`) is a `group` named by its `aria-label`, so tests and screen readers can scope to it.
 
 ## Elevation & Depth
 

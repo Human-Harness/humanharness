@@ -106,7 +106,7 @@ export function Row({
   hintId?: string;
   children?: ReactNode;
   below?: ReactNode;
-  /** `li` inside a loose group, named by `aria-label`. */
+  /** `li` inside a loose group, named by `aria-label`; a `div` with `aria-label` is a named group. */
   as?: "div" | "li";
   "aria-label"?: string;
   "data-setting"?: string;
@@ -120,7 +120,7 @@ export function Row({
     );
   }
   return (
-    <Box py="3" data-setting={setting}>
+    <Box py="3" data-setting={setting} role={name ? "group" : undefined} aria-label={name}>
       {inner}
     </Box>
   );

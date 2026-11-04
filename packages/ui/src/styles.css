@@ -375,15 +375,6 @@ svg.hh-home-logo { box-sizing: border-box; padding: 16px; background: var(--hh-i
 /* Motor, Modelos and Uso before setup: one empty state that leads to the setup flow. */
 select { font: inherit; height: var(--hh-control-h); padding: 0 10px; border-radius: var(--hh-control-r); border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); }
 select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
-.hh-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.hh-model-head h3 { margin: 0; }
-.hh-model-task { flex-wrap: wrap; }
-.hh-model-task > .hh-caption, .hh-model-task > .hh-model-note, .hh-model-editor { flex-basis: 100%; }
-.hh-model-note { margin: 0; display: flex; align-items: center; gap: 8px; }
-.hh-model-changed { color: var(--hh-t-orange-ink); font-size: 13px; }
-.hh-model-editor { display: grid; gap: 8px; justify-items: start; }
-.hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
-.hh-model-fields label { color: var(--hh-muted); }
 .hh-context-meter { display: block; width: 16px; height: 16px; flex: none; }
 .hh-context-meter svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
 .hh-context-meter circle { fill: none; stroke-width: 2.5; stroke: var(--hh-line-strong); }
@@ -398,14 +389,6 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-steps li:has(> .hh-ctxp-meter) button:not(.hh-ctxp-meter) { padding-right: 34px; }
 .hh-flow-question { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
 .hh-fallback { margin: 4px 0; }
-.hh-model-engine { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
-.hh-model-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
-.hh-model-card { display: grid; gap: 8px; padding: 12px; align-content: start; min-width: 0; }
-.hh-model-card h4 { margin: 0; }
-.hh-model-card .hh-model-fields { grid-template-columns: 1fr; gap: 4px; }
-.hh-model-card select { width: 100%; }
-.hh-model-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.hh-model-chips li { padding: 2px 8px; border: 1px solid var(--hh-line-strong); border-radius: 12px; font-size: 12px; color: var(--hh-muted); }
 
 /* Work screen: the 2a chat layout with the tokens (its own design comes later). */
 /* minmax(0, 1fr): the column is the window's width, never its content's (a big text size would push the page sideways). */
@@ -1104,8 +1087,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-ctxp-picked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
 .hh-ctxp-meter { display: inline-flex; height: auto; padding: 2px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
 .hh-ctxp-meter:focus-visible { outline: 2px solid var(--hh-muted); outline-offset: 1px; }
-/* Settings › Models' budget hint spans the label and select columns. */
-.hh-ctxp-budget-hint { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 899px) { .hh-ctxp { position: fixed; inset: 52px 0 0 0; z-index: 5; border-left: 0; } }
 /* Language on demand (plan 5b): picker, notice, offer card, Settings row, legal line. Own classes only (D0). */
 .hh-langpick-backdrop, .hh-langnotice-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: var(--hh-backdrop); }

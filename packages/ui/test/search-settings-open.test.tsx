@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { HhTheme } from "../src/guide";
 import { afterEach, describe, expect, it } from "vitest";
 import { createI18n } from "@humanharness/i18n";
 import { HarnessApp } from "../src";
@@ -38,7 +39,7 @@ async function openFirst(client: FakeClient, query: string) {
 describe("a setting from search opens Settings at the field (§6)", () => {
   it("typing a label shows it under Settings; Enter opens the tab with its control focused", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     await screen.findByRole("button", { name: "Start Demo" });
     act(() => client.search.open("appear"));
     const dialog = await screen.findByRole("dialog", { name: "Search" });
@@ -57,7 +58,7 @@ describe("a setting from search opens Settings at the field (§6)", () => {
   it("Models › Levels opens on its Levels part", async () => {
     const client = new FakeClient(ready);
     client.state.models = MODELS;
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     await screen.findByRole("button", { name: "Start Demo" });
     const sheet = await openFirst(client, "levels");
     expect(within(sheet).getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
@@ -69,7 +70,7 @@ describe("a setting from search opens Settings at the field (§6)", () => {
     const client = new FakeClient(ready);
     client.state.settings = HARNESS;
     client.settingsState = { values: { nickname: "", hintAfter: 2 }, pending: [] };
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     await screen.findByRole("button", { name: "Start Demo" });
     const sheet = await openFirst(client, "hint after");
     expect(within(sheet).getByRole("tab", { name: "How I learn" }).getAttribute("aria-selected")).toBe("true");
@@ -80,7 +81,7 @@ describe("a setting from search opens Settings at the field (§6)", () => {
   it("with Settings already open, a setting from search moves the sheet to its tab and field", async () => {
     const client = new FakeClient(ready);
     client.state.models = MODELS;
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     await screen.findByRole("button", { name: "Start Demo" });
     let sheet = await openFirst(client, "appear");
     await waitFor(() => expect(sheet.querySelector('[data-setting="general.appearance"]')!.contains(document.activeElement)).toBe(true));
@@ -95,7 +96,7 @@ describe("a setting from search opens Settings at the field (§6)", () => {
 
   it("closing the sheet gives focus back to what had it before search; the gear later opens it plain", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    render(<HhTheme><HarnessApp client={client} /></HhTheme>);
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     start.focus();

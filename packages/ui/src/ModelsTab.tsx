@@ -1,17 +1,14 @@
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
-import { Tag, type TagTone } from "./chrome";
-import { Segmented } from "./guide/Segmented";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
-import { SectionHead, SettingRow, SettingsCard } from "./settings-parts";
-import { Button } from "./guide/Button";
+import { Group, Row, Rx, SectionHead } from "./guide";
 
 // Local copies: the UI imports nothing from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
-/** Each level's tag colour (UI refresh spec: light green, standard blue, deep violet). */
-const TIER_TONE: Record<Tier, TagTone> = { light: "green", standard: "blue", deep: "violet" };
+/** Each level's tag colour (DESIGN.md "Tag colors": light green, standard blue, deep violet). */
+const TIER_COLOR: Record<Tier, "green" | "blue" | "violet"> = { light: "green", standard: "blue", deep: "violet" };
 const CAPS: readonly number[] = [100_000, 200_000, 400_000, 1_000_000];
 /** The engines package's `PINNED_OPTIONS`. */
 const PINNED: readonly number[] = [1000, 3000, 6000, 12_000];
@@ -127,7 +124,6 @@ export function ModelsTab({
   focus?: { part: "tasks" | "levels"; n: number };
 }) {
   const { t } = useTranslation();
-  const tasksId = useId();
   const [models, update, saveFailed] = useModels(client, state, onChange);
   const [part, setPart] = useState<"tasks" | "levels">(focus?.part ?? "tasks");
   const focusN = focus?.n;
@@ -135,13 +131,21 @@ export function ModelsTab({
     if (focus) setPart(focus.part);
   }, [focusN]);
   const view = state.models;
-  // No models view from main yet: the section's heading alone, so the page never skips a level.
-  if (!view)
-    return (
-      <div className="hh-tab">
-        <SectionHead title={t("settings.tabs.models")} line={t("settings.line.models")} />
-      </div>
-    );
+  const head = (
+    <SectionHead
+      line={t("settings.line.models")}
+      aside={
+        view && (
+          <Rx.SegmentedControl.Root value={part} onValueChange={(v) => setPart(v as "tasks" | "levels")} aria-label={t("settings.tabs.models")}>
+            <Rx.SegmentedControl.Item value="tasks">{t("models.tasks")}</Rx.SegmentedControl.Item>
+            <Rx.SegmentedControl.Item value="levels">{t("models.levels")}</Rx.SegmentedControl.Item>
+          </Rx.SegmentedControl.Root>
+        )
+      }
+    />
+  );
+  // No models view from main yet: the section's head alone.
+  if (!view) return <div>{head}</div>;
   const engine = state.config.engineId ?? state.engines[0]?.id ?? "";
   const engineName = state.engines.find((e) => e.id === engine)?.name ?? engine;
   const tierSpec = (tier: Tier): ModelSpec => models.tiers?.[engine]?.[tier] ?? view.defaults[engine]?.[tier] ?? FALLBACK_SPEC;
@@ -162,91 +166,77 @@ export function ModelsTab({
   );
 
   return (
-    <div className="hh-tab">
-      <SectionHead title={t("settings.tabs.models")} line={t("settings.line.models")} />
-      <div className="hh-model-head">
-        <Segmented
-          label={t("settings.tabs.models")}
-          value={part}
-          onChange={setPart}
-          options={[
-            { value: "tasks", label: t("models.tasks") },
-            { value: "levels", label: t("models.levels") },
-          ]}
-        />
-        {part === "tasks" && engineName && <span className="hh-caption">{t("models.engineNow", { engine: engineName })}</span>}
-      </div>
+    <div>
+      {head}
       {saveFailed && (
-        <p className="hh-caption" role="alert">
-          {t("models.saveFailed")}
-        </p>
+        <Rx.Callout.Root color="red" role="alert" mb="3">
+          <Rx.Callout.Text>{t("models.saveFailed")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
       )}
       {part === "levels" && <LevelsSection state={state} view={view} models={models} rows={rows} update={update} />}
       {part === "tasks" && (
-        <section aria-labelledby={tasksId} data-setting="models.tasks">
-          <SettingsCard title={t("models.tasks")} headingId={tasksId}>
-            <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
-          </SettingsCard>
-          <SettingsCard>
+        <>
+          {/* The engine the tasks run on: a grey tag, the one thing a card title may carry (Marco, 2026-11-04). */}
+          <Group
+            title={t("models.tasks")}
+            tag={
+              engineName && (
+                <Rx.Badge color="gray" variant="soft">
+                  {engineName}
+                </Rx.Badge>
+              )
+            }
+            data-setting="models.tasks"
+          >
+            {rows.map(({ key, label, description }) => {
+              const choice = models.tasks?.[key];
+              const recommended = view.recommended[key] ?? "standard";
+              const custom = typeof choice === "object" ? choice.custom : undefined;
+              const spec = custom ?? tierSpec(typeof choice === "string" ? choice : recommended);
+              return (
+                <TaskRow
+                  key={key}
+                  label={label}
+                  description={description}
+                  recommended={recommended}
+                  choice={choice}
+                  spec={spec}
+                  offer={offer}
+                  onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { ...spec, engine } } : v === recommended ? null : v))}
+                  // The editor offers the current engine's models: an edited custom task runs on that engine.
+                  onCustom={(next) => update((m) => withTask(m, key, { custom: { ...next, engine } }))}
+                  onRestore={() => update((m) => withTask(m, key, null))}
+                />
+              );
+            })}
+          </Group>
+          <Group>
             <PinnedBudget
               value={models.pinnedTokens ?? view.pinnedTokens}
               suggested={view.pinnedTokens}
-              onChange={(n) =>
-                update(({ pinnedTokens: _, ...rest }) => (n === view.pinnedTokens ? rest : { ...rest, pinnedTokens: n }))
-              }
+              onChange={(n) => update(({ pinnedTokens: _, ...rest }) => (n === view.pinnedTokens ? rest : { ...rest, pinnedTokens: n }))}
             />
-          </SettingsCard>
-        </section>
+          </Group>
+        </>
       )}
     </div>
   );
 }
 
-function TaskList({
-  rows,
-  view,
-  models,
-  engine,
-  tierSpec,
-  offer,
-  update,
-}: {
-  rows: TaskRowInfo[];
-  view: ModelsView;
-  models: ModelsConfig;
-  engine: string;
-  tierSpec: (tier: Tier) => ModelSpec;
-  offer: Offer;
-  update: (change: (models: ModelsConfig) => ModelsConfig) => void;
-}) {
+/** A level's tag: light green, standard blue, deep violet (DESIGN.md "Tag colors"). */
+function TierBadge({ tier }: { tier: Tier }) {
+  const { t } = useTranslation();
   return (
-    <>
-      {rows.map(({ key, label, description }) => {
-        const choice = models.tasks?.[key];
-        const recommended = view.recommended[key] ?? "standard";
-        const custom = typeof choice === "object" ? choice.custom : undefined;
-        const spec = custom ?? tierSpec(typeof choice === "string" ? choice : recommended);
-        return (
-          <TaskRow
-            key={key}
-            label={label}
-            description={description}
-            recommended={recommended}
-            choice={choice}
-            spec={spec}
-            offer={offer}
-            onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { ...spec, engine } } : v === recommended ? null : v))}
-            // The editor offers the current engine's models: an edited custom task runs on that engine.
-            onCustom={(next) => update((m) => withTask(m, key, { custom: { ...next, engine } }))}
-            onRestore={() => update((m) => withTask(m, key, null))}
-          />
-        );
-      })}
-    </>
+    <Rx.Badge color={TIER_COLOR[tier]} variant="soft">
+      {t(`models.tier.${tier}`)}
+    </Rx.Badge>
   );
 }
 
-/** Niveles: what each level runs on, per engine, and which tasks use it. */
+/**
+ * Niveles: what each level runs on, per engine, and which tasks use it. One card: the engine first, then one row per
+ * level with its three fields and the tasks on it (Marco, 2026-11-04).
+ */
 function LevelsSection({
   state,
   view,
@@ -261,7 +251,6 @@ function LevelsSection({
   update: (change: (models: ModelsConfig) => ModelsConfig) => void;
 }) {
   const { t } = useTranslation();
-  const headingId = useId();
   const [engine, setEngine] = useState(state.config.engineId ?? state.engines[0]?.id ?? "");
   const offer = view.offered[engine] ?? NO_OFFER;
   const name = state.engines.find((e) => e.id === engine)?.name ?? engine;
@@ -269,53 +258,64 @@ function LevelsSection({
   /** The tasks on `tier`: their own setting, else the recommendation (a custom task uses no level). */
   const users = (tier: Tier) => rows.filter(({ key }) => (models.tasks?.[key] ?? view.recommended[key] ?? "standard") === tier).map((r) => r.label);
   return (
-    <section aria-labelledby={headingId} data-setting="models.levels">
-      <SettingsCard
-        title={t("models.levels")}
-        headingId={headingId}
-        actions={
-          state.engines.length > 1 && (
-            <div className="hh-model-engine">
-              <span className="hh-row-label">{t("models.engine")}</span>
-              <Segmented label={t("models.engine")} value={engine} onChange={setEngine} options={state.engines.map((e) => ({ value: e.id, label: e.name }))} />
-            </div>
-          )
-        }
-      >
-      <p className="hh-caption">{t("models.levelsIntro", { engine: name })}</p>
-      <div className="hh-model-cards">
-        {TIERS.map((tier) => {
-          const label = t(`models.tier.${tier}`);
-          const used = users(tier);
-          return (
-            <section key={tier} className="hh-model-card" aria-label={label}>
-              <h4>
-                <Tag tone={TIER_TONE[tier]}>{label}</Tag>
-              </h4>
-              <p className="hh-caption">{t(`models.tierHint.${tier}`)}</p>
-              <SpecFields spec={tierSpec(tier)} offer={offer} onChange={(spec) => update((m) => withTier(m, engine, tier, spec))} />
-              <p className="hh-caption">{t("models.usedBy")}</p>
-              {used.length > 0 ? (
-                <ul className="hh-model-chips" aria-label={t("models.usedBy")}>
-                  {used.map((l) => (
-                    <li key={l}>{l}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="hh-caption">{t("models.nobody")}</p>
-              )}
-            </section>
-          );
-        })}
-      </div>
-      <p className="hh-caption">{t("models.fallbackHint")}</p>
-      <div>
-        <Button type="button" size="compact" onClick={() => update((m) => withTier(m, engine, null))}>
+    <Group title={t("models.levels")} data-setting="models.levels">
+      {/* A control never sits by a card title: the engine drops to the first row (DESIGN.md "Settings"). */}
+      <Row label={t("models.engine")} hint={t("models.levelsIntro", { engine: name })}>
+        {state.engines.length > 1 && (
+          <Rx.SegmentedControl.Root value={engine} onValueChange={setEngine} aria-label={t("models.engine")}>
+            {state.engines.map((e) => (
+              <Rx.SegmentedControl.Item key={e.id} value={e.id}>
+                {e.name}
+              </Rx.SegmentedControl.Item>
+            ))}
+          </Rx.SegmentedControl.Root>
+        )}
+      </Row>
+      {TIERS.map((tier) => {
+        const used = users(tier);
+        return (
+          <Row
+            key={tier}
+            aria-label={t(`models.tier.${tier}`)}
+            label={<TierBadge tier={tier} />}
+            hint={t(`models.tierHint.${tier}`)}
+            below={
+              <Rx.Flex direction="column" gap="3">
+                <SpecFields spec={tierSpec(tier)} offer={offer} onChange={(spec) => update((m) => withTier(m, engine, tier, spec))} />
+                <Rx.Flex align="center" gap="2" wrap="wrap">
+                  <Rx.Text size="1" color="gray">
+                    {t("models.usedBy")}
+                  </Rx.Text>
+                  {used.length > 0 ? (
+                    // Chips: things, white with a border (DESIGN.md "Badge").
+                    <Rx.Flex gap="1" wrap="wrap" role="list" aria-label={t("models.usedBy")}>
+                      {used.map((l) => (
+                        <Rx.Badge key={l} role="listitem" color="gray" variant="outline">
+                          {l}
+                        </Rx.Badge>
+                      ))}
+                    </Rx.Flex>
+                  ) : (
+                    <Rx.Text size="1" color="gray">
+                      {t("models.nobody")}
+                    </Rx.Text>
+                  )}
+                </Rx.Flex>
+              </Rx.Flex>
+            }
+          />
+        );
+      })}
+      {/* The card's end: a caption, and on the right its one action, secondary (DESIGN.md "Card and settings rows"). */}
+      <Rx.Flex align="center" justify="between" gap="3" pt="3" wrap="wrap">
+        <Rx.Text as="p" size="1" color="gray">
+          {t("models.fallbackHint")}
+        </Rx.Text>
+        <Rx.Button size="1" variant="outline" color="gray" onClick={() => update((m) => withTier(m, engine, null))}>
           {t("models.restoreAll")}
-        </Button>
-      </div>
-      </SettingsCard>
-    </section>
+        </Rx.Button>
+      </Rx.Flex>
+    </Group>
   );
 }
 
@@ -345,54 +345,105 @@ function TaskRow({
   const editorId = useId();
   const [open, setOpen] = useState(false);
   const value: Choice = choice === undefined ? recommended : typeof choice === "string" ? choice : "custom";
-  const options = (["light", "standard", "deep", "custom"] as const).map((v) => ({ value: v as Choice, label: t(`models.tier.${v}`) }));
+  // Under the control, right-aligned: the custom summary, or the recommendation when the choice is another level.
+  const note =
+    value === "custom" ? (
+      <>
+        <Rx.Text size="1" color="gray">
+          {t("models.customSummary", { model: spec.model ?? t("models.engineDefault"), effort: t(`models.effortLevel.${spec.effort}`), cap: formatCap(spec.cap) })}
+        </Rx.Text>
+        <Rx.Button size="1" variant="ghost" color="gray" aria-expanded={open} aria-controls={open ? editorId : undefined} onClick={() => setOpen(!open)}>
+          {t("models.edit")}
+        </Rx.Button>
+      </>
+    ) : value !== recommended ? (
+      <>
+        <Rx.Text size="1" color="gray">
+          {t("models.changed", { tier: t(`models.tier.${recommended}`) })}
+        </Rx.Text>
+        <Rx.Button size="1" variant="ghost" color="gray" onClick={onRestore}>
+          {t("models.restore")}
+        </Rx.Button>
+      </>
+    ) : null;
   return (
-    <SettingRow className="hh-model-task" label={label} hint={description}>
-      <Segmented
-        label={label}
+    <Row
+      aria-label={label}
+      label={label}
+      hint={description}
+      below={
+        (note || (value === "custom" && open)) && (
+          <Rx.Flex direction="column" gap="3">
+            {note && (
+              <Rx.Flex align="center" justify="end" gap="3" wrap="wrap">
+                {note}
+              </Rx.Flex>
+            )}
+            {value === "custom" && open && (
+              <Rx.Flex id={editorId} direction="column" gap="3">
+                <SpecFields spec={spec} offer={offer} onChange={onCustom} />
+                <Rx.Text as="p" size="1" color="gray">
+                  {t("models.customHint")}
+                </Rx.Text>
+                <Rx.Box>
+                  <Rx.Button
+                    size="1"
+                    variant="ghost"
+                    color="gray"
+                    onClick={() => {
+                      setOpen(false);
+                      onRestore();
+                    }}
+                  >
+                    {t("models.backToRecommended", { tier: t(`models.tier.${recommended}`) })}
+                  </Rx.Button>
+                </Rx.Box>
+              </Rx.Flex>
+            )}
+          </Rx.Flex>
+        )
+      }
+    >
+      <Rx.SegmentedControl.Root
         value={value}
-        options={options}
-        onChange={(v) => {
+        aria-label={label}
+        onValueChange={(v) => {
           setOpen(v === "custom");
-          onPick(v);
+          onPick(v as Choice);
         }}
-      />
-      {value === "custom" && (
-        <p className="hh-caption">
-          {t("models.customSummary", { model: spec.model ?? t("models.engineDefault"), effort: t(`models.effortLevel.${spec.effort}`), cap: formatCap(spec.cap) })}{" "}
-          <Button type="button" kind="quiet" size="compact" aria-expanded={open} aria-controls={open ? editorId : undefined} onClick={() => setOpen(!open)}>
-            {t("models.edit")}
-          </Button>
-        </p>
-      )}
-      {value !== "custom" && value !== recommended && (
-        <p className="hh-model-note">
-          <span className="hh-model-changed">{t("models.changed", { tier: t(`models.tier.${recommended}`) })}</span>{" "}
-          <Button type="button" size="compact" onClick={onRestore}>
-            {t("models.restore")}
-          </Button>
-        </p>
-      )}
-      {value === "custom" && open && (
-        <div id={editorId} className="hh-model-editor">
-          <SpecFields spec={spec} offer={offer} onChange={onCustom} />
-          <p className="hh-caption">{t("models.customHint")}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onRestore();
-            }}
-          >
-            {t("models.backToRecommended", { tier: t(`models.tier.${recommended}`) })}
-          </button>
-        </div>
-      )}
-    </SettingRow>
+      >
+        {(["light", "standard", "deep", "custom"] as const).map((v) => (
+          <Rx.SegmentedControl.Item key={v} value={v}>
+            {t(`models.tier.${v}`)}
+          </Rx.SegmentedControl.Item>
+        ))}
+      </Rx.SegmentedControl.Root>
+    </Row>
   );
 }
 
-/** Model, effort and context cap. A saved value the engine no longer lists stays selectable as it is. */
+/** One field of the three: its label on top, a select under it (DESIGN.md "Field and form controls"). */
+function SpecSelect({ id, label, value, onChange, children }: { id: string; label: string; value: string; onChange: (v: string) => void; children: ReactNode }) {
+  return (
+    <Rx.Flex direction="column" gap="2" minWidth="0">
+      <Rx.Text as="label" size="2" weight="bold" htmlFor={id}>
+        {label}
+      </Rx.Text>
+      <Rx.Select.Root value={value} onValueChange={onChange}>
+        <Rx.Select.Trigger id={id} aria-label={label} />
+        <Rx.Select.Content position="popper">{children}</Rx.Select.Content>
+      </Rx.Select.Root>
+    </Rx.Flex>
+  );
+}
+
+/** Radix's Select has no empty value: the engine's own model stands for "no model set". */
+const ENGINE_DEFAULT = "__engine-default__";
+
+/**
+ * Model, effort and context cap, in one line (Marco, 2026-11-04). A saved value the engine no longer lists stays
+ * selectable as it is.
+ */
 export function SpecFields({ spec, offer, onChange }: { spec: ModelSpec; offer: Offer; onChange: (s: ModelSpec) => void }) {
   const { t } = useTranslation();
   const id = useId();
@@ -400,33 +451,30 @@ export function SpecFields({ spec, offer, onChange }: { spec: ModelSpec; offer: 
   const efforts: Effort[] = offer.efforts.includes(spec.effort) ? offer.efforts : [...offer.efforts, spec.effort];
   const caps = CAPS.includes(spec.cap) ? CAPS : [...CAPS, spec.cap].sort((a, b) => a - b);
   return (
-    <div className="hh-model-fields">
-      <label htmlFor={`${id}-model`}>{t("models.model")}</label>
-      <select id={`${id}-model`} value={spec.model ?? ""} onChange={(e) => onChange(withModel(spec, e.target.value || undefined))}>
-        <option value="">{t("models.engineDefault")}</option>
+    <Rx.Grid columns={{ initial: "1", xs: "3" }} gap="3">
+      <SpecSelect id={`${id}-model`} label={t("models.model")} value={spec.model ?? ENGINE_DEFAULT} onChange={(v) => onChange(withModel(spec, v === ENGINE_DEFAULT ? undefined : v))}>
+        <Rx.Select.Item value={ENGINE_DEFAULT}>{t("models.engineDefault")}</Rx.Select.Item>
         {models.map((m) => (
-          <option key={m.id} value={m.id} title={m.description}>
+          <Rx.Select.Item key={m.id} value={m.id} title={m.description}>
             {m.name ?? m.id}
-          </option>
+          </Rx.Select.Item>
         ))}
-      </select>
-      <label htmlFor={`${id}-effort`}>{t("models.effort")}</label>
-      <select id={`${id}-effort`} value={spec.effort} onChange={(e) => onChange({ ...spec, effort: e.target.value as Effort })}>
+      </SpecSelect>
+      <SpecSelect id={`${id}-effort`} label={t("models.effort")} value={spec.effort} onChange={(v) => onChange({ ...spec, effort: v as Effort })}>
         {efforts.map((e) => (
-          <option key={e} value={e}>
+          <Rx.Select.Item key={e} value={e}>
             {t(`models.effortName.${e}`)}
-          </option>
+          </Rx.Select.Item>
         ))}
-      </select>
-      <label htmlFor={`${id}-cap`}>{t("models.cap")}</label>
-      <select id={`${id}-cap`} value={String(spec.cap)} onChange={(e) => onChange({ ...spec, cap: Number(e.target.value) })}>
+      </SpecSelect>
+      <SpecSelect id={`${id}-cap`} label={t("models.cap")} value={String(spec.cap)} onChange={(v) => onChange({ ...spec, cap: Number(v) })}>
         {caps.map((c) => (
-          <option key={c} value={c}>
+          <Rx.Select.Item key={c} value={String(c)}>
             {formatCap(c)}
-          </option>
+          </Rx.Select.Item>
         ))}
-      </select>
-    </div>
+      </SpecSelect>
+    </Rx.Grid>
   );
 }
 
@@ -439,21 +487,20 @@ function PinnedBudget({ value, suggested, onChange }: { value: number; suggested
   const id = useId();
   const options = [...new Set([...PINNED, suggested, value])].sort((a, b) => a - b);
   return (
-    <div className="hh-model-fields">
-      <label htmlFor={id}>{t("models.pinned")}</label>
-      <select id={id} value={String(value)} aria-describedby={`${id}-hint`} onChange={(e) => onChange(Number(e.target.value))}>
-        {options.map((n) => {
-          const tokens = n.toLocaleString(shownLanguage(i18n));
-          return (
-            <option key={n} value={String(n)}>
-              {t(n === suggested ? "models.pinnedSuggested" : "models.pinnedOption", { tokens })}
-            </option>
-          );
-        })}
-      </select>
-      <p id={`${id}-hint`} className="hh-caption hh-ctxp-budget-hint">
-        {t("models.pinnedHint")}
-      </p>
-    </div>
+    <Row label={t("models.pinned")} htmlFor={id} hint={t("models.pinnedHint")} hintId={`${id}-hint`}>
+      <Rx.Select.Root value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+        <Rx.Select.Trigger id={id} aria-label={t("models.pinned")} aria-describedby={`${id}-hint`} />
+        <Rx.Select.Content position="popper">
+          {options.map((n) => {
+            const tokens = n.toLocaleString(shownLanguage(i18n));
+            return (
+              <Rx.Select.Item key={n} value={String(n)}>
+                {t(n === suggested ? "models.pinnedSuggested" : "models.pinnedOption", { tokens })}
+              </Rx.Select.Item>
+            );
+          })}
+        </Rx.Select.Content>
+      </Rx.Select.Root>
+    </Row>
   );
 }

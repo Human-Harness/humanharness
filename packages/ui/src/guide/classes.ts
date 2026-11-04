@@ -18,6 +18,11 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-home-box",
   "hh-home-steps",
   "hh-home-label",
+  // Assistant: the steps list, the step's column, its action bar, the end's column (spec §7, stage 3b)
+  "hh-setup-steps",
+  "hh-setup-step",
+  "hh-setup-actions",
+  "hh-setup-end",
   // Group's loose list and a file path in a Row's hint (guide/settings.tsx)
   "hh-gd-list",
   "hh-gd-path",

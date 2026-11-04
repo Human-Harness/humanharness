@@ -244,39 +244,29 @@ svg.hh-home-logo { box-sizing: border-box; padding: var(--hh-s-4); background: v
 .hh-footer-path { margin-left: auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .hh-wordmark { flex: none; white-space: nowrap; font-family: var(--hh-display); font-weight: 500; color: var(--hh-muted); }
 
-/* Setup flow (spec 2026-10-14 §2): stepper, one centred step, footer on the sheet background. */
+/* The Assistant (DESIGN.md "Inicio, Assistant and Settings", stage 3b): the steps on the left, the step and its action
+   bar in one reading-width column on the right; the end is a dialog-wide column in the middle. */
 .hh-setup { height: 100vh; display: flex; flex-direction: column; }
-/* The setup frame (UI refresh spec §5.6): the steps on the left, the step on the right. */
 .hh-setup-frame { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, var(--hh-column-w)) minmax(0, 1fr); }
-.hh-setup-nav { padding: 28px 18px; border-right: 1px solid var(--hh-line); background: var(--hh-rail); overflow-y: auto; }
-.hh-setup-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; color: var(--hh-muted); }
-.hh-setup-steps .hh-step-mark { width: 26px; height: 26px; font-size: 12px; }
-.hh-setup-steps .hh-step-mark.done { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
-.hh-setup-step-text { min-width: 0; display: grid; gap: 2px; }
-.hh-setup-step-value { font-size: 12px; font-weight: 400; color: var(--hh-muted); overflow-wrap: anywhere; }
+.hh-setup-nav { padding: var(--hh-s-5) var(--hh-s-3); border-right: 1px solid var(--hh-line); background: var(--hh-rail); overflow-y: auto; }
+.hh-setup-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--hh-s-1); }
+.hh-setup-steps > li { min-width: 0; padding: var(--hh-s-3); }
+.hh-setup-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--hh-s-6) var(--hh-s-6) var(--hh-s-5); }
+.hh-setup-body.done { display: grid; align-content: center; }
+.hh-setup-body h2:focus { outline: none; }
+.hh-setup-step { max-width: var(--hh-read-w); margin: 0 auto; display: grid; gap: var(--hh-s-5); }
+.hh-setup-end { width: 100%; max-width: var(--hh-dialog-w); margin: 0 auto; text-align: center; }
+.hh-setup-actions > :first-child { margin-inline-end: auto; }
 @media (max-width: 720px) {
   .hh-setup-frame { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .hh-setup-nav { padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--hh-line); }
-  .hh-setup-body { padding: 20px 16px; }
+  .hh-setup-nav { padding: var(--hh-s-3) var(--hh-s-4); border-right: 0; border-bottom: 1px solid var(--hh-line); }
+  .hh-setup-body { padding: var(--hh-s-5) var(--hh-s-4); }
 }
-.hh-setup-column { min-height: 0; display: flex; flex-direction: column; }
-.hh-setup-body { flex: 1; min-height: 0; overflow-y: auto; padding: 32px 32px 24px; }
-.hh-setup-body.done { flex: 1; display: grid; align-content: center; }
-.hh-setup-step { max-width: 640px; margin: 0 auto; display: grid; gap: 12px; }
-.hh-setup-step h2 { font-family: var(--hh-display); font-size: 20px; font-weight: 600; }
-.hh-setup-step h2:focus { outline: none; }
-.hh-setup-intro { color: var(--hh-muted); line-height: 1.5; }
-.hh-setup-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 16px 32px 24px; }
-.hh-setup-actions > :first-child { margin-right: auto; }
-.hh-setup-reassure { margin: 0; }
 /* The engine step: the onboarding block as a card. */
 .hh-engine-radio-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--hh-muted); }
 .hh-engine-radio-status[data-tone="ok"] { color: var(--hh-t-green-ink); }
 .hh-engine-more { margin: 0; }
 .hh-setup .hh-onboarding { padding: 18px 20px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
-.hh-setup-done { width: 100%; justify-items: center; text-align: center; gap: 14px; }
-.hh-setup-done .hh-rows { width: 100%; text-align: left; }
-.hh-setup-done-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--hh-ink); color: var(--hh-bg); }
 
 /* Settings as a page (UI refresh spec §5.5): in place of the screen, which stays mounted under it, hidden. */
 /* Wraps Home or the work screen without changing its layout (hidden, and inert, while Settings shows). */
@@ -1009,7 +999,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-langnotice { width: min(460px, 100%); padding: 16px; border-radius: 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-langpick-actions, .hh-langnotice-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .hh-legal-english { margin-top: 4px; font-style: italic; }
-.hh-setup-language { margin-top: 4px; }
 
 /* ---- Search palette (search spec §5; packages/ui/src/search). One block: the UI refresh moves it as a unit. ---- */
 .hh-search-backdrop {

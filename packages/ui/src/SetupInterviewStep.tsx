@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ChatView } from "./ChatView";
 import type { AppState, HarnessClient, SetupStepView } from "./client";
 import type { BlockProps } from "./Message";
+import { Rx } from "./guide";
 
 /**
  * An `interview` step's body (setup-steps spec §3): its cost when it isn't light, then its task's chat, slim. The
@@ -25,7 +26,9 @@ export function SetupInterviewStep({
   return (
     <>
       {(step.cost === "medium" || step.cost === "heavy") && (
-        <p className="hh-caption">{t(step.cost === "heavy" ? "setupSteps.costHeavy" : "setupSteps.costMedium")}</p>
+        <Rx.Text as="p" size="1" color="gray">
+          {t(step.cost === "heavy" ? "setupSteps.costHeavy" : "setupSteps.costMedium")}
+        </Rx.Text>
       )}
       <ChatView client={client} state={state} components={blocks} stateBlocks={stateBlocks} slim={{ action: step.action ?? "" }} />
     </>

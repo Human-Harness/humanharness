@@ -111,9 +111,9 @@ describe("NavItem spacing and alignment (answers N3, N4, N10)", () => {
     expect(rule(".hh-nav-item")["align-items"]).toBe("center");
     expect(rule('.hh-nav-item[data-align="start"]')["align-items"]).toBe("flex-start");
   });
-  it("N10: only the Assistant steps ask for it", () => {
+  it("N10: no screen asks for it since the Assistant moved to Radix (stage 3b)", () => {
     const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
-    expect(src("SetupFlow.tsx")).toMatch(/<NavItem[^>]*align="start"/);
+    expect(src("SetupFlow.tsx")).not.toMatch(/<NavItem/);
     expect(src("SettingsPage.tsx")).not.toMatch(/align="start"/);
     expect(src("FlowSide.tsx")).not.toMatch(/align="start"/);
   });

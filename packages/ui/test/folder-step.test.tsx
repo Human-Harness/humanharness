@@ -73,7 +73,8 @@ describe("FolderStep", () => {
     const drivePlace = radio("Save it in Google Drive so you don't lose it");
     drivePlace.focus();
     fireEvent.keyDown(drivePlace, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(radio("Save it in iCloud Drive so you don't lose it"));
+    // Radix moves the focus on the next tick.
+    await waitFor(() => expect(document.activeElement).toBe(radio("Save it in iCloud Drive so you don't lose it")));
     expect(checked("Save it in iCloud Drive so you don't lose it")).toBe(true);
   });
 

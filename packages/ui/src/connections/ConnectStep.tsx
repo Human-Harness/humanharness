@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionResult, HarnessClient, SetupStepView } from "../client";
 import { useConnections } from "./ConnectionsTab";
 import { SecretField } from "./SecretField";
+import { Rx } from "../guide";
 
 /**
  * A `connect` setup step's body (tools spec §9): one field per key the step lists, in the step's order, as Settings ›
@@ -31,26 +32,37 @@ export function ConnectStep({ client, step, onReady }: { client: HarnessClient; 
   };
   return (
     <>
-      {unavailable && <p role="alert">{t("connections.unavailable")}</p>}
+      {unavailable && (
+        <Rx.Callout.Root color="red" role="alert">
+          <Rx.Callout.Text>{t("connections.unavailable")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
       {rows.length > 0 && (
-        <div className="hh-rows">
-          {rows.map((c) => (
-            <SecretField
-              key={c.id}
-              connection={c}
-              onSave={(value) => save(c.id, value).then(counted)}
-              onDelete={() => remove(c.id).then(counted)}
-              {...(c.test ? { onTest: () => test(c.id) } : {})}
-            />
+        // A card as Group draws it, without Group's bottom margin: the step's column already spaces its parts.
+        <Rx.Card size="3">
+          {rows.map((c, i) => (
+            <Fragment key={c.id}>
+              {i > 0 && <Rx.Separator size="4" />}
+              <SecretField
+                connection={c}
+                onSave={(value) => save(c.id, value).then(counted)}
+                onDelete={() => remove(c.id).then(counted)}
+                {...(c.test ? { onTest: () => test(c.id) } : {})}
+              />
+            </Fragment>
           ))}
-        </div>
+        </Rx.Card>
       )}
       {error && (
-        <p key={refusals} className="hh-field-error" role="alert">
-          {error}
-        </p>
+        <Rx.Callout.Root key={refusals} color="red" role="alert">
+          <Rx.Callout.Text>{error}</Rx.Callout.Text>
+        </Rx.Callout.Root>
       )}
-      {!ready && view && !unavailable && <p className="hh-caption">{t("connections.stepNext")}</p>}
+      {!ready && view && !unavailable && (
+        <Rx.Text as="p" size="1" color="gray">
+          {t("connections.stepNext")}
+        </Rx.Text>
+      )}
     </>
   );
 }

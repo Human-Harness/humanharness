@@ -226,9 +226,11 @@ describe("answers C1, C3, C4, C5, C8", () => {
   it("C4: every place with a toggle row gets that layout, none overrides it", () => {
     expect(css).not.toMatch(/\.hh-toggle-row[^{]*\{[^}]*(?:justify-content:\s*flex-start|width:\s*auto)/);
     const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
-    for (const f of ["parallel/JobsTab.tsx", "SettingsPage.tsx", "sidekick/ScopeSidekicks.tsx", "sidekick/SidekickEditor.tsx", "InputForm.tsx", "search/SearchPalette.tsx"]) {
+    for (const f of ["SettingsPage.tsx", "sidekick/ScopeSidekicks.tsx", "sidekick/SidekickEditor.tsx", "InputForm.tsx", "search/SearchPalette.tsx"]) {
       expect(src(f), f).toMatch(/<Toggle[^>]*>\s*[\s\S]*?<\/Toggle>/);
     }
+    // C13: the jobs row lays out its own text, caption and switch, in the same toggle row.
+    expect(src("parallel/JobsTab.tsx")).toMatch(/<label className="hh-toggle-row">/);
   });
 
   it("C5: the search filter toggle rows are 12 in the muted color", () => {

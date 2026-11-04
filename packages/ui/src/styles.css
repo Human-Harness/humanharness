@@ -1370,6 +1370,7 @@ input.hh-search-input {
 .hh-toggle[aria-checked="true"], .hh-toggle[aria-checked="true"]:hover:not(:disabled) { background: var(--hh-ink); }
 .hh-toggle[aria-checked="true"]::after { left: 17px; }
 .hh-toggle-row { display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box; gap: var(--hh-s-2); }
+.hh-toggle-row .hh-caption { margin-inline-start: auto; }
 .hh-search-filters .hh-toggle-row { font-size: 12px; color: var(--hh-muted); }
 .hh-sk-fieldset .hh-toggle-row + .hh-toggle-row { margin-top: var(--hh-s-2); }
 .hh-checkbox { flex: none; box-sizing: border-box; -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; width: var(--hh-h-counter); height: var(--hh-h-counter); margin: 0; border: 1px solid var(--hh-line-strong); border-radius: var(--hh-s-1); background: var(--hh-surface); color: var(--hh-ink); font: inherit; }

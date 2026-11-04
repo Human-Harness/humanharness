@@ -636,8 +636,8 @@ describe("DocumentReader: the new look, still docked (UI refresh spec §5.7, Q3)
     turn();
     const bar = (await screen.findByText("Document · notes/turn.md")).closest(".hh-reader-bar") as HTMLElement;
     expect(within(bar).getByText("A turn end to end")).toBeTruthy();
-    expect(within(bar).getByRole("button", { name: "Aa reading preferences" }).className).toContain("hh-pill");
-    expect(within(bar).getByRole("button", { name: "Full screen" }).className).toContain("hh-pill");
+    expect(within(bar).getByRole("button", { name: "Aa reading preferences" }).getAttribute("data-size")).toBe("compact");
+    expect(within(bar).getByRole("button", { name: "Full screen" }).getAttribute("data-size")).toBe("compact");
   });
 
   it("full screen: Show chat is a footer pill that brings the chat back", async () => {
@@ -645,7 +645,7 @@ describe("DocumentReader: the new look, still docked (UI refresh spec §5.7, Q3)
     await screen.findByText("Updated");
     const foot = document.querySelector(".hh-reader-foot") as HTMLElement;
     const show = within(foot).getByRole("button", { name: "Show chat" });
-    expect(show.className).toContain("hh-pill");
+    expect(show.getAttribute("data-size")).toBe("compact");
     expect(screen.getAllByRole("button", { name: "Show chat" })).toHaveLength(1);
     fireEvent.click(show);
     expect(props.onFull).toHaveBeenCalledWith(false);

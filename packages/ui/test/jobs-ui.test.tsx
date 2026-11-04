@@ -88,12 +88,12 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     c.state.config = { ...c.state.config, jobs: { digest: { dailyTokens: 20_000 } } };
     const save = vi.spyOn(c, "saveConfig");
     await renderIn("en", <Sheet c={c} />);
-    const on = within(group("Sync inbox")).getByRole("checkbox", { name: "On" }) as HTMLInputElement;
-    expect(on.checked).toBe(true);
+    const on = within(group("Sync inbox")).getByRole("switch", { name: "On" });
+    expect(on.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(on);
     await waitFor(() => expect(save).toHaveBeenLastCalledWith({ jobs: { digest: { dailyTokens: 20_000 }, sync: { off: true } } }));
-    await waitFor(() => expect((within(group("Sync inbox")).getByRole("checkbox", { name: "On" }) as HTMLInputElement).checked).toBe(false));
-    fireEvent.click(within(group("Sync inbox")).getByRole("checkbox", { name: "On" }));
+    await waitFor(() => expect(within(group("Sync inbox")).getByRole("switch", { name: "On" }).getAttribute("aria-checked")).toBe("false"));
+    fireEvent.click(within(group("Sync inbox")).getByRole("switch", { name: "On" }));
     // Back on: its entry goes, as it holds nothing else.
     await waitFor(() => expect(save).toHaveBeenLastCalledWith({ jobs: { digest: { dailyTokens: 20_000 } } }));
   });
@@ -142,9 +142,9 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     const cap = within(group("Digest")).getByLabelText("Daily token cap");
     fireEvent.change(cap, { target: { value: "20000" } });
     fireEvent.blur(cap);
-    fireEvent.click(within(group("Digest")).getByRole("checkbox", { name: "On" }));
+    fireEvent.click(within(group("Digest")).getByRole("switch", { name: "On" }));
     // Another job's change, still before any reply.
-    fireEvent.click(within(group("Sync inbox")).getByRole("checkbox", { name: "On" }));
+    fireEvent.click(within(group("Sync inbox")).getByRole("switch", { name: "On" }));
     await waitFor(() => expect(c.saveConfig).toHaveBeenCalledTimes(3));
     release();
     await waitFor(() => expect(c.state.config.jobs).toEqual({ digest: { dailyTokens: 20_000, off: true }, sync: { off: true } }));
@@ -155,7 +155,7 @@ describe("Settings › Jobs (parallel part 3 Task 10)", () => {
     const c = client();
     c.saveError = new Error("disk full");
     await renderIn("en", <Sheet c={c} />);
-    fireEvent.click(within(group("Sync inbox")).getByRole("checkbox", { name: "On" }));
+    fireEvent.click(within(group("Sync inbox")).getByRole("switch", { name: "On" }));
     expect(await screen.findByText("Couldn't save the change.")).toHaveProperty("role", "alert");
   });
 

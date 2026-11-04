@@ -197,7 +197,7 @@ describe("tool calls in a chat (tools spec §8.2)", () => {
     await screen.findByText("Pick one.");
     client.emit({ type: "tool-call", call: call() });
     await screen.findByRole("button", { name: "pr-ci · 12 items · 0.3 s · 0 tokens" });
-    const more = screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement;
+    const more = screen.getByRole("radio", { name: "Tell me more" }) as HTMLButtonElement;
     await waitFor(() => expect(more.disabled).toBe(false));
     fireEvent.click(more);
     await waitFor(() => expect(client.chosenTasks).toEqual(["t1"]));

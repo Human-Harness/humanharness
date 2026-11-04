@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { AppState, TasksState } from "../client";
 import { Tag } from "../chrome";
+import { Tabs } from "../guide";
 
 /**
  * Board mode (parallel spec §9.1, UI refresh spec §5.1): a row of tabs over the chat, one per open task, the one on
@@ -25,27 +26,17 @@ export function TaskStrip({
   const phase = task.phase ? (action?.phases?.find((p) => p.id === task.phase)?.label ?? null) : null;
   return (
     <div className="hh-tk-strip" role="group" aria-label={t("parallel.shownTask")}>
-      <div className="hh-tk-tabs" role="tablist" aria-label={t("tasks.open")}>
-        {tasks.tasks.map((s) => {
-          const waiting = s.state === "waiting";
-          return (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              className="hh-tk-tab"
-              aria-selected={s.focused === true}
-              aria-label={waiting ? t("tasks.tabWaiting", { title: s.label }) : s.label}
-              onClick={s.focused ? undefined : () => onFocus(s.id)}
-            >
-              {waiting && <span className="hh-tk-dot" aria-hidden="true" />}
-              <span className="hh-tk-label" dir="auto">
-                {s.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <Tabs
+        label={t("tasks.open")}
+        value={task.id}
+        items={tasks.tasks.map((s) => ({
+          id: s.id,
+          label: s.label,
+          waiting: s.state === "waiting",
+          ...(s.state === "waiting" ? { ariaLabel: t("tasks.tabWaiting", { title: s.label }) } : {}),
+        }))}
+        onChange={(id) => id !== task.id && onFocus(id)}
+      />
       {phase && (
         <Tag tone="orange">
           <span dir="auto">{phase}</span>

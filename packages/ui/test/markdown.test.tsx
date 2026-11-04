@@ -102,8 +102,9 @@ describe("Markdown", () => {
 
   it("task lists are read-only checkboxes", () => {
     const el = md("- [x] done\n- [ ] to do");
-    const boxes = [...el.querySelectorAll<HTMLInputElement>("li input[type=checkbox]")];
-    expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, true], [false, true]]);
+    const boxes = [...el.querySelectorAll<HTMLElement>("li [role=checkbox]")];
+    expect(boxes.map((b) => [b.getAttribute("aria-checked"), b.getAttribute("aria-disabled")])).toEqual([["true", "true"], ["false", "true"]]);
+    expect(el.querySelector("li input")).toBeNull();
     expect(screen.getByRole("checkbox", { name: "done" })).toBe(boxes[0]);
     expect(screen.getByRole("checkbox", { name: "to do" })).toBe(boxes[1]);
   });

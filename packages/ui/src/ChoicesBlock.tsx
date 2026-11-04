@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChoiceOption } from "./client";
+import { Option, OptionGroup } from "./guide/Option";
 
 /** The options of a `choices` block, keeping only well-formed fields (the agent wrote them). */
 export function readOptions(data: unknown): ChoiceOption[] {
@@ -31,24 +32,22 @@ export function ChoicesBlock({ data, choose, active }: { data: unknown; choose: 
   return (
     <section className="hh-choices">
       <h3 id={id}>{t("choices.title")}</h3>
-      <div className="hh-choice-list" role="group" aria-labelledby={id}>
+      <OptionGroup labelledBy={id}>
         {options.map((o, i) => (
-          <button
+          <Option
             key={i}
-            type="button"
-            aria-pressed={picked === i}
+            checked={picked === i}
             // The option that moves along the path is the recommended one (UI refresh spec §5.1): options carry no kind.
-            className={o.next ? "hh-choice next hh-choice-recommended" : "hh-choice"}
+            recommended={o.next}
+            title={o.label}
             disabled={!active || picked !== null}
             onClick={() => {
               // Marked only once sent: a pick waiting for the go-ahead (or refused) leaves every option usable.
               if (choose(o)) setPicked(i);
             }}
-          >
-            {o.label}
-          </button>
+          />
         ))}
-      </div>
+      </OptionGroup>
     </section>
   );
 }

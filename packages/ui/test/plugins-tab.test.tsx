@@ -117,8 +117,8 @@ describe("Settings › Plugins", () => {
     expect(items[2].textContent).toContain("Needs review");
     expect(items[3].textContent).toContain("Turned off after crashes");
     expect(items[4].textContent).toContain("Error: dist is too large");
-    expect((screen.getByRole("switch", { name: "On-call" }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("switch", { name: "Jira" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("switch", { name: "On-call" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: "Jira" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("turning on a plugin that needs a review opens the review; Turn on approves the reviewed dist", async () => {
@@ -207,6 +207,18 @@ describe("Settings › Plugins", () => {
       return region;
     }
 
+    it("I13: the back is a quiet compact Button with the back icon at 18", async () => {
+      const c = client([row()]);
+      c.pluginDetails = { oncall: detail() };
+      const region = await openDetail(c);
+      const back = within(region).getAllByRole("button")[0];
+      expect(back.getAttribute("data-kind")).toBe("quiet");
+      expect(back.getAttribute("data-size")).toBe("compact");
+      const icon = back.querySelector("svg.hh-icon-back");
+      expect(icon?.getAttribute("width")).toBe("18");
+      expect(back.querySelectorAll("svg")).toHaveLength(1);
+    });
+
     it("draws settings with SettingRow and shows a refusal under the field", async () => {
       const c = client([row()]);
       c.pluginDetails = { oncall: detail() };
@@ -232,8 +244,11 @@ describe("Settings › Plugins", () => {
       c2.pluginResults = [{ ok: true }, { ok: true }];
       const r2 = await openDetail(c2);
       const group = within(r2).getByRole("group", { name: "Work hours" });
-      const days = within(group).getAllByRole("button").filter((b) => b.hasAttribute("aria-pressed"));
+      const week = within(group).getByRole("group", { name: "Days" });
+      expect(week.classList.contains("hh-segmented")).toBe(true);
+      const days = within(week).getAllByRole("button");
       expect(days).toHaveLength(7);
+      expect(days[0].getAttribute("aria-label")).toBe("Sunday");
       expect(days.filter((d) => d.getAttribute("aria-pressed") === "true")).toHaveLength(5);
       fireEvent.click(days[6]); // Saturday (Sunday first)
       await waitFor(() => expect(c2.pluginCalls).toContainEqual(["setWorkHours", "oncall", { ...wh, days: [1, 2, 3, 4, 5, 6] }]));

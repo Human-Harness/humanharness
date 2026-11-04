@@ -18,7 +18,7 @@ test("a long task saves what matters before the engine compacts, then answers th
     await expect(page.getByRole("main").getByText(MANIFEST_ANSWER)).toBeVisible();
     await expect(page.getByRole("meter", { name: "Context in use" })).toHaveAttribute("aria-valuenow", "85");
 
-    await page.getByRole("button", { name: "Profundizar en las acciones" }).click();
+    await page.getByRole("radio", { name: "Profundizar en las acciones" }).click();
     await expect(page.getByRole("main").getByText("Las acciones traen su brief.")).toBeVisible();
 
     const runs = readJsonl<Run>(s.claudePrompts);

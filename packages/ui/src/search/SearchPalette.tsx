@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchIndexKind, SearchMarked, SearchRowKind, SearchStatus } from "../client";
+import { Toggle } from "../guide/Toggle";
 import { questionText } from "./ask";
 import { type LocalRows, type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
 
@@ -236,14 +237,14 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
               </button>
             ))}
             {scopesPlural && (
-              <label className="hh-search-toggle">
-                <input type="checkbox" checked={shownAll} onChange={(e) => setAllScopes(e.target.checked)} /> {t("search.allScopes", { plural: scopesPlural })}
-              </label>
+              <Toggle checked={shownAll} onChange={setAllScopes}>
+                {t("search.allScopes", { plural: scopesPlural })}
+              </Toggle>
             )}
             {references && (
-              <label className="hh-search-toggle">
-                <input type="checkbox" checked={refs} onChange={(e) => setRefs(e.target.checked)} /> {t("search.references")}
-              </label>
+              <Toggle checked={refs} onChange={setRefs}>
+                {t("search.references")}
+              </Toggle>
             )}
           </div>
         )}

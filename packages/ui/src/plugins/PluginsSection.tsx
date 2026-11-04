@@ -1,5 +1,6 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Tabs } from "../guide";
 import { PanelFrame } from "./PanelFrame";
 import { PLUGINS_SLOT, type PluginSurfaceContextValue, isTarget, reloadOf } from "./surface";
 
@@ -16,7 +17,6 @@ export function PluginsSection({ ctx }: { ctx: PluginSurfaceContextValue }) {
   const baseId = useId();
   const [active, setActive] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
   const panels = surface.panels.filter((p) => p.slot === PLUGINS_SLOT);
   const shown = panels.find((p) => keyOf(p) === active) ?? panels[0];
   const targetHere = panels.some((p) => isTarget(target, p.plugin, p.id));
@@ -32,50 +32,18 @@ export function PluginsSection({ ctx }: { ctx: PluginSurfaceContextValue }) {
 
   if (!shown) return null;
   const index = panels.indexOf(shown);
-  const onKeyDown = (e: KeyboardEvent) => {
-    const last = panels.length - 1;
-    const next =
-      e.key === "ArrowRight" || e.key === "ArrowDown"
-        ? (index + 1) % panels.length
-        : e.key === "ArrowLeft" || e.key === "ArrowUp"
-          ? (index + last) % panels.length
-          : e.key === "Home"
-            ? 0
-            : e.key === "End"
-              ? last
-              : -1;
-    if (next < 0) return;
-    e.preventDefault();
-    setActive(keyOf(panels[next]));
-    tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-  };
   return (
     <section ref={sectionRef} className="hh-pl-section" aria-labelledby={headingId}>
       <h2 id={headingId} className="hh-flow-heading">
         {t("plugins.panels.section")}
       </h2>
-      <div ref={tabsRef} className="hh-pl-tabs" role="tablist" aria-label={t("plugins.panels.tabs")} onKeyDown={onKeyDown}>
-        {panels.map((p, i) => {
-          const selected = p === shown;
-          return (
-            <button
-              key={keyOf(p)}
-              id={`${baseId}-tab-${i}`}
-              type="button"
-              role="tab"
-              className="hh-pl-tab"
-              aria-selected={selected}
-              aria-controls={selected ? `${baseId}-panel` : undefined}
-              tabIndex={selected ? 0 : -1}
-              title={p.pluginName}
-              dir="auto"
-              onClick={() => setActive(keyOf(p))}
-            >
-              {p.title}
-            </button>
-          );
-        })}
-      </div>
+      <Tabs
+        id={baseId}
+        label={t("plugins.panels.tabs")}
+        value={keyOf(shown)}
+        items={panels.map((p) => ({ id: keyOf(p), label: p.title, title: p.pluginName }))}
+        onChange={setActive}
+      />
       <div id={`${baseId}-panel`} className="hh-pl-tabpanel" role="tabpanel" aria-labelledby={`${baseId}-tab-${index}`}>
         <p className="hh-pl-panel-head" dir="auto">
           {shown.pluginName}

@@ -124,14 +124,14 @@ describe("flow mode", () => {
     tasks(client, { current: t1("running") });
     answer(client, "It declares everything.", [choices({ label: "Go deeper", followUp: "Tell me more" }, { label: "Next topic →", next: true })]);
     tasks(client, { current: t1("waiting") });
-    fireEvent.click(within(screen.getByRole("group", { name: GROUP })).getByRole("button", { name: "Go deeper" }));
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: GROUP })).getByRole("radio", { name: "Go deeper" }));
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Go deeper", followUp: "Tell me more" }]));
     expect(client.chosenTasks).toEqual(["t1"]);
     expect(screen.getByText("Go deeper", { selector: ".hh-message.user p" })).toBeTruthy();
     answer(client, "More detail.", [choices({ label: "Next topic →", next: true })]);
-    const groups = screen.getAllByRole("group", { name: GROUP });
-    expect((within(groups[0]).getAllByRole("button")[0] as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(groups.at(-1)!).getByRole("button", { name: "Next topic →" }));
+    const groups = screen.getAllByRole("radiogroup", { name: GROUP });
+    expect((within(groups[0]).getAllByRole("radio")[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(groups.at(-1)!).getByRole("radio", { name: "Next topic →" }));
     await waitFor(() => expect(client.chosen).toHaveLength(2));
     expect(screen.queryByText("It declares everything.")).toBeNull();
     expect(screen.getByText("Engines", { selector: ".hh-message.user p" })).toBeTruthy();
@@ -145,7 +145,7 @@ describe("flow mode", () => {
     tasks(client, { current: t1("running") });
     answer(client, "It declares everything.", [choices({ label: "Done →", next: true })]);
     tasks(client, { current: t1("waiting") });
-    fireEvent.click(screen.getByRole("button", { name: "Done →" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Done →" }));
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Done →", next: true }]));
     expect(screen.queryAllByText("Done →", { selector: ".hh-message.user p" })).toHaveLength(0);
     tasks(client, { current: { id: "t1", action: "manifest", status: "closing" } });
@@ -208,12 +208,12 @@ describe("flow mode", () => {
     tasks(client, { current: t1("running") });
     answer(client, "It declares everything.", [choices({ label: "Next topic →", next: true })]);
     tasks(client, { current: t1("waiting") });
-    const next = () => screen.getByRole("button", { name: "Next topic →" }) as HTMLButtonElement;
+    const next = () => screen.getByRole("radio", { name: "Next topic →" }) as HTMLButtonElement;
     fireEvent.click(next());
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Not now" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(next().disabled).toBe(false);
-    expect(next().getAttribute("aria-pressed")).toBe("false");
+    expect(next().getAttribute("aria-checked")).toBe("false");
     fireEvent.click(next());
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Next topic →", next: true }]));
@@ -229,9 +229,9 @@ describe("flow mode", () => {
     answer(client, "It declares everything.", [choices({ label: "Done →", next: true })]);
     tasks(client, { current: t1("waiting") });
     client.chooseError = new Error("A turn is already running");
-    fireEvent.click(screen.getByRole("button", { name: "Done →" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Done →" }));
     await screen.findByRole("alert");
-    const done = screen.getByRole("button", { name: "Done →" }) as HTMLButtonElement;
+    const done = screen.getByRole("radio", { name: "Done →" }) as HTMLButtonElement;
     expect(done.disabled).toBe(false);
     client.chooseError = null;
     fireEvent.click(done);
@@ -246,7 +246,7 @@ describe("flow mode", () => {
     tasks(client, { current: t1("running") });
     answer(client, "It declares everything.", [choices({ label: "Go deeper", followUp: "Tell me more" })]);
     tasks(client, { current: t1("waiting") });
-    fireEvent.click(screen.getByRole("button", { name: "Go deeper" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Go deeper" }));
     await waitFor(() => expect(client.chosen).toHaveLength(1));
     act(() => client.emit({ type: "done", ok: false, error: { code: "agent-crashed" } }));
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
@@ -351,9 +351,9 @@ describe("choices of an earlier task", () => {
     await clickStart();
     await screen.findByText("Pick one.");
     await waitFor(() => expect(client.tasks.current?.id).toBe("t2"));
-    expect((screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
     tasks(client, { current: null });
-    expect((screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("send the task the block was shown for", async () => {
@@ -363,7 +363,7 @@ describe("choices of an earlier task", () => {
     render(<HarnessApp client={client} />);
     await clickStart();
     await screen.findByText("Pick one.");
-    const more = screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement;
+    const more = screen.getByRole("radio", { name: "Tell me more" }) as HTMLButtonElement;
     await waitFor(() => expect(more.disabled).toBe(false));
     fireEvent.click(more);
     await waitFor(() => expect(client.chosenTasks).toEqual(["t1"]));

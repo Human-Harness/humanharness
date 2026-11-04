@@ -127,21 +127,17 @@ describe("styles", () => {
   });
 
   it("draws the CTA's focus ring inside it, in its ink", () => {
-    expect(css).toMatch(/^\.hh-primary:focus-visible,\s*\.hh-cta:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--hh-cta-ink\)[^}]*outline-offset:\s*-\d/m);
-    expect(css).not.toMatch(/\.hh-start:focus-visible/);
+    expect(css).toMatch(/^\.hh-btn\[data-kind="primary"\]:focus-visible,\s*\.hh-btn\[data-kind="large"\]:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--hh-cta-ink\)[^}]*outline-offset:\s*-\d/m);
+    expect(css).not.toMatch(/\.hh-start\b[^-]/);
   });
 
   it("keeps the border of buttons that set their own on hover", () => {
-    const hover = (sel: string) => css.match(new RegExp(`^${sel}:hover:not\\(:disabled\\)[^{]*{[^}]*border-color:\\s*([^;}]+)`, "m"))?.[1].trim();
-    expect(hover("\\.hh-steps button")).toBe("transparent");
-    expect(hover('\\.hh-steps button\\[aria-current="step"\\]')).toBe("var(--hh-line)");
-    expect(hover("\\.hh-choice\\.next")).toBe("var(--hh-ink)");
-    expect(css).toMatch(/\.hh-choice\[aria-pressed="true"\]:hover:not\(:disabled\)\s*{[^}]*border-color:\s*var\(--hh-ink\)/);
-    expect(hover('\\.hh-pl-tab\\[aria-selected="true"\\]')).toBe("var(--hh-ink)");
+    expect(css).toMatch(/\.hh-option-item\[data-recommended="true"\]:hover:not\(:disabled\)\s*{[^}]*border-color:\s*var\(--hh-cta\)/);
+    expect(css).toMatch(/\.hh-option-item\[aria-checked="true"\]:hover:not\(:disabled\)\s*{[^}]*border-color:\s*var\(--hh-ink\)/);
   });
 
   it("has the soft-cards controls: amber CTA, tags by meaning, no chamfer (spec §3.2–3.3)", () => {
-    expect(css).toMatch(/^\.hh-primary,\s*\.hh-cta\s*{[^}]*background:\s*var\(--hh-cta\)[^}]*color:\s*var\(--hh-cta-ink\)/m);
+    expect(css).toMatch(/^\.hh-btn\[data-kind="primary"\],\s*\.hh-btn\[data-kind="large"\]\s*{[^}]*background:\s*var\(--hh-cta\)[^}]*color:\s*var\(--hh-cta-ink\)/m);
     expect(css).not.toMatch(/clip-path:\s*polygon/);
     for (const t of ["green", "orange", "blue", "violet", "red"])
       expect(css).toMatch(new RegExp(`^\\.hh-tag-${t}\\s*{\\s*background:\\s*var\\(--hh-t-${t}\\);\\s*color:\\s*var\\(--hh-t-${t}-ink\\)`, "m"));
@@ -156,12 +152,12 @@ describe("start view in the chat column", () => {
     // window, ~310 px at the 900 px minimum.
     expect(css).toMatch(/^\.hh-chat\s*{[^}]*container:\s*hh-chat\s*\/\s*inline-size/m);
     expect(css).toMatch(/^\.hh-chat\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/m);
-    expect(css).toMatch(/^\.hh-topics\s*{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(200px,\s*100%\),\s*1fr\)\)/m);
-    expect(css).toMatch(/^\.hh-topic-head\s*{[^}]*flex-wrap:\s*wrap/m);
+    expect(css).toMatch(/^\.hh-tile-grid\s*{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(200px,\s*100%\),\s*1fr\)\)/m);
+    expect(css).toMatch(/^\.hh-tile-head\s*{[^}]*flex-wrap:\s*wrap/m);
     const narrow = css.match(/@container hh-chat \(max-width:\s*(\d+)px\)\s*{([\s\S]*?)\n}/);
     expect(narrow).not.toBeNull();
     expect(Number(narrow![1])).toBeGreaterThanOrEqual(560);
-    expect(narrow![2]).toMatch(/\.hh-topics\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    expect(narrow![2]).toMatch(/\.hh-tile-grid\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
     expect(narrow![2]).toMatch(/\.hh-start-view\s*{[^}]*padding:/);
   });
 });
@@ -214,10 +210,10 @@ describe("control size tokens and top bar overrides", () => {
   });
 
   it("has rules for the top bar icon button and the language row label", () => {
-    expect(css).toMatch(/\.hh-topbar-icon\s*\{/);
+    expect(css).toMatch(/\.hh-icon-btn\[data-size="compact"\]\s*\{/);
     expect(css).toMatch(/\.hh-langrow-label\s*\{|\.hh-langrow-label::after\s*\{/);
     const tsx = readFileSync(resolve(__dirname, "../src/chrome.tsx"), "utf8");
-    expect(tsx).toMatch(/className="hh-topbar-icon"/);
+    expect(tsx).toMatch(/<IconButton[^>]*size="compact"/);
   });
 });
 

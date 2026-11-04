@@ -118,9 +118,10 @@ describe("task phases in the chat", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: /Session/ }))[0]);
     const picker = await screen.findByRole("dialog", { name: "How long?" });
     // The default ("No limit" here) comes first.
-    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["No limit", "15 min", "30 min", "Not now"]);
+    expect(within(picker).getAllByRole("radio").map((b) => b.textContent)).toEqual(["No limit", "15 min", "30 min"]);
+    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["Not now"]);
     expect(client.sent).toEqual([]);
-    fireEvent.click(within(picker).getByRole("button", { name: "30 min" }));
+    fireEvent.click(within(picker).getByRole("radio", { name: "30 min" }));
     await waitFor(() => expect(client.sentOptions.at(-1)).toMatchObject({ action: "session", timeBox: 30 }));
   });
 
@@ -129,7 +130,7 @@ describe("task phases in the chat", () => {
     client.sendError = new Error("boom");
     await open(client, null);
     fireEvent.click((await screen.findAllByRole("button", { name: /Session/ }))[0]);
-    fireEvent.click(within(await screen.findByRole("dialog", { name: "How long?" })).getByRole("button", { name: "30 min" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "How long?" })).getByRole("radio", { name: "30 min" }));
     client.sendError = null;
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(client.sentOptions).toHaveLength(2));

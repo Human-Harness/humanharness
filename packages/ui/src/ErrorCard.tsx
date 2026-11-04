@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { EngineError, EngineProblem, LimitWindow } from "./client";
 import { formatReset, resetWindow } from "./usage";
 import { shownLanguage } from "./language";
+import { Button } from "./guide/Button";
 
 /** A turn error, or "notice" for an engine whose setup isn't finished. */
 export type CardError = EngineError | { code: "notice"; detail?: string };
@@ -48,9 +49,9 @@ export function ErrorCard({
       </p>
       {reset && <p>{t("errors.resetsAt", { time: formatReset(reset.resetsAt, shownLanguage(i18n)) })}</p>}
       {onFix && FIXABLE.has(error.code) && (
-        <button className="hh-primary" onClick={onFix}>
+        <Button kind="primary" onClick={onFix}>
           {t(`errors.fix.${error.code}`, { engine })}
-        </button>
+        </Button>
       )}
       {onRetry && error.code !== "cancelled" && error.code !== "notice" && error.code !== "notice-required" && <button onClick={onRetry}>{t("errors.retry")}</button>}
     </div>

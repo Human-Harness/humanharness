@@ -2,7 +2,8 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEf
 import { useTranslation } from "react-i18next";
 import { PARALLEL_MAX } from "@humanharness/harness-sdk/parallel";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { Segmented, Tag, TopBar } from "./chrome";
+import { Tag, TopBar } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import { Icon } from "./guide/icons";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { ConnectionsTab } from "./connections/ConnectionsTab";
@@ -26,6 +27,10 @@ import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
+import { Button } from "./guide/Button";
+import { IconButton } from "./guide/IconButton";
+import { NavItem } from "./guide/NavItem";
+import { Toggle } from "./guide/Toggle";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 
@@ -183,9 +188,7 @@ export function SettingsPage({
     <main ref={pageRef} className="hh-settings-page" aria-labelledby={titleId}>
       <TopBar
         trailing={
-          <button ref={doneRef} className="hh-topbar-icon hh-settings-done" aria-label={t("settings.done")} title={t("settings.done")} disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close}>
-            <Icon name="back" size={18} />
-          </button>
+          <IconButton ref={doneRef} icon="back" label={t("settings.done")} size="compact" className="hh-settings-done" disabled={running !== null} aria-describedby={running ? runningId : undefined} onClick={close} />
         }
       />
       <div className="hh-settings-body">
@@ -193,21 +196,21 @@ export function SettingsPage({
           <h1 id={titleId}>{t("settings.title")}</h1>
           <div className="hh-settings-tabs" role="tablist" aria-label={t("settings.title")} aria-orientation="vertical">
             {tabs.map((id) => (
-              <button
+              <NavItem
                 key={id}
                 id={tabId(id)}
-                type="button"
                 role="tab"
-                className="hh-settings-navitem"
+                selected={tab === id}
+                current="page"
                 aria-selected={tab === id}
                 aria-controls={panelId}
                 tabIndex={tab === id ? 0 : -1}
+                trail={attention[id] ? <Tag tone="orange">{attention[id]}</Tag> : null}
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
                 {tabLabel(t, state, id, sidekickTab)}
-                {attention[id] ? <Tag tone="orange">{attention[id]}</Tag> : null}
-              </button>
+              </NavItem>
             ))}
           </div>
         </nav>
@@ -391,19 +394,14 @@ function GeneralTab({
           <Segmented label={t("settings.appearance")} value={state.config.appearance ?? "system"} onChange={(appearance) => void save({ appearance })} options={appearances} />
         </div>
         <div className="hh-row hh-row-wrap" data-setting="general.textSize">
-          <span className="hh-row-label" id={sizeId}>
-            {t("settings.textSize")}
-          </span>
-          <div className="hh-text-sizes" role="group" aria-labelledby={sizeId} aria-describedby={`${sizeId}-hint`}>
-            {TEXT_SIZE_KEYS.map((textSize) => (
-              <button key={textSize} type="button" aria-pressed={(state.config.textSize ?? "normal") === textSize} onClick={() => void save({ textSize })}>
-                <span className="hh-text-size-sample" style={{ fontSize: `${Math.round(15 * TEXT_SIZES[textSize])}px` }} aria-hidden="true">
-                  Aa
-                </span>
-                <span>{t(`settings.textSizes.${textSize}`)}</span>
-              </button>
-            ))}
-          </div>
+          <span className="hh-row-label">{t("settings.textSize")}</span>
+          <Segmented
+            label={t("settings.textSize")}
+            describedBy={`${sizeId}-hint`}
+            value={state.config.textSize ?? "normal"}
+            onChange={(textSize) => void save({ textSize })}
+            options={TEXT_SIZE_KEYS.map((textSize) => ({ value: textSize, label: t(`settings.textSizes.${textSize}`) }))}
+          />
           <p className="hh-caption hh-row-note" id={`${sizeId}-hint`}>
             {t("settings.textSizeHint", { mod: ZOOM_KEY })}
           </p>
@@ -448,9 +446,9 @@ function GeneralTab({
         <div className="hh-row">
           <span>{t("settings.madeBy", { author: state.harness.author })}</span>
           {state.harness.donate && (
-            <a className="hh-button" href={state.harness.donate} target="_blank" rel="noreferrer">
+            <Button href={state.harness.donate} target="_blank" rel="noreferrer">
               {t("settings.support")}
-            </a>
+            </Button>
           )}
         </div>
       </div>
@@ -519,9 +517,9 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
           </p>
         )}
         <div className="hh-row" data-setting="general.notifyWaiting">
-          <label>
-            <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => said(save({ notifyWaiting: e.target.checked }))} /> {t("parallel.notifyWaiting")}
-          </label>
+          <Toggle checked={info.notifyWaiting} onChange={(on) => said(save({ notifyWaiting: on }))}>
+            {t("parallel.notifyWaiting")}
+          </Toggle>
         </div>
       </div>
       </SettingsCard>
@@ -540,9 +538,9 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
       <h2>{t("setupFlow.notConfiguredTitle")}</h2>
       <p>{t("setupFlow.notConfiguredText")}</p>
       {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
-      <button className="hh-primary" onClick={() => onSetup()}>
+      <Button kind="primary" onClick={() => onSetup()}>
         {t("setupFlow.configure", { name })}
-      </button>
+      </Button>
     </div>
   );
 }

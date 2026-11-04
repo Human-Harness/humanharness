@@ -46,7 +46,7 @@ test("the context panel: what the task loaded and read, Add now, a pin and an ex
 
     // Finish the task as flow.spec.ts does (the choices came back under the Add now reply); its note is listed.
     await panel.getByRole("button", { name: "Close" }).click();
-    await page.getByRole("button", { name: "Seguir el recorrido →" }).last().click();
+    await page.getByRole("radio", { name: "Seguir el recorrido →" }).last().click();
     await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
 
     // The walk opens the next topic, which starts with the pin and the notes index; exclude the note.
@@ -79,7 +79,7 @@ test("D0: a task without pins or exclusions writes no context file", async () =>
     expect(fs.existsSync(path.join(s.folder, ".harness", "context"))).toBe(false);
 
     // Finished, with its note written and committed: still no context file.
-    await page.getByRole("button", { name: "Seguir el recorrido →" }).last().click();
+    await page.getByRole("radio", { name: "Seguir el recorrido →" }).last().click();
     await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
     expect(fs.existsSync(path.join(s.folder, ".harness", "context"))).toBe(false);
   } finally {

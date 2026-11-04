@@ -6,6 +6,7 @@ import type { LanguageControl } from "./language-control";
 import { LanguagePicker } from "./LanguagePicker";
 import { useDialogKeys } from "./focus";
 import { TranslateNotice } from "./TranslateNotice";
+import { Button } from "./guide/Button";
 
 /**
  * Picking a language (spec §3–§4): the picker, then, only for a language with no complete translation, the notice;
@@ -145,9 +146,9 @@ function RunProgress({ run, onCancel, onClose }: { run: LanguageRun; onCancel: (
           <button type="button" onClick={onCancel}>
             {t("language.cancel")}
           </button>
-          <button type="button" ref={close} className="hh-primary" onClick={onClose}>
+          <Button type="button" ref={close} kind="primary" onClick={onClose}>
             {t("language.close")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

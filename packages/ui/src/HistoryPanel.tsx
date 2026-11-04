@@ -20,10 +20,12 @@ import {
   UNDO_PREFIX,
   type UndoRefusal,
 } from "./client";
-import { Segmented, Tag } from "./chrome";
+import { Tag } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import { Icon } from "./guide/icons";
 import { Drawer } from "./Drawer";
 import { shownLanguage } from "./language";
+import { Button } from "./guide/Button";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
 export function entryLabel(message: string): { key: string; values?: Record<string, string> } | null {
@@ -417,16 +419,16 @@ export function HistoryPanel({
                                   {t(`history.change.${c.kind}`)}
                                 </span>
                                 {onOpenFile ? (
-                                  <button
+                                  <Button
                                     type="button"
-                                    className="hh-link hh-history-file-link"
+                                    kind="quiet" size="compact" className="hh-history-file-link"
                                     title={c.path}
                                     aria-label={t("history.openTimeline", { file: c.path })}
                                     aria-describedby={`${bodyId}-k${i}`}
                                     onClick={() => onOpenFile(c.path, c.kind)}
                                   >
                                     <code>{c.path}</code>
-                                  </button>
+                                  </Button>
                                 ) : (
                                   <code title={c.path}>{c.path}</code>
                                 )}

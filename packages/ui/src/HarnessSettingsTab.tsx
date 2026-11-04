@@ -1,7 +1,9 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import type { HarnessClient, SettingFieldView, SettingsResult, SettingsState, SettingsView } from "./client";
+import { Button } from "./guide/Button";
+import { Toggle } from "./guide/Toggle";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -149,9 +151,9 @@ export function HarnessSettingsTab({
       {advanced.length > 0 && (
         <>
           <div>
-            <button type="button" className="hh-link" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((o) => !o)}>
+            <Button type="button" kind="quiet" size="compact" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((o) => !o)}>
               {t("settings.harness.more")}
-            </button>
+            </Button>
           </div>
           {more && (
             <div id={moreId} className="hh-tab">
@@ -217,7 +219,7 @@ export function HarnessFieldRow({
       </select>
     );
   } else if (field.control === "toggle") {
-    control = <input id={id} type="checkbox" role="switch" checked={value === true} onChange={(e) => onSave(e.target.checked)} {...aria} />;
+    control = <Toggle id={id} checked={value === true} onChange={onSave} {...aria} />;
   } else {
     control = <DraftInput id={id} field={field} value={value} aria={aria} onSave={onSave} onDrop={onDrop} />;
   }

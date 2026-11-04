@@ -68,15 +68,15 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     // The task starts asking for a recommendation; the block draws it.
     await page.getByRole("button", { name: "Start Coach" }).click();
     await page.getByRole("button", { name: /Study/ }).first().click();
-    const recommend = page.getByRole("group", { name: "How do we work?" });
-    await expect(recommend.getByRole("button", { name: /Socratic/ })).toContainText("Recommended");
+    const recommend = page.getByRole("radiogroup", { name: "How do we work?" });
+    await expect(recommend.getByRole("radio", { name: /Socratic/ })).toContainText("Recommended");
     const bar = page.getByRole("group", { name: "Task mode" });
     await expect(bar).toContainText("No mode chosen yet");
     // The managed AGENTS.md section lists the block's tool (only a harness with modes has it).
     expect(agents()).toContain("show_recommend_mode");
 
     // The pick switches in the same session: a system line, the agent's answer in the new mode.
-    await recommend.getByRole("button", { name: /Socratic/ }).click();
+    await recommend.getByRole("radio", { name: /Socratic/ }).click();
     await expect(page.locator(".hh-message.system > .hh-mode-line")).toHaveText("Switched to Socratic");
     await expect(page.getByRole("main").getByText("¿Qué es una mitad?")).toBeVisible();
     await expect(bar).toContainText("Mode: Socratic");
@@ -103,7 +103,7 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
 
     // Worked examples asks for the deep tier; the task runs at standard: the question comes first.
     await bar.getByRole("button", { name: "Change mode" }).click();
-    await bar.getByRole("button", { name: "Worked examples" }).click();
+    await bar.getByRole("radio", { name: "Worked examples" }).click();
     const dialog = page.getByRole("alertdialog", { name: "Worked examples asks for more power" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Continue with the current model" }).click();

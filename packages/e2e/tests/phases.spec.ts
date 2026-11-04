@@ -53,7 +53,7 @@ test("a session moves through its parts: auto, a proposal, the time box's wrap-u
     await page.getByRole("button", { name: "Start Tutor" }).click();
     await page.getByRole("button", { name: /Session/ }).first().click();
     // The time box comes first (the stepper's time group shares the name, so the picker is the dialog).
-    await page.getByRole("dialog", { name: "How long?" }).getByRole("button", { name: "15 min" }).click();
+    await page.getByRole("dialog", { name: "How long?" }).getByRole("radio", { name: "15 min" }).click();
     const steps = page.getByRole("navigation", { name: "Task parts" });
     // The warm-up's auto: the app moved to the main block right after the first answer.
     await expect(page.getByText("— Main block —")).toBeVisible();

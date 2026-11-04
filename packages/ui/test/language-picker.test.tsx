@@ -6,10 +6,10 @@ import { LanguagePicker, readyLanguage } from "../src/LanguagePicker";
 import { renderIn } from "./render";
 
 const view: LanguageState = { language: "en", cached: [{ tag: "fr", complete: true }], missing: 0, canTranslate: true, run: null };
-const radioText = (r: HTMLElement) => r.closest("label")?.textContent ?? "";
+const radioText = (r: HTMLElement) => r.textContent ?? "";
 /** Whether a control can be used (not disabled). */
 const on = (el: HTMLElement) => !(el as HTMLInputElement | HTMLButtonElement).disabled;
-const checked = (el: HTMLElement) => (el as HTMLInputElement).checked;
+const checked = (el: HTMLElement) => el.getAttribute("aria-checked") === "true";
 
 afterEach(cleanup);
 
@@ -25,6 +25,18 @@ describe("LanguagePicker (spec §2, §3)", () => {
     expect(radioText(screen.getAllByRole("radio")[0])).toMatch(/^English/);
     fireEvent.click(screen.getByRole("button", { name: "Use" }));
     expect(onPick).toHaveBeenCalledWith("es");
+  });
+
+  it("moves between languages with the arrows and picks the one it lands on", async () => {
+    await renderIn("en", <LanguagePicker current="en" suggested="es" view={view} onPick={() => {}} onClose={() => {}} />);
+    const es = screen.getByRole("radio", { name: /Español/ });
+    es.focus();
+    const radios = screen.getAllByRole("radio");
+    const next = radios[(radios.indexOf(es) + 1) % radios.length];
+    fireEvent.keyDown(es, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(next);
+    expect(checked(next)).toBe(true);
+    expect(checked(es)).toBe(false);
   });
 
   it("filters by search; without an engine only English and complete languages can be picked, and it says why", async () => {
@@ -60,8 +72,8 @@ describe("LanguagePicker (spec §2, §3)", () => {
 
   it("canonicalizes the saved, cached and suggested tags (pt-br is pt-BR)", async () => {
     await renderIn("en", <LanguagePicker current="en" suggested="pt-br" view={{ ...view, cached: [{ tag: "PT-br", complete: true }] }} onPick={() => {}} onClose={() => {}} />);
-    const pt = screen.getAllByRole("radio").filter((r) => (r as HTMLInputElement).value.toLowerCase() === "pt-br");
-    expect(pt.map((r) => (r as HTMLInputElement).value)).toEqual(["pt-BR"]);
+    const pt = screen.getAllByRole("radio").filter((r) => (r as HTMLButtonElement).value.toLowerCase() === "pt-br");
+    expect(pt.map((r) => (r as HTMLButtonElement).value)).toEqual(["pt-BR"]);
     expect(checked(pt[0])).toBe(true);
     expect(radioText(pt[0])).toMatch(/Ready/);
     expect(readyLanguage(view, "en-GB")).toBe(true);
@@ -99,7 +111,7 @@ describe("LanguagePicker (spec §2, §3)", () => {
 
   it("marks each English name as English text, and says when no language matches the search", async () => {
     await renderIn("en", <LanguagePicker current="en" view={view} onPick={() => {}} onClose={() => {}} />);
-    const english = screen.getByRole("radio", { name: /Español/ }).closest("label")!.querySelector(".hh-langpick-english")!;
+    const english = screen.getByRole("radio", { name: /Español/ }).querySelector(".hh-option-desc > [lang]")!;
     expect(english.getAttribute("lang")).toBe("en");
     expect(screen.queryByText("No language matches.")).toBeNull();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "zzzz" } });

@@ -132,9 +132,9 @@ describe("SearchPalette (§5)", () => {
 
   it("the scopes and reference folders toggles ask again", async () => {
     const { client, dialog } = await show({ scopesPlural: "topics" });
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "All topics" }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: "All topics" }));
     await waitFor(() => expect(client.searchCalls.at(-1)?.filters).toEqual({ allScopes: true }));
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Reference folders" }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: "Reference folders" }));
     await waitFor(() => expect(client.searchCalls.at(-1)?.filters).toEqual({ allScopes: true, references: false }));
   });
 

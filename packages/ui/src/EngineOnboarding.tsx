@@ -1,6 +1,8 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupResult, type SetupStep, type TestResult, engineProblem } from "./client";
+import { Button } from "./guide/Button";
+import { Checkbox } from "./guide/Checkbox";
 
 type Busy = null | "notice" | "test" | SetupStep;
 
@@ -291,13 +293,13 @@ export function EngineOnboarding({
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
         </p>
         <label>
-          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> <span lang={legalLang}>{t("legal.engine.accept")}</span>
+          <Checkbox purpose="accept" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> <span lang={legalLang}>{t("legal.engine.accept")}</span>
         </label>
         {/* After the accept text, so the line covers every legal block of the notice. */}
         <LegalInEnglish />
-        <button className="hh-primary" disabled={!accepted || busy !== null} onClick={() => void accept()}>
+        <Button kind="primary" disabled={!accepted || busy !== null} onClick={() => void accept()}>
           {t("engine.continue")}
-        </button>
+        </Button>
       </>
     );
   } else if (problem === "not-installed") {
@@ -318,9 +320,9 @@ export function EngineOnboarding({
             {busy === "install" ? (
               <p role="status">{t("engine.installing")}</p>
             ) : (
-              <button className={failed ? undefined : "hh-primary"} disabled={busy !== null} onClick={() => void runStep("install")}>
+              <Button kind={failed ? "secondary" : "primary"} disabled={busy !== null} onClick={() => void runStep("install")}>
                 {failed ? t("engine.retry") : t("engine.installRun")}
-              </button>
+              </Button>
             )}
             {!failed && manualInstall}
           </>
@@ -342,9 +344,9 @@ export function EngineOnboarding({
         {busy === "update" ? (
           <p role="status">{t("engine.updating")}</p>
         ) : (
-          <button className="hh-primary" disabled={busy !== null} onClick={() => void runStep("update")}>
+          <Button kind="primary" disabled={busy !== null} onClick={() => void runStep("update")}>
             {failed ? t("engine.retry") : t("engine.updateRun")}
-          </button>
+          </Button>
         )}
         {engine.installDocsUrl && <p>{link(engine.installDocsUrl, t("engine.installDocs"))}</p>}
       </>
@@ -362,9 +364,9 @@ export function EngineOnboarding({
           <li>{t("engine.providerStep3")}</li>
         </ol>
         <p>
-          <button className="hh-primary" onClick={() => void copySetup("login")}>
+          <Button kind="primary" onClick={() => void copySetup("login")}>
             {t("engine.copyCommand")}
-          </button>{" "}
+          </Button>{" "}
           <button onClick={() => void client.openTerminal().catch(() => {})}>{t("engine.openTerminal")}</button>{" "}
           <button disabled={busy !== null || rechecking} onClick={() => void recheck()}>
             {t("engine.providerRecheck")}
@@ -395,9 +397,9 @@ export function EngineOnboarding({
         {busy === "login" ? (
           loginProgress
         ) : (
-          <button className="hh-primary" disabled={busy !== null} onClick={() => void runStep("login")}>
+          <Button kind="primary" disabled={busy !== null} onClick={() => void runStep("login")}>
             {failed ? t("engine.retry") : t("engine.loginRun")}
-          </button>
+          </Button>
         )}
       </>
     );
@@ -409,9 +411,9 @@ export function EngineOnboarding({
           loginProgress
         ) : failed && busy === null ? (
           <>
-            <button className="hh-primary" onClick={() => void runTest()}>
+            <Button kind="primary" onClick={() => void runTest()}>
               {t("engine.retry")}
-            </button>
+            </Button>
             {/* The CLI can't say whether it is signed in: signing in again may be the fix. */}
             {failed === "step" &&
               (status.loggedIn === null || testError?.code === "session-expired") &&
@@ -463,9 +465,9 @@ export function EngineOnboarding({
           {reset === "confirm" && (
             <div role="group" aria-label={t("engine.sharedConfigReset")}>
               <p>{t("engine.sharedConfigConfirm")}</p>
-              <button className="hh-primary" onClick={() => void resetShared()}>
+              <Button kind="primary" onClick={() => void resetShared()}>
                 {t("engine.sharedConfigConfirmYes")}
-              </button>{" "}
+              </Button>{" "}
               <button onClick={() => setReset(null)}>{t("engine.cancel")}</button>
             </div>
           )}

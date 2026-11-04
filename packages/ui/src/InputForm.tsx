@@ -4,6 +4,8 @@ import { Icon } from "./guide/icons";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
 import { type Draft, answerRows, draftOf, draftValue, emptyDraft, isSkipped, optionLabel, optionsOf } from "./input";
 import { ReviewHint } from "./sidekick/ReviewHint";
+import { Button } from "./guide/Button";
+import { Toggle } from "./guide/Toggle";
 
 /** Drafts by block id: they survive the chat being drawn again (Home, Settings), not a restart (spec §11.2). */
 const drafts = new Map<string, Draft>();
@@ -188,9 +190,9 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
       {!formId && (
         <div className="hh-input-actions">
           {/* Reviewing keeps the button (and focus) in place: aria-disabled, never disabled. */}
-          <button type="submit" className="hh-primary" disabled={disabled || sending || unsupported} {...(reviewing ? { "aria-disabled": true } : {})}>
+          <Button type="submit" kind="primary" disabled={disabled || sending || unsupported} {...(reviewing ? { "aria-disabled": true } : {})}>
             {reviewing ? t("sidekick.composer.reviewing") : sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
-          </button>
+          </Button>
           {reviewing && (
             <button type="button" onClick={sendNow}>
               {t("sidekick.answer.sendNow")}
@@ -198,9 +200,9 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
           )}
           {reviewing && reviewWait !== undefined && <ReviewHint until={reviewing.until} />}
           {skip && (
-            <button
+            <Button
               type="button"
-              className="hh-link"
+              kind="quiet" size="compact"
               disabled={disabled || sending}
               onClick={() => {
                 if (running.current) stopReview();
@@ -213,7 +215,7 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
               }}
             >
               {t("input.skip")}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -252,10 +254,9 @@ function Field({
   if (field.kind === "boolean") {
     return (
       <div className="hh-field">
-        <label className="hh-option">
-          <input id={id} type="checkbox" checked={value === true} disabled={disabled} onChange={(e) => onChange(e.target.checked)} {...invalid} />
+        <Toggle id={id} checked={value === true} disabled={disabled} onChange={onChange} {...invalid}>
           {label}
-        </label>
+        </Toggle>
         {errorLine}
       </div>
     );
@@ -287,17 +288,16 @@ function Field({
           {optional}
         </legend>
         {options.map((o) => (
-          <label key={o} className="hh-option">
-            <input
-              type="checkbox"
-              checked={picked.includes(o)}
-              disabled={disabled}
-              // In the options' order, whatever the order of the clicks.
-              onChange={(e) => onChange(options.filter((x) => (x === o ? e.target.checked : picked.includes(x))))}
-              {...invalid}
-            />
+          <Toggle
+            key={o}
+            checked={picked.includes(o)}
+            disabled={disabled}
+            // In the options' order, whatever the order of the clicks.
+            onChange={(on) => onChange(options.filter((x) => (x === o ? on : picked.includes(x))))}
+            {...invalid}
+          >
             {optionLabel(field, o)}
-          </label>
+          </Toggle>
         ))}
         {errorLine}
       </fieldset>

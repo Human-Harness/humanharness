@@ -51,9 +51,9 @@ describe("Settings › Sidekicks (spec §8)", () => {
     expect(within(group).getByRole("button", { name: "guardian" }).getAttribute("aria-pressed")).toBe("true");
     expect(within(group).getByRole("button", { name: "coach" }).getAttribute("aria-pressed")).toBe("false");
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Docs" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Custom" }));
     fireEvent.change(screen.getByRole("textbox", { name: "What it watches for" }), { target: { value: "Docs stay in sync." } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "After the reply" }));
+    fireEvent.click(screen.getByRole("switch", { name: "After the reply" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["saveSidekick", expect.objectContaining({ name: "Docs", mark: "guardian" }), undefined]));
   });
@@ -65,12 +65,12 @@ describe("Settings › Sidekicks (spec §8)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "New sidekick" }));
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Docs" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Custom" }));
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
     fireEvent.change(screen.getByRole("textbox", { name: "What it watches for" }), { target: { value: "Docs stay in sync." } });
     expect(save.disabled).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox", { name: "After the reply" }));
+    fireEvent.click(screen.getByRole("switch", { name: "After the reply" }));
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
     await waitFor(() =>
@@ -87,9 +87,9 @@ describe("Settings › Sidekicks (spec §8)", () => {
     await renderIn("en", <SidekickList client={c} places={[{ id: "terminal", label: "Terminal" }]} />);
     fireEvent.click(await screen.findByRole("button", { name: "New sidekick" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Watch" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Custom" }));
     fireEvent.change(screen.getByRole("textbox", { name: "What it watches for" }), { target: { value: "Errors." } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Terminal" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Terminal" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["saveSidekick", expect.objectContaining({ purposes: [{ id: "custom", text: "Errors.", moments: ["place:terminal"] }] }), undefined]));
   });
@@ -101,7 +101,7 @@ describe("Settings › Sidekicks (spec §8)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Edit Rulo" }));
     const name = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
     expect(name.value).toBe("Rulo");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Focus" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(c.sidekickCalls).toContainEqual([
@@ -130,7 +130,7 @@ describe("Settings › Sidekicks (spec §8)", () => {
     await renderIn("en", <SidekickList client={c} />);
     fireEvent.click(await screen.findByRole("button", { name: "New sidekick" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Docs" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Mentor" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Mentor" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect((await screen.findByRole("alert")).textContent).toContain("At most 20 sidekicks");
     expect(screen.getByRole("textbox", { name: "Name" })).toBeTruthy();
@@ -217,7 +217,7 @@ describe("Settings › Sidekicks: guards", () => {
     expect(c.sidekickCalls.filter((x) => x[0] === "remove")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "New sidekick" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Docs" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Mentor" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Mentor" }));
     const save = screen.getByRole("button", { name: "Save" });
     fireEvent.click(save);
     fireEvent.click(save);
@@ -245,7 +245,7 @@ describe("Settings › Sidekicks: guards", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Edit Docs" }));
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Daily" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Daily" }));
     expect(save.disabled).toBe(false);
     cleanup();
     const d = new FakeClient({ language: "en" });
@@ -258,7 +258,7 @@ describe("Settings › Sidekicks: guards", () => {
     const big = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(big.disabled).toBe(true);
     expect(screen.getByText("Choose at most 6 purposes to save.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Focus" }));
     expect(big.disabled).toBe(false);
     expect(screen.queryByText("Choose at most 6 purposes to save.")).toBeNull();
   });

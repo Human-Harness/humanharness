@@ -70,6 +70,8 @@ import { initialChat, isToolLine, reduceChat } from "./state";
 import { TaskHeader } from "./TaskHeader";
 import { UsageMeter } from "./UsageMeter";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
+import { Button } from "./guide/Button";
+import { Option, OptionGroup } from "./guide/Option";
 
 /** How close to the bottom (px) the user must be for new content to keep the chat pinned. */
 const STICK_THRESHOLD = 80;
@@ -581,13 +583,13 @@ export function ChatView({
   useEffect(() => {
     if (!askingMode) return;
     askRef.current?.scrollIntoView?.({ block: "nearest" });
-    askRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+    askRef.current?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus();
   }, [askingMode]);
   const askingTime = timePick !== null;
   useEffect(() => {
     if (!askingTime) return;
     timeRef.current?.scrollIntoView?.({ block: "nearest" });
-    timeRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+    timeRef.current?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus();
   }, [askingTime]);
 
   // The answer appears at a steady pace, word by word and block by block: the turn running now, then its entry
@@ -1738,9 +1740,9 @@ export function ChatView({
               )}
               {slim && slimStart && (
                 <div className="hh-slim-start">
-                  <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
+                  <Button type="button" kind="primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
                     {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
-                  </button>
+                  </Button>
                 </div>
               )}
               {flow && !slim && since !== null && !tasks.current && !chat.live && (
@@ -1818,8 +1820,8 @@ export function ChatView({
                     <strong className="hh-warn">{t("preflight.title")}</strong>
                   </p>
                   <p id="hh-preflight-text">{preflightText}</p>
-                  <button
-                    className="hh-primary"
+                  <Button
+                    kind="primary"
                     onClick={() => {
                       const p = pending;
                       setPending(null);
@@ -1828,7 +1830,7 @@ export function ChatView({
                     }}
                   >
                     {t("preflight.continue")}
-                  </button>
+                  </Button>
                   <button ref={notNowRef} onClick={closePreflight}>
                     {t("preflight.notNow")}
                   </button>
@@ -1853,9 +1855,9 @@ export function ChatView({
                   <p id="hh-tier-text">
                     {t("modes.tierText", { required: t(`models.tier.${tierAsk.required}`), current: t(`models.tier.${tierAsk.current}`) })}
                   </p>
-                  <button className="hh-primary" onClick={() => answerTier("continue")}>
+                  <Button kind="primary" onClick={() => answerTier("continue")}>
                     {t("modes.keepTier")}
-                  </button>
+                  </Button>
                   <button onClick={() => answerTier("new-task")}>{t("modes.newTask", { mode: modeLabel(tierAsk.mode) })}</button>
                   <button ref={tierNotNowRef} onClick={() => answerTier()}>
                     {t("modes.notNow")}
@@ -1877,12 +1879,12 @@ export function ChatView({
                   <p id="hh-time-title">
                     <strong>{t("phases.timeTitle")}</strong>
                   </p>
-                  <div className="hh-mode-list" role="group" aria-labelledby="hh-time-title">
+                  <OptionGroup labelledBy="hh-time-title">
                     {timeChoices(timePick.options.action).map((m) => (
-                      <button
+                      <Option
                         key={m ?? "none"}
-                        type="button"
-                        className="hh-choice"
+                        checked={false}
+                        title={m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
                         onClick={() => {
                           const p = timePick;
                           setTimePick(null);
@@ -1891,11 +1893,9 @@ export function ChatView({
                           inputRef.current?.focus();
                           send(p.text, { ...p.options, timeBox: m });
                         }}
-                      >
-                        {m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
-                      </button>
+                      />
                     ))}
-                  </div>
+                  </OptionGroup>
                   <button onClick={closeTime}>{t("modes.notNow")}</button>
                 </div>
               )}
@@ -2009,9 +2009,9 @@ export function ChatView({
                       </button>
                     )}
                     <span className="hh-caption hh-composer-send-hint">{t("chat.enterToSend")}</span>
-                    <button type="submit" className="hh-cta">
+                    <Button type="submit" kind="primary">
                       {t("chat.send")}
-                    </button>
+                    </Button>
                   </>
                 )}
               </form>

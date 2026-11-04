@@ -78,7 +78,7 @@ describe("a notice in a task's chat (parallel spec §5.3)", () => {
     render(<HarnessApp client={client} />);
     await clickStart();
     await screen.findByText("Pick one.");
-    const more = screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement;
+    const more = screen.getByRole("radio", { name: "Tell me more" }) as HTMLButtonElement;
     await waitFor(() => expect(more.disabled).toBe(false));
     fireEvent.click(more);
     await waitFor(() => expect(client.chosenTasks).toEqual(["t1"]));

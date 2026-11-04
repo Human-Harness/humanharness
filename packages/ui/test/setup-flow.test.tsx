@@ -26,6 +26,7 @@ const next = () => screen.getByRole("button", { name: "Next" }) as HTMLButtonEle
 // The step's buttons: a bar at the bottom of the body column, not the app footer.
 const actions = () => document.querySelector(".hh-setup-actions") as HTMLElement;
 const steps = () => within(screen.getByRole("list", { name: "Steps" })).getAllByRole("listitem");
+const currentOf = (item: Element) => item.querySelector(".hh-nav-item")?.getAttribute("aria-current");
 
 describe("SetupFlow", () => {
   it("walks a fresh app from the folder to the engine to All set, then starts", async () => {
@@ -35,7 +36,7 @@ describe("SetupFlow", () => {
     expect(screen.getByRole("banner").textContent).toContain("Set up Demo");
     const folderHeading = screen.getByRole("heading", { name: "Where should we keep your work?" });
     expect(document.activeElement).toBe(folderHeading);
-    expect(steps()[0].getAttribute("aria-current")).toBe("step");
+    expect(currentOf(steps()[0])).toBe("step");
     expect(screen.queryByText(/works with an AI plan you already have, using your own account\. The app/)).toBeNull();
     // Next sits in the bar under the step next to Cancel, as on the engine step; the folder step has no button of its own.
     const footer = actions();
@@ -47,7 +48,7 @@ describe("SetupFlow", () => {
     expect(client.state.config).toEqual({ language: systemLanguage(), folder: "/Users/me/Documents/Demo" });
     expect(document.activeElement).toBe(engineHeading);
     expect(steps()[0].querySelector("svg")).toBeTruthy();
-    expect(steps()[1].getAttribute("aria-current")).toBe("step");
+    expect(currentOf(steps()[1])).toBe("step");
     // Settings' own "Use Claude" isn't shown: Next does that.
     expect(screen.queryByRole("button", { name: "Use Claude" })).toBeNull();
 
@@ -64,7 +65,7 @@ describe("SetupFlow", () => {
     expect(screen.getByText("Claude")).toBeTruthy();
     expect(screen.getByText("You can change all of this whenever you like in Settings.")).toBeTruthy();
     const start = screen.getByRole("button", { name: "Start Demo" });
-    expect(start.className).toBe("hh-primary hh-start");
+    expect(start.getAttribute("data-kind")).toBe("large");
     fireEvent.click(start);
     expect(onStart).toHaveBeenCalledOnce();
   });
@@ -222,7 +223,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     const form = await screen.findByRole("heading", { name: "How the AI talks" });
     expect(document.activeElement).toBe(form);
     expect(screen.getByText("Pick how it sounds.")).toBeTruthy();
-    expect(steps()[2].getAttribute("aria-current")).toBe("step");
+    expect(currentOf(steps()[2])).toBe("step");
     // The form starts from the saved values, and the option labels show.
     expect(((await screen.findByRole("radio", { name: "Patient" })) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "Demanding" }));
@@ -396,7 +397,7 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(within(nav).getByText("Step 2 of 2")).toBeTruthy();
     expect(within(nav).getAllByText(/^Step \d of \d$/)).toHaveLength(1);
     const items = within(nav).getAllByRole("listitem");
-    expect(items[1].getAttribute("aria-current")).toBe("step");
+    expect(currentOf(items[1])).toBe("step");
     expect(items[1].textContent).toContain("Step 2 of 2");
   });
 
@@ -471,7 +472,7 @@ describe("the setup frame and engine tiles (UI refresh spec §5.6)", () => {
     expect(within(footer).getByRole("button", { name: "Back" })).toBeTruthy();
     // A step with Back still leaves setup: Cancel stays first, at the far left.
     expect(footer.firstElementChild).toBe(within(footer).getByRole("button", { name: "Cancel setup" }));
-    expect(within(footer).getByRole("button", { name: "Next" }).className).toContain("hh-primary");
+    expect(within(footer).getByRole("button", { name: "Next" }).getAttribute("data-kind")).toBe("primary");
   });
 });
 
@@ -481,7 +482,7 @@ describe("SetupFlow settings gear", () => {
     const client = new FakeClient();
     await renderIn("en", <SetupFlow client={client} state={client.state} onChange={() => {}} onCancel={() => {}} onStart={() => {}} onSettings={onSettings} />);
     const gear = await screen.findByRole("button", { name: "Settings" });
-    expect(gear.className).toContain("hh-topbar-icon");
+    expect(gear.getAttribute("data-size")).toBe("compact");
     expect(gear.closest(".hh-topbar")).toBeTruthy();
     fireEvent.click(gear);
     expect(onSettings).toHaveBeenCalledTimes(1);

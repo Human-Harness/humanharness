@@ -5,6 +5,7 @@ import type { AppState, HarnessClient } from "../client";
 import { trapTab } from "../focus";
 import { EngineConfig } from "./EngineConfig";
 import { LinkedFolders } from "./LinkedFolders";
+import { Button } from "../guide/Button";
 
 /**
  * A scope's settings (hatches spec §3.2), opened from the scope picker: its linked folders and, with `enginePresets`,
@@ -70,9 +71,9 @@ export function ScopeSettings({
       <div ref={sheetRef} className="hh-scope-dialog hh-scope-settings" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="hh-scope-dialog-head">
           <h2 id={titleId}>{t("hatches.scopeSettings", { scope: title })}</h2>
-          <button ref={doneRef} className="hh-primary" onClick={onClose}>
+          <Button ref={doneRef} kind="primary" onClick={onClose}>
             {t("settings.done")}
-          </button>
+          </Button>
         </div>
         {linked && <LinkedFolders client={client} scope={scope} declared={linked} scopeLabel={state.scopes?.label ?? ""} />}
         {state.hatches?.enginePresets && (

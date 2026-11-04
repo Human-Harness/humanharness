@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "./guide/icons";
 import type { RailEntry } from "./shell-nav";
+import { IconButton } from "./guide/IconButton";
 
 export function MockBadge() {
   const { t } = useTranslation();
@@ -91,37 +92,6 @@ export function AppFooter({ folder, mock }: { folder?: string | undefined; mock?
   );
 }
 
-export interface SegmentOption<T extends string> {
-  value: T;
-  label: string;
-}
-
-/** macOS-style segmented control: one choice among a few. */
-export function Segmented<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-  describedBy,
-}: {
-  label: string;
-  options: SegmentOption<T>[];
-  value: T;
-  onChange: (value: T) => void;
-  /** Ids of the texts that describe the group (help, an error). */
-  describedBy?: string;
-}) {
-  return (
-    <div className="hh-segmented" role="group" aria-label={label} aria-describedby={describedBy}>
-      {options.map((o) => (
-        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** The task header's Sidekick pill (sidekick spec §7, UI refresh spec §5.1): a state dot, green when on. */
 export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   const { t } = useTranslation();
@@ -172,9 +142,7 @@ export function HHLogo({ className = "", title }: { className?: string; title?: 
 export function SettingsGear({ onClick }: { onClick: () => void }) {
   const { t } = useTranslation();
   return (
-    <button type="button" className="hh-topbar-icon" aria-label={t("home.settings")} title={t("home.settings")} onClick={onClick}>
-      <Icon name="settings" size={18} />
-    </button>
+    <IconButton icon="settings" label={t("home.settings")} size="compact" onClick={onClick} />
   );
 }
 
@@ -192,9 +160,7 @@ const RAIL_ICONS: Record<RailEntry, IconName> = {
 export function Rail({ entries, current, onPick }: { entries: RailEntry[]; current: RailEntry; onPick: (e: RailEntry) => void }) {
   const { t } = useTranslation();
   const button = (e: RailEntry) => (
-    <button key={e} className="hh-icon-button" aria-label={t(`rail.${e}`)} title={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
-      <Icon name={RAIL_ICONS[e]} size={18} />
-    </button>
+    <IconButton key={e} icon={RAIL_ICONS[e]} label={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)} />
   );
   return (
     <nav className="hh-rail" aria-label={t("rail.label")}>

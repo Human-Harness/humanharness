@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { PluginLine, PluginReview } from "../client";
+import { Button } from "../guide/Button";
 
 /** Plugin text: plain, and isolated so a right-to-left or mixed string can't reorder what is around it (B12). */
 export function Plain({ children }: { children: string }) {
@@ -151,9 +152,9 @@ export function PermissionReview({
         </p>
       )}
       <div className="hh-pl-actions">
-        <button type="button" className="hh-primary" aria-disabled={busy} onClick={() => !busy && onTurnOn()}>
+        <Button type="button" kind="primary" aria-disabled={busy} onClick={() => !busy && onTurnOn()}>
           {t("plugins.review.turnOn")}
-        </button>
+        </Button>
         {/* Not while Turn on is in flight: it could still end with the plugin on. */}
         <button type="button" aria-disabled={busy} onClick={() => !busy && onCancel()}>
           {t("plugins.review.cancel")}

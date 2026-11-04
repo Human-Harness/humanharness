@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HHLogo, Rail, Segmented, Tag, TopBar } from "../src/chrome";
+import { HHLogo, Rail, Tag, TopBar } from "../src/chrome";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -48,15 +48,6 @@ describe("chrome", () => {
     expect(controls.getAttribute("dir")).toBe("auto");
     // The separators stay outside the isolation: every crumb is its own island.
     for (const sep of nav.querySelectorAll(".hh-crumb-sep")) expect(sep.getAttribute("dir")).toBeNull();
-  });
-
-  it("Segmented marks the chosen option and reports changes", () => {
-    const onChange = vi.fn();
-    render(<Segmented label="Appearance" value="system" onChange={onChange} options={[{ value: "system", label: "Automatic" }, { value: "dark", label: "Dark" }]} />);
-    expect(screen.getByRole("group", { name: "Appearance" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Automatic" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
-    expect(onChange).toHaveBeenCalledWith("dark");
   });
 
   it("HHLogo is decorative unless it gets a title", () => {

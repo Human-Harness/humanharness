@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, FolderProblem, HarnessClient } from "./client";
 import { systemLanguage } from "./language";
+import { Option, OptionGroup } from "./guide/Option";
 
 /**
  * The setup flow's folder step (spec §7: chosen once, then fixed). Saves the language with it. It shows no save
@@ -16,7 +17,6 @@ export function FolderStep({ client, state, onSaved, formId }: { client: Harness
   const [folder, setFolder] = useState(state.config.folder ?? locations[0]?.suggested ?? state.suggestedFolder);
   const [problem, setProblem] = useState<FolderProblem | null>(null);
   const [saveError, setSaveError] = useState(false);
-  const placesId = useId();
   const choose = (next: string) => {
     setFolder(next);
     setProblem(null);
@@ -50,31 +50,20 @@ export function FolderStep({ client, state, onSaved, formId }: { client: Harness
       <p className="hh-caption">{t("setup.folderHint")}</p>
       {locations.length > 0 && (
         <>
-          <div className="hh-places" role="radiogroup" aria-label={t("backup.placesLabel")}>
-            {locations.map((l, i) => (
-              <label key={l.path} className="hh-place">
-                <input
-                  type="radio"
-                  name={`${placesId}-place`}
-                  checked={folder === l.suggested}
-                  onChange={() => choose(l.suggested)}
-                  aria-labelledby={`${placesId}-${i}-name`}
-                  aria-describedby={l.account ? `${placesId}-${i}-account` : undefined}
-                />
-                <span id={`${placesId}-${i}-name`}>{t("backup.saveIn", { provider: t(`backup.provider.${l.provider}`) })}</span>
-                {/* Two accounts of one provider would read the same: the account tells them apart. */}
-                {l.account && (
-                  <span className="hh-caption" id={`${placesId}-${i}-account`}>
-                    {l.account}
-                  </span>
-                )}
-              </label>
+          <OptionGroup followFocus label={t("backup.placesLabel")}>
+            {locations.map((l) => (
+              <Option
+                key={l.path}
+                nameOnly
+                checked={folder === l.suggested}
+                onClick={() => choose(l.suggested)}
+                title={t("backup.saveIn", { provider: t(`backup.provider.${l.provider}`) })}
+                // Two accounts of one provider would read the same: the account tells them apart.
+                description={l.account || undefined}
+              />
             ))}
-            <label className="hh-place">
-              <input type="radio" name={`${placesId}-place`} checked={folder === state.suggestedFolder} onChange={() => choose(state.suggestedFolder)} />
-              <span>{t("backup.thisComputer")}</span>
-            </label>
-          </div>
+            <Option checked={folder === state.suggestedFolder} onClick={() => choose(state.suggestedFolder)} title={t("backup.thisComputer")} />
+          </OptionGroup>
           <p className="hh-caption">{t("backup.placesHint")}</p>
         </>
       )}

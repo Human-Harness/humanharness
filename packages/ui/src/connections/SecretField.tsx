@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tag } from "../chrome";
 import type { ConnectionResult, ConnectionView } from "../client";
+import { Button } from "../guide/Button";
 
 /**
  * One declared key (tools spec §9): its label, help and whether it is set, never its value. The typed value lives only
@@ -80,9 +81,9 @@ export function SecretField({
           aria-describedby={connection.help ? `${id}-state ${id}-help` : `${id}-state`}
           onChange={(e) => setValue(e.target.value)}
         />
-        <button type="submit" className={connection.set ? undefined : "hh-cta"} disabled={value.trim() === ""}>
+        <Button type="submit" kind={connection.set ? "secondary" : "primary"} disabled={value.trim() === ""}>
           {connection.set ? t("connections.replace") : t("connections.save")}
-        </button>
+        </Button>
         {connection.set && (
           // Delete goes away once the key is gone: focus moves to the field, not to the page.
           <button type="button" onClick={() => void onDelete().then((r) => r.ok && input.current?.focus())}>

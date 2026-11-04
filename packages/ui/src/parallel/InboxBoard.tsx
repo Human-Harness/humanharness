@@ -1,12 +1,14 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented, Tag, type TagTone } from "../chrome";
+import { Tag, type TagTone } from "../chrome";
+import { Segmented } from "../guide/Segmented";
 import { type AppState, type HarnessClient, type JobSummary, type TaskSummary, type TasksState, timeAgo } from "../client";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { boardColumns } from "./board";
 import { InboxList, JOB_STATUS, QueuePause, jobTime, startableAction, useScopeTitles, waitingCount } from "./Inbox";
 import { useJobs } from "./useJobs";
+import { Button } from "../guide/Button";
 
 const RESULT_TONE: Record<NonNullable<JobSummary["last"]>["status"], TagTone> = { ok: "green", "needs-you": "orange", failed: "red" };
 const TIER_TONE = { light: "green", standard: "blue", deep: "violet" } as const;
@@ -185,9 +187,9 @@ export function InboxBoard({
     const start = startableAction(state, j);
     const pill = start
       ? (
-          <button
+          <Button
             type="button"
-            className="hh-pill"
+            size="compact"
             aria-describedby={labelId}
             onClick={() => {
               setProblem(null);
@@ -196,19 +198,19 @@ export function InboxBoard({
             }}
           >
             {t("inbox.board.open")}
-          </button>
+          </Button>
         )
       : j.manual && !j.running && j.paused !== "off"
         ? (
-            <button type="button" className="hh-pill" aria-describedby={labelId} onClick={() => runNow(j, key)}>
+            <Button type="button" size="compact" aria-describedby={labelId} onClick={() => runNow(j, key)}>
               {t("parallel.runNow")}
-            </button>
+            </Button>
           )
         : j.paused && onJobSettings
           ? (
-              <button type="button" className="hh-pill" aria-describedby={labelId} onClick={onJobSettings}>
+              <Button type="button" size="compact" aria-describedby={labelId} onClick={onJobSettings}>
                 {t("parallel.resume")}
-              </button>
+              </Button>
             )
           : null;
     return (
@@ -263,9 +265,9 @@ export function InboxBoard({
           onChange={setView}
         />
         {onNewTask && (
-          <button type="button" className="hh-primary" onClick={onNewTask}>
+          <Button type="button" kind="primary" onClick={onNewTask}>
             {t("parallel.newTask")}
-          </button>
+          </Button>
         )}
       </header>
       {view === "list" ? (

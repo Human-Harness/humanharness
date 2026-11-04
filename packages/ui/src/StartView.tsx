@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented, Tag } from "./chrome";
+import { Tag } from "./chrome";
+import { Segmented } from "./guide/Segmented";
 import { Icon } from "./guide/icons";
+import { Tile, TileGrid } from "./guide/Tile";
 import { type AppState, type TaskView, nextInPath } from "./client";
 
 /** The start view's copy: keys of the harness's own strings (its `locales`). */
@@ -106,7 +108,7 @@ export function StartView({
       </div>
       <section className="hh-start-body" aria-labelledby="hh-start-title">
         {/* "Topics", not "Guided path": the flow side's list already has that name, and topics off the path show here too. */}
-        <ol aria-label={t("start.view.topics")} className={layout === "list" ? "hh-topics hh-topics-list" : "hh-topics"}>
+        <TileGrid label={t("start.view.topics")} layout={layout}>
           {ids.map((id, i) => {
             const action = state.actions[id];
             const status = tasks.actions[id];
@@ -114,19 +116,17 @@ export function StartView({
             const tier = action.tier;
             return (
               <li key={id}>
-                <button
-                  type="button"
-                  className={`hh-topic${status === "done" ? " done" : ""}${next ? " next hh-topic-next" : ""}`}
+                <Tile
+                  done={status === "done"}
+                  recommended={next}
                   disabled={disabled}
                   onClick={() => onStart(id)}
-                >
-                  <span className="hh-topic-head">
-                    <span className="hh-topic-num" aria-hidden="true">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <span className="hh-topic-title">{action.label}</span>{" "}
-                    {/* Only the tags that say what the topic already said are read: the rest is for the eye. */}
-                    <span className="hh-topic-tags">
+                  lead={<span aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>}
+                  title={action.label}
+                  description={action.description || undefined}
+                  /* Only the tags that say what the topic already said are read: the rest is for the eye. */
+                  tags={
+                    <>
                       {status === "done" ? (
                         <Tag tone="green">
                           <Icon name="check" size={14} />
@@ -151,14 +151,13 @@ export function StartView({
                           {t(`models.tier.${tier}`)}
                         </span>
                       )}
-                    </span>
-                  </span>
-                  {action.description && <span className="hh-topic-text">{action.description}</span>}
-                </button>
+                    </>
+                  }
+                />
               </li>
             );
           })}
-        </ol>
+        </TileGrid>
         {copy.faq && copy.faq.length > 0 && (
           <div className="hh-faq">
             <h3 className="hh-flow-heading">{t("start.view.askNow")}</h3>

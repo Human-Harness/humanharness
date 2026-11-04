@@ -25,7 +25,7 @@ test("a harness made with init builds with dev, opens, and runs its example task
     await page.getByRole("region", { name: "Where do we start?" }).getByRole("button", { name: /Example/ }).click();
     await expect(page.getByRole("main").getByText("Hola, este harness todavía se está armando.")).toBeVisible();
     await expect(page.getByRole("article", { name: "Idea" }).getByText("Una idea")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Profundizar" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Profundizar" })).toBeVisible();
   } finally {
     await closeAndClean(app, s);
     fs.rmSync(outDir, { recursive: true, force: true });

@@ -41,7 +41,7 @@ describe("SettingsSheet", () => {
     expect(within(dialog).getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
     expect(screen.getByRole("tab", { name: "Engine" }).getAttribute("aria-selected")).toBe("true");
-    await screen.findByRole("group", { name: "AI engines" });
+    await screen.findByRole("radiogroup", { name: "AI engines" });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     // Handled: a listener further out (focus mode's) leaves this Escape alone.
     expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
@@ -78,7 +78,7 @@ describe("SettingsSheet", () => {
     await renderIn("en", <Sheet client={client} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Sidekick", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Sidekick" }));
-    expect(await screen.findByRole("checkbox", { name: "Sidekick" })).toBeTruthy();
+    expect(await screen.findByRole("switch", { name: "Sidekick" })).toBeTruthy();
     // Change in Models switches the sheet's tab.
     fireEvent.click(screen.getByRole("button", { name: "Change in Models" }));
     expect(screen.getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
@@ -153,7 +153,7 @@ describe("SettingsSheet", () => {
     const done = screen.getByRole("button", { name: "Done" }) as HTMLButtonElement;
     expect(done.disabled).toBe(true);
     expect(document.getElementById(done.getAttribute("aria-describedby")!)).toBe(line);
-    expect((screen.getByRole("button", { name: /Codex/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: /Codex/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByText(/Installing Claude…/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -220,9 +220,10 @@ describe("SettingsSheet", () => {
     const client = new FakeClient(ready);
     await renderIn("en", <Sheet client={client} />);
     const sizes = screen.getByRole("group", { name: "Text size" });
-    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["AaNormal", "AaLarge", "AaLarger", "AaLargest"]);
+    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["Normal", "Large", "Larger", "Largest"]);
     expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
     expect(sizes.getAttribute("aria-describedby")).toBe(screen.getByText(/0 goes back to Normal\.$/).id);
+    expect(sizes.classList.contains("hh-segmented")).toBe(true);
     fireEvent.click(within(sizes).getByRole("button", { name: "Larger" }));
     await waitFor(() => expect(client.state.config.textSize).toBe("larger"));
     expect(within(sizes).getByRole("button", { name: "Larger" }).getAttribute("aria-pressed")).toBe("true");
@@ -256,7 +257,7 @@ describe("SettingsSheet", () => {
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
     expect(screen.getByRole("heading", { name: "You haven't chosen an engine yet" })).toBeTruthy();
     expect(screen.getByText("First choose where your work is kept, then connect the AI. It takes two steps.")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "AI engines" })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "AI engines" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
     expect(onSetup).toHaveBeenCalledTimes(1);
   });
@@ -277,8 +278,8 @@ describe("SettingsSheet", () => {
     expect([...tasks.options].map((o) => o.value)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
     expect(tasks.value).toBe("2");
     expect((screen.getByLabelText("Jobs at once") as HTMLSelectElement).value).toBe("2");
-    const notify = screen.getByRole("checkbox", { name: "Notify me when a task waits" }) as HTMLInputElement;
-    expect(notify.checked).toBe(false);
+    const notify = screen.getByRole("switch", { name: "Notify me when a task waits" });
+    expect(notify.getAttribute("aria-checked")).toBe("false");
     fireEvent.change(tasks, { target: { value: "4" } });
     // The jobs cap the person set goes with it: the store merges the top level only.
     await waitFor(() => expect(save).toHaveBeenCalledWith({ parallel: { jobs: 2, tasks: 4 } }));
@@ -295,7 +296,7 @@ describe("SettingsSheet", () => {
     expect(tasks.disabled).toBe(true);
     expect((screen.getByLabelText("Jobs at once") as HTMLSelectElement).disabled).toBe(true);
     expect(screen.getByText(/not yet checked with OpenCode/).id).toBe(tasks.getAttribute("aria-describedby"));
-    expect((screen.getByRole("checkbox", { name: "Notify me when a task waits" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("switch", { name: "Notify me when a task waits" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("D0: no harness tab when the harness declares no settings", async () => {

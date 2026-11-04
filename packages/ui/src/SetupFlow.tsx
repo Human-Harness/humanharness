@@ -12,6 +12,8 @@ import { ProfileStep } from "./ProfileStep";
 import { useProfiles } from "./ProfileSwitcher";
 import { SetupInterviewStep } from "./SetupInterviewStep";
 import { SetupStepForm } from "./SetupStepForm";
+import { Button } from "./guide/Button";
+import { NavItem } from "./guide/NavItem";
 
 /** A core step, or a harness step by id (setup-steps spec §4). */
 type Step = "folder" | "engine" | "profile" | "done" | `step:${string}`;
@@ -264,9 +266,9 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
               </div>
             </div>
             <p className="hh-caption">{t("setupFlow.readyHint")}</p>
-            <button className="hh-primary hh-start" onClick={onStart}>
+            <Button kind="large" onClick={onStart}>
               {t("home.start", { name })}
-            </button>
+            </Button>
           </section>
         </main>
         <AppFooter mock={state.mock} />
@@ -305,17 +307,24 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
         <nav className="hh-setup-nav">
           <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
             {steps.map((s, i) => (
-              <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "done" : undefined}>
-                <span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>
-                <span className="hh-setup-step-text">
-                  <span className="hh-setup-step-label">{s.label}</span>
-                  {i < at && s.value && (
-                    <span className="hh-setup-step-value">
-                      <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
-                    </span>
-                  )}
-                  {i === at && <span className="hh-setup-step-value">{t("setupFlow.stepOf", { n: at + 1, count: steps.length })}</span>}
-                </span>
+              <li key={s.id}>
+                <NavItem
+                  selected={i === at}
+                  current="step"
+                  look="white"
+                  tone={i > at ? "muted" : undefined}
+                  lead={<span className={i < at ? "hh-step-mark done" : "hh-step-mark"}>{i < at ? <Icon name="check" size={14} /> : i + 1}</span>}
+                >
+                  <span className="hh-setup-step-text">
+                    <span className="hh-setup-step-label">{s.label}</span>
+                    {i < at && s.value && (
+                      <span className="hh-setup-step-value">
+                        <bdi dir={s.id === "folder" ? "ltr" : "auto"}>{s.value}</bdi>
+                      </span>
+                    )}
+                    {i === at && <span className="hh-setup-step-value">{t("setupFlow.stepOf", { n: at + 1, count: steps.length })}</span>}
+                  </span>
+                </NavItem>
               </li>
             ))}
           </ol>
@@ -424,25 +433,25 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                 )}
                 {/* A form's Next submits it from here, like the folder step's; a component step ends itself (done()). */}
                 {current.kind === "form" && (
-                  <button type="submit" form={stepFormId} className="hh-primary" disabled={waiting}>
+                  <Button type="submit" form={stepFormId} kind="primary" disabled={waiting}>
                     {t("setupFlow.next")}
-                  </button>
+                  </Button>
                 )}
                 {/* An interview's Next waits while its task is busy (a turn, the closing turn). */}
                 {current.kind === "interview" && (
-                  <button
-                    className="hh-primary"
+                  <Button
+                    kind="primary"
                     disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
                     onClick={() => finishInterview(current)}
                   >
                     {t("setupFlow.next")}
-                  </button>
+                  </Button>
                 )}
                 {/* A connect step's Next waits for every key it lists (tools spec §9). */}
                 {current.kind === "connect" && (
-                  <button ref={connectNext} className="hh-primary" disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
+                  <Button ref={connectNext} kind="primary" disabled={waiting || connectReady !== current.id} onClick={() => complete(current.id)}>
                     {t("setupFlow.next")}
-                  </button>
+                  </Button>
                 )}
               </>
             ) : (
@@ -460,9 +469,9 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                         {t("setupFlow.back")}
                       </button>
                     )}
-                    <button type="submit" form={profileFormId} className="hh-primary" disabled={creating || stranded !== null}>
+                    <Button type="submit" form={profileFormId} kind="primary" disabled={creating || stranded !== null}>
                       {t("setupFlow.next")}
-                    </button>
+                    </Button>
                   </>
                 )}
                 {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
@@ -480,15 +489,15 @@ export function SetupFlow({ client, state, onChange, onCancel, onSettings, onSta
                 )}
                 {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
                 {step === "folder" && (
-                  <button type="submit" form={folderFormId} className="hh-primary">
+                  <Button type="submit" form={folderFormId} kind="primary">
                     {t("setupFlow.next")}
-                  </button>
+                  </Button>
                 )}
                 {/* With harness steps, it also waits for which of them this run goes through. */}
                 {step === "engine" && (
-                  <button className="hh-primary" disabled={!selection?.ready || saving || queue === null} onClick={() => void next()}>
+                  <Button kind="primary" disabled={!selection?.ready || saving || queue === null} onClick={() => void next()}>
                     {t("setupFlow.next")}
-                  </button>
+                  </Button>
                 )}
               </>
             )}

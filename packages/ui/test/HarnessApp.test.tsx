@@ -392,7 +392,7 @@ describe("HarnessApp", () => {
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
     const pill = await screen.findByRole("button", { name: /Claude.*Connected.*5 h · 42%/ });
     fireEvent.click(pill);
-    await screen.findByRole("group", { name: "AI engines" });
+    await screen.findByRole("radiogroup", { name: "AI engines" });
   });
 
   it("leaves a five-hour window that has already reset out of Home's engine pill", async () => {
@@ -464,12 +464,12 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={new FakeClient({ ...ready, language: "es" })} />);
     const work = await screen.findByRole("button", { name: "Settings" });
     // Top right, like Settings' save, so going in and out doesn't move it.
-    expect(work.className).toBe("hh-topbar-icon");
+    expect(work.getAttribute("data-size")).toBe("compact");
     expect(work.closest("header.hh-topbar")?.lastElementChild).toBe(work);
     expect(work.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 24 24");
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     const home = await screen.findByRole("button", { name: "Settings" });
-    expect(home.className).toBe("hh-topbar-icon");
+    expect(home.getAttribute("data-size")).toBe("compact");
     expect(home.closest("header.hh-topbar")?.lastElementChild).toBe(home);
   });
 
@@ -502,7 +502,7 @@ describe("HarnessApp", () => {
     await screen.findByRole("button", { name: /Claude.*Checking/ });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Codex/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
     await waitFor(() => expect(client.state.config.engineId).toBe("codex"));
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -516,7 +516,7 @@ describe("HarnessApp", () => {
     client.statusError = new Error("boom");
     render(<HarnessApp client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: /Claude.*Not connected/ }));
-    await screen.findByRole("group", { name: "AI engines" });
+    await screen.findByRole("radiogroup", { name: "AI engines" });
   });
 
   it("shows the whole folder path on hover in Home's footer", async () => {
@@ -783,7 +783,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Codex/ }));
     client.switchedFrom = "claude";
     fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
     fireEvent.click(screen.getByRole("button", { name: "Done" }));

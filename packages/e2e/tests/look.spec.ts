@@ -48,11 +48,11 @@ for (const theme of ["light", "dark"] as const) {
     await first.page.getByPlaceholder("Ask about this topic…").fill("¿Y los permisos?");
     await first.page.getByRole("button", { name: "Send" }).click();
     await expect(first.page.getByRole("main").getByText(/no está grabada en esta prueba/)).toBeVisible();
-    await expect(first.page.getByRole("button", { name: "Profundizar en las acciones" })).toHaveCount(2);
-    await first.page.getByRole("button", { name: "Profundizar en las acciones" }).last().click();
+    await expect(first.page.getByRole("radio", { name: "Profundizar en las acciones" })).toHaveCount(2);
+    await first.page.getByRole("radio", { name: "Profundizar en las acciones" }).last().click();
     await expect(first.page.getByRole("main").getByText(/Cada acción trae su brief/)).toBeVisible();
-    await expect(first.page.getByRole("button", { name: "Seguir el recorrido →" })).toHaveCount(3);
-    await first.page.getByRole("button", { name: "Seguir el recorrido →" }).last().click();
+    await expect(first.page.getByRole("radio", { name: "Seguir el recorrido →" })).toHaveCount(3);
+    await first.page.getByRole("radio", { name: "Seguir el recorrido →" }).last().click();
     await expect(first.page.getByRole("main").getByText(/Los motores se detectan en cada inicio/)).toBeVisible();
     await expect.poll(() => fs.existsSync(path.join(s.folder, ".harness", "notes", "manifest.md"))).toBe(true);
     await first.page.waitForTimeout(1500);
@@ -127,7 +127,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
       await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
       // The next topic closes the manifest task, so Usage has a real row for it (as in flow.spec).
-      await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
+      await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
       const answer = page.getByRole("main").getByText("Los motores se detectan en cada inicio.");
       await expect(answer).toBeVisible();
 

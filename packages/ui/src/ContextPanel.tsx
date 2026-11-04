@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "./guide/icons";
 import type { ContextItem, ContextRead, ContextRefusal, ContextResult, HarnessClient, NoteView, TaskContext } from "./client";
 import { shownLanguage } from "./language";
+import { Button } from "./guide/Button";
+import { IconButton } from "./guide/IconButton";
 
 export interface ContextPanelProps {
   client: HarnessClient;
@@ -157,9 +159,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
         <h2>{t("context.title")}</h2>
       </div>
       {onClose && (
-        <button type="button" className="hh-icon-button" aria-label={t("context.close")} onClick={onClose}>
-          <Icon name="close" size={18} />
-        </button>
+        <IconButton icon="close" label={t("context.close")} onClick={onClose} />
       )}
     </div>
   );
@@ -174,9 +174,9 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
 
   const open = (path: string, label: ReactNode = path) =>
     onOpen ? (
-      <button type="button" className="hh-link" onClick={() => onOpen(path)}>
+      <Button type="button" kind="quiet" size="compact" onClick={() => onOpen(path)}>
         {label}
-      </button>
+      </Button>
     ) : (
       <span>{label}</span>
     );

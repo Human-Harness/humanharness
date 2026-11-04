@@ -5,6 +5,9 @@ import { groups, HarnessFieldRow } from "../HarnessSettingsTab";
 import { Icon } from "../guide/icons";
 import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
+import { Button } from "../guide/Button";
+import { Segmented } from "../guide/Segmented";
+import { Toggle } from "../guide/Toggle";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const message = (r: PluginResult, failed: string) => (r.ok ? null : "message" in r && r.message ? r.message : failed);
@@ -105,9 +108,9 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   return (
     <section className="hh-tab hh-card hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
       <div>
-        <button type="button" className="hh-link" onClick={onBack}>
-          <Icon name="back" size={18} /> {t("plugins.detail.back")}
-        </button>
+        <Button type="button" kind="quiet" size="compact" icon="back" onClick={onBack}>
+          {t("plugins.detail.back")}
+        </Button>
       </div>
       <h3 id={`${id}-name`} ref={head} tabIndex={-1}>
         <Plain>{row.name}</Plain>
@@ -268,13 +271,11 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
               <label className="hh-row-label" htmlFor={`${id}-notify`}>
                 {t("plugins.notify")}
               </label>
-              <input
+              <Toggle
                 id={`${id}-notify`}
-                type="checkbox"
-                role="switch"
                 checked={detail.notify}
                 aria-describedby={`${id}-notify-help`}
-                onChange={(e) => void change("notify", () => client.plugins.setNotify(row.id, e.target.checked))}
+                onChange={(on) => void change("notify", () => client.plugins.setNotify(row.id, on))}
               />
               <p className="hh-caption hh-row-note" id={`${id}-notify-help`}>
                 {t("plugins.notifyHelp")}
@@ -464,16 +465,13 @@ function WorkHours({ value, language, error, onSave }: { value: PluginWorkHours;
       </p>
       <div className="hh-rows">
         <div className="hh-row hh-row-wrap">
-          <span className="hh-row-label" id={`${id}-days`}>
-            {t("plugins.workHours.days")}
-          </span>
-          <span className="hh-pl-days" role="group" aria-labelledby={`${id}-days`}>
-            {[0, 1, 2, 3, 4, 5, 6].map((d) => (
-              <button key={d} type="button" aria-pressed={value.days.includes(d)} aria-label={dayName(d, "long")} onClick={() => toggle(d)}>
-                {dayName(d, "short")}
-              </button>
-            ))}
-          </span>
+          <span className="hh-row-label">{t("plugins.workHours.days")}</span>
+          <Segmented
+            label={t("plugins.workHours.days")}
+            value={value.days.map(String)}
+            onChange={(d) => toggle(Number(d))}
+            options={[0, 1, 2, 3, 4, 5, 6].map((d) => ({ value: String(d), label: dayName(d, "short"), ariaLabel: dayName(d, "long") }))}
+          />
         </div>
         <div className="hh-row">
           <label className="hh-row-label" htmlFor={`${id}-from`}>

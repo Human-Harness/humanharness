@@ -5,6 +5,7 @@ import { splitFrontMatter } from "@humanharness/harness-sdk/documents";
 import type { EngineConfigView, EngineRunsCommandView, HarnessClient } from "../client";
 import { shownLanguage } from "../language";
 import { Markdown, parseMarkdown, textOf } from "../markdown";
+import { Button } from "../guide/Button";
 
 // Characters that draw as nothing (zero-width, bidi controls, BOM): text the agent reads that nobody sees.
 const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/;
@@ -37,9 +38,9 @@ function Instructions({ title, text, path }: { title: string; text: string; path
       <div className="hh-engine-doc">
         <Markdown source={text} document path={path} />
       </div>
-      <button type="button" className="hh-link" aria-expanded={raw} {...(raw ? { "aria-controls": sourceId } : {})} onClick={() => setRaw(!raw)}>
+      <Button type="button" kind="quiet" size="compact" aria-expanded={raw} {...(raw ? { "aria-controls": sourceId } : {})} onClick={() => setRaw(!raw)}>
         {t(raw ? "hatches.engineHideSource" : "hatches.engineShowSource")}
-      </button>
+      </Button>
       {raw && (
         <pre id={sourceId} className="hh-engine-source">
           <code>{text}</code>
@@ -372,16 +373,16 @@ export const EngineConfig = forwardRef<HTMLHeadingElement, EngineConfigProps>(
             {revokeFailed && <p role="alert">{t("hatches.engineRevokeFailed")}</p>}
             {!view.approved && (
               <div className="hh-engine-actions">
-                <button
+                <Button
                   ref={approveRef}
                   type="button"
-                  className="hh-primary"
+                  kind="primary"
                   disabled={busy || view.refusals.length > 0}
                   {...(view.refusals.length > 0 ? { "aria-describedby": view.refusals.map((_, i) => `${baseId}-refusal-${i}`).join(" ") } : {})}
                   onClick={() => void approve()}
                 >
                   {t("hatches.engineApprove")}
-                </button>
+                </Button>
               </div>
             )}
           </>

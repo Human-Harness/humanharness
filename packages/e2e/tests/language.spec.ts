@@ -150,7 +150,7 @@ test("changing the engine stops a translation run", async () => {
     await expect.poll(() => batchRuns(s).length, { timeout: 30_000 }).toBe(1);
     await expect(page.getByText(/^Translating… \d+ of \d+$/)).toBeVisible();
     await page.getByRole("tab", { name: "Engine" }).click();
-    await page.getByRole("group", { name: "AI engines" }).getByRole("button", { name: /Codex/ }).click();
+    await page.getByRole("radiogroup", { name: "AI engines" }).getByRole("radio", { name: /Codex/ }).click();
     await page.getByRole("button", { name: "Use Codex" }).click();
     await expect.poll(() => savedConfig(s).engineId, { timeout: 30_000 }).toBe("codex");
     await page.getByRole("tab", { name: "General" }).click();

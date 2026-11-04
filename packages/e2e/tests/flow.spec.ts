@@ -20,7 +20,7 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     // Source files are shown in Finder, never opened.
     await expect(page.getByRole("button", { name: "Show packages/harness-sdk/src/index.ts in Finder" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
+    await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
 
     const note = fs.readFileSync(path.join(s.folder, ".harness", "notes", "manifest.md"), "utf8");
@@ -108,14 +108,14 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await page.getByRole("button", { name: "Start Demo" }).click();
     await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
-    await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
+    await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
     // The text shows before the turn ends, and the engine can't change while a turn runs.
     await expect.poll(() => readTasks(s.folder).current?.status).toBe("waiting");
 
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "Engine" }).click();
-    await page.getByRole("button", { name: /Codex/ }).first().click();
+    await page.getByRole("radio", { name: /Codex/ }).first().click();
     await page.getByRole("button", { name: "Use Codex" }).click();
     await page.getByRole("button", { name: "Done", exact: true }).click();
 

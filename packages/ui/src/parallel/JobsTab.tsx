@@ -6,6 +6,8 @@ import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { useJobs } from "./useJobs";
 import { SectionHead } from "../settings-parts";
+import { Button } from "../guide/Button";
+import { Toggle } from "../guide/Toggle";
 
 /** The lowest daily cap the field takes: less would pause a periodic job after its first run. */
 export const DAILY_CAP_MIN = 1000;
@@ -112,8 +114,8 @@ export function JobsTab({
         </div>
         {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
         {action && (
-          <button
-            className="hh-tk-cancel"
+          <Button
+            size="compact"
             aria-describedby={labelId}
             onClick={() => {
               setProblem(null);
@@ -121,12 +123,12 @@ export function JobsTab({
             }}
           >
             {t("parallel.start")}
-          </button>
+          </Button>
         )}
         {j.manual && !j.running && j.paused !== "off" && (
-          <button className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
+          <Button size="compact" aria-describedby={labelId} onClick={() => runNow(j)}>
             {t("parallel.runNow")}
-          </button>
+          </Button>
         )}
       </li>
     );
@@ -201,9 +203,9 @@ function JobGroup({
       </h3>
       <div className="hh-rows">
         <div className="hh-row">
-          <label>
-            <input type="checkbox" checked={entry.off !== true} aria-describedby={labelId} onChange={(e) => onOn(e.target.checked)} /> {t("parallel.jobOn")}
-          </label>
+          <Toggle checked={entry.off !== true} aria-describedby={labelId} onChange={onOn}>
+            {t("parallel.jobOn")}
+          </Toggle>
           {job.every && <span className="hh-caption">{t("parallel.every", { interval: job.every })}</span>}
         </div>
         {job.every && (

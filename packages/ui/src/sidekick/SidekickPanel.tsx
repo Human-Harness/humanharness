@@ -1,11 +1,13 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { Segmented, Tag } from "../chrome";
+import { Tag } from "../chrome";
+import { Segmented } from "../guide/Segmented";
 import { Icon } from "../guide/icons";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../client";
 import { shownLanguage } from "../language";
 import { SidekickMark, markIcon } from "./mark";
 import { wordDiff } from "./word-diff";
+import { Button } from "../guide/Button";
 
 export interface SidekickPanelProps {
   state: SidekickState;
@@ -134,7 +136,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
                 <h3>{t("sidekick.intro.title")}</h3>
                 <p>{s.cap === null ? t("sidekick.intro.bodyNoCap") : t("sidekick.intro.body", { cap: n(s.cap) })}</p>
                 <div className="hh-sk-actions">
-                  <button type="button" className="hh-primary" onClick={p.onTurnOn}>{t("sidekick.intro.turnOn")}</button>
+                  <Button type="button" kind="primary" onClick={p.onTurnOn}>{t("sidekick.intro.turnOn")}</Button>
                   <button type="button" onClick={p.onNotNow}>{t("sidekick.intro.notNow")}</button>
                 </div>
               </div>
@@ -189,9 +191,9 @@ export function SidekickPanel(p: SidekickPanelProps) {
           {s.cap !== null && <progress max={s.cap} value={Math.min(s.spent, s.cap)} aria-label={t("sidekick.toggle")} />}
           <p className="hh-caption">
             {p.onTier ? (
-              <button type="button" className="hh-link" onClick={p.onTier}>
+              <Button type="button" kind="quiet" size="compact" onClick={p.onTier}>
                 {tierText}
-              </button>
+              </Button>
             ) : (
               <span>{tierText}</span>
             )}{" "}
@@ -229,16 +231,16 @@ function Card({ card, speaker, onSendSuggested, onEdit, onSendAnyway, onMute }: 
       <div className="hh-sk-actions">
         {card.rewrite && (
           <>
-            <button type="button" className="hh-primary" onClick={() => onSendSuggested(card)}>{t("sidekick.card.sendSuggested")}</button>
-            <button type="button" className="hh-pill" onClick={() => onEdit(card)}>{t("sidekick.card.edit")}</button>
+            <Button type="button" kind="primary" onClick={() => onSendSuggested(card)}>{t("sidekick.card.sendSuggested")}</Button>
+            <Button type="button" size="compact" onClick={() => onEdit(card)}>{t("sidekick.card.edit")}</Button>
           </>
         )}
-        <button type="button" className="hh-pill" onClick={() => onSendAnyway(card)}>{t("sidekick.card.sendAnyway")}</button>
+        <Button type="button" size="compact" onClick={() => onSendAnyway(card)}>{t("sidekick.card.sendAnyway")}</Button>
       </div>
       {card.why && <p className="hh-caption">{t("sidekick.why", { used: card.why.used, of: card.why.of, kind })}</p>}
-      <button type="button" className="hh-link" onClick={() => onMute(card.id)}>
+      <Button type="button" kind="quiet" size="compact" onClick={() => onMute(card.id)}>
         {t("sidekick.mute", { kind })}
-      </button>
+      </Button>
     </section>
   );
 }
@@ -279,18 +281,18 @@ function AfterCard({ card, speaker, onPutInComposer, onDismiss }: { card: Sideki
       )}
       <div className="hh-sk-actions">
         {next && (
-          <button
+          <Button
             type="button"
-            className="hh-primary"
+            kind="primary"
             onClick={() => {
               onPutInComposer(next);
               onDismiss(card.id, "used");
             }}
           >
             {t("sidekick.card.putInComposer")}
-          </button>
+          </Button>
         )}
-        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <Button type="button" size="compact" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</Button>
       </div>
     </section>
   );
@@ -328,15 +330,15 @@ function HeadsUpCard({ card, headsUp, speaker, onSaveDecision, onFinishTask, onD
       {headsUp.kind === "off-phase" && <p>{headsUp.phase ? t("sidekick.headsUp.offPhaseNamed", { phase: headsUp.phase }) : t("sidekick.headsUp.offPhase")}</p>}
       <div className="hh-sk-actions">
         {headsUp.kind === "repeated" ? (
-          <button type="button" className="hh-primary" disabled={saving} onClick={save}>
+          <Button type="button" kind="primary" disabled={saving} onClick={save}>
             {t("sidekick.headsUp.saveDecision")}
-          </button>
+          </Button>
         ) : (
-          <button type="button" className="hh-primary" onClick={() => onFinishTask(card.id)}>
+          <Button type="button" kind="primary" onClick={() => onFinishTask(card.id)}>
             {t("sidekick.headsUp.finishTask")}
-          </button>
+          </Button>
         )}
-        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <Button type="button" size="compact" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</Button>
       </div>
       {/* No message back: the plain line, never "…decision: " with nothing after it. */}
       {failed !== null && <p role="alert">{failed ? t("sidekick.headsUp.saveFailed", { message: failed }) : t("sidekick.headsUp.saveFailedPlain")}</p>}
@@ -358,7 +360,7 @@ function GuardCard({ card, guard, speaker, onDismiss }: { card: SidekickCard; gu
         ))}
       </ul>
       <div className="hh-sk-actions">
-        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <Button type="button" size="compact" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</Button>
       </div>
     </section>
   );
@@ -373,7 +375,7 @@ function DailyCard({ card, speaker, onDismiss }: { card: SidekickCard; speaker: 
       <h3>{t("sidekick.daily.title")}</h3>
       <p className="hh-sk-daily">{card.text}</p>
       <div className="hh-sk-actions">
-        <button type="button" className="hh-pill" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+        <Button type="button" size="compact" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</Button>
       </div>
     </section>
   );

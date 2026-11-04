@@ -4,7 +4,7 @@
 
 **Goal:** The app runs inside one Radix Themes root that reads our tokens and changes nothing on screen. Screens get the allowed Radix pieces from the guide barrel, and the guard test keeps Radix behind that barrel. Impeccable, PRODUCT.md and DESIGN.md are in the repo and linked from CLAUDE.md, and the PR template carries the UI loop.
 
-**Status:** written 2026-11-04 and waiting for Marco's review. Not started.
+**Status:** approved by Marco on 2026-11-04, every section OK, including the five decisions at the end. Not started.
 
 **Spec:** `docs/superpowers/specs/2026-11-04-radix-impeccable-design.md` (merged in PR #122), section 7, stage 1. Stage 0 is already decided: nothing is reverted, and Part 5 was discarded. No screen moves to Radix in this stage; that starts in stage 2 (Settings).
 

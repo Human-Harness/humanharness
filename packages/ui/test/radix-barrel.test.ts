@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Rx } from "../src/guide";
@@ -30,7 +30,10 @@ describe("Radix behind the guide barrel (Radix + Impeccable spec §3)", () => {
 
   it("only packages/ui/src/guide imports @radix-ui/themes", () => {
     const guide = join(REPO, "packages/ui/src/guide") + sep;
-    const files = [...sources(join(REPO, "packages/ui/src")), ...sources(join(REPO, "packages/shell/src"))];
+    // Harness screens live in harnesses/<name>/ui, so they are checked too.
+    const harnessUis = readdirSync(join(REPO, "harnesses")).map((h) => join(REPO, "harnesses", h, "ui")).filter((d) => existsSync(d));
+    const files = [join(REPO, "packages/ui/src"), join(REPO, "packages/shell/src"), ...harnessUis].flatMap(sources);
+    expect(harnessUis.length, "at least one harness ui folder is scanned").toBeGreaterThan(0);
     const outside = files.filter((f) => !f.startsWith(guide) && RADIX_IMPORT.test(readFileSync(f, "utf8")));
     expect(outside.map((f) => f.slice(REPO.length + 1)), "import Radix pieces from packages/ui/src/guide (Rx), never from @radix-ui/themes").toEqual([]);
   });

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "./guide/icons";
 import type { RailEntry } from "./shell-nav";
 import { IconButton } from "./guide/IconButton";
+import { Rx } from "./guide";
 
 export function MockBadge() {
   const { t } = useTranslation();
@@ -162,11 +163,32 @@ const RAIL_ICONS: Record<RailEntry, IconName> = {
 };
 
 /** The icon rail (UI refresh spec §4.2): the screens of a harness. Settings is the top bar's gear, not a rail entry. */
-export function Rail({ entries, current, onPick }: { entries: RailEntry[]; current: RailEntry; onPick: (e: RailEntry) => void }) {
+export function Rail({
+  entries,
+  current,
+  onPick,
+  counts = {},
+}: {
+  entries: RailEntry[];
+  current: RailEntry;
+  onPick: (e: RailEntry) => void;
+  /** A count over an entry's icon (the Inbox's waiting count, an orange badge), and the name said with it. */
+  counts?: Partial<Record<RailEntry, { count: number; label: string }>>;
+}) {
   const { t } = useTranslation();
-  const button = (e: RailEntry) => (
-    <IconButton key={e} icon={RAIL_ICONS[e]} label={t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)} />
-  );
+  const button = (e: RailEntry) => {
+    const n = counts[e];
+    const shown = n && n.count > 0 ? n : null;
+    return (
+      <IconButton key={e} icon={RAIL_ICONS[e]} label={shown ? shown.label : t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
+        {shown && (
+          <Rx.Badge className="hh-rail-count" color="orange" variant="solid" size="1" radius="full" aria-hidden="true">
+            {shown.count > 99 ? "99+" : shown.count}
+          </Rx.Badge>
+        )}
+      </IconButton>
+    );
+  };
   return (
     <nav className="hh-rail" aria-label={t("rail.label")}>
       {entries.filter((e) => e !== "settings").map(button)}

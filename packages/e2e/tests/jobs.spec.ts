@@ -42,25 +42,34 @@ async function messages(s: Sandbox): Promise<string[]> {
   return (await git.log({ fs, gitdir })).reverse().map((e) => e.commit.message.trim());
 }
 
-const inboxButton = (page: Page) => page.getByRole("button", { name: /^Inbox, \d+ waiting$/ });
-/** Opens the Inbox screen through the top bar's pill (unless it is open), as its List: the four sections (UI refresh spec §5.4). */
+/** The rail's Inbox: "Inbox" alone, or "Inbox, N waiting" while something waits (stage 4a). */
+const inboxButton = (page: Page) => page.getByRole("navigation", { name: "App" }).getByRole("button", { name: /^Inbox(, \d+ waiting)?$/ });
+const inboxPage = (page: Page) => page.getByRole("region", { name: "Inbox", exact: true });
+const jobsPage = (page: Page) => page.getByRole("region", { name: "Jobs", exact: true });
+/** Opens the Inbox page through the rail (unless it is open): tasks and the job results that need the person. */
 async function openInbox(page: Page) {
-  const screen = page.getByRole("region", { name: "Inbox", exact: true });
-  if (!(await screen.isVisible())) await inboxButton(page).click();
-  await expect(screen).toBeVisible();
-  await screen.getByRole("button", { name: "List", exact: true }).click();
-  return screen;
+  if (!(await inboxPage(page).isVisible())) await inboxButton(page).click();
+  await expect(inboxPage(page)).toBeVisible();
+  return inboxPage(page);
 }
-/** Back to the chat from the Inbox screen (which has no pill): the rail's Tasks. */
-async function closeInbox(page: Page) {
+/** Opens the Jobs page through the rail: one card per job (stage 4a). */
+async function openJobs(page: Page) {
+  if (!(await jobsPage(page).isVisible())) await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Jobs", exact: true }).click();
+  await expect(jobsPage(page)).toBeVisible();
+  return jobsPage(page);
+}
+/** Back to the chat from a page: the rail's Tasks. */
+async function toChat(page: Page) {
   await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Tasks" }).click();
-  await expect(page.getByRole("region", { name: "Inbox", exact: true })).toBeHidden();
+  await expect(inboxPage(page)).toBeHidden();
+  await expect(jobsPage(page)).toBeHidden();
 }
-/** Job `label`'s row in the inbox's Jobs section. */
-const jobRow = (page: Page, label: string): Locator =>
-  page
-    .getByRole("region", { name: "Inbox", exact: true })
-    .getByRole("region", { name: "Jobs" })
+/** Job `label`'s card on the Jobs page (its run's summary is in the folded body: text, not shown). */
+const jobCard = (page: Page, label: string): Locator => jobsPage(page).getByRole("region", { name: label, exact: true });
+/** Job `label`'s row in the Inbox page's job results. */
+const resultRow = (page: Page, label: string): Locator =>
+  inboxPage(page)
+    .getByRole("region", { name: /^Job results for you/ })
     .getByRole("listitem")
     .filter({ has: page.getByText(label, { exact: true }) });
 
@@ -102,8 +111,8 @@ test("a start job runs once after setup, logs its run, commits with a Job: trail
     expect(sync).toMatchObject({ job: "sync", scope: null, trigger: "start", status: "ok", summary: "Synced" });
     expect(sync.tokens).toBeGreaterThan(0);
 
-    await openInbox(page);
-    const row = jobRow(page, "Sync");
+    await openJobs(page);
+    const row = jobCard(page, "Sync");
     await expect(row).toContainText("OK");
     await expect(row).toContainText("Synced");
     await expect(row).toContainText(/Last run/);
@@ -127,20 +136,22 @@ test("a start job runs once after setup, logs its run, commits with a Job: trail
 test("a needs-you result shows in the inbox, counts as waiting and starts its action", async () => {
   await withApp(board, "jobs-needs-you", scenario(board, "parallel"), async (page, s) => {
     await expect.poll(() => runsOf(s, "sync").length).toBe(1);
-    await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 0 waiting");
-    await openInbox(page);
-    await jobRow(page, "Check").getByRole("button", { name: "Run now" }).click();
+    await expect(inboxButton(page)).toHaveAccessibleName("Inbox");
+    await openJobs(page);
+    await jobCard(page, "Check").getByRole("button", { name: "Run now" }).click();
     await expect.poll(() => runsOf(s, "check").map((r) => [r.trigger, r.status, r.action])).toEqual([["manual", "needs-you", "write-a"]]);
-    const row = jobRow(page, "Check");
-    await expect(row).toContainText("Needs you");
-    await expect(row).toContainText("2 tickets without AC");
-    await closeInbox(page);
+    const card = jobCard(page, "Check");
+    await expect(card).toContainText("Needs you");
+    await expect(card).toContainText("2 tickets without AC");
+    await toChat(page);
     await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 1 waiting");
     await openInbox(page);
+    const row = resultRow(page, "Check");
+    await expect(row).toContainText("2 tickets without AC");
 
     // "Start" opens a Write A task, as its topic would.
     await row.getByRole("button", { name: "Start" }).click();
-    await expect(page.getByRole("region", { name: "Inbox", exact: true })).toBeHidden();
+    await expect(inboxPage(page)).toBeHidden();
     await expect(page.getByRole("main").getByText("Wrote a.")).toBeVisible();
     expect(fs.readFileSync(path.join(s.folder, "a.md"), "utf8")).toBe("a\n");
     const lanes = (JSON.parse(fs.readFileSync(path.join(s.folder, ".harness", "tasks.json"), "utf8")) as { lanes: { action?: string }[] }).lanes;
@@ -151,21 +162,21 @@ test("a needs-you result shows in the inbox, counts as waiting and starts its ac
 test("a job that tries to ask fails without asking, and one with no result fails", async () => {
   await withApp(board, "jobs-asker", scenario(board, "parallel"), async (page, s) => {
     await expect.poll(() => runsOf(s, "sync").length).toBe(1);
-    await openInbox(page);
-    await jobRow(page, "Asker").getByRole("button", { name: "Run now" }).click();
+    await openJobs(page);
+    await jobCard(page, "Asker").getByRole("button", { name: "Run now" }).click();
     await expect.poll(() => runsOf(s, "asker").map((r) => [r.status, r.summary])).toEqual([["failed", "Could not ask"]]);
-    await expect(jobRow(page, "Asker")).toContainText("Failed");
-    await expect(jobRow(page, "Asker")).toContainText("Could not ask");
+    await expect(jobCard(page, "Asker")).toContainText("Failed");
+    await expect(jobCard(page, "Asker")).toContainText("Could not ask");
 
-    await jobRow(page, "Silent").getByRole("button", { name: "Run now" }).click();
+    await jobCard(page, "Silent").getByRole("button", { name: "Run now" }).click();
     await expect.poll(() => runsOf(s, "silent").map((r) => [r.status, r.summary])).toEqual([["failed", "No result"]]);
-    await expect(jobRow(page, "Silent")).toContainText("No result");
+    await expect(jobCard(page, "Silent")).toContainText("No result");
 
     // The asker's choices reached no one: no card anywhere, nothing waits for the person.
     await expect(page.getByRole("button", { name: "Tickets 1-3" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "All of them" })).toHaveCount(0);
-    await closeInbox(page);
-    await expect(inboxButton(page)).toHaveAccessibleName("Inbox, 0 waiting");
+    await toChat(page);
+    await expect(inboxButton(page)).toHaveAccessibleName("Inbox");
     // And opened no task: the tasks file (if any) has no lane.
     const tasksFile = path.join(s.folder, ".harness", "tasks.json");
     const lanes = fs.existsSync(tasksFile) ? (JSON.parse(fs.readFileSync(tasksFile, "utf8")) as { lanes?: unknown[] }).lanes ?? [] : [];

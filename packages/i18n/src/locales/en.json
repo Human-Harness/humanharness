@@ -2,18 +2,14 @@
   "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
   "inbox": {
     "title": "Inbox",
-    "pill": "Inbox, {{count}} waiting",
-    "board": {
-      "summary": "{{waiting}} waiting for you · {{working}} working · {{jobs}} jobs",
-      "summaryNoJobs": "{{waiting}} waiting for you · {{working}} working",
-      "view": "Show as",
-      "board": "Board",
-      "list": "List",
-      "startsWhen": "Starts when a slot frees up · {{cap}} tasks at once",
-      "started": "Started {{ago}}",
-      "progress": "Phase {{step}} of {{total}}",
-      "open": "Open"
-    }
+    "railCount": "Inbox, {{count}} waiting",
+    "summary": "{{waiting}} waiting for you · {{working}} working",
+    "startsWhen": "Starts when a slot frees up · {{cap}} tasks at once",
+    "started": "Started {{ago}}",
+    "progress": "Phase {{step}} of {{total}}",
+    "onScreen": "On screen",
+    "count": "{{count}} in this section",
+    "jobsTitle": "Job results for you"
   },
   "task": { "header": { "new": "New task" } },
   "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },

@@ -1,35 +1,22 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Tag } from "../chrome";
-import { Icon } from "../guide/icons";
-import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
+import { type AppState, type HarnessClient, type JobSummary, type TaskSummary, type TasksState, timeAgo } from "../client";
+import { Hidden, Rx, SecondaryPage } from "../guide";
 import { shownLanguage } from "../language";
 import { JobRunSteps } from "../tools/JobRunSteps";
 import { taskGroups } from "./board";
 import { useJobs } from "./useJobs";
-import { Button } from "../guide/Button";
 
 export { WORKING } from "./board";
 
 /** Waiting for the person: tasks waiting for them, and needs-you job results (a job turned off, as the Dock badge, waits for no one). */
 export function waitingCount(tasks: TasksState | null, jobs: readonly JobSummary[] = []): number {
-  const waiting = (tasks?.tasks ?? []).filter((s) => s.state === "waiting").length;
-  return waiting + jobs.filter((j) => j.last?.status === "needs-you" && j.paused !== "off").length;
+  return (tasks?.tasks ?? []).filter((s) => s.state === "waiting").length + jobsWaiting(jobs).length;
 }
 
-/**
- * The top bar's Inbox pill (UI refresh spec §4.1): the waiting count on an orange tag. It opens the Inbox screen (§5.4).
- */
-export function InboxPill({ tasks, jobs, onOpen }: { tasks: TasksState | null; jobs?: readonly JobSummary[]; onOpen: () => void }) {
-  const { t } = useTranslation();
-  const count = waitingCount(tasks, jobs);
-  return (
-    <Button size="compact" aria-label={t("inbox.pill", { count })} onClick={onOpen}>
-      <Icon name="inbox" size={18} />
-      {t("inbox.title")}
-      {count > 0 && <Tag tone="orange">{count}</Tag>}
-    </Button>
-  );
+/** The job results that wait for the person: needs-you, and the job not turned off. */
+function jobsWaiting(jobs: readonly JobSummary[]): JobSummary[] {
+  return jobs.filter((j) => j.last?.status === "needs-you" && j.paused !== "off");
 }
 
 /** The scopes' titles by id, read once on mount; empty for a harness without scopes (it asks nothing). */
@@ -58,15 +45,13 @@ export function jobTime(iso: string, language: string): string {
   return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString(language, { weekday: "long" })} ${time}`;
 }
 
-export const JOB_STATUS = { ok: "parallel.statusOk", "needs-you": "parallel.statusNeedsYou", failed: "parallel.statusFailed" } as const;
-
 /** A needs-you result's action, when the harness declares it (the summary is the agent's; its action is checked here too). */
 export function startableAction(state: AppState, j: JobSummary): string | null {
   const action = j.last?.status === "needs-you" ? j.last.action : undefined;
   return action !== undefined && Object.hasOwn(state.actions, action) ? action : null;
 }
 
-/** The queues' pause (out of quota, a folder move), with Resume when quota is what stopped them. */
+/** The queues' pause (out of quota, a folder move) as an orange notice, with Resume when quota is what stopped them. */
 export function QueuePause({ client, tasks }: { client: HarnessClient; tasks: TasksState | null }) {
   const { t, i18n } = useTranslation();
   const language = shownLanguage(i18n);
@@ -88,81 +73,88 @@ export function QueuePause({ client, tasks }: { client: HarnessClient; tasks: Ta
         : untilText(resetsAt);
   if (!pauseText) return null;
   return (
-    <p className="hh-tk-paused" role="status">
-      <span>{pauseText}</span>
-      {paused?.reason === "out-of-quota" && <button onClick={() => void client.tasks.resumeQueues().catch(() => undefined)}>{t("parallel.resume")}</button>}
-    </p>
+    <Rx.Callout.Root color="orange" role="status" mb="5">
+      <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
+        <Rx.Callout.Text>{pauseText}</Rx.Callout.Text>
+        {paused?.reason === "out-of-quota" && (
+          <Rx.Button variant="outline" color="gray" size="1" onClick={() => void client.tasks.resumeQueues().catch(() => undefined)}>
+            {t("parallel.resume")}
+          </Rx.Button>
+        )}
+      </Rx.Flex>
+    </Rx.Callout.Root>
   );
 }
 
-/**
- * The core inbox of open tasks in the top bar (parallel spec §9.2, UI refresh spec §4.1): the Inbox pill with the
- * waiting count (tasks waiting for the person and needs-you job results) and a polite live region that says it as it
- * changes. It reads only `client.tasks` and `client.jobs` (never the attention items' `read` flag, which the plugins
- * inbox shares); the pill opens the Inbox screen (`InboxBoard`), where the list's rows and actions are.
- */
-export function Inbox({ client, state, tasks, onOpen }: { client: HarnessClient; state: AppState; tasks: TasksState | null; onOpen: () => void }) {
+/** The rail's Inbox count said aloud as it changes (a polite live region; the rail's badge shows it). */
+export function InboxAnnouncer({ count }: { count: number }) {
   const { t } = useTranslation();
-  const jobs = useJobs(client, Boolean(state.jobs));
-  const count = waitingCount(tasks, jobs);
   return (
-    <div className="hh-pl-inbox">
-      <InboxPill tasks={tasks} jobs={jobs} onOpen={onOpen} />
-      <span className="hh-sr-only" aria-live="polite">
-        {count > 0 ? t("parallel.waitingCount", { count }) : ""}
-      </span>
-    </div>
+    <span className="hh-sr-only" aria-live="polite">
+      {count > 0 ? t("parallel.waitingCount", { count }) : ""}
+    </span>
   );
 }
 
+const TIER_COLOR = { light: "green", standard: "blue", deep: "violet" } as const;
+const SECTION_COLOR = { waiting: "orange", working: "blue", queued: "gray", jobs: "orange" } as const;
+
 /**
- * The Inbox's four sections (parallel spec §9.2), the Inbox screen's List: the queues' pause,
- * Waiting for you, Working, Queued, Jobs, and "New task". A row asks main to focus its task; `onFocused` hears once main
- * took it (null: the start view). "Start" on a needs-you job tells `onStarted` once the chat took it.
+ * The Inbox page (rail › Inbox; DESIGN.md "Secondary pages", stage 4a): a list only, in sections by state, each with
+ * its tag and counter: Waiting for you, Working, Queued, and the job results that wait for you. A task row asks main
+ * to focus its task, and `onOpened` hears once main took it (the chat follows main's tasks change). A queued row has
+ * Cancel; a needs-you job result has Start, its declared action. Jobs themselves live on their own page.
  */
-export function InboxList({
+export function InboxPage({
   client,
   state,
   tasks,
-  jobs,
-  onFocused,
-  onStarted,
-  onRefill,
+  focusKey,
+  onNewTask,
+  onOpened,
+  onBack,
   onStartAction,
-  newTask = true,
+  onRefill,
 }: {
   client: HarnessClient;
   state: AppState;
   tasks: TasksState | null;
-  jobs: readonly JobSummary[];
-  onFocused?: (taskId: string | null) => void;
-  onStarted?: () => void;
-  /** A cancelled queued message of the focused task: its text goes back in the box (Decision 7). */
-  onRefill?: (text: string) => void;
-  /** Starts a needs-you job's action; false when it couldn't start (the list stays and says so). */
+  /** Each rail pick is a new number: the focus goes to the title again. */
+  focusKey?: number;
+  /** "New task" (a harness with parallel tasks). Absent: no button. */
+  onNewTask?: () => void;
+  /** A task was focused, or a job's action started: the chat shows again. */
+  onOpened: () => void;
+  /** Escape on the page: back to the chat. */
+  onBack?: () => void;
+  /** Starts a needs-you job's action through the chat's start path; false when it couldn't. */
   onStartAction?: (action: string, scope: string | null) => boolean;
-  /** Its own "New task" button (the Inbox screen has one in its header). */
-  newTask?: boolean;
+  /** A cancelled queued message of the focused task: its text goes back in the box (parallel spec, Decision 7). */
+  onRefill?: (text: string) => void;
 }) {
   const { t, i18n } = useTranslation();
-  /** Why the last Start or Run now in the Jobs section didn't go through. */
-  const [jobProblem, setJobProblem] = useState<string | null>(null);
-  /** A focus is on its way to main: a second click asks nothing more. */
-  const focusing = useRef(false);
-  const id = useId();
   const language = shownLanguage(i18n);
+  const id = useId();
+  const jobs = useJobs(client, Boolean(state.jobs));
   const hasScopes = Boolean(state.scopes);
   const scopeTitles = useScopeTitles(client, hasScopes);
-  const { waiting, working, queued } = taskGroups(tasks?.tasks ?? []);
+  /** Why the last Start on a job result didn't go through, by its row's key. */
+  const [problem, setProblem] = useState<{ key: string; text: string } | null>(null);
+  /** A focus is on its way to main: a second click asks nothing more. */
+  const focusing = useRef(false);
 
-  const focus = async (taskId: string | null) => {
+  const { waiting, working, queued } = taskGroups(tasks?.tasks ?? []);
+  const results = jobsWaiting(jobs);
+  const summary = t("inbox.summary", { waiting: waitingCount(tasks, jobs), working: working.length });
+
+  const focus = async (taskId: string) => {
     if (focusing.current) return;
     focusing.current = true;
     try {
       await client.tasks.focus(taskId);
-      onFocused?.(taskId);
+      onOpened();
     } catch {
-      // Main refused (the task has just ended): the list stays, and its next change drops the row.
+      // Main refused (the task has just ended): the page stays, and its next change drops the row.
     } finally {
       focusing.current = false;
     }
@@ -177,130 +169,197 @@ export function InboxList({
     );
   };
 
-  const stateText = (s: TaskSummary): string | null => {
-    if (s.state === "waiting") return t(s.waitingFor === "answer" ? "parallel.hasQuestion" : s.waitingFor === "phase" ? "parallel.wantsPhase" : "parallel.yourTurn");
-    if (s.state === "closing") return t("parallel.closing");
-    if (s.state === "checkpoint") return t("parallel.checkpoint");
+  const action = (s: TaskSummary) => (s.action && Object.hasOwn(state.actions, s.action) ? state.actions[s.action] : null);
+  const scopeOf = (scope: string | null) => (scope !== null && hasScopes && Object.hasOwn(scopeTitles, scope) ? scopeTitles[scope] : null);
+  /** What the task waits for, or what a working one does now, as a badge. */
+  const stateBadge = (s: TaskSummary) => {
+    if (s.state === "waiting") {
+      if (s.waitingFor === "answer") return <Rx.Badge color="blue">{t("parallel.hasQuestion")}</Rx.Badge>;
+      return <Rx.Badge color="orange">{t(s.waitingFor === "phase" ? "parallel.wantsPhase" : "parallel.yourTurn")}</Rx.Badge>;
+    }
+    if (s.state === "closing") return <Rx.Badge color="blue">{t("parallel.closing")}</Rx.Badge>;
+    if (s.state === "checkpoint") return <Rx.Badge color="blue">{t("parallel.checkpoint")}</Rx.Badge>;
     return null;
   };
-  const phaseLabel = (s: TaskSummary): string | null => {
-    if (!s.phase) return null;
-    const action = s.action && Object.hasOwn(state.actions, s.action) ? state.actions[s.action] : null;
-    return action?.phases?.find((p) => p.id === s.phase)?.label ?? null;
+
+  const taskRow = (s: TaskSummary, key: string, index: number) => {
+    const labelId = `${id}-${key}-${index}`;
+    const a = action(s);
+    const phases = a?.phases ?? [];
+    const step = s.phase ? phases.findIndex((p) => p.id === s.phase) : -1;
+    const scope = scopeOf(s.scope);
+    const conflict = s.conflict && s.conflict.length > 0 ? s.conflict : null;
+    const progress = s.state !== "waiting" && s.state !== "queued" && step >= 0 ? t("inbox.progress", { step: step + 1, total: phases.length }) : null;
+    return (
+      <li key={s.id}>
+        <Rx.Flex align="start" gap="2">
+          <button type="button" className="hh-inbox-row" aria-current={s.focused ? "true" : undefined} onClick={() => void focus(s.id)}>
+            <Rx.Flex direction="column" gap="2" minWidth="0">
+              <Rx.Flex align="baseline" justify="between" gap="3">
+                <Rx.Text id={labelId} size="2" weight="bold" dir="auto">
+                  {s.label}
+                </Rx.Text>
+                <Rx.Text size="1" color="gray" wrap="nowrap">
+                  {t("inbox.started", { ago: timeAgo(s.startedAt, language) })}
+                </Rx.Text>
+              </Rx.Flex>
+              <Rx.Flex align="center" gap="2" wrap="wrap">
+                {s.focused && (
+                  <Rx.Badge color="gray" variant="outline">
+                    {t("inbox.onScreen")}
+                  </Rx.Badge>
+                )}
+                {stateBadge(s)}
+                {step >= 0 && (
+                  <Rx.Badge color="gray" variant="outline" dir="auto">
+                    {phases[step].label}
+                  </Rx.Badge>
+                )}
+                {scope && (
+                  <Rx.Badge color="gray" variant="outline" dir="auto">
+                    {scope}
+                  </Rx.Badge>
+                )}
+                {a?.tier && <Rx.Badge color={TIER_COLOR[a.tier]}>{t(`models.tier.${a.tier}`)}</Rx.Badge>}
+                {conflict && <Rx.Badge color="orange">{t("parallel.conflictChip")}</Rx.Badge>}
+              </Rx.Flex>
+              {progress && (
+                <Rx.Flex align="center" gap="3">
+                  <Rx.Box flexGrow="1" maxWidth="240px">
+                    <Rx.Progress size="1" value={((step + 1) / phases.length) * 100} aria-label={progress} />
+                  </Rx.Box>
+                  <Rx.Text size="1" color="gray" aria-hidden="true">
+                    {progress}
+                  </Rx.Text>
+                </Rx.Flex>
+              )}
+              {conflict && (
+                <Rx.Text as="p" size="1" color="gray" dir="auto">
+                  {conflict.join(", ")}
+                </Rx.Text>
+              )}
+              {s.state === "queued" && (
+                <Rx.Text as="p" size="1" color="gray">
+                  {t("inbox.startsWhen", { cap: tasks?.caps.tasks ?? 1 })}
+                </Rx.Text>
+              )}
+            </Rx.Flex>
+          </button>
+          {s.state === "queued" && (
+            <Rx.Box pt="3" pr="3">
+              <Rx.Button variant="ghost" color="gray" size="1" aria-describedby={labelId} onClick={() => cancel(s)}>
+                {t("parallel.cancel")}
+              </Rx.Button>
+            </Rx.Box>
+          )}
+        </Rx.Flex>
+      </li>
+    );
   };
 
-  const row = (s: TaskSummary, index: number, key: string) => {
-    const labelId = `${id}-${key}-${index}`;
-    const scope = hasScopes && Object.hasOwn(scopeTitles, s.scope) ? scopeTitles[s.scope] : null;
-    const said = stateText(s);
-    const phase = phaseLabel(s);
-    return (
-      <li key={s.id} className="hh-tk-item">
-        <button className="hh-tk-row" aria-current={s.focused ? "true" : undefined} onClick={() => void focus(s.id)}>
-          <span id={labelId} className="hh-tk-label" dir="auto">
-            {s.label}
-          </span>
-          {(scope || said || phase) && (
-            <span className="hh-tk-meta">
-              {scope && <span dir="auto">{scope}</span>}
-              {said && <span>{said}</span>}
-              {phase && <span dir="auto">{phase}</span>}
-            </span>
-          )}
-          {s.conflict && s.conflict.length > 0 && (
-            <span className="hh-tk-conflict" title={s.conflict.join("\n")}>
-              {t("parallel.conflictChip")}
-            </span>
-          )}
-        </button>
-        {s.state === "queued" && (
-          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => cancel(s)}>
-            {t("parallel.cancel")}
-          </Button>
-        )}
-      </li>
-    );
-  };
-  const when = (iso: string) => jobTime(iso, language);
-  const runNow = (j: JobSummary) => {
-    setJobProblem(null);
-    void client.jobs.run(j.id, ...(j.scope !== null ? [j.scope] : [])).then(
-      (queued) => {
-        if (!queued) setJobProblem(t("parallel.runFailed"));
-      },
-      () => setJobProblem(t("parallel.runFailed")),
-    );
-  };
   const jobRow = (j: JobSummary, index: number) => {
+    const key = `${j.id}:${j.scope ?? "-"}`;
     const labelId = `${id}-job-${index}`;
-    const scope = j.scope !== null && hasScopes && Object.hasOwn(scopeTitles, j.scope) ? scopeTitles[j.scope] : null;
-    const action = startableAction(state, j);
+    const scope = scopeOf(j.scope);
+    const start = onStartAction ? startableAction(state, j) : null;
     return (
-      <li key={`${j.id}:${j.scope ?? "-"}`} className="hh-tk-item">
-        <div className="hh-tk-row">
-          <span id={labelId} className="hh-tk-label" dir="auto">
-            {j.label}
-          </span>
-          <span className="hh-tk-meta">
-            {scope && <span dir="auto">{scope}</span>}
-            {j.running ? <span>{t("parallel.jobRunning")}</span> : j.last && <span>{t(JOB_STATUS[j.last.status])}</span>}
-            {j.last && <span>{t("parallel.lastRun", { time: when(j.last.at) })}</span>}
-            {j.paused === "daily-cap" && <span>{t("parallel.pausedTomorrow")}</span>}
-            {j.paused === "off" && <span>{t("parallel.jobOff")}</span>}
-            {!j.paused && j.next && <span>{t("parallel.nextRun", { time: when(j.next) })}</span>}
-          </span>
-          {j.last && (
-            <span className="hh-tk-summary" dir="auto">
-              {j.last.summary}
-            </span>
+      <li key={key}>
+        <Rx.Box px="4" py="3">
+          <Rx.Flex align="start" justify="between" gap="3">
+            <Rx.Flex direction="column" gap="2" minWidth="0">
+              <Rx.Text id={labelId} size="2" weight="bold" dir="auto">
+                {j.label}
+              </Rx.Text>
+              <Rx.Flex align="center" gap="2" wrap="wrap">
+                <Rx.Badge color="orange">{t("parallel.statusNeedsYou")}</Rx.Badge>
+                {scope && (
+                  <Rx.Badge color="gray" variant="outline" dir="auto">
+                    {scope}
+                  </Rx.Badge>
+                )}
+                {j.last && (
+                  <Rx.Text size="1" color="gray">
+                    {t("parallel.lastRun", { time: jobTime(j.last.at, language) })}
+                  </Rx.Text>
+                )}
+              </Rx.Flex>
+              {j.last && (
+                <Rx.Text as="p" size="2" dir="auto">
+                  {j.last.summary}
+                </Rx.Text>
+              )}
+            </Rx.Flex>
+            {start && (
+              <Rx.Button
+                variant="outline"
+                color="gray"
+                size="1"
+                aria-describedby={labelId}
+                onClick={() => {
+                  setProblem(null);
+                  if (onStartAction?.(start, j.scope) === false) setProblem({ key, text: t("parallel.startFailed") });
+                  else onOpened();
+                }}
+              >
+                {t("parallel.start")}
+              </Rx.Button>
+            )}
+          </Rx.Flex>
+          {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
+          {problem?.key === key && (
+            <Rx.Text as="p" size="1" color="red" role="alert" mt="2">
+              {problem.text}
+            </Rx.Text>
           )}
-        </div>
-        {j.last?.run ? <JobRunSteps client={client} run={j.last.run} describedBy={labelId} /> : null}
-        {action && (
-          <Button
-            size="compact"
-            className="hh-tk-cancel"
-            aria-describedby={labelId}
-            onClick={() => {
-              setJobProblem(null);
-              if (onStartAction?.(action, j.scope) === false) setJobProblem(t("parallel.startFailed"));
-              else onStarted?.();
-            }}
-          >
-            {t("parallel.start")}
-          </Button>
-        )}
-        {j.manual && !j.running && j.paused !== "off" && (
-          <Button size="compact" className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
-            {t("parallel.runNow")}
-          </Button>
-        )}
+        </Rx.Box>
       </li>
     );
   };
-  const section = (key: string, title: string, list: TaskSummary[], empty: string) => (
-    <section className="hh-tk-section" aria-labelledby={`${id}-${key}`}>
-      <h3 id={`${id}-${key}`}>{title}</h3>
-      {list.length === 0 ? <p className="hh-tk-empty">{empty}</p> : <ul className="hh-tk-list">{list.map((s, i) => row(s, i, key))}</ul>}
-    </section>
+
+  const section = (key: keyof typeof SECTION_COLOR, title: string, count: number, rows: ReactNode) => (
+    <Rx.Box asChild mb="5" key={key}>
+      <section aria-labelledby={`${id}-${key}`}>
+        <Rx.Flex asChild align="center" gap="2" mb="2">
+          <h2 id={`${id}-${key}`} className="hh-inbox-head">
+            <Rx.Badge color={SECTION_COLOR[key]} size="2">
+              {title}
+            </Rx.Badge>
+            <Rx.Badge color="gray" variant="outline" size="2" aria-hidden="true">
+              {count}
+            </Rx.Badge>
+            <Hidden>{t("inbox.count", { count })}</Hidden>
+          </h2>
+        </Rx.Flex>
+        {count === 0 ? (
+          <Rx.Text as="p" size="1" color="gray">
+            {t("parallel.none")}
+          </Rx.Text>
+        ) : (
+          <ul className="hh-gd-list">{rows}</ul>
+        )}
+      </section>
+    </Rx.Box>
   );
 
   return (
-    <>
+    <SecondaryPage
+      title={t("inbox.title")}
+      line={summary}
+      focusKey={focusKey}
+      {...(onBack ? { onBack } : {})}
+      action={
+        onNewTask && (
+          <Rx.Button size="2" onClick={onNewTask}>
+            {t("parallel.newTask")}
+          </Rx.Button>
+        )
+      }
+    >
       <QueuePause client={client} tasks={tasks} />
-      {section("waiting", t("parallel.waitingTitle"), waiting, t("parallel.none"))}
-      {section("working", t("parallel.workingTitle"), working, t("parallel.none"))}
-      {section("queued", t("parallel.queuedTitle"), queued, t("parallel.none"))}
-      <section className="hh-tk-section" aria-labelledby={`${id}-jobs`}>
-        <h3 id={`${id}-jobs`}>{t("parallel.jobsTitle")}</h3>
-        {jobs.length === 0 ? <p className="hh-tk-empty">{t("parallel.noJobs")}</p> : <ul className="hh-tk-list">{jobs.map(jobRow)}</ul>}
-        {jobProblem && <p role="alert">{jobProblem}</p>}
-      </section>
-      {newTask && (
-        <button className="hh-tk-new" onClick={() => void focus(null)}>
-          {t("parallel.newTask")}
-        </button>
-      )}
-    </>
+      {section("waiting", t("parallel.waitingTitle"), waiting.length, waiting.map((s, i) => taskRow(s, "waiting", i)))}
+      {section("working", t("parallel.workingTitle"), working.length, working.map((s, i) => taskRow(s, "working", i)))}
+      {section("queued", t("parallel.queuedTitle"), queued.length, queued.map((s, i) => taskRow(s, "queued", i)))}
+      {results.length > 0 && section("jobs", t("inbox.jobsTitle"), results.length, results.map(jobRow))}
+    </SecondaryPage>
   );
 }

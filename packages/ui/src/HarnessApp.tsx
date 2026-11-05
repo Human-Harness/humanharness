@@ -12,8 +12,10 @@ import { BackendCard } from "./hatches/BackendCard";
 import { Home } from "./Home";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { useAttention } from "./plugins/usePlugins";
-import { Inbox } from "./parallel/Inbox";
-import { InboxBoard } from "./parallel/InboxBoard";
+import { InboxAnnouncer, InboxPage, waitingCount } from "./parallel/Inbox";
+import { JobsPage } from "./parallel/JobsPage";
+import { useJobs } from "./parallel/useJobs";
+import { Icon, Rx } from "./guide";
 import { TaskStrip } from "./parallel/TaskStrip";
 import { useFocusEpoch, useTasks } from "./parallel/useTasks";
 import { shownLanguage, systemLanguage } from "./language";
@@ -50,9 +52,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
   const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
-  /** On the work screen, the rail's place (UI refresh spec §4.2): the chat, or the Inbox screen (§5.4; the chat stays mounted under it). */
-  const [view, setView] = useState<{ kind: "chat" } | { kind: "inbox"; column?: "jobs"; request?: number }>({ kind: "chat" });
-  /** Each rail pick of Inbox or Jobs is a new number: picking Jobs again moves the focus to its column again. */
+  /** On the work screen, the rail's place (UI refresh spec §4.2): the chat, or a secondary page, Inbox or Jobs (stage 4a; the chat stays mounted under it). */
+  const [view, setView] = useState<{ kind: "chat" } | { kind: "inbox" | "jobs"; request?: number }>({ kind: "chat" });
+  /** Each rail pick of Inbox or Jobs is a new number: picking it again moves the focus to its title again. */
   const inboxPicks = useRef(0);
   /** The rail's Notes and Plugins ask the chat to open them: each pick is a new number the chat watches. */
   const [notesRequest, setNotesRequest] = useState(0);
@@ -164,21 +166,23 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const tasksState = useTasks(client, Boolean(state?.parallel));
   /** Board mode: the chat remounts on each change of the task shown (`epoch`); only a message put back outlives it. */
   const { epoch, toStart } = useFocusEpoch(tasksState);
-  /** Main moved the focus to another task (a notification click): that task's chat shows, even over the Inbox screen or Settings. */
+  /** The job results that wait for the person, for the rail's Inbox count. */
+  const railJobs = useJobs(client, Boolean(state?.jobs) && Boolean(state?.parallel?.inbox));
+  /** Main moved the focus to another task (a notification click): that task's chat shows, even over a page or Settings. */
   const shownEpoch = useRef(epoch);
   useEffect(() => {
     if (shownEpoch.current === epoch) return;
     shownEpoch.current = epoch;
-    setView((v) => (v.kind === "inbox" ? { kind: "chat" } : v));
+    setView((v) => (v.kind !== "chat" ? { kind: "chat" } : v));
     setSettings(null);
     setSettingsFocus(null);
   }, [epoch]);
-  /** Leaving the Inbox screen for the chat: a focus lost with the board goes to the rail's Tasks, not the page. */
-  const wasInbox = useRef(false);
+  /** Leaving a page (Inbox, Jobs) for the chat: a focus lost with the page goes to the rail's Tasks, not the body. */
+  const wasPage = useRef(false);
   useEffect(() => {
-    const was = wasInbox.current;
-    wasInbox.current = view.kind === "inbox";
-    if (!was || view.kind === "inbox") return;
+    const was = wasPage.current;
+    wasPage.current = view.kind !== "chat";
+    if (!was || view.kind !== "chat") return;
     const active = document.activeElement;
     if (active && active !== document.body && active.isConnected) return;
     document.querySelector<HTMLElement>('.hh-rail [aria-current="page"]')?.focus();
@@ -382,8 +386,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
   /**
    * The rail (spec §4.2): an entry only for a feature the harness has (D0). Notes come from declared actions' topics.
-   * Inbox and Jobs open the Inbox screen (§5.4): a harness whose manifest turns the core inbox off (`inbox: false`) has
-   * neither, as it has no top-bar pill.
+   * Inbox and Jobs open their own pages (stage 4a): a harness whose manifest turns the core inbox off (`inbox: false`)
+   * has no Inbox.
    */
   const entries = railEntries({
     parallel: Boolean(state.parallel?.inbox),
@@ -394,15 +398,22 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
   const focusedTask = tasksState?.tasks.find((s) => s.focused);
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
-  const railCurrent: RailEntry = view.kind === "inbox" ? (view.column === "jobs" ? "jobs" : "inbox") : "tasks";
+  const railCurrent: RailEntry = view.kind === "chat" ? "tasks" : view.kind;
+  /** The page's name, for Settings' Volver. */
+  const pageTitle = view.kind === "inbox" ? i18n.t("inbox.title") : view.kind === "jobs" ? i18n.t("rail.jobs") : null;
+  const waiting = waitingCount(tasksState, railJobs);
+  const toChat = () => setView({ kind: "chat" });
+  /** A needs-you job's Start, from either page: through the chat's start path, and the chat shows once it started. */
+  const startAction = (action: string, scope: string | null) => {
+    const started = shellRef.current?.start(action, scope) ?? false;
+    if (started) toChat();
+    return started;
+  };
   const pick = (e: RailEntry) => {
     if (e === "home") return setScreen("home");
     if (e === "settings") return setSettings("general");
-    if (e === "inbox" || e === "jobs") {
-      const request = ++inboxPicks.current;
-      return setView(e === "jobs" ? { kind: "inbox", column: "jobs", request } : { kind: "inbox", request });
-    }
-    // Notes, Plugins and Tasks are the chat's: the Inbox screen gives way to it.
+    if (e === "inbox" || e === "jobs") return setView({ kind: e, request: ++inboxPicks.current });
+    // Notes, Plugins and Tasks are the chat's: a page gives way to it.
     setView({ kind: "chat" });
     if (e === "notes") return setNotesRequest((n) => n + 1);
     if (e === "plugins") return setPluginsRequest((n) => n + 1);
@@ -416,19 +427,26 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
         {screen === "work" && configured ? (
           <div className="hh-shell">
             <TopBar
-              crumbs={[{ label: state.harness.name, onClick: () => setScreen("home") }, { label: view.kind === "inbox" ? i18n.t("inbox.title") : screenTitle }]}
+              {...(pageTitle
+                ? {
+                    // A page's Volver (DESIGN.md "Secondary pages"): back to the chat, named by its task.
+                    leading: (
+                      <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: screenTitle })} onClick={toChat}>
+                        <Icon name="back" size={18} />
+                        {screenTitle}
+                      </Rx.Button>
+                    ),
+                  }
+                : { crumbs: [{ label: state.harness.name, onClick: () => setScreen("home") }, { label: screenTitle }] })}
               mock={state.mock}
               trailing={
                 <>
-                  {state.parallel?.inbox && view.kind !== "inbox" && (
-                    <Inbox client={client} state={state} tasks={tasksState} onOpen={() => setView({ kind: "inbox" })} />
-                  )}
                   {attention?.show && (
                     <AttentionInbox
                       client={client}
                       view={attention}
                       onOpenPanel={(plugin, panel, focus) => {
-                        // The panel is the chat's: the Inbox screen gives way to it.
+                        // The panel is the chat's: a page gives way to it.
                         setView({ kind: "chat" });
                         shellRef.current?.openPanel(plugin, panel, focus);
                       }}
@@ -440,38 +458,47 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 </>
               }
             />
-            <Rail entries={entries} current={railCurrent} onPick={pick} />
+            <Rail entries={entries} current={railCurrent} onPick={pick} counts={{ inbox: { count: waiting, label: i18n.t("inbox.railCount", { count: waiting }) } }} />
+            {state.parallel?.inbox && <InboxAnnouncer count={waiting} />}
             <div className="hh-shell-main">
               {view.kind === "inbox" && (
-                <InboxBoard
+                <InboxPage
                   client={client}
                   state={state}
                   tasks={tasksState}
-                  {...(view.column ? { column: view.column } : {})}
-                  {...(view.request !== undefined ? { request: view.request } : {})}
+                  {...(view.request !== undefined ? { focusKey: view.request } : {})}
                   {...(state.parallel
                     ? {
                         onNewTask: () => {
                           client.tasks.focus(null).then(() => {
                             toStart();
-                            setView({ kind: "chat" });
+                            toChat();
                           }, () => undefined);
                         },
                       }
                     : {})}
-                  onOpened={() => setView({ kind: "chat" })}
-                  onClose={() => setView({ kind: "chat" })}
-                  onStartAction={(action, scope) => shellRef.current?.start(action, scope) ?? false}
+                  onOpened={toChat}
+                  onBack={toChat}
+                  onStartAction={startAction}
                   onRefill={(text) => {
                     shellRef.current?.refill(text);
                     // The text is back in the box: the chat shows it.
-                    setView({ kind: "chat" });
+                    toChat();
                   }}
-                  {...(state.jobs ? { onJobSettings: () => setSettings("jobs") } : {})}
                 />
               )}
-              {/* Under the Inbox screen the chat stays mounted (its draft, panels and start path): only hidden. */}
-              <div className="hh-shell-chat" hidden={view.kind === "inbox"}>
+              {view.kind === "jobs" && (
+                <JobsPage
+                  client={client}
+                  state={state}
+                  {...(view.request !== undefined ? { focusKey: view.request } : {})}
+                  onChange={setState}
+                  onBack={toChat}
+                  onStartAction={startAction}
+                />
+              )}
+              {/* Under a page the chat stays mounted (its draft, panels and start path): only hidden. */}
+              <div className="hh-shell-chat" hidden={view.kind !== "chat"}>
                 <ChatView
                   key={state.parallel ? `${chatKey}:${epoch}` : chatKey}
                   client={client}
@@ -558,7 +585,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           }}
           onChange={setState}
           onClose={closeSettings}
-          from={screen === "home" ? i18n.t("rail.home") : view.kind === "inbox" ? i18n.t("inbox.title") : screenTitle}
+          from={screen === "home" ? i18n.t("rail.home") : (pageTitle ?? screenTitle)}
           onSetup={(step?: string) => {
             const back = settings;
             setSettings(null);

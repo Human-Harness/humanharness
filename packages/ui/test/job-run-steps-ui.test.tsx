@@ -20,9 +20,10 @@ const plainRows = (): JobSummary[] => [
   { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Two conflicts need you", at, action: "implement" }, manual: true, running: false },
   { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "Digest written", at }, manual: false, running: false },
 ];
+/** Needs-you results, as the Inbox lists them (stage 4a): the first with a run, the second without. */
 const withRun = (): JobSummary[] => [
-  { id: "sync", label: "Sync inbox", scope: null, last: { status: "ok", summary: "3 steps · 1 AI step", at, run: "run-1" }, manual: true, running: false },
-  { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "Digest written", at }, manual: false, running: false },
+  { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "3 steps · 1 AI step", at, run: "run-1", action: "implement" }, manual: true, running: false },
+  { id: "digest", label: "Digest", scope: null, last: { status: "needs-you", summary: "Digest written", at }, manual: false, running: false },
 ];
 
 const call = (over: Partial<ToolCallView> = {}): ToolCallView => ({
@@ -49,18 +50,17 @@ function client(list: JobSummary[]) {
   return c;
 }
 
-/** The inbox's Jobs section, open. */
-async function openInbox(c: FakeClient) {
+/** The Inbox page's job results section, open, with its `count` rows. */
+async function openInbox(c: FakeClient, count = 2) {
   render(<HarnessApp client={c} />);
   const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  // The top bar's pill ("Inbox, N waiting"; the rail's Inbox is named "Inbox" too), then the Inbox screen's List.
+  // The rail's Inbox ("Inbox, N waiting" once the results are read).
   fireEvent.click(await screen.findByRole("button", { name: /^Inbox, / }));
-  fireEvent.click(screen.getByRole("button", { name: "List" }));
-  const section = screen.getByRole("heading", { name: "Jobs" }).closest("section")!;
-  await waitFor(() => expect(within(section).getAllByRole("listitem")).toHaveLength(2));
+  const section = (await screen.findByRole("heading", { name: /^Job results for you/ })).closest("section")!;
+  await waitFor(() => expect(within(section).getAllByRole("listitem")).toHaveLength(count));
   return section as HTMLElement;
 }
 
@@ -73,12 +73,12 @@ describe("a job run's steps (tools spec §8.2)", () => {
   it("D0: a row without last.run renders as before", async () => {
     const c = client(plainRows());
     const trace = vi.spyOn(c.tools, "trace");
-    const section = await openInbox(c);
+    const section = await openInbox(c, 1);
     const items = within(section).getAllByRole("listitem");
     expect(within(section).queryByRole("button", { name: "Steps" })).toBeNull();
     expect(items[0].textContent).toContain("Two conflicts need you");
-    expect(within(items[0]).getAllByRole("button").map((b) => b.textContent)).toEqual(["Start", "Run now"]);
-    expect(within(items[1]).queryAllByRole("button")).toHaveLength(0);
+    // Run now lives on the Jobs page (stage 4a): a result here only has its Start.
+    expect(within(items[0]).getAllByRole("button").map((b) => b.textContent)).toEqual(["Start"]);
     expect(trace).not.toHaveBeenCalled();
   });
 
@@ -152,7 +152,7 @@ describe("a job run's steps (tools spec §8.2)", () => {
     expect(items[0].textContent).toContain("Sync inbox");
     expect(items[0].textContent).toContain("3 steps · 1 AI step");
     expect(items[0].textContent).not.toContain("secret");
-    expect(within(items[0]).getByRole("button", { name: "Run now" })).toBeTruthy();
+    expect(within(items[0]).getByRole("button", { name: "Start" })).toBeTruthy();
   });
 
   it("Settings › Jobs shows the same Steps under a run line", async () => {
@@ -240,8 +240,8 @@ describe("a job run's steps when the row's run changes or the answer is odd (Tas
 
   it("each Steps button is described by its row's label, in the inbox and in Settings › Jobs", async () => {
     const c = client([
-      { id: "sync", label: "Sync inbox", scope: null, last: { status: "ok", summary: "1 step", at, run: "run-1" }, manual: true, running: false },
-      { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "2 steps", at, run: "run-2" }, manual: false, running: false },
+      { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "1 step", at, run: "run-1" }, manual: true, running: false },
+      { id: "digest", label: "Digest", scope: null, last: { status: "needs-you", summary: "2 steps", at, run: "run-2" }, manual: false, running: false },
     ]);
     const section = await openInbox(c);
     const described = (b: HTMLElement) => document.getElementById(b.getAttribute("aria-describedby") ?? "")?.textContent;

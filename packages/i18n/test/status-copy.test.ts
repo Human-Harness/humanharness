@@ -23,7 +23,7 @@ describe("status copy", () => {
   });
 
   it("matches the spec's examples", () => {
-    expect(get("inbox.board.startsWhen")).toBe("Starts when a slot frees up · {{cap}} tasks at once");
+    expect(get("inbox.startsWhen")).toBe("Starts when a slot frees up · {{cap}} tasks at once");
     expect(get("parallel.pausedTomorrow")).toBe("Paused until tomorrow · daily token cap reached");
     expect(get("plugins.status.crashed")).toBe("Turned off after crashes · turn it on to try again");
     expect(get("connections.notSet")).toBe("Not set · paste the key to use it");

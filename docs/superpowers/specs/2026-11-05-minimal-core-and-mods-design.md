@@ -1,6 +1,6 @@
 # Minimal core and mods — design
 
-Status: approved by Marco section by section, 2026-11-05, in a brainstorming session. The written spec waits for his review.
+Status: approved by Marco, 2026-11-05, section by section in a brainstorming session and then as a written spec.
 
 Human Harness grew features into the core one spec at a time: Sidekick, search, history views, jobs, reviews, translation, material. Each is off unless a harness declares it (the "D0" rule), so a harness pays nothing at runtime. But every one of them branches through `shell/src/main/index.ts` and `task-manager.ts`, every one is code the core must keep working, and none of them can be changed by the person who uses the app.
 

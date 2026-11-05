@@ -48,7 +48,7 @@ import { markdownToPlain } from "./markdown";
 import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
 import { ModeBar, ModeList } from "./ModeList";
 import { actionModes, tierBelow } from "./modes";
-import { NotesPanel } from "./NotesPanel";
+import { NotesPage } from "./NotesPage";
 import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
@@ -80,6 +80,17 @@ const isReply = (e: ChatEntry): boolean => isTurnEntry(e) && !isToolLine(e);
 const NO_TASKS: TaskView = { current: null, actions: {}, notes: [] };
 
 export type SendFn = (text: string, options?: SendOptions) => boolean;
+
+/**
+ * A page of the chat's own on the work screen: its title, the way back and, when the way back is not to the task (a
+ * note's detail goes back to the list), what Volver says; `rail` is the rail entry it belongs to.
+ */
+export interface ChatPage {
+  title: string;
+  back: () => void;
+  backLabel?: string;
+  rail?: "notes";
+}
 
 /** What the shell's top bar asks of the chat on screen (see `shellRef`). */
 export interface ShellBridge {
@@ -182,10 +193,10 @@ export function ChatView({
   /** Told whether a running plugin has a panel in the Plugins section (the rail's Plugins entry), and false when gone. */
   onPluginPanels?: (has: boolean) => void;
   /**
-   * A page of the chat's own took the work screen (History, stage 4b1): its title and the way back, for the top bar's
-   * Volver; null when the chat shows again (and on unmount).
+   * A page of the chat's own took the work screen (History, stage 4b1; Files, 4b2): its title and the way back, for the
+   * top bar's Volver; null when the chat shows again (and on unmount).
    */
-  onPage?: (page: { title: string; back: () => void } | null) => void;
+  onPage?: (page: ChatPage | null) => void;
   /** The open task's label, null with none (and on unmount): the top bar's breadcrumb names it. */
   onTaskLabel?: (label: string | null) => void;
   onFixEngine?: () => void;
@@ -225,7 +236,7 @@ export function ChatView({
   const [historyTask, setHistoryTask] = useState<string | undefined>(undefined);
   /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
-  const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
+  const [notesPage, setNotesPage] = useState<{ open?: string } | null>(null);
   /** The context panel is open (context-panel spec §5.1); it shares the reader's slot. */
   const [contextOpen, setContextOpen] = useState(false);
   /** The meter that opened the context panel: it gets focus back when the panel closes. */
@@ -1036,7 +1047,7 @@ export function ChatView({
         closeReader();
         setTimelineFile(null);
         setShowHistory(false);
-        setNotesPanel(null);
+        setNotesPage(null);
         setContextOpen(false);
         requestAnimationFrame(() => inputRef.current?.focus());
         return true;
@@ -1044,7 +1055,7 @@ export function ChatView({
         if (slim) return false;
         closeReader();
         setContextOpen(false);
-        setNotesPanel(null);
+        setNotesPage(null);
         setTimelineFile(null);
         setHistoryTask(undefined);
         setShowHistory(true);
@@ -1055,7 +1066,7 @@ export function ChatView({
         setContextOpen(false);
         setTimelineFile(null);
         setShowHistory(false);
-        setNotesPanel({});
+        setNotesPage({});
         return true;
       case "open-context":
         // The open task's context: with no task the panel has nothing to show (and would stay open for the next one).
@@ -1094,7 +1105,7 @@ export function ChatView({
         if (slim) return false;
         closeReader();
         setContextOpen(false);
-        setNotesPanel(null);
+        setNotesPage(null);
         setTimelineFile(null);
         setHistoryTask(intent.task);
         setShowHistory(true);
@@ -1166,7 +1177,7 @@ export function ChatView({
     };
   });
   const resume = (note: NoteView) => {
-    setNotesPanel(null);
+    setNotesPage(null);
     if (note.action && state.actions[note.action]) startTopic(note.action);
     else send(t("notes.resumeQuestion", { title: note.title }));
   };
@@ -1463,7 +1474,7 @@ export function ChatView({
     closeReader();
     setTimelineFile(null);
     setShowHistory(false);
-    setNotesPanel(null);
+    setNotesPage(null);
     setContextOpen(true);
   };
   /** Close or Escape: focus goes back to the meter that opened the panel (or the meter on screen now). */
@@ -1581,8 +1592,8 @@ export function ChatView({
     pluginPanelsTo.current?.(hasPluginsSection);
   }, [hasPluginsSection]);
   useEffect(() => () => pluginPanelsTo.current?.(false), []);
-  // The rail's Notes: the drawer, as search's "Open notes" opens it (one panel at a time). Only a pick made while this
-  // view is on screen counts: a remount (another task, back from Home) doesn't reopen it.
+  // The rail's Files: the notes list, as search's "Open notes" opens it (one page or panel at a time). Only a pick made
+  // while this view is on screen counts: a remount (another task, back from Home) doesn't reopen it.
   const notesSeen = useRef(notesRequest);
   useEffect(() => {
     if (notesRequest === notesSeen.current || slim) return;
@@ -1591,7 +1602,7 @@ export function ChatView({
     setContextOpen(false);
     setTimelineFile(null);
     setShowHistory(false);
-    setNotesPanel({});
+    setNotesPage({});
   }, [notesRequest]);
   // The rail's Plugins: the section's first panel, opened as a chip opens it (its tab, scrolled into view).
   const pluginsSeen = useRef(pluginsRequest);
@@ -1613,40 +1624,55 @@ export function ChatView({
     blockedTo.current?.(now);
   });
   useEffect(() => () => blockedTo.current?.(false), []);
-  /** History is a page (stage 4b1): the chat stays mounted under it, hidden, and the top bar shows Volver. */
+  /**
+   * History (stage 4b1) and Files (4b2) are pages: the chat stays mounted under them, hidden, and the top bar shows
+   * Volver. One at a time.
+   */
   const historyPage = showHistory && !slim;
+  const notesShown = notesPage !== null && !slim && !historyPage;
+  const paged = historyPage || notesShown;
+  const noteOpen = notesShown ? notesPage.open : undefined;
   const closeHistory = useCallback(() => {
     setShowHistory(false);
     setHistoryTask(undefined);
   }, []);
+  const closeNotes = useCallback(() => setNotesPage(null), []);
+  const toNotesList = useCallback(() => setNotesPage({}), []);
   const pageTo = useRef(onPage);
   pageTo.current = onPage;
   useEffect(() => {
-    pageTo.current?.(historyPage ? { title: t("history.title"), back: closeHistory } : null);
-  }, [historyPage, closeHistory, t]);
+    pageTo.current?.(
+      historyPage
+        ? { title: t("history.title"), back: closeHistory }
+        : notesShown
+          ? // From a note's detail, Volver goes to the list and says its name (DESIGN.md "Secondary pages").
+            { title: t("files.title"), rail: "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
+          : null,
+    );
+  }, [historyPage, notesShown, noteOpen, closeHistory, closeNotes, toNotesList, t]);
   useEffect(() => () => pageTo.current?.(null), []);
-  /** What had focus when History opened (read before the page's title takes it): it gets focus back on leaving. */
-  const historyOpener = useRef<HTMLElement | null>(null);
-  const wasHistory = useRef(false);
+  /** What had focus when a page opened (read before the page's title takes it): it gets focus back on leaving. */
+  const pageOpener = useRef<HTMLElement | null>(null);
+  const wasPaged = useRef(false);
   useLayoutEffect(() => {
-    const was = wasHistory.current;
-    wasHistory.current = historyPage;
-    if (historyPage && !was) {
+    const was = wasPaged.current;
+    wasPaged.current = paged;
+    if (paged && !was) {
       const active = document.activeElement;
-      historyOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+      pageOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
     }
-  }, [historyPage]);
-  const historyShown = useRef(false);
+  }, [paged]);
+  const pageShown = useRef(false);
   useEffect(() => {
-    const was = historyShown.current;
-    historyShown.current = historyPage;
-    if (!was || historyPage) return;
-    // Only when focus went away with the page: what took it since (the reader, the timeline) keeps it.
+    const was = pageShown.current;
+    pageShown.current = paged;
+    if (!was || paged) return;
+    // Only when focus went away with the page: what took it since (the reader, the timeline, a topic) keeps it.
     const active = document.activeElement;
     if (active && active !== document.body && active.isConnected) return;
-    const back = historyOpener.current;
+    const back = pageOpener.current;
     (back?.isConnected ? back : document.querySelector<HTMLElement>(".hh-composer textarea"))?.focus();
-  }, [historyPage]);
+  }, [paged]);
   /** The open task's name for the breadcrumb (a harness without `parallel` has no task list to read it from). */
   const taskLabel = tasks.current ? (tasks.current.action ? labelOf(tasks.current.action) : t("history.question")) : null;
   const taskLabelTo = useRef(onTaskLabel);
@@ -1658,7 +1684,7 @@ export function ChatView({
 
   return (
     <DocumentContext.Provider value={documentHost}>
-      <div className={slim ? "hh-app hh-app-slim" : `hh-app${historyPage ? " hh-app-paged" : ""}`}>
+      <div className={slim ? "hh-app hh-app-slim" : `hh-app${paged ? " hh-app-paged" : ""}`}>
         {!slim && (
           <TaskHeader
             title={title ?? taskLabel ?? (startView?.title ? t(startView.title, { ns: "harness" }) : t("rail.tasks"))}
@@ -1686,7 +1712,7 @@ export function ChatView({
             chips={surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
             onHistory={() => {
               // One panel at a time: Escape closes the one on screen.
-              setNotesPanel(null);
+              setNotesPage(null);
               setTimelineFile(null);
               setContextOpen(false);
               setShowHistory(true);
@@ -1707,7 +1733,7 @@ export function ChatView({
                 setShowHistory(false);
                 setTimelineFile(null);
                 setContextOpen(false);
-                setNotesPanel({ expanded: slug });
+                setNotesPage({ open: slug });
               }}
               material={material}
               {...(pluginsSection ? { plugins: pluginsSection } : {})}
@@ -2229,14 +2255,16 @@ export function ChatView({
             }}
           />
         )}
-        {notesPanel && (
-          <NotesPanel
+        {notesShown && (
+          <NotesPage
             notes={tasks.notes}
-            expanded={notesPanel.expanded}
+            {...(noteOpen ? { open: noteOpen } : {})}
+            focusKey={notesRequest}
             disabled={blocked()}
+            onPick={(slug) => setNotesPage(slug ? { open: slug } : {})}
             onResume={resume}
-            onOpen={openFile}
-            onClose={() => setNotesPanel(null)}
+            onOpenFile={openFile}
+            onBack={closeNotes}
           />
         )}
       </div>

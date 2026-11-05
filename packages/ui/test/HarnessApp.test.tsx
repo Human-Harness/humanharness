@@ -887,18 +887,31 @@ describe("HarnessApp", () => {
     expect(await screen.findByRole("button", { name: /Start/ })).toBeTruthy();
   });
 
-  it("Rail › Notes opens the notes drawer, only for a harness with actions (D0)", async () => {
+  it("Rail › Files opens the Files page, only for a harness with actions (D0); a note's Volver goes to the list", async () => {
     await startWork(<HarnessApp client={new FakeClient(ready)} />);
-    expect(within(await screen.findByRole("navigation", { name: "App" })).queryByRole("button", { name: "Notes" })).toBeNull();
+    expect(within(await screen.findByRole("navigation", { name: "App" })).queryByRole("button", { name: "Files" })).toBeNull();
     cleanup();
     const client = new FakeClient(ready);
     client.state.actions = { manifest: { label: "The manifest", cost: "medium" } };
     client.state.path = ["manifest"];
+    client.tasks = {
+      current: null,
+      actions: {},
+      notes: [{ slug: "manifest", title: "The manifest", action: "manifest", date: "2026-10-12T11:20:00.000Z", summary: ["One point"], decisions: [], path: ".harness/notes/manifest.md" }],
+    };
     await startWork(<HarnessApp client={client} />);
     const rail = await screen.findByRole("navigation", { name: "App" });
-    expect(screen.queryByRole("dialog", { name: "What's clear so far" })).toBeNull();
-    fireEvent.click(within(rail).getByRole("button", { name: "Notes" }));
-    expect(await screen.findByRole("dialog", { name: "What's clear so far" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
+    fireEvent.click(within(rail).getByRole("button", { name: "Files" }));
+    const files = await screen.findByRole("region", { name: "Files" });
+    expect(within(rail).getByRole("button", { name: "Files" }).getAttribute("aria-current")).toBe("page");
+    fireEvent.click(within(files).getByRole("button", { name: /The manifest/ }));
+    expect(await screen.findByRole("region", { name: "The manifest" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to Notes" }));
+    expect(await screen.findByRole("region", { name: "Files" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!Notes)/ }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Files" })).toBeNull());
+    expect(within(rail).getByRole("button", { name: "Tasks" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("restores the side panel from the saved conversation", async () => {

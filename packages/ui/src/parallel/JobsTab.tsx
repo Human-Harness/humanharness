@@ -26,10 +26,13 @@ export function JobsTab({
   state,
   onChange,
   onStartAction,
+  headless,
 }: {
   client: HarnessClient;
   state: AppState;
   onChange: (state: AppState) => void;
+  /** On the Jobs page: the page's head says the line, so the tab has none. */
+  headless?: boolean;
   /** Starts a needs-you run's action through the chat's start path; false when it couldn't. Absent: no Start. */
   onStartAction?: (action: string, scope: string | null) => boolean;
 }) {
@@ -92,7 +95,7 @@ export function JobsTab({
 
   return (
     <div data-setting="jobs.jobs">
-      <SectionHead line={t("settings.line.jobs")} />
+      {!headless && <SectionHead line={t("settings.line.jobs")} />}
       {saveFailed && (
         <Rx.Callout.Root color="red" role="alert" mb="3">
           <Rx.Callout.Text>{t("parallel.saveFailed")}</Rx.Callout.Text>

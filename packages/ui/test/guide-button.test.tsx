@@ -198,14 +198,6 @@ describe("Button and IconButton CSS (style guide §2, §3)", () => {
     expect(r["box-shadow"]).toBe("inset 0 0 0 1px var(--hh-t-red-ink)");
     expect(r["border-color"]).toBe("transparent");
   });
-  it("the cancel and start buttons of a running task keep their own margin and do not shrink (answer B9)", () => {
-    const r = rule(".hh-tk-cancel");
-    expect(r.flex).toBe("none");
-    // 6 is no step of the scale: half of --hh-s-3 (12), so the guard stays strict.
-    expect(r.margin).toBe("calc(var(--hh-s-3) / 2) calc(var(--hh-s-3) / 2) 0 0");
-    expect(token("--hh-s-3")).toBe("12px");
-    expect(r["font-size"]).toBeUndefined();
-  });
   it("large is 52 high with radius 14", () => {
     const r = rule('.hh-btn[data-kind="large"]');
     expect(px(r.height)).toBe("52px");
@@ -299,13 +291,3 @@ describe("Link placement (style guide §3: only inside running text)", () => {
   });
 });
 
-describe("Cancel, Start and Run now on a task row (answer B9)", () => {
-  it.each([
-    // Settings › Jobs moved to Radix (stage 2c): its Start and Run now are outline gray size-1 buttons.
-    ["parallel/Inbox.tsx", 3],
-  ])("%s gives each compact row button the hh-tk-cancel layout class", (file, count) => {
-    const src = readFileSync(join(import.meta.dirname, "../src", file), "utf8");
-    expect(src.match(/className="hh-tk-cancel"/g)?.length).toBe(count);
-    expect(src).not.toMatch(/<Button\s+size="compact"\s+aria-describedby/);
-  });
-});

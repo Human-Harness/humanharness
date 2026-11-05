@@ -32,8 +32,12 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   // Button and IconButton (§3)
   "hh-btn",
   "hh-icon-btn",
-  // The row buttons of a task keep their own margin (answer B9)
-  "hh-tk-cancel",
+  // SecondaryPage (template 3) and the Inbox page's row buttons, section heads and the rail's count (spec §7, stage 4a)
+  "hh-page",
+  "hh-page-col",
+  "hh-inbox-row",
+  "hh-inbox-head",
+  "hh-rail-count",
   // Segmented (§3)
   "hh-segmented",
   // Tabs (§3)

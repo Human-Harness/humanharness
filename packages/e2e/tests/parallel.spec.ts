@@ -88,23 +88,24 @@ async function commits(s: Sandbox): Promise<Commit[]> {
 /** The trailers a turn's commit carries for a task started from `action`. */
 const turnOf = (id: string, action: string) => (c: Commit) => c.message.startsWith(`Turn: # Task: ${action}`) && c.message.endsWith(`\n\nTask: ${id}\nAction: ${action}`);
 
-const inboxButton = (page: Page) => page.getByRole("button", { name: /^Inbox, \d+ waiting$/ });
-/** Opens the Inbox screen through the top bar's pill (unless it is open) and returns it: the board (UI refresh spec §5.4). */
+/** The rail's Inbox: "Inbox" alone, or "Inbox, N waiting" while something waits (stage 4a). */
+const inboxButton = (page: Page) => page.getByRole("navigation", { name: "App" }).getByRole("button", { name: /^Inbox(, \d+ waiting)?$/ });
+/** Opens the Inbox page through the rail (unless it is open) and returns it: the list in sections (stage 4a). */
 async function openInbox(page: Page) {
   const board = page.getByRole("region", { name: "Inbox", exact: true });
   if (!(await board.isVisible())) await inboxButton(page).click();
   await expect(board).toBeVisible();
   return board;
 }
-/** Back to the chat from the Inbox screen (which has no pill): the rail's Tasks. */
+/** Back to the chat from the Inbox page: the rail's Tasks. */
 async function closeInbox(page: Page) {
   await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Tasks" }).click();
   await expect(page.getByRole("region", { name: "Inbox", exact: true })).toBeHidden();
 }
-/** A board column: its region is named by its title and count. */
+/** A section of the Inbox page: its region is named by its title and count ("Working 1 in this section"). */
 const section = (page: Page, title: "Waiting for you" | "Working" | "Queued") =>
-  page.getByRole("region", { name: "Inbox", exact: true }).getByRole("region", { name: new RegExp(`^${title} \\d+$`) });
-/** Opens the Inbox screen and focuses the open task labelled `label` by its card. */
+  page.getByRole("region", { name: "Inbox", exact: true }).getByRole("region", { name: new RegExp(`^${title} \\d+ in this section$`) });
+/** Opens the Inbox page and focuses the open task labelled `label` by its row. */
 async function focusTask(page: Page, label: string) {
   const dialog = await openInbox(page);
   await dialog.getByRole("button", { name: new RegExp(`^${label}`) }).click();
@@ -313,7 +314,9 @@ test("two tasks that change the same file are both told", async () => {
 test("at one task at a time, the second waits in the queue and the commits are today's", async () => {
   await withApp("parallel-cap1", scenarios.slow, async (page, s) => {
     await page.getByRole("button", { name: "Settings" }).click();
-    await page.getByRole("tabpanel", { name: "General" }).getByLabel("Tasks at once").selectOption("1");
+    // A Radix Select since stage 2a: open it, then pick the option.
+    await page.getByRole("tabpanel", { name: "General" }).getByRole("combobox", { name: "Tasks at once" }).click();
+    await page.getByRole("option", { name: "1", exact: true }).click();
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(s.userData, "config.json"), "utf8")).parallel).toEqual({ tasks: 1 });
     await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 

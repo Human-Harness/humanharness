@@ -3,7 +3,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HhTheme } from "../src/guide";
 import { HarnessApp } from "../src";
-import { InboxPill } from "../src/parallel/Inbox";
 import type { JobSummary, ParallelInfo, TaskSummary, TasksState } from "../src/client";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -51,22 +50,22 @@ async function open(c: FakeClient) {
 }
 /** `client.tasks`'s methods: the getter answers a new view each time, the methods sit on its prototype. */
 const api = (c: FakeClient) => Object.getPrototypeOf(c.tasks) as FakeClient["tasks"];
-/** The top bar's Inbox pill ("Inbox, N waiting"): the rail's Inbox entry is named "Inbox" too. */
-const inbox = () => screen.findByRole("button", { name: /^Inbox, / });
-/** The Inbox screen, as the pill opens it (UI refresh spec §5.4). */
+const rail = () => screen.getByRole("navigation", { name: "App" });
+/** The rail's Inbox entry: "Inbox", or "Inbox, N waiting" with its count. */
+const inbox = () => within(rail()).findByRole("button", { name: /^Inbox/ });
+/** The Inbox page (stage 4a). */
 const inboxScreen = () => screen.getByRole("region", { name: "Inbox" });
-/** Opens the Inbox screen through `pill` (default: the top bar's) and switches it to List: the four sections. */
-async function openList(pill?: HTMLElement) {
-  fireEvent.click(pill ?? (await inbox()));
-  fireEvent.click(within(inboxScreen()).getByRole("button", { name: "List" }));
-  // The screen reads the jobs as it opens: let that answer land.
+/** Opens the Inbox page through the rail. */
+async function openList() {
+  fireEvent.click(await inbox());
+  // The page reads the jobs as it opens: let that answer land.
   await act(async () => {});
 }
-/** Back to the chat from the Inbox screen: the rail's Tasks. */
-const toChat = () => fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "Tasks" }));
+/** Back to the chat from a page: the rail's Tasks. */
+const toChat = () => fireEvent.click(within(rail()).getByRole("button", { name: "Tasks" }));
 
 describe("Inbox (parallel spec §9.2)", () => {
-  it("D0: without state.parallel there is no button and no task call", async () => {
+  it("D0: without state.parallel there is no Inbox and no task call", async () => {
     const c = client();
     const list = vi.spyOn(api(c), "list");
     const sub = vi.spyOn(api(c), "onChange");
@@ -83,17 +82,17 @@ describe("Inbox (parallel spec §9.2)", () => {
     expect((await c.tasks.list()).tasks).toEqual([]);
   });
 
-  it("four sections; the button counts waiting tasks; a row focuses its task", async () => {
+  it("three sections; the rail counts waiting tasks; a row focuses its task", async () => {
     const c = client(parallel(), {
       tasks: [summary("a", "waiting", { waitingFor: "answer" }), summary("b", "running"), summary("c", "queued")],
       caps: { tasks: 2, jobs: 1 },
     });
     await open(c);
     const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
-    await openList(button);
+    expect(button.closest("nav")).toBe(rail());
+    fireEvent.click(button);
     const dialog = inboxScreen();
-    for (const name of ["Waiting for you", "Working", "Queued", "Jobs"]) expect(within(dialog).getByRole("heading", { name })).toBeTruthy();
-    expect(within(dialog).getByText("No jobs")).toBeTruthy();
+    for (const name of ["Waiting for you", "Working", "Queued"]) expect(within(dialog).getByRole("heading", { name: new RegExp(`^${name}`) })).toBeTruthy();
     expect(within(dialog).getByText("Has a question")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: /Task a/ }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith("a"));
@@ -104,7 +103,7 @@ describe("Inbox (parallel spec §9.2)", () => {
   it("a pushed change updates the count without a refetch", async () => {
     const c = client(parallel(), { tasks: [summary("a", "running")], caps: { tasks: 2, jobs: 1 } });
     await open(c);
-    await screen.findByRole("button", { name: "Inbox, 0 waiting" });
+    await within(rail()).findByRole("button", { name: "Inbox" });
     const list = vi.spyOn(api(c), "list");
     act(() => c.tasks.set({ tasks: [summary("a", "waiting", { waitingFor: "message" }), summary("b", "waiting")], caps: { tasks: 2, jobs: 1 } }));
     const button = await screen.findByRole("button", { name: "Inbox, 2 waiting" });
@@ -124,13 +123,13 @@ describe("Inbox (parallel spec §9.2)", () => {
     c.state.actions = { intro: { label: "Intro", cost: "light", phases: [{ id: "draft", label: "Drafting" }] } };
     await open(c);
     await openList();
-    const waiting = screen.getByRole("heading", { name: "Waiting for you" }).closest("section")!;
+    const waiting = screen.getByRole("heading", { name: /^Waiting for you/ }).closest("section")!;
     const rows = within(waiting).getAllByRole("button").map((b) => b.textContent);
     expect(rows[0]).toContain("Task new");
     expect(rows[0]).toContain("Wants to change phase");
     expect(rows[1]).toContain("Task old");
     expect(rows[1]).toContain("Your turn");
-    const working = screen.getByRole("heading", { name: "Working" }).closest("section")!;
+    const working = screen.getByRole("heading", { name: /^Working/ }).closest("section")!;
     expect(within(working).getByText("Drafting")).toBeTruthy();
     expect(within(working).getByText("Another task changed the same files")).toBeTruthy();
   });
@@ -208,8 +207,8 @@ describe("Inbox (parallel spec §9.2)", () => {
   it("a polite live region announces the waiting count as it changes", async () => {
     const c = client(parallel(), { tasks: [summary("a", "running")], caps: { tasks: 2, jobs: 1 } });
     await open(c);
-    await screen.findByRole("button", { name: "Inbox, 0 waiting" });
-    const region = document.querySelector('.hh-pl-inbox [aria-live="polite"]');
+    await within(rail()).findByRole("button", { name: "Inbox" });
+    const region = document.querySelector('[aria-live="polite"]');
     expect(region).not.toBeNull();
     expect(region!.textContent).toBe("");
     act(() => c.tasks.set({ tasks: [summary("a", "waiting"), summary("b", "waiting")], caps: { tasks: 2, jobs: 1 } }));
@@ -237,7 +236,7 @@ describe("Inbox (parallel spec §9.2)", () => {
   });
 });
 
-describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
+describe("Inbox's job results and the Jobs page (stage 4a)", () => {
   const jobsInfo = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }, { id: "digest", label: "Digest", every: "1h", dailyTokens: 50_000, manual: false }] };
   const at = "2026-10-28T09:00:00Z";
   const rows = (): JobSummary[] => [
@@ -251,79 +250,45 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     c.jobsList = list;
     return c;
   }
-  const jobsSection = () => screen.getByRole("heading", { name: "Jobs" }).closest("section")!;
+  const results = () => screen.getByRole("heading", { name: /^Job results for you/ }).closest("section")!;
 
-  it("D0: without state.jobs the section says No jobs and no jobs call is made", async () => {
+  it("D0: without state.jobs no jobs call is made and there is no results section", async () => {
     const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 } });
     const list = vi.spyOn(c.jobs, "list");
     const sub = vi.spyOn(c.jobs, "onChange");
     await open(c);
     await openList();
-    expect(within(jobsSection()).getByText("No jobs")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /^Job results/ })).toBeNull();
     expect(list).not.toHaveBeenCalled();
     expect(sub).not.toHaveBeenCalled();
   });
 
-  it("each job × scope shows its label, last status and summary; the button counts needs-you rows with the waiting tasks", async () => {
+  it("the rail counts needs-you results with the waiting tasks; the Inbox lists only those results", async () => {
     const c = jobsClient();
     await open(c);
-    // One waiting task and one job that needs the person.
-    await openList(await screen.findByRole("button", { name: "Inbox, 2 waiting" }));
-    const section = jobsSection();
-    const items = within(section).getAllByRole("listitem");
-    expect(items).toHaveLength(2);
+    fireEvent.click(await screen.findByRole("button", { name: "Inbox, 2 waiting" }));
+    const items = await within(await waitFor(results)).findAllByRole("listitem");
+    expect(items).toHaveLength(1);
     expect(items[0].textContent).toContain("Sync inbox");
-    expect(items[0].textContent).toContain("Needs you");
     expect(items[0].textContent).toContain("Two conflicts need you");
     expect(items[0].textContent).toContain("Last run");
-    expect(items[1].textContent).toContain("Digest");
-    expect(items[1].textContent).toContain("OK");
-    expect(items[1].textContent).toContain("Digest written");
-    expect(items[1].textContent).toContain("Paused until tomorrow");
-    // Paused by its daily cap: its armed timer runs nothing today, so no "Next run".
-    expect(items[1].textContent).not.toContain("Next run");
-    expect(within(section).queryByText("No jobs")).toBeNull();
   });
 
-  it("a job turned off doesn't count, as the Dock badge doesn't: its needs-you row still shows", async () => {
+  it("a job turned off doesn't count, as the Dock badge doesn't", async () => {
     const c = jobsClient([
       { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Two conflicts need you", at }, paused: "off", manual: true, running: false },
     ]);
     await open(c);
-    // Only the waiting task.
-    await openList(await screen.findByRole("button", { name: "Inbox, 1 waiting" }));
-    expect(within(jobsSection()).getAllByRole("listitem")[0].textContent).toContain("Two conflicts need you");
+    expect(await screen.findByRole("button", { name: "Inbox, 1 waiting" })).toBeTruthy();
   });
 
-  it("Run now only on manual jobs, and it calls client.jobs.run(id, scope)", async () => {
-    const c = jobsClient([
-      { id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: false },
-      { id: "digest", label: "Digest", scope: null, next: "2026-10-28T10:00:00Z", manual: false, running: false },
-    ]);
-    await open(c);
-    await openList();
-    const section = jobsSection();
-    expect(within(section).getAllByRole("listitem")[1].textContent).toContain("Next run");
-    const runs = within(section).getAllByRole("button", { name: /Run now/ });
-    expect(runs).toHaveLength(1);
-    fireEvent.click(runs[0]);
-    await waitFor(() => expect(c.jobs.run).toHaveBeenCalledWith("sync", "physics"));
-  });
-
-  it("a running job offers no Run now", async () => {
-    const c = jobsClient([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: true }]);
-    await open(c);
-    await openList();
-    expect(within(jobsSection()).queryByRole("button", { name: /Run now/ })).toBeNull();
-  });
-
-  it("Start on a needs-you row starts its action through the start path (client.send with the action) and closes the list", async () => {
+  it("Start on a needs-you result starts its action through the start path and shows the chat", async () => {
     const c = jobsClient([
       { id: "sync", label: "Sync inbox", scope: "physics", last: { status: "needs-you", summary: "Look", at, action: "implement" }, manual: false, running: false },
     ]);
     await open(c);
     await openList();
-    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
+    fireEvent.click(within(await waitFor(results)).getByRole("button", { name: /Start/ }));
     await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
     expect(c.sent.at(-1)).toBe("Implement");
     expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
@@ -336,11 +301,11 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     c.state.scopes = { label: "topic", plural: "topics" };
     await open(c);
     await openList();
-    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
+    fireEvent.click(within(await waitFor(results)).getByRole("button", { name: /Start/ }));
     await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
   });
 
-  it("a Start that can't go through keeps the list open and says so", async () => {
+  it("a Start that can't go through keeps the page and says so", async () => {
     // An app-wide row in a scoped harness with no scope open: the start path refuses it.
     const c = jobsClient([
       { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Look", at, action: "implement" }, manual: false, running: false },
@@ -349,107 +314,65 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     await open(c);
     await openList();
     const sent = c.sent.length;
-    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
-    expect(await within(jobsSection()).findByRole("alert")).toHaveProperty("textContent", "Couldn't start it now.");
+    fireEvent.click(within(await waitFor(results)).getByRole("button", { name: /Start/ }));
+    expect(await within(results()).findByRole("alert")).toHaveProperty("textContent", "Couldn't start it now.");
     expect(inboxScreen()).toBeTruthy();
     expect(c.sent.length).toBe(sent);
   });
 
-  it("Run now that is refused or fails says so", async () => {
-    const c = jobsClient([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }]);
-    c.jobs.run.mockResolvedValueOnce(false);
-    await open(c);
-    await openList();
-    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Run now/ }));
-    expect(await within(jobsSection()).findByRole("alert")).toHaveProperty("textContent", "Couldn't run it now.");
-    c.jobs.run.mockRejectedValueOnce(new Error("No jobs"));
-    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Run now/ }));
-    await waitFor(() => expect(c.jobs.run).toHaveBeenCalledTimes(2));
-    expect(within(jobsSection()).getByRole("alert").textContent).toBe("Couldn't run it now.");
-  });
-
-  it("no Start for an action the harness doesn't declare, nor without a needs-you result", async () => {
-    const c = jobsClient([
-      { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Look", at, action: "ghost" }, manual: false, running: false },
-      { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "Fine", at, action: "implement" }, manual: false, running: false },
-    ]);
-    await open(c);
-    await openList();
-    expect(within(jobsSection()).queryByRole("button", { name: /Start/ })).toBeNull();
-  });
-
-  it("a pushed change updates the rows and the count", async () => {
+  it("a pushed change updates the count", async () => {
     const c = jobsClient([]);
     await open(c);
     await screen.findByRole("button", { name: "Inbox, 1 waiting" });
     act(() => c.jobs.set(rows()));
     await screen.findByRole("button", { name: "Inbox, 2 waiting" });
   });
+
+  it("rail › Jobs opens the Jobs page: one card per job, Run now on a manual one", async () => {
+    const c = jobsClient();
+    await open(c);
+    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
+    const page = screen.getByRole("region", { name: "Jobs" });
+    expect(document.activeElement).toBe(within(page).getByRole("heading", { level: 1, name: "Jobs" }));
+    expect(within(rail()).getByRole("button", { name: "Jobs" }).getAttribute("aria-current")).toBe("page");
+    expect(await within(page).findByText("Sync inbox")).toBeTruthy();
+    expect(within(page).getByText("Digest")).toBeTruthy();
+    fireEvent.click(within(page).getAllByRole("button", { name: /Run now/ })[0]);
+    await waitFor(() => expect(c.jobs.run).toHaveBeenCalledWith("sync"));
+  });
 });
 
-/** A tasks state with `waiting` tasks waiting for the person. */
-const tasksWith = ({ waiting }: { waiting: number }): TasksState => ({
-  tasks: Array.from({ length: waiting }, (_, i) => summary(`w${i}`, "waiting")),
-  caps: { tasks: 2, jobs: 1 },
-});
-
-describe("Inbox pill (UI refresh spec §4.1)", () => {
-  it("is a top-bar pill with the waiting count that opens the Inbox screen (spec §4.1)", async () => {
-    const onOpen = vi.fn();
-    await renderIn("en", <InboxPill tasks={tasksWith({ waiting: 2 })} onOpen={onOpen} />);
-    fireEvent.click(screen.getByRole("button", { name: "Inbox, 2 waiting" }));
-    expect(onOpen).toHaveBeenCalled();
+describe("the rail's Inbox count (stage 4a)", () => {
+  it("is an orange badge on the rail's Inbox, with the count in its name; no top-bar pill", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "waiting"), summary("b", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    const button = await screen.findByRole("button", { name: "Inbox, 2 waiting" });
+    expect(button.closest("nav")).toBe(rail());
+    expect(button.querySelector(".hh-rail-count")?.textContent).toBe("2");
+    expect((document.querySelector(".hh-shell header.hh-topbar") as HTMLElement).querySelector("button[aria-label^='Inbox']")).toBeNull();
   });
 
-  it("sits in the top bar on the work screen", async () => {
-    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+  it("shows no badge when nothing waits", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "running")], caps: { tasks: 2, jobs: 1 } });
     await open(c);
-    const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
-    expect(button.closest("header.hh-topbar")).not.toBeNull();
-    expect(button.getAttribute("data-size")).toBe("compact");
-  });
-
-  it("opens the Inbox screen, not a drop-down; the screen has no pill (spec §4.1, §5.4)", async () => {
-    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
-    await open(c);
-    const button = await screen.findByRole("button", { name: "Inbox, 1 waiting" });
-    expect(button.hasAttribute("aria-haspopup")).toBe(false);
-    fireEvent.click(button);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    const board = inboxScreen();
-    expect(within(board).getByRole("heading", { level: 1, name: "Inbox" })).toBeTruthy();
-    expect(within(board).getByRole("button", { name: "Board" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.queryByRole("button", { name: /^Inbox, / })).toBeNull();
-    const rail = screen.getByRole("navigation", { name: "App" });
-    expect(within(rail).getByRole("button", { name: "Inbox" }).getAttribute("aria-current")).toBe("page");
+    const button = await within(rail()).findByRole("button", { name: "Inbox" });
+    expect(button.querySelector(".hh-rail-count")).toBeNull();
   });
 });
 
 describe("the rail's Inbox and Jobs (UI refresh spec §4.2)", () => {
-  const rail = () => screen.getByRole("navigation", { name: "App" });
 
-  it("Inbox opens the Inbox screen; Tasks goes back to the chat", async () => {
+  it("Inbox opens the Inbox page; Tasks goes back to the chat", async () => {
     const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
     await open(c);
     expect(within(rail()).queryByRole("button", { name: "Jobs" })).toBeNull(); // no declared jobs
-    fireEvent.click(within(rail()).getByRole("button", { name: "Inbox" }));
+    fireEvent.click(within(rail()).getByRole("button", { name: /^Inbox/ }));
     expect(within(inboxScreen()).getByRole("button", { name: /^Task a/ })).toBeTruthy();
+    expect(within(rail()).getByRole("button", { name: /^Inbox/ }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(within(rail()).getByRole("button", { name: "Tasks" }));
     expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
     expect(screen.getByRole("textbox")).toBeTruthy();
     expect(await inbox()).toBeTruthy();
-  });
-
-  it("Jobs opens the Inbox screen on its Jobs column", async () => {
-    const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 } });
-    c.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
-    c.jobsList = [{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }];
-    await open(c);
-    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
-    expect(within(rail()).getByRole("button", { name: "Jobs" }).getAttribute("aria-current")).toBe("page");
-    const column = document.activeElement?.closest("section");
-    expect(column?.getAttribute("aria-labelledby")).toContain("jobs");
-    expect(inboxScreen().contains(column!)).toBe(true);
   });
 
   it("D0: no Inbox nor Jobs without parallel, nor when the manifest turns the inbox off", async () => {
@@ -465,8 +388,7 @@ describe("the rail's Inbox and Jobs (UI refresh spec §4.2)", () => {
   });
 });
 
-describe("the Inbox screen's focus and its way back to the chat (UI refresh spec §5.4)", () => {
-  const rail = () => screen.getByRole("navigation", { name: "App" });
+describe("the Inbox page's focus and its way back to the chat (stage 4a)", () => {
   const tasksButton = () => within(rail()).getByRole("button", { name: "Tasks" });
 
   it("opening it puts the focus on its title", async () => {
@@ -476,11 +398,22 @@ describe("the Inbox screen's focus and its way back to the chat (UI refresh spec
     expect(document.activeElement).toBe(within(inboxScreen()).getByRole("heading", { level: 1, name: "Inbox" }));
   });
 
+  it("the top bar's Volver names the task and goes back; no crumbs on the page", async () => {
+    const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("b", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    await open(c);
+    fireEvent.click(await inbox());
+    const bar = (document.querySelector(".hh-shell header.hh-topbar") as HTMLElement);
+    expect(within(bar).queryByRole("navigation")).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Back to Task a" }));
+    expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
+    expect(within((document.querySelector(".hh-shell header.hh-topbar") as HTMLElement)).getByRole("navigation")).toBeTruthy();
+  });
+
   it("Escape goes back to the chat and the focus to the rail's Tasks", async () => {
     const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
     await open(c);
     fireEvent.click(await inbox());
-    fireEvent.keyDown(within(inboxScreen()).getByRole("button", { name: "List" }), { key: "Escape" });
+    fireEvent.keyDown(within(inboxScreen()).getByRole("button", { name: /^Task a/ }), { key: "Escape" });
     expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull();
     expect(screen.getByRole("textbox")).toBeTruthy();
     expect(document.activeElement).toBe(tasksButton());
@@ -527,20 +460,5 @@ describe("the Inbox screen's focus and its way back to the chat (UI refresh spec
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Inbox" })).toBeNull());
     await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("the queued text"));
-  });
-
-  it("Jobs while List is chosen shows the board on its Jobs column; Jobs again moves the focus back there", async () => {
-    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
-    c.state.jobs = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }] };
-    c.jobsList = [{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }];
-    await open(c);
-    await openList();
-    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
-    expect(within(inboxScreen()).getByRole("button", { name: "Board" }).getAttribute("aria-pressed")).toBe("true");
-    const column = () => document.activeElement?.closest("section")?.getAttribute("aria-labelledby") ?? "";
-    expect(column()).toContain("jobs");
-    within(inboxScreen()).getByRole("button", { name: "Board" }).focus();
-    fireEvent.click(within(rail()).getByRole("button", { name: "Jobs" }));
-    expect(column()).toContain("jobs");
   });
 });

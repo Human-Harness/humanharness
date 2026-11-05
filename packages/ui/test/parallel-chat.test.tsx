@@ -114,7 +114,7 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     const load = vi.spyOn(c, "loadChat");
     await open(c);
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    // The top bar's pill ("Inbox, N waiting"; the rail's Inbox is named "Inbox" too) opens the Inbox screen.
+    // The rail's Inbox ("Inbox, N waiting") opens the Inbox page.
     fireEvent.click(await screen.findByRole("button", { name: /^Inbox, / }));
     fireEvent.click(within(screen.getByRole("region", { name: "Inbox" })).getByRole("button", { name: "New task" }));
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
@@ -138,9 +138,8 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     await open(c);
     fireEvent.click(await screen.findByRole("button", { name: /^Inbox, / }));
     const inboxScreen = screen.getByRole("region", { name: "Inbox" });
-    fireEvent.click(within(inboxScreen).getByRole("button", { name: "List" }));
     fireEvent.click(within(inboxScreen).getByRole("button", { name: "Cancel" }));
-    // The text waits in the chat's box, which the Inbox screen covers: back to it through the rail's Tasks.
+    // The text waits in the chat's box, which the Inbox page covers: back to it through the rail's Tasks.
     await waitFor(() => expect(api(c).cancelQueued).toHaveBeenCalled());
     fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "Tasks" }));
     await waitFor(() => expect(box().value).toBe("Draft the intro"));

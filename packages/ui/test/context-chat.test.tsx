@@ -62,7 +62,7 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: PANEL })).toBeNull());
   });
 
-  it("a .md opens in the reader, any other file in the file timeline panel", async () => {
+  it("a .md opens in the reader, any other file in the file timeline split view", async () => {
     await openApp();
     let p = await openPanel();
     fireEvent.click(await within(p).findByRole("button", { name: "docs/plan.md" }));
@@ -72,7 +72,7 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     // The panel takes the reader's slot: one side panel at a time.
     expect(screen.queryByRole("complementary", { name: "Document" })).toBeNull();
     fireEvent.click(await within(p).findByRole("button", { name: "src/a.ts" }));
-    expect(await screen.findByRole("heading", { name: /a\.ts/ })).toBeTruthy();
+    expect((await screen.findByRole("region", { name: "File history" })).textContent).toContain("src/a.ts");
     expect(screen.queryByRole("region", { name: PANEL })).toBeNull();
   });
 

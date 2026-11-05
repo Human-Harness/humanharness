@@ -567,7 +567,7 @@
     "restored": "I went back to that point. Files changed after it were undone.",
     "restoredTask": "I went back to before that task. Everything it changed in your files was undone.",
     "restoreFailed": "I couldn't go back to that point. Try again in a moment.",
-    "loadFailed": "I couldn't read the history. Close it and try again.",
+    "loadFailed": "I couldn't read the history. Go back and try again.",
     "restoreTask": "Undo this task",
     "confirmTaskTitle": "Undo “{{name}}”?",
     "confirmTask": "Everything it changed in your files will be undone.",
@@ -1082,7 +1082,7 @@
     "unapproved": "not approved",
     "approved": "v{{version}} approved",
     "approvedReason": "v{{version}} approved, with a reason",
-    "outside": "Outside the app",
+    "outside": "Changed outside the app",
     "deleted": "Deleted",
     "wentBackVersion": "You went back to v{{version}}",
     "wentBackTime": "You went back to the version of {{time}}",
@@ -1121,7 +1121,7 @@
       "unsafe": "I couldn't write the file safely, so nothing changed.",
       "other": "I couldn't go back to that version. Try again in a moment."
     },
-    "panelTitle": "History of {{file}}"
+    "close": "Close file history"
   },
   "goBack": {
     "yes": "Go back",

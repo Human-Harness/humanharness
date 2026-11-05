@@ -453,59 +453,26 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); padding: 8px; }
 .hh-composer button:not(.hh-btn) { height: auto; }
 .hh-composer button[type="submit"]:not(.hh-btn) { background: var(--hh-ink); color: var(--hh-bg); border-color: transparent; font-weight: 600; }
-/* History (spec 3d §1, mockup "History panel redesign"): a side sheet, tasks grouped by day, entries as a timeline. */
-/* History's drawer body (UI refresh spec §5.7): the frame is the drawer's. */
-.hh-history { display: flex; flex-direction: column; gap: 8px; }
-.hh-history > .hh-segmented { align-self: flex-start; }
-.hh-history > [role="alert"] { margin: 0 8px; color: var(--hh-t-orange-ink); }
-.hh-history-busy { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 10px 12px; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); line-height: 1.4; }
-.hh-history-busy svg { flex: none; }
-.hh-history-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px 28px; text-align: center; color: var(--hh-muted); }
-.hh-history-empty-line { display: inline-flex; align-items: center; gap: 8px; }
-.hh-history-empty strong { color: var(--hh-ink); }
-.hh-history-empty p { line-height: 1.45; }
-.hh-history-day { display: grid; gap: 6px; }
-.hh-history-day + .hh-history-day { margin-top: 8px; }
-.hh-history-day h3 { margin: 6px 8px 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--hh-muted); }
-.hh-history-tasks, .hh-history-entries, .hh-history-files { list-style: none; margin: 0; padding: 0; }
-.hh-history-tasks { display: grid; gap: 8px; }
-.hh-history-tasks > li { overflow: hidden; }
-.hh-history-row { width: 100%; height: auto; justify-content: flex-start; gap: 10px; padding: 10px 12px; border: none; border-radius: 0; background: transparent; text-align: left; }
+/* History as a secondary page (DESIGN.md template 3, stage 4b1): each day's tasks in one bordered list, a task a full-row
+   button like the Inbox's, its body under it. */
+ol.hh-gd-list { list-style: none; margin: 0; padding: 0; }
+.hh-history-row { display: flex; align-items: center; gap: 8px; width: 100%; height: auto; box-sizing: border-box; padding: 12px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: default; }
 .hh-history-row > svg { flex: none; color: var(--hh-muted); }
-.hh-history-row-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.hh-history-label { font-weight: 600; }
-.hh-history-row > .hh-tag { flex: none; }
-.hh-history-body { display: grid; gap: 10px; padding: 0 12px 12px 34px; }
-/* The changed files as chips. */
-.hh-history-files { display: flex; flex-wrap: wrap; gap: 6px; }
-.hh-history-files li { display: flex; align-items: baseline; gap: 6px; min-width: 0; max-width: 100%; padding: 3px 9px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface-2); }
-.hh-history-files code { font-size: 12px; color: var(--hh-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* A changed file that opens its timeline (file-timeline spec §6.2): the path keeps its ellipsis. */
-.hh-history-file-link { display: flex; min-width: 0; text-align: left; cursor: pointer; }
-.hh-history-entries { border-left: 1px solid var(--hh-line-strong); }
-.hh-history-entries > li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 6px 4px 14px; border-radius: 8px; }
-.hh-history-dot { position: absolute; left: -4px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--hh-muted); }
-.hh-history-dot.green { background: var(--hh-t-green-ink); }
-.hh-history-entries > li:hover, .hh-history-entries > li:focus-within { background: var(--hh-surface-2); }
-.hh-history-entries > li:hover .hh-history-dot:not(.green), .hh-history-entries > li:focus-within .hh-history-dot:not(.green) { background: var(--hh-ink); }
-.hh-history-entry-text { display: grid; gap: 1px; min-width: 0; }
-.hh-history time { color: var(--hh-muted); font-size: 12px; }
-/* "Go back here" shows on the entry under the pointer or focus; it stays in the tab order. */
-.hh-history-point-back { flex: none; height: 24px; padding: 0 10px; font-size: 12px; opacity: 0; }
-.hh-history-entries > li:hover .hh-history-point-back, .hh-history-point-back:focus-visible { opacity: 1; }
-.hh-history-undo { justify-self: start; background: transparent; }
+.hh-history-row:hover { background: var(--hh-surface-2); }
+.hh-history-row:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: -2px; border-radius: var(--hh-r-compact); }
+.hh-gd-list > li:first-child > .hh-history-row { border-radius: var(--hh-r-control) var(--hh-r-control) 0 0; }
+.hh-gd-list > li:last-child > .hh-history-row[aria-expanded="false"] { border-radius: 0 0 var(--hh-r-control) var(--hh-r-control); }
+.hh-history-body ul, .hh-history-body ol { list-style: none; margin: 0; padding: 0; }
+.hh-history-file { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
+.hh-history-time { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* File timeline (file-timeline spec §6.1). */
-.hh-timeline { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.hh-timeline-pick { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; width: 100%; height: auto; padding: 6px 8px; text-align: left; border-radius: 8px; background: none; border: 1px solid transparent; }
-button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-color: var(--hh-line-strong); background: var(--hh-surface); }
-.hh-timeline-author { font-weight: 600; }
-.hh-timeline-more { margin-left: 8px; font-size: 12px; }
-.hh-timeline-turns { margin: 2px 0 4px 16px; padding: 0; list-style: none; font-size: 13px; }
-.hh-timeline-chip { padding: 0 6px; border-radius: 999px; font-size: 12px; color: var(--hh-ink); }
-.hh-timeline-chip-amber { background: var(--hh-t-orange); }
-.hh-timeline-chip-green { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
-.hh-timeline-chip-grey { background: var(--hh-line); }
+/* File timeline (file-timeline spec §6.1, stage 4b1): the versions in one bordered list, an entry a full-row button. */
+.hh-timeline-pick { display: block; width: 100%; height: auto; box-sizing: border-box; padding: 12px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: default; }
+button.hh-timeline-pick:hover, .hh-timeline-pick[aria-current] { background: var(--hh-surface-2); }
+button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: -2px; border-radius: var(--hh-r-compact); }
+.hh-gd-list > li:first-child > .hh-timeline-pick { border-radius: var(--hh-r-control) var(--hh-r-control) 0 0; }
+.hh-gd-list > li:last-child > .hh-timeline-pick:last-child { border-radius: 0 0 var(--hh-r-control) var(--hh-r-control); }
+.hh-gd-list ol { list-style: none; margin: 0; padding: 0; }
 /* File diff (file-timeline spec §4): marks carry a line or strike as well as colour. Every class is hh-filediff-*. */
 .hh-filediff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hh-filediff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -532,14 +499,18 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-filediff-before, .hh-filediff-after { min-width: 0; padding: 2px 6px; }
 .hh-filediff-diagrams figure { margin: 0 0 8px; }
 .hh-filediff-diagrams figcaption { font-size: 12px; color: var(--hh-muted); }
-/* An entry's diff and the core's go-back confirmation (file-timeline spec §5, §6.1). */
-.hh-entrydiff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.hh-entrydiff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-/* A file's timeline outside the reader, opened from the History panel (file-timeline spec §6.2). */
-.hh-timeline-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
-.hh-change.added { color: var(--hh-t-green-ink); }
-.hh-change.deleted { color: var(--hh-t-orange-ink); }
+/* An entry's diff (file-timeline spec §5, §6.1): Radix lays it out; it never widens its column. */
+.hh-entrydiff { min-width: 0; }
+/* A file's timeline outside the reader (stage 4b1): a split view like the context's, the right 55% next to the chat. */
+.hh-split { display: flex; flex-direction: column; min-width: 0; flex: 0 0 var(--hh-split-w); box-sizing: border-box; overflow-y: auto; border-left: 1px solid var(--hh-line); background: var(--hh-surface); }
+.hh-split-head { position: sticky; top: 0; z-index: 1; padding: 12px 16px; border-bottom: 1px solid var(--hh-line); background: var(--hh-surface); }
+.hh-split-head h2:focus { outline: none; }
+.hh-split-head h2:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; border-radius: var(--hh-r-compact); }
+.hh-split-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 24px; }
+@media (max-width: 899px) { .hh-split { position: fixed; inset: 52px 0 0 0; z-index: 5; border-left: 0; } }
+/* A page of the chat's own (History) takes the work screen: the chat stays mounted under it, hidden. */
+.hh-app.hh-app-paged { grid-template-rows: minmax(0, 1fr); }
+.hh-app.hh-app-paged > :not(.hh-page) { display: none; }
 /* Flow mode (spec 2026-10-12, mockups "Plan 3 · Explicador"): side panel, start view, choices. */
 .hh-flow-side { width: 248px; flex: none; box-sizing: border-box; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--hh-line); overflow-y: auto; }
 .hh-flow-heading { margin: 0 0 6px; padding-left: 6px; font-size: 12px; font-weight: 600; color: var(--hh-muted); }
@@ -688,8 +659,6 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-linked-git { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .hh-linked-git p { margin: 0; }
 .hh-linked-add { display: grid; gap: 4px; justify-items: start; }
-.hh-history-uncovered { padding: 0 8px 6px; }
-.hh-history-linked { display: grid; gap: 4px; }
 
 /* Profiles (profiles spec §5): the switcher and the avatar. A stored title can be long: it never widens the bar. */
 .hh-profile-switcher { display: flex; align-items: center; gap: 8px; }

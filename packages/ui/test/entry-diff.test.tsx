@@ -38,7 +38,7 @@ describe("EntryDiff (file-timeline spec §4.1, §5, §6.1)", () => {
     const client = setup();
     await renderIn("en", <EntryDiff client={client} path={DOC} entry={entry} onBack={() => undefined} />);
     expect(await screen.findByText("New.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Against the current version" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Against the current version" }));
     expect(await screen.findByText("No changes")).toBeTruthy();
     expect(client.fileCalls.filter((c) => c.op === "diff").map((c) => c.args)).toEqual([
       [DOC, A, B],
@@ -51,7 +51,7 @@ describe("EntryDiff (file-timeline spec §4.1, §5, §6.1)", () => {
     const view = await renderIn("en", <EntryDiff client={client} path={DOC} entry={entry} onBack={() => undefined} refresh="one" />);
     await screen.findByText("New.");
     const diffs = () => client.fileCalls.filter((c) => c.op === "diff" && c.args[2] === "current").length;
-    fireEvent.click(screen.getByRole("button", { name: "Against the current version" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Against the current version" }));
     await screen.findByText("No changes");
     expect(diffs()).toBe(1);
     client.diffs[`${DOC}|${B}|current`] = changed;

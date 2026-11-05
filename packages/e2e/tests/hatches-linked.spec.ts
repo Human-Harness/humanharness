@@ -148,7 +148,7 @@ test("link a git folder and a plain one; a turn edits both; undo restores only t
     // History: the git folder is named as not covered; the task changed only linked folders, and its row lists the
     // plain folder's file. Undoing it takes back the plain folder's changes, never the repo's.
     await page.getByRole("button", { name: "History", exact: true }).click();
-    const panel = page.getByRole("dialog", { name: "History" });
+    const panel = page.getByRole("region", { name: "History", exact: true });
     await expect(panel.getByText("Repos: Undo doesn't cover this folder: it has its own git.")).toBeVisible();
     await expect(panel.getByRole("list", { name: "Repos" }).getByText("b.txt")).toBeVisible();
     await answerGoBack(app, "Go back");

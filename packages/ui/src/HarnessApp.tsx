@@ -61,6 +61,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [pluginsRequest, setPluginsRequest] = useState(0);
   /** The chat has a running plugin with a panel in its Plugins section: the rail shows Plugins (spec §4.2). */
   const [pluginPanels, setPluginPanels] = useState(false);
+  /** A page of the chat's own on screen (History, stage 4b1): its title and the way back, for the top bar's Volver. */
+  const [chatPage, setChatPage] = useState<{ title: string; back: () => void } | null>(null);
   /** The open task's label as the chat reports it: the breadcrumb's fallback without `parallel` (no task list). */
   const [chatTaskLabel, setChatTaskLabel] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
@@ -399,8 +401,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const focusedTask = tasksState?.tasks.find((s) => s.focused);
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
   const railCurrent: RailEntry = view.kind === "chat" ? "tasks" : view.kind;
-  /** The page's name, for Settings' Volver. */
-  const pageTitle = view.kind === "inbox" ? i18n.t("inbox.title") : view.kind === "jobs" ? i18n.t("rail.jobs") : null;
+  /** The page's name, for Settings' Volver: the shell's (Inbox, Jobs), else the chat's own (History). */
+  const pageTitle = view.kind === "inbox" ? i18n.t("inbox.title") : view.kind === "jobs" ? i18n.t("rail.jobs") : (chatPage?.title ?? null);
+  /** Volver: from the shell's page to the chat; from the chat's own page back to the chat under it. */
+  const pageBack = view.kind === "chat" && chatPage ? chatPage.back : () => setView({ kind: "chat" });
   const waiting = waitingCount(tasksState, railJobs);
   const toChat = () => setView({ kind: "chat" });
   /** A needs-you job's Start, from either page: through the chat's start path, and the chat shows once it started. */
@@ -412,6 +416,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const pick = (e: RailEntry) => {
     if (e === "home") return setScreen("home");
     if (e === "settings") return setSettings("general");
+    // A rail pick leaves the chat's own page (History) too: coming back from another page shows the chat.
+    chatPage?.back();
     if (e === "inbox" || e === "jobs") return setView({ kind: e, request: ++inboxPicks.current });
     // Notes, Plugins and Tasks are the chat's: a page gives way to it.
     setView({ kind: "chat" });
@@ -431,7 +437,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 ? {
                     // A page's Volver (DESIGN.md "Secondary pages"): back to the chat, named by its task.
                     leading: (
-                      <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: screenTitle })} onClick={toChat}>
+                      <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: screenTitle })} onClick={pageBack}>
                         <Icon name="back" size={18} />
                         {screenTitle}
                       </Rx.Button>
@@ -524,6 +530,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                   notesRequest={notesRequest}
                   pluginsRequest={pluginsRequest}
                   onPluginPanels={setPluginPanels}
+                  onPage={setChatPage}
                   onTaskLabel={setChatTaskLabel}
                   onFixEngine={() => setSettings("engine")}
                   onSidekickSettings={() => setSettings("sidekick")}

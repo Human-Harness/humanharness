@@ -3,11 +3,14 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, HistoryTaskView } from "../src/client";
-import { HistoryPanel } from "../src/HistoryPanel";
+import { HistoryPage } from "../src/HistoryPage";
 import { ScopePicker } from "../src/ScopePicker";
 import { LinkedFolders } from "../src/hatches/LinkedFolders";
 import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { renderIn as renderBase } from "./render";
+
+/** History is built with Radix pieces that read the theme (Select). */
+const renderIn = (language: string, ui: Parameters<typeof renderBase>[1]) => renderBase(language, ui, { theme: true });
 
 afterEach(cleanup);
 
@@ -43,6 +46,12 @@ const task = (taskId: string): HistoryTaskView => ({
   entries: [{ sha: `e-${taskId}`, message: "Turn: go", date: "2026-10-13T11:00:00.000Z" }],
 });
 
+/** Picks `value` in the Radix select named `name`, from the keyboard. */
+async function pick(name: string | RegExp, value: string) {
+  fireEvent.keyDown(screen.getByRole("combobox", { name }), { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name: value }), { key: "Enter" });
+}
+
 describe("Scope settings › Linked folders (hatches spec §3.2)", () => {
   it("D0: no settings button and no linked lines without state.hatches", async () => {
     const client = scoped(false);
@@ -52,7 +61,7 @@ describe("Scope settings › Linked folders (hatches spec §3.2)", () => {
     await screen.findByRole("combobox", { name: "Choose project" });
     expect(screen.queryByRole("button", { name: /settings/i })).toBeNull();
     cleanup();
-    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => undefined} />);
     await screen.findByRole("button", { name: /A question/ });
     expect(screen.queryByText(/Undo doesn't cover/)).toBeNull();
     expect(client.scopes.linkedHistory).not.toHaveBeenCalled();
@@ -250,7 +259,7 @@ describe("History panel with linked folders", () => {
       uncovered: [{ key: "repos", label: "Repos" }],
       tasks: { t1: [{ key: "notes", label: "Notes", changes: [{ path: "todo.md", kind: "added" }] }] },
     };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} onOpenFile={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} onOpenFile={() => undefined} />);
     expect(await screen.findByText("Repos: Undo doesn't cover this folder: it has its own git.")).toBeTruthy();
     expect(screen.getAllByText(/Undo doesn't cover/)).toHaveLength(1);
     const files = await screen.findByRole("list", { name: "Notes" });
@@ -266,7 +275,7 @@ describe("History panel with linked folders", () => {
       uncovered: [],
       tasks: { t1: [{ key: "notes", label: "Notes", changes: [{ path: "b.txt", kind: "added" }, { path: "c.txt", kind: "modified" }] }] },
     };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} onOpenFile={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} onOpenFile={() => undefined} />);
     const files = await screen.findByRole("list", { name: "Notes" });
     expect(within(files).getByText("b.txt")).toBeTruthy();
     expect(await screen.findByText(/2 files changed/)).toBeTruthy();
@@ -280,7 +289,7 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.linkedHistoryAnswer = { uncovered: [{ key: "repos", label: "Repos", noGit: true }, { key: "notes", label: "Notes" }], tasks: {} };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
     expect(await screen.findByText("Repos: Undo doesn't cover this folder: it has no git, and the app's history doesn't track it.")).toBeTruthy();
     expect(screen.getByText("Notes: Undo doesn't cover this folder: it has its own git.")).toBeTruthy();
   });
@@ -289,7 +298,7 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.scopes.linkedHistory.mockRejectedValueOnce(new Error("no"));
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
     await screen.findByRole("button", { name: /A question/ });
     await waitFor(() => expect(client.scopes.linkedHistory).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
@@ -300,12 +309,11 @@ describe("History panel with linked folders", () => {
     client.scopeList = [...client.scopeList, { id: "web", title: "Web", createdAt: "c", archived: false }];
     client.historyGroups = [{ ...task("t1"), scopeId: "app" }, { ...task("t2"), scopeId: "web" }];
     client.linkedHistoryAnswer = { uncovered: [{ key: "repos", label: "Repos" }], tasks: {} };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
     expect(await screen.findByText(/Undo doesn't cover/)).toBeTruthy();
-    const filter = screen.getByRole("combobox");
-    fireEvent.change(filter, { target: { value: "web" } });
+    await pick("Show", "Web");
     await waitFor(() => expect(screen.queryByText(/Undo doesn't cover/)).toBeNull());
-    fireEvent.change(filter, { target: { value: "app" } });
+    await pick("Show", "App");
     expect(await screen.findByText(/Undo doesn't cover/)).toBeTruthy();
   });
 
@@ -319,7 +327,7 @@ describe("History panel with linked folders", () => {
       notRestored: ["notes", "repos"],
       cause: { reason: "running", path: "notes/todo.md" },
     };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onBack={() => undefined} />);
     const loads = client.scopes.linkedHistory.mock.calls.length;
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
@@ -333,7 +341,7 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.restoreTaskRefusal = { reason: "partial", workFolder: false, restored: [], notRestored: ["gone"], cause: { reason: "uncommitted", path: "gone/a.md" } };
-    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onBack={() => undefined} />);
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     // A key the manifest no longer declares shows as its key.
     expect((await screen.findByRole("alert")).textContent).toMatch(/^Not undone in gone: /);

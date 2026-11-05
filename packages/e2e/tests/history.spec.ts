@@ -38,7 +38,7 @@ test("a turn edits a file; going back to before the task brings it back, and the
     const taskId: string = readTasks(s.folder).current.id;
 
     await page.getByRole("button", { name: "History", exact: true }).click();
-    const panel = page.getByRole("dialog", { name: "History" });
+    const panel = page.getByRole("region", { name: "History", exact: true });
     await expect(panel.getByRole("button", { name: /The manifest.*1 file changed/ })).toHaveAttribute("aria-expanded", "true");
     await expect(panel.getByRole("list", { name: "Changed files" }).getByText("plan.md")).toBeVisible();
     // Main asks with a native sheet (answered here through the test hook); the window draws no confirmation.
@@ -63,7 +63,7 @@ test("a turn edits a file; going back to before the task brings it back, and the
 
     // The restore carries no task: it shows under "Outside a task", and the task's own row keeps what it changed.
     await page.getByRole("button", { name: "History", exact: true }).click();
-    const again = page.getByRole("dialog", { name: "History" });
+    const again = page.getByRole("region", { name: "History", exact: true });
     await expect(again.getByRole("button", { name: /The manifest.*1 file changed/ })).toHaveAttribute("aria-expanded", "true");
     await again.getByRole("button", { name: /Outside a task/ }).click();
     await expect(again.getByText("You went back to before this task")).toBeVisible();

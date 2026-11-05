@@ -3,9 +3,14 @@ import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { HistoryTaskView, TimelineEntry } from "../src/client";
-import { FileTimelinePanel } from "../src/FileTimelinePanel";
+import { FileTimelineSplit } from "../src/FileTimelineSplit";
 import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { renderIn as renderBase } from "./render";
+
+/** The chat's History is built with Radix pieces that read the theme. */
+const renderIn = (language: string, ui: Parameters<typeof renderBase>[1]) => renderBase(language, ui, { theme: true });
+/** The timeline's split view, outside the reader, and which file it shows. */
+const split = () => document.querySelector<HTMLElement>("section.hh-split");
 
 afterEach(cleanup);
 
@@ -22,24 +27,44 @@ const entry: TimelineEntry = {
   commits: [{ id: B, subject: "Turn: write", at: "2026-10-28T10:00:00.000Z" }],
 };
 
-describe("FileTimelinePanel (file-timeline spec §6.2)", () => {
-  it("a dialog with the file's timeline; an entry opens its diff; back to the list; Esc closes", async () => {
+describe("FileTimelineSplit (file-timeline spec §6.2, Radix stage 4b1)", () => {
+  it("a split view with the file's timeline; an entry opens its diff; back to the list; Esc closes", async () => {
     const client = new FakeClient();
     client.timelines[FILE] = [entry];
     client.diffs[`${FILE}|${A}|${B}`] = { ok: true, kind: "text", same: false, truncated: false, lang: "json", lines: [{ kind: "ins", text: "{}", new: 1 }] };
     let closed = 0;
-    await renderIn("en", <FileTimelinePanel client={client} path={FILE} onClose={() => closed++} />);
-    const dialog = screen.getByRole("dialog", { name: `History of ${FILE}` });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+    await renderIn("en", <FileTimelineSplit client={client} path={FILE} onClose={() => closed++} />);
+    const view = screen.getByRole("region", { name: "File history" });
+    expect(view.textContent).toContain(FILE);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "File history" }));
     const pick = await screen.findByRole("button", { name: /Spec writer/ });
     pick.focus();
     fireEvent.click(pick);
     expect((await screen.findByRole("region", { name: "Changes" })).textContent).toContain("{}");
+    // The entry is hidden with the list: the focus moves to the way back, inside the split view.
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back to the list" }));
     fireEvent.click(screen.getByRole("button", { name: "Back to the list" }));
     expect(await screen.findByRole("list", { name: "Versions and changes" })).toBeTruthy();
     // Focus goes back to the entry it came from.
     expect(document.activeElement).toBe(pick);
-    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.keyDown(view, { key: "Escape" });
+    expect(closed).toBe(1);
+  });
+
+  it("Escape in a diff goes back to the list first; Close file history closes", async () => {
+    const client = new FakeClient();
+    client.timelines[FILE] = [entry];
+    client.diffs[`${FILE}|${A}|${B}`] = { ok: true, kind: "text", same: false, truncated: false, lang: "json", lines: [{ kind: "ins", text: "{}", new: 1 }] };
+    let closed = 0;
+    await renderIn("en", <FileTimelineSplit client={client} path={FILE} onClose={() => closed++} />);
+    const view = screen.getByRole("region", { name: "File history" });
+    fireEvent.click(await within(view).findByRole("button", { name: /Spec writer/ }));
+    await within(view).findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(view, { key: "Escape" });
+    expect(closed).toBe(0);
+    expect(await within(view).findByRole("list", { name: "Versions and changes" })).toBeTruthy();
+    fireEvent.click(within(view).getByRole("button", { name: "Close file history" }));
     expect(closed).toBe(1);
   });
 });
@@ -74,10 +99,10 @@ describe("the History panel's links in the window (file-timeline spec §6.2, Q10
     fireEvent.click(await screen.findByRole("button", { name: `History of ${file}` }));
   };
 
-  it("a `.md` that is still there opens in the reader with its drawer; the History panel closes, and one Esc doesn't close both", async () => {
+  it("a `.md` that is still there opens in the reader with its drawer; the History page closes, and one Esc doesn't close both", async () => {
     await chat();
     await openLink("plan.md");
-    expect(screen.queryByRole("dialog", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull();
     const reader = await screen.findByRole("complementary", { name: "Document" });
     const drawer = within(reader).getByRole("region", { name: "File history" });
     // The History panel closed before the reader opened: its document listener is gone, so one Esc is one step back.
@@ -86,54 +111,31 @@ describe("the History panel's links in the window (file-timeline spec §6.2, Q10
     fireEvent.keyDown(pick, { key: "Escape" });
     expect(within(reader).queryByRole("region", { name: "File history" })).toBeNull();
     expect(screen.getByRole("complementary", { name: "Document" })).toBeTruthy();
-    expect(screen.queryByRole("dialog", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull();
   });
 
-  it("a deleted `.md` and any other file open the timeline panel, not the reader", async () => {
+  it("a deleted `.md` and any other file open the timeline split view, not the reader", async () => {
     await chat();
     await openLink("gone.md");
-    expect(screen.queryByRole("dialog", { name: "History" })).toBeNull();
-    expect(screen.getByRole("dialog", { name: "History of gone.md" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull();
+    expect(split()?.textContent).toContain("gone.md");
     expect(screen.queryByRole("complementary", { name: "Document" })).toBeNull();
+    // The chat shows again, with the split view beside it.
+    expect(split()?.closest(".hh-body")?.classList.contains("hh-with-reader")).toBe(true);
     await openLink(FILE);
-    expect(screen.queryByRole("dialog", { name: "History of gone.md" })).toBeNull();
-    const panel = screen.getByRole("dialog", { name: `History of ${FILE}` });
-    expect(await within(panel).findByRole("button", { name: /Spec writer/ })).toBeTruthy();
-    fireEvent.keyDown(panel, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: `History of ${FILE}` })).toBeNull();
+    expect(split()?.textContent).not.toContain("gone.md");
+    expect(split()?.textContent).toContain(FILE);
+    expect(await within(split()!).findByRole("button", { name: /Spec writer/ })).toBeTruthy();
+    fireEvent.keyDown(split()!, { key: "Escape" });
+    expect(split()).toBeNull();
   });
 
-  it("a document opened in the reader closes the timeline panel, which would cover it", async () => {
+  it("a document opened in the reader closes the timeline split view: one split view at a time", async () => {
     const client = await chat();
     await openLink(FILE);
-    expect(screen.getByRole("dialog", { name: `History of ${FILE}` })).toBeTruthy();
+    expect(split()).toBeTruthy();
     act(() => client.openDocument("plan.md"));
     expect(await screen.findByRole("complementary", { name: "Document" })).toBeTruthy();
-    expect(screen.queryByRole("dialog", { name: `History of ${FILE}` })).toBeNull();
-  });
-});
-
-describe("the file timeline drawer (UI refresh spec §5.7)", () => {
-  it("renders in the drawer frame; Escape in a diff goes back to the list first; Tab stays inside", async () => {
-    const client = new FakeClient();
-    client.timelines[FILE] = [entry];
-    client.diffs[`${FILE}|${A}|${B}`] = { ok: true, kind: "text", same: false, truncated: false, lang: "json", lines: [{ kind: "ins", text: "{}", new: 1 }] };
-    let closed = 0;
-    await renderIn("en", <FileTimelinePanel client={client} path={FILE} onClose={() => closed++} />);
-    const dialog = screen.getByRole("dialog", { name: `History of ${FILE}` });
-    expect(dialog.classList.contains("hh-drawer")).toBe(true);
-    const pick = await within(dialog).findByRole("button", { name: /Spec writer/ });
-    fireEvent.click(pick);
-    await within(dialog).findByRole("region", { name: "Changes" });
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(closed).toBe(0);
-    expect(await within(dialog).findByRole("list", { name: "Versions and changes" })).toBeTruthy();
-    // Tab off the last control comes back to the first, the drawer's Close.
-    const items = [...dialog.querySelectorAll<HTMLElement>("button:not([disabled])")].filter((b) => !b.closest("[hidden]"));
-    items[items.length - 1].focus();
-    fireEvent.keyDown(items[items.length - 1], { key: "Tab" });
-    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close" }));
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(closed).toBe(1);
+    expect(split()).toBeNull();
   });
 });

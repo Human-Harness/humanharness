@@ -38,6 +38,18 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-inbox-row",
   "hh-inbox-head",
   "hh-rail-count",
+  // History as a page: its task rows, a row's body, a changed file, a point's time; the chat hidden under it (stage 4b1)
+  "hh-history-row",
+  "hh-history-body",
+  "hh-history-file",
+  "hh-history-time",
+  "hh-app-paged",
+  // The file timeline's split view (template 2), an entry's row button and its diff (stage 4b1)
+  "hh-split",
+  "hh-split-head",
+  "hh-split-body",
+  "hh-timeline-pick",
+  "hh-entrydiff",
   // Segmented (§3)
   "hh-segmented",
   // Tabs (§3)
@@ -75,8 +87,6 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-toggle-row",
   "hh-checkbox",
   "hh-checkbox-box",
-  // Empty state line (§4: a 14 icon before the text)
-  "hh-history-empty-line",
   // Hidden: text only screen readers get (Radix + Impeccable spec, stage 2c)
   "hh-sr-only",
 ]);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type ActionOption,
@@ -20,12 +20,8 @@ import {
   UNDO_PREFIX,
   type UndoRefusal,
 } from "./client";
-import { Tag } from "./chrome";
-import { Segmented } from "./guide/Segmented";
-import { Icon } from "./guide/icons";
-import { Drawer } from "./Drawer";
+import { Hidden, Icon, Rx, SecondaryPage } from "./guide";
 import { shownLanguage } from "./language";
-import { Button } from "./guide/Button";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
 export function entryLabel(message: string): { key: string; values?: Record<string, string> } | null {
@@ -51,6 +47,9 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
 
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
 
+/** The scope picker's "every scope" (Radix Select keeps no empty value). */
+const ALL = "__all__";
+
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 /** The groups split by local day, keeping their order (newest first). */
@@ -67,17 +66,20 @@ export function byDay(groups: HistoryTaskView[]): { day: Date; items: HistoryTas
 
 type Restore = { kind: "task" | "point"; id: string };
 
-/** The drawer's switch (UI refresh spec §5.7): every group, the tasks' groups, or the one outside any task. */
+/** The page's switch (UI refresh spec §5.7): every group, the tasks' groups, or the one outside any task. */
 type Kind = "all" | "tasks" | "outside";
 
 /** The id of a "go back" button, so focus can return to it when its confirmation is cancelled. */
 const triggerId = (r: Restore) => `hh-history-back-${r.kind}-${r.id}`;
 
-/** History (spec 3d §1): one row per task, with the files it changed, its entries and both ways back. */
-export function HistoryPanel({
+/**
+ * History (spec 3d §1) as a secondary page (DESIGN.md "Secondary pages", stage 4b1): days with one foldable row per
+ * task, with the files it changed, its entries and both ways back.
+ */
+export function HistoryPage({
   client,
   actions,
-  onClose,
+  onBack,
   onRestored,
   disabled = false,
   currentTask,
@@ -91,8 +93,9 @@ export function HistoryPanel({
   actions: Record<string, ActionOption>;
   /** The open task's id: its row says it is open now. */
   currentTask?: string;
-  onClose: () => void;
-  /** Called after a restore succeeded, before the panel closes. */
+  /** Volver, Escape, or a restore that went through: back to the chat. */
+  onBack: () => void;
+  /** Called after a restore succeeded, before the page goes back. */
   onRestored?: (kind: Restore["kind"]) => void;
   /** Going back is not allowed while a turn is live. */
   disabled?: boolean;
@@ -115,6 +118,7 @@ export function HistoryPanel({
   linkedFolders?: Record<string, { label: string }>;
 }) {
   const { t, i18n } = useTranslation();
+  const pageId = useId();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [failed, setFailed] = useState(false);
@@ -156,16 +160,7 @@ export function HistoryPanel({
   const shown = kind === "all" ? inScope : inScope?.filter((g) => (kind === "tasks" ? g.taskId !== null : g.taskId === null));
   /** The button whose go-back was cancelled or failed: it gets focus back once it is enabled again. */
   const refocus = useRef<string | null>(null);
-  /** What had focus when the panel opened (read before the drawer takes focus): it gets focus back when the panel closes. */
-  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  // Reads only refs, so the Escape listener added on the first render can call it.
-  const close = () => {
-    const back = opener.current;
-    onCloseRef.current();
-    if (back?.isConnected) back.focus();
-  };
+  const close = onBack;
   const loadGroups = (first: boolean) =>
     client.historyTasks().then(
       (g) => {
@@ -181,18 +176,6 @@ export function HistoryPanel({
   useEffect(() => {
     void loadGroups(true);
   }, [client]);
-  useEffect(() => {
-    // The drawer hears an Escape inside it; this one hears it anywhere else (focus left on the page).
-    const onKey = (e: KeyboardEvent) => {
-      // A dialog above it (the pre-flight question) handled this Escape itself. Handling it here marks it too, so
-      // focus mode's window listener does not also leave.
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      e.preventDefault();
-      close();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
   useEffect(() => {
     if (restoring || !refocus.current) return;
     document.getElementById(refocus.current)?.focus();
@@ -247,17 +230,20 @@ export function HistoryPanel({
     );
   };
 
-  const goBack = (r: Restore) =>
-    r.kind === "task" ? (
-      <button id={triggerId(r)} className="hh-history-undo" disabled={disabled || restoring} onClick={() => restore(r)}>
-        <Icon name="undo" size={14} />
-        {t("history.restoreTask")}
-      </button>
-    ) : (
-      <button id={triggerId(r)} className="hh-history-point-back" disabled={disabled || restoring} onClick={() => restore(r)}>
-        {t("history.restore")}
-      </button>
-    );
+  /** "Undo this task" is an outline button under the task's points; "Go back here" a ghost one on each point. */
+  const goBack = (r: Restore) => (
+    <Rx.Button
+      id={triggerId(r)}
+      variant={r.kind === "task" ? "outline" : "ghost"}
+      color="gray"
+      size="1"
+      disabled={disabled || restoring}
+      onClick={() => restore(r)}
+    >
+      <Icon name="undo" size={14} />
+      {t(r.kind === "task" ? "history.restoreTask" : "history.restore")}
+    </Rx.Button>
+  );
 
   const rowLabel = (g: HistoryTaskView) => {
     if (g.taskId === null) return t("history.other");
@@ -325,165 +311,221 @@ export function HistoryPanel({
     return day.toLocaleDateString(language, { month: "short", day: "numeric", year });
   };
 
+  const alert = (text: string) => (
+    <Rx.Callout.Root color="red" role="alert" mb="4">
+      <Rx.Callout.Text>{text}</Rx.Callout.Text>
+    </Rx.Callout.Root>
+  );
+  const changeColor = { added: "green", modified: "gray", deleted: "orange" } as const;
+  const change = (c: HistoryFileChange, id?: string) => (
+    <Rx.Badge id={id} color={changeColor[c.kind]} variant="soft">
+      {t(`history.change.${c.kind}`)}
+    </Rx.Badge>
+  );
+  const many = (groups?.length ?? 0) > 0;
+
   return (
-    <Drawer title={t("history.title")} subtitle={groups !== null && groups.length > 0 ? t("history.intro") : undefined} focusClose onClose={close}>
-      <div className="hh-history">
-        {disabled && (
-          <p role="status" className="hh-history-busy">
-            <Icon name="clock" size={14} />
-            {t("history.busy")}
-          </p>
-        )}
-        {failed && <p role="alert">{t("history.restoreFailed")}</p>}
-        {refused && <p role="alert">{refusalText(refused)}</p>}
-        {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
-        {(!filter || filter === linkedScope) &&
-          linked?.uncovered.map((u) => (
-            <p key={u.key} className="hh-caption hh-history-uncovered">
-              {t(u.noGit ? "hatches.notCoveredNoGit" : "hatches.notCoveredFolder", { label: u.label })}
-            </p>
-          ))}
-        {groups?.length === 0 && (
-          <div className="hh-history-empty">
-            <span className="hh-history-empty-line">
-              <Icon name="clock" size={14} />
-              <strong>{t("history.emptyTitle")}</strong>
-            </span>
-            <p className="hh-caption">{t("history.empty")}</p>
-          </div>
-        )}
-        {(groups?.length ?? 0) > 0 && (
-          <Segmented<Kind>
-            label={t("history.filter.label")}
-            options={[
-              { value: "all", label: t("history.filter.all") },
-              { value: "tasks", label: t("history.filter.tasks") },
-              { value: "outside", label: t("history.filter.outside") },
-            ]}
-            value={kind}
-            onChange={setKind}
-          />
-        )}
-        {shown?.length === 0 && (groups?.length ?? 0) > 0 && <p>{t("history.emptyFilter")}</p>}
-        {hasScopes && (
-          <label className="hh-history-filter">
-            {t("history.scopeFilter")}{" "}
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="">{t("history.allScopes")}</option>
-              {scopeIds.map((id) => (
-                <option key={id} value={id}>
-                  {id === "_app" ? t("history.appScope") : (titles[id] ?? id)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {days.map(({ day, items }) => (
-          <section key={day?.toDateString() ?? "outside"} className="hh-history-day">
-            {day && <h3>{dayLabel(day)}</h3>}
-            <ol className="hh-history-tasks">
-              {items.map((g) => {
-                const key = keyOf(g);
-                const expanded = open.has(key);
-                const bodyId = `hh-history-${key}`;
-                const total = g.changes.length + linkedOf(g).reduce((n, f) => n + f.changes.length, 0);
-                // Outside a task with nothing changed: the gray tag says it, no "0 files changed".
-                const nothing = g.taskId === null && total === 0;
-                return (
-                  <li key={key} className="hh-card">
-                    {/* aria-controls only names a body that is there. */}
-                    <button className="hh-history-row" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined} onClick={() => toggle(key)}>
-                      <Icon name="chevron" size={14} />
-                      <span className="hh-history-row-text">
-                        <span className="hh-history-label">{rowLabel(g)}</span>
-                        <span className="hh-caption">
-                          {span(g)}
-                          {!nothing && <> · {t("history.filesChanged", { count: total })}</>}
-                        </span>
-                      </span>
-                      {currentTask !== undefined && g.taskId === currentTask && <Tag tone="blue">{t("history.inProgress")}</Tag>}
-                      {g.noteTitle && (
-                        <Tag tone="green" title={g.noteTitle}>
-                          {t("history.noteSaved")}
-                        </Tag>
-                      )}
-                      {nothing && <Tag tone="gray">{t("history.noChanges")}</Tag>}
-                    </button>
-                    {expanded && (
-                      <div id={bodyId} className="hh-history-body">
-                        {g.changes.length > 0 && (
-                          <ul className="hh-history-files" aria-label={t("history.changedFiles")}>
-                            {g.changes.map((c, i) => (
-                              <li key={c.path}>
-                                <span id={`${bodyId}-k${i}`} className={`hh-change ${c.kind}`}>
-                                  {t(`history.change.${c.kind}`)}
-                                </span>
-                                {onOpenFile ? (
-                                  <Button
-                                    type="button"
-                                    kind="quiet" size="compact" className="hh-history-file-link"
-                                    title={c.path}
-                                    aria-label={t("history.openTimeline", { file: c.path })}
-                                    aria-describedby={`${bodyId}-k${i}`}
-                                    onClick={() => onOpenFile(c.path, c.kind)}
-                                  >
-                                    <code>{c.path}</code>
-                                  </Button>
-                                ) : (
-                                  <code title={c.path}>{c.path}</code>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {/* A linked folder's files are plain text: the file timeline reads only the main folder's history. */}
-                        {linkedOf(g).map((f, j) => (
-                          <div key={`${f.key}-${j}`} className="hh-history-linked">
-                            <span id={`${bodyId}-l${j}`} className="hh-caption">
-                              {f.label}
-                            </span>
-                            <ul className="hh-history-files" aria-labelledby={`${bodyId}-l${j}`}>
-                              {f.changes.map((c) => (
-                                <li key={c.path}>
-                                  <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
-                                  <code title={c.path}>{c.path}</code>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                        {/* A task that changed only linked folders has no entry in the work folder's history. */}
-                        {g.entries.length > 0 && (
-                          <ol className="hh-history-entries" aria-label={t("history.points")}>
-                            {g.entries.map((e) => (
-                              <li key={e.sha}>
-                                {/* Green where the AI finished a turn. */}
-                                <span className={e.message.startsWith(TURN_PREFIX) ? "hh-history-dot green" : "hh-history-dot"} aria-hidden="true" />
-                                <span className="hh-history-entry-text">
-                                  <span>{entryText(e)}</span>
-                                  {/* The part the task was in (task-phases spec §6); none for a part the manifest no longer has. */}
-                                  {e.phase && g.actionId && Object.hasOwn(actions, g.actionId) && (
-                                    <span className="hh-caption">{actions[g.actionId].phases?.find((p) => p.id === e.phase)?.label}</span>
-                                  )}
-                                  {when(e.date)}
-                                </span>
-                                {goBack({ kind: "point", id: e.sha })}
-                              </li>
-                            ))}
-                          </ol>
-                        )}
-                        {g.taskId !== null &&
-                          g.start !== null &&
-                          goBack({ kind: "task", id: g.taskId })}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
+    <SecondaryPage title={t("history.title")} line={many ? t("history.intro") : undefined} onBack={close}>
+      {disabled && (
+        <Rx.Callout.Root color="gray" role="status" mb="4">
+          <Rx.Callout.Icon>
+            <Icon name="clock" size={18} />
+          </Rx.Callout.Icon>
+          <Rx.Callout.Text>{t("history.busy")}</Rx.Callout.Text>
+        </Rx.Callout.Root>
+      )}
+      {failed && alert(t("history.restoreFailed"))}
+      {refused && alert(refusalText(refused))}
+      {loadFailed && alert(t("history.loadFailed"))}
+      {(!filter || filter === linkedScope) &&
+        linked?.uncovered.map((u) => (
+          <Rx.Text key={u.key} as="p" size="1" color="gray" mb="3">
+            {t(u.noGit ? "hatches.notCoveredNoGit" : "hatches.notCoveredFolder", { label: u.label })}
+          </Rx.Text>
         ))}
-      </div>
-    </Drawer>
+      {groups?.length === 0 && (
+        <Rx.Flex direction="column" gap="1">
+          <Rx.Text as="p" size="2" weight="bold">
+            {t("history.emptyTitle")}
+          </Rx.Text>
+          <Rx.Text as="p" size="2" color="gray">
+            {t("history.empty")}
+          </Rx.Text>
+        </Rx.Flex>
+      )}
+      {many && (
+        <Rx.Flex align="center" justify="between" gap="3" wrap="wrap" mb="5">
+          <Rx.SegmentedControl.Root size="1" value={kind} onValueChange={(v) => setKind(v as Kind)} aria-label={t("history.filter.label")}>
+            <Rx.SegmentedControl.Item value="all">{t("history.filter.all")}</Rx.SegmentedControl.Item>
+            <Rx.SegmentedControl.Item value="tasks">{t("history.filter.tasks")}</Rx.SegmentedControl.Item>
+            <Rx.SegmentedControl.Item value="outside">{t("history.filter.outside")}</Rx.SegmentedControl.Item>
+          </Rx.SegmentedControl.Root>
+          {hasScopes && (
+            <Rx.Flex align="center" gap="2">
+              <Rx.Text id={`${pageId}-scope`} size="1" color="gray">
+                {t("history.scopeFilter")}
+              </Rx.Text>
+              {/* Radix Select keeps no empty value: "" (every scope) travels as ALL. */}
+              <Rx.Select.Root size="1" value={filter || ALL} onValueChange={(v) => setFilter(v === ALL ? "" : v)}>
+                <Rx.Select.Trigger variant="soft" color="gray" aria-labelledby={`${pageId}-scope`} />
+                <Rx.Select.Content position="popper">
+                  <Rx.Select.Item value={ALL}>{t("history.allScopes")}</Rx.Select.Item>
+                  {scopeIds.map((id) => (
+                    <Rx.Select.Item key={id} value={id}>
+                      {id === "_app" ? t("history.appScope") : (titles[id] ?? id)}
+                    </Rx.Select.Item>
+                  ))}
+                </Rx.Select.Content>
+              </Rx.Select.Root>
+            </Rx.Flex>
+          )}
+        </Rx.Flex>
+      )}
+      {shown?.length === 0 && many && (
+        <Rx.Text as="p" size="1" color="gray">
+          {t("history.emptyFilter")}
+        </Rx.Text>
+      )}
+      {days.map(({ day, items }) => {
+        const headId = `${pageId}-${day?.toDateString().replace(/\W/g, "") ?? "outside"}`;
+        return (
+          <Rx.Box asChild mb="5" key={day?.toDateString() ?? "outside"}>
+            {/* The group outside any task has no day: its row already says what it is. */}
+            <section {...(day ? { "aria-labelledby": headId } : { "aria-label": t("history.other") })}>
+              {day && (
+                <Rx.Heading as="h2" size="1" color="gray" weight="medium" mb="2" id={headId}>
+                  {dayLabel(day)}
+                </Rx.Heading>
+              )}
+              <ol className="hh-gd-list">
+                {items.map((g) => {
+                  const key = keyOf(g);
+                  const expanded = open.has(key);
+                  const bodyId = `hh-history-${key}`;
+                  const total = g.changes.length + linkedOf(g).reduce((n, f) => n + f.changes.length, 0);
+                  // Outside a task with nothing changed: the grey badge says it, no "0 files changed".
+                  const nothing = g.taskId === null && total === 0;
+                  return (
+                    <li key={key}>
+                      {/* aria-controls only names a body that is there. */}
+                      <button type="button" className="hh-history-row" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined} onClick={() => toggle(key)}>
+                        <Icon name="chevron" size={14} />
+                        <Rx.Flex direction="column" gap="1" minWidth="0" flexGrow="1">
+                          <Rx.Text size="2" weight="bold" dir="auto">
+                            {rowLabel(g)}
+                          </Rx.Text>
+                          <Rx.Text size="1" color="gray">
+                            {span(g)}
+                            {!nothing && <> · {t("history.filesChanged", { count: total })}</>}
+                          </Rx.Text>
+                        </Rx.Flex>
+                        <Rx.Flex gap="2" wrap="wrap" justify="end" flexShrink="0">
+                          {currentTask !== undefined && g.taskId === currentTask && <Rx.Badge color="blue">{t("history.inProgress")}</Rx.Badge>}
+                          {g.noteTitle && (
+                            <Rx.Badge color="green" title={g.noteTitle}>
+                              {t("history.noteSaved")}
+                              <Hidden>: {g.noteTitle}</Hidden>
+                            </Rx.Badge>
+                          )}
+                          {nothing && (
+                            <Rx.Badge color="gray" variant="outline">
+                              {t("history.noChanges")}
+                            </Rx.Badge>
+                          )}
+                        </Rx.Flex>
+                      </button>
+                      {expanded && (
+                        <Rx.Flex id={bodyId} className="hh-history-body" direction="column" gap="4" pl="7" pr="4" pb="4">
+                          {g.changes.length > 0 && (
+                            <Rx.Flex asChild direction="column" gap="1">
+                              <ul aria-label={t("history.changedFiles")}>
+                                {g.changes.map((c, i) => (
+                                  <Rx.Flex asChild key={c.path} align="center" gap="2" minWidth="0">
+                                    <li>
+                                      {change(c, `${bodyId}-k${i}`)}
+                                      {onOpenFile ? (
+                                        <Rx.Button
+                                          variant="ghost"
+                                          color="gray"
+                                          size="1"
+                                          className="hh-history-file"
+                                          title={c.path}
+                                          aria-label={t("history.openTimeline", { file: c.path })}
+                                          aria-describedby={`${bodyId}-k${i}`}
+                                          onClick={() => onOpenFile(c.path, c.kind)}
+                                        >
+                                          {c.path}
+                                        </Rx.Button>
+                                      ) : (
+                                        <Rx.Text size="1" color="gray" truncate title={c.path}>
+                                          {c.path}
+                                        </Rx.Text>
+                                      )}
+                                    </li>
+                                  </Rx.Flex>
+                                ))}
+                              </ul>
+                            </Rx.Flex>
+                          )}
+                          {/* A linked folder's files are plain text: the file timeline reads only the main folder's history. */}
+                          {linkedOf(g).map((f, j) => (
+                            <Rx.Flex key={`${f.key}-${j}`} direction="column" gap="1">
+                              <Rx.Text id={`${bodyId}-l${j}`} size="1" color="gray">
+                                {f.label}
+                              </Rx.Text>
+                              <Rx.Flex asChild direction="column" gap="1">
+                                <ul aria-labelledby={`${bodyId}-l${j}`}>
+                                  {f.changes.map((c) => (
+                                    <Rx.Flex asChild key={c.path} align="center" gap="2" minWidth="0">
+                                      <li>
+                                        {change(c)}
+                                        <Rx.Text size="1" color="gray" truncate title={c.path}>
+                                          {c.path}
+                                        </Rx.Text>
+                                      </li>
+                                    </Rx.Flex>
+                                  ))}
+                                </ul>
+                              </Rx.Flex>
+                            </Rx.Flex>
+                          ))}
+                          {/* A task that changed only linked folders has no entry in the work folder's history. */}
+                          {g.entries.length > 0 && (
+                            <Rx.Flex asChild direction="column" gap="1">
+                              <ol aria-label={t("history.points")}>
+                                {g.entries.map((e) => (
+                                  <Rx.Flex asChild key={e.sha} align="center" justify="between" gap="3">
+                                    <li>
+                                      <Rx.Flex align="baseline" gap="3" minWidth="0">
+                                        <Rx.Text size="1" color="gray" className="hh-history-time">
+                                          {when(e.date)}
+                                        </Rx.Text>
+                                        <Rx.Text size="2">{entryText(e)}</Rx.Text>
+                                        {/* The part the task was in (task-phases spec §6); none for a part the manifest no longer has. */}
+                                        {e.phase && g.actionId && Object.hasOwn(actions, g.actionId) && (
+                                          <Rx.Text size="1" color="gray">
+                                            {actions[g.actionId].phases?.find((p) => p.id === e.phase)?.label}
+                                          </Rx.Text>
+                                        )}
+                                      </Rx.Flex>
+                                      {goBack({ kind: "point", id: e.sha })}
+                                    </li>
+                                  </Rx.Flex>
+                                ))}
+                              </ol>
+                            </Rx.Flex>
+                          )}
+                          {g.taskId !== null && g.start !== null && <Rx.Box>{goBack({ kind: "task", id: g.taskId })}</Rx.Box>}
+                        </Rx.Flex>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          </Rx.Box>
+        );
+      })}
+    </SecondaryPage>
   );
 }

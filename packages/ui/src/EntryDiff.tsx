@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileRestoreResult, HarnessClient, TimelineEntry } from "./client";
 import { FileDiff } from "./FileDiff";
+import { Icon, Rx } from "./guide";
 
 /** One entry's diff (file-timeline spec §4.1, §6.1): what changed here or against now, and going back to it. */
 export function EntryDiff({
@@ -73,31 +74,35 @@ export function EntryDiff({
     setStatus(t(known ? `timeline.refused.${r.refused}` : "timeline.refused.other"));
   };
   return (
-    <div className="hh-entrydiff">
-      <div className="hh-entrydiff-tools">
-        <div className="hh-segmented" role="group" aria-label={t("timeline.compare")}>
-          <button type="button" aria-pressed={mode === "here"} onClick={() => setMode("here")}>
-            {t("timeline.compareHere")}
-          </button>
-          <button type="button" aria-pressed={mode === "current"} onClick={() => setMode("current")}>
-            {t("timeline.compareCurrent")}
-          </button>
-        </div>
-        {/* A "Deleted" entry has no file to bring back (§3.1): the button stays, disabled. */}
-        <button type="button" ref={goBackButton} disabled={busy || working || entry.deleted === true} onClick={goBack}>
-          {t("timeline.goBack")}
-        </button>
-        <button type="button" onClick={onBack}>
+    <Rx.Flex direction="column" gap="3" className="hh-entrydiff">
+      <Rx.Box>
+        <Rx.Button variant="ghost" color="gray" size="1" onClick={onBack}>
+          <Icon name="back" size={18} />
           {backLabel ?? t("timeline.backToDocument")}
-        </button>
-      </div>
-      {busy && <p className="hh-caption">{t("timeline.busy")}</p>}
+        </Rx.Button>
+      </Rx.Box>
+      <Rx.Flex align="center" justify="between" gap="3" wrap="wrap">
+        <Rx.SegmentedControl.Root size="1" value={mode} onValueChange={(v) => setMode(v as "here" | "current")} aria-label={t("timeline.compare")}>
+          <Rx.SegmentedControl.Item value="here">{t("timeline.compareHere")}</Rx.SegmentedControl.Item>
+          <Rx.SegmentedControl.Item value="current">{t("timeline.compareCurrent")}</Rx.SegmentedControl.Item>
+        </Rx.SegmentedControl.Root>
+        {/* A "Deleted" entry has no file to bring back (§3.1): the button stays, disabled. */}
+        <Rx.Button ref={goBackButton} size="1" disabled={busy || working || entry.deleted === true} onClick={goBack}>
+          <Icon name="undo" size={14} />
+          {t("timeline.goBack")}
+        </Rx.Button>
+      </Rx.Flex>
+      {busy && (
+        <Rx.Text as="p" size="1" color="gray">
+          {t("timeline.busy")}
+        </Rx.Text>
+      )}
       {/* Always mounted, so a screen reader hears each new answer. */}
-      <p className="hh-caption" role="status">
+      <Rx.Text as="p" size="1" color="gray" role="status">
         {status}
-      </p>
+      </Rx.Text>
       {/* Keyed by the pair: a new entry, file or mode starts the diff afresh (its Source toggle included). */}
       <FileDiff key={`${path}:${from}:${to}`} client={client} path={path} from={from} to={to} refresh={to === "current" ? now : undefined} />
-    </div>
+    </Rx.Flex>
   );
 }

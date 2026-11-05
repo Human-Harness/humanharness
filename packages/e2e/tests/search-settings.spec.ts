@@ -25,7 +25,7 @@ test("⌘K: a setting opens Settings at the field; an action runs; nothing typed
     await page.keyboard.type("history");
     await dialog.getByRole("option", { name: /Open History/ }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole("dialog", { name: "History" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "History", exact: true })).toBeVisible();
   } finally {
     await closeAndClean(app, s);
   }

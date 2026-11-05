@@ -2,8 +2,8 @@ import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { authorName, type FileTimelineResult, type HarnessClient, type TimelineEntry, timeAgo } from "./client";
-import { entryLabel } from "./HistoryPanel";
-import { Button } from "./guide/Button";
+import { entryLabel } from "./HistoryPage";
+import { Rx } from "./guide";
 
 // Shared with main's native go-back confirmation, so both say who and when the same way.
 export { authorName, timeAgo };
@@ -29,6 +29,8 @@ function entryText(t: TFunction, e: TimelineEntry, language: string): string | n
   if (e.deleted) return null;
   if (e.kind === "task") return t("timeline.changes", { count: e.commits.length });
   if (e.kind === "answers") return t("timeline.answers", { count: e.commits.length });
+  // The spec's label (§3), not a chip that repeats the author.
+  if (e.kind === "outside") return t("timeline.outside");
   if (e.kind === "goBack") {
     if (e.back?.version !== undefined) return t("timeline.wentBackVersion", { version: e.back.version });
     if (e.back?.at !== undefined) return t("timeline.wentBackTime", { time: clock(e.back.at, language) });
@@ -39,10 +41,9 @@ function entryText(t: TFunction, e: TimelineEntry, language: string): string | n
 
 function chips(t: TFunction, e: TimelineEntry): ReactNode {
   const out: ReactNode[] = [];
-  if (e.unapproved) out.push(<span key="u" className="hh-timeline-chip hh-timeline-chip-amber">{t("timeline.unapproved")}</span>);
-  if (e.kind === "approval") out.push(<span key="a" className="hh-timeline-chip hh-timeline-chip-green">{t(e.reason ? "timeline.approvedReason" : "timeline.approved", { version: e.version })}</span>);
-  if (e.kind === "outside") out.push(<span key="o" className="hh-timeline-chip hh-timeline-chip-grey">{t("timeline.outside")}</span>);
-  if (e.deleted) out.push(<span key="d" className="hh-timeline-chip hh-timeline-chip-grey">{t("timeline.deleted")}</span>);
+  if (e.unapproved) out.push(<Rx.Badge key="u" color="orange">{t("timeline.unapproved")}</Rx.Badge>);
+  if (e.kind === "approval") out.push(<Rx.Badge key="a" color="green">{t(e.reason ? "timeline.approvedReason" : "timeline.approved", { version: e.version })}</Rx.Badge>);
+  if (e.deleted) out.push(<Rx.Badge key="d" color="gray" variant="outline">{t("timeline.deleted")}</Rx.Badge>);
   return out;
 }
 
@@ -76,12 +77,21 @@ export function FileTimeline({ client, path, selected, onPick }: FileTimelinePro
       off();
     };
   }, [client, path]);
-  if (!result) return <p className="hh-caption" role="status">{t("timeline.loading")}</p>;
+  const note = (text: string, role?: "status") => (
+    <Rx.Text as="p" size="1" color="gray" role={role}>
+      {text}
+    </Rx.Text>
+  );
+  if (!result) return note(t("timeline.loading"), "status");
   if (!result.ok) {
-    const none = result.reason === "untracked" || result.reason === "outside";
-    return <p className={none ? "hh-caption" : "hh-warn"} role={none ? undefined : "alert"}>{t(none ? "timeline.noHistory" : "timeline.loadFailed")}</p>;
+    if (result.reason === "untracked" || result.reason === "outside") return note(t("timeline.noHistory"));
+    return (
+      <Rx.Callout.Root color="red" role="alert" size="1">
+        <Rx.Callout.Text>{t("timeline.loadFailed")}</Rx.Callout.Text>
+      </Rx.Callout.Root>
+    );
   }
-  if (result.entries.length === 0) return <p className="hh-caption">{t("timeline.empty")}</p>;
+  if (result.entries.length === 0) return note(t("timeline.empty"));
   const toggle = (key: string) =>
     setOpen((o) => {
       const next = new Set(o);
@@ -90,47 +100,60 @@ export function FileTimeline({ client, path, selected, onPick }: FileTimelinePro
       return next;
     });
   return (
-    <ol className="hh-timeline" aria-label={t("timeline.entries")}>
+    <ol className="hh-gd-list" aria-label={t("timeline.entries")}>
       {result.entries.map((e, i) => {
         const turnsId = `${id}-turns-${i}`;
         const text = entryText(t, e, i18n.language);
+        const current = selected === e.to ? "true" : undefined;
         const summary = (
-          <>
-            <span className="hh-timeline-author">{authorName(t, e.author)}</span>
-            {text && <span className="hh-timeline-text">{text}</span>}
-            {chips(t, e)}
-            <time className="hh-caption" dateTime={e.at}>
-              {clock(e.at, i18n.language)}
-            </time>
-          </>
+          <Rx.Flex direction="column" gap="1" minWidth="0">
+            <Rx.Flex align="baseline" justify="between" gap="3">
+              <Rx.Text size="2" weight="bold">
+                {authorName(t, e.author)}
+              </Rx.Text>
+              <Rx.Text size="1" color="gray" wrap="nowrap">
+                <time dateTime={e.at}>{clock(e.at, i18n.language)}</time>
+              </Rx.Text>
+            </Rx.Flex>
+            {(text || chips(t, e)) && (
+              <Rx.Flex align="center" gap="2" wrap="wrap">
+                {text && <Rx.Text size="1">{text}</Rx.Text>}
+                {chips(t, e)}
+              </Rx.Flex>
+            )}
+          </Rx.Flex>
         );
         return (
-          <li key={e.to} className={`hh-timeline-entry${selected === e.to ? " hh-timeline-selected" : ""}`}>
+          <li key={e.to}>
             {onPick ? (
-              <button type="button" className="hh-timeline-pick" aria-current={selected === e.to ? "true" : undefined} onClick={() => onPick(e)}>
+              <button type="button" className="hh-timeline-pick" aria-current={current} onClick={() => onPick(e)}>
                 {summary}
               </button>
             ) : (
-              <div className="hh-timeline-pick" aria-current={selected === e.to ? "true" : undefined}>
+              <div className="hh-timeline-pick" aria-current={current}>
                 {summary}
               </div>
             )}
             {e.commits.length > 1 && (
-              <Button type="button" kind="quiet" size="compact" className="hh-timeline-more" aria-expanded={open.has(e.to)} aria-controls={turnsId} onClick={() => toggle(e.to)}>
-                {t("timeline.turns", { count: e.commits.length })}
-              </Button>
-            )}
-            {open.has(e.to) && (
-              <ol id={turnsId} className="hh-timeline-turns">
-                {e.commits.map((c) => (
-                  <li key={c.id}>
-                    {turnText(t, c.subject)}{" "}
-                    <time className="hh-caption" dateTime={c.at}>
-                      {clock(c.at, i18n.language)}
-                    </time>
-                  </li>
-                ))}
-              </ol>
+              <Rx.Box px="4" pb="3">
+                <Rx.Button variant="ghost" color="gray" size="1" aria-expanded={open.has(e.to)} aria-controls={turnsId} onClick={() => toggle(e.to)}>
+                  {t("timeline.turns", { count: e.commits.length })}
+                </Rx.Button>
+                {open.has(e.to) && (
+                  <Rx.Flex asChild direction="column" gap="1" mt="2">
+                    <ol id={turnsId}>
+                      {e.commits.map((c) => (
+                        <li key={c.id}>
+                          <Rx.Text size="1">{turnText(t, c.subject)} </Rx.Text>
+                          <Rx.Text size="1" color="gray">
+                            <time dateTime={c.at}>{clock(c.at, i18n.language)}</time>
+                          </Rx.Text>
+                        </li>
+                      ))}
+                    </ol>
+                  </Rx.Flex>
+                )}
+              </Rx.Box>
             )}
           </li>
         );

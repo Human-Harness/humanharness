@@ -38,10 +38,10 @@ import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { ToolCallLines } from "./tools/ToolCallLine";
-import { FileTimelinePanel } from "./FileTimelinePanel";
+import { FileTimelineSplit } from "./FileTimelineSplit";
 import { ContextMeter, FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
-import { HistoryPanel } from "./HistoryPanel";
+import { HistoryPage } from "./HistoryPage";
 import { type AnswerHold, pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
@@ -128,6 +128,7 @@ export function ChatView({
   notesRequest,
   pluginsRequest,
   onPluginPanels,
+  onPage,
   onTaskLabel,
   onSidekickSettings,
   onFixEngine,
@@ -180,6 +181,11 @@ export function ChatView({
   pluginsRequest?: number;
   /** Told whether a running plugin has a panel in the Plugins section (the rail's Plugins entry), and false when gone. */
   onPluginPanels?: (has: boolean) => void;
+  /**
+   * A page of the chat's own took the work screen (History, stage 4b1): its title and the way back, for the top bar's
+   * Volver; null when the chat shows again (and on unmount).
+   */
+  onPage?: (page: { title: string; back: () => void } | null) => void;
   /** The open task's label, null with none (and on unmount): the top bar's breadcrumb names it. */
   onTaskLabel?: (label: string | null) => void;
   onFixEngine?: () => void;
@@ -1110,7 +1116,10 @@ export function ChatView({
         return true;
       case "timeline":
         if (slim) return false;
+        // A split view: one at a time, and a page (History) gives way to it.
         closeReader();
+        setContextOpen(false);
+        setShowHistory(false);
         setTimelineFile(intent.path);
         return true;
       case "draft":
@@ -1604,6 +1613,40 @@ export function ChatView({
     blockedTo.current?.(now);
   });
   useEffect(() => () => blockedTo.current?.(false), []);
+  /** History is a page (stage 4b1): the chat stays mounted under it, hidden, and the top bar shows Volver. */
+  const historyPage = showHistory && !slim;
+  const closeHistory = useCallback(() => {
+    setShowHistory(false);
+    setHistoryTask(undefined);
+  }, []);
+  const pageTo = useRef(onPage);
+  pageTo.current = onPage;
+  useEffect(() => {
+    pageTo.current?.(historyPage ? { title: t("history.title"), back: closeHistory } : null);
+  }, [historyPage, closeHistory, t]);
+  useEffect(() => () => pageTo.current?.(null), []);
+  /** What had focus when History opened (read before the page's title takes it): it gets focus back on leaving. */
+  const historyOpener = useRef<HTMLElement | null>(null);
+  const wasHistory = useRef(false);
+  useLayoutEffect(() => {
+    const was = wasHistory.current;
+    wasHistory.current = historyPage;
+    if (historyPage && !was) {
+      const active = document.activeElement;
+      historyOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    }
+  }, [historyPage]);
+  const historyShown = useRef(false);
+  useEffect(() => {
+    const was = historyShown.current;
+    historyShown.current = historyPage;
+    if (!was || historyPage) return;
+    // Only when focus went away with the page: what took it since (the reader, the timeline) keeps it.
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const back = historyOpener.current;
+    (back?.isConnected ? back : document.querySelector<HTMLElement>(".hh-composer textarea"))?.focus();
+  }, [historyPage]);
   /** The open task's name for the breadcrumb (a harness without `parallel` has no task list to read it from). */
   const taskLabel = tasks.current ? (tasks.current.action ? labelOf(tasks.current.action) : t("history.question")) : null;
   const taskLabelTo = useRef(onTaskLabel);
@@ -1615,7 +1658,7 @@ export function ChatView({
 
   return (
     <DocumentContext.Provider value={documentHost}>
-      <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
+      <div className={slim ? "hh-app hh-app-slim" : `hh-app${historyPage ? " hh-app-paged" : ""}`}>
         {!slim && (
           <TaskHeader
             title={title ?? taskLabel ?? (startView?.title ? t(startView.title, { ns: "harness" }) : t("rail.tasks"))}
@@ -1652,7 +1695,7 @@ export function ChatView({
           />
         )}
         <div
-          className={`hh-body${(reader || contextOpen) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
+          className={`hh-body${(reader || contextOpen || timelineFile !== null) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
         >
           {flow && !slim && (
             <FlowSide
@@ -2140,12 +2183,27 @@ export function ChatView({
               onClose={closeContext}
             />
           )}
+          {timelineFile !== null && !slim && (
+            <FileTimelineSplit
+              client={client}
+              path={timelineFile}
+              busy={Boolean(chat.live) || closing || checkpoint}
+              onClose={() => {
+                setTimelineFile(null);
+                // Focus lost with the split view goes to the composer, not the page.
+                requestAnimationFrame(() => {
+                  const active = document.activeElement;
+                  if (!active || active === document.body) document.querySelector<HTMLElement>(".hh-composer textarea")?.focus();
+                });
+              }}
+            />
+          )}
         </div>
         <div className="hh-sr-only" aria-live="polite">
           {announcement}
         </div>
-        {showHistory && (
-          <HistoryPanel
+        {historyPage && (
+          <HistoryPage
             key={historyTask ?? "history"}
             client={client}
             actions={state.actions}
@@ -2155,10 +2213,7 @@ export function ChatView({
             {...(state.jobs ? { jobs: state.jobs.jobs } : {})}
             {...(state.hatches?.linkedFolders ? { linkedFolders: state.hatches.linkedFolders } : {})}
             disabled={Boolean(chat.live) || closing || checkpoint}
-            onClose={() => {
-              setShowHistory(false);
-              setHistoryTask(undefined);
-            }}
+            onBack={closeHistory}
             onRestored={(kind) => {
               setSkRefresh((n) => n + 1);
               const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
@@ -2166,15 +2221,13 @@ export function ChatView({
               setNotice(text);
             }}
             onOpenFile={(file, kind) => {
-              setShowHistory(false);
-              // A `.md` that is still there opens in the reader with its drawer; anything else in the timeline panel.
-              if (kind !== "deleted" && isMarkdownPath(file) && !slim) showReader({ path: file, timeline: true });
+              closeHistory();
+              setContextOpen(false);
+              // A `.md` that is still there opens in the reader with its timeline; anything else in the timeline split view.
+              if (kind !== "deleted" && isMarkdownPath(file)) showReader({ path: file, timeline: true });
               else setTimelineFile(file);
             }}
           />
-        )}
-        {timelineFile !== null && (
-          <FileTimelinePanel client={client} path={timelineFile} busy={Boolean(chat.live) || closing || checkpoint} onClose={() => setTimelineFile(null)} />
         )}
         {notesPanel && (
           <NotesPanel

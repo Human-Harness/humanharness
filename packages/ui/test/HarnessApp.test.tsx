@@ -370,16 +370,22 @@ describe("HarnessApp", () => {
     expect(within(container.querySelector(".hh-chat") as HTMLElement).getByText("All done")).toBeTruthy();
   });
 
-  it("history is a modal dialog: focuses Close, Escape closes", async () => {
+  it("history is a secondary page: its title takes focus, the top bar's Volver and Escape go back to the chat", async () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog.getAttribute("aria-modal")).toBe("true");
-    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close" }));
-    fireEvent.keyDown(document, { key: "Escape" });
+    const title = await screen.findByRole("heading", { level: 1, name: "History" });
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(title);
+    expect(document.querySelector(".hh-app-paged")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Back to / }));
+    await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
+    expect(document.querySelector(".hh-app-paged")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.keyDown(await screen.findByRole("heading", { level: 1, name: "History" }), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
+    expect(screen.queryByRole("button", { name: /^Back to / })).toBeNull();
   });
 
   it("opens on Home with the logo, name, tagline, Start and the engine pill", async () => {

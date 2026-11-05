@@ -192,7 +192,7 @@ test("two tasks run at once, the inbox follows them, and undoing one leaves the 
     // file, so it is neither undone nor counted, and its file and task stay.
     await closeInbox(page);
     await page.getByRole("button", { name: "History", exact: true }).click();
-    const panel = page.getByRole("dialog", { name: "History" });
+    const panel = page.getByRole("region", { name: "History", exact: true });
     const rowB = panel.locator("li", { has: page.getByRole("button", { name: /^Write B.*1 file changed/ }) });
     const header = rowB.getByRole("button", { name: /^Write B.*1 file changed/ });
     if ((await header.getAttribute("aria-expanded")) !== "true") await header.click();

@@ -38,7 +38,7 @@ describe("FileTimeline (file-timeline spec §6.1)", () => {
     await renderIn("en", <FileTimeline client={client} path={DOC} />);
     const list = await screen.findByRole("list", { name: "Versions and changes" });
     const items = within(list).getAllByRole("listitem").filter((li) => li.parentElement === list);
-    expect(items.map((li) => li.querySelector(".hh-timeline-author")?.textContent)).toEqual(["You", "Outside the app", "You", "You", "Spec writer", "A question"]);
+    expect(items.map((li) => li.querySelector(".hh-timeline-pick .rt-Text")?.textContent)).toEqual(["You", "Outside the app", "You", "You", "Spec writer", "A question"]);
     expect(items[0].textContent).toContain("You went back to v1");
     expect(items[1].textContent).toContain("Outside the app");
     expect(items[2].textContent).toContain("v1 approved, with a reason");
@@ -100,18 +100,14 @@ describe("FileTimeline (file-timeline spec §6.1)", () => {
     expect(screen.getByRole("button", { name: "2 turns" })).toBeTruthy();
   });
 
-  it("the chips use the timeline's own classes, not the start view's .hh-chip", async () => {
+  it("the chips are Radix badges, not the start view's .hh-chip: deleted gray, approved green, unapproved orange; an outside change says so in words", async () => {
     const client = new FakeClient();
     client.timelines[DOC] = entries;
     const { container } = await renderIn("en", <FileTimeline client={client} path={DOC} />);
     await screen.findByRole("list", { name: "Versions and changes" });
     expect(container.querySelectorAll(".hh-chip").length).toBe(0);
-    expect([...container.querySelectorAll(".hh-timeline-chip")].map((c) => c.className)).toEqual([
-      "hh-timeline-chip hh-timeline-chip-grey",
-      "hh-timeline-chip hh-timeline-chip-green",
-      "hh-timeline-chip hh-timeline-chip-amber",
-      "hh-timeline-chip hh-timeline-chip-grey",
-    ]);
+    expect([...container.querySelectorAll(".rt-Badge")].map((c) => c.getAttribute("data-accent-color"))).toEqual(["green", "orange", "gray"]);
+    expect(screen.getByText("Changed outside the app").classList.contains("rt-Badge")).toBe(false);
   });
 
   it("a reload that fails keeps the last good list", async () => {
@@ -136,7 +132,7 @@ describe("a tool's entry (tools spec §8.3)", () => {
     ];
     await renderIn("en", <FileTimeline client={client} path={DOC} />);
     const list = await screen.findByRole("list", { name: "Versions and changes" });
-    expect(list.querySelector(".hh-timeline-author")?.textContent).toBe("apply-triage");
+    expect(list.querySelector(".hh-timeline-pick .rt-Text")?.textContent).toBe("apply-triage");
     expect(authorName((k) => k, { kind: "tool", label: "due-today", tool: "due-today" })).toBe("due-today");
   });
 });

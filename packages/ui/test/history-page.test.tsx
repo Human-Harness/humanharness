@@ -3,9 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionOption, HistoryTaskView } from "../src/client";
-import { HistoryPanel, byDay, entryLabel } from "../src/HistoryPanel";
+import { HistoryPage, byDay, entryLabel } from "../src/HistoryPage";
+import { HhTheme } from "../src/guide";
 import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { renderIn as renderBase } from "./render";
+
+/** History is built with Radix pieces that read the theme (Select). */
+const renderIn = (language: string, ui: Parameters<typeof renderBase>[1]) => renderBase(language, ui, { theme: true });
 
 afterEach(cleanup);
 
@@ -69,21 +73,27 @@ async function open(
   const onClose = vi.fn();
   await renderIn(
     "en",
-    <HistoryPanel
+    <HistoryPage
       client={client}
       actions={opts.actions ?? actions}
       disabled={opts.disabled}
       currentTask={opts.currentTask}
       {...(opts.undoByFiles ? { undoByFiles: true } : {})}
       {...(opts.jobs ? { jobs: opts.jobs } : {})}
-      onClose={onClose}
+      onBack={onClose}
       onRestored={onRestored}
     />,
   );
   return { client, onRestored, onClose };
 }
 
-describe("HistoryPanel", () => {
+/** Picks `value` in the Radix select named `name`, from the keyboard. */
+async function pick(name: string | RegExp, value: string) {
+  fireEvent.keyDown(screen.getByRole("combobox", { name }), { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name: value }), { key: "Enter" });
+}
+
+describe("HistoryPage", () => {
   it("labels a job run's row with its job (Job: trailer); an unknown job is just a background job", async () => {
     const client = new FakeClient();
     const run = (taskId: string, jobId?: string): HistoryTaskView => ({
@@ -118,11 +128,12 @@ describe("HistoryPanel", () => {
       entries: [{ sha: `e-${taskId}`, message: `Turn: ${taskId}`, date: "2026-10-10T12:00:00.000Z" }],
     });
     client.historyGroups = [group("t1", "fracciones"), group("t2", "_app"), group("t3")];
-    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} />);
-    const filter = (await screen.findByRole("combobox", { name: "Show" })) as HTMLSelectElement;
-    await waitFor(() => expect([...filter.options].map((o) => o.textContent)).toEqual(["All", "Fractions", "App-wide"]));
-    expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(3);
-    fireEvent.change(filter, { target: { value: "fracciones" } });
+    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => {}} />);
+    const filter = await screen.findByRole("combobox", { name: "Show" });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(3));
+    fireEvent.keyDown(filter, { key: "Enter" });
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["All", "Fractions", "App-wide"]);
+    fireEvent.keyDown(screen.getByRole("option", { name: "Fractions" }), { key: "Enter" });
     expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
   });
 
@@ -144,10 +155,9 @@ describe("HistoryPanel", () => {
 
   it("goes back from a filtered list (main counts the later tasks the filter hides)", async () => {
     const client = scoped(["t2", "_app", "2026-10-11T12:00:00.000Z"], ["t1", "fracciones", "2026-10-10T12:00:00.000Z"]);
-    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} />);
-    const filter = await screen.findByRole("combobox", { name: "Show" });
-    await waitFor(() => expect(within(filter).getByRole("option", { name: "Fractions" })).toBeTruthy());
-    fireEvent.change(filter, { target: { value: "fracciones" } });
+    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => {}} />);
+    await screen.findByRole("combobox", { name: "Show" });
+    await pick("Show", "Fractions");
     fireEvent.click(screen.getByRole("button", { name: /A question/ }));
     fireEvent.click(screen.getByRole("button", { name: "Undo this task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
@@ -159,21 +169,22 @@ describe("HistoryPanel", () => {
     const i18n = await (await import("@humanharness/i18n")).createI18n("en");
     const ui = (c: FakeClient) => (
       <I18nextProvider i18n={i18n}>
-        <HistoryPanel client={c} actions={{}} onClose={() => {}} />
+        <HhTheme>
+          <HistoryPage client={c} actions={{}} onBack={() => {}} />
+        </HhTheme>
       </I18nextProvider>
     );
     const view = render(ui(first));
-    const filter = (await screen.findByRole("combobox", { name: "Show" })) as HTMLSelectElement;
-    await waitFor(() => expect(filter.options.length).toBe(3));
-    fireEvent.change(filter, { target: { value: "fracciones" } });
+    await screen.findByRole("combobox", { name: "Show" });
+    await pick("Show", "Fractions");
     expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
     view.rerender(ui(scoped(["t2", "other", date], ["t3", "more", date])));
     await waitFor(() => expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(2));
-    expect((screen.getByRole("combobox", { name: "Show" }) as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("All");
   });
 
   it("shows no filter for a history without scopes", async () => {
-    await renderIn("en", <HistoryPanel client={new FakeClient()} actions={{}} onClose={() => {}} />);
+    await renderIn("en", <HistoryPage client={new FakeClient()} actions={{}} onBack={() => {}} />);
     await screen.findByRole("heading", { name: "History" });
     expect(screen.queryByRole("combobox", { name: "Show" })).toBeNull();
   });
@@ -207,11 +218,11 @@ describe("HistoryPanel", () => {
     ];
     await open({ client });
     await screen.findByRole("button", { name: /Plan the week/ });
-    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Today", "Yesterday"]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Today", "Yesterday"]);
     // Newer than both tasks, yet still last.
-    const sections = document.querySelectorAll(".hh-history-day");
+    const sections = [...document.querySelectorAll("ol.hh-gd-list")].map((l) => l.closest("section")!);
     expect(sections).toHaveLength(3);
-    expect(sections[sections.length - 1].textContent).toMatch(/^Outside a task/);
+    expect(sections[sections.length - 1].getAttribute("aria-label")).toBe("Outside a task");
   });
 
   it("groups by local day, keeping the order", () => {
@@ -241,11 +252,6 @@ describe("HistoryPanel", () => {
     await open({ client });
     expect(await screen.findByText("Nothing to go back to yet")).toBeTruthy();
     expect(screen.getByText("Each time the AI changes your files, a point shows here so you can undo it.")).toBeTruthy();
-    // The clock is 14 and sits inline before the text, not a 32 icon above it.
-    const empty = document.querySelector(".hh-history-empty")!;
-    expect(empty.querySelector("svg")?.getAttribute("width")).toBe("14");
-    expect(empty.querySelector("svg")?.nextElementSibling?.textContent).toBe("Nothing to go back to yet");
-    expect(empty.querySelectorAll("svg")).toHaveLength(1);
   });
 
   it("opens a row on click and shows its entries in plain language", async () => {
@@ -358,7 +364,7 @@ describe("HistoryPanel", () => {
     const client = new FakeClient();
     client.historyError = new Error("disk");
     await open({ client });
-    expect((await screen.findByRole("alert")).textContent).toBe("I couldn't read the history. Close it and try again.");
+    expect((await screen.findByRole("alert")).textContent).toBe("I couldn't read the history. Go back and try again.");
     expect(screen.queryByText("Nothing to go back to yet")).toBeNull();
   });
 
@@ -410,7 +416,7 @@ describe("HistoryPanel", () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     const g = (taskId: string, date: string) => ({ taskId, actionId: null, start: null, end: `e-${taskId}`, date, changes: [], entries: [{ sha: `e-${taskId}`, message: "Turn: hi", date }] });
     client.historyGroups = [g("t2", "2026-10-10T12:00:00.000Z"), g("t1", "2026-10-09T12:00:00.000Z")];
-    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} openTask="t1" />);
+    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => {}} openTask="t1" />);
     await waitFor(() => expect(screen.getAllByRole("button", { expanded: true }).map((b) => b.getAttribute("aria-controls"))).toEqual(["hh-history-t1"]));
   });
 });
@@ -420,11 +426,11 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
     const client = new FakeClient();
     client.historyGroups = groups;
     const opened: [string, string][] = [];
-    await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
+    await renderIn("en", <HistoryPage client={client} actions={actions} onBack={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
     const link = await screen.findByRole("button", { name: "History of plan.md" });
     // The change's kind is the link's description: a screen reader hears it with the name.
     const kind = document.getElementById(link.getAttribute("aria-describedby") ?? "");
-    expect(kind?.textContent).toBe(link.closest("li")?.querySelector(".hh-change")?.textContent);
+    expect(kind?.textContent).toBe("Changed");
     expect(kind?.textContent).not.toBe("");
     fireEvent.click(link);
     fireEvent.click(screen.getByRole("button", { name: "History of old.md" }));
@@ -437,7 +443,7 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
   it("D0: without onOpenFile the paths stay plain text", async () => {
     const client = new FakeClient();
     client.historyGroups = groups;
-    await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} actions={actions} onBack={() => undefined} />);
     await screen.findAllByText("plan.md");
     expect(screen.queryByRole("button", { name: "History of plan.md" })).toBeNull();
   });
@@ -453,37 +459,38 @@ describe("context changes in the history (context-panel spec §4.2)", () => {
   });
 });
 
-describe("the History drawer (UI refresh spec §5.7)", () => {
-  it("is a drawer with the go-back subtitle and an All / Tasks / Outside a task filter", async () => {
-    await open();
+describe("the History page (Radix stage 4b1)", () => {
+  it("is a secondary page with the go-back line and an All / Tasks / Outside a task filter", async () => {
+    const { onClose } = await open();
     await screen.findByRole("button", { name: /Plan the week/ });
-    const drawer = screen.getByRole("dialog", { name: "History" });
-    expect(drawer.classList.contains("hh-drawer")).toBe(true);
-    expect(within(drawer).getByText("Go back to any point: your files return to how they were then.")).toBeTruthy();
-    const filter = within(drawer).getByRole("group", { name: "Which turns to show" });
-    expect(within(filter).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(within(filter).getByRole("button", { name: "Outside tasks" }));
+    const title = screen.getByRole("heading", { level: 1, name: "History" });
+    expect(document.activeElement).toBe(title);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Go back to any point: your files return to how they were then.")).toBeTruthy();
+    const filter = screen.getByRole("radiogroup", { name: "Which turns to show" });
+    const item = (name: string) => within(filter).getByRole("radio", { name });
+    expect(item("All").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(item("Outside tasks"));
     expect(screen.queryByRole("button", { name: /Plan the week/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /A question/ })).toBeNull();
-    expect(screen.getByText("No changes").className).toContain("hh-tag-gray");
     // The gray tag stands alone: no "0 files changed" beside it.
     expect(screen.getByRole("button", { name: /Outside a task.*No changes/ }).textContent).not.toMatch(/files? changed/);
-    fireEvent.click(within(filter).getByRole("button", { name: "Tasks" }));
+    fireEvent.click(item("Tasks"));
     expect(screen.getByRole("button", { name: /Plan the week/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Outside a task/ })).toBeNull();
-    fireEvent.click(within(filter).getByRole("button", { name: "All" }));
+    fireEvent.click(item("All"));
     expect(screen.getByRole("button", { name: /Outside a task.*No changes/ })).toBeTruthy();
+    // Escape on the page goes back.
+    fireEvent.keyDown(title, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
   });
 
-  it("makes each task a card with its status tags, and gives each point a dot, green where the AI finished", async () => {
+  it("puts each day's tasks in one bordered list, with the status badges", async () => {
     await open({ currentTask: "t2" });
     const row = await screen.findByRole("button", { name: /Plan the week/ });
-    expect(row.closest("li")?.classList.contains("hh-card")).toBe(true);
-    expect(screen.getByText("Open now").className).toContain("hh-tag-blue");
-    expect(screen.getByText("Note saved").className).toContain("hh-tag-green");
-    const points = screen.getByRole("list", { name: "Points in this task" });
-    const dots = [...points.querySelectorAll(".hh-history-dot")];
-    expect(dots).toHaveLength(3);
-    expect(dots.map((d) => d.classList.contains("green"))).toEqual([false, true, false]);
+    expect(row.classList.contains("hh-history-row")).toBe(true);
+    expect(row.closest("ol")?.classList.contains("hh-gd-list")).toBe(true);
+    expect(screen.getByText("Open now")).toBeTruthy();
+    expect(screen.getByText("Note saved")).toBeTruthy();
   });
 });

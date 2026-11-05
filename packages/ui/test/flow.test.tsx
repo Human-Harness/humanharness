@@ -274,7 +274,7 @@ describe("flow mode", () => {
     expect(document.activeElement).toBe(chats);
   });
 
-  it("opening the history closes the notes panel, so one Escape closes the one on top", async () => {
+  it("opening the history page closes the notes panel; Escape leaves the page and focus goes back", async () => {
     const client = flowClient();
     client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
     await startWork(client);
@@ -283,10 +283,10 @@ describe("flow mode", () => {
     const history = screen.getByRole("button", { name: "History" });
     history.focus();
     fireEvent.click(history);
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(screen.queryByRole("dialog", { name: "What's clear so far" })).toBeNull();
-    fireEvent.keyDown(document, { key: "Escape" });
+    const page = await screen.findByRole("heading", { level: 1, name: "History" });
     expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(page, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
     expect(document.activeElement).toBe(history);
   });
 

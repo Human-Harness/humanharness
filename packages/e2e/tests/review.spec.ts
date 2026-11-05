@@ -224,7 +224,7 @@ test.describe("the review fixture", () => {
       await drawer.getByRole("button", { name: /Ticket/ }).click();
       const diff = reader.getByRole("region", { name: "Changes" });
       await expect(diff).toContainText("Filter by size.");
-      await reader.getByRole("button", { name: "Against the current version" }).click();
+      await reader.getByRole("radio", { name: "Against the current version" }).click();
       await expect(diff.locator("ins")).toContainText(["and colour"]);
       // Both diffs came from the built worker thread, not from Electron main.
       await expect.poll(async () => (await workers()).filter(Boolean).length).toBeGreaterThanOrEqual(2);
@@ -258,17 +258,18 @@ test.describe("the review fixture", () => {
       await reader.getByRole("button", { name: "Back to the document" }).click();
       await reader.getByRole("button", { name: "Close" }).click();
 
-      // The History panel: the task's changed files are links; the .md opens in the reader with the drawer…
+      // The History page: the task's changed files are links; the .md opens in the reader with the drawer…
       await page.getByRole("button", { name: "History", exact: true }).click();
-      const panel = page.getByRole("dialog", { name: "History" });
+      const panel = page.getByRole("region", { name: "History", exact: true });
       await panel.getByRole("button", { name: "History of specs/filter.md" }).click();
       await expect(page.getByRole("complementary", { name: "Document" }).getByRole("region", { name: "File history" })).toBeVisible();
       await page.getByRole("complementary", { name: "Document" }).getByRole("button", { name: "Close" }).click();
 
-      // …and the review record, not a document, in the timeline panel.
+      // …and the review record, not a document, in the timeline split view.
       await page.getByRole("button", { name: "History", exact: true }).click();
-      await page.getByRole("dialog", { name: "History" }).getByRole("button", { name: "History of .harness/reviews/specs/filter.md.json" }).click();
-      const files = page.getByRole("dialog", { name: "History of .harness/reviews/specs/filter.md.json" });
+      await page.getByRole("region", { name: "History", exact: true }).getByRole("button", { name: "History of .harness/reviews/specs/filter.md.json" }).click();
+      const files = page.getByRole("region", { name: "File history", exact: true });
+      await expect(files).toContainText(".harness/reviews/specs/filter.md.json");
       await expect(files.getByRole("list", { name: "Versions and changes" })).toBeVisible();
 
       expect(csp).toEqual([]);

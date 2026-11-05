@@ -81,10 +81,9 @@ describe("design tokens", () => {
 });
 
 describe("styles", () => {
-  it("gives the timeline's chips their own classes: the start view's .hh-chip rule is the only one (D0)", () => {
+  it("the start view's .hh-chip rule is the only one (D0): the timeline's chips are Radix badges", () => {
     expect(css.match(/^\.hh-chip[\s,{-]/gm)).toEqual([".hh-chip "]);
     expect(css).toMatch(/^\.hh-chip\s*{\s*height:\s*32px;/m);
-    for (const c of ["", "-amber", "-green", "-grey"]) expect(css).toMatch(new RegExp(`^\\.hh-timeline-chip${c}\\s*{`, "m"));
   });
 
   it("keeps the file diff's rules in one block of its own classes, so they restyle nothing else (D0)", () => {

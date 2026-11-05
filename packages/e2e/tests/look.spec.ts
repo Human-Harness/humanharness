@@ -137,7 +137,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
       await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
       await page.getByRole("button", { name: "History", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "History" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "History", exact: true })).toBeVisible();
       await page.screenshot({ path: path.join(lookDir, `history-${theme}.png`) });
     } finally {
       await closeAndClean(app, s);

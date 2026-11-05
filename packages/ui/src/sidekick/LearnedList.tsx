@@ -31,7 +31,7 @@ export function LearnedList({ client }: { client: HarnessClient }) {
   const back = useRef<"edit" | "forgetAll" | null>(null);
   const isEditing = editing !== null;
 
-  // Every view switch moves focus into the new view, and back to its opener when it closes (as in HistoryPanel).
+  // Every view switch moves focus into the new view, and back to its opener when it closes (as the History page does).
   useEffect(() => {
     if (confirm) yesRef.current?.focus();
     else if (isEditing) firstInputRef.current?.focus();

@@ -54,14 +54,14 @@ describe("focus mode (review spec §6.2)", () => {
     expect(client.focus.current()).toEqual({ on: false });
   });
 
-  it("Esc with the History panel open in focus mode closes only the panel", async () => {
+  it("Esc on the History page in focus mode leaves only the page", async () => {
     const client = await chat(true);
     const reader = await openReader();
     fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
     fireEvent.click(screen.getByRole("button", { name: "History" }));
-    expect(screen.getByRole("dialog", { name: "History" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "History" })).toBeTruthy();
     fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull();
     expect(document.querySelector(".hh-focus")).not.toBeNull();
     expect(client.focus.current()).toEqual({ on: true, path: "specs/a.md" });
     fireEvent.keyDown(document.body, { key: "Escape" });

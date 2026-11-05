@@ -173,16 +173,17 @@ describe("flow mode", () => {
     await startWork(client);
     await startRegion();
     fireEvent.click(within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" }));
-    const panel = screen.getByRole("dialog", { name: "What's clear so far" });
+    // The note's detail on the Files page (stage 4b2).
+    const panel = await screen.findByRole("region", { name: "Where chats live" });
     expect(within(panel).getByText("In .harness/chats")).toBeTruthy();
-    expect(within(panel).getByText(/2 key points/)).toBeTruthy();
+    expect(within(panel).getByText(/1 key point/)).toBeTruthy();
     client.openResult = false;
     fireEvent.click(within(panel).getByRole("button", { name: "Open the file" }));
     await waitFor(() => expect(client.opened).toEqual([".harness/notes/q-chats.md"]));
     await within(panel).findByRole("alert");
     fireEvent.click(within(panel).getByRole("button", { name: "Pick this topic up again" }));
     await waitFor(() => expect(client.sent).toEqual(['Let\'s pick up "Where chats live" again.']));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Where chats live" })).toBeNull();
   });
 
   it("asks a free question from the start view and follows up while the task waits", async () => {
@@ -255,39 +256,22 @@ describe("flow mode", () => {
     expect(client.chosenTasks).toEqual(["t1", "t1"]);
   });
 
-  it("opens another note from the side panel while the panel is open, and gives focus back on Escape", async () => {
+  it("a note from the side panel opens its detail on the Files page; Escape goes to the list, then back with focus", async () => {
     const client = flowClient();
     client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
     await startWork(client);
     await startRegion();
-    const side = screen.getByRole("list", { name: "What's clear so far" });
-    const chats = within(side).getByRole("button", { name: "Where chats live" });
+    const chats = within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" });
     chats.focus();
     fireEvent.click(chats);
-    const panel = screen.getByRole("dialog", { name: "What's clear so far" });
-    expect(within(panel).getByText("In .harness/chats")).toBeTruthy();
-    fireEvent.click(within(side).getByRole("button", { name: "The manifest" }));
-    expect(within(panel).getByText("It is validated")).toBeTruthy();
-    expect(within(panel).queryByText("In .harness/chats")).toBeNull();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    const title = await screen.findByRole("heading", { level: 1, name: "Where chats live" });
+    await waitFor(() => expect(document.activeElement).toBe(title));
+    fireEvent.keyDown(title, { key: "Escape" });
+    const row = within(await screen.findByRole("region", { name: "Files" })).getByRole("button", { name: /Where chats live/ });
+    expect(document.activeElement).toBe(row);
+    fireEvent.keyDown(row, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "Files" })).toBeNull());
     expect(document.activeElement).toBe(chats);
-  });
-
-  it("opening the history page closes the notes panel; Escape leaves the page and focus goes back", async () => {
-    const client = flowClient();
-    client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
-    await startWork(client);
-    await startRegion();
-    fireEvent.click(within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" }));
-    const history = screen.getByRole("button", { name: "History" });
-    history.focus();
-    fireEvent.click(history);
-    const page = await screen.findByRole("heading", { level: 1, name: "History" });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.keyDown(page, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
-    expect(document.activeElement).toBe(history);
   });
 
   it("gives harness blocks a way to open files and show them in Finder", async () => {

@@ -1,5 +1,5 @@
 {
-  "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Notes", "plugins": "Plugins", "settings": "Settings" },
+  "rail": { "label": "App", "home": "Home", "tasks": "Tasks", "inbox": "Inbox", "jobs": "Jobs", "notes": "Files", "plugins": "Plugins", "settings": "Settings" },
   "inbox": {
     "title": "Inbox",
     "railCount": "Inbox, {{count}} waiting",
@@ -13,7 +13,7 @@
   },
   "task": { "header": { "new": "New task" } },
   "tasks": { "open": "Open tasks", "tabWaiting": "{{title}}, waiting for you" },
-  "drawer": { "close": "Close" },
+  "files": { "title": "Files" },
   "start": {
     "view": {
       "label": "View",
@@ -519,6 +519,8 @@
   },
   "notes": {
     "title": "What's clear so far",
+    "list": "Notes",
+    "points": "Key points",
     "resume": "Pick this topic up again",
     "open": "Open the file",
     "openFailed": "I couldn't open that file.",

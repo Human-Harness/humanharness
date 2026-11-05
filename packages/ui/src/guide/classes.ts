@@ -44,6 +44,9 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-history-file",
   "hh-history-time",
   "hh-app-paged",
+  // Files › Notes as a page: a note's row button, the detail's key points (stage 4b2)
+  "hh-notes-row",
+  "hh-notes-points",
   // The file timeline's split view (template 2), an entry's row button and its diff (stage 4b1)
   "hh-split",
   "hh-split-head",

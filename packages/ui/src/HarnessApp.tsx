@@ -4,7 +4,7 @@ import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
 import { ProfileAvatar } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
-import { ChatView, type SendFn, type ShellBridge } from "./ChatView";
+import { type ChatPage, ChatView, type SendFn, type ShellBridge } from "./ChatView";
 import { Rail, SettingsGear, TopBar } from "./chrome";
 import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
@@ -61,8 +61,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [pluginsRequest, setPluginsRequest] = useState(0);
   /** The chat has a running plugin with a panel in its Plugins section: the rail shows Plugins (spec §4.2). */
   const [pluginPanels, setPluginPanels] = useState(false);
-  /** A page of the chat's own on screen (History, stage 4b1): its title and the way back, for the top bar's Volver. */
-  const [chatPage, setChatPage] = useState<{ title: string; back: () => void } | null>(null);
+  /** A page of the chat's own on screen (History, stage 4b1; Files, 4b2): its title and the way back, for the top bar's Volver. */
+  const [chatPage, setChatPage] = useState<ChatPage | null>(null);
   /** The open task's label as the chat reports it: the breadcrumb's fallback without `parallel` (no task list). */
   const [chatTaskLabel, setChatTaskLabel] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
@@ -400,7 +400,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
   const focusedTask = tasksState?.tasks.find((s) => s.focused);
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
-  const railCurrent: RailEntry = view.kind === "chat" ? "tasks" : view.kind;
+  const railCurrent: RailEntry = view.kind === "chat" ? (chatPage?.rail ?? "tasks") : view.kind;
+  /** What Volver says: the task, unless the page goes back to a list of its own (a note's detail says "Notes"). */
+  const backLabel = (view.kind === "chat" ? chatPage?.backLabel : undefined) ?? screenTitle;
   /** The page's name, for Settings' Volver: the shell's (Inbox, Jobs), else the chat's own (History). */
   const pageTitle = view.kind === "inbox" ? i18n.t("inbox.title") : view.kind === "jobs" ? i18n.t("rail.jobs") : (chatPage?.title ?? null);
   /** Volver: from the shell's page to the chat; from the chat's own page back to the chat under it. */
@@ -416,8 +418,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const pick = (e: RailEntry) => {
     if (e === "home") return setScreen("home");
     if (e === "settings") return setSettings("general");
-    // A rail pick leaves the chat's own page (History) too: coming back from another page shows the chat.
-    chatPage?.back();
+    // A rail pick leaves the chat's own page (History, Files) too: coming back from another page shows the chat. Files
+    // picked on Files only goes back to its list (below).
+    if (!(e === "notes" && chatPage?.rail === "notes")) chatPage?.back();
     if (e === "inbox" || e === "jobs") return setView({ kind: e, request: ++inboxPicks.current });
     // Notes, Plugins and Tasks are the chat's: a page gives way to it.
     setView({ kind: "chat" });
@@ -437,9 +440,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 ? {
                     // A page's Volver (DESIGN.md "Secondary pages"): back to the chat, named by its task.
                     leading: (
-                      <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: screenTitle })} onClick={pageBack}>
+                      <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: backLabel })} onClick={pageBack}>
                         <Icon name="back" size={18} />
-                        {screenTitle}
+                        {backLabel}
                       </Rx.Button>
                     ),
                   }

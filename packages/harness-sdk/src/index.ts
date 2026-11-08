@@ -1,6 +1,5 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { MOD_ID } from "@humanharness/mod-sdk";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
@@ -22,6 +21,12 @@ import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
 import { STEP_OUTPUT_TOOL, aiStepOf, recipeProblems } from "./recipes";
 import { preProblems, preSchema, preTokensSchema, expectsSchema } from "./steps";
 import { CORE_SERVER_NAMES, hasTools, toolsSchema } from "./tools";
+
+/**
+ * A mod id in the manifest's `mods` keys: the same rule as mod-sdk's `MOD_ID` (a test checks they match). A copy because
+ * harness-sdk imports no other package (replaceable-parts spec §3).
+ */
+export const MANIFEST_MOD_ID = /^[a-z][a-z0-9-]{0,39}$/;
 
 export * from "./block";
 export * from "./core-blocks";
@@ -256,7 +261,7 @@ const manifestSchema = z.object({
   /** The prompt coach's hints and per-action review modes (sidekick spec §3). Absent: available, default off (D0). */
   sidekick: sidekickSchema.optional(),
   /** Mods this harness turns on, each with its config for the mod's own schema (minimal-core spec §4.1). Absent: none (D0). */
-  mods: z.record(z.string().regex(MOD_ID, "A mod id is lowercase letters, digits and -"), z.record(z.string(), z.unknown())).optional(),
+  mods: z.record(z.string().regex(MANIFEST_MOD_ID, "A mod id is lowercase letters, digits and -"), z.record(z.string(), z.unknown())).optional(),
   /** Plugins the harness ships and whether the person may add their own (plugins spec §3.4). Absent: none (D0). */
   plugins: harnessPluginsSchema.optional(),
   /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */

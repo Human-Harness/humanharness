@@ -329,12 +329,13 @@ importers:
 
   packages/harness-sdk:
     dependencies:
-      '@humanharness/mod-sdk':
-        specifier: workspace:*
-        version: link:../mod-sdk
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../mod-sdk
 
   packages/i18n:
     dependencies:

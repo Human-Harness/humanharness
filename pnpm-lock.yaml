@@ -329,6 +329,9 @@ importers:
 
   packages/harness-sdk:
     dependencies:
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../mod-sdk
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -474,6 +477,9 @@ importers:
       '@humanharness/material':
         specifier: workspace:*
         version: link:../material
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../mod-sdk
       '@humanharness/policies':
         specifier: workspace:*
         version: link:../policies

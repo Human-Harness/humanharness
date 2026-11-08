@@ -17,6 +17,7 @@
     "@humanharness/blocks": "workspace:*",
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/mod-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
     "@humanharness/material": "workspace:*",
     "@humanharness/policies": "workspace:*",

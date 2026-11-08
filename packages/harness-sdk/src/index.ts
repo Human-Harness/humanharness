@@ -1,5 +1,6 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { MOD_ID } from "@humanharness/mod-sdk";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
@@ -254,6 +255,8 @@ const manifestSchema = z.object({
   material: materialSchema.optional(),
   /** The prompt coach's hints and per-action review modes (sidekick spec §3). Absent: available, default off (D0). */
   sidekick: sidekickSchema.optional(),
+  /** Mods this harness turns on, each with its config for the mod's own schema (minimal-core spec §4.1). Absent: none (D0). */
+  mods: z.record(z.string().regex(MOD_ID, "A mod id is lowercase letters, digits and -"), z.record(z.string(), z.unknown())).optional(),
   /** Plugins the harness ships and whether the person may add their own (plugins spec §3.4). Absent: none (D0). */
   plugins: harnessPluginsSchema.optional(),
   /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */

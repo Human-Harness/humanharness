@@ -84,6 +84,44 @@ export interface AppConfig {
   jobs?: Record<string, JobSettings>;
   /** Which model and context policies run (replaceable-parts spec §8). No UI (D4). Cleaned when read; absent: the defaults. */
   policies?: PolicyIds;
+  /** Settings › Mods (minimal-core spec §4): the person's switches, local mod folders, mods turned off after three strikes. Cleaned when read. */
+  mods?: ModsConfig;
+}
+
+export interface ModsConfig {
+  on?: Record<string, boolean>;
+  /** Absolute folders the person added (after the warning). */
+  local?: string[];
+  /** Turned off after three failures in a row, with the reason; turning the mod on clears it. */
+  failed?: Record<string, string>;
+}
+
+/** One row of Settings › Mods (minimal-core spec §4, §6). */
+export interface ModRow {
+  id: string;
+  name: string;
+  version: string;
+  /** Who shipped the code: the core, the harness, or a folder the person added. */
+  origin: "core" | "harness" | "local";
+  on: boolean;
+  /** Turned off after three strikes, and why. */
+  failed?: string;
+  /** Couldn't start: a missing required mod, a bad config, a throw in main. */
+  problem?: string;
+  /** What it registered while on (spec §6: the person sees it). */
+  registers: { hooks: string[]; ipc: string[] };
+}
+export interface ModsView {
+  mods: ModRow[];
+  /** Folders that couldn't be read as mods, with why. */
+  problems: { id: string; reason: string }[];
+}
+/** What the warning before turning on a local mod shows (spec D2, §6). */
+export interface ModReview {
+  id: string;
+  name: string;
+  version: string;
+  folder: string;
 }
 
 /** The policy ids config.json names (replaceable-parts spec §8). Absent: `"default"`. */

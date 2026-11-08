@@ -258,6 +258,8 @@ export interface TaskDeps {
   phaseMoved?(e: PhaseMoved): void;
   /** A task ended with its note saved (parallel spec §8 `afterTask`). Never awaited. Absent: nothing (D0). */
   taskClosed?(task: { id: string; action?: string; scope: string }): void;
+  /** A task opened: it is current, before its first turn (minimal-core spec §4.2 taskOpen). Never awaited. Absent: nothing (D0). */
+  taskOpened?(task: { id: string; action?: string; scope: string }): void;
   /**
    * The scope's approved engine preset for a new task, and again before each later turn of a task that started with
    * one (hatches spec §5.2, §5.3, Decision 2). Only with `enginePresets` and scopes. Absent: none (D0).
@@ -1908,6 +1910,12 @@ export class TaskManager {
       this.taskLanguages.delete(current.id);
       await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
       return this.stopped();
+    }
+    // Once it is current and no Stop came first, so a mod never hears of a task that didn't open.
+    try {
+      this.d.taskOpened?.({ id, ...(task.action ? { action: task.action } : {}), scope });
+    } catch (err) {
+      console.error("taskOpened threw", err);
     }
     let done: Done;
     try {

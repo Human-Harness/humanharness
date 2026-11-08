@@ -34,7 +34,7 @@ interface Running {
   problem?: string;
   strikes: number;
   hooks: Map<HookName, Set<Fn>>;
-  ipc: Map<string, (p: unknown) => unknown>;
+  channels: Map<string, (p: unknown) => unknown>;
   disposers: Disposer[];
   service?: unknown;
 }
@@ -48,7 +48,7 @@ export class ModHost {
     const c = await this.d.config.load();
     for (const mod of list) {
       const failed = c?.failed?.[mod.json.id];
-      this.mods.set(mod.json.id, { mod, on: false, strikes: 0, hooks: new Map(), ipc: new Map(), disposers: [], ...(failed ? { failed } : {}) });
+      this.mods.set(mod.json.id, { mod, on: false, strikes: 0, hooks: new Map(), channels: new Map(), disposers: [], ...(failed ? { failed } : {}) });
     }
     // Required mods first: a simple pass in list order, retried while something new started.
     const want = new Set(list.filter((m) => isModOn(m.json.id, m.origin, c)).map((m) => m.json.id));
@@ -107,8 +107,8 @@ export class ModHost {
       config,
       on: { beforeSend: add("beforeSend"), turnStart: add("turnStart"), turnEnd: add("turnEnd"), taskOpen: add("taskOpen"), taskClose: add("taskClose") } as MainCtx<unknown>["on"],
       ipc: (name, handler) => {
-        r.ipc.set(name, handler);
-        const off = () => void r.ipc.delete(name);
+        r.channels.set(name, handler);
+        const off = () => void r.channels.delete(name);
         r.disposers.push(off);
         return off;
       },
@@ -126,7 +126,7 @@ export class ModHost {
       }
     }
     r.hooks.clear();
-    r.ipc.clear();
+    r.channels.clear();
     delete r.service;
     r.on = false;
   }
@@ -193,7 +193,7 @@ export class ModHost {
 
   async ipc(id: string, name: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
     const r = this.mods.get(id);
-    const handler = r?.on ? r.ipc.get(name) : undefined;
+    const handler = r?.on ? r.channels.get(name) : undefined;
     if (!r || !handler) return { ok: false, reason: "no such channel" };
     const res = await guarded(() => handler(payload), this.hookMs);
     await this.count(r, res.ok, res.ok ? undefined : res.reason);
@@ -227,7 +227,7 @@ export class ModHost {
       on: r.on,
       ...(r.failed ? { failed: r.failed } : {}),
       ...(r.problem ? { problem: r.problem } : {}),
-      registers: { hooks: [...r.hooks].filter(([, s]) => s.size > 0).map(([n]) => n), ipc: [...r.ipc.keys()] },
+      registers: { hooks: [...r.hooks].filter(([, s]) => s.size > 0).map(([n]) => n), ipc: [...r.channels.keys()] },
     }));
   }
 
@@ -242,7 +242,7 @@ export class ModHost {
       on: true,
       strikes: 0,
       hooks: new Map(),
-      ipc: new Map(),
+      channels: new Map(),
       disposers: [],
     };
     this.mods.set(id, r);

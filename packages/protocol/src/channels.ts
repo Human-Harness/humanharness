@@ -17,6 +17,7 @@ import type {
   MaterialView,
   ModeChoice,
   ModeResult,
+  ModsView,
   PluginDataChange,
   PluginSurfaceView,
   PluginsView,
@@ -45,6 +46,7 @@ type Files = H["files"];
 type Scopes = H["scopes"];
 type Settings = H["settings"];
 type Sidekick = H["sidekick"];
+type Mods = H["mods"];
 type Plugins = H["plugins"];
 type Attention = H["attention"];
 type SetupSteps = H["setupSteps"];
@@ -153,6 +155,11 @@ export interface Invoke {
   "hh:sidekickReorder": Sidekick["reorder"];
   "hh:sidekickScope": Sidekick["scope"];
   "hh:sidekickSetScope": Sidekick["setScope"];
+  "hh:mods": Mods["view"];
+  "hh:modSet": Mods["set"];
+  "hh:modReviewLocal": Mods["reviewLocal"];
+  "hh:modAddLocal": Mods["addLocal"];
+  "hh:modRemoveLocal": Mods["removeLocal"];
   "hh:pluginsGet": Plugins["get"];
   "hh:pluginsRescan": Plugins["rescan"];
   "hh:pluginsSetOn": Plugins["setOn"];
@@ -251,6 +258,7 @@ export interface Push {
   "hh:dataChange": DataChangeView;
   "hh:settings": SettingsState;
   "hh:sidekick": SidekickState;
+  "hh:modsChanged": ModsView;
   "hh:plugins": PluginsView;
   "hh:pluginSurface": PluginSurfaceView;
   "hh:pluginData": PluginDataChange;

@@ -3,9 +3,10 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { MOD_ID, modJsonSchema } from "@humanharness/mod-sdk";
 import type { ModReview, ModsView } from "@humanharness/protocol";
+import type { InvokeChannel } from "@humanharness/protocol/channels";
 
 const TOKEN = /^[0-9a-f]{32}$/;
-type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
+type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
 
 export interface ModsIpcDeps {
   view(): Promise<ModsView>;

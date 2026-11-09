@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/protocol";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, modRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -677,5 +677,16 @@ describe("translate turns (language spec §5 Measuring)", () => {
       { at: "2", engine: "claude", phase: "translate" as const, scope: "s", language: "es", batch: 1, ok: true, usage },
     ];
     expect(summarizeUsage(records as never, undefined).scopes).toEqual({ s: 3 });
+  });
+});
+
+describe("modRecord (minimal-core spec §5: a mod's engine turn)", () => {
+  const usage = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  const profile = { engine: "claude", tier: "light" as const, effort: "low" as const, cap: 1 };
+  it("is tagged with the mod's process and never counts as a task", () => {
+    const line = modRecord({ engine: "claude", process: "mod:echo", profile, ok: true, usage }, "2026-10-27T10:00:00Z");
+    expect(line).toMatchObject({ at: "2026-10-27T10:00:00Z", engine: "claude", phase: "mod", process: "mod:echo", ok: true, usage });
+    expect(summarizeUsage([line], undefined).tokens).toEqual({});
+    expect(dayTokens([line], "2026-10-27", (d) => d.toISOString().slice(0, 10))).toEqual({ tasks: 0, sidekick: 0 });
   });
 });

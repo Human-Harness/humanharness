@@ -5,7 +5,7 @@ import { registerModsIpc } from "../../src/main/mods/mods-ipc";
 
 const fx = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/mods");
 
-function setup(pick: string | null) {
+function setup(pick: string | null, taken: Set<string> = new Set()) {
   const handlers = new Map<string, (...a: never[]) => unknown>();
   const handle = (c: string, fn: (...a: never[]) => unknown) => void handlers.set(c, fn);
   const deps = {
@@ -15,6 +15,7 @@ function setup(pick: string | null) {
     addLocal: vi.fn(async () => {}),
     removeLocal: vi.fn(async () => {}),
     isLocal: (id: string) => id === "broken",
+    taken: (id: string) => taken.has(id),
   };
   registerModsIpc(handle as never, deps);
   const call = (c: string, ...a: unknown[]) => (handlers.get(c) as (...x: unknown[]) => Promise<unknown>)(...a);
@@ -42,6 +43,20 @@ describe("mods IPC", () => {
   it("add: a cancelled dialog answers null; a folder without a valid mod.json answers its problem", async () => {
     expect(await setup(null).call("hh:modReviewLocal")).toBeNull();
     expect(await setup(path.join(fx, "badjson")).call("hh:modReviewLocal")).toMatchObject({ problem: expect.stringContaining("mod.json") });
+  });
+  it("add: a folder whose id is already a mod's is refused at review, and nothing is added", async () => {
+    const { call, deps } = setup(path.join(fx, "echo"), new Set(["echo"]));
+    expect(await call("hh:modReviewLocal")).toMatchObject({ problem: expect.stringContaining('"echo"') });
+    await expect(call("hh:modAddLocal", "0".repeat(32))).rejects.toThrow();
+    expect(deps.addLocal).not.toHaveBeenCalled();
+  });
+  it("add: an id taken between the review and the add is refused at add", async () => {
+    const taken = new Set<string>();
+    const { call, deps } = setup(path.join(fx, "echo"), taken);
+    const r = (await call("hh:modReviewLocal")) as { token: string };
+    taken.add("echo");
+    await expect(call("hh:modAddLocal", r.token)).rejects.toThrow(/echo/);
+    expect(deps.addLocal).not.toHaveBeenCalled();
   });
   it("remove only applies to local mods", async () => {
     const { call, deps } = setup(null);

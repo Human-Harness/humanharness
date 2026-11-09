@@ -1356,6 +1356,13 @@ async function saveMods(fn: (m: ModsConfig | undefined) => ModsConfig | undefine
   await config.save({ mods: cleanModsConfig(fn((await config.load()).mods)) });
 }
 
+/**
+ * An id a local folder can't take: a resolved mod's, or one the manifest declares or the core ships even when it
+ * couldn't be read (its `on` switch is that mod's).
+ */
+const modIdTaken = (id: string): boolean =>
+  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id);
+
 /** The id in a folder's mod.json, or null when it has none. */
 async function modIdIn(folder: string): Promise<string | null> {
   try {
@@ -2930,11 +2937,15 @@ function registerIpc() {
     },
     // The person confirmed the warning: the mod starts on.
     addLocal: async (folder) => {
+      // Read again (the folder may have changed since the review); a taken id never reaches config.json.
       const id = await modIdIn(folder);
+      if (!id) throw new Error("This folder has no valid mod.json");
+      if (modIdTaken(id)) throw new Error(`A mod with the id "${id}" is already in this app`);
       await saveMods((m) => ({
         ...m,
         local: [...new Set([...(m?.local ?? []), folder])],
-        ...(id ? { on: { ...m?.on, [id]: true }, failed: Object.fromEntries(Object.entries(m?.failed ?? {}).filter(([k]) => k !== id)) } : {}),
+        on: { ...m?.on, [id]: true },
+        failed: Object.fromEntries(Object.entries(m?.failed ?? {}).filter(([k]) => k !== id)),
       }));
       await restartModHost();
     },
@@ -2945,6 +2956,7 @@ function registerIpc() {
       await restartModHost();
     },
     isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local"),
+    taken: modIdTaken,
   });
   // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
   // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.

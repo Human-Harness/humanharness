@@ -16,6 +16,7 @@ import type { LanguageControl } from "./language-control";
 import { LanguageChooser } from "./LanguageChooser";
 import { useLatestConfig } from "./latest-config";
 import { ModelsTab } from "./ModelsTab";
+import { ModsTab } from "./mods/ModsTab";
 import { JobsTab } from "./parallel/JobsTab";
 import { PluginsTab, type SettingsSub } from "./plugins/PluginsTab";
 import { usePluginsView } from "./plugins/usePlugins";
@@ -230,6 +231,7 @@ export function SettingsPage({
             {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
             {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} {...(focus && focus.id.startsWith("models.") ? { focus: { part: focus.id === "models.levels" ? ("levels" as const) : ("tasks" as const), n: focus.n } } : {})} />}
             {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
+            {tab === "mods" && configured && <ModsTab client={client} onSub={setSub} />}
             {tab === "plugins" && configured && <PluginsTab client={client} onSub={setSub} />}
             {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
             {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}

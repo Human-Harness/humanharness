@@ -74,7 +74,7 @@ describe("Settings › Plugins", () => {
     const rescan = vi.spyOn(c.plugins, "rescan");
     const get = vi.spyOn(c.plugins, "get");
     await draw(c, "general");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Mods", "Usage"]);
     expect(rescan).not.toHaveBeenCalled();
     expect(get).not.toHaveBeenCalled();
   });
@@ -83,7 +83,7 @@ describe("Settings › Plugins", () => {
     const c = client();
     c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     await draw(c, "general");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Sidekick", "Plugins", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Sidekick", "Mods", "Plugins", "Usage"]);
     expect(c.pluginCalls).toEqual([]);
     fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(await screen.findByText("No plugins yet.")).toBeTruthy();

@@ -13,7 +13,7 @@ import {
   searchCommands,
   settingAvailable,
 } from "../client";
-import { tabLabel, visibleTabs } from "../settings-tabs";
+import { searchable, tabLabel, visibleTabs } from "../settings-tabs";
 
 /** What the window's state says about each setting's `needs`. */
 export function settingState(state: AppState): SettingState {
@@ -67,7 +67,7 @@ export function settingRows(t: TFunction, state: AppState, query: string): Searc
 
 /** Action rows (§6): all available ones in the table's order with nothing typed (plan 1 deviation 9), else the matching ones. */
 export function commandRows(t: TFunction, state: AppState, query: string, chat: ChatSearchContext | null, scopes: readonly ScopeView[], openScope: string | null): SearchHitView[] {
-  const tabs = visibleTabs(state);
+  const tabs = visibleTabs(state).filter(searchable);
   const all = searchCommands({ chat, scopes, openScope, tabs }).map((c): Candidate => {
     const vars = c.command === "open-settings" && c.arg ? { tab: tabLabel(t, state, c.arg as SearchSettingsTab) } : (c.vars ?? {});
     const label = t(c.label, vars);

@@ -1229,6 +1229,25 @@
       "notice-required": "Review {{engine}}'s notice"
     }
   },
+  "mods": {
+    "tab": "Mods",
+    "line": "Mods add parts to this app: a panel, a check before sending, a helper.",
+    "empty": "No mods yet. A mod adds a part to this app: a panel, a check before sending, a helper.",
+    "origin": { "core": "Core", "harness": "Harness", "local": "Local" },
+    "registers": "Uses: {{list}}",
+    "failed": "Turned off after failing three times: {{reason}}",
+    "problem": "Couldn't start: {{reason}}",
+    "add": "Add from folder…",
+    "remove": "Remove",
+    "error": "That didn't work. Try again.",
+    "review": {
+      "title": "Turn on {{name}}?",
+      "warning": "A mod runs with full access to your folder, your files and your keys. Turn it on only if you trust where it came from.",
+      "folder": "From {{folder}}",
+      "on": "Turn on",
+      "cancel": "Cancel"
+    }
+  },
   "plugins": {
     "attention": {
       "title": "Attention",

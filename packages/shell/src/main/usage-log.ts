@@ -27,7 +27,7 @@ interface ProfileFields {
  * §10, part 3 Decision 2). `subagent`: the tokens a turn's subagents used (subagent plan D4), one line per model, written
  * after the turn's own line and apart from it.
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate" | "sidekick" | "job" | "subagent";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add" | "translate" | "sidekick" | "job" | "subagent" | "mod";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -82,8 +82,8 @@ export interface UsageRecord extends ProfileFields {
   source?: string;
   /** Material lines only: the fragments the stage handled (its prompt listed). */
   fragments?: number;
-  /** Sidekick lines only (sidekick spec §8): the process, the moment and which sidekick spoke. */
-  process?: "sidekick";
+  /** Sidekick lines (sidekick spec §8): the process, the moment and which sidekick spoke. Mod lines: `mod:<id>`. */
+  process?: "sidekick" | `mod:${string}`;
   moment?: SidekickUsageMoment;
   sidekick?: string;
   /** Job lines only (parallel spec §10, part 3 Decision 2): the job's id; `task` is the run's id. */
@@ -314,6 +314,23 @@ export function sidekickRecord(
   };
 }
 
+/** A mod's own engine turn (minimal-core spec §5): `phase: "mod"`, `process: "mod:<id>"`; never a task's. */
+export function modRecord(
+  o: { engine: string; process: `mod:${string}`; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return {
+    at,
+    engine: o.engine,
+    phase: "mod",
+    process: o.process,
+    ...profileMeta(o.profile),
+    ok: o.ok,
+    ...(o.usage ? { usage: o.usage } : {}),
+    ...(o.limits ? { limits: o.limits } : {}),
+  };
+}
+
 /** One job run's usage event (part 3 Decision 2): `phase: "job"`, the job's id, and the run's id as `task`. */
 export function jobRecord(o: { engine: string; job: string; task: string; scope?: string; usage: TurnUsage }, at: string = new Date().toISOString()): UsageRecord {
   return { at, engine: o.engine, task: o.task, ...(o.scope ? { scope: o.scope } : {}), phase: "job", job: o.job, ok: true, usage: o.usage };
@@ -361,7 +378,7 @@ export function translateRecord(
  * Lines that are no task's turn: material stages, translation batches, Sidekick turns and job runs. Job lines are told
  * apart by `phase: "job"`, never by their id (a job may be called "questions").
  */
-const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate" || r?.phase === "sidekick" || r?.phase === "job";
+const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate" || r?.phase === "sidekick" || r?.phase === "job" || r?.phase === "mod";
 
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */
 const QUESTIONS = "questions";
@@ -393,7 +410,7 @@ export function dayTokens(records: UsageRecord[], day: string, localDay: (d: Dat
   const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
   const jobLines = ofDay.filter((u) => u.phase === "job");
   return {
-    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job" && u.phase !== "subagent")),
+    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job" && u.phase !== "subagent" && u.phase !== "mod")),
     sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")),
     ...(jobLines.length ? { jobs: sum(jobLines) } : {}),
   };

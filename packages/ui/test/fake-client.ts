@@ -50,6 +50,8 @@ import type {
   ModeChoice,
   ModeResult,
   ModeSwitch,
+  ModReview,
+  ModsView,
   MoveResult,
   PanelAnswer,
   PanelCall,
@@ -1273,6 +1275,15 @@ export class FakeClient implements HarnessClient {
       this.sidekickListeners.add(l);
       return () => void this.sidekickListeners.delete(l);
     },
+  };
+  /** Settings › Mods: a no-op stub with no mods. */
+  mods = {
+    view: async (): Promise<ModsView> => ({ mods: [], problems: [] }),
+    set: async (_id: string, _on: boolean): Promise<ModsView> => ({ mods: [], problems: [] }),
+    reviewLocal: async (): Promise<{ review: ModReview; token: string } | { problem: string } | null> => null,
+    addLocal: async (_token: string): Promise<ModsView> => ({ mods: [], problems: [] }),
+    removeLocal: async (_id: string): Promise<ModsView> => ({ mods: [], problems: [] }),
+    onChanged: (_fn: (v: ModsView) => void) => () => {},
   };
   /** What setupSteps.get answers; submit, complete and skip change it. */
   setupState: SetupStepsState = { steps: {}, blocking: [] };

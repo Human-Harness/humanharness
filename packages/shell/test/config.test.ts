@@ -212,6 +212,15 @@ describe("ConfigStore", () => {
     }
   });
 
+  it("a hand-edited mods entry is cleaned when read: bad ids and folders drop, a non-object drops the key", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", mods: { on: { echo: false, "Bad!": true }, local: ["/a", 3] } }));
+    expect(await store.load()).toEqual({ folder: "/x", mods: { on: { echo: false }, local: ["/a"] } });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", mods: "nope" }));
+    expect(await store.load()).toEqual({ folder: "/x" });
+  });
+
   it("setProfile refuses anything that isn't an id", async () => {
     const store = new ConfigStore(fs.mkdtempSync(path.join(root, "c-")));
     await expect(store.setProfile("../x")).rejects.toThrow(/profile/);

@@ -194,6 +194,14 @@ const client: HarnessClient = {
     setScope: (scope, sidekick, v) => invoke("hh:sidekickSetScope", scope, sidekick, v),
     onChange: (listener) => subscribe("hh:sidekick", listener),
   },
+  mods: {
+    view: () => invoke("hh:mods"),
+    set: (id, on) => invoke("hh:modSet", id, on),
+    reviewLocal: () => invoke("hh:modReviewLocal"),
+    addLocal: (token) => invoke("hh:modAddLocal", token),
+    removeLocal: (id) => invoke("hh:modRemoveLocal", id),
+    onChanged: (fn) => subscribe("hh:modsChanged", fn),
+  },
   plugins: {
     get: () => invoke("hh:pluginsGet"),
     rescan: () => invoke("hh:pluginsRescan"),

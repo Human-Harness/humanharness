@@ -66,6 +66,7 @@ import {
 import { createI18n } from "@humanharness/i18n";
 import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
+import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
   type EnginePreset,
   type Event,
@@ -90,6 +91,8 @@ import {
   type FolderPick,
   type ModelsView,
   type ModeView,
+  type ModsConfig,
+  type ModsView,
   type MoveResult,
   type ProfileResult,
   type ProfilesState,
@@ -180,6 +183,7 @@ import {
   capTokens,
   compactionRecord,
   dayTokens,
+  modRecord,
   measuredMaterialCosts,
   policyMeta,
   profileMeta,
@@ -251,6 +255,13 @@ import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
 import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
+import { cleanModsConfig } from "./mods/config";
+import { CORE_MODS } from "./mods/core-mods";
+import { ModHost } from "./mods/host";
+import { registerModsIpc } from "./mods/mods-ipc";
+import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
+import { type ServiceDeps, buildServices, modHistoryIgnores } from "./mods/services";
+import { needsHost, toTurnEnd } from "./mods/wiring";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./task-manager";
@@ -345,6 +356,12 @@ let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 let settingsCtl: SettingsController | null = null;
 /** Sidekick, the core's prompt coach (sidekick spec D1): every harness gets it once loaded; it does nothing while off. */
 let sidekickCtl: SidekickController | null = null;
+/** The mod host (minimal-core spec §4); null with no mod that could run (D0). */
+let modHost: ModHost | null = null;
+/** Folders `resolveMods` couldn't read as mods, for Settings › Mods. */
+let modProblems: ResolveProblem[] = [];
+/** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
+let resolvedMods: ResolvedMod[] = [];
 /**
  * Plugins (plugins spec); null for a harness that takes none and no dev folders (D0): no `hh-plugin` scheme, no
  * backend window, no IPC handler, no file.
@@ -1210,7 +1227,7 @@ async function singleMainSlot(): Promise<SessionSlot | null> {
 /** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
 const standaloneHistory = lastOpened(async (key) => {
   const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
-  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, historyKeep(harness));
+  const history = new History(folder, historyDir(app.getPath("userData"), folder), [...ignore, ...modHistoryIgnores(resolvedMods.map((m) => ({ id: m.json.id, history: m.json.history })))], historyKeep(harness));
   await history.init();
   announceCommits(history);
   return history;
@@ -1247,6 +1264,113 @@ function sendToWindow(channel: PushChannel, value: unknown) {
   }
 }
 const emit = (event: Event) => sendToWindow("hh:event", event);
+
+/** A mod's notice (turned off after three strikes, or its own `notify`): the system notification, as task attention uses. */
+function showNotice(text: string): void {
+  if (!Notification.isSupported()) return void console.error(`Mod notice: ${text}`);
+  keepNotification(new Notification({ title: harness.name, body: text.slice(0, 300) }), notifications).show();
+}
+
+/** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
+const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: modProblems });
+
+/** A mod's own tool-less engine turn (minimal-core spec §5), on SidekickSession like Sidekick's; usage tagged `mod:<id>`. */
+const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, prompt, workDir, signal }) => {
+  const c = await validConfig();
+  if (!c) return { ok: false, text: "", error: "not set up" };
+  if (!(await hasNotice(c.engineId))) return { ok: false, text: "", error: "the engine notice is not accepted" };
+  const engine = getEngine(c.engineId);
+  const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
+  if (!cmd) return { ok: false, text: "", error: "the engine isn't installed" };
+  const saved = await config.load();
+  const profile = await pickProfile(saved.policies?.model, { engine: engine.id, tier, models: cleanModels(saved.models) });
+  await fs.mkdir(workDir, { recursive: true });
+  const session = new SidekickSession({ engine, command: cmd.command, env: cmd.env, folder: workDir, profile });
+  try {
+    const a = await session.ask(prompt, signal ?? new AbortController().signal);
+    if (a.usage) {
+      const record = modRecord({ engine: engine.id, process: proc as `mod:${string}`, profile, ok: a.ok, usage: a.usage, ...(a.limits ? { limits: a.limits } : {}) });
+      await new UsageLog(baseOf(c)).append(record).catch((err: unknown) => console.error("Could not record the mod's turn", err));
+    }
+    return a.ok ? { ok: true, text: a.text } : { ok: false, text: "", error: a.error ? (a.error.detail ?? a.error.code) : "failed" };
+  } finally {
+    await session.close();
+  }
+};
+
+/** Reads the mods again and builds the host when some mod could run (D0); without one, `modHost` stays null. */
+async function startModHost(): Promise<void> {
+  const modsConfig = (await config.load()).mods;
+  const local = modsConfig?.local ?? [];
+  if (!needsHost({ declared: harness.mods, local, coreIds: Object.keys(CORE_MODS) })) {
+    resolvedMods = [];
+    modProblems = [];
+    return;
+  }
+  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, core: CORE_MODS });
+  for (const p of resolved.problems) console.error(`Mod ${p.id}: ${p.reason}`);
+  resolvedMods = resolved.mods;
+  modProblems = resolved.problems;
+  const runningTask = async () => {
+    const t = await tasks.runningTask();
+    return t ? { id: t.id, scope: t.scope, ...(t.action ? { action: t.action } : {}) } : null;
+  };
+  const mods = new ModHost({
+    config: {
+      load: async () => (await config.load()).mods,
+      saveFailed: (id, reason) => saveMods((m) => ({ ...m, failed: { ...m?.failed, [id]: reason } })),
+    },
+    services: buildServices({
+      harnessId: harness.id,
+      userData: app.getPath("userData"),
+      base: async () => {
+        const c = await validConfig();
+        return c ? baseOf(c) : null;
+      },
+      engineRun: modEngineRun,
+      runningTask,
+      noteTitles: async (scope) => {
+        const c = await validConfig();
+        return c ? (await readNotes(baseOf(c), notesPrefix(scoped(), scope ?? MAIN_SCOPE)).catch(() => [])).map((n) => n.title) : [];
+      },
+      notify: showNotice,
+    }),
+    notice: showNotice,
+    changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
+  });
+  modHost = mods;
+  await mods.start(resolved.mods);
+}
+
+/** Stops the host and builds it again from config.json (a local mod added or removed). */
+async function restartModHost(): Promise<void> {
+  const old = modHost;
+  modHost = null;
+  await old?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
+  await startModHost();
+  sendToWindow("hh:modsChanged", await modsView());
+}
+
+/** Changes config.json's `mods` (cleaned, so an empty one goes away). */
+async function saveMods(fn: (m: ModsConfig | undefined) => ModsConfig | undefined): Promise<void> {
+  await config.save({ mods: cleanModsConfig(fn((await config.load()).mods)) });
+}
+
+/**
+ * An id a local folder can't take: a resolved mod's, or one the manifest declares or the core ships even when it
+ * couldn't be read (its `on` switch is that mod's).
+ */
+const modIdTaken = (id: string): boolean =>
+  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id);
+
+/** The id in a folder's mod.json, or null when it has none. */
+async function modIdIn(folder: string): Promise<string | null> {
+  try {
+    return modJsonSchema.parse(JSON.parse(await fs.readFile(path.join(folder, "mod.json"), "utf8"))).id;
+  } catch {
+    return null;
+  }
+}
 // Mock mode: the test engine has no provider to disclose and nothing leaves the computer, so its notice counts as accepted.
 const hasNotice = async (engineId: string) => isMockEngine(hooks, engineId) || hasAcceptedNotice(shared, engineId);
 
@@ -1327,9 +1451,20 @@ const taskDeps: TaskDeps = {
     return single?.turns ?? turns;
   },
   // A task closed with its note saved: the jobs' `afterTask` (Decision 6). A getter: undefined without jobs (D0).
+  // And the mods' taskClose hook (minimal-core spec §4).
   get taskClosed() {
     const jobs = jobsHost;
-    return jobs ? (t: { id: string; action?: string; scope: string }) => jobs.taskClosed(t) : undefined;
+    const mods = modHost;
+    if (!jobs && !mods) return undefined;
+    return (t: { id: string; action?: string; scope: string }) => {
+      jobs?.taskClosed(t);
+      if (mods) void mods.taskClose(t);
+    };
+  },
+  // The mods' taskOpen hook (minimal-core spec §4). A getter: undefined without a mod host (D0).
+  get taskOpened() {
+    const mods = modHost;
+    return mods ? (t: { id: string; action?: string; scope: string }) => void mods.taskOpen(t) : undefined;
   },
   get actions() {
     return harness.actions;
@@ -1441,14 +1576,25 @@ const taskDeps: TaskDeps = {
       if (plugins?.takeRuntimeStale()) await (host ? host.runtimeStale() : closeRuntime());
     };
   },
-  // Sidekick's after-reply moment (sidekick spec §4.2). Getters: undefined until the controller exists (D0).
+  // Sidekick's after-reply moment (sidekick spec §4.2) and the mods' turn hooks (minimal-core spec §4). Getters:
+  // undefined until the controller or the host exists (D0).
   get turnStarting() {
     const sidekick = sidekickCtl;
-    return sidekick ? () => sidekick.turnStarting() : undefined;
+    const mods = modHost;
+    if (!sidekick && !mods) return undefined;
+    return () => {
+      sidekick?.turnStarting();
+      if (mods) void tasks.runningTask().then((t) => t && mods.turnStart(t)).catch((err: unknown) => console.error("The mods' turnStart failed", err));
+    };
   },
   get turnEnded() {
     const sidekick = sidekickCtl;
-    return sidekick ? (end: TurnEnd) => void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err)) : undefined;
+    const mods = modHost;
+    if (!sidekick && !mods) return undefined;
+    return (end: TurnEnd) => {
+      if (sidekick) void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err));
+      if (mods) void mods.turnEnd(toTurnEnd(end));
+    };
   },
   // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard). A getter for the same reason (D0).
   get phaseMoved() {
@@ -2658,7 +2804,7 @@ function registerIpc() {
     if (host) return { ...(switchedFrom ? { switchedFrom } : {}), ...(await host.loadChat(baseOf(c))) };
     return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
-  handle("hh:send", (message: string, options?: SendOptions) => {
+  handle("hh:send", async (message: string, options?: SendOptions) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
     if (blocked) throw new Error(blocked);
@@ -2673,6 +2819,11 @@ function registerIpc() {
     const offered = action ? harness.actions[action].timeBox?.options : undefined;
     const timeBox = options?.timeBox;
     if (timeBox !== undefined && !timeBoxOffered(timeBox, offered)) throw new Error("Unknown time box");
+    // The mods' beforeSend (minimal-core spec §4.2): each may rewrite the text; the host refuses a blank or oversized one.
+    if (modHost) {
+      const running = await tasks.runningTask().catch(() => null);
+      message = await modHost.beforeSend({ text: message, ...(action ? { action } : {}), ...(scope ? { scope } : {}), task: running });
+    }
     // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
     const sent = action ? tasks.start(action, message, scope, mode, timeBox !== undefined ? { timeBox } : {}) : tasks.ask(message, undefined, scope);
     return scope === undefined ? sent : sent.finally(() => void scopesChanged());
@@ -2771,6 +2922,42 @@ function registerIpc() {
   handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
   // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
   registerSidekickIpc(handle, () => sidekickCtl);
+  // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
+  registerModsIpc(handle, {
+    view: modsView,
+    set: async (id, on) => {
+      // Turning a mod on clears its three-strikes failure.
+      await saveMods((m) => ({ ...m, on: { ...m?.on, [id]: on }, ...(on && m?.failed ? { failed: Object.fromEntries(Object.entries(m.failed).filter(([k]) => k !== id)) } : {}) }));
+      await modHost?.set(id, on);
+    },
+    pickFolder: async () => {
+      if (!window || window.isDestroyed()) return null;
+      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+      return r.canceled ? null : (r.filePaths[0] ?? null);
+    },
+    // The person confirmed the warning: the mod starts on.
+    addLocal: async (folder) => {
+      // Read again (the folder may have changed since the review); a taken id never reaches config.json.
+      const id = await modIdIn(folder);
+      if (!id) throw new Error("This folder has no valid mod.json");
+      if (modIdTaken(id)) throw new Error(`A mod with the id "${id}" is already in this app`);
+      await saveMods((m) => ({
+        ...m,
+        local: [...new Set([...(m?.local ?? []), folder])],
+        on: { ...m?.on, [id]: true },
+        failed: Object.fromEntries(Object.entries(m?.failed ?? {}).filter(([k]) => k !== id)),
+      }));
+      await restartModHost();
+    },
+    removeLocal: async (id) => {
+      const dir = resolvedMods.find((m) => m.json.id === id && m.shipped === "local")?.dir;
+      const drop = <T>(r: Record<string, T> | undefined) => Object.fromEntries(Object.entries(r ?? {}).filter(([k]) => k !== id));
+      await saveMods((m) => ({ ...m, local: (m?.local ?? []).filter((f) => f !== dir), on: drop(m?.on), failed: drop(m?.failed) }));
+      await restartModHost();
+    },
+    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local"),
+    taken: modIdTaken,
+  });
   // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
   // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.
   if (pluginsCtl) {
@@ -3802,6 +3989,8 @@ if (primary) {
     }
     // Before any task: a configured folder with no setup.json is recorded now, fresh or as set up before (D0: no `setup`, nothing).
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
+    // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
+    await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void interruptTasks().catch((err: unknown) => console.error("Could not settle the last task", err));
@@ -3847,13 +4036,15 @@ if (primary) {
       turns.close();
     }
     void sidekickCtl?.close();
+    // The mods stop (their disposers run) before the app goes.
+    const modsStopped = modHost?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
       // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
       await moving?.catch(() => undefined);
-      await Promise.all([setupStopped, testStopped]);
+      await Promise.all([setupStopped, testStopped, modsStopped]);
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));

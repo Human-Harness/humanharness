@@ -105,3 +105,20 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect(profileFor).toMatch(/manifestTier: manifestTier\(harness, action, tier\)/);
   });
 });
+
+/** Settings › Mods (minimal-core spec §4, §6): mods-ipc.ts registers every hh:mod* channel, and none carries a path. */
+describe("the Settings › Mods channels", () => {
+  it("are exactly the protocol's hh:mod* invoke channels, registered in mods-ipc.ts", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    const declared = [...channels.matchAll(/^\s*"(hh:mods?[A-Z]?[A-Za-z]*)":\s*Mods\[/gm)].map((m) => m[1]).sort();
+    expect(declared).toEqual(["hh:modAddLocal", "hh:modRemoveLocal", "hh:modReviewLocal", "hh:modSet", "hh:mods"]);
+    const ipc = (await sources()).find(([f]) => f === path.join("mods", "mods-ipc.ts"))![1];
+    const registered = [...ipc.matchAll(/handle\("(hh:[A-Za-z]+)"/g)].map((m) => m[1]).sort();
+    expect(registered).toEqual(declared);
+  });
+  it("the renderer adds a local mod with a token only: the preload sends no path", async () => {
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    expect(preload).toContain('addLocal: (token) => invoke("hh:modAddLocal", token)');
+    expect(preload).toContain('reviewLocal: () => invoke("hh:modReviewLocal")');
+  });
+});

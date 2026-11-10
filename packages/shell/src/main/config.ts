@@ -5,6 +5,7 @@ import { JOB_ID, canonicalLanguage } from "@humanharness/harness-sdk";
 import { DEFAULT_POLICY, isContextPolicyId, isModelPolicyId } from "@humanharness/policies";
 import { type AppConfig, type PolicyIds, cleanReaderPrefs, isTextSize } from "@humanharness/protocol";
 import { isProfileId } from "@humanharness/workspace";
+import { cleanModsConfig } from "./mods/config";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
 export function historyDir(userData: string, folder: string): string {
@@ -81,11 +82,12 @@ export class ConfigStore {
       if (!saved || typeof saved !== "object") return saved;
       // Like a bad entry under models: a hand-edited backupDismissed, languageOffered, textSize, language or reader of the
       // wrong kind is dropped (the reader only its bad fields), never a reason to treat the whole config as invalid.
-      const { backupDismissed, languageOffered, textSize, language, profile, reader, parallel, notifyWaiting, jobs, policies, ...rest } = saved;
+      const { backupDismissed, languageOffered, textSize, language, profile, reader, parallel, notifyWaiting, jobs, policies, mods, ...rest } = saved;
       const readerPrefs = cleanReaderPrefs(reader);
       const caps = cleanParallel(parallel);
       const jobSettings = cleanJobs(jobs);
       const policyIds = cleanPolicies(policies);
+      const modsConfig = cleanModsConfig(mods);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
@@ -98,6 +100,7 @@ export class ConfigStore {
         ...(jobSettings && Object.keys(jobSettings).length > 0 ? { jobs: jobSettings } : {}),
         ...(readerPrefs ? { reader: readerPrefs } : {}),
         ...(policyIds ? { policies: policyIds } : {}),
+        ...(modsConfig ? { mods: modsConfig } : {}),
       };
     } catch {
       return {};

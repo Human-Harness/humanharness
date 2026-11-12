@@ -1,11 +1,27 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { MOCK_SIDEKICK_MARKS } from "@humanharness/fake-agent";
-import { closeAndClean, launch, makeSandbox, readJsonl, sessionOf, usageFile } from "./helpers";
+import { closeAndClean, launch as launchApp, makeSandbox, readJsonl, sessionOf, shellDir, usageFile } from "./helpers";
 import { sidekickScript, slowSidekickScript } from "./scripts";
 
-// Sidekick's pre-send review end to end (sidekick spec §4.1, §10 slice 1), against fake-claude.
+// Sidekick's pre-send review end to end (sidekick spec §4.1, §10 slice 1), against fake-claude. It runs on the
+// sidekick-harness fixture: the demo declares no Sidekick, so it shows none.
+
+const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/sidekick-harness");
+const outDir = path.join(shellDir, "out", "sidekick");
+
+// One full app build of the fixture for the whole file.
+test.beforeAll(() => {
+  test.setTimeout(300_000);
+  // electron-vite directly: `humanharness dev --build` would first run `check`, which a test fixture has no HARNESS.md for.
+  const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: outDir };
+  delete env.ELECTRON_RUN_AS_NODE;
+  execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit", timeout: 240_000 });
+});
+const launch: typeof launchApp = (s, script) => launchApp(s, script, path.join(outDir, "main", "index.js"));
 
 type Run = { argv: string[]; prompt: string };
 type UsageLine = { phase?: string; process?: string; moment?: string; sidekick?: string };
@@ -14,24 +30,31 @@ const isSidekick = (r: Run) => Object.values(MOCK_SIDEKICK_MARKS).some((m) => r.
 /** Sidekick's pre-send turn only: the after-reply turn runs too (on by default), at its own pace. */
 const isPreSend = (r: Run) => r.prompt.startsWith(MOCK_SIDEKICK_MARKS.pre);
 
-/** Opens the demo and turns Sidekick on from the top bar; returns the composer. */
+/** Starts the Report task and waits for its first reply; returns the composer. */
+async function openTask(page: Page) {
+  await page.getByRole("button", { name: /Report/ }).first().click();
+  await expect(page.getByRole("main").getByText("Listo.").first()).toBeVisible();
+  return page.getByRole("textbox").first();
+}
+
+/** Opens the fixture task and turns Sidekick on from the top bar; returns the composer. */
 async function start(page: Page) {
-  await page.getByRole("button", { name: "Start Demo" }).click();
+  await page.getByRole("button", { name: "Start Planner" }).click();
   await page.getByRole("button", { name: "Sidekick is off. Turn it on" }).click();
   await expect(page.getByRole("button", { name: "Sidekick is on. Turn it off" })).toBeVisible();
-  return page.getByRole("textbox").first();
+  return openTask(page);
 }
 
 test("D0: with Sidekick off a vague prompt goes straight out; no review, no session, no folder, no usage line", async () => {
   const s = makeSandbox("sidekick-off");
   const { app, page } = await launch(s, { claude: sidekickScript });
   try {
-    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("button", { name: "Start Planner" }).click();
     await expect(page.getByRole("button", { name: "Sidekick is off. Turn it on" })).toBeVisible();
-    const box = page.getByRole("textbox").first();
+    const box = await openTask(page);
     await box.fill("make it better");
     await box.press("Enter");
-    await expect(page.getByRole("main").getByText("Listo.")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Listo.")).toHaveCount(2);
     // The task's own turn is logged, so the absence of a Sidekick line below is meaningful.
     await expect.poll(() => readJsonl<UsageLine>(usageFile(s)).length).toBeGreaterThan(0);
 
@@ -54,7 +77,7 @@ test("a vague prompt gets a card; Send suggested sends the rewrite; the turn is 
     const card = page.getByRole("region", { name: "Before you send" });
     await expect(card.getByText("Say which part should be better.")).toBeVisible();
     await card.getByRole("button", { name: "Send suggested" }).click();
-    await expect(page.getByRole("main").getByText("Listo.")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Listo.")).toHaveCount(2);
 
     const runs = readJsonl<Run>(s.claudePrompts);
     const sk = runs.filter(isPreSend);
@@ -68,10 +91,10 @@ test("a vague prompt gets a card; Send suggested sends the rewrite; the turn is 
     await expect
       .poll(() => readJsonl<UsageLine>(usageFile(s)).filter((r) => r.phase === "sidekick" && r.moment === "pre"))
       .toEqual([expect.objectContaining({ process: "sidekick", moment: "pre", sidekick: "sidekick" })]);
-    // The reply then gets its after-reply turn, tagged "after"; its "{}" shows no card.
+    // Each reply gets its after-reply turn, tagged "after" (the fixture's opening turn too); its "{}" shows no card.
     await expect
       .poll(() => readJsonl<UsageLine>(usageFile(s)).filter((r) => r.phase === "sidekick" && r.moment === "after"))
-      .toEqual([expect.objectContaining({ process: "sidekick", moment: "after", sidekick: "sidekick" })]);
+      .toEqual(Array(2).fill(expect.objectContaining({ process: "sidekick", moment: "after", sidekick: "sidekick" })));
     await expect(page.getByRole("region", { name: "Before you send" })).toHaveCount(0);
   } finally {
     await closeAndClean(app, s);
@@ -85,7 +108,7 @@ test("⌘⏎ / Ctrl⏎ sends at once with no review", async () => {
     const box = await start(page);
     await box.fill("make it better");
     await box.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter");
-    await expect(page.getByRole("main").getByText("Listo.")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Listo.")).toHaveCount(2);
     expect(readJsonl<Run>(s.claudePrompts).filter(isPreSend)).toEqual([]);
   } finally {
     await closeAndClean(app, s);
@@ -102,7 +125,7 @@ test("a review that takes too long: the countdown, then the prompt goes as typed
     await box.press("Enter");
     await expect(page.getByRole("button", { name: "Reviewing…" })).toBeVisible();
     await expect(page.getByText(/Sends anyway in \d+ s/)).toBeVisible();
-    await expect(page.getByRole("main").getByText("Listo.")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("main").getByText("Listo.")).toHaveCount(2, { timeout: 15_000 });
     await expect(page.getByText("Sidekick took too long. Your prompt went as typed.")).toBeVisible();
     const sent = readJsonl<Run>(s.claudePrompts).filter((r) => !isSidekick(r));
     expect(sent.map((r) => r.prompt)).toContainEqual(expect.stringContaining("make it better"));

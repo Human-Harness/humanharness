@@ -29,7 +29,7 @@ export interface TestHooks {
   fakeSecrets?: boolean;
   /** Every fake engine reports this missing step (HH_TEST_ENGINE_PROBLEM), so e2e can show the engine step's cards. */
   engineProblem?: TestEngineProblem;
-  /** The window opens inactive (no focus steal) and the Dock icon is hidden (HH_TEST_BACKGROUND=1: e2e runs in the background). */
+  /** Headless: the window is never shown and the Dock icon is hidden (HH_TEST_BACKGROUND=1: e2e runs in the background). */
   background?: boolean;
 }
 

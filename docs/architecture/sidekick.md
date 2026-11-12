@@ -5,7 +5,7 @@ Spec: `docs/superpowers/specs/2026-10-25-sidekick-design.md` ("§" below). Plan:
 ## What it is
 
 - A prompt coach. Before the person's prompt goes to the task agent, a free local check looks at it; when something looks off (or the action asks for it, or the person presses Review) a light model reviews it in its own session and a card in the right panel suggests a rewrite. The person sends the suggestion, edits it, or sends as typed. Sidekick suggests and never acts: it has no tools and changes nothing.
-- It is core (D1): every harness gets the controller, the top-bar toggle, the panel or its rail, Settings › Sidekick, a Sidekick row in Settings › Models and (once a Sidekick turn ran) a Sidekick line in Settings › Usage.
+- It lives in the core, but shows only in a harness whose manifest declares `sidekick` (an empty `sidekick: {}` is enough). This reverses D1's "every harness": without the key there is no controller, no state, no toggle, no panel, no Settings tab and no pre-send review. A harness that declares it gets the controller, the top-bar toggle, the panel or its rail, Settings › Sidekick, a Sidekick row in Settings › Models and (once a Sidekick turn ran) a Sidekick line in Settings › Usage.
 - It starts **off** unless the manifest says `sidekick: { default: "on" }` (§3). Off, nothing runs: no review, no session, no folder, no usage line (D0, below).
 - Part 1 has one sidekick: id `sidekick`, name "Sidekick" (`SIDEKICK_ID`, `SIDEKICK_NAME` in `packages/shell/src/main/sidekick.ts`, Decision 9), and one moment: before you send. Part 2 adds the other moments, learning, several sidekicks, places, presets and import (sections from "Moments" on); with no sidekick records a profile still has exactly that one Sidekick (`DEFAULT_SIDEKICK`).
 

@@ -256,13 +256,16 @@ import { SidekickController, localDay } from "./sidekick";
 import { sidekickView } from "./sidekick-view";
 import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
-import { cleanModsConfig } from "./mods/config";
+import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
+import { type ModsSettings, cleanModsConfig } from "./mods/config";
 import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { shownLayout } from "./mods/layout";
 import { ModHost } from "./mods/host";
-import { registerModsIpc } from "./mods/mods-ipc";
+import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
+import { type ModsChannel, registerModsIpc } from "./mods/mods-ipc";
+import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchUserLayer, writeMainShims } from "./mods/user-layer";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
 import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
 import { needsHost, toTurnEnd } from "./mods/wiring";
@@ -362,8 +365,12 @@ let settingsCtl: SettingsController | null = null;
 let sidekickCtl: SidekickController | null = null;
 /** The mod host (minimal-core spec §4); null with no mod that could run (D0). */
 let modHost: ModHost | null = null;
-/** Folders `resolveMods` couldn't read as mods, for Settings › Mods. */
+/** Folders `resolveMods` couldn't read as mods, for Settings › Mods (the user layer keeps its own). */
 let modProblems: ResolveProblem[] = [];
+/** The home folder's `mods/` as the host runs them (minimal-core 0b2); null without a host. */
+let userLayer: UserLayer | null = null;
+/** The watcher on the home folder's `mods/`; closed on quit. */
+let userLayerWatch: { close(): void } | null = null;
 /** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
 let resolvedMods: ResolvedMod[] = [];
 /**
@@ -1276,7 +1283,7 @@ function showNotice(text: string): void {
 }
 
 /** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
-const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: modProblems });
+const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: [...modProblems, ...(userLayer?.problems() ?? [])] });
 
 /** A mod's own tool-less engine turn (minimal-core spec §5), on SidekickSession like Sidekick's; usage tagged `mod:<id>`. */
 const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, prompt, workDir, signal }) => {
@@ -1306,15 +1313,23 @@ const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, pro
 async function startModHost(): Promise<void> {
   const modsConfig = (await config.load()).mods;
   const local = modsConfig?.local ?? [];
-  if (!needsHost({ declared: harness.mods, local, coreIds: Object.keys(CORE_MODS) })) {
+  const userData = app.getPath("userData");
+  const home = appHome(userData, harness.id);
+  const user = await userModFolders(home);
+  if (!needsHost({ declared: harness.mods, local: [...local, ...user], coreIds: Object.keys(CORE_MODS) })) {
     resolvedMods = [];
     modProblems = [];
+    userLayer = null;
     return;
   }
-  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, core: CORE_MODS });
+  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, user, core: CORE_MODS });
   for (const p of resolved.problems) console.error(`Mod ${p.id}: ${p.reason}`);
   resolvedMods = resolved.mods;
-  modProblems = resolved.problems;
+  // The user layer's folders that couldn't be read are its own (they come and go with the watcher).
+  modProblems = resolved.problems.filter((p) => path.dirname(p.id) !== userModsDir(home));
+  // A user-layer mod's main imports the app's own zod and mod-sdk, through small files beside its builds.
+  const buildRoot = modBuildRoot(userData, harness.id);
+  const resolveShared = await writeMainShims(path.join(buildRoot, ".shared"), MAIN_SHARED_MODULES);
   const runningTask = async () => {
     const t = await tasks.runningTask();
     return t ? { id: t.id, scope: t.scope, ...(t.action ? { action: t.action } : {}) } : null;
@@ -1341,9 +1356,19 @@ async function startModHost(): Promise<void> {
     }),
     notice: showNotice,
     changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
+    builds: new ModBuilds(buildRoot, resolveShared),
+    // Not in the protocol's push table yet: the window's side lands in the next step of 0b2 (mods-ipc.ts).
+    reloaded: (id, version) => sendToWindow("hh:modReloaded" as PushChannel, { id, version }),
   });
   modHost = mods;
+  userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
   await mods.start(resolved.mods);
+}
+
+/** Watches the home folder's `mods/` once: a change syncs the folder with whatever host runs now. */
+function watchUserMods(): void {
+  if (userLayerWatch) return;
+  userLayerWatch = watchUserLayer(appHome(app.getPath("userData"), harness.id), (dir) => void userLayer?.sync(dir));
 }
 
 /** Stops the host and builds it again from config.json (a local mod added or removed). */
@@ -1365,7 +1390,7 @@ async function saveMods(fn: (m: ModsConfig | undefined) => ModsConfig | undefine
  * couldn't be read (its `on` switch is that mod's).
  */
 const modIdTaken = (id: string): boolean =>
-  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id);
+  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id) || (modHost?.has(id) ?? false);
 
 /** The id in a folder's mod.json, or null when it has none. */
 async function modIdIn(folder: string): Promise<string | null> {
@@ -2929,8 +2954,15 @@ function registerIpc() {
   // The layout the screen shows (minimal-core spec §5.2).
   handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
-  registerModsIpc(handle, {
+  // `hh:modReviewUser` is not in the protocol's table yet (mods-ipc.ts): the same `handle`, typed wider.
+  registerModsIpc(handle as (channel: ModsChannel, fn: (...args: never[]) => unknown) => void, {
     view: modsView,
+    // A mod in the home folder's `mods/`: turned on the first time only through the warning (spec D2, `mods.trusted`).
+    ...userConsent({
+      config: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
+      host: { set: async (id, on) => modHost?.set(id, on) },
+      layer: { dirOf: (id) => userLayer?.dirOf(id) },
+    }),
     set: async (id, on) => {
       // Turning a mod on clears its three-strikes failure.
       await saveMods((m) => ({ ...m, on: { ...m?.on, [id]: on }, ...(on && m?.failed ? { failed: Object.fromEntries(Object.entries(m.failed).filter(([k]) => k !== id)) } : {}) }));
@@ -2961,7 +2993,8 @@ function registerIpc() {
       await saveMods((m) => ({ ...m, local: (m?.local ?? []).filter((f) => f !== dir), on: drop(m?.on), failed: drop(m?.failed) }));
       await restartModHost();
     },
-    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local"),
+    // A user-layer mod goes by deleting its folder, not from config.json's `local`.
+    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local" && !m.user),
     taken: modIdTaken,
   });
   // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
@@ -3498,6 +3531,13 @@ async function createWindow() {
   window = win;
   // Read now: once closed, the window's webContents can no longer be asked.
   const contentsId = win.webContents.id;
+  // hh-mod (0b2): the built ui of an on, non-core mod, on the window's session; once per session.
+  const modProtocol = win.webContents.session.protocol;
+  if (!modProtocol.isProtocolHandled(MOD_SCHEME.scheme)) {
+    modProtocol.handle(MOD_SCHEME.scheme, (req) =>
+      serveModUi(req.url, { mod: (id) => modHost?.info(id), buildDir: (id) => path.join(modBuildRoot(app.getPath("userData"), harness.id), id) }),
+    );
+  }
   win.on("closed", () => {
     if (window === win) window = null;
     documentSessions.closeOwner(contentsId);
@@ -3705,7 +3745,7 @@ if (loaded) {
   // otherwise no scheme, no controller, no window, no IPC handler and no file.
   if (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0) {
     // Before "ready" (spike S2): the backend windows' own scheme. Nothing else registers one.
-    protocol.registerSchemesAsPrivileged(hasTools(harness) ? [PLUGIN_SCHEME, TOOL_SCHEME] : [PLUGIN_SCHEME]);
+    protocol.registerSchemesAsPrivileged(hasTools(harness) ? [MOD_SCHEME, PLUGIN_SCHEME, TOOL_SCHEME] : [MOD_SCHEME, PLUGIN_SCHEME]);
     // The app's own per-harness folder (outside every base, B8/B13): pointers, approvals, keys, the inbox's tag key.
     const appDir = path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id);
     const host = new PluginBackendHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
@@ -3784,13 +3824,15 @@ if (loaded) {
       log: pluginLog,
     });
   }
+  // hh-mod (minimal-core 0b2): always, in the one call Electron takes; with plugins or tools, theirs registers it.
+  if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0 && !hasTools(harness)) protocol.registerSchemesAsPrivileged([MOD_SCHEME]);
   // Settings › Connections (tools spec §9): only a harness that declares secrets (D0: no channel, no controller).
   if (hasSecrets(harness)) registerConnectionsIpc(handle, connections());
   // Tools (tools spec §4, §5): only a harness that declares them. D0: otherwise no scheme, no window, no IPC handler,
   // no `tools` server and no trace.
   if (hasTools(harness)) {
     // Before "ready". Electron takes one call: with plugins, theirs above registers this scheme too.
-    if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0) protocol.registerSchemesAsPrivileged([TOOL_SCHEME]);
+    if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0) protocol.registerSchemesAsPrivileged([MOD_SCHEME, TOOL_SCHEME]);
     const sandbox = new ToolHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: toolsLog });
     const toolData = toolDataRequests({
       store: async () => {
@@ -4003,6 +4045,8 @@ if (primary) {
     });
     // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
+    // The home folder's mods/ (0b2): an edit syncs and reloads the user mod live.
+    watchUserMods();
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void interruptTasks().catch((err: unknown) => console.error("Could not settle the last task", err));
@@ -4048,7 +4092,9 @@ if (primary) {
       turns.close();
     }
     void sidekickCtl?.close();
-    // The mods stop (their disposers run) before the app goes.
+    // The mods stop (their disposers run) before the app goes; the home folder is no longer watched.
+    userLayerWatch?.close();
+    userLayerWatch = null;
     const modsStopped = modHost?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);

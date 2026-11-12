@@ -72,7 +72,8 @@ function baseEnv(s: Sandbox): Record<string, string> {
   // The suggested folder stays in the sandbox, so a fresh app's setup never writes into the real home.
   // The window opens without taking focus and without a Dock icon (HH_TEST_BACKGROUND); HH_E2E_FOREGROUND=1 turns that off to watch.
   const background: Record<string, string> = process.env.HH_E2E_FOREGROUND === "1" ? {} : { HH_TEST_BACKGROUND: "1" };
-  return { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_SUGGESTED_FOLDER: s.folder, ...background };
+  // HOME is the sandbox too: a checkout under ~/.claude (an agent worktree) would otherwise pick up the real home's config.
+  return { ...env, HOME: s.root, USERPROFILE: s.root, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_SUGGESTED_FOLDER: s.folder, ...background };
 }
 
 /** Launches the built shell (or the build at `app`, a main/index.js) with the fake agents in place of every engine. */

@@ -9,10 +9,8 @@ import { Rail, SettingsGear, TopBar } from "./chrome";
 import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type Layout, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured, loadLayout } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
-import { Home } from "./Home";
 import { type AppValue, AppProvider } from "./layout/app";
 import { LayoutView } from "./layout/LayoutView";
-import { type BlockProps as ModBlockProps, registerBlock } from "./layout/registry";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { useAttention } from "./plugins/usePlugins";
 import { InboxAnnouncer, InboxPage, waitingCount } from "./parallel/Inbox";
@@ -46,30 +44,6 @@ export interface HarnessAppProps {
   /** A harness's own material panel (material spec §11); absent: the core's. Only drawn when the harness takes material. */
   materialPanel?: ComponentType<MaterialPanelProps>;
 }
-
-// Temporary until home-mod (T8): today's Home as the core's `home/home` block, drawn from the app.
-function HomeBlock({ app }: ModBlockProps) {
-  return (
-    <Home
-      state={app.state}
-      client={app.client}
-      onChange={app.setState}
-      status={app.status}
-      checkFailed={app.checkFailed}
-      limits={app.limits}
-      steps={app.steps}
-      onStart={app.nav.start}
-      onSetup={app.nav.setup}
-      onSettings={app.nav.settings}
-      onEngine={app.nav.engine}
-      move={app.move}
-      onAddProfile={app.nav.addProfile}
-      language={app.language}
-      onOpen={app.nav.open}
-    />
-  );
-}
-registerBlock("home", "home", HomeBlock);
 
 /** How long the line for an action search couldn't run stays. */
 const SEARCH_NOTICE_MS = 4000;

@@ -1,12 +1,17 @@
 import { createRoot } from "react-dom/client";
 import App from "@harness/ui";
-import { HhTheme } from "@humanharness/ui";
+import { type BlockComponent, HhTheme, registerBlock } from "@humanharness/ui";
+import home from "@humanharness/mod-home";
 // DM Sans for all text, DM Mono for code and keys, bundled with the app (no network fonts: the renderer's CSP allows 'self' only).
 import "@fontsource/dm-sans/400.css";
 import "@fontsource/dm-sans/500.css";
 import "@fontsource/dm-sans/600.css";
 import "@fontsource/dm-mono/400.css";
 import "@humanharness/ui/styles.css";
+
+// The core mods' blocks (minimal-core step 0b1), in the app's block registry before the first render. Home's on/off is
+// main's: the layout draws "Mod Home is off" in place of the block while it is off.
+home.ui?.({ id: home.id, block: (name, component) => registerBlock(home.id, name, component as BlockComponent) });
 
 createRoot(document.getElementById("root")!).render(
   <HhTheme>

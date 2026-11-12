@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import { type Plugin, searchForWorkspaceRoot } from "vite";
 import { noBareDirname } from "./src/build/bundle-guard";
-import { CORE_MOD_LIST } from "./src/main/mods/core-mod-list";
+import { CORE_MOD_SWITCHES } from "./src/main/mods/core-mods";
 
 const harnessDir = path.resolve(process.env.HH_HARNESS_DIR ?? path.join(__dirname, "../../harnesses/demo"));
 // `humanharness dev --build <dir>`: the build goes to <dir>/{main,preload,renderer} instead of out/.
@@ -17,6 +17,7 @@ const workspacePackages = [
   "@humanharness/harness-sdk",
   "@humanharness/i18n",
   "@humanharness/material",
+  "@humanharness/mod-home",
   "@humanharness/mod-sdk",
   "@humanharness/policies",
   "@humanharness/protocol",
@@ -37,7 +38,7 @@ function copyCoreMods(): Plugin {
       if (!options.dir) return;
       const dest = path.join(options.dir, "..", "core-mods");
       await fs.rm(dest, { recursive: true, force: true });
-      for (const id of Object.keys(CORE_MOD_LIST)) {
+      for (const id of Object.keys(CORE_MOD_SWITCHES)) {
         const src = path.join(__dirname, "../mods", id);
         for (const part of ["mod.json", "README.md", "src"]) {
           const from = path.join(src, part);

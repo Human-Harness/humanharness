@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { type Message, type Plugin, build } from "esbuild";
+import * as zod from "zod";
+import * as modSdk from "./index";
 
 /** What a mod may import besides its own files; the app gives its own copy of each (minimal-core 0b2). */
 export const SHARED_IMPORTS: ReadonlySet<string> = new Set(["react", "react/jsx-runtime", "@humanharness/mod-sdk", "@humanharness/ui", "zod"]);
@@ -74,3 +76,9 @@ export async function bundleMod(o: BundleOptions): Promise<BundleResult> {
     return { ok: false, problems: [err instanceof Error ? err.message : String(err)] };
   }
 }
+
+/**
+ * The app's own copies a mod's main part may import: what main hands to the shims a built main part imports
+ * (`react` and `@humanharness/ui` belong to the ui part, in the window).
+ */
+export const MAIN_SHARED_MODULES: Readonly<Record<string, Record<string, unknown>>> = { "@humanharness/mod-sdk": modSdk, zod };

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
@@ -43,6 +44,50 @@ for (const theme of ["light", "dark"] as const) {
       }
       await page.waitForTimeout(400);
       await shot(page, `work-${theme}`);
+    } finally {
+      await closeAndClean(app, s);
+    }
+  });
+}
+
+// Minimal core step 0b1: Home is a core mod, on by default. Off, the layout keeps its place with "Mod Home is off" and the
+// one way back on. The home folder's core layer holds its files and the default layout after a launch.
+for (const theme of ["light", "dark"] as const) {
+  test(`Home is a core mod: on by default, off shows its line and Turn on, ${theme}`, async () => {
+    test.skip(!checkLayout, "a tagged run only takes the layout's screenshots");
+    test.setTimeout(120_000);
+    const s = makeSandbox(`layout-home-mod-${theme}`);
+    const { app, page } = await launchMock(s);
+    try {
+      await look(page, theme);
+      await expect(page.getByRole("button", { name: "Start Demo" })).toBeEnabled();
+      const core = fs.readdirSync(s.userData).map((h) => path.join(s.userData, h, "app", "core"));
+      expect(core.some((dir) => fs.existsSync(path.join(dir, "mods", "home", "mod.json")))).toBe(true);
+      expect(core.some((dir) => fs.existsSync(path.join(dir, "layouts", "main.json")))).toBe(true);
+
+      // Settings › Mods: Home, a core mod (no Local badge), on.
+      await page.getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("tab", { name: "Mods" }).click();
+      const tab = page.getByRole("tabpanel", { name: "Mods" });
+      const home = tab.getByRole("switch", { name: "Home", exact: true });
+      await expect(home).toBeChecked();
+      await expect(tab.getByText("Local", { exact: true })).toHaveCount(0);
+      await home.click();
+      await expect(home).not.toBeChecked();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("main", { name: "Settings" })).toHaveCount(0);
+
+      // Off: the home block says so, with Turn on; Start is gone with Home.
+      const off = page.getByRole("status").filter({ hasText: "Mod Home is off" });
+      await expect(off).toBeVisible();
+      await expect(page.getByRole("button", { name: "Start Demo" })).toHaveCount(0);
+      await page.waitForTimeout(400);
+      await shot(page, `home-off-${theme}`);
+
+      // Turn on brings Home back.
+      await off.getByRole("button", { name: "Turn on" }).click();
+      await expect(page.getByRole("button", { name: "Start Demo" })).toBeEnabled();
+      await expect(page.getByText("Mod Home is off")).toHaveCount(0);
     } finally {
       await closeAndClean(app, s);
     }

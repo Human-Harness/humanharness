@@ -133,14 +133,19 @@ function ModBlock({ content }: { content: ModContent }) {
   );
 }
 
-/** The empty block of an off or missing part: a grey line, and the one way on when there is one. */
+/**
+ * The empty block of an off or missing part: a grey notice a dialog's width (440, like Home's notices, DESIGN.md), and
+ * the one way on when there is one.
+ */
 function Placeholder({ text, children }: { text: string; children?: ReactNode }) {
   return (
     <Rx.Box p="4">
-      <Rx.Callout.Root color="gray" role="status">
-        <Rx.Callout.Text>{text}</Rx.Callout.Text>
-        {children && <Rx.Flex>{children}</Rx.Flex>}
-      </Rx.Callout.Root>
+      <Rx.Box maxWidth="440px">
+        <Rx.Callout.Root color="gray" role="status">
+          <Rx.Callout.Text>{text}</Rx.Callout.Text>
+          {children && <Rx.Flex>{children}</Rx.Flex>}
+        </Rx.Callout.Root>
+      </Rx.Box>
     </Rx.Box>
   );
 }

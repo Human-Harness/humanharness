@@ -1,0 +1,25 @@
+{
+  "name": "@humanharness/mod-home",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/ui.tsx" },
+  "dependencies": {
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/mod-sdk": "workspace:*",
+    "@humanharness/ui": "workspace:*",
+    "react-i18next": "^17.0.16"
+  },
+  "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "devDependencies": {
+    "@humanharness/i18n": "workspace:*",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.6",
+    "i18next": "^26.4.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

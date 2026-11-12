@@ -390,6 +390,9 @@ importers:
 
   packages/mod-sdk:
     dependencies:
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       zod:
         specifier: ^4.6.5
         version: 4.6.5

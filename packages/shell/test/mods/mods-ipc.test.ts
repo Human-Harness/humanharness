@@ -16,6 +16,9 @@ function setup(pick: string | null, taken: Set<string> = new Set()) {
     removeLocal: vi.fn(async () => {}),
     isLocal: (id: string) => id === "broken",
     taken: (id: string) => taken.has(id),
+    needsReview: vi.fn(async (id: string) => id === "mine"),
+    reviewUser: vi.fn(async (id: string) => (id === "mine" ? { id, name: "Mine", version: "0.1.0", folder: "/home/app/mods/mine" } : null)),
+    trustUser: vi.fn(async () => {}),
   };
   registerModsIpc(handle as never, deps);
   const call = (c: string, ...a: unknown[]) => (handlers.get(c) as (...x: unknown[]) => Promise<unknown>)(...a);
@@ -57,6 +60,20 @@ describe("mods IPC", () => {
     taken.add("echo");
     await expect(call("hh:modAddLocal", r.token)).rejects.toThrow(/echo/);
     expect(deps.addLocal).not.toHaveBeenCalled();
+  });
+  it("a user-layer mod not yet reviewed is refused by modSet and turns on only with its review token", async () => {
+    const { call, deps } = setup(null);
+    await expect(call("hh:modSet", "mine", true)).rejects.toThrow(/review/);
+    expect(deps.set).not.toHaveBeenCalled();
+    await call("hh:modSet", "mine", false); // turning off never needs a review
+    expect(await call("hh:modReviewLocal", "nope")).toMatchObject({ problem: expect.stringContaining("nope") });
+    await expect(call("hh:modReviewLocal", "Bad!")).rejects.toThrow();
+    const r = (await call("hh:modReviewLocal", "mine")) as { review: { id: string; folder: string }; token: string };
+    expect(r.review).toMatchObject({ id: "mine", folder: "/home/app/mods/mine" });
+    await call("hh:modAddLocal", r.token);
+    expect(deps.trustUser).toHaveBeenCalledWith("mine");
+    expect(deps.addLocal).not.toHaveBeenCalled();
+    await expect(call("hh:modAddLocal", r.token)).rejects.toThrow(); // one-time
   });
   it("remove only applies to local mods", async () => {
     const { call, deps } = setup(null);

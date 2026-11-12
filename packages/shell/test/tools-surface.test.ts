@@ -44,9 +44,9 @@ describe("tools surface (tools spec §4, §5; D0)", () => {
     }
     // The scheme: alone inside the block, or beside the plugins' only when the harness has tools.
     expect(count(index, /\bTOOL_SCHEME\b/)).toBe(3); // the import, the plugins' call and the tools-only call
-    expect(inBlocks).toContain("protocol.registerSchemesAsPrivileged([TOOL_SCHEME]);");
-    expect(index).toContain("protocol.registerSchemesAsPrivileged(hasTools(harness) ? [PLUGIN_SCHEME, TOOL_SCHEME] : [PLUGIN_SCHEME]);");
-    expect(count(index, /registerSchemesAsPrivileged\(/)).toBe(2);
+    expect(inBlocks).toContain("protocol.registerSchemesAsPrivileged([MOD_SCHEME, TOOL_SCHEME]);");
+    expect(index).toContain("protocol.registerSchemesAsPrivileged(hasTools(harness) ? [MOD_SCHEME, PLUGIN_SCHEME, TOOL_SCHEME] : [MOD_SCHEME, PLUGIN_SCHEME]);");
+    expect(count(index, /registerSchemesAsPrivileged\(/)).toBe(3); // and hh-mod alone when neither
     // toolsHost starts null and is set only there; everything else reads it through `toolsHost?.` or `toolsHost ?`.
     expect(index).toContain("let toolsHost: ToolsHost | null = null;");
     // index.ts never names a tools channel or the scheme in a string; only the tools/ files that own them do.

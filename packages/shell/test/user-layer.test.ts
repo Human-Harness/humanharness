@@ -65,7 +65,7 @@ async function setup() {
   });
   const call = (c: string, ...a: unknown[]) => (handlers.get(c) as (...x: unknown[]) => Promise<unknown>)(...a);
   const turnOn = async (id: string) => {
-    const r = (await call("hh:modReviewUser", id)) as { review: { id: string; folder: string }; token: string };
+    const r = (await call("hh:modReviewLocal", id)) as { review: { id: string; folder: string }; token: string };
     await call("hh:modAddLocal", r.token);
   };
   return { host, layer, call, turnOn, reloaded, config };
@@ -78,7 +78,7 @@ describe("the user layer", () => {
     expect(host.view()).toMatchObject([{ id: "greet", origin: "local", on: false }]);
     await expect(call("hh:modSet", "greet", true)).rejects.toThrow(/review/);
     expect(host.view()[0].on).toBe(false);
-    const r = (await call("hh:modReviewUser", "greet")) as { review: { id: string; folder: string }; token: string };
+    const r = (await call("hh:modReviewLocal", "greet")) as { review: { id: string; folder: string }; token: string };
     expect(r.review).toMatchObject({ id: "greet", name: "Greet", folder: modDir("greet") });
     await call("hh:modAddLocal", r.token);
     expect(host.view()[0].on).toBe(true);
@@ -88,7 +88,7 @@ describe("the user layer", () => {
     await call("hh:modSet", "greet", false);
     await call("hh:modSet", "greet", true);
     expect(host.view()[0].on).toBe(true);
-    await expect(call("hh:modReviewUser", "nope")).resolves.toMatchObject({ problem: expect.any(String) });
+    await expect(call("hh:modReviewLocal", "nope")).resolves.toMatchObject({ problem: expect.any(String) });
   });
 
   it("a new folder appears off", async () => {

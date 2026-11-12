@@ -114,8 +114,7 @@ describe("the Settings › Mods channels", () => {
     expect(declared).toEqual(["hh:modAddLocal", "hh:modRemoveLocal", "hh:modReviewLocal", "hh:modSet", "hh:mods"]);
     const ipc = (await sources()).find(([f]) => f === path.join("mods", "mods-ipc.ts"))![1];
     const registered = [...ipc.matchAll(/handle\("(hh:[A-Za-z]+)"/g)].map((m) => m[1]).sort();
-    // hh:modReviewUser (0b2, the user layer's review) is registered before the protocol declares it with the renderer side.
-    expect(registered).toEqual([...declared, "hh:modReviewUser"].sort());
+    expect(registered).toEqual(declared);
   });
   it("the renderer adds a local mod with a token only: the preload sends no path", async () => {
     const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");

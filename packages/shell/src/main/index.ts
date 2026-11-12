@@ -264,7 +264,7 @@ import defaultLayoutJson from "./mods/default-layout.json";
 import { shownLayout } from "./mods/layout";
 import { ModHost } from "./mods/host";
 import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
-import { type ModsChannel, registerModsIpc } from "./mods/mods-ipc";
+import { registerModsIpc } from "./mods/mods-ipc";
 import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchUserLayer, writeMainShims } from "./mods/user-layer";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
 import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
@@ -1356,9 +1356,8 @@ async function startModHost(): Promise<void> {
     }),
     notice: showNotice,
     changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
+    // A reload reaches the window through `changed` (hh:modsChanged); a remount signal comes with the window's side.
     builds: new ModBuilds(buildRoot, resolveShared),
-    // Not in the protocol's push table yet: the window's side lands in the next step of 0b2 (mods-ipc.ts).
-    reloaded: (id, version) => sendToWindow("hh:modReloaded" as PushChannel, { id, version }),
   });
   modHost = mods;
   userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
@@ -2954,8 +2953,7 @@ function registerIpc() {
   // The layout the screen shows (minimal-core spec §5.2).
   handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
-  // `hh:modReviewUser` is not in the protocol's table yet (mods-ipc.ts): the same `handle`, typed wider.
-  registerModsIpc(handle as (channel: ModsChannel, fn: (...args: never[]) => unknown) => void, {
+  registerModsIpc(handle, {
     view: modsView,
     // A mod in the home folder's `mods/`: turned on the first time only through the warning (spec D2, `mods.trusted`).
     ...userConsent({

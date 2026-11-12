@@ -66,9 +66,9 @@ describe("mods IPC", () => {
     await expect(call("hh:modSet", "mine", true)).rejects.toThrow(/review/);
     expect(deps.set).not.toHaveBeenCalled();
     await call("hh:modSet", "mine", false); // turning off never needs a review
-    expect(await call("hh:modReviewUser", "nope")).toMatchObject({ problem: expect.stringContaining("nope") });
-    await expect(call("hh:modReviewUser", "Bad!")).rejects.toThrow();
-    const r = (await call("hh:modReviewUser", "mine")) as { review: { id: string; folder: string }; token: string };
+    expect(await call("hh:modReviewLocal", "nope")).toMatchObject({ problem: expect.stringContaining("nope") });
+    await expect(call("hh:modReviewLocal", "Bad!")).rejects.toThrow();
+    const r = (await call("hh:modReviewLocal", "mine")) as { review: { id: string; folder: string }; token: string };
     expect(r.review).toMatchObject({ id: "mine", folder: "/home/app/mods/mine" });
     await call("hh:modAddLocal", r.token);
     expect(deps.trustUser).toHaveBeenCalledWith("mine");

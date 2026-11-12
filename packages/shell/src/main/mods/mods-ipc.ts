@@ -6,12 +6,7 @@ import type { ModReview, ModsView } from "@humanharness/protocol";
 import type { InvokeChannel } from "@humanharness/protocol/channels";
 
 const TOKEN = /^[0-9a-f]{32}$/;
-/**
- * `hh:modReviewUser` is not in the protocol's channel table yet: the window's side (preload, Settings › Mods) lands in
- * the next step of 0b2, with its entry there. Until then index.ts registers it through the same `handle`.
- */
-export type ModsChannel = InvokeChannel | "hh:modReviewUser";
-type Handle = (channel: ModsChannel, fn: (...args: never[]) => unknown) => void;
+type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
 
 export interface ModsIpcDeps {
   view(): Promise<ModsView>;
@@ -43,6 +38,12 @@ export function registerModsIpc(handle: Handle, d: ModsIpcDeps): void {
     pending.set(token, review);
     return token;
   };
+  const reviewUser = async (id: unknown): Promise<{ review: ModReview; token: string } | { problem: string }> => {
+    if (!validId(id)) throw new Error("Invalid mod id");
+    const review = await d.reviewUser(id);
+    if (!review) return { problem: `No mod in the app's home folder has the id "${id}"` };
+    return { review, token: issue({ kind: "user", id }) };
+  };
   handle("hh:mods", () => d.view());
   handle("hh:modSet", async (id: unknown, on: unknown) => {
     if (!validId(id) || typeof on !== "boolean") throw new Error("Invalid mod change");
@@ -51,7 +52,9 @@ export function registerModsIpc(handle: Handle, d: ModsIpcDeps): void {
     await d.set(id, on);
     return d.view();
   });
-  handle("hh:modReviewLocal", async (): Promise<{ review: ModReview; token: string } | { problem: string } | null> => {
+  // With an id: a mod already in the home folder's `mods/` (0b2), reviewed through the same warning and token; no dialog.
+  handle("hh:modReviewLocal", async (id?: unknown): Promise<{ review: ModReview; token: string } | { problem: string } | null> => {
+    if (id !== undefined) return reviewUser(id);
     const folder = await d.pickFolder();
     if (!folder) return null;
     let json;
@@ -64,12 +67,6 @@ export function registerModsIpc(handle: Handle, d: ModsIpcDeps): void {
     if (d.taken(json.id)) return { problem: takenProblem(json.id) };
     const token = issue({ kind: "folder", folder, id: json.id });
     return { review: { id: json.id, name: json.name, version: json.version, folder }, token };
-  });
-  handle("hh:modReviewUser", async (id: unknown): Promise<{ review: ModReview; token: string } | { problem: string }> => {
-    if (!validId(id)) throw new Error("Invalid mod id");
-    const review = await d.reviewUser(id);
-    if (!review) return { problem: `No mod in the app's home folder has the id "${id}"` };
-    return { review, token: issue({ kind: "user", id }) };
   });
   handle("hh:modAddLocal", async (token: unknown) => {
     if (typeof token !== "string" || !TOKEN.test(token)) throw new Error("Unknown review");

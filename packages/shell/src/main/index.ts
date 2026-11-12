@@ -3480,8 +3480,8 @@ async function createWindow() {
     // y 13 centres the traffic lights in it; text size moves them with trafficLightY.
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 13 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
-    // Test background mode (HH_TEST_BACKGROUND, development builds only): shown without taking focus, and kept
-    // rendering at full speed although nobody looks at it.
+    // Test background mode (HH_TEST_BACKGROUND, development builds only): headless, the window is never shown,
+    // and it keeps rendering at full speed although nobody looks at it.
     ...(hooks.background ? { show: false } : {}),
     webPreferences: {
       preload: path.join(here, "../preload/index.mjs"),
@@ -3490,7 +3490,6 @@ async function createWindow() {
       ...(hooks.background ? { backgroundThrottling: false } : {}),
     },
   });
-  if (hooks.background) win.once("ready-to-show", () => win.showInactive());
   window = win;
   // Read now: once closed, the window's webContents can no longer be asked.
   const contentsId = win.webContents.id;

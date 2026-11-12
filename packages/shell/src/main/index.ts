@@ -1356,7 +1356,8 @@ async function startModHost(): Promise<void> {
     }),
     notice: showNotice,
     changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
-    // A reload reaches the window through `changed` (hh:modsChanged); a remount signal comes with the window's side.
+    // A user-layer mod rebuilt after an edit: the window imports its ui again (hh:modReloaded, 0b2).
+    reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
     builds: new ModBuilds(buildRoot, resolveShared),
   });
   modHost = mods;

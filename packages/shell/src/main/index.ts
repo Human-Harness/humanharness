@@ -253,6 +253,7 @@ import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
+import { sidekickView } from "./sidekick-view";
 import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { cleanModsConfig } from "./mods/config";
@@ -354,7 +355,7 @@ let historyHeld = false;
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 /** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
 let settingsCtl: SettingsController | null = null;
-/** Sidekick, the core's prompt coach (sidekick spec D1): every harness gets it once loaded; it does nothing while off. */
+/** Sidekick, the core's prompt coach: built only for a harness that declares `sidekick`. */
 let sidekickCtl: SidekickController | null = null;
 /** The mod host (minimal-core spec §4); null with no mod that could run (D0). */
 let modHost: ModHost | null = null;
@@ -763,8 +764,8 @@ async function appState(): Promise<AppState> {
     ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
     // Only a harness with settings gets its tab (harness-settings D0).
     ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
-    // Sidekick is core (sidekick spec D1): every harness sends it; the window draws it only with this.
-    sidekick: { id: "sidekick", name: "Sidekick", mark: "coach" },
+    // Sidekick shows only for a harness that declares it (a `sidekick` key, `{}` allowed); the window draws it only with this.
+    ...(sidekickView(harness) ? { sidekick: sidekickView(harness) } : {}),
     // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
     ...(hasModes(harness)
       ? {
@@ -3579,8 +3580,8 @@ if (loaded) {
       changed: (state) => sendToWindow("hh:settings", state),
     });
   }
-  // Sidekick is core (sidekick spec D1): every harness gets the controller; it does nothing while off.
-  sidekickCtl = new SidekickController({
+  // Sidekick runs only for a harness that declares it: without the key there is no controller, so no tips, daily card or turns.
+  sidekickCtl = !sidekickView(harness) ? null : new SidekickController({
     ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
     harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),

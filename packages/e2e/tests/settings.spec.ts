@@ -47,7 +47,7 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     const page = launched.page;
     // Before any task: the tab saves at once; nothing runs, so nothing is pending.
     await page.getByRole("button", { name: "Settings" }).click();
-    await expect(page.getByRole("tab")).toHaveText(["General", "How I learn", "Engine", "Models", "Sidekick", "Usage"]);
+    await expect(page.getByRole("tab")).toHaveText(["General", "How I learn", "Engine", "Models", "Sidekick", "Mods", "Usage"]);
     await page.getByRole("tab", { name: "How I learn" }).click();
     const tab = page.getByRole("tabpanel", { name: "How I learn" });
     await tab.getByRole("radiogroup", { name: "Tone" }).getByRole("radio", { name: "Demanding" }).click();

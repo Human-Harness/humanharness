@@ -38,7 +38,7 @@ describe("SettingsSheet", () => {
     const onClose = vi.fn();
     await renderIn("en", <Sheet client={client} onClose={onClose} />, { theme: true });
     const dialog = screen.getByRole("main", { name: "Settings" });
-    expect(within(dialog).getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
+    expect(within(dialog).getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Mods", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
     expect(screen.getByRole("tab", { name: "Engine" }).getAttribute("aria-selected")).toBe("true");
     await screen.findByRole("radiogroup", { name: "AI engines" });
@@ -57,7 +57,7 @@ describe("SettingsSheet", () => {
       pinnedTokens: 3000,
     };
     await renderIn("en", <Sheet client={client} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Mods", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Models" }));
     expect(screen.getByRole("region", { name: "Tasks" })).toBeTruthy();
   });
@@ -71,12 +71,12 @@ describe("SettingsSheet", () => {
       pinnedTokens: 3000,
     };
     const first = await renderIn("en", <Sheet client={client} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Mods", "Usage"]);
     first.unmount();
     client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     client.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, on: false }, status: "off" };
     await renderIn("en", <Sheet client={client} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Sidekick", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Sidekick", "Mods", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Sidekick" }));
     expect(await screen.findByRole("switch", { name: "Sidekick" })).toBeTruthy();
     // Change in Models switches the sheet's tab.
@@ -254,7 +254,7 @@ describe("SettingsSheet", () => {
     };
     const onSetup = vi.fn();
     await renderIn("en", <Sheet client={client} initialTab={tab} onSetup={onSetup} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Mods", "Usage"]);
     expect(screen.getByRole("heading", { name: "You haven't chosen an engine yet" })).toBeTruthy();
     expect(screen.getByText("First choose where your work is kept, then connect the AI. It takes two steps.")).toBeTruthy();
     expect(screen.queryByRole("radiogroup", { name: "AI engines" })).toBeNull();
@@ -302,7 +302,7 @@ describe("SettingsSheet", () => {
 
   it("D0: no harness tab when the harness declares no settings", async () => {
     await renderIn("en", <Sheet client={new FakeClient(ready)} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Mods", "Usage"]);
   });
 
   it("adds the harness's tab right after General, with its own name", async () => {
@@ -314,7 +314,7 @@ describe("SettingsSheet", () => {
     };
     client.settingsState = { values: { tone: "patient" }, pending: [] };
     await renderIn("en", <Sheet client={client} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "How I learn", "Engine", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "How I learn", "Engine", "Mods", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "How I learn" }));
     const panel = screen.getByRole("tabpanel", { name: "How I learn" });
     expect(await within(panel).findByRole("group", { name: "Tone" })).toBeTruthy();

@@ -6,6 +6,8 @@ import path from "node:path";
 export interface Layer {
   mods: Record<string, string>;
   layouts: Record<string, string>;
+  /** Layouts the app holds as text, not as a file (the core's default is built in): layout name → its text. */
+  layoutTexts?: Record<string, string>;
 }
 
 const LAYERS = ["core", "harness"] as const;
@@ -37,10 +39,11 @@ export async function harnessLayer(root: string, declared: string[]): Promise<La
 }
 
 /** What a layer should hold: home-relative path → source file. */
-async function wanted(name: LayerName, layer: Layer): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+async function wanted(name: LayerName, layer: Layer): Promise<Map<string, string | Buffer>> {
+  const out = new Map<string, string | Buffer>();
   for (const [id, dir] of Object.entries(layer.mods)) for (const rel of await filesUnder(dir)) out.set(`${name}/mods/${id}/${posix(rel)}`, path.join(dir, rel));
   for (const [layout, file] of Object.entries(layer.layouts)) out.set(`${name}/layouts/${layout}.json`, file);
+  for (const [layout, text] of Object.entries(layer.layoutTexts ?? {})) out.set(`${name}/layouts/${layout}.json`, Buffer.from(text));
   return out;
 }
 
@@ -109,7 +112,7 @@ export async function writeLayers(o: { home: string; core: Layer; harness: Layer
 
     const want = new Map<string, { data: Buffer; hash: string }>();
     for (const [key, src] of [...(await wanted("core", o.core)), ...(await wanted("harness", o.harness))]) {
-      const data = await fs.readFile(src);
+      const data = typeof src === "string" ? await fs.readFile(src) : src;
       want.set(key, { data, hash: sha(data) });
     }
 

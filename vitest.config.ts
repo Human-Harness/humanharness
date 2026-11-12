@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["packages/*/test/**/*.test.{ts,tsx}", "harnesses/*/test/**/*.test.{ts,tsx}"],
+    include: ["packages/*/test/**/*.test.{ts,tsx}", "packages/mods/*/test/**/*.test.{ts,tsx}", "harnesses/*/test/**/*.test.{ts,tsx}"],
     globalSetup: ["./vitest.global-setup.ts"],
     setupFiles: ["./vitest.setup.ts"],
     testTimeout: 30_000,

@@ -73,7 +73,15 @@ export class ModHost {
 
   private async load(r: Running): Promise<void> {
     const id = r.mod.json.id;
-    const imported = await guarded(async () => (await import(pathToFileURL(path.join(r.mod.dir, r.mod.json.main)).href)) as { default?: ModDefinition<unknown> }, this.hookMs);
+    const main = r.mod.json.main;
+    // No main part: nothing to import or run; the mod is on with its raw config and no hooks.
+    if (main === undefined) {
+      delete r.problem;
+      r.strikes = 0;
+      r.on = true;
+      return;
+    }
+    const imported = await guarded(async () => (await import(pathToFileURL(path.join(r.mod.dir, main)).href)) as { default?: ModDefinition<unknown> }, this.hookMs);
     if (!imported.ok) return void (r.problem = imported.reason);
     const def = imported.value.default;
     if (!def || def.id !== id) return void (r.problem = `main does not export the mod "${id}"`);

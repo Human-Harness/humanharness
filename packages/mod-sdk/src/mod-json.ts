@@ -4,8 +4,8 @@ import { z } from "zod";
 export const MOD_ID = /^[a-z][a-z0-9-]{0,39}$/;
 /** The mod API this core speaks (spec §4.1 `apiVersion`). A mod for another version is refused. */
 export const MOD_API_VERSION = 1;
-/** A relative path inside the mod's folder: no `..` segment, not absolute. */
-const inside = z.string().min(1).max(200).refine((p) => !p.startsWith("/") && !p.split(/[\\/]/).includes(".."), "main must be inside the mod's folder");
+/** A relative path inside the mod's folder: no `..` segment, not absolute. Problems read `<key> must be inside…`. */
+const inside = z.string().min(1).max(200).refine((p) => !p.startsWith("/") && !p.split(/[\\/]/).includes(".."), "must be inside the mod's folder");
 
 /** `mod.json`: the only part of a mod read without running its code (spec §4.1). */
 export const modJsonSchema = z
@@ -17,8 +17,10 @@ export const modJsonSchema = z
     requires: z.array(z.string().regex(MOD_ID)).max(10).default([]),
     /** The mod's `.harness/mods/<id>/` folder is in the work folder's history. Absent: excluded. */
     history: z.boolean().default(false),
-    /** The built main part, relative to the folder. 0b adds bundling `main.ts`. */
-    main: inside.default("main.js"),
+    /** The built main part, relative to the folder. Absent: the mod has no main part (a ui-only mod). */
+    main: inside.optional(),
+    /** The built ui part, relative to the folder. Absent: the mod places no blocks. */
+    ui: inside.optional(),
   })
   .refine((m) => !m.requires.includes(m.id), { message: "A mod can't require itself", path: ["requires"] });
 

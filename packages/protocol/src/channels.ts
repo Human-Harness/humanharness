@@ -17,6 +17,7 @@ import type {
   MaterialView,
   ModeChoice,
   ModeResult,
+  LayoutView,
   ModsView,
   PluginDataChange,
   PluginSurfaceView,
@@ -155,6 +156,7 @@ export interface Invoke {
   "hh:sidekickReorder": Sidekick["reorder"];
   "hh:sidekickScope": Sidekick["scope"];
   "hh:sidekickSetScope": Sidekick["setScope"];
+  "hh:layout": NonNullable<H["layout"]>;
   "hh:mods": Mods["view"];
   "hh:modSet": Mods["set"];
   "hh:modReviewLocal": Mods["reviewLocal"];

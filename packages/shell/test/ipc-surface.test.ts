@@ -122,3 +122,15 @@ describe("the Settings › Mods channels", () => {
     expect(preload).toContain('reviewLocal: () => invoke("hh:modReviewLocal")');
   });
 });
+
+/** The layout the screen shows (minimal-core spec §5.2): one invoke channel, in the table, the preload and main. */
+describe("the hh:layout channel", () => {
+  it("is declared in channels.ts, sent by the preload and handled in main", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    expect(channels).toMatch(/^\s*"hh:layout":/m);
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    expect(preload).toContain('layout: () => invoke("hh:layout")');
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    expect(index).toMatch(/handle\("hh:layout", \(\) => shownLayout\(/);
+  });
+});

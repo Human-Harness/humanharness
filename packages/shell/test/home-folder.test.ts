@@ -47,6 +47,12 @@ describe("harnessLayer", () => {
 });
 
 describe("writeLayers", () => {
+  it("writes a layout the app holds as text into core/layouts", async () => {
+    await writeLayers({ home, core: { ...core, layoutTexts: { main: '{ "type": "stack" }\n' } }, harness, notice: vi.fn() });
+    expect(await read(path.join(home, "core", "layouts", "main.json"))).toBe('{ "type": "stack" }\n');
+    const layers = JSON.parse(await read(path.join(home, ".layers.json"))) as Record<string, string>;
+    expect(Object.keys(layers)).toContain("core/layouts/main.json");
+  });
   it("a fresh start writes core/, harness/ and .layers.json", async () => {
     const notice = vi.fn();
     await writeLayers({ home, core, harness, notice });

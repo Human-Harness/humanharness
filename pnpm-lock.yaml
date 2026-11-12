@@ -545,9 +545,15 @@ importers:
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../workspace
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
       '@humanharness/fake-agent':
         specifier: workspace:*

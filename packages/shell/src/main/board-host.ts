@@ -2,11 +2,10 @@ import { randomUUID } from "node:crypto";
 import { type ParallelCaps, hasJobs } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
 import { type AppConfig, type BlockAnswer, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/protocol";
-import { type History, type HistoryTrailer, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
+import { type History, type HistoryTrailer, MAIN_SCOPE } from "@humanharness/workspace";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { notePath } from "./app-change";
 import { ChatLog } from "./chat-log";
-import { migrateChats } from "./chat-migration";
 import { gatedTurns } from "./gated-turns";
 import { type TasksFileStore } from "./lane-store";
 import { LaneStore } from "./lane-store";
@@ -153,8 +152,6 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
   const gate = new TurnGate(caps, { hold });
   /** Lane sleeps under way: a second asks for the same one, and a turn waits for it before its send (sleep holds busy). */
   const sleeps = new Map<string, Promise<void>>();
-  /** The last chat move: no lane writes its chat before it ended. */
-  let migrated: Promise<unknown> = Promise.resolve();
   /** A refresh was refused because a turn ran: the next `betweenTasks` waits for a gap. */
   let refreshRefused = false;
   /** The plugin catalogue changed while lanes were open (Decision 13): the workspace closes once none is. */
@@ -323,14 +320,12 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
             lane.startFailed = false;
             throw new Error("Couldn't get ready for this turn");
           }
-          await migrated.catch(() => undefined);
           await d.checkTurn();
           // A sleep started just before this turn (the idle timer): the slot is busy until it ends.
           await sleeps.get(id)?.catch(() => undefined);
           return lane.slot.get();
         },
         chatLog: async (chat) => {
-          await migrated.catch(() => undefined);
           return d.chatLog(chat, id);
         },
         emit,
@@ -413,7 +408,6 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         d.taskDeps.markAnswered
           ? (chat: string, answer: BlockAnswer) =>
               chatOp(lane, async () => {
-                await migrated.catch(() => undefined);
                 const log = await d.chatLog(chat, id);
                 if (!log?.markAnswered) throw new Error("No valid configuration: the chat log can't be found");
                 return log.markAnswered(answer);
@@ -552,7 +546,6 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
   }
 
   async function appendNotices(x: Lane, notices: Notice[]): Promise<void> {
-    await migrated.catch(() => undefined);
     for (const n of notices) {
       try {
         await chatOp(x, async () => (await d.chatLog(n.scope, x.id))?.append(n.entry));
@@ -701,31 +694,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         console.error("The plugin collections changed: the agent gets them once no task is open");
       }
     },
-    /**
-     * At start, after a profile switch or a folder change: the chats move to per-task files (once per folder, before
-     * any lane writes), then every task left open ends unfinished.
-     */
+    /** At start, after a profile switch or a folder change: every task left open ends unfinished. */
     async interrupt(): Promise<void> {
-      const move = (async () => {
-        const base = await d.base();
-        if (!base) return;
-        const f = await file.load();
-        // `current` first: plain mode's (or an older app's) open task keeps its scope's chat.
-        const open = [...(f.current ? [f.current] : []), ...(f.lanes ?? [])]
-          .map((t) => ({ scope: scopeOfTask(t), task: t.id }))
-          .filter((o) => {
-            try {
-              taskChatFile(base, o.scope, o.task);
-              return true;
-            } catch {
-              return false;
-            }
-          });
-        const r = await migrateChats(base, open);
-        if (r.kept.length > 0) console.error(`Chats kept as they were (their task's chat had lines of its own): ${r.kept.join(", ")}`);
-      })();
-      migrated = move;
-      await move.catch((err: unknown) => console.error("Could not move the chats to per-task files", err));
       await board.interrupt();
     },
     /**

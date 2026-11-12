@@ -287,12 +287,11 @@ describe("hostMode (D7)", () => {
     expect(hostMode({ jobs: {} })).toBe("plain");
   });
 
-  it("D0: the chat move and the board host run only in board mode", () => {
+  it("D0: the board host runs only in board mode", () => {
     const main = path.resolve(__dirname, "../src/main");
     const files = fs.readdirSync(main).filter((f) => f.endsWith(".ts"));
     const naming = (re: RegExp) => files.filter((f) => re.test(fs.readFileSync(path.join(main, f), "utf8"))).sort();
-    // Only the host moves the chats; only index.ts builds the host.
-    expect(naming(/\bmigrateChats\(/)).toEqual(["board-host.ts", "chat-migration.ts"]);
+    // Only index.ts builds the host.
     expect(naming(/\bcreateBoardHost\(/)).toEqual(["board-host.ts", "index.ts"]);
     const index = fs.readFileSync(path.join(main, "index.ts"), "utf8");
     // index.ts builds it in one place, and calls that only when the harness is in board mode.
@@ -568,13 +567,10 @@ describe("the board host (parallel spec §6, §7)", () => {
     await Promise.all([a, b]);
   });
 
-  it("start: the chats move to per-task files before any lane writes; an open lane of an earlier run ends", async () => {
+  it("start: an open lane of an earlier run ends", async () => {
     const t = host();
-    await new ChatLog(t.base).append({ id: "1", role: "user", text: "earlier", blocks: [], activities: [], at: "t" });
     await new TaskStore(t.base).save({ version: 1, actions: {}, current: { id: "old", action: "write", status: "waiting", startedAt: "2026-10-28T09:00:00Z", turns: 1 } });
     await t.h.interrupt();
-    expect((await t.chat("main", "old")).map((e) => e.text)).toEqual(["earlier"]);
-    expect(await new ChatLog(t.base).load()).toEqual([]);
     const f = await t.file();
     expect(f.current).toBeNull();
     expect(f.lanes ?? []).toEqual([]);

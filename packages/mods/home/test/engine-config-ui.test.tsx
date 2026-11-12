@@ -1,13 +1,12 @@
 // @vitest-environment happy-dom
-import "./home-block";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { render, renderIn } from "./home-block";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { EngineConfigView } from "../../../ui/src/client";
 import { ScopePicker } from "../../../ui/src/ScopePicker";
 import { hidesText } from "../../../ui/src/hatches/EngineConfig";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import "./home-block";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PROFILE_COLLECTION as SDK_COLLECTION, PROFILE_COLORS, RETIRED_PROFILE_COLORS } from "@humanharness/harness-sdk";
 import { HarnessApp } from "../../../ui/src";
@@ -8,7 +8,6 @@ import { Home } from "../src/Home";
 import { AVATAR_COLORS, PROFILE_COLLECTION, RETIRED_AVATAR_COLORS } from "../../../ui/src/profiles";
 import { Avatar, ProfileAvatar, ProfileSwitcher } from "../../../ui/src/ProfileSwitcher";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import "./home-block";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { InputSpec, ProfileResult, SetupStepView } from "../../../ui/src/client";
@@ -8,7 +8,6 @@ import { Home } from "../src/Home";
 import { ProfileSwitcher } from "../../../ui/src/ProfileSwitcher";
 import { SetupFlow } from "../../../ui/src/SetupFlow";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

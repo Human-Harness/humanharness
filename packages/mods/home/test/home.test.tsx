@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
-import "./home-block";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState, EngineProblem, EngineStatus, LanguageState } from "../../../ui/src/client";
 import { Home, languageOffer } from "../src/Home";
 import type { LanguageControl } from "../../../ui/src/language-control";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(() => {
   cleanup();

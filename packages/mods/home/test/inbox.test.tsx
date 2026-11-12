@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
-import "./home-block";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { render, renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HhTheme } from "../../../ui/src/guide";
 import { HarnessApp } from "../../../ui/src";
 import type { JobSummary, ParallelInfo, TaskSummary, TasksState } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };

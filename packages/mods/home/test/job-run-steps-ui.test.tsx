@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import "./home-block";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { render, renderIn } from "./home-block";
 import { I18nextProvider } from "react-i18next";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +9,6 @@ import type { AppState, JobSummary, ToolCallView } from "../../../ui/src/client"
 import { SettingsPage } from "../../../ui/src/SettingsPage";
 import { JobRunSteps } from "../../../ui/src/tools/JobRunSteps";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

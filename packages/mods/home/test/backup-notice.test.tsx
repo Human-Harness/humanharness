@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import "./home-block";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { render, renderIn } from "./home-block";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackupNotice, needsBackupNotice } from "../../../ui/src/BackupNotice";
@@ -9,7 +9,6 @@ import type { AppState, MoveError } from "../../../ui/src/client";
 import { Home } from "../src/Home";
 import { type SettingsTab, SettingsPage } from "../../../ui/src/SettingsPage";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

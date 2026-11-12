@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import "./home-block";
 // happy-dom can't fetch hh-plugin:, so it doesn't navigate child frames here; each frame still fires one `load`.
 // @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { render } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type HarnessAppProps, HarnessApp, PluginSlot } from "../../../ui/src";
 import type { PluginChipView, PluginPanelView, PluginSurfaceView } from "../../../ui/src/client";

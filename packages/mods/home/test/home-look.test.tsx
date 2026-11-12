@@ -1,13 +1,12 @@
 // @vitest-environment happy-dom
-import "./home-block";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderIn } from "./home-block";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HistoryTaskView, LimitWindow, TaskSummary } from "../../../ui/src/client";
 import { Home } from "../src/Home";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

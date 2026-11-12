@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
-import "./home-block";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderIn } from "./home-block";
 import { afterEach, expect, it, vi } from "vitest";
 import { PickUp, pickUpItems } from "../src/PickUp";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

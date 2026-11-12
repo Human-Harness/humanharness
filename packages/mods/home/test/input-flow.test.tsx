@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import "./home-block";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { render } from "./home-block";
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BlockProps, HarnessApp } from "../../../ui/src";

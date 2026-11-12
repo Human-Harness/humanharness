@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
-import "./home-block";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { render, renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp, type HarnessAppProps, type MaterialView } from "../../../ui/src";
 import { MaterialPanel } from "../../../ui/src/MaterialPanel";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

@@ -6,10 +6,13 @@ import { ProfileAvatar } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
 import { type ChatPage, ChatView, type SendFn, type ShellBridge } from "./ChatView";
 import { Rail, SettingsGear, TopBar } from "./chrome";
-import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
+import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type Layout, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured, loadLayout } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { Home } from "./Home";
+import { type AppValue, AppProvider } from "./layout/app";
+import { LayoutView } from "./layout/LayoutView";
+import { type BlockProps as ModBlockProps, registerBlock } from "./layout/registry";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { useAttention } from "./plugins/usePlugins";
 import { InboxAnnouncer, InboxPage, waitingCount } from "./parallel/Inbox";
@@ -44,6 +47,30 @@ export interface HarnessAppProps {
   materialPanel?: ComponentType<MaterialPanelProps>;
 }
 
+// Temporary until home-mod (T8): today's Home as the core's `home/home` block, drawn from the app.
+function HomeBlock({ app }: ModBlockProps) {
+  return (
+    <Home
+      state={app.state}
+      client={app.client}
+      onChange={app.setState}
+      status={app.status}
+      checkFailed={app.checkFailed}
+      limits={app.limits}
+      steps={app.steps}
+      onStart={app.nav.start}
+      onSetup={app.nav.setup}
+      onSettings={app.nav.settings}
+      onEngine={app.nav.engine}
+      move={app.move}
+      onAddProfile={app.nav.addProfile}
+      language={app.language}
+      onOpen={app.nav.open}
+    />
+  );
+}
+registerBlock("home", "home", HomeBlock);
+
 /** How long the line for an action search couldn't run stays. */
 const SEARCH_NOTICE_MS = 4000;
 
@@ -51,6 +78,17 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
+  /** The layout the screen shows, asked once at start (minimal-core spec §5.2). */
+  const [layout, setLayout] = useState<Layout | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadLayout(client).then((l) => {
+      if (live) setLayout(l);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client]);
   const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
   /** On the work screen, the rail's place (UI refresh spec §4.2): the chat, or a secondary page, Inbox or Jobs (stage 4a; the chat stays mounted under it). */
   const [view, setView] = useState<{ kind: "chat" } | { kind: "inbox" | "jobs"; request?: number }>({ kind: "chat" });
@@ -310,7 +348,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     );
   }
   // Even before anything loads, the window keeps its drag strip.
-  if (!state || !i18n)
+  if (!state || !i18n || !layout)
     return (
       <>
         <TopBar />
@@ -428,121 +466,33 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     if (e === "plugins") return setPluginsRequest((n) => n + 1);
   };
 
+  /** What the layout's blocks get as `app`: what Home needs today. */
+  const app: AppValue = {
+    state,
+    client,
+    setState,
+    status,
+    checkFailed,
+    limits,
+    steps,
+    move,
+    language: client.language ? language : undefined,
+    nav: {
+      start: () => setScreen("work"),
+      setup: (step) => openSetup(step ? { step } : {}),
+      settings: () => setSettings("general"),
+      engine: () => setSettings("engine"),
+      addProfile,
+      open: searchIntent,
+    },
+  };
+
   return (
     <I18nextProvider i18n={i18n}>
       {/* Settings is a page in place of the screen (UI refresh spec §5.5): the screen stays mounted (the chat's draft,
           panels and start path), hidden and inert, top bar included. */}
       <div className="hh-screen" hidden={settings !== null} inert={settings !== null}>
-        {screen === "work" && configured ? (
-          <div className="hh-shell">
-            <TopBar
-              {...(pageTitle
-                ? {
-                    // A page's Volver (DESIGN.md "Secondary pages"): back to the chat, named by its task.
-                    leading: (
-                      <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: backLabel })} onClick={pageBack}>
-                        <Icon name="back" size={18} />
-                        {backLabel}
-                      </Rx.Button>
-                    ),
-                  }
-                : { crumbs: [{ label: state.harness.name, onClick: () => setScreen("home") }, { label: screenTitle }] })}
-              mock={state.mock}
-              trailing={
-                <>
-                  {attention?.show && (
-                    <AttentionInbox
-                      client={client}
-                      view={attention}
-                      onOpenPanel={(plugin, panel, focus) => {
-                        // The panel is the chat's: a page gives way to it.
-                        setView({ kind: "chat" });
-                        shellRef.current?.openPanel(plugin, panel, focus);
-                      }}
-                      onPrepared={() => setView({ kind: "chat" })}
-                    />
-                  )}
-                  {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
-                  <SettingsGear onClick={() => setSettings("general")} />
-                </>
-              }
-            />
-            <Rail entries={entries} current={railCurrent} onPick={pick} counts={{ inbox: { count: waiting, label: i18n.t("inbox.railCount", { count: waiting }) } }} />
-            {state.parallel?.inbox && <InboxAnnouncer count={waiting} />}
-            <div className="hh-shell-main">
-              {view.kind === "inbox" && (
-                <InboxPage
-                  client={client}
-                  state={state}
-                  tasks={tasksState}
-                  {...(view.request !== undefined ? { focusKey: view.request } : {})}
-                  {...(state.parallel
-                    ? {
-                        onNewTask: () => {
-                          client.tasks.focus(null).then(() => {
-                            toStart();
-                            toChat();
-                          }, () => undefined);
-                        },
-                      }
-                    : {})}
-                  onOpened={toChat}
-                  onBack={toChat}
-                  onStartAction={startAction}
-                  onRefill={(text) => {
-                    shellRef.current?.refill(text);
-                    // The text is back in the box: the chat shows it.
-                    toChat();
-                  }}
-                />
-              )}
-              {view.kind === "jobs" && (
-                <JobsPage
-                  client={client}
-                  state={state}
-                  {...(view.request !== undefined ? { focusKey: view.request } : {})}
-                  onChange={setState}
-                  onBack={toChat}
-                  onStartAction={startAction}
-                />
-              )}
-              {/* Under a page the chat stays mounted (its draft, panels and start path): only hidden. */}
-              <div className="hh-shell-chat" hidden={view.kind !== "chat"}>
-                <ChatView
-                  key={state.parallel ? `${chatKey}:${epoch}` : chatKey}
-                  client={client}
-                  state={state}
-                  components={blocks}
-                  stateBlocks={stateBlocks}
-                  renderSide={renderSide}
-                  startView={startView}
-                  openScope={openScope}
-                  materialPanel={materialPanel}
-                  shellRef={shellRef}
-                  onBlocked={(b) => {
-                    chatBlocked.current.now = b;
-                    chatBlocked.current.listener?.(b);
-                  }}
-                  {...(state.jobs ? { startRef: chatStart } : {})}
-                  searchRef={searchRef}
-                  searchContextRef={searchContextRef}
-                  {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onFocus={focusTask} />, onNewTask: newTask, draftKeep } : {})}
-                  title={screenTitle}
-                  scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
-                  engineProblem={status ? engineProblem(status) : null}
-                  notesRequest={notesRequest}
-                  pluginsRequest={pluginsRequest}
-                  onPluginPanels={setPluginPanels}
-                  onPage={setChatPage}
-                  onTaskLabel={setChatTaskLabel}
-                  onFixEngine={() => setSettings("engine")}
-                  onSidekickSettings={() => setSettings("sidekick")}
-                  onTurnOk={checkEngine}
-                />
-              </div>
-            </div>
-          </div>
-        ) : screen === "setup" ? (
+        {screen === "setup" ? (
           <SetupFlow
             key={`${setupAt.step ?? ""}:${setupAt.only ? "only" : ""}:${setupAt.newProfile ? "new" : ""}`}
             client={client}
@@ -563,23 +513,123 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             stateBlocks={stateBlocks}
           />
         ) : (
-          <Home
-            state={state}
-            client={client}
-            onChange={setState}
-            status={status}
-            checkFailed={checkFailed}
-            limits={limits}
-            steps={steps}
-            onStart={() => setScreen("work")}
-            onSetup={(step) => openSetup(step ? { step } : {})}
-            onSettings={() => setSettings("general")}
-            onEngine={() => setSettings("engine")}
-            move={move}
-            onAddProfile={addProfile}
-            language={client.language ? language : undefined}
-            onOpen={searchIntent}
-          />
+          // Home and the work screen are the layout's (minimal-core spec §5.2); the work screen is its task block.
+          <AppProvider value={app}>
+            <LayoutView
+              layout={layout}
+              shown={screen === "work" && configured ? "work" : "home"}
+              task={() => (
+              <div className="hh-shell">
+                <TopBar
+                  {...(pageTitle
+                    ? {
+                        // A page's Volver (DESIGN.md "Secondary pages"): back to the chat, named by its task.
+                        leading: (
+                          <Rx.Button variant="ghost" color="gray" size="1" aria-label={i18n.t("settings.backTo", { place: backLabel })} onClick={pageBack}>
+                            <Icon name="back" size={18} />
+                            {backLabel}
+                          </Rx.Button>
+                        ),
+                      }
+                    : { crumbs: [{ label: state.harness.name, onClick: () => setScreen("home") }, { label: screenTitle }] })}
+                  mock={state.mock}
+                  trailing={
+                    <>
+                      {attention?.show && (
+                        <AttentionInbox
+                          client={client}
+                          view={attention}
+                          onOpenPanel={(plugin, panel, focus) => {
+                            // The panel is the chat's: a page gives way to it.
+                            setView({ kind: "chat" });
+                            shellRef.current?.openPanel(plugin, panel, focus);
+                          }}
+                          onPrepared={() => setView({ kind: "chat" })}
+                        />
+                      )}
+                      {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
+                      <SettingsGear onClick={() => setSettings("general")} />
+                    </>
+                  }
+                />
+                <Rail entries={entries} current={railCurrent} onPick={pick} counts={{ inbox: { count: waiting, label: i18n.t("inbox.railCount", { count: waiting }) } }} />
+                {state.parallel?.inbox && <InboxAnnouncer count={waiting} />}
+                <div className="hh-shell-main">
+                  {view.kind === "inbox" && (
+                    <InboxPage
+                      client={client}
+                      state={state}
+                      tasks={tasksState}
+                      {...(view.request !== undefined ? { focusKey: view.request } : {})}
+                      {...(state.parallel
+                        ? {
+                            onNewTask: () => {
+                              client.tasks.focus(null).then(() => {
+                                toStart();
+                                toChat();
+                              }, () => undefined);
+                            },
+                          }
+                        : {})}
+                      onOpened={toChat}
+                      onBack={toChat}
+                      onStartAction={startAction}
+                      onRefill={(text) => {
+                        shellRef.current?.refill(text);
+                        // The text is back in the box: the chat shows it.
+                        toChat();
+                      }}
+                    />
+                  )}
+                  {view.kind === "jobs" && (
+                    <JobsPage
+                      client={client}
+                      state={state}
+                      {...(view.request !== undefined ? { focusKey: view.request } : {})}
+                      onChange={setState}
+                      onBack={toChat}
+                      onStartAction={startAction}
+                    />
+                  )}
+                  {/* Under a page the chat stays mounted (its draft, panels and start path): only hidden. */}
+                  <div className="hh-shell-chat" hidden={view.kind !== "chat"}>
+                    <ChatView
+                      key={state.parallel ? `${chatKey}:${epoch}` : chatKey}
+                      client={client}
+                      state={state}
+                      components={blocks}
+                      stateBlocks={stateBlocks}
+                      renderSide={renderSide}
+                      startView={startView}
+                      openScope={openScope}
+                      materialPanel={materialPanel}
+                      shellRef={shellRef}
+                      onBlocked={(b) => {
+                        chatBlocked.current.now = b;
+                        chatBlocked.current.listener?.(b);
+                      }}
+                      {...(state.jobs ? { startRef: chatStart } : {})}
+                      searchRef={searchRef}
+                      searchContextRef={searchContextRef}
+                      {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onFocus={focusTask} />, onNewTask: newTask, draftKeep } : {})}
+                      title={screenTitle}
+                      scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
+                      engineProblem={status ? engineProblem(status) : null}
+                      notesRequest={notesRequest}
+                      pluginsRequest={pluginsRequest}
+                      onPluginPanels={setPluginPanels}
+                      onPage={setChatPage}
+                      onTaskLabel={setChatTaskLabel}
+                      onFixEngine={() => setSettings("engine")}
+                      onSidekickSettings={() => setSettings("sidekick")}
+                      onTurnOk={checkEngine}
+                    />
+                  </div>
+                </div>
+              </div>
+              )}
+            />
+          </AppProvider>
         )}
         {/* Hatches §4.3: only a harness with a backend gets the card and its listener (D0). */}
         {state.hatches?.backend && <BackendCard client={client} />}

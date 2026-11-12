@@ -8,6 +8,8 @@ export { ScopeSettings } from "./hatches/ScopeSettings";
 export { type UseBackend, useBackend } from "./hatches/useBackend";
 export { PhaseStepper } from "./PhaseStepper";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
+// Mods' blocks the layout places (minimal-core spec §5.2); `app` is typed for core mods only until step 0b2.
+export { type BlockComponent, type BlockProps as ModBlockProps, type BlockRegistry, ModBlocksProvider, blockFor, createBlockRegistry, registerBlock } from "./layout/registry";
 export { LanguagePicker } from "./LanguagePicker";
 export { TranslateNotice } from "./TranslateNotice";
 export { LanguageChooser } from "./LanguageChooser";

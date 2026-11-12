@@ -81,6 +81,22 @@ describe("ModHost", () => {
     const { h } = await host({ echo: {} });
     expect(h.view()[0]).toMatchObject({ id: "echo", name: "Echo", version: "0.1.0", origin: "harness", on: true, registers: { hooks: ["beforeSend", "turnEnd"], ipc: ["hello"] } });
   });
+  it("turns on a mod without main, importing nothing, with no hooks", async () => {
+    const h = new ModHost({ config: { load: async () => undefined, saveFailed: vi.fn(async () => {}) }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), beforeSendMs: 50, hookMs: 50 });
+    // The folder has no code at all: an import would fail.
+    await h.start([{ json: { id: "plain", name: "Plain", version: "0.1.0", apiVersion: 1, requires: [], history: false }, dir: path.join(fx, "nowhere"), origin: "harness", shipped: "harness", config: { a: 1 } }]);
+    expect(h.view()[0]).toMatchObject({ id: "plain", on: true, registers: { hooks: [], ipc: [] } });
+    expect(h.view()[0].problem).toBeUndefined();
+  });
+  it("starts a core mod whose core default is on", async () => {
+    const h = new ModHost({ config: { load: async () => undefined, saveFailed: vi.fn(async () => {}) }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), coreOn: (id) => id === "plain" });
+    const json = (id: string) => ({ id, name: id, version: "0.1.0", apiVersion: 1 as const, requires: [], history: false });
+    await h.start([
+      { json: json("plain"), dir: "", origin: "core", shipped: "core", config: undefined },
+      { json: json("other"), dir: "", origin: "core", shipped: "core", config: undefined },
+    ]);
+    expect(h.view().map((m) => [m.id, m.on])).toEqual([["plain", true], ["other", false]]);
+  });
   it("doesn't start a mod whose required mod is missing or off", async () => {
     const h = new ModHost({ config: { load: async () => undefined, saveFailed: vi.fn(async () => {}) }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), beforeSendMs: 50, hookMs: 50 });
     await h.start([{ json: { id: "needy", name: "Needy", version: "0.1.0", apiVersion: 1, requires: ["ghost"], history: false, main: "main.js" }, dir: path.join(fx, "echo"), origin: "harness", shipped: "harness", config: undefined }]);

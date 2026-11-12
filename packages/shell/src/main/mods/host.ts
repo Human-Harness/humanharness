@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import type { Disposer, MainCtx, ModDefinition, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
 import type { ModRow, ModsConfig } from "@humanharness/protocol";
 import { isModOn } from "./config";
+import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
 import type { ResolvedMod } from "./resolve";
 
@@ -25,6 +26,8 @@ export interface HostDeps {
   changed: () => void;
   beforeSendMs?: number;
   hookMs?: number;
+  /** Whether a core mod is on by default; `CORE_MODS` when absent. */
+  coreOn?: (id: string) => boolean;
 }
 
 interface Running {
@@ -51,7 +54,7 @@ export class ModHost {
       this.mods.set(mod.json.id, { mod, on: false, strikes: 0, hooks: new Map(), channels: new Map(), disposers: [], ...(failed ? { failed } : {}) });
     }
     // Required mods first: a simple pass in list order, retried while something new started.
-    const want = new Set(list.filter((m) => isModOn(m.json.id, m.origin, c)).map((m) => m.json.id));
+    const want = new Set(list.filter((m) => isModOn(m.json.id, m.origin, c, m.shipped === "core" && (this.d.coreOn ?? coreModOn)(m.json.id))).map((m) => m.json.id));
     let progress = true;
     while (progress) {
       progress = false;
@@ -73,7 +76,15 @@ export class ModHost {
 
   private async load(r: Running): Promise<void> {
     const id = r.mod.json.id;
-    const imported = await guarded(async () => (await import(pathToFileURL(path.join(r.mod.dir, r.mod.json.main)).href)) as { default?: ModDefinition<unknown> }, this.hookMs);
+    const main = r.mod.json.main;
+    // No main part: nothing to import or run; the mod is on with its raw config and no hooks.
+    if (main === undefined) {
+      delete r.problem;
+      r.strikes = 0;
+      r.on = true;
+      return;
+    }
+    const imported = await guarded(async () => (await import(pathToFileURL(path.join(r.mod.dir, main)).href)) as { default?: ModDefinition<unknown> }, this.hookMs);
     if (!imported.ok) return void (r.problem = imported.reason);
     const def = imported.value.default;
     if (!def || def.id !== id) return void (r.problem = `main does not export the mod "${id}"`);

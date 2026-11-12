@@ -1,3 +1,5 @@
+> Superseded by [mods](mods.md) (minimal-core spec, 2026-11-05). The plugin runtime is removed in step 6.
+
 # Plugins
 
 Spec: `docs/superpowers/specs/2026-10-27-plugins-design.md` ("§" below). Plan: `docs/superpowers/plans/2026-10-27-plugins-part1.md` (the runtime, "Decision N" and "B1"–"B13" below); part 2 (`2026-10-27-plugins-part2.md`) adds panels, chips on screen, actions and the prepared task, the `humanharness plugin` CLI, the `/new-plugin` guide and the demo plugin. Spikes: `docs/spikes/2026-10-27-plugins.md` (S1–S9) and `docs/spikes/2026-10-27-plugins-panels.md` (P-S1–P-S10). Part 2's threat model rows are "P1"–"P13".

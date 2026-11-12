@@ -27,7 +27,9 @@
     "@humanharness/search": "workspace:*",
     "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
-    "pdfjs-dist": "^6.4.299"
+    "esbuild": "^0.28.2",
+    "pdfjs-dist": "^6.4.299",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@humanharness/fake-agent": "workspace:*",

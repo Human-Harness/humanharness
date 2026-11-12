@@ -5,6 +5,7 @@ import App from "@harness/ui";
 import * as hhUi from "@humanharness/ui";
 import { type BlockComponent, HhTheme, ModBlocksProvider, createBlockRegistry, startModLoader } from "@humanharness/ui";
 import * as modSdk from "@humanharness/mod-sdk";
+import * as zod from "zod";
 import home from "@humanharness/mod-home";
 // DM Sans for all text, DM Mono for code and keys, bundled with the app (no network fonts: the renderer's CSP allows 'self' only).
 import "@fontsource/dm-sans/400.css";
@@ -20,6 +21,7 @@ import "@humanharness/ui/styles.css";
   "react/jsx-runtime": jsxRuntime,
   "@humanharness/ui": hhUi,
   "@humanharness/mod-sdk": modSdk,
+  zod,
 };
 
 // The core mods' blocks (minimal-core step 0b1), registered before the first render in the registry the layout gets

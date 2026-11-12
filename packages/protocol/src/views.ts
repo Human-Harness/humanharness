@@ -112,7 +112,7 @@ export interface ModRow {
   /** What it registered while on (spec §6: the person sees it). */
   registers: { hooks: string[]; ipc: string[] };
   /** It has a `ui` part: the window imports it from `hh-mod://<id>/ui.js` while it is on (minimal-core 0b2). */
-  ui?: boolean;
+  ui: boolean;
 }
 /** A mod in the home folder was reloaded after an edit; `version` counts its reloads (minimal-core 0b2). */
 export interface ModReloaded {

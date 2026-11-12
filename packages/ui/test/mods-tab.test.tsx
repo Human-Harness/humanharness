@@ -11,8 +11,8 @@ afterEach(cleanup);
 
 const view: ModsView = {
   mods: [
-    { id: "echo", name: "Echo", version: "0.1.0", origin: "harness", on: true, registers: { hooks: ["beforeSend"], ipc: [] } },
-    { id: "mine", name: "Mine", version: "0.1.0", origin: "local", on: false, failed: "boom", registers: { hooks: [], ipc: [] } },
+    { id: "echo", name: "Echo", version: "0.1.0", origin: "harness", on: true, ui: false, registers: { hooks: ["beforeSend"], ipc: [] } },
+    { id: "mine", name: "Mine", version: "0.1.0", origin: "local", on: false, ui: false, failed: "boom", registers: { hooks: [], ipc: [] } },
   ],
   problems: [],
 };

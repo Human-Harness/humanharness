@@ -346,6 +346,7 @@ export class ModHost {
       version: r.mod.json.version,
       origin: r.mod.shipped,
       on: r.on,
+      ui: r.mod.json.ui !== undefined,
       ...(r.failed ? { failed: r.failed } : {}),
       ...(r.problem ? { problem: r.problem } : {}),
       registers: { hooks: [...r.hooks].filter(([, s]) => s.size > 0).map(([n]) => n), ipc: [...r.channels.keys()] },

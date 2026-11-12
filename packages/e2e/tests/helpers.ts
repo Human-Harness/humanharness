@@ -61,6 +61,23 @@ export function makeSandbox(name: string, config: Record<string, unknown> = {}):
   return s;
 }
 
+/**
+ * The app's home folder for harness `harnessId` in the sandbox (`<userData>/<harness>/app`, minimal-core 0b2): a test
+ * writes a user mod or layout here before or after launch.
+ */
+export function appHomeOf(s: Sandbox, harnessId: string): string {
+  return path.join(s.userData, harnessId, "app");
+}
+
+/** Copies the folder `from` to `<app home>/<rel>`, replacing what was there. */
+export function copyIntoAppHome(s: Sandbox, harnessId: string, from: string, rel: string): string {
+  const to = path.join(appHomeOf(s, harnessId), rel);
+  fs.rmSync(to, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.cpSync(from, to, { recursive: true });
+  return to;
+}
+
 /** A Codex or OpenCode that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
 const idleCodex: AcpScript = { turns: [] };
 

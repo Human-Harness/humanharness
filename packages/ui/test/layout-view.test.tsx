@@ -12,7 +12,7 @@ import { renderIn } from "./render";
 afterEach(cleanup);
 
 const view = (on: boolean): ModsView => ({
-  mods: [{ id: "notes", name: "Notes", version: "0.1.0", origin: "core", on, registers: { hooks: [], ipc: [] } }],
+  mods: [{ id: "notes", name: "Notes", version: "0.1.0", origin: "core", on, ui: false, registers: { hooks: [], ipc: [] } }],
   problems: [],
 });
 

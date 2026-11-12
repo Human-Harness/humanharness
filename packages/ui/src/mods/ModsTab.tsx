@@ -89,6 +89,14 @@ export function ModsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub
     act().catch(() => setRowErrors((e) => ({ ...e, [id]: error })));
   };
 
+  /** A home-folder mod not yet reviewed goes through the same warning as a folder added by hand. */
+  const turnOnRow = async (id: string) => {
+    const r = await mods.turnOn(id);
+    if (!r) return;
+    setReviewError(null);
+    setScreen({ kind: "review", review: r.review, token: r.token });
+  };
+
   const turnOn = async (s: Extract<Screen, { kind: "review" }>) => {
     setBusy(true);
     setReviewError(null);
@@ -143,7 +151,7 @@ export function ModsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub
   );
 
   const rows = [
-    ...view.mods.map((m) => <ModItem key={m.id} mod={m} error={Object.hasOwn(rowErrors, m.id) ? rowErrors[m.id] : undefined} onSet={(on) => rowAction(m.id, () => mods.set(m.id, on))} onRemove={() => rowAction(m.id, () => mods.remove(m.id))} />),
+    ...view.mods.map((m) => <ModItem key={m.id} mod={m} error={Object.hasOwn(rowErrors, m.id) ? rowErrors[m.id] : undefined} onSet={(on) => rowAction(m.id, () => (on ? turnOnRow(m.id) : mods.set(m.id, on)))} onRemove={() => rowAction(m.id, () => mods.remove(m.id))} />),
     // A folder that couldn't be read as a mod: its id and why, nothing to switch.
     ...view.problems.map((p) => (
       <Row

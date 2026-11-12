@@ -10,7 +10,7 @@ import type { Event, ToolCallView } from "@humanharness/engines";
 import type { DataQuery, DataQueryResult } from "@humanharness/workspace";
 import type { AnswerPick, ReviewSummary } from "@humanharness/harness-sdk/review";
 import type { GeneratedStrings } from "@humanharness/i18n";
-import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, ContextGetResult, ContextPick, ContextResult, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, GoBackResult, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, SidekickApproveCheck, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettingsPatch, SidekickState, SidekickView, TaskContext, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UndoRefusal, UsageSummary } from "./views";
+import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, ContextGetResult, ContextPick, ContextResult, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, GoBackResult, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, SidekickApproveCheck, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettingsPatch, SidekickState, SidekickView, TaskContext, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UndoRefusal, UsageSummary } from "./views";
 
 /** `client.jobs`: a harness's background jobs (spec §9.1). Only with `state.jobs`: otherwise main refuses every call (D0). */
 export interface JobsClient {
@@ -399,10 +399,13 @@ export interface HarnessClient {
   mods: {
     view(): Promise<ModsView>;
     set(id: string, on: boolean): Promise<ModsView>;
-    reviewLocal(): Promise<{ review: ModReview; token: string } | { problem: string } | null>;
+    /** With an id: a mod already in the app's home folder (0b2), reviewed with no dialog; addLocal(token) turns it on. */
+    reviewLocal(id?: string): Promise<{ review: ModReview; token: string } | { problem: string } | null>;
     addLocal(token: string): Promise<ModsView>;
     removeLocal(id: string): Promise<ModsView>;
     onChanged(fn: (v: ModsView) => void): () => void;
+    /** A home-folder mod was rebuilt after an edit: the window imports its ui again (minimal-core 0b2). */
+    onReloaded(fn: (e: ModReloaded) => void): () => void;
   };
   /**
    * Plugins (plugins spec §7). Only with `state.plugins`: a main without them registers none of these channels (D0).

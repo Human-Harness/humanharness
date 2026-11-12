@@ -85,8 +85,13 @@ describe("ModHost", () => {
     const h = new ModHost({ config: { load: async () => undefined, saveFailed: vi.fn(async () => {}) }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), beforeSendMs: 50, hookMs: 50 });
     // The folder has no code at all: an import would fail.
     await h.start([{ json: { id: "plain", name: "Plain", version: "0.1.0", apiVersion: 1, requires: [], history: false }, dir: path.join(fx, "nowhere"), origin: "harness", shipped: "harness", config: { a: 1 } }]);
-    expect(h.view()[0]).toMatchObject({ id: "plain", on: true, registers: { hooks: [], ipc: [] } });
+    expect(h.view()[0]).toMatchObject({ id: "plain", on: true, ui: false, registers: { hooks: [], ipc: [] } });
     expect(h.view()[0].problem).toBeUndefined();
+  });
+  it("says which mods have a ui part (0b2: the window imports it)", async () => {
+    const h = new ModHost({ config: { load: async () => undefined, saveFailed: vi.fn(async () => {}) }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), beforeSendMs: 50, hookMs: 50 });
+    await h.start([{ json: { id: "shown", name: "Shown", version: "0.1.0", apiVersion: 1, requires: [], history: false, ui: "ui.js" }, dir: path.join(fx, "nowhere"), origin: "harness", shipped: "harness", config: undefined }]);
+    expect(h.view()[0]).toMatchObject({ id: "shown", ui: true });
   });
   it("starts a core mod whose core default is on", async () => {
     const h = new ModHost({ config: { load: async () => undefined, saveFailed: vi.fn(async () => {}) }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), coreOn: (id) => id === "plain" });

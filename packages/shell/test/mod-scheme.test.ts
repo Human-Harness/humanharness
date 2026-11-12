@@ -33,8 +33,8 @@ afterEach(() => fs.rm(tmp, { recursive: true, force: true }));
 const get = (url: string) => serveModUi(url, { mod: (id) => mods[id], buildDir });
 
 describe("hh-mod://", () => {
-  it("is standard and secure, without bypassCSP", () => {
-    expect(MOD_SCHEME).toEqual({ scheme: "hh-mod", privileges: { standard: true, secure: true } });
+  it("is standard, secure and CORS-enabled (the window's import() is cross-origin), without bypassCSP", () => {
+    expect(MOD_SCHEME).toEqual({ scheme: "hh-mod", privileges: { standard: true, secure: true, corsEnabled: true } });
   });
 
   it("serves an on user mod's built ui, as JavaScript, not cached", async () => {
@@ -42,7 +42,15 @@ describe("hh-mod://", () => {
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type")).toBe("text/javascript");
     expect(r.headers.get("cache-control")).toBe("no-store");
+    expect(r.headers.get("access-control-allow-origin")).toBe("*");
     expect(await r.text()).toContain("mine built");
+  });
+
+  it("takes a ?v= version (the window's cache buster) and nothing else in the query", async () => {
+    expect((await get("hh-mod://mine/ui.js?v=0.1.0-3")).status).toBe(200);
+    for (const url of ["hh-mod://mine/ui.js?x=1", "hh-mod://mine/ui.js?v=1&x=2", "hh-mod://mine/ui.js?v=1&v=2", "hh-mod://mine/ui.js?v="]) {
+      expect((await get(url)).status, url).toBe(404);
+    }
   });
 
   it("serves an on local (non-user) mod's ui from its folder", async () => {

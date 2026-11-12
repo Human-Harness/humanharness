@@ -29,6 +29,8 @@ export { Markdown, type MarkdownProps } from "./markdown";
 export { DocumentContext, type DocumentHost } from "./documents-context";
 // What the core mods' blocks build with (minimal-core step 0b1): the app they get, and the core's pieces Home uses.
 export { type AppValue, useApp } from "./layout/app";
+// The window runs the ui part of each on, non-core mod (minimal-core 0b2).
+export { type ModLoader, type ModLoaderOptions, startModLoader } from "./layout/mod-loader";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
 export { AppFooter, HHLogo, SettingsGear, type TagTone, TopBar } from "./chrome";
 export { Hidden, Icon, Rx } from "./guide";

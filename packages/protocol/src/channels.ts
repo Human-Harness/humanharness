@@ -18,6 +18,7 @@ import type {
   ModeChoice,
   ModeResult,
   LayoutView,
+  ModReloaded,
   ModsView,
   PluginDataChange,
   PluginSurfaceView,
@@ -261,6 +262,7 @@ export interface Push {
   "hh:settings": SettingsState;
   "hh:sidekick": SidekickState;
   "hh:modsChanged": ModsView;
+  "hh:modReloaded": ModReloaded;
   "hh:plugins": PluginsView;
   "hh:pluginSurface": PluginSurfaceView;
   "hh:pluginData": PluginDataChange;

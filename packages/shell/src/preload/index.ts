@@ -198,10 +198,11 @@ const client: HarnessClient = {
   mods: {
     view: () => invoke("hh:mods"),
     set: (id, on) => invoke("hh:modSet", id, on),
-    reviewLocal: () => invoke("hh:modReviewLocal"),
+    reviewLocal: (id) => (id === undefined ? invoke("hh:modReviewLocal") : invoke("hh:modReviewLocal", id)),
     addLocal: (token) => invoke("hh:modAddLocal", token),
     removeLocal: (id) => invoke("hh:modRemoveLocal", id),
     onChanged: (fn) => subscribe("hh:modsChanged", fn),
+    onReloaded: (fn) => subscribe("hh:modReloaded", fn),
   },
   plugins: {
     get: () => invoke("hh:pluginsGet"),

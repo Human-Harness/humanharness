@@ -1284,6 +1284,7 @@ export class FakeClient implements HarnessClient {
     addLocal: async (_token: string): Promise<ModsView> => ({ mods: [], problems: [] }),
     removeLocal: async (_id: string): Promise<ModsView> => ({ mods: [], problems: [] }),
     onChanged: (_fn: (v: ModsView) => void) => () => {},
+    onReloaded: (_fn: (e: { id: string; version: number }) => void) => () => {},
   };
   /** What setupSteps.get answers; submit, complete and skip change it. */
   setupState: SetupStepsState = { steps: {}, blocking: [] };

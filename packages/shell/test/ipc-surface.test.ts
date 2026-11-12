@@ -119,7 +119,15 @@ describe("the Settings › Mods channels", () => {
   it("the renderer adds a local mod with a token only: the preload sends no path", async () => {
     const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
     expect(preload).toContain('addLocal: (token) => invoke("hh:modAddLocal", token)');
-    expect(preload).toContain('reviewLocal: () => invoke("hh:modReviewLocal")');
+    // With an id (0b2): a mod already in the home folder; main checks the id against its own folder, never a path.
+    expect(preload).toContain('reviewLocal: (id) => (id === undefined ? invoke("hh:modReviewLocal") : invoke("hh:modReviewLocal", id))');
+  });
+  it("hh:modReloaded is a channel the preload only listens on (minimal-core 0b2)", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    expect(channels).toMatch(/^\s*"hh:modReloaded": ModReloaded;/m);
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    expect(preload).toContain('onReloaded: (fn) => subscribe("hh:modReloaded", fn)');
+    expect(preload).not.toMatch(/invoke\("hh:modReloaded"/);
   });
 });
 

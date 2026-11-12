@@ -66,6 +66,31 @@ describe("Settings › Mods", () => {
     expect(await screen.findByRole("switch", { name: "Echo" })).toBeTruthy();
   });
 
+  it("a home-folder mod main refuses to turn on shows the warning first, then turns on through its token", async () => {
+    const set = vi.fn(async (): Promise<ModsView> => {
+      throw new Error("This mod needs your review first");
+    });
+    const reviewLocal = vi.fn(async () => ({ review: { id: "mine", name: "Mine", version: "0.1.0", folder: "/home/app/mods/mine" }, token: "b".repeat(32) }));
+    const addLocal = vi.fn(async () => view);
+    await renderIn("en", <ModsTab client={client({ set, reviewLocal, addLocal })} />, { theme: true });
+    fireEvent.click(await screen.findByRole("switch", { name: "Mine" }));
+    expect(await screen.findByText(/full access to your folder/)).toBeTruthy();
+    expect(reviewLocal).toHaveBeenCalledWith("mine");
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(addLocal).toHaveBeenCalledWith("b".repeat(32)));
+  });
+
+  it("a refused switch with no review stays an error on the row", async () => {
+    const set = vi.fn(async (): Promise<ModsView> => {
+      throw new Error("nope");
+    });
+    const reviewLocal = vi.fn(async () => ({ problem: "No mod in the app's home folder has the id" }));
+    await renderIn("en", <ModsTab client={client({ set, reviewLocal })} />, { theme: true });
+    fireEvent.click(await screen.findByRole("switch", { name: "Mine" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByText(/full access to your folder/)).toBeNull();
+  });
+
   it("Cancel goes back to the list without adding", async () => {
     const addLocal = vi.fn(async () => view);
     const reviewLocal = vi.fn(async () => ({ review: { id: "x", name: "X", version: "1.0.0", folder: "/m/x" }, token: "a".repeat(32) }));

@@ -44,8 +44,12 @@ async function wanted(name: LayerName, layer: Layer): Promise<Map<string, string
   return out;
 }
 
-/** The edited item a file belongs to: a mod folder or a layout file, with where it moves in the user layer. */
-function itemOf(rel: string): { from: string; to: (n: number) => string } | null {
+/**
+ * The edited item a file belongs to: a mod folder or a layout file, with where it moves in the user layer. Any other
+ * file (a stray: `core/notes.md`, `harness/layouts/sub/x.json`) is its own item and moves to the same path without
+ * the layer, `-edited` before its extension.
+ */
+function itemOf(rel: string): { from: string; to: (n: number) => string; stray?: true } {
   const [, kind, name, ...rest] = rel.split("/");
   if (kind === "mods" && name && rest.length > 0) {
     const from = rel.split("/").slice(0, 3).join("/");
@@ -55,7 +59,10 @@ function itemOf(rel: string): { from: string; to: (n: number) => string } | null
     const base = name.slice(0, -".json".length);
     return { from: rel, to: (n) => `layouts/${base}-edited${n > 1 ? `-${n}` : ""}.json` };
   }
-  return null;
+  const under = rel.split("/").slice(1).join("/");
+  const ext = path.posix.extname(under);
+  const stem = under.slice(0, under.length - ext.length);
+  return { from: rel, to: (n) => `${stem}-edited${n > 1 ? `-${n}` : ""}${ext}`, stray: true };
 }
 
 /** Writes a file through a temp file and a rename, so a reader never sees half of it. */
@@ -107,8 +114,7 @@ export async function writeLayers(o: { home: string; core: Layer; harness: Layer
     }
 
     // 1. The person's edits: what's on disk against what the app wrote.
-    const edited = new Map<string, (n: number) => string>();
-    const strays: string[] = [];
+    const edited = new Map<string, { to: (n: number) => string; stray?: true }>();
     const onDisk = new Map<string, string>();
     for (const layer of LAYERS) {
       for (const rel of await filesUnder(path.join(o.home, layer))) {
@@ -118,26 +124,20 @@ export async function writeLayers(o: { home: string; core: Layer; harness: Layer
         // Same as last written, or already what this start writes (a start cut short before the record): not an edit.
         if (last[key] === hash || want.get(key)?.hash === hash) continue;
         const item = itemOf(key);
-        if (item) edited.set(item.from, item.to);
-        else strays.push(key);
+        edited.set(item.from, item);
       }
     }
 
     // 2. Move each edited item aside, to a free name in the user layer.
-    const moved: [string, string][] = [];
-    for (const [from, to] of edited) {
+    const moved: { from: string; dest: string; stray?: true }[] = [];
+    for (const [from, { to, stray }] of edited) {
       let n = 1;
       while (await exists(path.join(o.home, to(n)))) n += 1;
       const dest = to(n);
       await fs.mkdir(path.dirname(path.join(o.home, dest)), { recursive: true });
       await fs.rename(path.join(o.home, from), path.join(o.home, dest));
-      moved.push([from, dest]);
+      moved.push({ from, dest, ...(stray ? { stray } : {}) });
       for (const key of [...onDisk.keys()]) if (key === from || key.startsWith(`${from}/`)) onDisk.delete(key);
-    }
-    for (const key of strays) {
-      console.error(`Removed ${key}: only mods/ and layouts/ belong in the ${key.split("/")[0]} layer`);
-      await fs.rm(path.join(o.home, key), { force: true });
-      onDisk.delete(key);
     }
 
     // 3. Rewrite: what differs or is missing, and drop what the layers no longer have.
@@ -149,7 +149,9 @@ export async function writeLayers(o: { home: string; core: Layer; harness: Layer
     for (const key of onDisk.keys()) if (!want.has(key)) await fs.rm(path.join(o.home, key), { force: true });
     for (const layer of LAYERS) await pruneEmpty(path.join(o.home, layer));
 
-    for (const [from, to] of moved) o.notice(`Your change to ${from} was moved to ${to}; the original is back.`);
+    for (const m of moved) {
+      o.notice(m.stray ? `Your file ${m.from} was moved to ${m.dest}; the app rewrites ${m.from.split("/")[0]}/ on every start.` : `Your change to ${m.from} was moved to ${m.dest}; the original is back.`);
+    }
 
     // 4. The record last.
     const text = `${JSON.stringify(Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b))), null, 2)}\n`;

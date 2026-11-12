@@ -129,6 +129,23 @@ describe("writeLayers", () => {
     expect(notice).toHaveBeenCalledTimes(1);
   });
 
+  it("moves a stray file outside mods/<id>/ and layouts/<name>.json to the user layer, with a notice each", async () => {
+    await writeLayers({ home, core, harness, notice: vi.fn() });
+    await put(path.join(home, "core", "notes.md"), "a");
+    await put(path.join(home, "core", "mods", "notes.md"), "b");
+    await put(path.join(home, "harness", "layouts", "sub", "x.json"), "c");
+    await put(path.join(home, "notes-edited.md"), "taken");
+    const notice = vi.fn();
+    await writeLayers({ home, core, harness, notice });
+    expect(await read(path.join(home, "notes-edited.md"))).toBe("taken");
+    expect(await read(path.join(home, "notes-edited-2.md"))).toBe("a");
+    expect(await read(path.join(home, "mods", "notes-edited.md"))).toBe("b");
+    expect(await read(path.join(home, "layouts", "sub", "x-edited.json"))).toBe("c");
+    for (const gone of ["core/notes.md", "core/mods/notes.md", "harness/layouts/sub/x.json"]) expect(await exists(path.join(home, gone))).toBe(false);
+    expect(notice).toHaveBeenCalledTimes(3);
+    expect(notice).toHaveBeenCalledWith("Your file core/notes.md was moved to notes-edited-2.md; the app rewrites core/ on every start.");
+  });
+
   it("brings back a deleted file without a notice, and drops a mod the layer no longer has", async () => {
     await writeLayers({ home, core, harness, notice: vi.fn() });
     await fs.rm(path.join(home, "core", "mods", "home", "README.md"));

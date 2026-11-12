@@ -194,6 +194,7 @@ const client: HarnessClient = {
     setScope: (scope, sidekick, v) => invoke("hh:sidekickSetScope", scope, sidekick, v),
     onChange: (listener) => subscribe("hh:sidekick", listener),
   },
+  layout: () => invoke("hh:layout"),
   mods: {
     view: () => invoke("hh:mods"),
     set: (id, on) => invoke("hh:modSet", id, on),

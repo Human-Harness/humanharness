@@ -1,6 +1,6 @@
 // The UI/core contract lives in @humanharness/protocol (replaceable parts §5). The views import it from here,
 // together with the helpers only views use.
-import type { AnswerPart, ChatEntry, EngineStatus } from "@humanharness/protocol";
+import type { AnswerPart, ChatEntry, EngineStatus, HarnessClient, LayoutView } from "@humanharness/protocol";
 
 export * from "@humanharness/protocol";
 
@@ -20,4 +20,26 @@ export function engineProblem(s: EngineStatus): EngineProblem | null {
   if (s.loggedIn === false) return "logged-out";
   if (!s.verified) return "untested";
   return null;
+}
+
+/** A layout file's tree (minimal-core spec §5.2). */
+export type Layout = LayoutView["layout"];
+
+/** The core's own layout, as the shell ships it: Home, and the work screen holding the task. */
+export const CORE_LAYOUT: Layout = {
+  type: "stack",
+  children: [
+    { type: "block", id: "home", content: { mod: "home", block: "home" } },
+    { type: "block", id: "work", content: { core: "task" } },
+  ],
+};
+
+/** The layout the screen shows: main's, or the core's when main has none to give or the call fails. */
+export async function loadLayout(client: Pick<HarnessClient, "layout">): Promise<Layout> {
+  if (!client.layout) return CORE_LAYOUT;
+  try {
+    return (await client.layout()).layout;
+  } catch {
+    return CORE_LAYOUT;
+  }
 }

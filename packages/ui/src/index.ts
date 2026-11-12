@@ -8,6 +8,8 @@ export { ScopeSettings } from "./hatches/ScopeSettings";
 export { type UseBackend, useBackend } from "./hatches/useBackend";
 export { PhaseStepper } from "./PhaseStepper";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
+// Mods' blocks the layout places (minimal-core spec §5.2); `app` is typed for core mods only until step 0b2.
+export { type BlockComponent, type BlockProps as ModBlockProps, type BlockRegistry, ModBlocksProvider, blockFor, createBlockRegistry, registerBlock } from "./layout/registry";
 export { LanguagePicker } from "./LanguagePicker";
 export { TranslateNotice } from "./TranslateNotice";
 export { LanguageChooser } from "./LanguageChooser";
@@ -25,3 +27,13 @@ export type { StartViewCopy } from "./StartView";
 export type { SendFn } from "./ChatView";
 export { Markdown, type MarkdownProps } from "./markdown";
 export { DocumentContext, type DocumentHost } from "./documents-context";
+// What the core mods' blocks build with (minimal-core step 0b1): the app they get, and the core's pieces Home uses.
+export { type AppValue, useApp } from "./layout/app";
+export { BackupNotice, type FolderMove } from "./BackupNotice";
+export { AppFooter, HHLogo, SettingsGear, type TagTone, TopBar } from "./chrome";
+export { Hidden, Icon, Rx } from "./guide";
+export { ownName, shownLanguage, systemLanguage } from "./language";
+export { ProfileSwitcher } from "./ProfileSwitcher";
+export { useCurrentWindows } from "./UsageMeter";
+export { useTasks } from "./parallel/useTasks";
+export type { SearchIntent } from "./search/intent";

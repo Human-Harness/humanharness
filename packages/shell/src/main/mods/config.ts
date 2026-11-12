@@ -24,10 +24,13 @@ export function cleanModsConfig(v: unknown): ModsConfig | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** On when not failed, and then the person's switch, else on only if the harness declares it. */
-export function isModOn(id: string, origin: ModOrigin, c: ModsConfig | undefined): boolean {
+/**
+ * On when not failed, and then the person's switch, else on if the harness declares it or it is a core mod that is
+ * on by default (`coreOn`, from `CORE_MODS`).
+ */
+export function isModOn(id: string, origin: ModOrigin, c: ModsConfig | undefined, coreOn = false): boolean {
   if (c?.failed?.[id] !== undefined) return false;
   const own = c?.on?.[id];
   if (own !== undefined) return own;
-  return origin === "harness";
+  return origin === "harness" || (origin === "core" && coreOn);
 }

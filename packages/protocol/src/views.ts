@@ -1,4 +1,5 @@
 // The view models the core sends the window and the window sends back (replaceable parts §5): data only.
+import type { Layout } from "../../mod-sdk/src/layout";
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
 import type {
   ActionCost,
@@ -110,6 +111,14 @@ export interface ModRow {
   problem?: string;
   /** What it registered while on (spec §6: the person sees it). */
   registers: { hooks: string[]; ipc: string[] };
+}
+/** The layout the screen shows (minimal-core spec §5.2) and where it came from. */
+export interface LayoutView {
+  layout: Layout;
+  /** `harness`: the harness's `layouts/main.json`; `core`: the app's own (the harness's is missing or invalid). */
+  source: "harness" | "core";
+  /** Why the files passed over were refused, one line each; none when the first file was used. */
+  problems: string[];
 }
 export interface ModsView {
   mods: ModRow[];

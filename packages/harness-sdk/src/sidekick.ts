@@ -119,7 +119,7 @@ const presetSchema = z.strictObject({
 
 const tipText = z.string().min(1).max(4000);
 
-/** The manifest's `sidekick` block (spec §3). Absent: Sidekick is available, default off, no tips. */
+/** The manifest's `sidekick` block (spec §3). Absent: no Sidekick in this harness; `{}` gives it with the defaults. */
 export const sidekickSchema = z
   .strictObject({
     /** The state for a new profile. */

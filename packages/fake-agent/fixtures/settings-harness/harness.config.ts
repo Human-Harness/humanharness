@@ -16,6 +16,8 @@ export default defineHarness({
     review: { label: "Review", prompt: "./agent/tasks/review.md", cost: "light" },
   },
   path: ["practice", "review"],
+  // Its Settings test expects the Sidekick tab, and Sidekick shows only to a harness that declares it.
+  sidekick: {},
   settings: {
     tab: "How I learn",
     sections: [

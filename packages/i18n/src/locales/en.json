@@ -679,6 +679,13 @@
     "breadcrumb": "Breadcrumb",
     "loadError": "The app couldn't start. Close it and open it again."
   },
+  "layout": {
+    "off": "Mod {{name}} is off",
+    "turnOn": "Turn on",
+    "missing": "This part isn't available yet",
+    "failed": "This part of the app failed",
+    "turnOff": "Turn off"
+  },
   "setupFlow": {
     "notConfiguredTitle": "You haven't chosen an engine yet",
     "notConfiguredText": "First choose where your work is kept, then connect the AI. It takes two steps.",

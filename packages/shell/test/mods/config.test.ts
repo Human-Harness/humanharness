@@ -15,4 +15,10 @@ describe("mods config", () => {
     expect(isModOn("echo", "harness", { on: { echo: true }, failed: { echo: "x" } })).toBe(false);
     expect(isModOn("core-x", "core", undefined)).toBe(false);
   });
+  it("a core mod on by default is on unless the person turned it off or it failed", () => {
+    expect(isModOn("home", "core", undefined, true)).toBe(true);
+    expect(isModOn("home", "core", { on: { home: false } }, true)).toBe(false);
+    expect(isModOn("home", "core", { failed: { home: "threw" } }, true)).toBe(false);
+    expect(isModOn("home", "core", undefined, false)).toBe(false);
+  });
 });

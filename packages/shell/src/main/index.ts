@@ -258,10 +258,11 @@ import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { cleanModsConfig } from "./mods/config";
 import { CORE_MODS } from "./mods/core-mods";
+import { harnessLayer, writeLayers } from "./mods/home-folder";
 import { ModHost } from "./mods/host";
 import { registerModsIpc } from "./mods/mods-ipc";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
-import { type ServiceDeps, buildServices, modHistoryIgnores } from "./mods/services";
+import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
 import { needsHost, toTurnEnd } from "./mods/wiring";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
@@ -3990,6 +3991,13 @@ if (primary) {
     }
     // Before any task: a configured folder with no setup.json is recorded now, fresh or as set up before (D0: no `setup`, nothing).
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
+    // The home folder's read-only layers (minimal-core spec §5.1), every start, before the host resolves the mods.
+    await writeLayers({
+      home: appHome(userData, harness.id),
+      core: { mods: Object.fromEntries(Object.entries(CORE_MODS).map(([id, m]) => [id, m.dir])), layouts: {} },
+      harness: await harnessLayer(harness.root, Object.keys(harness.mods ?? {}).filter((id) => !Object.hasOwn(CORE_MODS, id))),
+      notice: showNotice,
+    });
     // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
     registerIpc();

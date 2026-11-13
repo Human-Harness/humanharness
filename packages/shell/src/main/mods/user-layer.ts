@@ -151,6 +151,48 @@ export function watchUserLayer(home: string, onChange: (dir: string) => void, ms
 }
 
 /**
+ * Watches the person's layouts (0b2): any file in `app/layouts/` and `app/settings.json` (the pick). `onChange` runs
+ * once the burst has been quiet for `ms`. A `.error` (the app's) or `.tmp` (an atomic write's) file is not a change.
+ */
+export function watchLayouts(home: string, onChange: () => void, ms = USER_DEBOUNCE_MS): { close(): void } {
+  const dir = path.join(home, "layouts");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const fire = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      onChange();
+    }, ms);
+  };
+  const watchers: FSWatcher[] = [];
+  const add = (folder: string, keep: (name: string) => boolean) => {
+    try {
+      const w = fsWatch(folder, (_event, name) => {
+        if (name && keep(name.toString())) fire();
+      });
+      w.on("error", (err) => console.error(`The watcher of ${folder} stopped`, err));
+      watchers.push(w);
+    } catch (err) {
+      console.error(`Could not watch ${folder}`, err);
+    }
+  };
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    console.error(`Could not make ${dir}`, err);
+  }
+  add(dir, (n) => !n.endsWith(".error") && !n.endsWith(".tmp") && n !== path.basename(dir));
+  // settings.json is written by a rename: its folder is watched, not the file (whose watch would end with it).
+  add(home, (n) => n === "settings.json");
+  return {
+    close: () => {
+      clearTimeout(timer);
+      for (const w of watchers) w.close();
+    },
+  };
+}
+
+/**
  * The user layer's mods as the host runs them: which folder holds which mod, the folders that can't be read, and
  * what a change in a folder does (a new mod listed off, an edit reloaded, a removed folder dropped).
  */

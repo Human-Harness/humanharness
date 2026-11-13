@@ -119,11 +119,19 @@ export interface ModReloaded {
   id: string;
   version: number;
 }
-/** The layout the screen shows (minimal-core spec §5.2) and where it came from. */
+/** Where a layout file lives in the app's home folder: `layouts/` (the person's), `harness/layouts/` or `core/layouts/`. */
+export type LayoutSource = "user" | "harness" | "core";
+/** The layout the screen shows (minimal-core spec §5.2, 0b2) and where it came from. */
 export interface LayoutView {
   layout: Layout;
-  /** `harness`: the harness's `layouts/main.json`; `core`: the app's own (the harness's is missing or invalid). */
-  source: "harness" | "core";
+  /** The layer of the file shown; `core` also when no file parsed and the built-in copy is shown. */
+  source: LayoutSource;
+  /** The shown layout's name (its file name without `.json`). */
+  name: string;
+  /** The name picked in the home folder's `settings.json`; absent when none is (the harness's `main` then). */
+  picked?: string;
+  /** Every layout in the three layers, the person's first, each layer by name. */
+  choices: { name: string; source: LayoutSource }[];
   /** Why the files passed over were refused, one line each; none when the first file was used. */
   problems: string[];
 }

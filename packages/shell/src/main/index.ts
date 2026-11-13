@@ -261,11 +261,11 @@ import { type ModsSettings, cleanModsConfig } from "./mods/config";
 import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
-import { shownLayout } from "./mods/layout";
+import { pickLayout, shownLayout } from "./mods/layout";
 import { ModHost } from "./mods/host";
 import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
 import { registerModsIpc } from "./mods/mods-ipc";
-import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchUserLayer, writeMainShims } from "./mods/user-layer";
+import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./mods/user-layer";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
 import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
 import { needsHost, toTurnEnd } from "./mods/wiring";
@@ -371,6 +371,8 @@ let modProblems: ResolveProblem[] = [];
 let userLayer: UserLayer | null = null;
 /** The watcher on the home folder's `mods/`; closed on quit. */
 let userLayerWatch: { close(): void } | null = null;
+/** The watch on the home folder's `layouts/` and `settings.json` (0b2). */
+let layoutsWatch: { close(): void } | null = null;
 /** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
 let resolvedMods: ResolvedMod[] = [];
 /**
@@ -1369,6 +1371,17 @@ async function startModHost(): Promise<void> {
 function watchUserMods(): void {
   if (userLayerWatch) return;
   userLayerWatch = watchUserLayer(appHome(app.getPath("userData"), harness.id), (dir) => void userLayer?.sync(dir));
+}
+
+/** Watches the home folder's layouts and pick once: a change sends the layout to show now (hh:layoutChanged, 0b2). */
+function watchUserLayouts(): void {
+  if (layoutsWatch) return;
+  const home = appHome(app.getPath("userData"), harness.id);
+  layoutsWatch = watchLayouts(home, () => {
+    void shownLayout(home)
+      .then((v) => sendToWindow("hh:layoutChanged", v))
+      .catch((err: unknown) => console.error("Could not read the layout again", err));
+  });
 }
 
 /** Stops the host and builds it again from config.json (a local mod added or removed). */
@@ -2953,6 +2966,11 @@ function registerIpc() {
   registerSidekickIpc(handle, () => sidekickCtl);
   // The layout the screen shows (minimal-core spec §5.2).
   handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
+  // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
+  handle("hh:layoutPick", (name: unknown) => {
+    if (name !== null && typeof name !== "string") throw new Error("Invalid layout name");
+    return pickLayout(appHome(app.getPath("userData"), harness.id), name);
+  });
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
   registerModsIpc(handle, {
     view: modsView,
@@ -4046,6 +4064,8 @@ if (primary) {
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
     // The home folder's mods/ (0b2): an edit syncs and reloads the user mod live.
     watchUserMods();
+    // The home folder's layouts/ and settings.json (0b2): an edit or a pick redraws the window.
+    watchUserLayouts();
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void interruptTasks().catch((err: unknown) => console.error("Could not settle the last task", err));
@@ -4094,6 +4114,8 @@ if (primary) {
     // The mods stop (their disposers run) before the app goes; the home folder is no longer watched.
     userLayerWatch?.close();
     userLayerWatch = null;
+    layoutsWatch?.close();
+    layoutsWatch = null;
     const modsStopped = modHost?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);

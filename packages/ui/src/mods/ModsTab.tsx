@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, ModReview, ModRow } from "../client";
+import type { HarnessClient, LayoutView, ModReview, ModRow } from "../client";
 import { Group, Icon, Row, Rx, SectionHead } from "../guide";
 import type { SettingsSub } from "../plugins/PluginsTab";
-import { useMods } from "./useMods";
+import { useLayoutPick, useMods } from "./useMods";
 
 /** A review's token is spent by Turn on, once. */
 type Screen = { kind: "list" } | { kind: "review"; review: ModReview; token: string };
@@ -175,6 +175,7 @@ export function ModsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub
   return (
     <div>
       {head}
+      <LayoutSection client={client} />
       {rows.length === 0 ? (
         <>
           <Rx.Text as="p" size="2" color="gray" mb="3">
@@ -183,11 +184,76 @@ export function ModsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub
           {addRow}
         </>
       ) : (
-        <Group loose after={addRow}>
+        <Group loose title={t("mods.listTitle")} after={addRow}>
           {rows}
         </Group>
       )}
     </div>
+  );
+}
+
+/** The Select's value for "no pick": the harness's `main`, else the app's. Not a valid layout name. */
+const DEFAULT = "-default";
+
+/**
+ * Settings › Mods › Layout (0b2): a card with one row, "Layout to show", whose hint says what is shown and from which
+ * layer, and whose control is a Select of every layout (Default first, then each name once, from the first layer that
+ * has it). The files passed over are red lines under the row. Only when main has the layout channel.
+ */
+function LayoutSection({ client }: { client: HarnessClient }) {
+  const { t } = useTranslation();
+  const { view, pick } = useLayoutPick(client);
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+  if (!view) return null;
+  const layer = (s: LayoutView["source"]) => t(`mods.layout.layer.${s}`);
+  const short = (s: LayoutView["source"]) => t(`mods.layout.short.${s}`);
+  const names = new Map<string, LayoutView["source"]>();
+  for (const c of view.choices) if (!names.has(c.name)) names.set(c.name, c.source);
+  const items = [...names].map(([name, source]) => ({ name, label: t("mods.layout.choice", { name, layer: short(source) }) }));
+  if (view.picked !== undefined && !names.has(view.picked)) items.unshift({ name: view.picked, label: t("mods.layout.choice", { name: view.picked, layer: t("mods.layout.missing") }) });
+  const onPick = (v: string) => {
+    setError(null);
+    pick(v === DEFAULT ? null : v).catch(() => setError(t("mods.error")));
+  };
+  const lines = view.problems.map((p) => t("mods.layout.passedOver", { reason: p }));
+  return (
+    <Group title={t("mods.layout.title")}>
+      <Row
+        htmlFor={id}
+        hintId={`${id}-hint`}
+        label={t("mods.layout.pick")}
+        hint={t("mods.layout.showing", { name: view.name, layer: layer(view.source) })}
+        below={
+          (lines.length > 0 || error) && (
+            <Rx.Flex direction="column" gap="1">
+              {lines.map((l, i) => (
+                <Rx.Text as="p" size="1" color="red" key={i}>
+                  <Plain>{l}</Plain>
+                </Rx.Text>
+              ))}
+              {error && (
+                <Rx.Text as="p" size="1" color="red" role="alert">
+                  {error}
+                </Rx.Text>
+              )}
+            </Rx.Flex>
+          )
+        }
+      >
+        <Rx.Select.Root value={view.picked ?? DEFAULT} onValueChange={onPick}>
+          <Rx.Select.Trigger id={id} aria-label={t("mods.layout.pick")} aria-describedby={`${id}-hint`} />
+          <Rx.Select.Content position="popper">
+            <Rx.Select.Item value={DEFAULT}>{t("mods.layout.default")}</Rx.Select.Item>
+            {items.map((it) => (
+              <Rx.Select.Item key={it.name} value={it.name}>
+                {it.label}
+              </Rx.Select.Item>
+            ))}
+          </Rx.Select.Content>
+        </Rx.Select.Root>
+      </Row>
+    </Group>
   );
 }
 

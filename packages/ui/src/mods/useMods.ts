@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { HarnessClient, ModReview, ModsView } from "../client";
+import type { HarnessClient, LayoutView, ModReview, ModsView } from "../client";
 
 export interface ModsState {
   view: ModsView | null;
@@ -64,5 +64,43 @@ export function useMods(client: HarnessClient): ModsState {
     },
     add: async (token) => setView(await client.mods.addLocal(token)),
     remove: async (id) => setView(await client.mods.removeLocal(id)),
+  };
+}
+
+export interface LayoutPickState {
+  /** Null until the first read answers; also when this app has no layout channel. */
+  view: LayoutView | null;
+  /** Picks a layout by name (null: the default); the view becomes main's answer. */
+  pick(name: string | null): Promise<void>;
+}
+
+/** Settings › Mods › Layout (0b2), live: one read, then every `hh:layoutChanged` (a change before the read wins). */
+export function useLayoutPick(client: Pick<HarnessClient, "layout" | "layoutPick" | "onLayoutChanged">): LayoutPickState {
+  const [view, setView] = useState<LayoutView | null>(null);
+  useEffect(() => {
+    if (!client.layout) return;
+    let live = true;
+    let changed = false;
+    const off = client.onLayoutChanged?.((v) => {
+      changed = true;
+      if (live) setView(v);
+    });
+    client.layout().then(
+      (v) => {
+        if (live && !changed) setView(v);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [client]);
+  return {
+    view,
+    pick: async (name) => {
+      if (!client.layoutPick) return;
+      setView(await client.layoutPick(name));
+    },
   };
 }

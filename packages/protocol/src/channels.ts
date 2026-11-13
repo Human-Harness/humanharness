@@ -158,6 +158,7 @@ export interface Invoke {
   "hh:sidekickScope": Sidekick["scope"];
   "hh:sidekickSetScope": Sidekick["setScope"];
   "hh:layout": NonNullable<H["layout"]>;
+  "hh:layoutPick": NonNullable<H["layoutPick"]>;
   "hh:mods": Mods["view"];
   "hh:modSet": Mods["set"];
   "hh:modReviewLocal": Mods["reviewLocal"];
@@ -262,6 +263,7 @@ export interface Push {
   "hh:settings": SettingsState;
   "hh:sidekick": SidekickState;
   "hh:modsChanged": ModsView;
+  "hh:layoutChanged": LayoutView;
   "hh:modReloaded": ModReloaded;
   "hh:plugins": PluginsView;
   "hh:pluginSurface": PluginSurfaceView;

@@ -141,4 +141,16 @@ describe("the hh:layout channel", () => {
     const index = (await sources()).find(([n]) => n === "index.ts")![1];
     expect(index).toMatch(/handle\("hh:layout", \(\) => shownLayout\(/);
   });
+  it("hh:layoutPick is an invoke channel and hh:layoutChanged one the preload only listens on (0b2)", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    expect(channels).toMatch(/^\s*"hh:layoutPick":/m);
+    expect(channels).toMatch(/^\s*"hh:layoutChanged": LayoutView;/m);
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    expect(preload).toContain('layoutPick: (name) => invoke("hh:layoutPick", name)');
+    expect(preload).toContain('onLayoutChanged: (fn) => subscribe("hh:layoutChanged", fn)');
+    expect(preload).not.toMatch(/invoke\("hh:layoutChanged"/);
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    expect(index).toMatch(/handle\("hh:layoutPick", /);
+    expect(index).toContain('sendToWindow("hh:layoutChanged"');
+  });
 });

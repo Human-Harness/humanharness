@@ -24,6 +24,8 @@ export interface DevOptions {
   keep?: boolean;
   /** Where the mock session folders go (default: the OS temp folder; tests). */
   tmpRoot?: string;
+  /** Open the app in safe mode (HH_SAFE=1): local mods off, the layout pick cleared (minimal-core 0b2). */
+  safe?: boolean;
   /** Added to the app's environment, replacing any inherited HH_PLUGIN_* (`plugin dev`). Default: none, as before (D0). */
   env?: Record<string, string>;
   out: Writable;
@@ -82,6 +84,7 @@ export async function devCommand(o: DevOptions): Promise<number> {
     Object.assign(env, o.env);
   }
   if (o.engine) env.HH_DEV_ENGINE = o.engine;
+  if (o.safe) env.HH_SAFE = "1";
   if (o.build) env.HH_OUT_DIR = path.resolve(o.build);
   const child = (o.spawn ?? (spawn as unknown as DevSpawn))(path.join(shell, "node_modules", ".bin", "electron-vite"), [o.build ? "build" : "dev"], {
     cwd: shell,
@@ -98,14 +101,15 @@ export async function devCommand(o: DevOptions): Promise<number> {
 }
 
 export async function devCommandLine(args: string[], io: Io): Promise<number> {
-  const { values, positionals } = parseCommand(args, { engine: { type: "string" }, build: { type: "string" }, mock: { type: "boolean" }, keep: { type: "boolean" }, harness: { type: "string" } });
-  if (positionals.length > 0) throw new UsageError("Usage: humanharness dev [--engine <id>] [--mock [--keep]] [--build <dir>] [--harness <dir>]");
+  const { values, positionals } = parseCommand(args, { engine: { type: "string" }, build: { type: "string" }, mock: { type: "boolean" }, keep: { type: "boolean" }, safe: { type: "boolean" }, harness: { type: "string" } });
+  if (positionals.length > 0) throw new UsageError("Usage: humanharness dev [--engine <id>] [--mock [--keep]] [--build <dir>] [--safe] [--harness <dir>]");
   return devCommand({
     harnessDir: path.resolve(io.cwd, values.harness ?? "."),
     ...(values.engine ? { engine: values.engine } : {}),
     ...(values.build ? { build: path.resolve(io.cwd, values.build) } : {}),
     ...(values.mock ? { mock: true } : {}),
     ...(values.keep ? { keep: true } : {}),
+    ...(values.safe ? { safe: true } : {}),
     out: io.stdout,
   });
 }

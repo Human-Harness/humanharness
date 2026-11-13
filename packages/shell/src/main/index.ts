@@ -262,6 +262,8 @@ import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { pickLayout, shownLayout } from "./mods/layout";
+import { HomeHistory } from "./mods/home-history";
+import { enterSafeMode, isEscapeHatch, safeAtStart } from "./mods/safe";
 import { manualFiles } from "./mods/manual";
 import { startControl } from "./mods/control";
 import { ModHost } from "./mods/host";
@@ -375,6 +377,10 @@ let userLayer: UserLayer | null = null;
 let userLayerWatch: { close(): void } | null = null;
 /** The watch on the home folder's `layouts/` and `settings.json` (0b2). */
 let layoutsWatch: { close(): void } | null = null;
+/** The home folder's own history (0b2): every change to `mods/`, `layouts/` and `settings.json`, undoable. */
+let homeHistory: HomeHistory | null = null;
+/** Safe mode was entered this run (the escape hatch, `--safe` or HH_SAFE=1): the window shows its notice. */
+let safeEntered = false;
 /** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
 let control: { stop(): Promise<void> } | null = null;
 /** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
@@ -1386,6 +1392,34 @@ function watchUserLayouts(): void {
       .then((v) => sendToWindow("hh:layoutChanged", v))
       .catch((err: unknown) => console.error("Could not read the layout again", err));
   });
+}
+
+/**
+ * Safe mode (0b2): the layout pick goes and every local mod (the home folder's and the added folders) is set off; with
+ * a running host, it restarts. The window gets the layout and shows the notice. At start it runs before the host.
+ */
+async function safeMode(running: boolean): Promise<void> {
+  const home = appHome(app.getPath("userData"), harness.id);
+  const { layout } = await enterSafeMode({
+    home,
+    folders: [...((await config.load()).mods?.local ?? []), ...(await userModFolders(home))],
+    mods: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
+  });
+  safeEntered = true;
+  if (running) await restartModHost();
+  sendToWindow("hh:layoutChanged", layout);
+  sendToWindow("hh:safeModeEntered", true);
+}
+
+/** The home folder's history (0b2): made once, then every quiet change is committed; Settings › Mods hears each. */
+async function startHomeHistory(): Promise<void> {
+  const userData = app.getPath("userData");
+  const home = appHome(userData, harness.id);
+  const h = new HomeHistory(home, historyDir(userData, home));
+  await h.init();
+  h.onChange((c) => sendToWindow("hh:homeHistoryChanged", c));
+  h.watch();
+  homeHistory = h;
 }
 
 /** Stops the host and builds it again from config.json (a local mod added or removed). */
@@ -2975,6 +3009,15 @@ function registerIpc() {
     if (name !== null && typeof name !== "string") throw new Error("Invalid layout name");
     return pickLayout(appHome(app.getPath("userData"), harness.id), name);
   });
+  // The home folder's history (0b2): its last change, and undo (the watchers reload what the undo changed).
+  handle("hh:homeHistory", async () => (await homeHistory?.last()) ?? null);
+  handle("hh:homeUndo", async () => {
+    if (!homeHistory) return null;
+    await homeHistory.undo();
+    return homeHistory.last();
+  });
+  // Safe mode entered this run: the window shows its notice.
+  handle("hh:safeMode", () => safeEntered);
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
   registerModsIpc(handle, {
     view: modsView,
@@ -3591,6 +3634,12 @@ async function createWindow() {
   });
   // ⌘+, ⌘− and ⌘0 change the saved size (not the browser's own zoom, which would be forgotten).
   win.webContents.on("before-input-event", (event, input) => {
+    // The escape hatch (0b2), before any other shortcut and never rebound: local mods off, the harness's layout.
+    if (isEscapeHatch(input, process.platform)) {
+      event.preventDefault();
+      void safeMode(true).catch((err: unknown) => console.error("Could not enter safe mode", err));
+      return;
+    }
     const step = textSizeShortcut(input, process.platform);
     if (!step) return;
     event.preventDefault();
@@ -4066,6 +4115,10 @@ if (primary) {
       // The folder's manual, AGENTS.md and hh.d.ts (0b2), rewritten every start.
       manual: manualFiles(),
     });
+    // Safe mode at start (0b2): `--safe` or HH_SAFE=1, before the host so no local mod runs.
+    if (safeAtStart(process.argv, process.env)) await safeMode(false).catch((err: unknown) => console.error("Could not enter safe mode", err));
+    // The home folder's history (0b2): what changed while the app was closed is committed, then every quiet change.
+    await startHomeHistory().catch((err: unknown) => console.error("Could not start the home folder's history", err));
     // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
     // The home folder's mods/ (0b2): an edit syncs and reloads the user mod live.
@@ -4138,6 +4191,7 @@ if (primary) {
     userLayerWatch = null;
     layoutsWatch?.close();
     layoutsWatch = null;
+    homeHistory?.close();
     const modsStopped = modHost?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
     // The control channel closes and app/.control.json goes.
     const controlStopped = control?.stop().catch((err: unknown) => console.error("Could not stop the control channel", err));

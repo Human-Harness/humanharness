@@ -140,6 +140,13 @@ export interface ModsView {
   /** Folders that couldn't be read as mods, with why. */
   problems: { id: string; reason: string }[];
 }
+/** The last change to the app's home folder, as its history recorded it (minimal-core 0b2). */
+export interface HomeChange {
+  /** The commit's message: "Change to the app: <paths>" or "Undo: <message>". */
+  message: string;
+  /** When, as an ISO date. */
+  at: string;
+}
 /** What the warning before turning on a local mod shows (spec D2, §6). */
 export interface ModReview {
   id: string;

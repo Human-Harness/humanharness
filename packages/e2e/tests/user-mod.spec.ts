@@ -34,7 +34,7 @@ async function pickLayout(page: Page, tab: Locator, name: string) {
   await page.getByRole("option", { name }).click();
 }
 
-test("a picked user layout shows a user mod's block and follows edits, without a relaunch", async () => {
+test("a picked user layout shows a user mod's block and follows edits, undo, a broken source and the escape hatch", async () => {
   test.setTimeout(180_000);
   const s = makeSandbox("user-mod");
   // In the home folder before launch: the mod (listed off until reviewed), the layout `mine`, and a broken one.
@@ -95,9 +95,64 @@ test("a picked user layout shows a user mod's block and follows edits, without a
     fs.writeFileSync(ui, fs.readFileSync(ui, "utf8").replace("<p>Hello</p>", "<p>Hello again</p>"));
     await expect(page.getByText("Hello again", { exact: true })).toBeVisible({ timeout: 15_000 });
 
-    // The pick cleared by hand in settings.json: back to the default, no header.
+    // The pick cleared by hand in settings.json: back to the default, no header; set again, the header is back.
     fs.writeFileSync(path.join(home, "settings.json"), "{}\n");
     await expect(page.getByText("Hello again", { exact: true })).toHaveCount(0, { timeout: 15_000 });
+    fs.writeFileSync(path.join(home, "settings.json"), `${JSON.stringify({ layout: "mine" })}\n`);
+    await expect(page.getByText("Hello again", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    // The home history: an edit is committed after a quiet second; Undo brings the file before it back.
+    await page.waitForTimeout(1_500);
+    fs.writeFileSync(ui, fs.readFileSync(ui, "utf8").replace("<p>Hello again</p>", "<p>Hello edited</p>"));
+    await expect(page.getByText("Hello edited", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Mods" }).click();
+    const changes = tab.getByRole("region", { name: "Changes" });
+    await expect(changes.getByText(/^Last change: Change to the app: mods\/hello\/ui\.tsx · /)).toBeVisible({ timeout: 15_000 });
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.waitForTimeout(300);
+      await changes.screenshot({ path: path.join(lookDir, `settings-mods-undo-${theme}.png`) });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await changes.getByRole("button", { name: "Undo the last change to the app" }).click();
+    await expect(changes.getByText(/^Last change: Undo: Change to the app: mods\/hello\/ui\.tsx · /)).toBeVisible();
+    await expect.poll(() => fs.readFileSync(ui, "utf8")).toContain("<p>Hello again</p>");
+    await page.keyboard.press("Escape");
+    await expect(page.getByText("Hello again", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    // A broken ui.tsx: the block keeps the last good version and main writes ui.tsx.error; fixed, the .error goes.
+    fs.copyFileSync(path.join(hello, "broken-ui.tsx"), ui);
+    await expect.poll(() => fs.existsSync(`${ui}.error`), { timeout: 15_000 }).toBe(true);
+    await expect(page.getByText("Hello again", { exact: true })).toBeVisible();
+    await expect(page.getByText("Hello broken", { exact: true })).toHaveCount(0);
+    fs.writeFileSync(ui, fs.readFileSync(path.join(hello, "ui.tsx"), "utf8").replace("<p>Hello</p>", "<p>Hello fixed</p>"));
+    await expect(page.getByText("Hello fixed", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => fs.existsSync(`${ui}.error`)).toBe(false);
+
+    // The escape hatch: the pick cleared (the harness's layout, no header), hello off, and the notice says so.
+    // Through Electron's own input path (sendInputEvent): a key Playwright sends over CDP never reaches before-input-event.
+    await app.evaluate(({ BrowserWindow }, mod) => {
+      const win = BrowserWindow.getAllWindows()[0]!;
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape", modifiers: [mod, "alt", "shift"] });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape", modifiers: [mod, "alt", "shift"] });
+    }, process.platform === "darwin" ? ("meta" as const) : ("control" as const));
+    const notice = page.getByRole("status").filter({ hasText: /^Safe mode: / });
+    await expect(notice).toBeVisible({ timeout: 15_000 });
+    await expect(notice).toHaveText("Safe mode: your mods are off and the harness's layout is shown. Turn them back on in Settings › Mods.");
+    await expect(page.getByText("Hello fixed", { exact: true })).toHaveCount(0);
+    expect(JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8"))).toEqual({});
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.waitForTimeout(300);
+      await notice.screenshot({ path: path.join(lookDir, `safe-mode-notice-${theme}.png`) });
+      await page.screenshot({ path: path.join(lookDir, `safe-mode-${theme}.png`) });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Mods" }).click();
+    await expect(tab.getByRole("switch", { name: "Hello", exact: true })).not.toBeChecked();
+    await expect(tab.getByRole("region", { name: "Layout" }).getByText("Showing main, from the app.")).toBeVisible();
   } finally {
     await closeAndClean(app, s);
   }

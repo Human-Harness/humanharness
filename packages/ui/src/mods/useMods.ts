@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { HarnessClient, LayoutView, ModReview, ModsView } from "../client";
+import type { HarnessClient, HomeChange, LayoutView, ModReview, ModsView } from "../client";
 
 export interface ModsState {
   view: ModsView | null;
@@ -101,6 +101,48 @@ export function useLayoutPick(client: Pick<HarnessClient, "layout" | "layoutPick
     pick: async (name) => {
       if (!client.layoutPick) return;
       setView(await client.layoutPick(name));
+    },
+  };
+}
+
+export interface HomeHistoryState {
+  /** False when this app has no home history channel; then there is no row. */
+  has: boolean;
+  /** The last change, or null before the first read answers and when there is none. */
+  last: HomeChange | null;
+  /** Undoes the last change; the state becomes main's answer. */
+  undo(): Promise<void>;
+}
+
+/** Settings › Mods › Undo (0b2), live: one read, then every `hh:homeHistoryChanged` (a change before the read wins). */
+export function useHomeHistory(client: Pick<HarnessClient, "homeHistory" | "homeUndo" | "onHomeHistory">): HomeHistoryState {
+  const [last, setLast] = useState<HomeChange | null>(null);
+  useEffect(() => {
+    if (!client.homeHistory) return;
+    let live = true;
+    let changed = false;
+    const off = client.onHomeHistory?.((c) => {
+      changed = true;
+      if (live) setLast(c);
+    });
+    client.homeHistory().then(
+      (c) => {
+        if (live && !changed) setLast(c);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [client]);
+  return {
+    has: client.homeHistory !== undefined && client.homeUndo !== undefined,
+    last,
+    undo: async () => {
+      if (!client.homeUndo) return;
+      const c = await client.homeUndo();
+      if (c) setLast(c);
     },
   };
 }

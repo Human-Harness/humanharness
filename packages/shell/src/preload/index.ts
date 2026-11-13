@@ -197,6 +197,11 @@ const client: HarnessClient = {
   layout: () => invoke("hh:layout"),
   layoutPick: (name) => invoke("hh:layoutPick", name),
   onLayoutChanged: (fn) => subscribe("hh:layoutChanged", fn),
+  homeHistory: () => invoke("hh:homeHistory"),
+  homeUndo: () => invoke("hh:homeUndo"),
+  onHomeHistory: (fn) => subscribe("hh:homeHistoryChanged", fn),
+  safeMode: () => invoke("hh:safeMode"),
+  onSafeMode: (fn) => subscribe("hh:safeModeEntered", () => fn()),
   mods: {
     view: () => invoke("hh:mods"),
     set: (id, on) => invoke("hh:modSet", id, on),

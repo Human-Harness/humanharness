@@ -17,6 +17,7 @@ import type {
   MaterialView,
   ModeChoice,
   ModeResult,
+  HomeChange,
   LayoutView,
   ModReloaded,
   ModsView,
@@ -159,6 +160,9 @@ export interface Invoke {
   "hh:sidekickSetScope": Sidekick["setScope"];
   "hh:layout": NonNullable<H["layout"]>;
   "hh:layoutPick": NonNullable<H["layoutPick"]>;
+  "hh:homeHistory": NonNullable<H["homeHistory"]>;
+  "hh:homeUndo": NonNullable<H["homeUndo"]>;
+  "hh:safeMode": NonNullable<H["safeMode"]>;
   "hh:mods": Mods["view"];
   "hh:modSet": Mods["set"];
   "hh:modReviewLocal": Mods["reviewLocal"];
@@ -265,6 +269,8 @@ export interface Push {
   "hh:modsChanged": ModsView;
   "hh:layoutChanged": LayoutView;
   "hh:modReloaded": ModReloaded;
+  "hh:homeHistoryChanged": HomeChange | null;
+  "hh:safeModeEntered": true;
   "hh:plugins": PluginsView;
   "hh:pluginSurface": PluginSurfaceView;
   "hh:pluginData": PluginDataChange;

@@ -10,7 +10,7 @@ import type { Event, ToolCallView } from "@humanharness/engines";
 import type { DataQuery, DataQueryResult } from "@humanharness/workspace";
 import type { AnswerPick, ReviewSummary } from "@humanharness/harness-sdk/review";
 import type { GeneratedStrings } from "@humanharness/i18n";
-import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, ContextGetResult, ContextPick, ContextResult, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, GoBackResult, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, SidekickApproveCheck, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettingsPatch, SidekickState, SidekickView, TaskContext, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UndoRefusal, UsageSummary } from "./views";
+import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, ContextGetResult, ContextPick, ContextResult, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, GoBackResult, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, HomeChange, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, SidekickApproveCheck, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettingsPatch, SidekickState, SidekickView, TaskContext, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UndoRefusal, UsageSummary } from "./views";
 
 /** `client.jobs`: a harness's background jobs (spec §9.1). Only with `state.jobs`: otherwise main refuses every call (D0). */
 export interface JobsClient {
@@ -399,6 +399,16 @@ export interface HarnessClient {
   layoutPick?(name: string | null): Promise<LayoutView>;
   /** A layout file or the pick changed: the view to show now (0b2). */
   onLayoutChanged?(fn: (v: LayoutView) => void): () => void;
+  /** The home folder's history (0b2): its last change, or null before any. */
+  homeHistory?(): Promise<HomeChange | null>;
+  /** Brings back the home folder as it was before its last change; the new last change (null: nothing to undo). */
+  homeUndo?(): Promise<HomeChange | null>;
+  /** A change to the home folder was committed (or undone): the last change now. */
+  onHomeHistory?(fn: (c: HomeChange | null) => void): () => void;
+  /** Safe mode was entered this run (the escape hatch, `--safe` or HH_SAFE=1): the window shows its notice. */
+  safeMode?(): Promise<boolean>;
+  /** Safe mode was entered now (the escape hatch). */
+  onSafeMode?(fn: () => void): () => void;
   /** Settings › Mods (minimal-core spec §4, §6). Adding a local mod: main picks the folder, answers a review and a one-time token. */
   mods: {
     view(): Promise<ModsView>;

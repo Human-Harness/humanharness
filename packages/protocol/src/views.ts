@@ -111,12 +111,27 @@ export interface ModRow {
   problem?: string;
   /** What it registered while on (spec §6: the person sees it). */
   registers: { hooks: string[]; ipc: string[] };
+  /** It has a `ui` part: the window imports it from `hh-mod://<id>/ui.js` while it is on (minimal-core 0b2). */
+  ui: boolean;
 }
-/** The layout the screen shows (minimal-core spec §5.2) and where it came from. */
+/** A mod in the home folder was reloaded after an edit; `version` counts its reloads (minimal-core 0b2). */
+export interface ModReloaded {
+  id: string;
+  version: number;
+}
+/** Where a layout file lives in the app's home folder: `layouts/` (the person's), `harness/layouts/` or `core/layouts/`. */
+export type LayoutSource = "user" | "harness" | "core";
+/** The layout the screen shows (minimal-core spec §5.2, 0b2) and where it came from. */
 export interface LayoutView {
   layout: Layout;
-  /** `harness`: the harness's `layouts/main.json`; `core`: the app's own (the harness's is missing or invalid). */
-  source: "harness" | "core";
+  /** The layer of the file shown; `core` also when no file parsed and the built-in copy is shown. */
+  source: LayoutSource;
+  /** The shown layout's name (its file name without `.json`). */
+  name: string;
+  /** The name picked in the home folder's `settings.json`; absent when none is (the harness's `main` then). */
+  picked?: string;
+  /** Every layout in the three layers, the person's first, each layer by name. */
+  choices: { name: string; source: LayoutSource }[];
   /** Why the files passed over were refused, one line each; none when the first file was used. */
   problems: string[];
 }
@@ -124,6 +139,13 @@ export interface ModsView {
   mods: ModRow[];
   /** Folders that couldn't be read as mods, with why. */
   problems: { id: string; reason: string }[];
+}
+/** The last change to the app's home folder, as its history recorded it (minimal-core 0b2). */
+export interface HomeChange {
+  /** The commit's message: "Change to the app: <paths>" or "Undo: <message>". */
+  message: string;
+  /** When, as an ISO date. */
+  at: string;
 }
 /** What the warning before turning on a local mod shows (spec D2, §6). */
 export interface ModReview {

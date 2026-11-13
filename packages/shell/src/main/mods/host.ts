@@ -1,8 +1,8 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Disposer, MainCtx, ModDefinition, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
-import type { ModRow, ModsConfig } from "@humanharness/protocol";
-import { isModOn } from "./config";
+import type { ModRow } from "@humanharness/protocol";
+import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
 import type { ResolvedMod } from "./resolve";
@@ -18,7 +18,7 @@ type Fn = (arg: never) => unknown;
 export type Services = Partial<Omit<MainCtx<unknown>, "id" | "config" | "on" | "ipc" | "provide" | "mods">>;
 
 export interface HostDeps {
-  config: { load(): Promise<ModsConfig | undefined>; saveFailed(id: string, reason: string): Promise<void> };
+  config: { load(): Promise<ModsSettings | undefined>; saveFailed(id: string, reason: string): Promise<void> };
   services: (id: string) => Services;
   /** A notice the window shows (a mod turned off after three strikes). */
   notice: (text: string) => void;
@@ -28,6 +28,20 @@ export interface HostDeps {
   hookMs?: number;
   /** Whether a core mod is on by default; `CORE_MODS` when absent. */
   coreOn?: (id: string) => boolean;
+  /** Builds a user-layer mod's sources and keeps its last good build (user-layer.ts); without it a user mod can't load. */
+  builds?: UserBuilds;
+  /** A user-layer mod was reloaded after an edit; `version` counts its reloads. */
+  reloaded?: (id: string, version: number) => void;
+}
+
+/** What the host needs to load a user-layer mod (`ModBuilds` in user-layer.ts). */
+export interface UserBuilds {
+  /** Bundles the mod's sources; `main` is the built main part's file, when it has one. */
+  build(mod: ResolvedMod): Promise<{ ok: true; main?: string } | { ok: false; file: string; reason: string }>;
+  /** The build ran: it becomes the last good one, and every `.error` of the mod goes away. */
+  keep(mod: ResolvedMod): Promise<void>;
+  /** The build failed: writes `<file>.error` and puts the last good build back; `restored` false when there is none. */
+  fail(mod: ResolvedMod, file: string, reason: string): Promise<{ restored: boolean; main?: string }>;
 }
 
 interface Running {
@@ -35,6 +49,8 @@ interface Running {
   on: boolean;
   failed?: string;
   problem?: string;
+  /** Reloads after an edit (user-layer mods). */
+  version: number;
   strikes: number;
   hooks: Map<HookName, Set<Fn>>;
   channels: Map<string, (p: unknown) => unknown>;
@@ -45,16 +61,28 @@ interface Running {
 /** Loads the mods that are on, runs their hooks guarded (try/catch, a timeout), and turns one off after three strikes. */
 export class ModHost {
   private readonly mods = new Map<string, Running>();
+
+  private seq = 0;
   constructor(private readonly d: HostDeps) {}
+
+  private entry(mod: ResolvedMod, c: ModsSettings | undefined): Running {
+    const failed = c?.failed?.[mod.json.id];
+    const r: Running = { mod, on: false, version: 0, strikes: 0, hooks: new Map(), channels: new Map(), disposers: [], ...(failed ? { failed } : {}) };
+    this.mods.set(mod.json.id, r);
+    return r;
+  }
+
+  /** On by config, and, for a user-layer mod, reviewed (`mods.trusted`): a hand-edited `on` alone never runs one. */
+  private wanted(m: ResolvedMod, c: ModsSettings | undefined): boolean {
+    if (m.user && !c?.trusted?.includes(m.json.id)) return false;
+    return isModOn(m.json.id, m.origin, c, m.shipped === "core" && (this.d.coreOn ?? coreModOn)(m.json.id));
+  }
 
   async start(list: ResolvedMod[]): Promise<void> {
     const c = await this.d.config.load();
-    for (const mod of list) {
-      const failed = c?.failed?.[mod.json.id];
-      this.mods.set(mod.json.id, { mod, on: false, strikes: 0, hooks: new Map(), channels: new Map(), disposers: [], ...(failed ? { failed } : {}) });
-    }
+    for (const mod of list) this.entry(mod, c);
     // Required mods first: a simple pass in list order, retried while something new started.
-    const want = new Set(list.filter((m) => isModOn(m.json.id, m.origin, c, m.shipped === "core" && (this.d.coreOn ?? coreModOn)(m.json.id))).map((m) => m.json.id));
+    const want = new Set(list.filter((m) => this.wanted(m, c)).map((m) => m.json.id));
     let progress = true;
     while (progress) {
       progress = false;
@@ -74,34 +102,68 @@ export class ModHost {
     }
   }
 
+  private started(r: Running): void {
+    delete r.problem;
+    r.strikes = 0;
+    r.on = true;
+  }
+
   private async load(r: Running): Promise<void> {
-    const id = r.mod.json.id;
+    if (r.mod.user) return this.loadUser(r);
     const main = r.mod.json.main;
     // No main part: nothing to import or run; the mod is on with its raw config and no hooks.
-    if (main === undefined) {
-      delete r.problem;
-      r.strikes = 0;
-      r.on = true;
-      return;
-    }
-    const imported = await guarded(async () => (await import(pathToFileURL(path.join(r.mod.dir, main)).href)) as { default?: ModDefinition<unknown> }, this.hookMs);
-    if (!imported.ok) return void (r.problem = imported.reason);
+    const why = main === undefined ? undefined : await this.run(r, pathToFileURL(path.join(r.mod.dir, main)).href);
+    if (why === undefined) this.started(r);
+    else r.problem = why;
+  }
+
+  /** Imports a main part and runs it; the reason it couldn't, or undefined when it runs. */
+  private async run(r: Running, url: string): Promise<string | undefined> {
+    const id = r.mod.json.id;
+    const imported = await guarded(async () => (await import(url)) as { default?: ModDefinition<unknown> }, this.hookMs);
+    if (!imported.ok) return imported.reason;
     const def = imported.value.default;
-    if (!def || def.id !== id) return void (r.problem = `main does not export the mod "${id}"`);
+    if (!def || def.id !== id) return `main does not export the mod "${id}"`;
     let config: unknown;
     if (def.schema) {
       const p = def.schema.safeParse(r.mod.config ?? {});
-      if (!p.success) return void (r.problem = `config: ${p.error.issues.map((i) => i.message).join("; ")}`);
+      if (!p.success) return `config: ${p.error.issues.map((i) => i.message).join("; ")}`;
       config = p.data;
     } else config = r.mod.config;
     const ran = await guarded(() => def.main?.(this.ctx(r, config)), this.hookMs);
     if (!ran.ok) {
       this.dispose(r);
-      return void (r.problem = ran.reason);
+      return ran.reason;
     }
-    delete r.problem;
-    r.strikes = 0;
-    r.on = true;
+    return undefined;
+  }
+
+  /**
+   * A user-layer mod: bundle its sources, then run the build (a fresh `?v=` so an edit is imported anew). A build or a
+   * run that fails writes `<file>.error` and runs the last good build instead, when there is one.
+   */
+  private async loadUser(r: Running): Promise<void> {
+    const b = this.d.builds;
+    if (!b) return void (r.problem = "this app can't build mods from the home folder");
+    const fresh = (file: string) => `${pathToFileURL(file).href}?v=${++this.seq}`;
+    const built = await b.build(r.mod);
+    let failure: { file: string; reason: string };
+    if (built.ok) {
+      const why = built.main === undefined ? undefined : await this.run(r, fresh(built.main));
+      if (why === undefined) {
+        await b.keep(r.mod).catch((err: unknown) => console.error(`Mod ${r.mod.json.id}: could not keep its build`, err));
+        return this.started(r);
+      }
+      failure = { file: r.mod.json.main ?? "mod.json", reason: why };
+    } else failure = built;
+    console.error(`Mod ${r.mod.json.id}: ${failure.file}: ${failure.reason}`);
+    const back = await b.fail(r.mod, failure.file, failure.reason).catch(() => ({ restored: false, main: undefined }));
+    if (back.restored && (back.main === undefined || (await this.run(r, fresh(back.main))) === undefined)) {
+      this.started(r);
+      r.problem = `${failure.reason} (the last good version runs; see ${failure.file}.error)`;
+      return;
+    }
+    r.problem = failure.reason;
   }
 
   private ctx(r: Running, config: unknown): MainCtx<unknown> {
@@ -225,6 +287,54 @@ export class ModHost {
       // Mods that require this one go off too.
       for (const other of this.mods.values()) if (other.on && other.mod.json.requires.includes(id)) await this.set(other.mod.json.id, false);
       this.dispose(r);
+      delete r.problem; // only a running last-good version had one
+    }
+    this.d.changed();
+  }
+
+  /** Whether some mod, on or off, has this id. */
+  has(id: string): boolean {
+    return this.mods.has(id);
+  }
+
+  /** A mod as resolved and whether it is on (the `hh-mod` scheme serves only an on mod's ui). */
+  info(id: string): { mod: ResolvedMod; on: boolean } | undefined {
+    const r = this.mods.get(id);
+    return r ? { mod: r.mod, on: r.on } : undefined;
+  }
+
+  /** A mod that appeared (a new folder in the user layer): listed, and on only if config.json and its review say so. */
+  async add(mod: ResolvedMod): Promise<void> {
+    if (this.mods.has(mod.json.id)) return;
+    const c = await this.d.config.load();
+    const r = this.entry(mod, c);
+    if (this.wanted(mod, c) && mod.json.requires.every((q) => this.mods.get(q)?.on)) await this.load(r);
+    this.d.changed();
+  }
+
+  /** A mod that went away (its folder was deleted): turned off, its hooks disposed, and dropped from the list. */
+  async remove(id: string): Promise<void> {
+    if (!this.mods.has(id)) return;
+    await this.set(id, false);
+    this.mods.delete(id);
+    this.d.changed();
+  }
+
+  /**
+   * After an edit: runs every disposer of the old main part, then loads the new build. A new build that fails puts
+   * the last good one back (`loadUser`). `mod` is the mod as read again (its mod.json may have changed). An off mod
+   * only takes the new mod.json; it builds when it is turned on.
+   */
+  async reload(id: string, mod?: ResolvedMod): Promise<void> {
+    const r = this.mods.get(id);
+    if (!r) return;
+    if (mod) r.mod = mod;
+    if (r.on) {
+      this.dispose(r);
+      delete r.problem;
+      await this.load(r);
+      r.version += 1;
+      this.d.reloaded?.(id, r.version);
     }
     this.d.changed();
   }
@@ -236,6 +346,7 @@ export class ModHost {
       version: r.mod.json.version,
       origin: r.mod.shipped,
       on: r.on,
+      ui: r.mod.json.ui !== undefined,
       ...(r.failed ? { failed: r.failed } : {}),
       ...(r.problem ? { problem: r.problem } : {}),
       registers: { hooks: [...r.hooks].filter(([, s]) => s.size > 0).map(([n]) => n), ipc: [...r.channels.keys()] },
@@ -251,6 +362,7 @@ export class ModHost {
     const r: Running = {
       mod: { json: { id, name, version: "0.0.0", apiVersion: 1, requires: [], history: false, main: "main.js" }, dir: "", origin: "local", shipped: "local", config: undefined },
       on: true,
+      version: 0,
       strikes: 0,
       hooks: new Map(),
       channels: new Map(),

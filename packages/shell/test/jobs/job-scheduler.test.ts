@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { type HarnessJob, jobSchema } from "@humanharness/harness-sdk";
 import { JobLog, type JobRunRecord, type JobTrigger } from "../../src/main/jobs/job-log";
 import { JobScheduler, type SchedulerDeps, TIMER_MAX_MS } from "../../src/main/jobs/job-scheduler";
@@ -302,13 +302,14 @@ describe("JobScheduler (parallel spec §8)", () => {
     await s.appReady();
     expect(await s.pausedToday("tick")).toBe(false);
     await t.advance(15 * MIN);
-    expect(calls).toHaveLength(1);
+    // The cap check reads the log from disk before the run: under a loaded machine that takes more than flush()'s turns.
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
     calls[0].finish();
     await log.append(record("tick", 400, new Date(DAY0 + 15 * MIN)));
     expect(await s.pausedToday("tick")).toBe(true);
     await t.advance(15 * MIN);
+    await vi.waitFor(() => expect(lines).toEqual(["Job tick: daily cap reached, every skipped"]));
     expect(calls).toHaveLength(1);
-    expect(lines).toEqual(["Job tick: daily cap reached, every skipped"]);
     expect(await s.manual("tick")).toBe(true);
     expect(calls.map((c) => c.trigger)).toEqual(["every", "manual"]);
     calls[1].finish();

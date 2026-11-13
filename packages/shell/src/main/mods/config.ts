@@ -3,12 +3,21 @@ import { MOD_ID } from "@humanharness/mod-sdk";
 import type { ModsConfig } from "@humanharness/protocol";
 
 export type ModOrigin = "core" | "harness" | "local";
+/**
+ * `config.json` → `mods` as the shell keeps it: the protocol's fields and `trusted`, the user-layer mods the person
+ * reviewed and accepted (minimal-core 0b2); one of those turns on without another review.
+ */
+export type ModsSettings = ModsConfig & { trusted?: string[] };
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** `config.json` → `mods`, cleaned; undefined when nothing is left. */
-export function cleanModsConfig(v: unknown): ModsConfig | undefined {
+export function cleanModsConfig(v: unknown): ModsSettings | undefined {
   if (!isObj(v)) return undefined;
-  const out: ModsConfig = {};
+  const out: ModsSettings = {};
+  if (Array.isArray(v.trusted)) {
+    const trusted = [...new Set(v.trusted.filter((id): id is string => typeof id === "string" && MOD_ID.test(id)))];
+    if (trusted.length > 0) out.trusted = trusted;
+  }
   if (isObj(v.on)) {
     const on = Object.fromEntries(Object.entries(v.on).filter(([id, b]) => MOD_ID.test(id) && typeof b === "boolean")) as Record<string, boolean>;
     if (Object.keys(on).length > 0) out.on = on;

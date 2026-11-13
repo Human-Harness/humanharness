@@ -5,10 +5,11 @@
   "type": "module",
   "license": "Apache-2.0",
   "main": "out/main/index.js",
-  "exports": { "./tasks": "./src/main/tasks.ts", "./plugins": "./src/main/plugin-cli.ts", "./tools": "./src/main/tools/tool-cli.ts", "./package.json": "./package.json" },
+  "exports": { "./tasks": "./src/main/tasks.ts", "./plugins": "./src/main/plugin-cli.ts", "./tools": "./src/main/tools/tool-cli.ts", "./mod-shims": "./src/main/mods/user-layer.ts", "./package.json": "./package.json" },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build"
+    "build": "electron-vite build",
+    "hh-dts": "node scripts/hh-dts.ts"
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "2.2.2",
@@ -27,7 +28,9 @@
     "@humanharness/search": "workspace:*",
     "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
-    "pdfjs-dist": "^6.4.299"
+    "esbuild": "^0.28.2",
+    "pdfjs-dist": "^6.4.299",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@humanharness/fake-agent": "workspace:*",

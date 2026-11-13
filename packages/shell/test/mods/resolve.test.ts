@@ -23,6 +23,17 @@ describe("resolveMods", () => {
     expect(r.mods[0].origin).toBe("harness"); // declared by the harness, so its switch default is the harness's
     expect(r.mods[0].shipped).toBe("core");
   });
+  it("lists the user layer's folders as local, after the configured local folders, marked as user", async () => {
+    const r = await resolveMods({ declared: {}, harnessModsDir: fx, local: [path.join(fx, "broken")], user: [path.join(fx, "echo"), path.join(fx, "slow")], core: {} });
+    expect(r.mods.map((m) => [m.json.id, m.origin, m.shipped, m.user])).toEqual([
+      ["broken", "local", "local", undefined],
+      ["echo", "local", "local", true],
+      ["slow", "local", "local", true],
+    ]);
+    const taken = await resolveMods({ declared: {}, harnessModsDir: fx, local: [path.join(fx, "echo")], user: [path.join(fx, "echo")], core: {} });
+    expect(taken.mods).toHaveLength(1);
+    expect(taken.problems).toEqual([{ id: path.join(fx, "echo"), reason: expect.stringMatching(/already/) }]);
+  });
   it("refuses a local mod whose id is already taken", async () => {
     const r = await resolveMods({ declared: { echo: {} }, harnessModsDir: fx, local: [path.join(fx, "echo")], core: {} });
     expect(r.mods).toHaveLength(1);

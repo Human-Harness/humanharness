@@ -119,7 +119,41 @@ describe("the Settings › Mods channels", () => {
   it("the renderer adds a local mod with a token only: the preload sends no path", async () => {
     const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
     expect(preload).toContain('addLocal: (token) => invoke("hh:modAddLocal", token)');
-    expect(preload).toContain('reviewLocal: () => invoke("hh:modReviewLocal")');
+    // With an id (0b2): a mod already in the home folder; main checks the id against its own folder, never a path.
+    expect(preload).toContain('reviewLocal: (id) => (id === undefined ? invoke("hh:modReviewLocal") : invoke("hh:modReviewLocal", id))');
+  });
+  it("hh:modReloaded is a channel the preload only listens on (minimal-core 0b2)", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    expect(channels).toMatch(/^\s*"hh:modReloaded": ModReloaded;/m);
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    expect(preload).toContain('onReloaded: (fn) => subscribe("hh:modReloaded", fn)');
+    expect(preload).not.toMatch(/invoke\("hh:modReloaded"/);
+  });
+});
+
+/** The home history and safe mode (minimal-core 0b2): invoke channels handled in main, pushes the preload only listens on. */
+describe("the home history and safe-mode channels", () => {
+  it("are declared, sent by the preload and handled in main", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    for (const [ch, call] of [
+      ["hh:homeHistory", 'homeHistory: () => invoke("hh:homeHistory")'],
+      ["hh:homeUndo", 'homeUndo: () => invoke("hh:homeUndo")'],
+      ["hh:safeMode", 'safeMode: () => invoke("hh:safeMode")'],
+    ] as const) {
+      expect(channels).toMatch(new RegExp(`^\\s*"${ch}":`, "m"));
+      expect(preload).toContain(call);
+      expect(index).toContain(`handle("${ch}"`);
+    }
+    for (const [ch, call] of [
+      ["hh:homeHistoryChanged", 'onHomeHistory: (fn) => subscribe("hh:homeHistoryChanged", fn)'],
+      ["hh:safeModeEntered", 'onSafeMode: (fn) => subscribe("hh:safeModeEntered", () => fn())'],
+    ] as const) {
+      expect(channels).toMatch(new RegExp(`^\\s*"${ch}":`, "m"));
+      expect(preload).toContain(call);
+      expect(preload).not.toContain(`invoke("${ch}"`);
+    }
   });
 });
 
@@ -132,5 +166,17 @@ describe("the hh:layout channel", () => {
     expect(preload).toContain('layout: () => invoke("hh:layout")');
     const index = (await sources()).find(([n]) => n === "index.ts")![1];
     expect(index).toMatch(/handle\("hh:layout", \(\) => shownLayout\(/);
+  });
+  it("hh:layoutPick is an invoke channel and hh:layoutChanged one the preload only listens on (0b2)", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    expect(channels).toMatch(/^\s*"hh:layoutPick":/m);
+    expect(channels).toMatch(/^\s*"hh:layoutChanged": LayoutView;/m);
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    expect(preload).toContain('layoutPick: (name) => invoke("hh:layoutPick", name)');
+    expect(preload).toContain('onLayoutChanged: (fn) => subscribe("hh:layoutChanged", fn)');
+    expect(preload).not.toMatch(/invoke\("hh:layoutChanged"/);
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    expect(index).toMatch(/handle\("hh:layoutPick", /);
+    expect(index).toContain('sendToWindow("hh:layoutChanged"');
   });
 });

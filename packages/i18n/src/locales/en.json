@@ -1239,6 +1239,7 @@
   "mods": {
     "tab": "Mods",
     "line": "Mods add parts to this app: a panel, a check before sending, a helper.",
+    "listTitle": "Mods",
     "empty": "No mods yet. A mod adds a part to this app: a panel, a check before sending, a helper.",
     "origin": { "core": "Core", "harness": "Harness", "local": "Local" },
     "registers": "Uses: {{list}}",
@@ -1247,6 +1248,26 @@
     "add": "Add from folder…",
     "remove": "Remove",
     "error": "That didn't work. Try again.",
+    "layout": {
+      "title": "Layout",
+      "pick": "Layout to show",
+      "showing": "Showing {{name}}, from {{layer}}.",
+      "layer": { "user": "your layouts", "harness": "the harness", "core": "the app" },
+      "short": { "user": "Yours", "harness": "Harness", "core": "App" },
+      "choice": "{{name}} · {{layer}}",
+      "missing": "Not found",
+      "default": "Default",
+      "passedOver": "Passed over {{reason}}"
+    },
+    "history": {
+      "title": "Changes",
+      "undo": "Undo the last change to the app",
+      "last": "Last change: {{message}} · {{time}}",
+      "none": "No change to undo yet.",
+      "button": "Undo"
+    },
+    "safeNotice": "Safe mode: your mods are off and the harness's layout is shown. Turn them back on in Settings › Mods.",
+    "safeClose": "Close",
     "review": {
       "title": "Turn on {{name}}?",
       "warning": "A mod runs with full access to your folder, your files and your keys. Turn it on only if you trust where it came from.",

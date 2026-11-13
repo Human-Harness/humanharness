@@ -256,13 +256,20 @@ import { SidekickController, localDay } from "./sidekick";
 import { sidekickView } from "./sidekick-view";
 import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
-import { cleanModsConfig } from "./mods/config";
+import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
+import { type ModsSettings, cleanModsConfig } from "./mods/config";
 import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
-import { shownLayout } from "./mods/layout";
+import { pickLayout, shownLayout } from "./mods/layout";
+import { HomeHistory } from "./mods/home-history";
+import { enterSafeMode, isEscapeHatch, safeAtStart } from "./mods/safe";
+import { manualFiles } from "./mods/manual";
+import { startControl } from "./mods/control";
 import { ModHost } from "./mods/host";
+import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
 import { registerModsIpc } from "./mods/mods-ipc";
+import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./mods/user-layer";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
 import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
 import { needsHost, toTurnEnd } from "./mods/wiring";
@@ -362,8 +369,20 @@ let settingsCtl: SettingsController | null = null;
 let sidekickCtl: SidekickController | null = null;
 /** The mod host (minimal-core spec §4); null with no mod that could run (D0). */
 let modHost: ModHost | null = null;
-/** Folders `resolveMods` couldn't read as mods, for Settings › Mods. */
+/** Folders `resolveMods` couldn't read as mods, for Settings › Mods (the user layer keeps its own). */
 let modProblems: ResolveProblem[] = [];
+/** The home folder's `mods/` as the host runs them (minimal-core 0b2); null without a host. */
+let userLayer: UserLayer | null = null;
+/** The watcher on the home folder's `mods/`; closed on quit. */
+let userLayerWatch: { close(): void } | null = null;
+/** The watch on the home folder's `layouts/` and `settings.json` (0b2). */
+let layoutsWatch: { close(): void } | null = null;
+/** The home folder's own history (0b2): every change to `mods/`, `layouts/` and `settings.json`, undoable. */
+let homeHistory: HomeHistory | null = null;
+/** Safe mode was entered this run (the escape hatch, `--safe` or HH_SAFE=1): the window shows its notice. */
+let safeEntered = false;
+/** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
+let control: { stop(): Promise<void> } | null = null;
 /** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
 let resolvedMods: ResolvedMod[] = [];
 /**
@@ -1276,7 +1295,7 @@ function showNotice(text: string): void {
 }
 
 /** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
-const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: modProblems });
+const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: [...modProblems, ...(userLayer?.problems() ?? [])] });
 
 /** A mod's own tool-less engine turn (minimal-core spec §5), on SidekickSession like Sidekick's; usage tagged `mod:<id>`. */
 const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, prompt, workDir, signal }) => {
@@ -1306,15 +1325,23 @@ const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, pro
 async function startModHost(): Promise<void> {
   const modsConfig = (await config.load()).mods;
   const local = modsConfig?.local ?? [];
-  if (!needsHost({ declared: harness.mods, local, coreIds: Object.keys(CORE_MODS) })) {
+  const userData = app.getPath("userData");
+  const home = appHome(userData, harness.id);
+  const user = await userModFolders(home);
+  if (!needsHost({ declared: harness.mods, local: [...local, ...user], coreIds: Object.keys(CORE_MODS) })) {
     resolvedMods = [];
     modProblems = [];
+    userLayer = null;
     return;
   }
-  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, core: CORE_MODS });
+  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, user, core: CORE_MODS });
   for (const p of resolved.problems) console.error(`Mod ${p.id}: ${p.reason}`);
   resolvedMods = resolved.mods;
-  modProblems = resolved.problems;
+  // The user layer's folders that couldn't be read are its own (they come and go with the watcher).
+  modProblems = resolved.problems.filter((p) => path.dirname(p.id) !== userModsDir(home));
+  // A user-layer mod's main imports the app's own zod and mod-sdk, through small files beside its builds.
+  const buildRoot = modBuildRoot(userData, harness.id);
+  const resolveShared = await writeMainShims(path.join(buildRoot, ".shared"), MAIN_SHARED_MODULES);
   const runningTask = async () => {
     const t = await tasks.runningTask();
     return t ? { id: t.id, scope: t.scope, ...(t.action ? { action: t.action } : {}) } : null;
@@ -1341,9 +1368,58 @@ async function startModHost(): Promise<void> {
     }),
     notice: showNotice,
     changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
+    // A user-layer mod rebuilt after an edit: the window imports its ui again (hh:modReloaded, 0b2).
+    reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
+    builds: new ModBuilds(buildRoot, resolveShared),
   });
   modHost = mods;
+  userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
   await mods.start(resolved.mods);
+}
+
+/** Watches the home folder's `mods/` once: a change syncs the folder with whatever host runs now. */
+function watchUserMods(): void {
+  if (userLayerWatch) return;
+  userLayerWatch = watchUserLayer(appHome(app.getPath("userData"), harness.id), (dir) => void userLayer?.sync(dir));
+}
+
+/** Watches the home folder's layouts and pick once: a change sends the layout to show now (hh:layoutChanged, 0b2). */
+function watchUserLayouts(): void {
+  if (layoutsWatch) return;
+  const home = appHome(app.getPath("userData"), harness.id);
+  layoutsWatch = watchLayouts(home, () => {
+    void shownLayout(home)
+      .then((v) => sendToWindow("hh:layoutChanged", v))
+      .catch((err: unknown) => console.error("Could not read the layout again", err));
+  });
+}
+
+/**
+ * Safe mode (0b2): the layout pick goes and every local mod (the home folder's and the added folders) is set off; with
+ * a running host, it restarts. The window gets the layout and shows the notice. At start it runs before the host.
+ */
+async function safeMode(running: boolean): Promise<void> {
+  const home = appHome(app.getPath("userData"), harness.id);
+  const { layout } = await enterSafeMode({
+    home,
+    folders: [...((await config.load()).mods?.local ?? []), ...(await userModFolders(home))],
+    mods: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
+  });
+  safeEntered = true;
+  if (running) await restartModHost();
+  sendToWindow("hh:layoutChanged", layout);
+  sendToWindow("hh:safeModeEntered", true);
+}
+
+/** The home folder's history (0b2): made once, then every quiet change is committed; Settings › Mods hears each. */
+async function startHomeHistory(): Promise<void> {
+  const userData = app.getPath("userData");
+  const home = appHome(userData, harness.id);
+  const h = new HomeHistory(home, historyDir(userData, home));
+  await h.init();
+  h.onChange((c) => sendToWindow("hh:homeHistoryChanged", c));
+  h.watch();
+  homeHistory = h;
 }
 
 /** Stops the host and builds it again from config.json (a local mod added or removed). */
@@ -1365,7 +1441,7 @@ async function saveMods(fn: (m: ModsConfig | undefined) => ModsConfig | undefine
  * couldn't be read (its `on` switch is that mod's).
  */
 const modIdTaken = (id: string): boolean =>
-  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id);
+  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id) || (modHost?.has(id) ?? false);
 
 /** The id in a folder's mod.json, or null when it has none. */
 async function modIdIn(folder: string): Promise<string | null> {
@@ -2928,9 +3004,29 @@ function registerIpc() {
   registerSidekickIpc(handle, () => sidekickCtl);
   // The layout the screen shows (minimal-core spec §5.2).
   handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
+  // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
+  handle("hh:layoutPick", (name: unknown) => {
+    if (name !== null && typeof name !== "string") throw new Error("Invalid layout name");
+    return pickLayout(appHome(app.getPath("userData"), harness.id), name);
+  });
+  // The home folder's history (0b2): its last change, and undo (the watchers reload what the undo changed).
+  handle("hh:homeHistory", async () => (await homeHistory?.last()) ?? null);
+  handle("hh:homeUndo", async () => {
+    if (!homeHistory) return null;
+    await homeHistory.undo();
+    return homeHistory.last();
+  });
+  // Safe mode entered this run: the window shows its notice.
+  handle("hh:safeMode", () => safeEntered);
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
   registerModsIpc(handle, {
     view: modsView,
+    // A mod in the home folder's `mods/`: turned on the first time only through the warning (spec D2, `mods.trusted`).
+    ...userConsent({
+      config: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
+      host: { set: async (id, on) => modHost?.set(id, on) },
+      layer: { dirOf: (id) => userLayer?.dirOf(id) },
+    }),
     set: async (id, on) => {
       // Turning a mod on clears its three-strikes failure.
       await saveMods((m) => ({ ...m, on: { ...m?.on, [id]: on }, ...(on && m?.failed ? { failed: Object.fromEntries(Object.entries(m.failed).filter(([k]) => k !== id)) } : {}) }));
@@ -2961,7 +3057,8 @@ function registerIpc() {
       await saveMods((m) => ({ ...m, local: (m?.local ?? []).filter((f) => f !== dir), on: drop(m?.on), failed: drop(m?.failed) }));
       await restartModHost();
     },
-    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local"),
+    // A user-layer mod goes by deleting its folder, not from config.json's `local`.
+    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local" && !m.user),
     taken: modIdTaken,
   });
   // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
@@ -3498,6 +3595,13 @@ async function createWindow() {
   window = win;
   // Read now: once closed, the window's webContents can no longer be asked.
   const contentsId = win.webContents.id;
+  // hh-mod (0b2): the built ui of an on, non-core mod, on the window's session; once per session.
+  const modProtocol = win.webContents.session.protocol;
+  if (!modProtocol.isProtocolHandled(MOD_SCHEME.scheme)) {
+    modProtocol.handle(MOD_SCHEME.scheme, (req) =>
+      serveModUi(req.url, { mod: (id) => modHost?.info(id), buildDir: (id) => path.join(modBuildRoot(app.getPath("userData"), harness.id), id) }),
+    );
+  }
   win.on("closed", () => {
     if (window === win) window = null;
     documentSessions.closeOwner(contentsId);
@@ -3530,6 +3634,12 @@ async function createWindow() {
   });
   // ⌘+, ⌘− and ⌘0 change the saved size (not the browser's own zoom, which would be forgotten).
   win.webContents.on("before-input-event", (event, input) => {
+    // The escape hatch (0b2), before any other shortcut and never rebound: local mods off, the harness's layout.
+    if (isEscapeHatch(input, process.platform)) {
+      event.preventDefault();
+      void safeMode(true).catch((err: unknown) => console.error("Could not enter safe mode", err));
+      return;
+    }
     const step = textSizeShortcut(input, process.platform);
     if (!step) return;
     event.preventDefault();
@@ -3705,7 +3815,7 @@ if (loaded) {
   // otherwise no scheme, no controller, no window, no IPC handler and no file.
   if (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0) {
     // Before "ready" (spike S2): the backend windows' own scheme. Nothing else registers one.
-    protocol.registerSchemesAsPrivileged(hasTools(harness) ? [PLUGIN_SCHEME, TOOL_SCHEME] : [PLUGIN_SCHEME]);
+    protocol.registerSchemesAsPrivileged(hasTools(harness) ? [MOD_SCHEME, PLUGIN_SCHEME, TOOL_SCHEME] : [MOD_SCHEME, PLUGIN_SCHEME]);
     // The app's own per-harness folder (outside every base, B8/B13): pointers, approvals, keys, the inbox's tag key.
     const appDir = path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id);
     const host = new PluginBackendHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
@@ -3784,13 +3894,15 @@ if (loaded) {
       log: pluginLog,
     });
   }
+  // hh-mod (minimal-core 0b2): always, in the one call Electron takes; with plugins or tools, theirs registers it.
+  if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0 && !hasTools(harness)) protocol.registerSchemesAsPrivileged([MOD_SCHEME]);
   // Settings › Connections (tools spec §9): only a harness that declares secrets (D0: no channel, no controller).
   if (hasSecrets(harness)) registerConnectionsIpc(handle, connections());
   // Tools (tools spec §4, §5): only a harness that declares them. D0: otherwise no scheme, no window, no IPC handler,
   // no `tools` server and no trace.
   if (hasTools(harness)) {
     // Before "ready". Electron takes one call: with plugins, theirs above registers this scheme too.
-    if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0) protocol.registerSchemesAsPrivileged([TOOL_SCHEME]);
+    if (!pluginsAccepted(harness) && (hooks.pluginDirs?.length ?? 0) === 0) protocol.registerSchemesAsPrivileged([MOD_SCHEME, TOOL_SCHEME]);
     const sandbox = new ToolHost({ resources: shellResources, devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: toolsLog });
     const toolData = toolDataRequests({
       store: async () => {
@@ -4000,9 +4112,19 @@ if (primary) {
       core: { mods: Object.fromEntries(Object.entries(CORE_MODS).map(([id, m]) => [id, m.dir])), layouts: {}, layoutTexts: { main: `${JSON.stringify(defaultLayoutJson, null, 2)}\n` } },
       harness: await harnessLayer(harness.root, Object.keys(harness.mods ?? {}).filter((id) => !Object.hasOwn(CORE_MODS, id))),
       notice: showNotice,
+      // The folder's manual, AGENTS.md and hh.d.ts (0b2), rewritten every start.
+      manual: manualFiles(),
     });
+    // Safe mode at start (0b2): `--safe` or HH_SAFE=1, before the host so no local mod runs.
+    if (safeAtStart(process.argv, process.env)) await safeMode(false).catch((err: unknown) => console.error("Could not enter safe mode", err));
+    // The home folder's history (0b2): what changed while the app was closed is committed, then every quiet change.
+    await startHomeHistory().catch((err: unknown) => console.error("Could not start the home folder's history", err));
     // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
+    // The home folder's mods/ (0b2): an edit syncs and reloads the user mod live.
+    watchUserMods();
+    // The home folder's layouts/ and settings.json (0b2): an edit or a pick redraws the window.
+    watchUserLayouts();
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void interruptTasks().catch((err: unknown) => console.error("Could not settle the last task", err));
@@ -4016,6 +4138,22 @@ if (primary) {
     // AI stages an earlier run left to do (the queue looks only once the app is set up).
     if (await validConfig()) kickMaterial();
     await createWindow();
+    // The control channel (0b2): `humanharness status` and `shot` reach the app through app/.control.json.
+    const controlHome = appHome(userData, harness.id);
+    void startControl({
+      home: controlHome,
+      window: () => window,
+      status: async () => {
+        const layout = await shownLayout(controlHome);
+        return { ...(await modsView()), layout: { name: layout.name, source: layout.source, problems: layout.problems } };
+      },
+    })
+      .then((c) => {
+        // A quit that came first: the channel closes at once.
+        if (quitting) void c.stop();
+        else control = c;
+      })
+      .catch((err: unknown) => console.error("Could not start the control channel", err));
     // The plugins of the current base (none before setup); a computer that slept runs the sources that came due.
     if (pluginsCtl) {
       const plugins = pluginsCtl;
@@ -4048,15 +4186,23 @@ if (primary) {
       turns.close();
     }
     void sidekickCtl?.close();
-    // The mods stop (their disposers run) before the app goes.
+    // The mods stop (their disposers run) before the app goes; the home folder is no longer watched.
+    userLayerWatch?.close();
+    userLayerWatch = null;
+    layoutsWatch?.close();
+    layoutsWatch = null;
+    homeHistory?.close();
     const modsStopped = modHost?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
+    // The control channel closes and app/.control.json goes.
+    const controlStopped = control?.stop().catch((err: unknown) => console.error("Could not stop the control channel", err));
+    control = null;
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
       // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
       await moving?.catch(() => undefined);
-      await Promise.all([setupStopped, testStopped, modsStopped]);
+      await Promise.all([setupStopped, testStopped, modsStopped, controlStopped]);
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));

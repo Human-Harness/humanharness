@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ModsView } from "../src/client";
+import type { HarnessClient, LayoutView, ModsView } from "../src/client";
 import { ModsTab } from "../src/mods/ModsTab";
 import { visibleTabs } from "../src/settings-tabs";
 import { FakeClient } from "./fake-client";
@@ -9,10 +9,84 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
+const layoutView: LayoutView = {
+  layout: { type: "stack", children: [{ type: "block", id: "home", content: { mod: "home", block: "home" } }, { type: "block", id: "work", content: { core: "task" } }] },
+  source: "harness",
+  name: "main",
+  picked: "broken",
+  choices: [
+    { name: "broken", source: "user" },
+    { name: "mine", source: "user" },
+    { name: "main", source: "harness" },
+    { name: "main", source: "core" },
+  ],
+  problems: ["layouts/broken.json: The root must be a stack"],
+};
+
+/** Picks `name` in a Radix Select (its combobox, then the option in the portal). */
+async function pick(combobox: HTMLElement, name: string) {
+  fireEvent.keyDown(combobox, { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name }), { key: "Enter" });
+}
+
+describe("Settings › Mods › Layout (0b2)", () => {
+  type WithLayout = FakeClient & Pick<HarnessClient, "layout" | "layoutPick" | "onLayoutChanged">;
+  function withLayout(over: Partial<Pick<HarnessClient, "layout" | "layoutPick" | "onLayoutChanged">> = {}) {
+    const c: WithLayout = client();
+    c.layout = vi.fn(async () => layoutView);
+    c.layoutPick = vi.fn(async (name: string | null) => ({ ...layoutView, source: name ? ("user" as const) : ("harness" as const), name: name ?? "main", ...(name ? { picked: name } : { picked: undefined }), problems: [] }));
+    Object.assign(c, over);
+    return c;
+  }
+
+  it("shows the shown layout's name and layer, and the problems of the files passed over", async () => {
+    await renderIn("en", <ModsTab client={withLayout()} />, { theme: true });
+    expect(await screen.findByText("Showing main, from the harness.")).toBeTruthy();
+    expect(screen.getByText("Passed over layouts/broken.json: The root must be a stack")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Layout to show" }).textContent).toBe("broken · Yours");
+  });
+
+  it("picking a layout asks main and shows its answer; Default clears the pick", async () => {
+    const c = withLayout();
+    await renderIn("en", <ModsTab client={c} />, { theme: true });
+    await pick(await screen.findByRole("combobox", { name: "Layout to show" }), "mine · Yours");
+    expect(c.layoutPick).toHaveBeenCalledWith("mine");
+    expect(await screen.findByText("Showing mine, from your layouts.")).toBeTruthy();
+    expect(screen.queryByText(/Passed over/)).toBeNull();
+    await pick(screen.getByRole("combobox", { name: "Layout to show" }), "Default");
+    expect(c.layoutPick).toHaveBeenLastCalledWith(null);
+  });
+
+  it("one name in two layers is one choice, the first layer's", async () => {
+    await renderIn("en", <ModsTab client={withLayout()} />, { theme: true });
+    fireEvent.keyDown(await screen.findByRole("combobox", { name: "Layout to show" }), { key: "Enter" });
+    const names = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(names).toEqual(["Default", "broken · Yours", "mine · Yours", "main · Harness"]);
+  });
+
+  it("follows hh:layoutChanged", async () => {
+    let send: ((v: LayoutView) => void) | undefined;
+    const onLayoutChanged = (fn: (v: LayoutView) => void) => {
+      send = fn;
+      return () => undefined;
+    };
+    await renderIn("en", <ModsTab client={withLayout({ onLayoutChanged })} />, { theme: true });
+    await screen.findByText("Showing main, from the harness.");
+    send!({ ...layoutView, source: "user", name: "mine", picked: "mine", problems: [] });
+    expect(await screen.findByText("Showing mine, from your layouts.")).toBeTruthy();
+  });
+
+  it("no layout channel, no Layout section", async () => {
+    await renderIn("en", <ModsTab client={client()} />, { theme: true });
+    await screen.findByRole("switch", { name: "Echo" });
+    expect(screen.queryByRole("combobox", { name: "Layout to show" })).toBeNull();
+  });
+});
+
 const view: ModsView = {
   mods: [
-    { id: "echo", name: "Echo", version: "0.1.0", origin: "harness", on: true, registers: { hooks: ["beforeSend"], ipc: [] } },
-    { id: "mine", name: "Mine", version: "0.1.0", origin: "local", on: false, failed: "boom", registers: { hooks: [], ipc: [] } },
+    { id: "echo", name: "Echo", version: "0.1.0", origin: "harness", on: true, ui: false, registers: { hooks: ["beforeSend"], ipc: [] } },
+    { id: "mine", name: "Mine", version: "0.1.0", origin: "local", on: false, ui: false, failed: "boom", registers: { hooks: [], ipc: [] } },
   ],
   problems: [],
 };
@@ -66,6 +140,31 @@ describe("Settings › Mods", () => {
     expect(await screen.findByRole("switch", { name: "Echo" })).toBeTruthy();
   });
 
+  it("a home-folder mod main refuses to turn on shows the warning first, then turns on through its token", async () => {
+    const set = vi.fn(async (): Promise<ModsView> => {
+      throw new Error("This mod needs your review first");
+    });
+    const reviewLocal = vi.fn(async () => ({ review: { id: "mine", name: "Mine", version: "0.1.0", folder: "/home/app/mods/mine" }, token: "b".repeat(32) }));
+    const addLocal = vi.fn(async () => view);
+    await renderIn("en", <ModsTab client={client({ set, reviewLocal, addLocal })} />, { theme: true });
+    fireEvent.click(await screen.findByRole("switch", { name: "Mine" }));
+    expect(await screen.findByText(/full access to your folder/)).toBeTruthy();
+    expect(reviewLocal).toHaveBeenCalledWith("mine");
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(addLocal).toHaveBeenCalledWith("b".repeat(32)));
+  });
+
+  it("a refused switch with no review stays an error on the row", async () => {
+    const set = vi.fn(async (): Promise<ModsView> => {
+      throw new Error("nope");
+    });
+    const reviewLocal = vi.fn(async () => ({ problem: "No mod in the app's home folder has the id" }));
+    await renderIn("en", <ModsTab client={client({ set, reviewLocal })} />, { theme: true });
+    fireEvent.click(await screen.findByRole("switch", { name: "Mine" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByText(/full access to your folder/)).toBeNull();
+  });
+
   it("Cancel goes back to the list without adding", async () => {
     const addLocal = vi.fn(async () => view);
     const reviewLocal = vi.fn(async () => ({ review: { id: "x", name: "X", version: "1.0.0", folder: "/m/x" }, token: "a".repeat(32) }));
@@ -89,5 +188,59 @@ describe("Settings › Mods", () => {
     expect(tabs).toContain("mods");
     const at = tabs.indexOf("mods");
     if (tabs.includes("plugins")) expect(tabs.indexOf("plugins")).toBe(at + 1);
+  });
+});
+
+describe("Settings › Mods › Undo the last change to the app (0b2)", () => {
+  type Hist = Pick<HarnessClient, "homeHistory" | "homeUndo" | "onHomeHistory">;
+  const at = "2026-11-12T10:30:00.000Z";
+  function withHistory(over: Partial<Hist> = {}) {
+    const c: FakeClient & Hist = client();
+    c.homeHistory = vi.fn(async () => ({ message: "Change to the app: mods/hello/ui.tsx", at }));
+    c.homeUndo = vi.fn(async () => ({ message: "Undo: Change to the app: mods/hello/ui.tsx", at }));
+    Object.assign(c, over);
+    return c;
+  }
+  const time = new Date(at).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" });
+
+  it("shows the last change's message and time; Undo asks main and shows its answer", async () => {
+    const c = withHistory();
+    await renderIn("en", <ModsTab client={c} />, { theme: true });
+    expect(await screen.findByText(`Last change: Change to the app: mods/hello/ui.tsx · ${time}`)).toBeTruthy();
+    const undo = screen.getByRole("button", { name: "Undo the last change to the app" });
+    expect(undo.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(undo);
+    expect(c.homeUndo).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(`Last change: Undo: Change to the app: mods/hello/ui.tsx · ${time}`)).toBeTruthy();
+  });
+
+  it("is disabled when there is no change", async () => {
+    await renderIn("en", <ModsTab client={withHistory({ homeHistory: vi.fn(async () => null) })} />, { theme: true });
+    expect(await screen.findByText("No change to undo yet.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Undo the last change to the app" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("follows hh:homeHistoryChanged", async () => {
+    let send: ((c: { message: string; at: string } | null) => void) | undefined;
+    const onHomeHistory = (fn: typeof send & {}) => {
+      send = fn;
+      return () => undefined;
+    };
+    await renderIn("en", <ModsTab client={withHistory({ homeHistory: vi.fn(async () => null), onHomeHistory })} />, { theme: true });
+    await screen.findByText("No change to undo yet.");
+    send!({ message: "Change to the app: settings.json", at });
+    expect(await screen.findByText(`Last change: Change to the app: settings.json · ${time}`)).toBeTruthy();
+  });
+
+  it("a failed undo says so", async () => {
+    await renderIn("en", <ModsTab client={withHistory({ homeUndo: vi.fn(async () => Promise.reject(new Error("x"))) })} />, { theme: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Undo the last change to the app" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That didn't work. Try again.");
+  });
+
+  it("no history channel, no row", async () => {
+    await renderIn("en", <ModsTab client={client()} />, { theme: true });
+    await screen.findByRole("switch", { name: "Echo" });
+    expect(screen.queryByRole("button", { name: "Undo the last change to the app" })).toBeNull();
   });
 });

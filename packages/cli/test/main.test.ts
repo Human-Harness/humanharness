@@ -28,14 +28,15 @@ describe("humanharness", () => {
       "  check [--json]                           Validate the harness in the current folder",
       "  run <action> [--engine claude|codex|opencode] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--record [--force]]",
       "                                           Run one task against a real engine in the terminal",
-      "  dev [--engine <id>] [--mock [--keep]] [--build <dir>]",
-      "                                           Check the harness, then open the app with it (--mock: replay mock/, no AI)",
+      "  dev [--engine <id>] [--mock [--keep]] [--build <dir>] [--safe]",
+      "                                           Check the harness, then open the app with it (--mock: replay mock/, no AI;",
+      "                                           --safe: the home folder's mods off and its layout pick cleared)",
       "",
       "check, run and dev take --harness <dir> to work on another folder than the current one.",
       "",
     ];
     const lines = USAGE.split("\n");
-    expect(lines.filter((l) => !/^ {2}(plugin|build|measure|tool)\b/.test(l))).toEqual(before);
+    expect(lines.filter((l) => !/^ {2}(plugin|build|measure|tool|mod|layout|status|shot)\b/.test(l) && !l.startsWith("mod clone, layout clone"))).toEqual(before);
     expect(lines.filter((l) => /^ {2}plugin\b/.test(l)).length).toBe(1);
     expect(lines.filter((l) => /^ {2}build\b/.test(l))).toEqual(["  build [--harness <dir>]                  Bundle the harness's tools into dist/ (tools.json)"]);
   });
@@ -79,6 +80,7 @@ describe("exitsWhenDone", () => {
   it("is true only for the commands that run plugin code in this process", () => {
     expect(exitsWhenDone(["plugin", "test"])).toBe(true);
     expect(exitsWhenDone(["plugin", "record", "events"])).toBe(true);
-    for (const argv of [["plugin", "dev"], ["plugin", "build"], ["dev"], ["run", "x"], []]) expect(exitsWhenDone(argv), argv.join(" ")).toBe(false);
+    expect(exitsWhenDone(["mod", "check", "mods/x"])).toBe(true);
+    for (const argv of [["mod", "clone", "x"], ["plugin", "dev"], ["plugin", "build"], ["dev"], ["run", "x"], []]) expect(exitsWhenDone(argv), argv.join(" ")).toBe(false);
   });
 });

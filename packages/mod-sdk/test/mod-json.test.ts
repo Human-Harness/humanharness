@@ -13,6 +13,13 @@ describe("mod.json", () => {
     expect(m.ui).toBeUndefined();
     expect(modJsonSchema.parse({ ...ok, main: "main.js", ui: "ui.js" })).toMatchObject({ main: "main.js", ui: "ui.js" });
   });
+  it("records where a clone came from, as { id, version }", () => {
+    expect(modJsonSchema.parse({ ...ok, clonedFrom: { id: "home", version: "0.1.0" } }).clonedFrom).toEqual({ id: "home", version: "0.1.0" });
+    expect(modJsonSchema.parse(ok).clonedFrom).toBeUndefined();
+    expect(modJsonSchema.safeParse({ ...ok, clonedFrom: { id: "Home!", version: "0.1.0" } }).success).toBe(false);
+    expect(modJsonSchema.safeParse({ ...ok, clonedFrom: { id: "home" } }).success).toBe(false);
+    expect(modJsonSchema.safeParse({ ...ok, clonedFrom: { id: "home", version: "0.1.0", extra: 1 } }).success).toBe(false);
+  });
   it("refuses a bad id, an unknown API version and unknown keys", () => {
     expect(modJsonSchema.safeParse({ ...ok, id: "Echo!" }).success).toBe(false);
     expect(modJsonSchema.safeParse({ ...ok, apiVersion: 99 }).success).toBe(false);

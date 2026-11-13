@@ -1,4 +1,5 @@
 import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { SafeNotice } from "./mods/SafeNotice";
 import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
@@ -6,7 +7,7 @@ import { ProfileAvatar } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
 import { type ChatPage, ChatView, type SendFn, type ShellBridge } from "./ChatView";
 import { Rail, SettingsGear, TopBar } from "./chrome";
-import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type Layout, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured, loadLayout } from "./client";
+import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessClient, type Layout, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, followLayout, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { type AppValue, AppProvider } from "./layout/app";
@@ -52,17 +53,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
-  /** The layout the screen shows, asked once at start (minimal-core spec §5.2). */
+  /** The layout the screen shows (minimal-core spec §5.2): asked at start, then redrawn on every change (0b2). */
   const [layout, setLayout] = useState<Layout | null>(null);
-  useEffect(() => {
-    let live = true;
-    void loadLayout(client).then((l) => {
-      if (live) setLayout(l);
-    });
-    return () => {
-      live = false;
-    };
-  }, [client]);
+  useEffect(() => followLayout(client, setLayout), [client]);
   const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
   /** On the work screen, the rail's place (UI refresh spec §4.2): the chat, or a secondary page, Inbox or Jobs (stage 4a; the chat stays mounted under it). */
   const [view, setView] = useState<{ kind: "chat" } | { kind: "inbox" | "jobs"; request?: number }>({ kind: "chat" });
@@ -648,6 +641,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           {searchNotice}
         </p>
       )}
+      {/* Safe mode (minimal-core 0b2): outside the screen, so it shows over Settings too. */}
+      <SafeNotice client={client} />
       {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
       <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />
     </I18nextProvider>

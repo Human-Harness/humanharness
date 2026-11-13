@@ -49,6 +49,16 @@ describe("devCommand", () => {
     expect(call.env?.HH_OUT_DIR).toBeUndefined();
   });
 
+  it("--safe opens the app in safe mode: HH_SAFE=1; without it, no HH_SAFE is set", async () => {
+    const dir = await harness();
+    const safe = fakeSpawn();
+    expect(await devCommand({ harnessDir: dir, safe: true, out: memoryStream().stream, spawn: safe.spawn })).toBe(0);
+    expect(safe.calls[0].env).toMatchObject({ HH_SAFE: "1" });
+    const plain = fakeSpawn();
+    expect(await devCommand({ harnessDir: dir, out: memoryStream().stream, spawn: plain.spawn })).toBe(0);
+    expect(plain.calls[0].env?.HH_SAFE).toBe(process.env.HH_SAFE);
+  });
+
   it("--build builds into a folder instead of opening the app", async () => {
     const f = fakeSpawn();
     expect(await devCommand({ harnessDir: await harness(), build: path.join(root, "out"), out: memoryStream().stream, spawn: f.spawn })).toBe(0);

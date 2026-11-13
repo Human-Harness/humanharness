@@ -4,6 +4,8 @@ import { cleanModsConfig, isModOn } from "../../src/main/mods/config";
 describe("mods config", () => {
   it("drops junk and keeps on/local/failed", () => {
     expect(cleanModsConfig({ on: { echo: false, "Bad!": true, x: "yes" }, local: ["/a", 3, "/a"], failed: { echo: "threw" } })).toEqual({ on: { echo: false }, local: ["/a"], failed: { echo: "threw" } });
+    expect(cleanModsConfig({ trusted: ["greet", "Bad!", 3, "greet"] })).toEqual({ trusted: ["greet"] });
+    expect(cleanModsConfig({ trusted: "greet" })).toBeUndefined();
     expect(cleanModsConfig("nope")).toBeUndefined();
     expect(cleanModsConfig({})).toBeUndefined();
   });

@@ -21,6 +21,8 @@ export const modJsonSchema = z
     main: inside.optional(),
     /** The built ui part, relative to the folder. Absent: the mod places no blocks. */
     ui: inside.optional(),
+    /** Set by `humanharness mod clone`: the mod this one was copied from. A clone is never updated from it. */
+    clonedFrom: z.strictObject({ id: z.string().regex(MOD_ID), version: z.string().regex(/^\d+\.\d+\.\d+$/, "version is x.y.z") }).optional(),
   })
   .refine((m) => !m.requires.includes(m.id), { message: "A mod can't require itself", path: ["requires"] });
 

@@ -262,6 +262,7 @@ import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { pickLayout, shownLayout } from "./mods/layout";
+import { manualFiles } from "./mods/manual";
 import { ModHost } from "./mods/host";
 import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
 import { registerModsIpc } from "./mods/mods-ipc";
@@ -4059,6 +4060,8 @@ if (primary) {
       core: { mods: Object.fromEntries(Object.entries(CORE_MODS).map(([id, m]) => [id, m.dir])), layouts: {}, layoutTexts: { main: `${JSON.stringify(defaultLayoutJson, null, 2)}\n` } },
       harness: await harnessLayer(harness.root, Object.keys(harness.mods ?? {}).filter((id) => !Object.hasOwn(CORE_MODS, id))),
       notice: showNotice,
+      // The folder's manual, AGENTS.md and hh.d.ts (0b2), rewritten every start.
+      manual: manualFiles(),
     });
     // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));

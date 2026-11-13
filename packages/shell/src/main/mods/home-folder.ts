@@ -96,10 +96,22 @@ async function pruneEmpty(dir: string): Promise<void> {
  * Rewrites the home folder's read-only layers, `core/` and `harness/`, from the app's sources (spec §5.1). A file
  * there that differs from what the app wrote last time, or that the app never wrote, is the person's edit: its mod
  * folder moves to `mods/<id>-edited` (a layout to `layouts/<name>-edited.json`), the original comes back, and
- * `notice` says so once per moved item. Runs on every start; a failure is logged and never stops the app.
+ * `notice` says so once per moved item. `manual`'s files are written first, as they are, with no edit check. Runs on
+ * every start; a failure is logged and never stops the app.
  */
-export async function writeLayers(o: { home: string; core: Layer; harness: Layer; notice: (text: string) => void }): Promise<void> {
+export async function writeLayers(o: {
+  home: string;
+  core: Layer;
+  harness: Layer;
+  notice: (text: string) => void;
+  /** The folder's manual (`AGENTS.md`, `hh.d.ts`): rewritten as they are, outside `.layers.json`'s edit check. */
+  manual?: Record<string, string>;
+}): Promise<void> {
   try {
+    for (const [name, text] of Object.entries(o.manual ?? {})) {
+      const file = path.join(o.home, name);
+      if ((await fs.readFile(file, "utf8").catch(() => null)) !== text) await writeAtomic(file, text);
+    }
     const recordFile = path.join(o.home, RECORD);
     const raw = await fs.readFile(recordFile, "utf8").catch(() => "{}");
     let last: Record<string, unknown> = {};

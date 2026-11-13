@@ -1,7 +1,7 @@
 # Published-contract snapshots — design
 
 Date: 2026-11-13
-Status: written, waiting for Marco's review
+Status: approved by Marco on 2026-11-13
 Source: the herdr comparison (https://claude.ai/artifact/9rsD7WqQSYDPyPKQqyGci8), item 3, and the minimal-core spec (`2026-11-05-minimal-core-and-mods-design.md`, §7 "Relation to other work"). herdr freezes `released.openrpc.json` and a test fails on any breaking change.
 
 ## 1. Goal

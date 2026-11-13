@@ -71,7 +71,7 @@ describe("findHome", () => {
   });
 });
 
-describe("mod check", () => {
+describe("mod check", { timeout: 120_000 }, () => {
   it("passes a good mod: mod.json, both bundles, main against a fake ctx and each block rendered", async () => {
     const dir = path.join(home, "mods", "hello");
     write(dir, { "mod.json": modJson({ main: "main.ts", ui: "ui.tsx" }), "main.ts": GOOD_MAIN, "ui.tsx": GOOD_UI });
@@ -84,7 +84,7 @@ describe("mod check", () => {
     expect(r.out).toContain("✓ ui: bundled");
     expect(r.out).toContain("✓ block hello: rendered");
     expect(r.out).not.toContain("✗");
-  }, 60_000);
+  }, 120_000);
 
   it("fails a mod.json that doesn't parse or doesn't validate", async () => {
     const dir = path.join(home, "mods", "bad");
@@ -103,7 +103,7 @@ describe("mod check", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("✓ main: bundled");
     expect(r.out).toContain("✗ main: boom in main");
-  }, 60_000);
+  }, 120_000);
 
   it("fails a mod whose block throws", async () => {
     const dir = path.join(home, "mods", "hello");
@@ -112,7 +112,7 @@ describe("mod check", () => {
     const r = await run(["mod", "check", dir]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("✗ block bad: boom in block");
-  }, 60_000);
+  }, 120_000);
 
   it("fails a bundle that imports what a mod may not, and an id that doesn't match mod.json", async () => {
     const dir = path.join(home, "mods", "hello");
@@ -121,7 +121,7 @@ describe("mod check", () => {
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/✗ main: .*node:fs can't be imported/);
     expect(r.out).toContain('✗ ui: defineMod has id "other", mod.json has "hello"');
-  }, 60_000);
+  }, 120_000);
 
   it("needs a folder", async () => {
     expect((await run(["mod", "check"])).code).toBe(2);

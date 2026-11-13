@@ -1239,6 +1239,7 @@
   "mods": {
     "tab": "Mods",
     "line": "Mods add parts to this app: a panel, a check before sending, a helper.",
+    "listTitle": "Mods",
     "empty": "No mods yet. A mod adds a part to this app: a panel, a check before sending, a helper.",
     "origin": { "core": "Core", "harness": "Harness", "local": "Local" },
     "registers": "Uses: {{list}}",
@@ -1256,7 +1257,7 @@
       "choice": "{{name}} · {{layer}}",
       "missing": "Not found",
       "default": "Default",
-      "passedOver": "Passed over: {{reason}}"
+      "passedOver": "Passed over {{reason}}"
     },
     "review": {
       "title": "Turn on {{name}}?",

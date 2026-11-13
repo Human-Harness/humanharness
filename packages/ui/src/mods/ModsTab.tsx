@@ -184,7 +184,7 @@ export function ModsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub
           {addRow}
         </>
       ) : (
-        <Group loose after={addRow}>
+        <Group loose title={t("mods.listTitle")} after={addRow}>
           {rows}
         </Group>
       )}

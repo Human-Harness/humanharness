@@ -20,7 +20,7 @@ const layoutView: LayoutView = {
     { name: "main", source: "harness" },
     { name: "main", source: "core" },
   ],
-  problems: ["The root must be a stack"],
+  problems: ["layouts/broken.json: The root must be a stack"],
 };
 
 /** Picks `name` in a Radix Select (its combobox, then the option in the portal). */
@@ -42,7 +42,7 @@ describe("Settings › Mods › Layout (0b2)", () => {
   it("shows the shown layout's name and layer, and the problems of the files passed over", async () => {
     await renderIn("en", <ModsTab client={withLayout()} />, { theme: true });
     expect(await screen.findByText("Showing main, from the harness.")).toBeTruthy();
-    expect(screen.getByText("Passed over: The root must be a stack")).toBeTruthy();
+    expect(screen.getByText("Passed over layouts/broken.json: The root must be a stack")).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Layout to show" }).textContent).toBe("broken · Yours");
   });
 

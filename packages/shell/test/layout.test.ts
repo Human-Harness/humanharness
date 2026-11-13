@@ -44,7 +44,7 @@ describe("shownLayout", () => {
     expect(v.problems.length).toBeGreaterThan(0);
     const err = await fs.readFile(`${harnessFile()}.error`, "utf8");
     expect(err).toContain("The root must be a stack");
-    expect(err.trimEnd().split("\n")).toEqual(v.problems);
+    expect(err.trimEnd().split("\n").map((l) => `harness/layouts/main.json: ${l}`)).toEqual(v.problems);
   });
   it("a file that is not JSON is a problem too", async () => {
     await put(harnessFile(), "{ nope");

@@ -1247,6 +1247,17 @@
     "add": "Add from folder…",
     "remove": "Remove",
     "error": "That didn't work. Try again.",
+    "layout": {
+      "title": "Layout",
+      "pick": "Layout to show",
+      "showing": "Showing {{name}}, from {{layer}}.",
+      "layer": { "user": "your layouts", "harness": "the harness", "core": "the app" },
+      "short": { "user": "Yours", "harness": "Harness", "core": "App" },
+      "choice": "{{name}} · {{layer}}",
+      "missing": "Not found",
+      "default": "Default",
+      "passedOver": "Passed over: {{reason}}"
+    },
     "review": {
       "title": "Turn on {{name}}?",
       "warning": "A mod runs with full access to your folder, your files and your keys. Turn it on only if you trust where it came from.",

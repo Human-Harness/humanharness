@@ -43,3 +43,23 @@ export async function loadLayout(client: Pick<HarnessClient, "layout">): Promise
     return CORE_LAYOUT;
   }
 }
+
+/**
+ * The layout the screen shows, live (0b2): one read, then every `hh:layoutChanged` (a change before the read wins).
+ * Returns the unsubscribe.
+ */
+export function followLayout(client: Pick<HarnessClient, "layout" | "onLayoutChanged">, show: (layout: Layout) => void): () => void {
+  let live = true;
+  let changed = false;
+  const off = client.onLayoutChanged?.((v) => {
+    changed = true;
+    if (live) show(v.layout);
+  });
+  void loadLayout(client).then((l) => {
+    if (live && !changed) show(l);
+  });
+  return () => {
+    live = false;
+    off?.();
+  };
+}

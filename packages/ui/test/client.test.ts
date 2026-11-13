@@ -1,8 +1,40 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type DataChangeView, type EngineStatus, canOpenFile, engineProblem, hearsDataChange, isTextSize, nextInPath, stepTextSize } from "../src/client";
+import { CORE_LAYOUT, type DataChangeView, type EngineStatus, type LayoutView, canOpenFile, engineProblem, followLayout, hearsDataChange, isTextSize, nextInPath, stepTextSize } from "../src/client";
 import { FakeClient } from "./fake-client";
+
+describe("followLayout (0b2)", () => {
+  const other: LayoutView["layout"] = { type: "stack", children: [{ type: "block", id: "home", content: { mod: "hello", block: "hello" } }, { type: "block", id: "work", content: { core: "task" } }] };
+  const view = (layout: LayoutView["layout"]): LayoutView => ({ layout, source: "user", name: "mine", choices: [], problems: [] });
+  it("shows the first read, then every hh:layoutChanged; a change before the read wins", async () => {
+    let send: ((v: LayoutView) => void) | undefined;
+    let answer: (v: LayoutView) => void = () => {};
+    const seen: unknown[] = [];
+    const off = followLayout(
+      {
+        layout: () => new Promise((r) => (answer = r)),
+        onLayoutChanged: (fn) => {
+          send = fn;
+          return () => (send = undefined);
+        },
+      },
+      (l) => seen.push(l),
+    );
+    send!(view(other));
+    answer(view(CORE_LAYOUT));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen).toEqual([other]);
+    off();
+    expect(send).toBeUndefined();
+  });
+  it("without a layout channel shows the core layout", async () => {
+    const seen: unknown[] = [];
+    followLayout({}, (l) => seen.push(l));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen).toEqual([CORE_LAYOUT]);
+  });
+});
 
 const ready: EngineStatus = {
   engineId: "claude",

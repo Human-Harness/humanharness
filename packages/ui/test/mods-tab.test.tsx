@@ -1,13 +1,87 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ModsView } from "../src/client";
+import type { HarnessClient, LayoutView, ModsView } from "../src/client";
 import { ModsTab } from "../src/mods/ModsTab";
 import { visibleTabs } from "../src/settings-tabs";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
+
+const layoutView: LayoutView = {
+  layout: { type: "stack", children: [{ type: "block", id: "home", content: { mod: "home", block: "home" } }, { type: "block", id: "work", content: { core: "task" } }] },
+  source: "harness",
+  name: "main",
+  picked: "broken",
+  choices: [
+    { name: "broken", source: "user" },
+    { name: "mine", source: "user" },
+    { name: "main", source: "harness" },
+    { name: "main", source: "core" },
+  ],
+  problems: ["The root must be a stack"],
+};
+
+/** Picks `name` in a Radix Select (its combobox, then the option in the portal). */
+async function pick(combobox: HTMLElement, name: string) {
+  fireEvent.keyDown(combobox, { key: "Enter" });
+  fireEvent.keyDown(await screen.findByRole("option", { name }), { key: "Enter" });
+}
+
+describe("Settings › Mods › Layout (0b2)", () => {
+  type WithLayout = FakeClient & Pick<HarnessClient, "layout" | "layoutPick" | "onLayoutChanged">;
+  function withLayout(over: Partial<Pick<HarnessClient, "layout" | "layoutPick" | "onLayoutChanged">> = {}) {
+    const c: WithLayout = client();
+    c.layout = vi.fn(async () => layoutView);
+    c.layoutPick = vi.fn(async (name: string | null) => ({ ...layoutView, source: name ? ("user" as const) : ("harness" as const), name: name ?? "main", ...(name ? { picked: name } : { picked: undefined }), problems: [] }));
+    Object.assign(c, over);
+    return c;
+  }
+
+  it("shows the shown layout's name and layer, and the problems of the files passed over", async () => {
+    await renderIn("en", <ModsTab client={withLayout()} />, { theme: true });
+    expect(await screen.findByText("Showing main, from the harness.")).toBeTruthy();
+    expect(screen.getByText("Passed over: The root must be a stack")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Layout to show" }).textContent).toBe("broken · Yours");
+  });
+
+  it("picking a layout asks main and shows its answer; Default clears the pick", async () => {
+    const c = withLayout();
+    await renderIn("en", <ModsTab client={c} />, { theme: true });
+    await pick(await screen.findByRole("combobox", { name: "Layout to show" }), "mine · Yours");
+    expect(c.layoutPick).toHaveBeenCalledWith("mine");
+    expect(await screen.findByText("Showing mine, from your layouts.")).toBeTruthy();
+    expect(screen.queryByText(/Passed over/)).toBeNull();
+    await pick(screen.getByRole("combobox", { name: "Layout to show" }), "Default");
+    expect(c.layoutPick).toHaveBeenLastCalledWith(null);
+  });
+
+  it("one name in two layers is one choice, the first layer's", async () => {
+    await renderIn("en", <ModsTab client={withLayout()} />, { theme: true });
+    fireEvent.keyDown(await screen.findByRole("combobox", { name: "Layout to show" }), { key: "Enter" });
+    const names = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(names).toEqual(["Default", "broken · Yours", "mine · Yours", "main · Harness"]);
+  });
+
+  it("follows hh:layoutChanged", async () => {
+    let send: ((v: LayoutView) => void) | undefined;
+    const onLayoutChanged = (fn: (v: LayoutView) => void) => {
+      send = fn;
+      return () => undefined;
+    };
+    await renderIn("en", <ModsTab client={withLayout({ onLayoutChanged })} />, { theme: true });
+    await screen.findByText("Showing main, from the harness.");
+    send!({ ...layoutView, source: "user", name: "mine", picked: "mine", problems: [] });
+    expect(await screen.findByText("Showing mine, from your layouts.")).toBeTruthy();
+  });
+
+  it("no layout channel, no Layout section", async () => {
+    await renderIn("en", <ModsTab client={client()} />, { theme: true });
+    await screen.findByRole("switch", { name: "Echo" });
+    expect(screen.queryByRole("combobox", { name: "Layout to show" })).toBeNull();
+  });
+});
 
 const view: ModsView = {
   mods: [

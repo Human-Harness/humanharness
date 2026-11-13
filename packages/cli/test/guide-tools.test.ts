@@ -118,7 +118,8 @@ describe("D0: a HARNESS.md written before the Mechanical work section", () => {
   const { root, cleanup } = tempRoot("hh-guide-tools-");
   afterAll(cleanup);
 
-  it("checks exactly as one with the section", async () => {
+  // Two harnesses made and checked: about 20 s alone, more under a full-repo run.
+  it("checks exactly as one with the section", { timeout: 120_000 }, async () => {
     const withIt = path.join(root, "with");
     const without = path.join(root, "without");
     await initHarness({ dir: withIt, core: CORE, install: false });

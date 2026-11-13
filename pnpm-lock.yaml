@@ -242,6 +242,9 @@ importers:
       '@humanharness/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../mod-sdk
       '@humanharness/policies':
         specifier: workspace:*
         version: link:../policies
@@ -260,6 +263,15 @@ importers:
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../workspace
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.16
         version: 17.0.16(i18next@26.4.3(typescript@7.0.2))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)
@@ -268,9 +280,6 @@ importers:
         version: 4.23.15
     devDependencies:
       '@types/react':
-        specifier: ^19.3.0
-        version: 19.3.0
-      react:
         specifier: ^19.3.0
         version: 19.3.0
 

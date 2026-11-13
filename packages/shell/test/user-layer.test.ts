@@ -71,7 +71,11 @@ async function setup() {
   return { host, layer, call, turnOn, reloaded, config };
 }
 
-describe("the user layer", () => {
+// Each test bundles real mods with esbuild or waits on file watchers: under a full-repo run that can take far more
+// than the default 30 s.
+const BUNDLING = { timeout: 120_000 };
+
+describe("the user layer", BUNDLING, () => {
   it("lists a folder in app/mods off; it turns on only through a review token, and is then trusted", async () => {
     await writeMod("greet", { "mod.json": modJson("greet"), "main.ts": mainTs("greet", "v1") });
     const { host, call, config } = await setup();
@@ -179,7 +183,7 @@ describe("the user layer", () => {
   });
 });
 
-describe("watchUserLayer", () => {
+describe("watchUserLayer", BUNDLING, () => {
   it("calls back once per mod folder for a burst of changes, and never for a .error file", async () => {
     await writeMod("greet", { "mod.json": modJson("greet") });
     const seen: string[] = [];
@@ -190,7 +194,7 @@ describe("watchUserLayer", () => {
       seen.length = 0;
       await writeMod("greet", { "main.ts": "a", "lib/x.ts": "b" });
       await writeMod("greet", { "main.ts": "c" });
-      await vi.waitFor(() => expect(seen).toEqual([modDir("greet")]), { timeout: 3_000 });
+      await vi.waitFor(() => expect(seen).toEqual([modDir("greet")]), { timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 300));
       expect(seen).toEqual([modDir("greet")]);
       await writeMod("greet", { "main.ts.error": "x" });
@@ -202,7 +206,7 @@ describe("watchUserLayer", () => {
   });
 });
 
-describe("watchLayouts", () => {
+describe("watchLayouts", BUNDLING, () => {
   it("calls back once for a burst under layouts/ or to settings.json, never for a .error file", async () => {
     let calls = 0;
     const w = watchLayouts(home, () => void (calls += 1), 100);
@@ -211,14 +215,14 @@ describe("watchLayouts", () => {
       calls = 0;
       await fs.writeFile(path.join(home, "layouts", "mine.json"), "{}");
       await fs.writeFile(path.join(home, "layouts", "mine.json"), "{ }");
-      await vi.waitFor(() => expect(calls).toBe(1), { timeout: 3_000 });
+      await vi.waitFor(() => expect(calls).toBe(1), { timeout: 15_000 });
       await new Promise((r) => setTimeout(r, 300));
       expect(calls).toBe(1);
       await fs.writeFile(path.join(home, "layouts", "mine.json.error"), "x");
       await new Promise((r) => setTimeout(r, 400));
       expect(calls).toBe(1);
       await fs.writeFile(path.join(home, "settings.json"), "{}");
-      await vi.waitFor(() => expect(calls).toBe(2), { timeout: 3_000 });
+      await vi.waitFor(() => expect(calls).toBe(2), { timeout: 15_000 });
       await fs.writeFile(path.join(home, "notes.md"), "x");
       await new Promise((r) => setTimeout(r, 400));
       expect(calls).toBe(2);

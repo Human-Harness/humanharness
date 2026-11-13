@@ -262,6 +262,8 @@ import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { pickLayout, shownLayout } from "./mods/layout";
+import { manualFiles } from "./mods/manual";
+import { startControl } from "./mods/control";
 import { ModHost } from "./mods/host";
 import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
 import { registerModsIpc } from "./mods/mods-ipc";
@@ -373,6 +375,8 @@ let userLayer: UserLayer | null = null;
 let userLayerWatch: { close(): void } | null = null;
 /** The watch on the home folder's `layouts/` and `settings.json` (0b2). */
 let layoutsWatch: { close(): void } | null = null;
+/** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
+let control: { stop(): Promise<void> } | null = null;
 /** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
 let resolvedMods: ResolvedMod[] = [];
 /**
@@ -4059,6 +4063,8 @@ if (primary) {
       core: { mods: Object.fromEntries(Object.entries(CORE_MODS).map(([id, m]) => [id, m.dir])), layouts: {}, layoutTexts: { main: `${JSON.stringify(defaultLayoutJson, null, 2)}\n` } },
       harness: await harnessLayer(harness.root, Object.keys(harness.mods ?? {}).filter((id) => !Object.hasOwn(CORE_MODS, id))),
       notice: showNotice,
+      // The folder's manual, AGENTS.md and hh.d.ts (0b2), rewritten every start.
+      manual: manualFiles(),
     });
     // The mods (minimal-core spec §4): a host only when some mod could run (D0); before the IPC, so the first send meets it.
     await startModHost().catch((err: unknown) => console.error("Could not start the mods", err));
@@ -4079,6 +4085,22 @@ if (primary) {
     // AI stages an earlier run left to do (the queue looks only once the app is set up).
     if (await validConfig()) kickMaterial();
     await createWindow();
+    // The control channel (0b2): `humanharness status` and `shot` reach the app through app/.control.json.
+    const controlHome = appHome(userData, harness.id);
+    void startControl({
+      home: controlHome,
+      window: () => window,
+      status: async () => {
+        const layout = await shownLayout(controlHome);
+        return { ...(await modsView()), layout: { name: layout.name, source: layout.source, problems: layout.problems } };
+      },
+    })
+      .then((c) => {
+        // A quit that came first: the channel closes at once.
+        if (quitting) void c.stop();
+        else control = c;
+      })
+      .catch((err: unknown) => console.error("Could not start the control channel", err));
     // The plugins of the current base (none before setup); a computer that slept runs the sources that came due.
     if (pluginsCtl) {
       const plugins = pluginsCtl;
@@ -4117,13 +4139,16 @@ if (primary) {
     layoutsWatch?.close();
     layoutsWatch = null;
     const modsStopped = modHost?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
+    // The control channel closes and app/.control.json goes.
+    const controlStopped = control?.stop().catch((err: unknown) => console.error("Could not stop the control channel", err));
+    control = null;
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
       // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
       await moving?.catch(() => undefined);
-      await Promise.all([setupStopped, testStopped, modsStopped]);
+      await Promise.all([setupStopped, testStopped, modsStopped, controlStopped]);
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));

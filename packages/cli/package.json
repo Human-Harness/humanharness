@@ -10,17 +10,20 @@
     "@humanharness/fake-agent": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
+    "@humanharness/mod-sdk": "workspace:*",
     "@humanharness/policies": "workspace:*",
     "@humanharness/protocol": "workspace:*",
     "@humanharness/runtime": "workspace:*",
     "@humanharness/shell": "workspace:*",
     "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-i18next": "^17.0.16",
     "tsx": "^4.23.15"
   },
   "devDependencies": {
-    "@types/react": "^19.3.0",
-    "react": "^19.3.0"
+    "@types/react": "^19.3.0"
   }
 }

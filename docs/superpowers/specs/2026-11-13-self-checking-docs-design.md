@@ -1,7 +1,7 @@
 # Docs that check themselves — design
 
 Date: 2026-11-13
-Status: written, waiting for Marco's review
+Status: approved by Marco 2026-11-13
 Source: the herdr comparison (https://claude.ai/artifact/9rsD7WqQSYDPyPKQqyGci8), improvement 6. herdr generates its reference tables from code and fails CI when a public name has no doc.
 
 ## 1. Goal

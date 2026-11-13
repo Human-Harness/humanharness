@@ -131,6 +131,32 @@ describe("the Settings › Mods channels", () => {
   });
 });
 
+/** The home history and safe mode (minimal-core 0b2): invoke channels handled in main, pushes the preload only listens on. */
+describe("the home history and safe-mode channels", () => {
+  it("are declared, sent by the preload and handled in main", async () => {
+    const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
+    const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    for (const [ch, call] of [
+      ["hh:homeHistory", 'homeHistory: () => invoke("hh:homeHistory")'],
+      ["hh:homeUndo", 'homeUndo: () => invoke("hh:homeUndo")'],
+      ["hh:safeMode", 'safeMode: () => invoke("hh:safeMode")'],
+    ] as const) {
+      expect(channels).toMatch(new RegExp(`^\\s*"${ch}":`, "m"));
+      expect(preload).toContain(call);
+      expect(index).toContain(`handle("${ch}"`);
+    }
+    for (const [ch, call] of [
+      ["hh:homeHistoryChanged", 'onHomeHistory: (fn) => subscribe("hh:homeHistoryChanged", fn)'],
+      ["hh:safeModeEntered", 'onSafeMode: (fn) => subscribe("hh:safeModeEntered", () => fn())'],
+    ] as const) {
+      expect(channels).toMatch(new RegExp(`^\\s*"${ch}":`, "m"));
+      expect(preload).toContain(call);
+      expect(preload).not.toContain(`invoke("${ch}"`);
+    }
+  });
+});
+
 /** The layout the screen shows (minimal-core spec §5.2): one invoke channel, in the table, the preload and main. */
 describe("the hh:layout channel", () => {
   it("is declared in channels.ts, sent by the preload and handled in main", async () => {

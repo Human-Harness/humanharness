@@ -190,3 +190,57 @@ describe("Settings › Mods", () => {
     if (tabs.includes("plugins")) expect(tabs.indexOf("plugins")).toBe(at + 1);
   });
 });
+
+describe("Settings › Mods › Undo the last change to the app (0b2)", () => {
+  type Hist = Pick<HarnessClient, "homeHistory" | "homeUndo" | "onHomeHistory">;
+  const at = "2026-11-12T10:30:00.000Z";
+  function withHistory(over: Partial<Hist> = {}) {
+    const c: FakeClient & Hist = client();
+    c.homeHistory = vi.fn(async () => ({ message: "Change to the app: mods/hello/ui.tsx", at }));
+    c.homeUndo = vi.fn(async () => ({ message: "Undo: Change to the app: mods/hello/ui.tsx", at }));
+    Object.assign(c, over);
+    return c;
+  }
+  const time = new Date(at).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" });
+
+  it("shows the last change's message and time; Undo asks main and shows its answer", async () => {
+    const c = withHistory();
+    await renderIn("en", <ModsTab client={c} />, { theme: true });
+    expect(await screen.findByText(`Last change: Change to the app: mods/hello/ui.tsx · ${time}`)).toBeTruthy();
+    const undo = screen.getByRole("button", { name: "Undo the last change to the app" });
+    expect(undo.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(undo);
+    expect(c.homeUndo).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(`Last change: Undo: Change to the app: mods/hello/ui.tsx · ${time}`)).toBeTruthy();
+  });
+
+  it("is disabled when there is no change", async () => {
+    await renderIn("en", <ModsTab client={withHistory({ homeHistory: vi.fn(async () => null) })} />, { theme: true });
+    expect(await screen.findByText("No change to undo yet.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Undo the last change to the app" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("follows hh:homeHistoryChanged", async () => {
+    let send: ((c: { message: string; at: string } | null) => void) | undefined;
+    const onHomeHistory = (fn: typeof send & {}) => {
+      send = fn;
+      return () => undefined;
+    };
+    await renderIn("en", <ModsTab client={withHistory({ homeHistory: vi.fn(async () => null), onHomeHistory })} />, { theme: true });
+    await screen.findByText("No change to undo yet.");
+    send!({ message: "Change to the app: settings.json", at });
+    expect(await screen.findByText(`Last change: Change to the app: settings.json · ${time}`)).toBeTruthy();
+  });
+
+  it("a failed undo says so", async () => {
+    await renderIn("en", <ModsTab client={withHistory({ homeUndo: vi.fn(async () => Promise.reject(new Error("x"))) })} />, { theme: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Undo the last change to the app" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That didn't work. Try again.");
+  });
+
+  it("no history channel, no row", async () => {
+    await renderIn("en", <ModsTab client={client()} />, { theme: true });
+    await screen.findByRole("switch", { name: "Echo" });
+    expect(screen.queryByRole("button", { name: "Undo the last change to the app" })).toBeNull();
+  });
+});

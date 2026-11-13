@@ -1,4 +1,5 @@
 import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { SafeNotice } from "./mods/SafeNotice";
 import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
@@ -640,6 +641,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           {searchNotice}
         </p>
       )}
+      {/* Safe mode (minimal-core 0b2): outside the screen, so it shows over Settings too. */}
+      <SafeNotice client={client} />
       {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
       <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />
     </I18nextProvider>

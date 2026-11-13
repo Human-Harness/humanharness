@@ -1259,6 +1259,15 @@
       "default": "Default",
       "passedOver": "Passed over {{reason}}"
     },
+    "history": {
+      "title": "Changes",
+      "undo": "Undo the last change to the app",
+      "last": "Last change: {{message}} · {{time}}",
+      "none": "No change to undo yet.",
+      "button": "Undo"
+    },
+    "safeNotice": "Safe mode: your mods are off and the harness's layout is shown. Turn them back on in Settings › Mods.",
+    "safeClose": "Close",
     "review": {
       "title": "Turn on {{name}}?",
       "warning": "A mod runs with full access to your folder, your files and your keys. Turn it on only if you trust where it came from.",

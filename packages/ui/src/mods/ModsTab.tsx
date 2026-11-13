@@ -2,8 +2,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, LayoutView, ModReview, ModRow } from "../client";
 import { Group, Icon, Row, Rx, SectionHead } from "../guide";
+import { shownLanguage } from "../language";
 import type { SettingsSub } from "../plugins/PluginsTab";
-import { useLayoutPick, useMods } from "./useMods";
+import { useHomeHistory, useLayoutPick, useMods } from "./useMods";
 
 /** A review's token is spent by Turn on, once. */
 type Screen = { kind: "list" } | { kind: "review"; review: ModReview; token: string };
@@ -188,7 +189,52 @@ export function ModsTab({ client, onSub }: { client: HarnessClient; onSub?: (sub
           {rows}
         </Group>
       )}
+      <HistorySection client={client} />
     </div>
+  );
+}
+
+/**
+ * Settings › Mods › Changes (0b2): a card with one row, "Undo the last change to the app", whose hint is the home
+ * history's last change (its message and when) and whose control is an outline Undo button, disabled when there is
+ * nothing to undo. Last on the page: it acts on everything above it. Only when main has the history channel.
+ */
+function HistorySection({ client }: { client: HarnessClient }) {
+  const { t, i18n } = useTranslation();
+  const { has, last, undo } = useHomeHistory(client);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+  if (!has) return null;
+  const hint = last ? t("mods.history.last", { message: last.message, time: new Date(last.at).toLocaleString(shownLanguage(i18n), { dateStyle: "medium", timeStyle: "short" }), interpolation: { escapeValue: false } }) : t("mods.history.none");
+  const onUndo = () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    undo()
+      .catch(() => setError(t("mods.error")))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Group title={t("mods.history.title")}>
+      <Row
+        hintId={`${id}-hint`}
+        label={t("mods.history.undo")}
+        hint={<Plain>{hint}</Plain>}
+        below={
+          error && (
+            <Rx.Text as="p" size="1" color="red" role="alert">
+              {error}
+            </Rx.Text>
+          )
+        }
+      >
+        <Rx.Button variant="outline" color="gray" size="1" aria-label={t("mods.history.undo")} aria-describedby={`${id}-hint`} disabled={!last} aria-disabled={busy} onClick={onUndo}>
+          <Icon name="undo" size={14} />
+          {t("mods.history.button")}
+        </Rx.Button>
+      </Row>
+    </Group>
   );
 }
 

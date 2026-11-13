@@ -7,7 +7,7 @@ import { type ModsSettings, cleanModsConfig } from "../src/main/mods/config";
 import { ModHost } from "../src/main/mods/host";
 import { registerModsIpc } from "../src/main/mods/mods-ipc";
 import { resolveMods } from "../src/main/mods/resolve";
-import { ModBuilds, UserLayer, userConsent, userModFolders, watchUserLayer, writeMainShims } from "../src/main/mods/user-layer";
+import { ModBuilds, UserLayer, userConsent, userModFolders, watchLayouts, watchUserLayer, writeMainShims } from "../src/main/mods/user-layer";
 
 let tmp: string;
 let home: string;
@@ -196,6 +196,32 @@ describe("watchUserLayer", () => {
       await writeMod("greet", { "main.ts.error": "x" });
       await new Promise((r) => setTimeout(r, 400));
       expect(seen).toEqual([modDir("greet")]);
+    } finally {
+      w.close();
+    }
+  });
+});
+
+describe("watchLayouts", () => {
+  it("calls back once for a burst under layouts/ or to settings.json, never for a .error file", async () => {
+    let calls = 0;
+    const w = watchLayouts(home, () => void (calls += 1), 100);
+    try {
+      await new Promise((r) => setTimeout(r, 600));
+      calls = 0;
+      await fs.writeFile(path.join(home, "layouts", "mine.json"), "{}");
+      await fs.writeFile(path.join(home, "layouts", "mine.json"), "{ }");
+      await vi.waitFor(() => expect(calls).toBe(1), { timeout: 3_000 });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(calls).toBe(1);
+      await fs.writeFile(path.join(home, "layouts", "mine.json.error"), "x");
+      await new Promise((r) => setTimeout(r, 400));
+      expect(calls).toBe(1);
+      await fs.writeFile(path.join(home, "settings.json"), "{}");
+      await vi.waitFor(() => expect(calls).toBe(2), { timeout: 3_000 });
+      await fs.writeFile(path.join(home, "notes.md"), "x");
+      await new Promise((r) => setTimeout(r, 400));
+      expect(calls).toBe(2);
     } finally {
       w.close();
     }

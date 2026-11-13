@@ -195,6 +195,8 @@ const client: HarnessClient = {
     onChange: (listener) => subscribe("hh:sidekick", listener),
   },
   layout: () => invoke("hh:layout"),
+  layoutPick: (name) => invoke("hh:layoutPick", name),
+  onLayoutChanged: (fn) => subscribe("hh:layoutChanged", fn),
   mods: {
     view: () => invoke("hh:mods"),
     set: (id, on) => invoke("hh:modSet", id, on),

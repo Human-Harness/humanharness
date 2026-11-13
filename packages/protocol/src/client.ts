@@ -392,9 +392,13 @@ export interface HarnessClient {
     setScope(scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }): Promise<{ ok: boolean; message?: string }>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
-  /** The layout the screen shows: the harness's `layouts/main.json` when valid, else the core's (minimal-core spec §5.2). */
+  /** The layout the screen shows: the picked one, else the harness's `layouts/main.json`, else the core's (minimal-core spec §5.2, 0b2). */
   /** Optional until the UI reads it (step 0b1's React job makes it required, with the test fakes). */
   layout?(): Promise<LayoutView>;
+  /** Picks a layout by name in the home folder's `settings.json` (null: back to the harness's `main`); the new view. */
+  layoutPick?(name: string | null): Promise<LayoutView>;
+  /** A layout file or the pick changed: the view to show now (0b2). */
+  onLayoutChanged?(fn: (v: LayoutView) => void): () => void;
   /** Settings › Mods (minimal-core spec §4, §6). Adding a local mod: main picks the folder, answers a review and a one-time token. */
   mods: {
     view(): Promise<ModsView>;

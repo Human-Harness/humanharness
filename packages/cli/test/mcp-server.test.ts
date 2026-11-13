@@ -62,6 +62,14 @@ describe("mcp --config", () => {
     expect(configSnippet("codex", home)).toContain(`args = [${JSON.stringify(BIN)}, "mcp", "--home", ${JSON.stringify(home)}]`);
   });
 
+  it("shell-quotes what needs it in the claude command, as an Application Support home does", () => {
+    const spaced = "/Users/x/Library/Application Support/Human Harness/app";
+    const line = configSnippet("claude", spaced);
+    expect(line).toContain(`--home '/Users/x/Library/Application Support/Human Harness/app'\n`);
+    expect(configSnippet("claude", "/tmp/it's here")).toContain(`--home '/tmp/it'\\''s here'\n`);
+    expect(configSnippet("codex", spaced)).toContain(`"--home", ${JSON.stringify(spaced)}]`);
+  });
+
   it("is what `humanharness mcp --config` prints, with --home made absolute", async () => {
     const m = memoryIo(root);
     expect(await main(["mcp", "--config", "claude", "--home", "app"], m.io)).toBe(0);

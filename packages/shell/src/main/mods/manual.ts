@@ -7,6 +7,8 @@ import hhDts from "../../../scripts/hh.d.ts?raw";
  * works in the folder, and `hh.d.ts`, the mod API's types. Both are rewritten on every start.
  */
 export function agentsMd(): string {
+  // The example's imports go through q(), so the repo's import scanners don't read them as this file's imports.
+  const q = (spec: string) => JSON.stringify(spec);
   const imports = [...SHARED_IMPORTS].map((s) => `\`${s}\``).join(", ");
   return `# This app's home folder
 
@@ -81,8 +83,8 @@ A mod is a folder \`mods/<id>/\` with a \`mod.json\` and its code:
 Each part exports a mod with \`defineMod\` (\`ModDefinition\`); its \`id\` must match \`mod.json\`:
 
 \`\`\`tsx
-import { defineMod } from "@humanharness/mod-sdk";
-import { Rx, type BlockProps } from "@humanharness/ui";
+import { defineMod } from ${q("@humanharness/mod-sdk")};
+import { Rx, type BlockProps } from ${q("@humanharness/ui")};
 
 function Hello({ props }: BlockProps) {
   return <Rx.Text>Hello {String(props.name ?? "")}</Rx.Text>;

@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { MOD_API_VERSION } from "@humanharness/mod-sdk";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { compareHhDts } from "../scripts/contracts";
+import { checkRepo, compareHhDts, readContract, RELEASED_DIR } from "../scripts/contracts";
 
 const FIX = path.join(import.meta.dirname, "fixtures", "contracts");
 const pair = (c: string) => ({
@@ -34,4 +35,18 @@ describe("hh.d.ts check", () => {
   it("an exported type with no role fails, naming the type and roles.json", async () => {
     await expect(compareHhDts(pair("no-role"))).rejects.toThrow(/Extra.*packages\/mod-sdk\/released\/roles\.json/s);
   }, 60_000);
+});
+
+describe("the repo's contract", () => {
+  it("matches the frozen copy (run `corepack pnpm --filter @humanharness/shell contracts accept` after a contract change)", async () => {
+    const r = await checkRepo();
+    expect(r, `contract ${r.result}: ${r.names.join(", ")}; run \`corepack pnpm --filter @humanharness/shell contracts accept\``).toEqual({ result: "same", names: [] });
+  }, 60_000);
+
+  it("contract.json, the newest vN files and MOD_API_VERSION agree (spec §2)", () => {
+    const { apiVersion } = readContract();
+    const versions = readdirSync(RELEASED_DIR).flatMap((f) => /^hh\.v(\d+)\.d\.ts$/.exec(f)?.[1] ?? []).map(Number);
+    expect(Math.max(...versions)).toBe(apiVersion);
+    expect(apiVersion).toBe(MOD_API_VERSION);
+  });
 });

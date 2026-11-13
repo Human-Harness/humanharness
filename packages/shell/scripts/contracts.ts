@@ -6,10 +6,11 @@
 // `host` types (the app hands them to mods) may only grow, `mod` types (mods hand them to the app) may only loosen,
 // `both` may not change, values may only accept more. A failed assertion is a breaking change.
 import { execFileSync } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { publicNamesByModule, tscBin } from "./hh-dts.ts";
+import { fileURLToPath, pathToFileURL } from "node:url";
+// @ts-expect-error TS5097: plain `node` runs this script and needs the extension; the repo's tsconfig does not allow it.
+import { HH_DTS_FILE, publicNames, publicNamesByModule, tscBin } from "./hh-dts.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGES = path.resolve(here, "../..");
@@ -201,4 +202,57 @@ export async function compareHhDts(input: { frozen: string; current: string; rol
   }
   const changed = both.filter((n) => declarationText(input.frozen, n) !== declarationText(input.current, n));
   return verdictFrom({ removed, added, failed, changed });
+}
+
+/** The frozen contract: packages/mod-sdk/released/. */
+export const RELEASED_DIR = path.join(PACKAGES, "mod-sdk", "released");
+const CONTRACT_FILE = path.join(RELEASED_DIR, "contract.json");
+const ROLES_FILE = path.join(RELEASED_DIR, "roles.json");
+const frozenFile = (apiVersion: number) => path.join(RELEASED_DIR, `hh.v${apiVersion}.d.ts`);
+
+export type Contract = { apiVersion: number; frozen: boolean };
+export function readContract(): Contract {
+  return JSON.parse(readFileSync(CONTRACT_FILE, "utf8")) as Contract;
+}
+const readRoles = (): Record<string, Role> => JSON.parse(readFileSync(ROLES_FILE, "utf8")) as Record<string, Role>;
+
+/** Today's hh.d.ts against the frozen copy of the contract's version. */
+export async function checkRepo(): Promise<Verdict> {
+  const { apiVersion } = readContract();
+  return compareHhDts({ frozen: readFileSync(frozenFile(apiVersion), "utf8"), current: readFileSync(HH_DTS_FILE, "utf8"), roles: readRoles() });
+}
+
+/** Freezes today's hh.d.ts as the contract's version and drops the roles of types no longer exported (frozen false only). */
+export async function accept(): Promise<Verdict | null> {
+  if (!existsSync(CONTRACT_FILE)) writeFileSync(CONTRACT_FILE, `${JSON.stringify({ apiVersion: 1, frozen: false } satisfies Contract, null, 2)}\n`);
+  const { apiVersion, frozen } = readContract();
+  if (frozen) throw new Error("contracts accept: contract.json says frozen is true; accepting a frozen contract is not supported yet");
+  const current = readFileSync(HH_DTS_FILE, "utf8");
+  const verdict = existsSync(frozenFile(apiVersion)) ? await checkRepo() : null;
+  const names = publicNames(current);
+  const types = new Set([...kindsOf(current, names)].filter(([, k]) => k === "type").map(([n]) => n));
+  const roles = Object.fromEntries(Object.entries(readRoles()).filter(([n]) => types.has(n)).sort(([a], [b]) => a.localeCompare(b)));
+  writeFileSync(frozenFile(apiVersion), current);
+  writeFileSync(ROLES_FILE, `${JSON.stringify(roles, null, 2)}\n`);
+  return verdict;
+}
+
+function line(v: Verdict): string {
+  return v.result === "same" ? "same" : `${v.result}: ${v.names.join(", ")}`;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const cmd = process.argv[2];
+  if (cmd === "check") {
+    const v = await checkRepo();
+    console.log(line(v));
+    process.exitCode = v.result === "same" ? 0 : 1;
+  } else if (cmd === "accept") {
+    const v = await accept();
+    if (v?.result === "breaking") console.log(`warning: breaking changes accepted while frozen is false: ${v.names.join(", ")}`);
+    console.log(`Wrote ${path.relative(process.cwd(), RELEASED_DIR)}${v ? ` (${line(v)})` : ""}`);
+  } else {
+    console.error("usage: contracts check|accept");
+    process.exitCode = 2;
+  }
 }

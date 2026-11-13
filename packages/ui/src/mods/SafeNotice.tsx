@@ -29,8 +29,8 @@ export function SafeNotice({ client }: { client: Pick<HarnessClient, "safeMode" 
   }, [client]);
   if (!shown) return null;
   return (
-    // Over the screen, bottom centre; the strip lets clicks through, the notice takes them.
-    <Rx.Flex position="fixed" bottom="5" left="0" right="0" justify="center" px="4" mx="auto" maxWidth="600px" style={{ zIndex: 1000, pointerEvents: "none" }}>
+    // Over the screen, bottom centre above the footer; the strip lets clicks through, the notice takes them.
+    <Rx.Flex position="fixed" bottom="8" left="0" right="0" justify="center" px="4" mx="auto" maxWidth="600px" style={{ zIndex: 1000, pointerEvents: "none" }}>
       <Rx.Callout.Root color="orange" role="status" variant="surface" style={{ pointerEvents: "auto" }}>
         <Rx.Callout.Icon>
           <Icon name="callout-warning" size={14} />

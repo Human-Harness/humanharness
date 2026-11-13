@@ -311,12 +311,13 @@ describe("runTask", () => {
       ],
     };
     const ctrlC = fakeInterrupts();
-    const watcher = fs.watch(marks, (_event, name) => {
-      if (name === "closing") {
-        watcher.close();
+    // Polled, not fs.watch: under a loaded full run, macOS's watcher can miss the file and the turn hangs.
+    const poll = setInterval(() => {
+      if (fs.existsSync(path.join(marks, "closing"))) {
+        clearInterval(poll);
         ctrlC.press();
       }
-    });
+    }, 20);
     const out = memoryStream();
     let prompts = 0;
     const output = watch(out, (text) => {

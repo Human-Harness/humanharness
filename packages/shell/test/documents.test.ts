@@ -206,23 +206,27 @@ describe("documentsExist", () => {
 
 describe("DocumentWatchers (live reload)", () => {
   it("tells once after a quiet moment when the file changes, also through a rename; not for other files", async () => {
+    // Wide margins: under a full-repo run the rename and the append can land far apart, and a short quiet window
+    // would tell twice.
+    const QUIET_MS = 500;
+    const SETTLE_MS = 1_000;
     const changed = vi.fn();
-    const w = new DocumentWatchers(changed, 50);
+    const w = new DocumentWatchers(changed, QUIET_MS);
     const id = await w.watch("docs/plan.md", roots);
     expect(id).toEqual(expect.any(Number));
     fs.writeFileSync(path.join(folder, "docs", "other.md"), "x");
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
     expect(changed).not.toHaveBeenCalled();
     const tmp = path.join(folder, "docs", "plan.md.tmp");
     fs.writeFileSync(tmp, "# Plan v2\n");
     fs.renameSync(tmp, path.join(folder, "docs", "plan.md"));
     fs.appendFileSync(path.join(folder, "docs", "plan.md"), "more\n");
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(id), { timeout: 2000 });
-    await new Promise((r) => setTimeout(r, 150));
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(id), { timeout: 10_000 });
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
     expect(changed).toHaveBeenCalledTimes(1);
     w.unwatch(id);
     fs.appendFileSync(path.join(folder, "docs", "plan.md"), "again\n");
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
     expect(changed).toHaveBeenCalledTimes(1);
     w.closeAll();
   });

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { tableKeys } from "./contract-docs";
 
 const packages = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -23,15 +24,8 @@ function literals(dir: string): Set<string> {
   return found;
 }
 
-/** The keys of one interface in channels.ts. */
-function tableKeys(name: "Invoke" | "Push"): Set<string> {
-  const text = fs.readFileSync(path.join(packages, "protocol/src/channels.ts"), "utf8");
-  const body = text.match(new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? "";
-  return new Set([...body.matchAll(/^\s*"(hh:[A-Za-z]+)"\s*:/gm)].map((m) => m[1]));
-}
-
-const invoke = tableKeys("Invoke");
-const push = tableKeys("Push");
+const invoke = tableKeys("Invoke", path.resolve(packages, ".."));
+const push = tableKeys("Push", path.resolve(packages, ".."));
 const table = new Set([...invoke, ...push]);
 const main = literals(path.join(packages, "shell/src/main"));
 const preload = literals(path.join(packages, "shell/src/preload"));

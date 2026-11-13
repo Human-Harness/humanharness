@@ -7,6 +7,7 @@
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json",
+    "docs:gen": "tsx packages/protocol/scripts/gen-contract-docs.ts",
     "humanharness": "node packages/cli/bin/humanharness.js",
     "app:dev": "corepack pnpm --filter @humanharness/shell dev",
     "start-demo": "node packages/cli/bin/humanharness.js dev --harness harnesses/demo --mock",

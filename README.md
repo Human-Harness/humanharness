@@ -80,6 +80,10 @@ How it works: [`docs/architecture/authoring.md`](docs/architecture/authoring.md)
 
 You are responsible for what your harness does with the AI and for the engines you offer: each user brings their own account under their provider's terms.
 
+## File size
+
+No source, test or architecture doc may grow past 48 KB (target: 32 KB or less, one responsibility per file). `packages/protocol/test/file-size.test.ts` fails on a new file over the cap, and on a file in the baseline (`packages/protocol/test/file-size-baseline.json`) that grows. The baseline lists the files already over the cap and only goes down: after shrinking a baseline file, run `corepack pnpm size-baseline` and commit the new number.
+
 ## License
 
 [Apache-2.0](LICENSE)

@@ -57,7 +57,7 @@ import {
   stageTier,
 } from "@humanharness/harness-sdk";
 import { createI18n } from "@humanharness/i18n";
-import { type Job, MaterialStore, workerRunner } from "@humanharness/material/light";
+import { type Job, MaterialStore } from "@humanharness/material/light";
 import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
   type Event,
@@ -168,7 +168,6 @@ import {
   capTokens,
   dayTokens,
   modRecord,
-  measuredMaterialCosts,
   profilesUsage,
   recentUsage,
   summarizeUsage,
@@ -198,7 +197,7 @@ import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
-import { materialOwn, saveAppChange } from "./app-change";
+import { saveAppChange } from "./app-change";
 import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
@@ -269,8 +268,9 @@ import { createTaskDeps, createTurnDeps } from "./task-deps";
 import { createAppState } from "./app-state";
 import { type TranslationService, buildTranslation } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialIpc, materialItems, materialRecommended } from "./material-ipc";
-import { MaterialJobs } from "./material-jobs";
+import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
+import type { MaterialJobs } from "./material-jobs";
+import { buildMaterial, buildMaterialJobs } from "./material-wiring";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
 import { baseFor, isInsideFolder } from "./profile-base";
@@ -1519,85 +1519,6 @@ async function translateEngine(fresh = false): Promise<EngineDef | null> {
   if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
   const engine = getEngine(c.engineId);
   return (await engineReady(engine, fresh)) ? engine : null;
-}
-
-/** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
-async function buildMaterial(): Promise<MaterialService | null> {
-  const m = harness.material;
-  if (!m) return null;
-  const [{ MaterialService }, { fetchLink }] = await Promise.all([import("./material"), import("./material-fetch")]);
-  return new MaterialService({
-    material: m,
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    scopeOk: async (scope) => (scoped() ? activeScope(scope) : scope === MAIN_SCOPE),
-    pickFiles: async () => {
-      if (!window || window.isDestroyed()) return null;
-      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"] });
-      return r.canceled ? null : r.filePaths;
-    },
-    fetchLink: (url) => fetchLink(url),
-    send: sendToWindow,
-    provider: async () => {
-      const engineId = (await config.load()).engineId;
-      return engineId ? getEngine(engineId).provider : "";
-    },
-    window: async () => {
-      const c = await validConfig();
-      if (!c) return null;
-      const primary = getEngine(c.engineId).limits?.primary;
-      const last = recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 50).filter((r) => r.limits?.length).at(-1);
-      const w = last?.limits?.find((x) => x.kind === primary) ?? last?.limits?.[0];
-      return w && Date.parse(w.resetsAt) > Date.now() ? { kind: w.kind, utilization: w.utilization } : null;
-    },
-    afterChange: async (scope, what) => {
-      kickMaterial();
-      const history = await currentHistory();
-      // Board mode: only this scope's material, never another task's running work (parallel spec §5.3).
-      await saveAppChange(history, ownCommits(), materialOwn(scope), `Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) =>
-        console.error("Could not record the material change", err),
-      );
-    },
-    // The built converter worker (its own entry beside this file), at most CONVERT_AT_ONCE at a time.
-    runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
-    runStage: (job, prompt, tools, handle, signal, fragments) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal, fragments),
-    // The stages' costs measured in this base's log (§7): each profile's own.
-    measured: async () => {
-      const c = await validConfig();
-      return c ? measuredMaterialCosts(recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 500)) : undefined;
-    },
-    kick: kickMaterial,
-    trash: (file) => shell.trashItem(file),
-    // The links stage's items (§8), from the current base's data store; never throws.
-    ...(m.items
-      ? {
-          items: (scope: string) =>
-            materialItems(
-              m.items,
-              harness.data,
-              async () => {
-                const c = await validConfig();
-                return c ? dataStoreFor(baseOf(c)) : null;
-              },
-              scope,
-            ),
-        }
-      : {}),
-  });
-}
-
-/**
- * The queue of AI stages over the service (material spec §10): one at a time, started only when no turn, task
- * operation, hold, move or quit is under way.
- */
-function buildMaterialJobs(svc: MaterialService): MaterialJobs<Job> {
-  return new MaterialJobs<Job>({
-    idle: () => !quitting && moving === null && !tasks.isBusy() && hold.turnBlocked() === null && !hold.folderBusy(),
-    next: () => svc.nextJob(),
-    run: (job, signal) => svc.runJob(job, signal),
-  });
 }
 
 /** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
@@ -3087,8 +3008,32 @@ if (loaded) {
       blocked: hold.profileChangeBlocked,
     });
   }
-  materialSvc = await buildMaterial();
-  materialJobs = materialSvc ? buildMaterialJobs(materialSvc) : null;
+  materialSvc = await buildMaterial({
+    harness: () => harness,
+    config: () => config,
+    validConfig,
+    baseOf,
+    scoped,
+    activeScope,
+    pickFiles: async () => {
+      if (!window || window.isDestroyed()) return null;
+      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"] });
+      return r.canceled ? null : r.filePaths;
+    },
+    send: sendToWindow,
+    kick: kickMaterial,
+    currentHistory,
+    ownCommits,
+    trailerNow: () => tasks.trailerNow(),
+    here,
+    stageDeps: materialStageDeps,
+    trash: (file) => shell.trashItem(file),
+    dataStoreFor,
+  });
+  // The AI stages start only when no turn, task operation, hold, move or quit is under way.
+  materialJobs = materialSvc
+    ? buildMaterialJobs(materialSvc, () => !quitting && moving === null && !tasks.isBusy() && hold.turnBlocked() === null && !hold.folderBusy())
+    : null;
   translation = buildTranslation({
     userData: app.getPath("userData"),
     ...(harness.tone ? { tone: harness.tone } : {}),

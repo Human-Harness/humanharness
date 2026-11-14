@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>La IA trabajando</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+@keyframes hhpulse{0%,100%{opacity:1}50%{opacity:.45}}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; position: relative; overflow: hidden; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}}; opacity: {{chromeOp}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <sc-if value="{{showChip}}" hint-placeholder-val="{{ false }}">
+      <button style="height: 28px; padding: 0 10px; border: 1px solid {{t.line}}; border-radius: 8px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 4px; background: {{t.activeInk}}; animation: hhpulse 1.6s ease-in-out infinite;"></span>Armando 1 · 40%</button>
+    </sc-if>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{chatBtnBg}}; color: {{chatBtnInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px; opacity: {{chromeOp}};">
+      <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
+        <a href="{{n.href}}" aria-label="{{n.label}}" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg></a>
+      </sc-for>
+    </nav>
+
+    <!-- A: the request screen, under the blocking dialog -->
+    <sc-if value="{{isA}}" hint-placeholder-val="{{ false }}">
+      <main style="flex-grow: 1; min-width: 0; padding: 16px 32px; display: flex; flex-direction: column; gap: 16px;">
+        <span style="font-size: 14px; color: {{t.muted}};">{{aCrumb}}</span>
+        <h1 style="margin: 0; font-size: 20px; font-weight: 600;">{{aTitle}}</h1>
+        <section style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <span style="font-size: 14px; font-weight: 500;">{{aAskLabel}}</span>
+          <div style="border: 1px solid {{t.line}}; border-radius: 12px; padding: 12px; font-size: 14px; line-height: 1.5;">{{aAsk}}</div>
+          <span style="font-size: 14px; font-weight: 500;">{{aChipsLabel}}</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <sc-for list="{{aChips}}" as="c" hint-placeholder-count="3">
+              <span style="font-size: 12px; padding: 4px 10px; border-radius: 8px; background: {{t.s2}};">{{c.t}}</span>
+            </sc-for>
+          </div>
+        </section>
+      </main>
+    </sc-if>
+
+    <!-- B: the class editor builds live -->
+    <sc-if value="{{isB}}" hint-placeholder-val="{{ false }}">
+      <main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
+        <div style="padding: 12px 32px; display: flex; align-items: center; gap: 16px; background: {{t.active}}; color: {{t.activeInk}};">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="animation: hhpulse 1.6s ease-in-out infinite;"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path></svg>
+          <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 14px; font-weight: 600;">Armando la clase · escribiendo la diapositiva 5 de 12</span>
+            <div style="height: 6px; border-radius: 3px; background: {{t.barBg}};"><div style="width: 40%; height: 6px; border-radius: 3px; background: {{t.activeInk}};"></div></div>
+          </div>
+          <span style="font-size: 12px;">Faltan unos 2 min</span>
+          <button style="height: 32px; padding: 0 12px; border: 1px solid {{t.activeInk}}; border-radius: 12px; background: transparent; color: {{t.activeInk}}; font-family: inherit; font-size: 14px; font-weight: 500;">Seguir en segundo plano</button>
+        </div>
+        <div style="flex-grow: 1; min-height: 0; display: flex; gap: 24px; padding: 16px 32px;">
+          <div style="width: 160px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;">
+            <sc-for list="{{thumbs}}" as="s" hint-placeholder-count="8">
+              <div style="height: 54px; border-radius: 8px; border: 1.5px {{s.style}} {{s.line}}; background: {{s.bg}}; display: flex; align-items: center; padding: 0 10px; gap: 8px; font-size: 12px; color: {{s.ink}};"><span style="font-variant-numeric: tabular-nums;">{{s.n}}</span><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{s.t}}</span></div>
+            </sc-for>
+          </div>
+          <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: 600;">Clase 29 · Humedales del Delta</h1>
+            <div style="aspect-ratio: 16 / 9; max-height: 520px; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px;">
+              <span style="font-size: 14px; color: {{t.muted}};">Diapositiva 5</span>
+              <span style="font-size: 28px; font-weight: 600;">¿Por qué se queman los humedales?</span>
+              <span style="font-size: 18px; line-height: 1.5; color: {{t.ink}};">• Quemas para habilitar pastoreo en islas</span>
+              <span style="font-size: 18px; line-height: 1.5; color: {{t.ink}};">• Sequía: el río bajo deja el suelo de turba expuesto<span style="display: inline-block; width: 2px; height: 20px; background: {{t.activeInk}}; vertical-align: -3px; margin-left: 2px; animation: hhpulse 1s steps(2) infinite;"></span></span>
+              <span style="height: 14px; width: 60%; border-radius: 6px; background: {{t.s2}};"></span>
+            </div>
+            <span style="font-size: 14px; color: {{t.muted}};">Podés mirar mientras escribe. Para editar, esperá a que termine o pausalo.</span>
+          </div>
+        </div>
+      </main>
+    </sc-if>
+
+    <!-- C and background: the subject or the home, fully usable -->
+    <sc-if value="{{isList}}" hint-placeholder-val="{{ true }}">
+      <main style="flex-grow: 1; min-width: 0; padding: 16px 32px; display: flex; flex-direction: column; gap: 16px;">
+        <span style="font-size: 14px; color: {{t.muted}};">{{crumb}}</span>
+        <h1 style="margin: 0; font-size: 20px; font-weight: 600;">{{listTitle}}</h1>
+        <section style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+          <div style="padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid {{t.line}};">{{listHead}}</div>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+            <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px; border-top: {{r.border}}; background: {{r.bg}};">
+              <span style="font-size: 12px; color: {{t.faint}}; width: 24px; font-variant-numeric: tabular-nums;">{{r.n}}</span>
+              <span style="flex-grow: 1; font-size: 14px; font-weight: 500;">{{r.t}}</span>
+              <sc-if value="{{r.working}}" hint-placeholder-val="{{ false }}">
+                <div style="width: 120px; height: 6px; border-radius: 3px; background: {{t.barBg}};"><div style="width: 40%; height: 6px; border-radius: 3px; background: {{t.activeInk}};"></div></div>
+              </sc-if>
+              <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{r.tagBg}}; color: {{r.tagInk}};">{{r.tag}}</span>
+            </div>
+          </sc-for>
+        </section>
+      </main>
+    </sc-if>
+
+    <!-- C: progress lives in the chat -->
+    <sc-if value="{{isC}}" hint-placeholder-val="{{ false }}">
+      <aside aria-label="Asistente" style="width: 360px; flex-shrink: 0; background: {{t.rail}}; border-left: 1px solid {{t.line}}; display: flex; flex-direction: column;">
+        <div style="padding: 12px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid {{t.line}};">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="{{t.activeInk}}" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>
+          <span style="font-size: 16px; font-weight: 600; flex-grow: 1;">Asistente</span>
+        </div>
+        <div style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 1.45;">
+          <div style="align-self: flex-end; max-width: 85%; background: {{t.s2}}; border-radius: 14px; padding: 10px 12px;">Armá la clase de humedales con esas 3 fuentes.</div>
+          <span>Arranco. Podés seguir trabajando: te aviso acá cuando esté.</span>
+          <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+            <span style="font-weight: 600;">Clase 29 · Humedales del Delta</span>
+            <sc-for list="{{steps}}" as="s" hint-placeholder-count="5">
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{s.ink}};"><span style="width: 16px; text-align: center; color: {{s.mark}};">{{s.icon}}</span>{{s.t}}</div>
+            </sc-for>
+            <div style="height: 6px; border-radius: 3px; background: {{t.barBg}};"><div style="width: 40%; height: 6px; border-radius: 3px; background: {{t.activeInk}};"></div></div>
+            <div style="display: flex; gap: 8px;">
+              <button style="height: 28px; padding: 0 10px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">Mirar en vivo</button>
+              <button style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 12px;">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </sc-if>
+  </div>
+
+  <!-- A: blocking dialog over the whole app -->
+  <sc-if value="{{isA}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; background: {{t.scrim}}; display: flex; align-items: center; justify-content: center;">
+      <div role="dialog" aria-label="{{dTitle}}" style="width: 520px; background: {{t.surface}}; border-radius: 18px; box-shadow: {{t.shadow}}; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="{{t.activeInk}}" aria-hidden="true" style="animation: hhpulse 1.6s ease-in-out infinite;"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>
+          <span style="font-size: 20px; font-weight: 600;">{{dTitle}}</span>
+        </div>
+        <span style="font-size: 14px; color: {{t.muted}};">{{dSub}}</span>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{steps}}" as="s" hint-placeholder-count="5">
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: {{s.ink}};"><span style="width: 18px; text-align: center; color: {{s.mark}};">{{s.icon}}</span>{{s.t}}</div>
+          </sc-for>
+        </div>
+        <div style="height: 8px; border-radius: 4px; background: {{t.barBg}};"><div style="width: {{dPct}}; height: 8px; border-radius: 4px; background: {{t.activeInk}};"></div></div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+          <span style="flex-grow: 1; font-size: 14px; color: {{t.muted}};">Si seguís en segundo plano: cuando esté lista, te avisamos y queda en Para revisar.</span>
+          <a href="{{go.workCancel}}" style="height: 36px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
+          <a href="{{go.workBg}}" style="height: 36px; padding: 0 14px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Seguir en segundo plano</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Background: the done notice -->
+  <sc-if value="{{isBg}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; right: 24px; bottom: 24px; width: 340px; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; box-shadow: {{t.shadow}}; padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+      <span style="width: 28px; height: 28px; border-radius: 14px; background: {{t.ok}}; color: {{t.okInk}}; display: flex; align-items: center; justify-content: center; font-size: 14px;">✓</span>
+      <div style="flex-grow: 1; display: flex; flex-direction: column;">
+        <span style="font-size: 14px; font-weight: 600;">Clase 27 lista para revisar</span>
+        <span style="font-size: 14px; color: {{t.muted}};">Ecosistemas urbanos · 12 diapositivas</span>
+      </div>
+      <a href="{{go.classEdit}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Abrir</a>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"variant":{"editor":"text","default":"a"},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',ok:'#e3f1e6',okInk:'#2c6b3c',barBg:'#ecebe6',scrim:'rgba(27,28,30,0.45)',shadow:'0 12px 40px rgba(27,28,30,0.18)'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',ok:'#1b3022',okInk:'#8fd3a0',barBg:'#2f3237',scrim:'rgba(0,0,0,0.6)',shadow:'0 12px 40px rgba(0,0,0,0.5)'};
+    const t = this.props.dark ? D : L;
+    const v = this.props.variant || 'a';
+    const railIdx = v === 'bg' ? 0 : v === 'plan' ? 3 : 1;
+    const icons = [
+      ['Inicio', 'M3 11 12 4l9 7M5 10v10h14V10'],
+      ['Biblioteca', 'M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 3 15.5-3.5 1z'],
+      ['Exámenes', 'M6 3h9l4 4v14H6zM9 13l2 2 4-4'],
+      ['Plan del año', 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4']
+    ];
+    const isDlg = v === 'a' || v === 'exam' || v === 'examMat' || v === 'plan';
+    const rail = icons.map(([label, d], i) => ({ label, d, bg: i === railIdx && v !== 'a' && v !== 'b' && !isDlg ? t.active : 'transparent', ink: i === railIdx && v !== 'a' && v !== 'b' && !isDlg ? t.activeInk : t.muted }));
+    const K = {
+      a: { crumb: 'Biología · 2º B  ›  Nueva clase', title: 'Nueva clase', askLabel: 'Qué querés enseñar',
+           ask: 'Una clase de 80 minutos sobre los humedales del Delta: qué son, qué servicios dan y por qué se queman. Con una actividad en grupos.',
+           chipsLabel: 'Fuentes · 3', chips: ['Humedales del Delta del Paraná · INTA','Kandus et al., 2010','Campbell, cap. 55'],
+           dTitle: 'Armando tu clase', dSub: 'Clase 29 · Humedales del Delta. Tarda unos 2 minutos más.', pct: '40%',
+           steps: [['Leer las 3 fuentes','done'],['Armar el guion de 80 minutos','done'],['Escribir las diapositivas · 5 de 12','now'],['Material para alumnos','todo'],['Verificar cada cita contra su fuente','todo']] },
+      exam: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
+           ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos versiones, A y B.',
+           chipsLabel: 'Desde clases · 6', chips: ['22 · Leyes de Mendel','23 · Cruzamientos','25 · Qué es un ecosistema','26 · Cadenas y redes tróficas','27 · Ecosistemas urbanos','28 · Ciclo del carbono'],
+           dTitle: 'Armando tu examen', dSub: 'Evaluación · U4 Ecosistemas. Tarda alrededor de 1 minuto más.', pct: '55%',
+           steps: [['Leer las 6 clases','done'],['Elegir qué evaluar de cada clase','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
+      examMat: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
+           ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos versiones, A y B.',
+           chipsLabel: 'Material elegido · 5', chips: ['Campbell · cap. 54','Carbono en suelos urbanos','Guía de actividades: redes tróficas','Informe ambiental de la ciudad','Cómo funciona un humedal'],
+           dTitle: 'Armando tu examen', dSub: 'Evaluación · U4 Ecosistemas. Tarda alrededor de 1 minuto más.', pct: '55%',
+           steps: [['Leer las 5 fuentes','done'],['Elegir qué evaluar de cada fuente','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
+      plan: { crumb: 'Plan del año  ›  Pedir un plan', title: 'Pedir un plan', askLabel: 'Qué querés planificar',
+           ask: 'Biología de 2º B para todo 2026: 32 clases de 80 minutos, siguiendo el diseño curricular de la provincia. Con un examen al cierre de cada unidad.',
+           chipsLabel: 'Fuentes · 2', chips: ['Diseño curricular · Biología 2º año','Campbell, Biología'],
+           dTitle: 'Armando tu plan', dSub: 'Biología · 2º B · 2026. Tarda unos 3 minutos más.', pct: '30%',
+           steps: [['Leer el diseño curricular','done'],['Repartir los temas en 4 unidades','now'],['Ordenar las 32 clases','todo'],['Ubicar los exámenes','todo'],['Proponer fuentes para cada clase','todo']] }
+    };
+    const k = K[v] || K.a;
+    const stepRows = k.steps;
+    const steps = stepRows.map(([s, st]) => ({ t: s, icon: st === 'done' ? '✓' : st === 'now' ? '●' : '○', mark: st === 'done' ? t.okInk : st === 'now' ? t.activeInk : t.faint, ink: st === 'todo' ? t.muted : t.ink }));
+    const titles = ['Portada','Qué es un humedal','El Delta en el mapa','Servicios que dan','¿Por qué se queman?','','','',''];
+    const thumbs = titles.map((x, i) => {
+      const done = i < 4, now = i === 4;
+      return { n: i + 1, t: done ? x : now ? 'Escribiendo…' : '', bg: done ? t.surface : now ? t.active : 'transparent', line: done ? t.line : now ? t.activeInk : t.lineS, style: done || now ? 'solid' : 'dashed', ink: now ? t.activeInk : t.ink };
+    });
+    const tag = (k) => ({ ok: ['Aprobada', t.ok, t.okInk], draft: ['Borrador', t.s2, t.muted], work: ['Armándose · 40%', t.active, t.activeInk], pend: ['Pendiente', t.s2, t.muted] })[k];
+    let rows, crumb, listTitle, listHead;
+    if (v === 'bg') {
+      crumb = 'Inicio'; listTitle = 'Tus materias'; listHead = 'Biología · 2º B · próximas clases';
+      rows = [[26,'Cadenas y redes tróficas','ok'],[27,'Ecosistemas urbanos','draft'],[28,'Ciclo del carbono','draft'],[29,'Humedales del Delta','work']];
+    } else {
+      crumb = 'Biología · 2º B'; listTitle = 'Biología · 2º B'; listHead = 'U4 · Ecosistemas';
+      rows = [[25,'Qué es un ecosistema','ok'],[26,'Cadenas y redes tróficas','ok'],[27,'Ecosistemas urbanos','draft'],[28,'Ciclo del carbono','draft'],[29,'Humedales del Delta','work']];
+    }
+    rows = rows.map(([n, x, k], i) => { const g = tag(k); return { n, t: x, tag: g[0], tagBg: g[1], tagInk: g[2], working: k === 'work', bg: k === 'work' ? t.s2 : 'transparent', border: i === 0 ? '0' : '1px solid ' + t.line }; });
+    const chatOn = v === 'c';
+    return {
+      t, rail, steps, thumbs, rows, crumb, listTitle, listHead,
+      isA: isDlg,
+      aCrumb: k.crumb, aTitle: k.title, aAskLabel: k.askLabel, aAsk: k.ask, aChipsLabel: k.chipsLabel, aChips: k.chips.map(x => ({ t: x })),
+      dTitle: k.dTitle, dSub: k.dSub, dPct: k.pct, isB: v === 'b', isC: v === 'c', isBg: v === 'bg', isList: v === 'c' || v === 'bg',
+      showChip: v === 'bg',
+      chromeOp: v === 'b' ? '0.4' : '1',
+      chatBtnBg: chatOn ? t.active : 'transparent', chatBtnInk: chatOn ? t.activeInk : t.ink
+    };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    o.rail = (o.rail || []).map((n) => ({ ...n, href: ({'Inicio': g.home, 'Biblioteca': g.lib, 'Exámenes': g.exams, 'Plan del año': g.plan, 'Asistente': g.chat})[n.label] || '#' })); const v = this.props.variant || 'a'; g.workCancel = v === 'exam' ? g.examNew : v === 'examMat' ? g.examNewMaterial : v === 'plan' ? g.planAsk : g.classNew; g.workBg = v === 'exam' ? g.examReview : v === 'examMat' ? b('ExamReviewMaterial') : v === 'plan' ? g.plan : b('WorkBg');
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

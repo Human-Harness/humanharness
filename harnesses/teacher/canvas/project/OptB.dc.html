@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>B · Tablero de materias</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#7a4f00}a:hover{color:#3b2a06}
+</style>
+</helmet>
+<div style="width: 1280px; height: {{rootH}}; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+    <a href="{{go.settings}}" aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
+      <a href="{{go.lib}}" aria-label="{{libLabel}}" style="position: relative; width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
+      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
+      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    </nav>
+
+    <main style="flex-grow: 1; overflow: hidden; padding: 24px 32px 16px; display: flex; flex-direction: column; gap: 24px;">
+      <div style="display: flex; align-items: flex-start; gap: 16px;">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: 600;">Tus materias</h1>
+          <span style="font-size: 14px; color: {{t.muted}};">{{subline}}</span>
+        </div>
+        <sc-if value="{{notEmpty}}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; gap: 8px;">
+            <a href="{{go.subjectNew}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Nueva materia</a>
+            <a href="{{go.classNew}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Crear una clase</a>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{empty}}" hint-placeholder-val="{{ false }}">
+        <div style="flex-grow: 1; display: flex; align-items: flex-start; justify-content: center; padding-top: 48px;">
+          <div style="width: 800px; display: flex; flex-direction: column; gap: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 20px; font-weight: 600;">¿Por dónde empezás?</span>
+              <span style="font-size: 14px; line-height: 1.5; color: {{t.muted}};">Elegí lo que tenés más cerca. Las otras dos quedan en el riel para cuando las necesites.</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+              <sc-for list="{{starts}}" as="s" hint-placeholder-count="3">
+                <a href="{{s.href}}" style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 8px; color: {{t.ink}}; text-decoration: none; cursor: pointer;">
+                  <span style="font-size: 16px; font-weight: 600;">{{s.title}}</span>
+                  <span style="align-self: flex-start; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.s2}}; color: {{t.ink}};">{{s.who}}</span>
+                  <span style="font-size: 14px; line-height: 1.5; color: {{t.muted}}; flex-grow: 1;">{{s.what}}</span>
+                  <span style="margin-top: 8px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">{{s.cta}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+                </a>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{notEmpty}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 24px;">
+          <sc-if value="{{full}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; align-items: baseline; gap: 8px;">
+                <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Para revisar</span>
+                <span style="font-size: 14px; font-weight: 600; padding: 0 6px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.muted}};">7</span>
+                <span style="flex-grow: 1;"></span>
+                <a href="#" style="font-size: 14px; color: {{t.muted}};">Ver las 7</a>
+              </div>
+              <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+                <sc-for list="{{review}}" as="r" hint-placeholder-count="3">
+                  <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px; border-top: {{r.border}};">
+                    <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{r.bg}}; color: {{r.ink}};">{{r.tag}}</span>
+                    <span style="font-size: 14px; font-weight: 600;">{{r.title}}</span>
+                    <span style="flex-grow: 1; font-size: 14px; color: {{t.muted}};">{{r.why}}</span>
+                    <span style="font-size: 12px; font-weight: {{r.whenW}}; color: {{r.whenInk}}; white-space: nowrap; min-width: 96px; text-align: right;">{{r.when}}</span>
+                    <a href="{{r.href}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Abrir</a>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{groups}}" as="grp" hint-placeholder-count="1">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <sc-if value="{{grp.hasLabel}}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">{{grp.label}}</span>
+              </sc-if>
+              <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+                <sc-for list="{{grp.subjects}}" as="s" hint-placeholder-count="3">
+                  <div style="position: relative; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                    <a href="{{go.subject}}" aria-label="{{s.name}} · {{s.meta}}" style="position: absolute; inset: 0; border-radius: 14px; cursor: pointer;"></a>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                      <span style="font-size: 16px; font-weight: 600;">{{s.name}}</span>
+                      <span style="font-size: 14px; color: {{t.muted}};">{{s.meta}}</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                      <div style="height: 6px; border-radius: 3px; background: {{t.s2}}; overflow: hidden;"><div style="height: 6px; width: {{s.pct}}; background: {{t.greenInk}};"></div></div>
+                      <span style="font-size: 14px; color: {{t.muted}};">{{s.done}}</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                      <sc-for list="{{s.tags}}" as="g" hint-placeholder-count="2">
+                        <sc-if value="{{g.isLink}}" hint-placeholder-val="{{ false }}"><a href="{{g.href}}" style="position: relative; z-index: 1; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{g.bg}}; color: {{g.ink}}; text-decoration: underline; cursor: pointer;">{{g.label}}</a></sc-if><sc-if value="{{g.notLink}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{g.bg}}; color: {{g.ink}};">{{g.label}}</span></sc-if>
+                      </sc-for>
+                    </div>
+                    <div style="border-top: 1px solid {{t.line}}; padding-top: 12px; display: flex; flex-direction: column; gap: 4px;">
+                      <span style="font-size: 14px; color: {{t.muted}};">Sigue</span>
+                      <span style="font-size: 14px;">{{s.next}}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{notEmpty}}" hint-placeholder-val="{{ true }}">
+            <a href="{{go.past}}" style="height: 44px; padding: 0 16px; border: 1px dashed {{t.lineS}}; border-radius: 14px; display: flex; align-items: center; gap: 8px; font-size: 14px; color: {{t.muted}}; text-decoration: none; cursor: pointer;"><span style="flex-grow: 1;">Materias que ya no das · 3</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+          </sc-if>
+
+          <sc-if value="{{normal}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Para revisar</span>
+              <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+                <sc-for list="{{review}}" as="r" hint-placeholder-count="2">
+                  <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px; border-top: {{r.border}};">
+                    <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{r.bg}}; color: {{r.ink}};">{{r.tag}}</span>
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+                      <span style="font-size: 14px; font-weight: 600;">{{r.title}}</span>
+                      <span style="font-size: 14px; color: {{t.muted}};">{{r.why}}</span>
+                    </div>
+                    <span style="font-size: 12px; font-weight: {{r.whenW}}; color: {{r.whenInk}}; white-space: nowrap; min-width: 96px; text-align: right;">{{r.when}}</span>
+                    <a href="{{r.href}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Abrir</a>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"scenario":{"editor":"enum","options":["normal","empty","full"],"default":"normal"},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const sc = this.props.scenario || 'normal';
+    const tg = (label) => {
+      const k = label.split(' ').slice(1).join(' ');
+      const c = k.startsWith('borrador') ? [t.blue, t.blueInk] : k.startsWith('aprobada') ? [t.green, t.greenInk] : k.startsWith('desactualizada') ? [t.orange, t.orangeInk] : [t.s2, t.ink];
+      return { label, bg: c[0], ink: c[1], isLink: k.startsWith('desactualizada'), notLink: !k.startsWith('desactualizada') };
+    };
+    const subj = (list) => list.map((s) => ({ ...s, tags: s.tags.map(tg) }));
+    const stateCol = (k) => k === 'Desactualizada' ? [t.orange, t.orangeInk] : k === 'Borrador' ? [t.blue, t.blueInk] : [t.s2, t.ink];
+    const rev = (list) => list.map((r, i) => { const c = stateCol(r.tag); return { ...r, whenInk: r.soon ? t.orangeInk : t.muted, whenW: r.soon ? '600' : '400', bg: c[0], ink: c[1], border: i === 0 ? '0' : '1px solid ' + t.line }; });
+
+    let groups = [], review = [], subline = '';
+    if (sc === 'normal') {
+      subline = '2 materias y 3 clases sueltas · 2 cosas para revisar';
+      groups = [{ hasLabel: false, label: '', subjects: subj([
+        { name: 'Biología', meta: '2º B · 4 unidades', pct: '81%', done: '26 de 32 clases aprobadas', tags: ['26 aprobadas', '2 borradores', '4 pendientes'], next: 'U4 · Clase 27 · Ecosistemas urbanos' },
+        { name: 'Historia', meta: '4º A · 5 unidades', pct: '86%', done: '24 de 28 clases aprobadas', tags: ['24 aprobadas', '1 desactualizada', '3 pendientes'], next: 'U4 · Clase 25 · La Ley Sáenz Peña' },
+        { name: 'Clases sueltas', meta: 'Fuera de una materia', pct: '66%', done: '2 de 3 clases aprobadas', tags: ['2 aprobadas', '1 borrador'], next: 'Taller de lectura crítica' }
+      ]) }];
+      review = rev([
+        { tag: 'Borrador', title: 'Clase 27 · Ecosistemas urbanos', why: 'Biología · 2º B · faltan el guion y el material para alumnos', when: 'Mañana, lun 16', soon: true },
+        { tag: 'Desactualizada', title: 'Examen · Revolución de Mayo', why: 'Cambió una fuente de la Unidad 1 después de aprobarlo', when: 'Jue 26' }
+      ]);
+    } else if (sc === 'full') {
+      subline = '6 materias y 14 clases sueltas en 2026 · 181 clases · 31 exámenes · 146 fuentes';
+      groups = [
+        { hasLabel: true, label: 'Colegio San Martín', subjects: subj([
+          { name: 'Biología', meta: '2º B · 4 unidades', pct: '81%', done: '26 de 32 clases aprobadas', tags: ['26 aprobadas', '2 borradores', '4 pendientes'], next: 'U4 · Clase 27 · Ecosistemas urbanos' },
+          { name: 'Biología', meta: '2º C · 4 unidades · copia de 2º B', pct: '78%', done: '25 de 32 clases aprobadas', tags: ['25 aprobadas', '2 desactualizadas', '5 pendientes'], next: 'U4 · Clase 26 · Cadenas y redes tróficas' },
+          { name: 'Taller de ciencias', meta: 'Optativa · 3 unidades', pct: '90%', done: '18 de 20 clases aprobadas', tags: ['18 aprobadas', '2 pendientes'], next: 'U3 · Clase 19 · Feria de ciencias' }
+        ]) },
+        { hasLabel: true, label: 'Instituto Belgrano', subjects: subj([
+          { name: 'Historia', meta: '4º A · 5 unidades', pct: '86%', done: '24 de 28 clases aprobadas', tags: ['24 aprobadas', '1 desactualizada', '3 pendientes'], next: 'U4 · Clase 25 · La Ley Sáenz Peña' },
+          { name: 'Historia', meta: '5º B · 5 unidades', pct: '58%', done: '18 de 31 clases aprobadas', tags: ['18 aprobadas', '2 borradores', '11 pendientes'], next: 'U3 · Clase 19 · El primer peronismo' },
+          { name: 'Educación cívica', meta: '3º C · 4 unidades', pct: '45%', done: '11 de 24 clases aprobadas', tags: ['11 aprobadas', '13 pendientes'], next: 'U2 · Clase 12 · La Constitución de 1853' }
+        ]) },
+        { hasLabel: true, label: 'Sin materia', subjects: subj([
+          { name: 'Clases sueltas', meta: 'Fuera de una materia', pct: '86%', done: '12 de 14 clases aprobadas', tags: ['12 aprobadas', '2 borradores'], next: 'Charla · Uso responsable de IA' }
+        ]) }
+      ];
+      review = rev([
+        { tag: 'Desactualizada', title: 'Clase 14 · Leyes de Mendel', why: 'Biología 2º C · una fuente se reemplazó por una edición nueva', when: 'Mar 17' },
+        { tag: 'Desactualizada', title: 'Examen final · Biología 2º C', why: 'Cambiaron 2 fuentes de la Unidad 3', when: 'Vie 27' }
+      ]);
+    } else {
+      subline = 'Todavía no creaste nada';
+    }
+    const steps = [
+      { n: '1', text: 'Decís el tema, el curso y cuánto dura la clase' },
+      { n: '2', text: 'La IA busca fuentes con autor y te las muestra para aprobar' },
+      { n: '3', text: 'Arma diapositivas, guion y material; vos editás a mano o pidiendo cambios' }
+    ];
+    return {
+      t, groups, review, subline, steps,
+      empty: sc === 'empty', notEmpty: sc !== 'empty', full: sc === 'full', normal: sc === 'normal',
+      rootH: sc === 'full' ? '1400px' : '800px',
+      libLabel: 'Biblioteca'
+    };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    o.review = (o.review || []).map((r) => ({ ...r, href: /^(Examen|Evaluación)/.test(r.title) ? g.examReview : g.classEdit }));
+    o.groups = (o.groups || []).map((gr) => ({ ...gr, subjects: (gr.subjects || []).map((s) => ({ ...s, tags: (s.tags || []).map((x) => ({ ...x, href: g.examReview })) })) }));
+    o.starts = [
+      { title: 'Una clase', who: 'Para la semana que viene', what: 'Decís el tema y el curso. La IA busca fuentes citables y arma diapositivas, guion y material.', cta: 'Crear una clase', href: g.classNew },
+      { title: 'La materia', who: 'Para planificar el año', what: 'Cargás el programa y la IA propone las unidades y las clases de todo el año.', cta: 'Crear la materia', href: g.subjectNew },
+      { title: 'Tus materiales', who: 'Si ya tenés PDFs', what: 'Subís lo que ya usás. La IA lo ordena y lo cita en todo lo que arme.', cta: 'Ir a la Biblioteca', href: g.lib }
+    ];
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

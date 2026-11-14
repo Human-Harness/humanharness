@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>A · Inicio clásico</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#7a4f00}a:hover{color:#3b2a06}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="flex-grow: 1;"></span>
+    <button aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></button>
+    <button aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg></button>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; justify-content: center; padding: 32px 32px 16px; overflow: hidden;">
+    <div style="width: 560px; display: flex; flex-direction: column; gap: 24px;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;">
+        <span style="width: 48px; height: 48px; border-radius: 14px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 7l10-4 10 4-10 4z"></path><path d="M6 9v5c0 1.5 2.7 3 6 3s6-1.5 6-3V9"></path></svg></span>
+        <h1 style="margin: 0; font-size: 28px; font-weight: 600;">Teacher</h1>
+        <p style="margin: 0; font-size: 14px; color: {{t.muted}};">Preparás clases y exámenes a partir de tus fuentes.</p>
+      </div>
+
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+        <button style="height: 48px; padding: 0 32px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 16px; font-weight: 500;">Crear una clase</button>
+        <div style="display: flex; gap: 16px; font-size: 14px;">
+          <a href="#" style="color: {{t.muted}};">Planificar un grupo de clases</a>
+          <a href="#" style="color: {{t.muted}};">Nuevo examen</a>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{t.muted}};">Retomar</span>
+        <sc-for list="{{recent}}" as="r" hint-placeholder-count="2">
+          <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 14px; font-weight: 600;">{{r.title}}</span>
+              <span style="font-size: 14px; color: {{t.muted}};">{{r.where}}</span>
+            </div>
+            <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{r.tagBg}}; color: {{r.tagInk}};">{{r.tag}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{t.muted}};">Tus materias</span>
+        <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+          <sc-for list="{{subjects}}" as="s" hint-placeholder-count="3">
+            <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px; border-top: {{s.border}};">
+              <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-size: 14px; font-weight: 600;">{{s.name}}</span>
+                <span style="font-size: 14px; color: {{t.muted}};">{{s.meta}}</span>
+              </div>
+              <span style="font-size: 14px; color: {{t.muted}};">{{s.done}}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{t.faint}}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: {{t.faint}};">Human Harness · ~/Teacher</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const L = {bg:'#f3f3f1',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const tag = (k) => k === 'Borrador' ? [t.blue, t.blueInk] : k === 'Aprobada' ? [t.green, t.greenInk] : k === 'Desactualizada' ? [t.orange, t.orangeInk] : [t.s2, t.ink];
+    const recent = [
+      { title: 'Clase 5 · La fotosíntesis', where: 'Biología · 2º B · Unidad 2', tag: 'Borrador' },
+      { title: 'Examen · Revolución de Mayo', where: 'Historia · 4º A · 2 versiones', tag: 'Desactualizada' }
+    ].map((r) => { const [b, i] = tag(r.tag); return { ...r, tagBg: b, tagInk: i }; });
+    const subjects = [
+      { name: 'Biología', meta: '2º B · 4 unidades', done: '12 de 30 clases listas' },
+      { name: 'Historia', meta: '4º A · 5 unidades', done: '3 de 28 clases listas' },
+      { name: 'Clases sueltas', meta: 'Fuera de una materia', done: '3 clases' }
+    ].map((s, i) => ({ ...s, border: i === 0 ? '0' : '1px solid ' + t.line }));
+    return { t, recent, subjects };
+  }
+}
+</script>
+</body>
+</html>

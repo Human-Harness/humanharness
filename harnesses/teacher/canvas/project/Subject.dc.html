@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Materia por años</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1000px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column; position: relative;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+    <a href="{{go.settings}}" aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
+      <a href="{{go.lib}}" aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
+      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
+      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    </nav>
+
+    <main style="flex-grow: 1; overflow: hidden; padding: 16px 32px; display: flex; justify-content: center;">
+      <div style="width: 880px; display: flex; flex-direction: column; gap: 16px;">
+        <span style="font-size: 14px; color: {{t.muted}};">Tus materias  ›  {{crumb}}</span>
+
+        <div style="display: flex; align-items: flex-start; gap: 16px;">
+          <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: 600;">{{title}}</h1>
+            <span style="font-size: 14px; color: {{t.muted}};">{{subline}}</span>
+            <sc-if value="{{cf.chip}}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                <span role="status" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}}; display: inline-flex; align-items: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>{{cf.chipText}}</span>
+                <a href="{{cf.undoHref}}" style="font-size: 12px; font-weight: 500; color: {{t.ink}}; text-decoration: underline; cursor: pointer;">Deshacer</a>
+              </div>
+            </sc-if>
+          </div>
+          <sc-if value="{{current}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; gap: 8px;">
+              <a href="{{go.editSubject}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Editar materia</a>
+              <a href="{{go.unitNew}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Nueva unidad</a>
+              <a href="{{go.classNew}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Crear una clase</a>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div role="tablist" aria-label="Año" style="display: flex; height: 32px; padding: 2px; box-sizing: border-box; border-radius: 12px; background: {{t.s2}}; font-size: 14px;">
+            <sc-for list="{{years}}" as="y" hint-placeholder-count="3">
+              <a href="{{y.href}}" role="tab" style="padding: 0 12px; display: flex; align-items: center; border-radius: 10px; background: {{y.bg}}; color: {{y.ink}}; font-weight: {{y.w}}; text-decoration: none; cursor: pointer;">{{y.label}}</a>
+            </sc-for>
+          </div>
+          <span style="font-size: 14px; color: {{t.muted}};">{{yearHint}}</span>
+        </div>
+
+        <sc-if value="{{past}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: {{t.blue}}; color: {{t.blueInk}};">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+            <span style="flex-grow: 1; font-size: 14px;">Estás viendo 2025, que es de solo lectura. Copiá a 2026 lo que quieras reusar: llega como borrador y sus fuentes se revisan.</span>
+            <sc-if value="{{cf.canCopyAll}}" hint-placeholder-val="{{ true }}"><a href="{{go.copyAll}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: {{t.blueInk}}; color: {{t.blue}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer; white-space: nowrap;">Copiar todo a 2026</a></sc-if>
+            <a href="{{go.subject}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Volver a 2026</a>
+          </div>
+          <sc-if value="{{cf.copyAllAsk}}" hint-placeholder-val="{{ false }}">
+            <div role="dialog" aria-label="Copiar todo a 2026" style="background: {{t.surface}}; border: 1px solid {{t.lineS}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+              <span style="font-size: 16px; font-weight: 600;">Copiar todo 2025 a 2026</span>
+              <span style="font-size: 14px; line-height: 1.5;">Llegan a 2026 <b style="font-weight: 600;">4 unidades, 29 clases y 2 exámenes</b>, como borrador. Las fuentes se revisan antes de usarlas. 2025 no cambia.</span>
+              <div style="display: flex; justify-content: flex-end; gap: 8px;"><a href="{{go.subjectPast}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a><a href="{{go.copyAllDo}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Copiar todo</a></div>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{units}}" as="u" hint-placeholder-count="4">
+            <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+              <sc-if value="{{u.hasHeader}}" hint-placeholder-val="{{ true }}">
+              <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{t.muted}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform: rotate({{u.rot}});"><path d="m9 6 6 6-6 6"></path></svg>
+                <span style="font-size: 14px; font-weight: 600; color: {{t.muted}}; width: 24px;">{{u.code}}</span>
+                <span style="font-size: 16px; font-weight: 600;">{{u.name}}</span>
+                <span style="flex-grow: 1;"></span>
+                <span style="font-size: 14px; color: {{t.muted}};">{{u.count}}</span>
+                <div style="width: 96px; height: 6px; border-radius: 3px; background: {{t.s2}}; overflow: hidden;"><div style="height: 6px; width: {{u.pct}}; background: {{t.greenInk}};"></div></div>
+                <sc-if value="{{u.copyBtn}}" hint-placeholder-val="{{ false }}">
+                  <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">Copiar la unidad a 2026</button>
+                </sc-if>
+                <sc-if value="{{u.copyLink}}" hint-placeholder-val="{{ false }}">
+                  <a href="{{go.copyUnit}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Copiar la unidad a 2026</a>
+                </sc-if>
+                <sc-if value="{{u.unitCopied}}" hint-placeholder-val="{{ false }}">
+                  <span role="status" style="height: 24px; padding: 0 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}}; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; box-sizing: border-box;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Copiada a 2026</span>
+                </sc-if>
+              </div>
+              </sc-if>
+              <sc-if value="{{u.open}}" hint-placeholder-val="{{ false }}">
+                <div style="border-top: {{u.listBorder}}; display: flex; flex-direction: column;">
+                  <sc-if value="{{u.empty}}" hint-placeholder-val="{{ false }}">
+                    <div style="padding: 12px 16px 12px 44px; display: flex; align-items: center; gap: 12px;">
+                      <span style="flex-grow: 1; font-size: 14px; color: {{t.muted}};">Unidad creada, sin clases todavía.</span>
+                      <a href="{{go.classNew}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; color: {{t.ink}}; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Crear una clase</a>
+                    </div>
+                  </sc-if>
+                  <sc-for list="{{u.classes}}" as="c" hint-placeholder-count="4">
+                    <div style="display: flex; align-items: center; gap: 12px; padding-right: 16px; border-top: {{c.border}};"><a href="{{go.classEdit}}" style="flex-grow: 1; min-width: 0; padding: 10px 0 10px {{u.indent}}; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; cursor: pointer;">
+                      <span style="font-size: 12px; color: {{t.faint}}; width: 24px;">{{c.n}}</span>
+                      <span style="font-size: 14px; flex-grow: 1;">{{c.title}}</span>
+                      <span style="font-size: 14px; color: {{t.muted}};">{{c.meta}}</span>
+                      <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{c.bg}}; color: {{c.ink}}; width: 104px; text-align: center; box-sizing: border-box;">{{c.tag}}</span></a>
+                      <sc-if value="{{c.copyBtn}}" hint-placeholder-val="{{ false }}">
+                        <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; width: 112px;">Copiar a 2026</button>
+                      </sc-if>
+                      <sc-if value="{{c.copyLink}}" hint-placeholder-val="{{ false }}">
+                        <a href="{{go.copyClass}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-size: 12px; font-weight: 500; width: 112px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Copiar a 2026</a>
+                      </sc-if>
+                      <sc-if value="{{c.copied}}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size: 12px; color: {{t.greenInk}}; width: 112px; text-align: center;">Ya está en 2026</span>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; height: 24px;">
+            <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Exámenes</span>
+            <span style="font-size: 12px; color: {{t.faint}};">{{examHint}}</span>
+            <span style="flex-grow: 1;"></span>
+            <sc-if value="{{current}}" hint-placeholder-val="{{ true }}">
+              <a href="{{go.examNew}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Nuevo examen</a>
+            </sc-if>
+          </div>
+          <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+            <sc-for list="{{exams}}" as="e" hint-placeholder-count="3">
+              <a href="{{go.examReview}}" style="padding: 10px 16px; display: flex; align-items: center; gap: 12px; border-top: {{e.border}}; color: inherit; text-decoration: none; cursor: pointer;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{t.muted}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg>
+                <span style="font-size: 14px; flex-grow: 1;">{{e.title}}</span>
+                <span style="font-size: 14px; color: {{t.muted}};">{{e.meta}}</span>
+                <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{e.bg}}; color: {{e.ink}}; width: 104px; text-align: center; box-sizing: border-box;">{{e.tag}}</span>
+                <sc-if value="{{e.canCopy}}" hint-placeholder-val="{{ false }}">
+                  <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; width: 112px;">Copiar a 2026</button>
+                </sc-if>
+              </a>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <sc-if value="{{cf.toast}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 32px; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; padding: 10px 12px 10px 16px; border-radius: 12px; background: {{t.ink}}; color: {{t.bg}}; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); white-space: nowrap; z-index: 5;"><span>{{cf.toastText}}</span><a href="{{cf.toastHref}}" style="color: {{cf.toastLink}}; font-weight: 600; text-decoration: none; cursor: pointer;">{{cf.toastAction}}</a></div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"year":{"editor":"enum","options":["current","past"],"default":"current"},"flat":{"editor":"boolean","default":false},"confirm":{"editor":"text","default":""},"$preview":{"width":1280,"height":1000}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const past = this.props.year === 'past';
+    const col = { Aprobada: [t.green, t.greenInk], Borrador: [t.blue, t.blueInk], Desactualizada: [t.orange, t.orangeInk], Pendiente: [t.s2, t.ink], Dada: [t.s2, t.muted] };
+    const cls = (list, opts) => list.map((c, i) => {
+      const k = c[2]; const cc = col[k];
+      const copied = past && (opts.copied || []).includes(c[0]);
+      return { n: c[0], title: c[1], tag: k, meta: c[3], bg: cc[0], ink: cc[1], border: i === 0 ? '0' : '1px solid ' + t.line, canCopy: past && !copied, copied };
+    });
+    const unit = (code, name, count, pct, open, classes, copyUnit) => ({ code, name, count, pct, open, rot: open ? '90deg' : '0deg', classes: classes || [], copyUnit: past && copyUnit, hasHeader: true, listBorder: '1px solid ' + t.line, indent: '44px' });
+    const exCol = { Aprobado: [t.green, t.greenInk], Borrador: [t.blue, t.blueInk], Pendiente: [t.s2, t.ink], Tomado: [t.s2, t.muted] };
+    const ex = (list) => list.map((e, i) => { const c = exCol[e[2]]; return { title: e[0], meta: e[1], tag: e[2], bg: c[0], ink: c[1], border: i === 0 ? '0' : '1px solid ' + t.line, canCopy: past }; });
+
+    let units, subline, yearHint, exams, examHint;
+    let title = 'Biología · 2º B', crumb = 'Biología 2º B';
+    if (this.props.flat) {
+      title = 'Taller de ciencias'; crumb = 'Taller de ciencias';
+      subline = 'Colegio San Martín · Optativa · 2026 · sin unidades · 9 de 12 clases aprobadas';
+      yearHint = 'Primer año que la das';
+      units = [{ hasHeader: false, open: true, listBorder: '0', indent: '16px', classes: cls([
+        ['1', 'Qué es el método científico', 'Aprobada', '2 fuentes'],
+        ['2', 'Hacer una buena pregunta', 'Aprobada', '2 fuentes'],
+        ['3', 'Medir y registrar', 'Aprobada', '3 fuentes'],
+        ['4', 'Experimento · germinación', 'Aprobada', 'Guía + actividad'],
+        ['5', 'Leer un gráfico', 'Aprobada', '2 fuentes'],
+        ['6', 'Fuentes confiables', 'Aprobada', '4 fuentes'],
+        ['7', 'Experimento · densidad', 'Aprobada', 'Guía + actividad'],
+        ['8', 'Armar un póster', 'Aprobada', '1 fuente'],
+        ['9', 'Ensayo de la feria', 'Aprobada', ''],
+        ['10', 'Feria de ciencias', 'Borrador', '2 fuentes'],
+        ['11', 'Devolución entre pares', 'Pendiente', ''],
+        ['12', 'Cierre del taller', 'Pendiente', '']
+      ], {}) }];
+      exams = ex([['Entrega del proyecto · rúbrica', 'Clases 1 a 9 · rúbrica de 5 criterios', 'Aprobado']]);
+      examHint = '1 en 2026';
+    } else if (!past) {
+      subline = 'Colegio San Martín · 2026 · 26 de 32 clases aprobadas';
+      yearHint = 'Esta materia también la diste en 2025 y 2024';
+      units = [
+        unit('U1', 'La célula', '8 de 8 aprobadas', '100%', false),
+        unit('U2', 'Nutrición y fotosíntesis', '8 de 8 aprobadas', '100%', false),
+        unit('U3', 'Herencia y genética', '8 de 8 aprobadas', '100%', false),
+        unit('U4', 'Ecosistemas', '2 de 8 aprobadas', '25%', true, cls([
+          ['25', 'Qué es un ecosistema', 'Aprobada', '3 fuentes'],
+          ['26', 'Cadenas y redes tróficas', 'Aprobada', '4 fuentes'],
+          ['27', 'Ecosistemas urbanos', 'Borrador', '2 fuentes'],
+          ['28', 'Ciclo del carbono', 'Borrador', 'Traída de 2025'],
+          ['29', 'Humedales del Delta', 'Pendiente', ''],
+          ['30', 'Servicios de los ecosistemas', 'Pendiente', ''],
+          ['31', 'Salida de campo', 'Pendiente', ''],
+          ['32', 'Repaso integrador', 'Pendiente', '']
+        ], {}))
+      ];
+      exams = ex([
+        ['Evaluación · U1 y U2', 'Tomado el 14 de mayo · 2 versiones · 15 preguntas', 'Tomado'],
+        ['Evaluación · U3 Herencia', 'Tomado el 3 de septiembre · 12 preguntas', 'Tomado'],
+        ['Evaluación · U4 Ecosistemas', '6 clases · 14 preguntas · opción múltiple y desarrollo', 'Borrador']
+      ]);
+      examHint = '3 en 2026';
+    } else {
+      subline = 'Colegio San Martín · 2025 · 29 clases dadas · 2 exámenes';
+      yearHint = 'Solo lectura';
+      units = [
+        unit('U1', 'La célula', '8 clases', '100%', false, [], true),
+        unit('U2', 'Nutrición y fotosíntesis', '7 clases', '100%', false, [], true),
+        unit('U3', 'Herencia y genética', '8 clases', '100%', false, [], true),
+        unit('U4', 'Ecosistemas', '6 clases', '100%', true, cls([
+          ['24', 'Qué es un ecosistema', 'Dada', '3 fuentes'],
+          ['25', 'Cadenas y redes tróficas', 'Dada', '3 fuentes'],
+          ['26', 'Ciclo del carbono', 'Dada', '2 fuentes'],
+          ['27', 'Ciclo del agua', 'Dada', '2 fuentes'],
+          ['28', 'Especies en peligro', 'Dada', '4 fuentes'],
+          ['29', 'Salida de campo · Reserva Costanera', 'Dada', 'Guía + actividad']
+        ], { copied: ['26'] }), true)
+      ];
+      exams = ex([
+        ['Evaluación · U1 y U2', 'Tomado el 20 de mayo · 15 preguntas', 'Tomado'],
+        ['Evaluación · U4 Ecosistemas', 'Tomado el 4 de noviembre · 12 preguntas', 'Tomado']
+      ]);
+      examHint = '2 en 2025';
+    }
+    const yrs = this.props.flat ? ['2026'] : ['2026', '2025', '2024'];
+    const sel = past ? '2025' : '2026';
+    const years = yrs.map((y) => ({ label: y === '2026' ? '2026 · este año' : y, bg: y === sel ? t.surface : 'transparent', ink: y === sel ? t.ink : t.muted, w: y === sel ? '500' : '400' }));
+    return { t, units, subline, yearHint, years, past, current: !past, exams, examHint, title, crumb };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    o.years = (o.years || []).map((y) => ({ ...y, href: String(y.label).startsWith('2026') ? g.subject : g.subjectPast }));
+    if (!this.props.flat && o.current) o.years = o.years.concat([{ label: '+ 2027', href: g.yearStart, bg: 'transparent', ink: o.t.ink, w: '500' }]);
+    const c = this.props.confirm || '';
+    const t = o.t;
+    g.copyUnit = b('SubjectCopied');
+    g.editSubject = b('GapSubjectStyle');
+    o.units = (o.units || []).map((u) => {
+      const isU4 = u.code === 'U4';
+      const done = c === 'copied' && isU4;
+      let x = { ...u, copyBtn: !!u.copyUnit && !isU4, copyLink: !!u.copyUnit && isU4 && !done, unitCopied: !!u.copyUnit && done };
+      if (done) x.classes = x.classes.map((k) => ({ ...k, canCopy: false, copied: true }));
+      if (c === 'approved' && isU4) {
+        x.count = '3 de 8 aprobadas'; x.pct = '38%';
+        x.classes = x.classes.map((k) => k.n === '27' ? { ...k, tag: 'Aprobada', bg: t.green, ink: t.greenInk, meta: 'Aprobada recién' } : k);
+      }
+      return x;
+    });
+    const cc = c === 'copiedClass';
+    o.units = o.units.map((u) => ({ ...u, empty: !!u.empty, classes: (u.classes || []).map((k) => { const hit = o.past && u.code === 'U4' && k.n === '24'; return { ...k, copyLink: hit && k.canCopy && !cc, copyBtn: false, canCopy: k.canCopy && !(hit && cc), copied: k.copied || (hit && cc) }; }) }));
+    if (c === 'unit') o.units = o.units.concat([{ code: 'U5', name: 'Evolución', count: 'Sin clases', pct: '0%', open: true, rot: '90deg', classes: [], hasHeader: true, listBorder: '1px solid ' + t.line, indent: '44px', empty: true }]);
+    g.copyClass = b('SubjectCopiedClass');
+    g.copyAll = b('SubjectCopyAll'); g.copyAllDo = b('SubjectCopiedAll');
+    const all = c === 'copiedAll';
+    if (all) {
+      o.units = o.units.map((u) => ({ ...u, copyBtn: false, copyLink: false, unitCopied: !!u.copyUnit, classes: (u.classes || []).map((k) => ({ ...k, canCopy: false, copyLink: false, copyBtn: false, copied: true })) }));
+      o.exams = (o.exams || []).map((x) => ({ ...x, canCopy: false }));
+    }
+    if (c === 'approved') o.subline = 'Colegio San Martín · 2026 · 27 de 32 clases aprobadas';
+    const chips = { approved: 'Clase 27 aprobada', style: 'Materia guardada: estilo propio', unit: 'U5 · Evolución creada' };
+    const dark = !!this.props.dark;
+    o.cf = { chip: !!chips[c], chipText: chips[c] || '', undoHref: c === 'approved' ? g.classEdit : g.subject, toast: c === 'copied', toastText: 'U4 Ecosistemas copiada a 2026: 5 clases nuevas, como borrador', toastAction: 'Ver en 2026', toastHref: g.subject, toastLink: dark ? '#7a4f00' : t.cta };
+    if (cc) Object.assign(o.cf, { toast: true, toastText: 'Clase 24 · Qué es un ecosistema copiada a 2026, como borrador' });
+    o.cf.canCopyAll = !!o.past && !all; o.cf.copyAllAsk = c === 'copyAll';
+    if (all) Object.assign(o.cf, { toast: true, toastText: '2025 copiado a 2026: 4 unidades, 29 clases y 2 exámenes, como borrador' });
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

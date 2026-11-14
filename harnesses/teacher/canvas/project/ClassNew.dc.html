@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Nueva clase</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+    <a href="{{go.settings}}" aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
+      <a href="{{go.lib}}" aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
+      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
+      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    </nav>
+
+    <main style="flex-grow: 1; overflow: hidden; padding: 16px 32px; display: flex; justify-content: center;">
+      <div style="width: 1040px; display: flex; flex-direction: column; gap: 16px;">
+        <span style="font-size: 14px; color: {{t.muted}};">Tus materias  ›  Biología 2º B  ›  U4 Ecosistemas  ›  Nueva clase</span>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: 600;">Nueva clase</h1>
+          <span style="font-size: 14px; color: {{t.muted}};">Contale qué querés dar. La IA busca fuentes citables, vos elegís cuáles usar y después arma la clase.</span>
+          <span style="font-size: 14px; color: {{t.muted}};">También podés pedirla en una frase: <a href="{{go.chat}}" style="color: {{t.ink}}; font-weight: 500; text-decoration: underline; cursor: pointer;">Escribile al Asistente</a></span>
+        </div>
+
+        <div style="display: flex; gap: 16px; align-items: flex-start;">
+          <section aria-label="Pedido" style="width: 440px; flex-shrink: 0; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+            <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">1 · Qué querés dar</span>
+            <label style="display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 12px; font-weight: 500;">Tema</span>
+              <div style="min-height: 88px; box-sizing: border-box; padding: 8px 12px; border: 1px solid {{t.lineS}}; border-radius: 12px; font-size: 14px; line-height: 1.5;">Ecosistemas urbanos: qué seres vivos hay en una ciudad, cómo se relacionan y cómo los afectamos. Quiero una salida corta por el patio para observar.</div>
+            </label>
+            <sc-for list="{{fields}}" as="f" hint-placeholder-count="3">
+              <label style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-size: 12px; font-weight: 500;">{{f.label}}</span>
+                <div style="height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.lineS}}; border-radius: 12px; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                  <span style="flex-grow: 1;">{{f.value}}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{t.muted}}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+                </div>
+                <span style="font-size: 12px; color: {{t.faint}};">{{f.hint}}</span>
+              </label>
+            </sc-for>
+            <div style="border-top: 1px solid {{t.line}}; padding-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Lo que vas a recibir</span>
+              <sc-for list="{{outputs}}" as="o" hint-placeholder-count="3">
+                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                  <span style="width: 20px; height: 20px; border-radius: 6px; background: {{t.green}}; color: {{t.greenInk}}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span>
+                  <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 14px; font-weight: 500;">{{o.name}}</span>
+                    <span style="font-size: 14px; color: {{t.muted}};">{{o.desc}}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section aria-label="Fuentes" style="flex-grow: 1; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+            <div style="padding: 16px; display: flex; align-items: center; gap: 8px;">
+              <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">2 · Fuentes que propone la IA</span>
+                <span style="font-size: 14px; color: {{t.muted}};">Solo material con autor que se puede citar. 3 elegidas, 1 por decidir, 1 descartada.</span>
+              </div>
+              <button style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500;">Agregar de la Biblioteca</button>
+            </div>
+            <sc-for list="{{sources}}" as="s" hint-placeholder-count="5">
+              <div style="padding: 12px 16px; border-top: 1px solid {{t.line}}; display: flex; gap: 12px; align-items: flex-start; opacity: {{s.op}};">
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+                  <span style="font-size: 14px; font-weight: 600; text-decoration: {{s.deco}};">{{s.title}}</span>
+                  <span style="font-size: 14px; color: {{t.muted}};">{{s.cite}}</span>
+                  <span style="font-size: 12px; color: {{t.ink}}; line-height: 1.5;">{{s.why}}</span>
+                </div>
+                <sc-if value="{{s.chosen}}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}};">Elegida</span>
+                    <button style="height: 24px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 12px;">No usar</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{s.pending}}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                    <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">No usar</button>
+                    <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.lineS}}; border-radius: 8px; background: {{t.s2}}; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">Usar</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{s.dropped}}" hint-placeholder-val="{{ false }}">
+                  <button style="height: 24px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 12px; flex-shrink: 0;">Usar</button>
+                </sc-if>
+              </div>
+            </sc-for>
+            <div style="padding: 12px 16px; border-top: 1px solid {{t.line}}; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 14px; color: {{t.muted}};">Las fuentes elegidas se guardan en tu Biblioteca.</span>
+              <span style="flex-grow: 1;"></span>
+              <a href="{{go.sourcesChat}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Buscar más</a>
+            </div>
+          </section>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 14px; color: {{t.muted}};">Tarda unos 3 minutos. Podés seguir con otra cosa: te avisamos en Para revisar.</span>
+          <span style="flex-grow: 1;"></span>
+          <a href="{{go.subject}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Guardar como pendiente</a>
+          <a href="{{go.workA}}" style="height: 40px; padding: 0 20px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 16px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Armar la clase con 3 fuentes</a>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const fields = [
+      { label: 'Dónde va', value: 'Biología 2º B  ›  U4 Ecosistemas  ›  clase 27', hint: 'Sale de: la clase 26 es la última de U4 que armaste.' },
+      { label: 'Curso y nivel', value: '2º año de secundaria · 14 y 15 años', hint: 'Sale de: la materia Biología 2º B. Cambialo si esta clase es distinta.' },
+      { label: 'Duración', value: '80 minutos · 2 módulos', hint: 'Sale de: tus clases de esta materia, que duran 2 módulos.' }
+    ];
+    const outputs = [
+      { name: 'Diapositivas para proyectar', desc: 'Unas 12, cada dato con su cita al pie' },
+      { name: 'Guion para vos', desc: 'Qué decir, cuánto dura cada parte y la actividad del patio' },
+      { name: 'Material para alumnos', desc: 'Una guía de observación de 2 páginas' }
+    ];
+    const S = (title, cite, why, st) => ({ title, cite, why, chosen: st === 'c', pending: st === 'p', dropped: st === 'd', op: st === 'd' ? '0.55' : '1', deco: st === 'd' ? 'line-through' : 'none' });
+    const sources = [
+      S('Ecología urbana: la ciudad como ecosistema', 'Faggi, A. y Perepelizin, P. · 2006 · Revista Ciencia Hoy, 16(95)', 'Explica la ciudad como ecosistema con ejemplos de Buenos Aires. Nivel accesible.', 'c'),
+      S('Biología 2. Ecosistemas y biodiversidad', 'Aristegui, R. y otros · 2019 · Santillana, cap. 7', 'Es el manual del curso: mantiene el vocabulario que ya usan.', 'c'),
+      S('Aves de la Ciudad de Buenos Aires', 'Narosky, T. y Di Giacomo, A. · 2018 · Vázquez Mazzini', 'Fichas con fotos para reconocer aves en la salida al patio.', 'c'),
+      S('Urban ecology: patterns, processes and applications', 'Niemelä, J. (ed.) · 2011 · Oxford University Press', 'Muy completo, pero en inglés y de nivel universitario.', 'p'),
+      S('Manual de ecología', 'Odum, E. · 1972 · Interamericana', 'Clásico, pero los datos de ciudades están desactualizados.', 'd')
+    ];
+    return { t, fields, outputs, sources };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

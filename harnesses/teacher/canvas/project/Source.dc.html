@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Una fuente</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column; position: relative;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+    <a href="{{go.settings}}" aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
+      <a href="{{go.lib}}" aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
+      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
+      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    </nav>
+
+    <main style="flex-grow: 1; overflow: hidden; padding: 16px 32px; display: flex; justify-content: center;">
+      <div style="width: 1040px; display: flex; flex-direction: column; gap: 16px;">
+        <span style="font-size: 14px; color: {{t.muted}};">Biblioteca  ›  Fotosíntesis: la luz que alimenta al mundo</span>
+
+        <div style="display: flex; align-items: flex-start; gap: 16px;">
+          <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px;"><h1 style="margin: 0; font-size: 20px; font-weight: 600;">Fotosíntesis: la luz que alimenta al mundo</h1><sc-if value="{{cf.saved}}" hint-placeholder-val="{{ false }}"><span role="status" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}}; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Datos de la fuente guardados</span><a href="{{go.source}}" style="font-size: 12px; font-weight: 500; color: {{t.ink}}; text-decoration: underline; cursor: pointer; white-space: nowrap;">Deshacer</a></sc-if></div>
+            <span style="font-size: 14px; color: {{t.muted}};">Rodríguez, A. · 2021 · Ciencia Hoy · artículo web · agregada el 4 de marzo de 2026 por la búsqueda de la IA</span>
+          </div>
+          <div style="display: flex; gap: 8px; flex-shrink: 0;">
+            <a href="{{go.sourceEdit}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Editar datos</a>
+            <button style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px;">Abrir en la web<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"></path></svg></button>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 24px; align-items: flex-start; min-height: 0;">
+          <article style="width: 680px; flex-shrink: 0; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 24px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Texto guardado</span>
+              <span style="font-size: 12px; color: {{t.faint}};">· copia local del 4 de marzo de 2026 · 2.840 palabras</span>
+            </div>
+            <sc-for list="{{paras}}" as="p" hint-placeholder-count="5">
+              <p style="margin: 0; font-size: {{p.size}}; font-weight: {{p.w}}; line-height: 1.6; color: {{t.ink}};">{{p.text}}</p>
+            </sc-for>
+            <span style="font-size: 12px; color: {{t.faint}};">Sigue · 9 secciones más</span>
+          </article>
+
+          <aside style="flex-grow: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 12px;">
+            <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Datos</span>
+              <sc-for list="{{meta}}" as="m" hint-placeholder-count="5">
+                <div style="display: flex; gap: 8px; font-size: 14px;">
+                  <span style="width: 88px; flex-shrink: 0; color: {{t.muted}};">{{m.k}}</span>
+                  <span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{m.v}}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Categorías</span>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                <sc-for list="{{cats}}" as="c" hint-placeholder-count="3">
+                  <span style="font-size: 12px; padding: 2px 4px 2px 8px; border-radius: 8px; background: {{t.s2}}; display: flex; align-items: center; gap: 4px;">{{c}}<span style="color: {{t.faint}}; padding: 0 2px;">×</span></span>
+                </sc-for>
+                <span style="font-size: 12px; padding: 2px 8px; border-radius: 8px; border: 1px dashed {{t.lineS}}; color: {{t.muted}};">+ Agregar</span>
+              </div>
+            </div>
+
+            <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 14px; font-weight: 600; color: {{t.muted}}; flex-grow: 1;">Cómo citarla</span>
+                <span style="font-size: 12px; padding: 2px 8px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.muted}};">APA 7</span>
+                <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">Copiar</button>
+              </div>
+              <span style="font-size: 14px; line-height: 1.5; padding: 8px 12px; border-radius: 8px; background: {{t.s2}};">Rodríguez, A. (2021). Fotosíntesis: la luz que alimenta al mundo. <i>Ciencia Hoy</i>, 30(176), 22–29. https://cienciahoy.org.ar/fotosintesis</span>
+            </div>
+
+            <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Dónde la usás</span>
+              <sc-for list="{{uses}}" as="u" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 14px;">
+                  <span style="font-size: 12px; color: {{t.faint}}; width: 48px; flex-shrink: 0;">{{u.kind}}</span>
+                  <span style="flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{u.title}}</span>
+                  <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{u.bg}}; color: {{u.ink}};">{{u.tag}}</span>
+                </div>
+              </sc-for>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+  <sc-if value="{{cf.toast}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 32px; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; padding: 10px 12px 10px 16px; border-radius: 12px; background: {{t.ink}}; color: {{t.bg}}; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); white-space: nowrap; z-index: 5;"><span>{{cf.toastText}}</span><a href="{{cf.toastHref}}" style="color: {{cf.toastLink}}; font-weight: 600; text-decoration: none; cursor: pointer;">{{cf.toastAction}}</a></div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"confirm":{"editor":"text","default":""},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const P = (text, h) => ({ text, size: h ? '16px' : '14px', w: h ? '600' : '400' });
+    const paras = [
+      P('Cada hoja verde es una pequeña fábrica que funciona con luz. En sus cloroplastos, la energía del sol se usa para romper moléculas de agua y unir el dióxido de carbono del aire en azúcares que la planta usa para crecer.'),
+      P('Dos etapas, un mismo proceso', true),
+      P('La fase luminosa ocurre en las membranas de los tilacoides. Allí la clorofila absorbe luz roja y azul, y esa energía se guarda en ATP y NADPH. Como producto secundario se libera el oxígeno que respiramos.'),
+      P('En la fase oscura, o ciclo de Calvin, que no necesita oscuridad sino que no depende directamente de la luz, la enzima rubisco fija el CO₂ y lo transforma en glucosa usando la energía guardada en la etapa anterior.'),
+      P('Por qué importa en la Argentina', true),
+      P('Los pastizales pampeanos y los bosques chaqueños capturan cada año millones de toneladas de carbono. Entender la fotosíntesis ayuda a explicar por qué el desmonte y los incendios cambian el balance de gases de la atmósfera.')
+    ];
+    const meta = [
+      { k: 'Autor', v: 'Rodríguez, Ana' },
+      { k: 'Año', v: '2021' },
+      { k: 'Publicación', v: 'Ciencia Hoy · vol. 30, n.º 176' },
+      { k: 'Tipo', v: 'Artículo de divulgación · web' },
+      { k: 'URL', v: 'cienciahoy.org.ar/fotosintesis' },
+      { k: 'Consultada', v: '4 de marzo de 2026' }
+    ];
+    const cats = ['Artículos científicos', 'Célula', 'Fotosíntesis'];
+    const col = { Aprobada: [t.green, t.greenInk], Borrador: [t.blue, t.blueInk], Tomado: [t.s2, t.muted] };
+    const uses = [
+      ['Clase', 'Biología 2º B · U2 · Clase 13 · La fotosíntesis', 'Aprobada'],
+      ['Examen', 'Evaluación · U1 y U2 · Biología 2º B', 'Tomado']
+    ].map((u) => ({ kind: u[0], title: u[1], tag: u[2], bg: col[u[2]][0], ink: col[u[2]][1] }));
+    return { t, paras, meta, cats, uses };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    
+    const c = this.props.confirm || '';
+    const CF = {"saved":{"saved":true}};
+    const e = CF[c] || {};
+    o.cf = { ...e, toast: !!e.toast, toastText: e.toast || '', toastAction: e.action || '', toastHref: e.href ? g[e.href] : '', toastLink: this.props.dark ? '#7a4f00' : o.t.cta, draft: !e.approved };
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

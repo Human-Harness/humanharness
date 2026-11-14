@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pregunta: la IA trabajando</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#7a4f00}a:hover{color:#3b2a06}
+</style>
+</helmet>
+<div style="width: 1280px; height: 440px; box-sizing: border-box; padding: 32px; background: #f3f3f1; color: #1b1c1e; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 24px;">
+  <div style="display: flex; flex-direction: column; gap: 8px; max-width: 760px;">
+    <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #505359;">Teacher harness · mockups · la IA trabajando</span>
+    <h1 style="margin: 0; font-size: 28px; font-weight: 600;">¿Qué ve el profe mientras la IA arma?</h1>
+    <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #505359;">Elegiste C: en vivo, pero se puede salir y sigue en segundo plano. Para alguien con poca experiencia conviene que se note que la app está trabajando. Las tres opciones muestran la misma clase armándose. La cuarta pantalla es lo que pasa al salir: un aviso arriba, la clase con su avance y un aviso cuando termina.</p>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+    <div style="background: #ffffff; border: 1px solid #e7e7e3; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <span style="align-self: flex-start; background: #fde6b3; color: #7a4f00; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px;">A</span>
+      <span style="font-size: 16px; font-weight: 600;">Bloquea con una ventana</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #505359;">Una ventana sobre toda la app con los pasos y el avance. No se puede tocar nada atrás. El botón «Seguir en segundo plano» la cierra.</span>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e7e7e3; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <span style="align-self: flex-start; background: #fde6b3; color: #7a4f00; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px;">B</span>
+      <span style="font-size: 16px; font-weight: 600;">Pantalla en vivo</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #505359;">Se abre el editor y las diapositivas aparecen una por una. El resto de la app queda apagado. Una franja arriba muestra el avance y deja salir.</span>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e7e7e3; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <span style="align-self: flex-start; background: #fde6b3; color: #7a4f00; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px;">C</span>
+      <span style="font-size: 16px; font-weight: 600;">Sigue en el chat</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #505359;">La app queda libre. El avance vive en el chat como una tarjeta con los pasos. «Mirar en vivo» abre el editor.</span>
+    </div>
+    <div style="background: #f2f2ef; border: 1px dashed #d9d9d4; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <span style="align-self: flex-start; background: #ffffff; color: #505359; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; border: 1px solid #e7e7e3;">—</span>
+      <span style="font-size: 16px; font-weight: 600;">Dejar para después</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #505359;">Dibujo la pantalla de progreso más simple y lo decidimos al probar la demo.</span>
+    </div>
+  </div>
+  <p style="margin: 0; font-size: 12px; color: #505359;">Elegida: A, una ventana que bloquea. Es la más clara para quien tiene poca experiencia. Al salir, se usa el aviso de segundo plano.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":440}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

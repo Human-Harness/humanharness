@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>C · ¿Qué preparamos?</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#7a4f00}a:hover{color:#3b2a06}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <button aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></button>
+    <button aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></button>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <button aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></button>
+      <button aria-label="Materias" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"></path><path d="m3 13 9 5 9-5"></path></svg></button>
+      <button aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></button>
+      <button aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></button>
+    </nav>
+
+    <main style="flex-grow: 1; overflow: hidden; display: flex; justify-content: center; padding: 48px 32px 16px;">
+      <div style="width: 680px; display: flex; flex-direction: column; gap: 32px;">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: 600;">¿Qué preparamos hoy?</h1>
+          <div style="background: {{t.surface}}; border: 1px solid {{t.lineS}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+            <label for="ask" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Pedido</label>
+            <textarea id="ask" rows="3" placeholder="Ej.: armá la clase 5 de Biología con las fuentes de la Unidad 2, 40 minutos, con una actividad en grupos" style="border: 0; outline: none; resize: none; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 16px; line-height: 1.5;"></textarea>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <sc-for list="{{starts}}" as="s" hint-placeholder-count="4">
+                <button style="height: 28px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 14px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">{{s.label}}</button>
+              </sc-for>
+              <span style="flex-grow: 1;"></span>
+              <span style="font-size: 12px; color: {{t.faint}};">Enter para empezar</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{t.muted}};">Sigue en tu plan</span>
+            <span style="flex-grow: 1;"></span>
+            <a href="#" style="font-size: 14px; color: {{t.muted}};">Ver el plan</a>
+          </div>
+          <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+            <sc-for list="{{next}}" as="n" hint-placeholder-count="3">
+              <div style="padding: 12px 16px; display: flex; align-items: center; gap: 16px; border-top: {{n.border}};">
+                <span style="width: 72px; font-size: 14px; color: {{t.muted}}; font-variant-numeric: tabular-nums;">{{n.date}}</span>
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+                  <span style="font-size: 14px; font-weight: 600;">{{n.title}}</span>
+                  <span style="font-size: 14px; color: {{t.muted}};">{{n.where}}</span>
+                </div>
+                <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{n.bg}}; color: {{n.ink}};">{{n.tag}}</span>
+                <button style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">{{n.action}}</button>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{t.muted}};">Para revisar</span>
+          <div style="background: {{t.orange}}; color: {{t.orangeInk}}; border-radius: 14px; padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+            <span style="flex-grow: 1; font-size: 14px;">El examen «Revolución de Mayo» quedó desactualizado: cambió una fuente de la Unidad 1.</span>
+            <button style="height: 24px; padding: 0 8px; border: 0; border-radius: 8px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">Ver qué cambió</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const starts = [{ label: 'Una clase' }, { label: 'Un plan' }, { label: 'Un examen' }, { label: 'Buscar fuentes' }];
+    const col = (k) => k === 'Borrador' ? [t.blue, t.blueInk] : k === 'Aprobada' ? [t.green, t.greenInk] : [t.s2, t.ink];
+    const next = [
+      { date: 'lun 17 nov', title: 'Clase 5 · La fotosíntesis', where: 'Biología · 2º B · Unidad 2', tag: 'Borrador', action: 'Seguir' },
+      { date: 'mar 18 nov', title: 'Clase 4 · Revolución de Mayo', where: 'Historia · 4º A · Unidad 1', tag: 'Pendiente', action: 'Preparar' },
+      { date: 'jue 20 nov', title: 'Clase 6 · Respiración celular', where: 'Biología · 2º B · Unidad 2', tag: 'Pendiente', action: 'Preparar' }
+    ].map((n, i) => { const c = col(n.tag); return { ...n, bg: c[0], ink: c[1], border: i === 0 ? '0' : '1px solid ' + t.line }; });
+    return { t, starts, next };
+  }
+}
+</script>
+</body>
+</html>

@@ -252,6 +252,7 @@ import { instructionSubagentsOption } from "./instruction-subagents";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
+import { layoutIpc } from "./layout-ipc";
 import { setupIpc } from "./setup-ipc";
 import { folderIpc } from "./folder-ipc";
 import { engineSetupIpc } from "./engine-setup-ipc";
@@ -271,7 +272,7 @@ import { type ModsSettings, cleanModsConfig } from "./mods/config";
 import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
-import { pickLayout, shownLayout } from "./mods/layout";
+import { shownLayout } from "./mods/layout";
 import { HomeHistory } from "./mods/home-history";
 import { enterSafeMode, isEscapeHatch, safeAtStart } from "./mods/safe";
 import { manualFiles } from "./mods/manual";
@@ -2903,10 +2904,7 @@ function registerIpc() {
   // The layout the screen shows (minimal-core spec §5.2).
   handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
   // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
-  handle("hh:layoutPick", (name: unknown) => {
-    if (name !== null && typeof name !== "string") throw new Error("Invalid layout name");
-    return pickLayout(appHome(app.getPath("userData"), harness.id), name);
-  });
+  handle("hh:layoutPick", layoutIpc({ home: () => appHome(app.getPath("userData"), harness.id) })["hh:layoutPick"]);
   // Safe mode entered this run: the window shows its notice.
   handle("hh:safeMode", () => safeEntered);
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).

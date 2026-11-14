@@ -289,7 +289,7 @@ import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./tas
 import { TranslationCache } from "./translation-cache";
 import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
+import { historyKeep, materialAppState, materialIpc, materialItems, materialRecommended } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
@@ -2964,20 +2964,8 @@ function registerIpc() {
   }
   handleAll(setupIpc({ setupCtl: () => setupCtl }));
   handleAll(profilesIpc({ profilesCtl: () => profilesCtl, appState, lastAppState: () => lastAppState }));
-  // The person's material (material spec §10). Answers are data; without material every call is "not-ready" (D0).
-  const noMaterial = { ok: false, reason: "not-ready" } as const;
-  handle("hh:materialList", async (scope: unknown) => (materialSvc && typeof scope === "string" ? materialSvc.list(scope) : null));
-  handle("hh:materialAdd", (scope: unknown) => materialSvc?.add(scope) ?? noMaterial);
-  handle("hh:materialAddLink", (scope: unknown, url: unknown) => materialSvc?.addLink(scope, url) ?? noMaterial);
-  handle("hh:materialConfirm", (scope: unknown, id: unknown, choice: unknown) => materialSvc?.confirm(scope, id, choice) ?? noMaterial);
-  handle("hh:materialGrounding", (scope: unknown, mode: unknown) => materialSvc?.setGrounding(scope, mode) ?? noMaterial);
-  handle("hh:materialRetry", (scope: unknown, id: unknown) => materialSvc?.retry(scope, id) ?? noMaterial);
-  handle("hh:materialRemove", (scope: unknown, id: unknown) => materialSvc?.remove(scope, id) ?? noMaterial);
-  handle("hh:materialDecide", (scope: unknown, id: unknown, fragment: unknown, choice: unknown) => materialSvc?.decide(scope, id, fragment, choice) ?? noMaterial);
-  handle("hh:materialCite", async (scope: unknown, id: unknown) => (materialSvc ? materialSvc.cite(scope, id) : null));
-  handle("hh:materialOpen", (scope: unknown, id: unknown) =>
-    openMaterial(materialSvc, scope, id, (file) => shell.openPath(file), (file) => shell.showItemInFolder(file)),
-  );
+  // The person's material (material spec §10).
+  handleAll(materialIpc({ materialSvc: () => materialSvc, shell }));
   handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
   // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
   handle(

@@ -167,7 +167,8 @@ import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { reviewHandlers } from "./review-ipc";
 import { workerDiff } from "./diff-runner";
-import { commitAnnouncer, fileHandlers } from "./file-ipc";
+import { commitAnnouncer, fileHandlers, openPathIpc } from "./file-ipc";
+import { documentIpc } from "./document-ipc";
 import { FileTimelineService } from "./file-timeline";
 import { CANCELLED, type GoBackAsk, askNatively, goBackHandlers, goBackText } from "./go-back";
 import { ReviewService } from "./reviews";
@@ -251,6 +252,16 @@ import { instructionSubagentsOption } from "./instruction-subagents";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
+import { layoutIpc } from "./layout-ipc";
+import { setupIpc } from "./setup-ipc";
+import { folderIpc } from "./folder-ipc";
+import { engineSetupIpc } from "./engine-setup-ipc";
+import { chatIpc } from "./chat-ipc";
+import { historyIpc } from "./history-ipc";
+import { dataIpc } from "./data-ipc";
+import { settingsIpc } from "./settings-ipc";
+import { scopesIpc } from "./scopes-ipc";
+import { profilesIpc } from "./profiles-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
 import { sidekickView } from "./sidekick-view";
@@ -261,7 +272,7 @@ import { type ModsSettings, cleanModsConfig } from "./mods/config";
 import { CORE_MODS } from "./mods/core-mods";
 import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
-import { pickLayout, shownLayout } from "./mods/layout";
+import { shownLayout } from "./mods/layout";
 import { HomeHistory } from "./mods/home-history";
 import { enterSafeMode, isEscapeHatch, safeAtStart } from "./mods/safe";
 import { manualFiles } from "./mods/manual";
@@ -279,7 +290,7 @@ import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./tas
 import { TranslationCache } from "./translation-cache";
 import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
+import { historyKeep, materialAppState, materialIpc, materialItems, materialRecommended } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
@@ -309,9 +320,6 @@ declare const __SHELL_RESOURCES__: string;
 
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
-const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
-/** How long each setup step may run before it is stopped (a sign-in left open in the browser, a stuck download). */
-const SETUP_TIMEOUT_MS: Record<SetupStep, number> = { install: 20 * 60_000, update: 20 * 60_000, login: 10 * 60_000, logout: 60_000 };
 
 const requireFromHere = createRequire(import.meta.url);
 // The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
@@ -347,8 +355,6 @@ let backendStarted = false;
 const backendGen = new BackendGeneration();
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
-/** The first web address the running step printed, for a screen that reopens while it runs. */
-let setupUrl: string | undefined;
 /** How long quitting waits for the test prompt to clean up (its temporary folder, the CLI it started). */
 const QUIT_TEST_WAIT_MS = 5_000;
 /** Engine changes, setup steps and test prompts against turns (see EngineGuards). */
@@ -529,9 +535,6 @@ const rebasePlugins = (): Promise<void> => pluginsCtl?.rebase().catch((err: unkn
 let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
 let profilesCtl: Profiles | null = null;
-const NO_SETUP_STEPS: SetupStepsState = { steps: {}, blocking: [] };
-const NO_PROFILES: ProfilesState = { active: null, list: [] };
-const NO_SETUP_STEP: SetupStepResult = { ok: false, reason: "unknown" };
 
 /**
  * The reference folders usable with the working folder: one that is or contains it is left out (its
@@ -2807,158 +2810,69 @@ const announceCommits = (history: History) => commitAnnouncements.watch(history)
 
 function registerIpc() {
   handle("hh:getState", () => appState());
-  handle("hh:pickFolder", async (defaultPath: string) => {
-    const result = await dialog.showOpenDialog(window!, { defaultPath, properties: ["openDirectory", "createDirectory"] });
-    const folder = result.canceled ? undefined : result.filePaths[0];
-    if (!folder) return null;
-    return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
-  });
-  handle("hh:saveConfig", async (raw: unknown) => {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("A config change must be an object");
-    // The active profile changes only through a profile switch (profiles spec §4).
-    const { profile: _profile, ...input }: AppConfig = raw as AppConfig;
-    const problem = await configProblem(input, validation());
-    if (problem) throw new Error(problem);
-    // Spec §7: a bad entry under models is dropped, never stored.
-    const cleaned: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
-    // Parallel spec §7: the same for the caps; with none valid the key goes (the saved caps stay).
-    const { parallel: caps, ...rest } = cleaned;
-    const kept = caps !== undefined ? cleanCaps(caps) : undefined;
-    const capped: AppConfig = caps === undefined ? cleaned : { ...rest, ...(kept ? { parallel: kept } : {}) };
-    // Part 3: Settings › Jobs keeps only the harness's own jobs, each cleaned ({} turns every one back on); without
-    // jobs the key goes (D0).
-    const { jobs: jobChoices, ...noJobs } = capped;
-    const declared = harness.jobs;
-    const keptJobs = jobChoices !== undefined && declared && hasJobs(harness) ? cleanJobs(jobChoices, (id) => Object.hasOwn(declared, id)) : undefined;
-    const patch: AppConfig = jobChoices === undefined ? capped : { ...noJobs, ...(keptJobs ? { jobs: keptJobs } : {}) };
-    const before = await config.load();
-    const baseBefore = pluginsCtl ? await currentBase() : null;
-    // Spec §9: an engine is only used once its notice is accepted.
-    await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
-    // folder's task ends and its runtime goes.
-    try {
-      await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: interruptTasks, dropRuntime }, () =>
-        saveConfigPatch(patch, before),
-      );
-      if (patch.folder !== undefined && patch.folder !== before.folder) {
-        // The reader's watches were checked against the old folder.
-        documentSessions.closeAll();
-        if (before.folder) dropDataStoresUnder(before.folder);
-        await settleScopes()
-          .then(scopesChanged)
-          .catch((err: unknown) => console.error("Could not prepare the scopes", err));
-      }
-    } finally {
-      // Set up now, or another folder: the plugins follow the base, even when something above threw after the save.
-      if (pluginsCtl && (await currentBase().catch(() => null)) !== baseBefore) await rebasePlugins();
-    }
-    // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
-    await recordSetup(setupCtl, async () => (await validConfig()) !== null);
-    // Set up for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
-    void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
-    // The backend starts now that the app is set up, or follows a new folder. Without one, nothing (D0).
-    const folderChanged = patch.folder !== undefined && patch.folder !== before.folder;
-    void (folderChanged ? backendRebase() : backendReady()).catch((err: unknown) => console.error("Could not start the backend", err));
-    if (patch.appearance) applyAppearance(patch.appearance);
-    if (patch.textSize) applyTextSize(patch.textSize);
-    // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
-    if (host && patch.parallel !== undefined) host.capsChanged((await config.load()).parallel);
-    // Settings › Jobs reach the scheduler at once (its next trigger reads them), and the Jobs section and badge follow.
-    jobSettings = (await config.load()).jobs;
-    if (patch.jobs !== undefined) {
-      jobsChanged();
-      void refreshJobBadge();
-    }
-    return appState();
-  });
-  handle("hh:loadChat", async (): Promise<ChatLoad> => {
-    // After the migration: it opens `main`, whose chat is the one to show.
-    await scopesSettled();
-    const c = await validConfig();
-    if (!c) return { entries: [] };
-    // The engine change archives the chat; the check here only catches a change made while the app was closed.
-    const switchedFrom =
-      guards.takeSwitchedFrom() ?? (hold.engineBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
-    // Board mode: the focused task's own chat, and its turn still running to replay (read last).
-    if (host) return { ...(switchedFrom ? { switchedFrom } : {}), ...(await host.loadChat(baseOf(c))) };
-    return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
-  });
-  handle("hh:send", async (message: string, options?: SendOptions) => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
-    const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
-    // The mode the person picked for a new task ("ask"); one the action doesn't list is refused before anything closes.
-    const mode = action && typeof options?.mode === "string" && (harness.actions[action].modes ?? []).includes(options.mode) ? options.mode : undefined;
-    if (options?.mode !== undefined && mode === undefined) throw new Error("Unknown mode");
-    const scope = options?.scope;
-    if (scope !== undefined && !isScopeId(scope)) throw new Error("Unknown scope");
-    // The time box the person picked (task-phases spec §5): one the action doesn't offer is refused before anything closes.
-    const offered = action ? harness.actions[action].timeBox?.options : undefined;
-    const timeBox = options?.timeBox;
-    if (timeBox !== undefined && !timeBoxOffered(timeBox, offered)) throw new Error("Unknown time box");
-    // The mods' beforeSend (minimal-core spec §4.2): each may rewrite the text; the host refuses a blank or oversized one.
-    if (modHost) {
-      const running = await tasks.runningTask().catch(() => null);
-      message = await modHost.beforeSend({ text: message, ...(action ? { action } : {}), ...(scope ? { scope } : {}), task: running });
-    }
-    // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
-    const sent = action ? tasks.start(action, message, scope, mode, timeBox !== undefined ? { timeBox } : {}) : tasks.ask(message, undefined, scope);
-    return scope === undefined ? sent : sent.finally(() => void scopesChanged());
-  });
+  handleAll(
+    settingsIpc({
+      harness: () => harness,
+      config: () => config,
+      settingsCtl: () => settingsCtl,
+      pluginsCtl: () => pluginsCtl,
+      setupCtl: () => setupCtl,
+      host: () => host,
+      setJobSettings: (jobs) => (jobSettings = jobs),
+      validation,
+      currentBase,
+      hasNotice,
+      folderBusy: hold.folderBusy,
+      guards,
+      interruptTasks,
+      dropRuntime,
+      saveConfigPatch,
+      documentSessions,
+      dropDataStoresUnder,
+      settleScopes,
+      scopesChanged,
+      rebasePlugins,
+      validConfig,
+      jobsReady,
+      backendRebase,
+      backendReady,
+      applyAppearance,
+      applyTextSize,
+      jobsChanged,
+      refreshJobBadge,
+      appState,
+    }),
+  );
+  handleAll(
+    chatIpc({
+      harness: () => harness,
+      quitting: () => quitting,
+      turnBlocked,
+      tasks: () => tasks,
+      host: () => host,
+      modHost: () => modHost,
+      guards,
+      engineBusy: hold.engineBusy,
+      scopesSettled,
+      scopesChanged,
+      validConfig,
+      baseOf,
+      dropRuntime,
+    }),
+  );
   handle("hh:getTasks", () => tasks.view());
-  handle("hh:scopes", async () => (await scopesView()).list);
-  handle("hh:scopeCurrent", async () => {
-    await scopesSettled();
-    return tasks.currentScope();
-  });
-  handle("hh:scopeCreate", async (title: unknown) => {
-    const created = await (await scopeStore()).create(title);
-    await scopesChanged();
-    return created;
-  });
-  handle("hh:scopeRename", async (id: unknown, title: unknown) => {
-    if (!isScopeId(id)) throw new Error("Unknown scope");
-    const renamed = await (await scopeStore()).rename(id, title);
-    await scopesChanged();
-    return renamed;
-  });
-  // A scope is never deleted (spec §3.4). Archiving the open one closes its task and the scope first.
-  handle("hh:scopeArchive", async (id: unknown, archived: unknown) => {
-    if (quitting) throw new Error("The app is closing");
-    if (!isScopeId(id) || typeof archived !== "boolean") throw new Error("Invalid scope change");
-    const store = await scopeStore();
-    const closeIfOpen = async () => {
-      if ((await tasks.currentScope()) !== id) return;
-      const blocked = turnBlocked();
-      if (blocked) throw new Error(blocked);
-      if (!(await tasks.switchScope(null))) throw new Error("The open task is still closing");
-    };
-    if (archived) await closeIfOpen();
-    await store.setArchived(id, archived);
-    // It may have been opened while the close ran (the scope was not archived yet): close it again.
-    if (archived) await closeIfOpen();
-    await scopesChanged();
-  });
-  handle("hh:scopeOpen", async (id: unknown) => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    if (id !== null && !isScopeId(id)) throw new Error("Unknown scope");
-    const opened = await tasks.switchScope(id);
-    await scopesChanged();
-    // Linked folders: a folder that gained or lost git is marked (Decision 13); AGENTS.md lists the new scope's folders.
-    const linked = linked_();
-    if (linked && opened) {
-      void (async () => {
-        if (id !== null) await linked.access.checkGit(id).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
-        await linked.instructions.changed();
-      })();
-    }
-    return opened;
-  });
+  handleAll(
+    scopesIpc({
+      quitting: () => quitting,
+      turnBlocked,
+      tasks: () => tasks,
+      scopesView,
+      scopesSettled,
+      scopeStore,
+      scopesChanged,
+      linked_,
+    }),
+  );
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
   if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
   // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
@@ -2984,38 +2898,13 @@ function registerIpc() {
     });
     if (backend) registerBackendIpc(handle, { supervisor: backend });
   }
-  handle("hh:data", async (request: unknown, options: unknown) => {
-    // After the migration: it opens `main`, the scope a request made on mount acts in.
-    await scopesSettled();
-    return harnessUiData(request, options);
-  });
-  handle("hh:dataDiff", async (taskId: unknown) => {
-    if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) return [];
-    const history = await currentHistory();
-    return history ? dataDiffOf(history, taskId, dataCollections(harness)) : [];
-  });
-  // The harness's Settings tab (harness-settings spec §4). Refusals come back as data: Electron flattens thrown errors.
-  handle("hh:settingsGet", () => (settingsCtl ? settingsCtl.state() : { values: {}, pending: [] }));
-  handle("hh:settingsSet", (field: unknown, value: unknown) =>
-    settingsCtl ? settingsCtl.set(field, value) : { ok: false, message: "This harness has no settings" },
-  );
-  handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
+  handleAll(dataIpc({ harness: () => harness, scopesSettled, harnessUiData, currentHistory }));
   // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
   registerSidekickIpc(handle, () => sidekickCtl);
   // The layout the screen shows (minimal-core spec §5.2).
   handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
   // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
-  handle("hh:layoutPick", (name: unknown) => {
-    if (name !== null && typeof name !== "string") throw new Error("Invalid layout name");
-    return pickLayout(appHome(app.getPath("userData"), harness.id), name);
-  });
-  // The home folder's history (0b2): its last change, and undo (the watchers reload what the undo changed).
-  handle("hh:homeHistory", async () => (await homeHistory?.last()) ?? null);
-  handle("hh:homeUndo", async () => {
-    if (!homeHistory) return null;
-    await homeHistory.undo();
-    return homeHistory.last();
-  });
+  handle("hh:layoutPick", layoutIpc({ home: () => appHome(app.getPath("userData"), harness.id) })["hh:layoutPick"]);
   // Safe mode entered this run: the window shows its notice.
   handle("hh:safeMode", () => safeEntered);
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
@@ -3071,65 +2960,10 @@ function registerIpc() {
       ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
     });
   }
-  // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
-  // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
-  // it stands, never a thrown error.
-  const stepRefused = (err: unknown): SetupStepResult => {
-    console.error("A setup step call failed", err);
-    return { ok: false, reason: "not-ready" };
-  };
-  const stepsAsTheyStand = (err: unknown): Promise<SetupStepsState> => {
-    console.error("A setup step call failed", err);
-    return setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : Promise.resolve(NO_SETUP_STEPS);
-  };
-  handle("hh:setupStepsGet", () => (setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : NO_SETUP_STEPS));
-  handle("hh:setupStepValues", (id: unknown) => (setupCtl ? setupCtl.values(id).catch(() => ({})) : {}));
-  handle("hh:setupStepSubmit", (id: unknown, value: unknown) => (setupCtl ? setupCtl.submit(id, value).catch(stepRefused) : NO_SETUP_STEP));
-  handle("hh:setupStepComplete", (id: unknown) => (setupCtl ? setupCtl.complete(id).catch(stepRefused) : NO_SETUP_STEP));
-  handle("hh:setupStepSkip", (id: unknown) => (setupCtl ? setupCtl.skip(id).catch(stepRefused) : NO_SETUP_STEP));
-  handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
-  handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
-  // Profiles (profiles spec §5). Without them, nothing to read and every change refused (D4). Refusals come back as data.
-  const profileAnswer = (outcome: Promise<ProfileOutcome>): Promise<ProfileResult> =>
-    profileResult(
-      outcome,
-      appState,
-      () => lastAppState,
-      async () => (profilesCtl ? (await profilesCtl.state()).active : null),
-    );
-  const noProfiles = (): ProfileResult => ({ ok: false, reason: "not-ready" });
-  handle("hh:profilesGet", () => (profilesCtl ? profilesCtl.state().catch(() => NO_PROFILES) : NO_PROFILES));
-  handle("hh:profileCreate", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.create(values)) : noProfiles()));
-  handle("hh:profileOpen", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.open(id)) : noProfiles()));
-  handle("hh:profileArchive", (id: unknown, archived: unknown) =>
-    profilesCtl && typeof archived === "boolean" ? profileAnswer(profilesCtl.setArchived(id, archived)) : noProfiles(),
-  );
-  handle("hh:profileEdit", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.edit(values)) : noProfiles()));
-  handle("hh:profileDelete", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.remove(id)) : noProfiles()));
-  // The person's material (material spec §10). Answers are data; without material every call is "not-ready" (D0).
-  const noMaterial = { ok: false, reason: "not-ready" } as const;
-  handle("hh:materialList", async (scope: unknown) => (materialSvc && typeof scope === "string" ? materialSvc.list(scope) : null));
-  handle("hh:materialAdd", (scope: unknown) => materialSvc?.add(scope) ?? noMaterial);
-  handle("hh:materialAddLink", (scope: unknown, url: unknown) => materialSvc?.addLink(scope, url) ?? noMaterial);
-  handle("hh:materialConfirm", (scope: unknown, id: unknown, choice: unknown) => materialSvc?.confirm(scope, id, choice) ?? noMaterial);
-  handle("hh:materialGrounding", (scope: unknown, mode: unknown) => materialSvc?.setGrounding(scope, mode) ?? noMaterial);
-  handle("hh:materialRetry", (scope: unknown, id: unknown) => materialSvc?.retry(scope, id) ?? noMaterial);
-  handle("hh:materialRemove", (scope: unknown, id: unknown) => materialSvc?.remove(scope, id) ?? noMaterial);
-  handle("hh:materialDecide", (scope: unknown, id: unknown, fragment: unknown, choice: unknown) => materialSvc?.decide(scope, id, fragment, choice) ?? noMaterial);
-  handle("hh:materialCite", async (scope: unknown, id: unknown) => (materialSvc ? materialSvc.cite(scope, id) : null));
-  handle("hh:materialOpen", (scope: unknown, id: unknown) =>
-    openMaterial(materialSvc, scope, id, (file) => shell.openPath(file), (file) => shell.showItemInFolder(file)),
-  );
-  handle("hh:choose", (option: unknown, task: unknown) => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    const parsed = choiceOptionSchema.safeParse(option);
-    if (!parsed.success) throw new Error("Invalid choice");
-    // The task the block was shown for: a block of an earlier task is refused (TaskManager.choose).
-    if (typeof task !== "string" || !task || task.length > 100) throw new Error("Invalid choice");
-    return tasks.choose(parsed.data, task);
-  });
+  handleAll(setupIpc({ setupCtl: () => setupCtl }));
+  handleAll(profilesIpc({ profilesCtl: () => profilesCtl, appState, lastAppState: () => lastAppState }));
+  // The person's material (material spec §10).
+  handleAll(materialIpc({ materialSvc: () => materialSvc, shell }));
   handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
   // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
   handle(
@@ -3143,84 +2977,13 @@ function registerIpc() {
   );
   // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
   handle("hh:setPhase", setPhaseHandler({ quitting: () => quitting, blocked: turnBlocked, setPhase: (to, task) => tasks.setPhase(to, task) }));
-  // The stepper's Finish and the time box's controls.
-  handle("hh:finishTask", () => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    return tasks.finish();
-  });
-  // Quitting already paused the box (TaskManager.close): nothing may run it again.
-  handle("hh:pauseTask", () => {
-    if (quitting) return false;
-    return tasks.pauseTimeBox();
-  });
-  handle("hh:resumeTask", () => {
-    if (quitting) return false;
-    return tasks.resumeTimeBox();
-  });
-  handle("hh:extendTimeBox", () => {
-    if (quitting) return false;
-    return tasks.extendTimeBox();
-  });
-  handle("hh:openPath", async (file: unknown) => {
-    const c = await validConfig();
-    if (!c) return false;
-    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
-    const target = await openableFile(file, roots);
-    if (!target) return false;
-    // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
-    return openIfStillSafe(target, roots, (p) => shell.openPath(p));
-  });
-  // Shows a file in Finder (it never opens it): any kind of file, with the same checks as hh:openPath.
-  handle("hh:revealPath", async (file: unknown) => {
-    const c = await validConfig();
-    if (!c) return false;
-    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
-    const target = await revealableFile(file, roots);
-    if (!target) return false;
-    return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));
-  });
-  // The reader (document-reader spec §5.3): it only ever reads, inside the folder or a reference folder. Every input
-  // is untrusted (documents.ts checks its shape first) and every failure is an answer, never a thrown error.
-  handle("hh:readDocument", async (rel: unknown): Promise<DocumentRead> => {
-    try {
-      const roots = await documentRoots();
-      if (!roots) return { ok: false, reason: "not-ready" };
-      return await readDocument(rel, roots);
-    } catch (err) {
-      console.error("Could not read the document", err);
-      return { ok: false, reason: "missing" };
-    }
-  });
-  handle("hh:readImage", async (rel: unknown): Promise<string | null> => {
-    try {
-      const roots = await documentRoots();
-      return roots ? await readImage(rel, roots) : null;
-    } catch {
-      return null;
-    }
-  });
-  handle("hh:documentsExist", async (paths: unknown): Promise<boolean[]> => {
-    if (!Array.isArray(paths)) return [];
-    // Too many to check: none counts as there (one answer per path, as the window expects).
-    if (paths.length > MAX_EXIST_PATHS) return paths.map(() => false);
-    try {
-      const roots = await documentRoots();
-      return roots ? await documentsExist(paths, roots) : paths.map(() => false);
-    } catch {
-      return paths.map(() => false);
-    }
-  });
-  handleFrom("hh:watchDocument", async (sender, rel): Promise<number | null> => {
-    try {
-      const roots = await documentRoots();
-      return roots ? await documentSessions.watch(sender.id, rel, roots) : null;
-    } catch {
-      return null;
-    }
-  });
-  handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
+  handleAll(openPathIpc({ validConfig, baseOf, workReferences, shell }));
+  const reader = documentIpc({ documentRoots, documentSessions });
+  handle("hh:readDocument", reader["hh:readDocument"]);
+  handle("hh:readImage", reader["hh:readImage"]);
+  handle("hh:documentsExist", reader["hh:documentsExist"]);
+  handleFrom("hh:watchDocument", reader["hh:watchDocument"]);
+  handleFrom("hh:unwatchDocument", reader["hh:unwatchDocument"]);
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
   handleAll(reviewHandlers(reviews, () => harness.permissions.edit === "folder"));
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
@@ -3231,112 +2994,27 @@ function registerIpc() {
   if (translation) handleAll(languageHandlers(translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
-  const historyGroups = async () => {
-    const history = await currentHistory();
-    return history ? historyView(await history.tasks()) : [];
-  };
-  /**
-   * The groups "Undo this task" acts on: the panel's, and with tracked linked folders theirs too (a task or a later
-   * task that changed only a linked folder, hatches spec §3.4). Without linked folders, exactly the panel's (D0).
-   */
-  const undoGroups = async (taskId: string) => {
-    const main = await historyGroups();
-    if (!linked_()) return main;
-    const refs = await linkedHistoriesOf(main.find((g) => g.taskId === taskId)?.scopeId);
-    if (refs.length === 0) return main;
-    return mergeTaskGroups(main, await Promise.all(refs.map(async (r) => ({ key: r.key, groups: historyView(await r.history.tasks()) }))));
-  };
-  // Every go-back (one file, the whole folder, one task) asks first with main's native dialog (go-back.ts).
-  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
-  // A restore changes tracked files with no data event: the settings may have changed.
-  const goBacks = goBackHandlers<WebContents>({
-    confirm: confirmGoBack,
-    blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
-    groups: historyGroups,
-    restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(afterRestore),
-    taskGroups: undoGroups,
-    restoreTask: (taskId) => {
-      // Something was restored: the settings may have changed, even when a linked folder then failed.
-      let touched = false;
-      return restoreWith(async (history) => {
-        const group = (await history.tasks()).find((g) => g.taskId === taskId);
-        // Its tracked linked folders too (hatches spec §3.4); none without linked folders (D0).
-        const linkedRefs = await linkedHistoriesOf(group?.scopeId);
-        if (!group?.start && linkedRefs.length === 0) throw new Error("Nothing to go back to");
-        if (group?.start) {
-          await history.restore(group.start, RESTORE_TASK);
-          touched = true;
-        }
-        if (linkedRefs.length === 0) return;
-        touched = true;
-        let restored: number;
-        try {
-          restored = await restoreLinkedTask(linkedRefs, taskId, RESTORE_TASK);
-        } catch (err) {
-          // A failure there is logged and fails the undo (the window's generic failure).
-          console.error("Undo covered the work folder but not its linked folders", err);
-          throw err;
-        }
-        if (!group?.start && restored === 0) throw new Error("Nothing to go back to");
-      }).then(afterRestore, (err: unknown) => {
-        if (touched) afterRestore();
-        throw err;
-      });
-    },
-    file: fileTimelines,
+  const history = historyIpc({
+    quitting: () => quitting,
+    tasksBusy: () => tasks.isBusy(),
+    restoreHeld: hold.restoreHeld,
+    homeHistory: () => homeHistory,
+    linked_,
+    currentHistory,
+    linkedHistoriesOf,
+    confirmGoBack,
+    restoreWith,
+    afterRestore,
+    restores,
+    undoByPaths,
+    fileTimelines,
   });
-  // Every go-back but "Undo this task" as master registers it; that one also undoes by paths below.
-  for (const channel of Object.keys(goBacks) as (keyof typeof goBacks)[]) if (channel !== "hh:restoreTask") handleFrom(channel, goBacks[channel]);
-  // The panel's rows; with tracked linked folders, a task that changed only one of them too (hatches spec §3.4), so it
-  // can be undone. Without linked folders, exactly the work folder's (D0); a linked folder that can't be read adds none.
-  handle("hh:historyTasks", async () => {
-    const main = await historyGroups();
-    if (!linked_()) return main;
-    try {
-      const refs = await linkedHistoriesOf(undefined);
-      if (refs.length === 0) return main;
-      return linkedOnlyRows(main, await Promise.all(refs.map(async (r) => ({ key: r.key, groups: historyView(await r.history.tasks()) }))));
-    } catch (err) {
-      console.error("Could not read the linked folders' history", err);
-      return main;
-    }
-  });
-  handleFrom("hh:restoreTask", async (sender, taskId: unknown, includeShared?: unknown) => {
-    // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
-    // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.
-    // `single` mode the same (part 3 Decision 12): a job's commits sit between the task's, and a job run is undone alone.
-    const byPaths = undoByPaths();
-    // Plain mode: the whole folder back to the task's start, after main's native confirmation (go-back.ts).
-    if (!byPaths) return goBacks["hh:restoreTask"](sender, taskId);
-    const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
-    const task = (await undoGroups(id)).find((g) => g.taskId === id);
-    if (!task) return { refused: { reason: "nothing" as const } };
-    if (quitting || hold.restoreHeld() !== null) throw new Error("Going back can't run now");
-    // Main's native dialog too; by paths no later task is undone, so none is listed.
-    if (!(await confirmGoBack(sender, { kind: "task", task, later: [] }))) return CANCELLED;
-    let result: Awaited<ReturnType<typeof restoreTaskWithLinked>> | null = null;
-    await restores.run(
-      currentHistory,
-      async (history: History) => {
-        // With tracked linked folders, each of them by paths too (hatches spec §3.4); without, today's (D0).
-        const linkedRefs = await linkedHistoriesOf(task.scopeId);
-        result =
-          linkedRefs.length > 0
-            ? await restoreTaskWithLinked(history, linkedRefs, id, { running: byPaths.running, linkedRunning: byPaths.linkedRunning, includeShared: withShared })
-            : await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
-      },
-      { busy: () => byPaths.busy(id) },
-    );
-    const r = result!;
-    // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3). A partial undo (linked
-    // folders) restored some folders: the settings may have changed.
-    if (!r.ok) {
-      if (r.reason === "partial") afterRestore();
-      return { refused: undoRefusalOf(r) };
-    }
-    afterRestore();
-    return { ok: true };
-  });
+  handleFrom("hh:restore", history["hh:restore"]);
+  handleFrom("hh:fileRestore", history["hh:fileRestore"]);
+  handle("hh:historyTasks", history["hh:historyTasks"]);
+  handleFrom("hh:restoreTask", history["hh:restoreTask"]);
+  handle("hh:homeHistory", history["hh:homeHistory"]);
+  handle("hh:homeUndo", history["hh:homeUndo"]);
   // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.
   const inbox = tasksIpc(() => host);
   handle("hh:tasksList", () => inbox.list());
@@ -3347,228 +3025,67 @@ function registerIpc() {
   const jobsChannels = jobsIpc(() => jobsHost);
   handle("hh:jobsList", () => jobsChannels.list());
   handle("hh:jobsRun", (id: unknown, scope: unknown) => jobsChannels.run(id, scope));
-  handle("hh:engineStatus", async (engineId: string) => {
-    const engine = engineFor(engineId);
-    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id), hooks.engineProblem);
-    return detectEngine(engine, commandDeps, shared);
-  });
-  handle("hh:acceptNotice", async (engineId: string) => {
-    engineFor(engineId);
-    await shared.update(engineId, { notice: { version: NOTICE_VERSION, acceptedAt: new Date().toISOString() } });
-  });
-  handle("hh:runSetup", async (engineId: string, step: SetupStep) => {
-    const engine = engineFor(engineId);
-    if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
-    // A fake engine has nothing to install or sign in to, and no real CLI may run.
-    const fake = fakeSetupResult(hooks, engineId);
-    if (fake) return fake;
-    // A step the person runs in Terminal (OpenCode's provider picker) is never run by the app.
-    if (runsInTerminal(engine, step)) return { ok: false };
-    // Start and end are only reported by the call that holds the setup slot, so only it resets these.
-    const output = (o: SetupOutput) => {
-      if (o.kind === "start") setupUrl = undefined;
-      if (o.kind === "url") setupUrl ??= o.url;
-      if (o.kind === "end") {
-        setupRun = null;
-        setupUrl = undefined;
-      }
-      sendToWindow("hh:setupOutput", o);
-    };
-    return runSetupStep(
-      {
-        guards,
-        hasNotice,
-        currentEngine: async () => (await config.load()).engineId,
-        isBusy: hold.engineBusy,
-        quitting: () => quitting,
-        command: async () => {
-          const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
-          return setupCommand(engine, step, cli, await loginShellPath(commandDeps));
-        },
-        dropRuntime,
-        spawn: (cmd) => (setupRun = runSetupProcess(cmd, output, { timeoutMs: SETUP_TIMEOUT_MS[step] })),
-        output,
-      },
-      engineId,
-      step,
-    );
-  });
-  handle("hh:getSetup", (): SetupInfo | null => {
-    const s = guards.setup;
-    return s ? { ...s, ...(setupUrl ? { url: setupUrl } : {}) } : null;
-  });
-  handle("hh:setupInput", (text: string) => {
-    if (typeof text === "string") setupRun?.write(text.slice(0, 2000));
-  });
-  handle("hh:cancelSetup", () => {
-    // Remembered too, for a step whose process hasn't started yet.
-    guards.cancelSetup();
-    setupRun?.cancel();
-  });
-  handle("hh:testEngine", async (engineId: string) => {
-    const engine = engineFor(engineId);
-    if (quitting) throw new Error("The app is closing");
-    // A second request for the same engine (the screen was reopened) gets the running test's result.
-    return guards.runTest(engineId, async (signal): Promise<TestResult> => {
-      if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
-      // A fake engine is never tested against a real CLI.
-      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
-      if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
-      // The app may have started quitting while the CLI was being found.
-      if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
-      const result = fakeSetupResult(hooks, engineId) ? { ok: true } : await testPrompt(engine, cmd, { signal });
-      if (!result.ok) return result;
-      try {
-        await shared.update(engineId, { verifiedAt: new Date().toISOString() });
-      } catch (err) {
-        console.error("Could not record the test prompt", err);
-        return { ok: true, recorded: false };
-      }
-      return { ok: true };
-    });
-  });
-  handle("hh:getUsage", async (): Promise<UsageSummary> => {
-    const c = await validConfig();
-    if (!c) return { limits: null, estimates: {}, tokens: {} };
-    // A mock engine reports no limits, so it measures no window.
-    const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
-    const engineOnly = (records: UsageRecord[]) => records.filter((r) => r.engine === c.engineId);
-    // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
-    const ids = profilesCtl && c.profile ? await profilesCtl.state().then((s) => s.list.map((p) => p.id), () => null) : null;
-    // An unreadable registry: the active profile's own log, as without profiles.
-    // The 30-day spend reads every line, not only the latest 500 (OpenCode; spec §4).
-    const reportsCost = !isMockEngine(hooks, c.engineId) && getEngine(c.engineId).reportsCost === true;
-    if (ids && c.profile) {
-      const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(recentUsage(await new UsageLog(profileDir(c.folder, id)).load(Infinity), 500))] as const));
-      const folders = ids.map((id) => profileDir(c.folder, id));
-      return withSpent(profilesUsage(Object.fromEntries(logs), c.profile, primary), folders, c.engineId, reportsCost);
-    }
-    return withSpent(summarizeUsage(engineOnly(recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 500)), primary), [baseOf(c)], c.engineId, reportsCost);
-  });
-  handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
-  // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
-  // where the user pastes it. Nothing is run for them.
-  handle("hh:copyInstallCommand", (engineId: string) => clipboard.writeText(installCommandOf(engineFor(engineId))));
-  handle("hh:copySetupCommand", async (engineId: string, step: unknown) => {
-    if (step !== "login" && step !== "logout") throw new Error("Unknown setup step");
-    await copySetupStep(engineFor(engineId), step, {
-      copy: (text) => clipboard.writeText(text),
-      forgetVerified: async (id) => {
-        await shared.update(id, { verifiedAt: null });
-      },
-    });
-  });
-  handle("hh:openTerminal", async () => {
-    const terminal = terminalCommand(process.platform);
-    if (!terminal) throw new Error("No Terminal app to open here");
-    await new Promise<void>((resolve, reject) => execFile(terminal.command, terminal.args, (err) => (err ? reject(err) : resolve())));
-  });
-  handle("hh:resetSharedConfig", async () => {
-    // A reset drops the engine set-up: a translation run must not keep using it.
-    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
-    await shared.reset();
-  });
-  handle("hh:revealFolder", async () => {
-    const c = await validConfig();
-    if (c) await shell.openPath(c.folder);
-  });
-  // Spec 3d §2: refused while a turn or a restore runs; turns and restores are held off until it is over.
-  handle("hh:moveFolder", async (to: unknown): Promise<MoveResult> => {
-    if (quitting) throw new Error("The app is closing");
-    if (typeof to !== "string" || !path.isAbsolute(to) || to.length > 1000 || to.includes("\0")) return { ok: false, error: "unsuitable" };
-    const c = await validConfig();
-    if (!c) throw new Error("The app is not set up yet");
-    const userData = app.getPath("userData");
-    // Read without creating a history: a folder that has none yet has no tracked files.
-    const hasHistory = (folder: string) => fs.access(historyDir(userData, folder)).then(() => true, () => false);
-    // With profiles every profile's history moves with the folder (spec §4); without them, the folder's own (D0).
-    const people = profilesCtl;
-    const profileIds = async () => (people ? (await people.state()).list.map((p) => p.id) : []);
-    const deps: MoveDeps = {
-      check: (folder) => checkFolder(folder, os.homedir()),
-      tracked: people
-        ? async () => {
-            // Every profile's tracked files, relative to the app's folder. The runtime is closed by now
-            // (`guardedMove` closes it before `move()`), so each history is opened on its own.
-            const extra = getEngine(c.engineId).instructionsFile?.path;
-            const ignore = [".harness/", "AGENTS.md", ...(extra ? [extra] : [])];
-            const out: string[] = [];
-            for (const id of await profileIds()) {
-              const folder = profileDir(c.folder, id);
-              if (!(await hasHistory(folder))) continue;
-              const history = await standaloneHistory(JSON.stringify({ folder, ignore }));
-              out.push(...(await history.trackedFiles()).map((f) => `${id}/${f}`));
-            }
-            return out;
-          }
-        : async () => ((await hasHistory(baseOf(c))) ? ((await (await openHistory())?.trackedFiles()) ?? []) : []),
-      ...(people ? { subfolders: profileIds } : {}),
-      saveFolder: async (folder) => void (await config.replaceFolder(folder)),
-      historyDir: (folder) => historyDir(userData, folder),
-      journal: moveJournal(userData),
-      ...(pluginStateRoot ? { pluginStateRoot } : {}),
-      ops: { trash: (p) => shell.trashItem(p) },
-    };
-    // Checked and set with no await in between, so two requests can't both start a move.
-    if (moving) return { ok: false, error: "busy" };
-    let pluginsStopped = false;
-    let backendStopped = false;
-    const run = guardedMove({
-      guards,
-      isBusy: hold.folderBusy,
-      precheck: () => precheckMove(c.folder, to, deps),
+  handleAll(
+    engineSetupIpc({
+      harness: () => harness,
+      config: () => config,
+      shared: () => shared,
       quitting: () => quitting,
-      // Board mode: each open task's checkpoint, one at a time, then the queues pause until the move ends (Decision 15).
-      checkpoint: () => (host ? host.board.checkpointAllBeforeMove() : plainTasks.checkpointBeforeMove()),
-      holdHistory: (held) => (historyHeld = held),
-      flush: async () => {
-        await flushTurns();
-        // The file indexes waiting to be written go with the history, not after it.
-        await flushFileIndexes();
-      },
-      // The plugins work on the old folder too: stopped with the runtime, started again after (rebase, below).
-      closeRuntime: async () => {
-        await closeRuntime();
-        pluginsStopped = true;
-        await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins before the move", err));
-        // The backend works in the old folder too: stopped with the runtime, started again after (below).
-        backendStopped = backend !== null;
-        await backend?.stop().catch((err: unknown) => console.error("Could not stop the backend before the move", err));
-      },
-      restoresSettled: () => restores.settled(),
-      resumeFromNotes: () => tasks.resumeFromNotes(),
-      move: () => moveFolder(c.folder, to, deps),
-    });
-    moving = run;
-    let result: Awaited<typeof run>;
-    try {
-      result = await run;
-    } finally {
-      moving = null;
-      // Done, refused or failed (guardedMove may return before its checkpoint): the queues go on.
-      host?.board.moveEnded();
-      // Moved or not, the plugins start again in whichever folder is the app's now.
-      if (pluginsStopped) await rebasePlugins();
-      // Moved or not, the backend starts again in whichever folder is the app's now (never while quitting).
-      if (backendStopped) void backendRebase().catch((err: unknown) => console.error("Could not start the backend after the move", err));
-      // The reader's watches were checked against the folder as it was.
-      documentSessions.closeAll();
-    }
-    // The window always gets the state as it is now, whatever happened.
-    const state = await appState().catch((err: unknown) => {
-      console.error("Could not read the app state after the move", err);
-      return null;
-    });
-    if (!result.ok) return { ...result, ...(state ? { state } : {}) };
-    dropDataStoresUnder(c.folder);
-    // Search's indexes are caches keyed by the base (plan deviation 2): the old ones go, the next ⌘K rebuilds.
-    // `c` is the config from before the move, so these are the old bases; the profile ids did not change.
-    const oldBases = people ? (await profileIds()).map((id) => profileDir(c.folder, id)) : [c.folder];
-    for (const b of oldBases) void searchSvc.discard(b).catch((err: unknown) => console.error("Could not drop the old search index", err));
-    if (!state) throw new Error("Could not read the app state after the move");
-    const { oldRemoved, historyMoved } = result.done;
-    return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };
-  });
+      profilesCtl: () => profilesCtl,
+      setupRun: () => setupRun,
+      setSetupRun: (run) => (setupRun = run),
+      stopTranslation: () => translation?.stop(),
+      hooks,
+      commandDeps,
+      guards,
+      engineFor,
+      hasNotice,
+      engineBusy: hold.engineBusy,
+      dropRuntime,
+      sendToWindow,
+      validConfig,
+      baseOf,
+      clipboard,
+      shell,
+    }),
+  );
+  handleAll(
+    folderIpc({
+      window: () => window,
+      config: () => config,
+      quitting: () => quitting,
+      profilesCtl: () => profilesCtl,
+      pluginsCtl: () => pluginsCtl,
+      backend: () => backend,
+      host: () => host,
+      tasks: () => tasks,
+      moving: () => moving,
+      setMoving: (run) => (moving = run),
+      setHistoryHeld: (held) => (historyHeld = held),
+      pluginStateRoot: () => pluginStateRoot,
+      userData: () => app.getPath("userData"),
+      dialog,
+      shell,
+      guards,
+      folderBusy: hold.folderBusy,
+      plainTasks,
+      restores,
+      documentSessions,
+      searchSvc,
+      validConfig,
+      baseOf,
+      standaloneHistory,
+      openHistory,
+      flushTurns,
+      flushFileIndexes,
+      closeRuntime,
+      pluginLog,
+      rebasePlugins,
+      backendRebase,
+      appState,
+      dropDataStoresUnder,
+    }),
+  );
 }
 
 async function createWindow() {

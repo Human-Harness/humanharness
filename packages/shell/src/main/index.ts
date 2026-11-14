@@ -191,7 +191,7 @@ import { testCrypto } from "./secrets/test-crypto";
 import { isPublicHost } from "./material-fetch";
 import { ToolHost } from "./tools/tool-host";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
-import { type ToolsHost, createToolsHost, jobLimits, lastCallOf, slotTaskOf } from "./tools/tools-host";
+import { type ToolsHost, createToolsHost, slotTaskOf } from "./tools/tools-host";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, hostMode } from "./board-host";
@@ -199,7 +199,8 @@ import { buildBoardHost } from "./board-host-wiring";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { type TaskAttention, buildTaskAttention, keepNotification } from "./task-attention";
 import { saveAppChange } from "./app-change";
-import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type JobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps } from "./jobs/jobs-host";
+import { type JobsWiringDeps, buildJobsHost, buildSingleJobs } from "./jobs/jobs-wiring";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold } from "./parallel-config";
@@ -1560,82 +1561,28 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
   }
 }
 
-/**
- * The jobs' wiring (part 3) over the app's own: the brief from the harness folder, the task deps' notes, data and
- * material for the first message, the active scopes. `workspace` is single mode's or the board's.
- */
-function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace>): JobsHost {
-  return createJobsHost({
-    jobs: harness.jobs ?? {},
-    actions: harness.actions,
-    // Only a prompt job's run reads a brief; a recipe has none (a job declares prompt or steps).
-    readBrief: (job) => (job.prompt !== undefined ? fs.readFile(resolveInHarness(harness, job.prompt), "utf8") : Promise.reject(new Error("A recipe has no brief"))),
-    workspace: async () => {
-      if (quitting) throw new Error("The app is closing");
-      const blocked = turnBlocked();
-      if (blocked) throw new Error(blocked);
-      await checkTurn();
-      // As a lane's turn: a run never edits a file an undo is putting back.
-      while (restores.turnBlocked()) await new Promise((r) => setTimeout(r, 50));
-      return workspace();
-    },
-    gate,
-    base: currentBase,
-    // A job is not a task (replaceable-parts §8 fixes ids per task): its picks read config.json's ids, as material does.
-    taskDeps: { ...taskDeps, profileFor: async (a, f, t) => taskDeps.profileFor!(a, f, t, (await config.load()).policies) },
-    scoped,
-    scopes: async () => {
-      const c = await validConfig();
-      if (!c) return [];
-      if (!scoped()) return [MAIN_SCOPE];
-      return (await scopeStoreFor(baseOf(c)).list()).filter((sc) => !sc.archived).map((sc) => sc.id);
-    },
-    scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
-    // A scoped run reaches its own scope's linked folders, checked as a task's turn (hatches). None without (D0).
-    ...(hasLinkedFolders(harness)
-      ? { linked: { access: async (sc: string) => linked_()?.access.access(sc), section: async (sc: string) => (await linked_()?.access.section(sc)) ?? "" } }
-      : {}),
-    engine: async () => (await config.load()).engineId ?? "",
-    // Settings › Jobs, read at each trigger: a change applies from the next one, without a restart.
-    settings: (id) => jobSettings?.[id],
-    changed: jobsChanged,
-    // Needs-you results in the base's shared store (Task 8), and the Dock badge.
-    attention: async (b) => sharedAttention?.forBase(b, true) ?? null,
-    needsYouChanged: () => void refreshJobBadge(),
-    // A recipe's tools (tools spec §7): only with tools (D0). toolsHost is set before "ready", so before this runs.
-    ...(toolsHost ? { tools: recipeTools(toolsHost) } : {}),
-  });
-}
-
-/**
- * What a recipe run needs of the tools host (tools spec §7): its registry, the run's trailer on its calls, the job's
- * limits, the run's last tool call (trace notes, such as an AI round's, skipped) and the AI step's brief.
- */
-function recipeTools(t: ToolsHost): NonNullable<JobsHostDeps["tools"]> {
-  return {
-    registry: t.registry,
-    withRunTrailer: (trailer, fn) => t.withRunTrailer(trailer, fn),
-    limits: (job) => jobLimits(harness, job),
-    lastCall: async (run) => lastCallOf(await t.trace(run)),
-    readAiBrief: (p) => fs.readFile(resolveInHarness(harness, p), "utf8"),
-  };
-}
-
-/**
- * `single` mode (Decision 12): the gate (tasks 1, the jobs' cap beside), today's TurnController through its `tasks` cap,
- * and the jobs host on the runtime's workspace.
- */
-function buildSingleJobs(c: AppConfig): JobsHost {
-  const gate = singleGate(c.engineId, c.parallel);
-  gate.setBeforeStart(singleBeforeStart(c.engineId, singleMainSlot));
-  single = { gate, turns: singleTurns(gate, turns, emit) };
-  return buildJobsHost(gate, async () => {
-    const rt = await runtime.get();
-    const parts = rt ? singleParts.get(rt) : undefined;
-    if (!parts) throw new Error("The engine isn't installed");
-    return parts.workspace;
-  });
-}
+/** The jobs' wiring over the app's own (jobs/jobs-wiring.ts): single mode's or the board's. */
+const jobsWiring = (): JobsWiringDeps => ({
+  harness: () => harness,
+  config: () => config,
+  validConfig,
+  baseOf,
+  quitting: () => quitting,
+  turnBlocked: () => turnBlocked(),
+  checkTurn,
+  restoreBlocked: () => restores.turnBlocked(),
+  currentBase,
+  taskDeps,
+  scoped,
+  activeScope,
+  scopeStoreFor,
+  linked: linked_,
+  jobSettings: () => jobSettings,
+  changed: jobsChanged,
+  sharedAttention: () => sharedAttention,
+  refreshJobBadge,
+  toolsHost: () => toolsHost,
+});
 
 /** Jobs (Decision 7): once the app is set up in this process, the `start` runs and the `every` timers; once only. */
 async function jobsReady(): Promise<void> {
@@ -3061,12 +3008,27 @@ if (primary) {
     if (hasJobs(harness)) {
       const board = host;
       jobsHost = board
-        ? buildJobsHost(board.gate, async () => {
+        ? buildJobsHost(jobsWiring(), board.gate, async () => {
             const ws = await board.workspace();
             if (!ws) throw new Error("The engine isn't installed");
             return ws;
           })
-        : buildSingleJobs(await config.load());
+        : buildSingleJobs(
+            jobsWiring(),
+            {
+              mainSlot: singleMainSlot,
+              turns,
+              emit,
+              workspace: async () => {
+                const rt = await runtime.get();
+                const parts = rt ? singleParts.get(rt) : undefined;
+                if (!parts) throw new Error("The engine isn't installed");
+                return parts.workspace;
+              },
+              setSingle: (s) => (single = s),
+            },
+            await config.load(),
+          );
     }
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
     const preselect = devEngine(process.env, app.isPackaged, offered().map((e) => e.id));

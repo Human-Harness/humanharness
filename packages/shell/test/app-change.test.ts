@@ -125,7 +125,9 @@ describe("index.ts: the app's own changes go through saveAppChange, board mode d
     const material = fs.readFileSync(path.resolve(__dirname, "../src/main/material-wiring.ts"), "utf8");
     expect(material).toMatch(/saveAppChange\(history, d\.ownCommits\(\), materialOwn\(scope\), `Material: \$\{what\}`/);
     expect(index).toMatch(/buildMaterial\(\{[^]*?\n    ownCommits,\n/);
-    expect(index).toMatch(/saveOwn: async \(paths, message, trailer\) => saveAppChange\(await currentHistory\(\), true, paths, message, trailer\)/);
+    // board-host-wiring.ts builds the board host.
+    const board = fs.readFileSync(path.resolve(__dirname, "../src/main/board-host-wiring.ts"), "utf8");
+    expect(board).toMatch(/saveOwn: async \(paths, message, trailer\) => saveAppChange\(await currentHistory\(\), true, paths, message, trailer\)/);
     // The person's data writes: board mode is the host's (and a running job's, part 3).
     expect(index).toMatch(/\n  board: ownCommits,\n/);
   });

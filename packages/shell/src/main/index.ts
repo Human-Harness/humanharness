@@ -194,9 +194,10 @@ import { TOOL_SCHEME } from "./tools/tool-protocol";
 import { type ToolsHost, createToolsHost, jobLimits, lastCallOf, slotTaskOf } from "./tools/tools-host";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
-import { type BoardHost, createBoardHost, hostMode } from "./board-host";
+import { type BoardHost, hostMode } from "./board-host";
+import { buildBoardHost } from "./board-host-wiring";
 import { type AttentionStores, attentionStores } from "./attention-stores";
-import { keepNotification, TaskAttention } from "./task-attention";
+import { type TaskAttention, buildTaskAttention, keepNotification } from "./task-attention";
 import { saveAppChange } from "./app-change";
 import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
@@ -1560,55 +1561,6 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
 }
 
 /**
- * Board mode's host (parallel spec §6) over the app's own wiring: the plain runtime's checks and options for its
- * workspace, today's turn and task deps for its lanes.
- */
-function buildBoardHost(c: AppConfig): BoardHost {
-  return createBoardHost(
-    {
-      suggested: harness.parallel ?? { tasks: 1, jobs: 1 },
-      config: () => config.load(),
-      base: currentBase,
-      taskStoreOptions,
-      openWorkspace: async (runningTask) => {
-        const p = await prepareEngine();
-        if (!p) return null;
-        const ws = await createWorkspace(
-          await runtimeOptions(p, (slot) => {
-            // A job run's slot: that run, in its scope (P3); never a lane's task.
-            const jobs = jobsHost;
-            if (slot && jobs && isJobSlot(slot.key)) return Promise.resolve(jobs.runningOf(slot.key));
-            return slot ? runningTask(slot) : Promise.resolve(null);
-          }),
-        );
-        // A new workspace: the material queue goes on (in this base), and its commits reach the file timelines, as with
-        // a new runtime.
-        announceCommits(ws.history);
-        kickMaterial();
-        return ws;
-      },
-      turnDeps,
-      checkTurn: async () => {
-        await checkTurn();
-        // A lane let in while an undo runs waits for it: it never edits a file being put back.
-        while (restores.turnBlocked()) await new Promise((r) => setTimeout(r, 50));
-      },
-      chatLog: (chat, task) => turnChatLog(chat, task),
-      taskDeps,
-      scoped,
-      scopeExists: activeScope,
-      emit,
-      send: sendToWindow,
-      label: (t) => (t.action && Object.hasOwn(harness.actions, t.action) ? harness.actions[t.action].label : (t.question ?? "").slice(0, 60)),
-      // A lane's note commits its file alone (parallel spec §5.3).
-      saveOwn: async (paths, message, trailer) => saveAppChange(await currentHistory(), true, paths, message, trailer),
-      attention: buildTaskAttention(),
-    },
-    { engineId: c.engineId, parallel: c.parallel },
-  );
-}
-
-/**
  * The jobs' wiring (part 3) over the app's own: the brief from the harness folder, the task deps' notes, data and
  * material for the first message, the active scopes. `workspace` is single mode's or the board's.
  */
@@ -1759,39 +1711,6 @@ async function backendScopes(): Promise<void> {
 async function backendLeaveBase(): Promise<void> {
   backendGen.bump();
   if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
-}
-
-/**
- * Board mode's waiting tasks (parallel spec §9.2, Decisions 10–11): an item in the base's shared Attention store, the
- * Dock badge (with the plugins' count) and, when Settings › General asks and the window isn't focused, a notification
- * whose click shows that task. Only a count and the task's label leave the board (P4).
- */
-function buildTaskAttention(): TaskAttention {
-  const attention = new TaskAttention({
-    store: async () => {
-      const base = await currentBase().catch(() => null);
-      return base && sharedAttention ? sharedAttention.forBase(base, true) : null;
-    },
-    badge: setDockBadge,
-    notify: ({ title, body }, id) => {
-      if (!Notification.isSupported()) return;
-      const n = keepNotification(new Notification({ title, body }), notifications);
-      n.on("click", () => {
-        if (window && !window.isDestroyed()) {
-          if (window.isMinimized()) window.restore();
-          window.show();
-          window.focus();
-        }
-        void host?.board.focus(id).catch((err: unknown) => console.error("Could not show the waiting task", err));
-      });
-      n.show();
-    },
-    notifyOn: async () => (await config.load()).notifyWaiting === true,
-    windowFocused: () => (window && !window.isDestroyed() ? window.isFocused() : false),
-    otherCount: () => pluginBadge + jobBadge,
-  });
-  taskAttention = attention;
-  return attention;
 }
 
 /** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
@@ -3088,7 +3007,53 @@ if (primary) {
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
     // A harness that declares `parallel` runs the board (D7); any other keeps today's single task.
     if (hostMode(harness) === "board") {
-      const board = buildBoardHost(await config.load());
+      const board = buildBoardHost(
+        {
+          harness: () => harness,
+          config: () => config,
+          currentBase,
+          taskStoreOptions,
+          prepareEngine,
+          runtimeOptions,
+          jobsHost: () => jobsHost,
+          announceCommits,
+          kickMaterial,
+          turnDeps,
+          checkTurn,
+          restoreBlocked: () => restores.turnBlocked(),
+          turnChatLog,
+          taskDeps,
+          scoped,
+          activeScope,
+          emit,
+          send: sendToWindow,
+          currentHistory,
+          attention: () =>
+            (taskAttention = buildTaskAttention({
+              currentBase,
+              sharedAttention: () => sharedAttention,
+              badge: setDockBadge,
+              notify: ({ title, body }, onClick) => {
+                if (!Notification.isSupported()) return;
+                const n = keepNotification(new Notification({ title, body }), notifications);
+                n.on("click", onClick);
+                n.show();
+              },
+              showWindow: () => {
+                if (window && !window.isDestroyed()) {
+                  if (window.isMinimized()) window.restore();
+                  window.show();
+                  window.focus();
+                }
+              },
+              focusTask: (id) => host?.board.focus(id),
+              notifyOn: async () => (await config.load()).notifyWaiting === true,
+              windowFocused: () => (window && !window.isDestroyed() ? window.isFocused() : false),
+              otherCount: () => pluginBadge + jobBadge,
+            })),
+        },
+        await config.load(),
+      );
       host = board;
       tasks = board.board;
     }

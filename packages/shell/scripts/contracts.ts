@@ -6,9 +6,12 @@
 // `host` types (the app hands them to mods) may only grow, `mod` types (mods hand them to the app) may only loosen,
 // `both` may not change, values may only accept more. A failed assertion is a breaking change.
 import { execFileSync } from "node:child_process";
-import { existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, promises as fs, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+// @ts-expect-error TS5097: plain `node` needs the extension, and mod-sdk's index has extensionless imports; mod-json.ts imports only zod.
+import { MOD_API_VERSION, modJsonSchema } from "../../mod-sdk/src/mod-json.ts";
+import { z, type ZodType } from "zod";
 // @ts-expect-error TS5097: plain `node` runs this script and needs the extension; the repo's tsconfig does not allow it.
 import { HH_DTS_FILE, publicNames, publicNamesByModule, tscBin } from "./hh-dts.ts";
 
@@ -204,37 +207,101 @@ export async function compareHhDts(input: { frozen: string; current: string; rol
   return verdictFrom({ removed, added, failed, changed });
 }
 
+export type JsonSchema = { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown };
+
+/** `mod.json`: today's zod schema (input side) against the frozen JSON Schema and the frozen examples (spec §3.5). */
+export async function compareModJson(input: { frozenSchema: JsonSchema; examples: Record<string, unknown>; current: ZodType }): Promise<Verdict> {
+  const current = z.toJSONSchema(input.current, { io: "input" }) as JsonSchema;
+  const frozenProps = Object.keys(input.frozenSchema.properties ?? {});
+  const currentProps = Object.keys(current.properties ?? {});
+  const removed = frozenProps.filter((k) => !currentProps.includes(k)).map((k) => `properties.${k}`);
+  const frozenRequired = new Set(input.frozenSchema.required ?? []);
+  const required = (current.required ?? []).filter((k) => !frozenRequired.has(k)).map((k) => `required.${k}`);
+  const failed = Object.entries(input.examples).filter(([, e]) => !input.current.safeParse(e).success).map(([file]) => `example.${file}`);
+  const added = currentProps.filter((k) => !frozenProps.includes(k)).map((k) => `properties.${k}`);
+  const otherDiff = JSON.stringify(input.frozenSchema) !== JSON.stringify(current) ? ["schema"] : [];
+  return verdictFrom({ removed: [...removed, ...required], added, failed: new Set(failed), changed: added.length > 0 ? [] : otherDiff });
+}
+
+/** Breaking wins over additive over same; the mod.json names carry a `mod.json:` prefix. */
+export function mergeVerdicts(hh: Verdict, mod: Verdict | null): Verdict {
+  if (!mod) return hh;
+  const rank = { same: 0, additive: 1, breaking: 2 } as const;
+  const result = rank[hh.result] >= rank[mod.result] ? hh.result : mod.result;
+  const names = [...(hh.result === result ? hh.names : []), ...(mod.result === result ? mod.names.map((n) => `mod.json:${n}`) : [])];
+  return { result, names };
+}
+
 /** The frozen contract: packages/mod-sdk/released/. */
 export const RELEASED_DIR = path.join(PACKAGES, "mod-sdk", "released");
-const CONTRACT_FILE = path.join(RELEASED_DIR, "contract.json");
-const ROLES_FILE = path.join(RELEASED_DIR, "roles.json");
-const frozenFile = (apiVersion: number) => path.join(RELEASED_DIR, `hh.v${apiVersion}.d.ts`);
 
 export type Contract = { apiVersion: number; frozen: boolean };
-export function readContract(): Contract {
-  return JSON.parse(readFileSync(CONTRACT_FILE, "utf8")) as Contract;
-}
-const readRoles = (): Record<string, Role> => JSON.parse(readFileSync(ROLES_FILE, "utf8")) as Record<string, Role>;
+const contractFile = (dir: string) => path.join(dir, "contract.json");
+const hhFile = (dir: string, v: number) => path.join(dir, `hh.v${v}.d.ts`);
+const schemaFile = (dir: string, v: number) => path.join(dir, `mod-json.v${v}.schema.json`);
+const examplesDir = (dir: string, v: number) => path.join(dir, `mod-json.v${v}.examples`);
+const readJson = <T>(file: string) => JSON.parse(readFileSync(file, "utf8")) as T;
+const pretty = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
 
-/** Today's hh.d.ts against the frozen copy of the contract's version. */
-export async function checkRepo(): Promise<Verdict> {
-  const { apiVersion } = readContract();
-  return compareHhDts({ frozen: readFileSync(frozenFile(apiVersion), "utf8"), current: readFileSync(HH_DTS_FILE, "utf8"), roles: readRoles() });
+export function readContract(dir = RELEASED_DIR): Contract {
+  return readJson<Contract>(contractFile(dir));
 }
 
-/** Freezes today's hh.d.ts as the contract's version and drops the roles of types no longer exported (frozen false only). */
-export async function accept(): Promise<Verdict | null> {
-  if (!existsSync(CONTRACT_FILE)) writeFileSync(CONTRACT_FILE, `${JSON.stringify({ apiVersion: 1, frozen: false } satisfies Contract, null, 2)}\n`);
-  const { apiVersion, frozen } = readContract();
-  if (frozen) throw new Error("contracts accept: contract.json says frozen is true; accepting a frozen contract is not supported yet");
-  const current = readFileSync(HH_DTS_FILE, "utf8");
-  const verdict = existsSync(frozenFile(apiVersion)) ? await checkRepo() : null;
-  const names = publicNames(current);
-  const types = new Set([...kindsOf(current, names)].filter(([, k]) => k === "type").map(([n]) => n));
-  const roles = Object.fromEntries(Object.entries(readRoles()).filter(([n]) => types.has(n)).sort(([a], [b]) => a.localeCompare(b)));
-  writeFileSync(frozenFile(apiVersion), current);
-  writeFileSync(ROLES_FILE, `${JSON.stringify(roles, null, 2)}\n`);
-  return verdict;
+/** Today's contract against the newest frozen copy in `dir`: hh.d.ts, and mod.json when its schema is there. */
+export async function checkRepo(input: { dir?: string; currentDts?: string; currentSchema?: ZodType } = {}): Promise<Verdict> {
+  const dir = input.dir ?? RELEASED_DIR;
+  const { apiVersion } = readContract(dir);
+  const hh = await compareHhDts({
+    frozen: readFileSync(hhFile(dir, apiVersion), "utf8"),
+    current: input.currentDts ?? readFileSync(HH_DTS_FILE, "utf8"),
+    roles: readJson<Record<string, Role>>(path.join(dir, "roles.json")),
+  });
+  if (!existsSync(schemaFile(dir, apiVersion))) return hh;
+  const examples = Object.fromEntries(
+    readdirSync(examplesDir(dir, apiVersion)).filter((f) => f.endsWith(".json")).sort().map((f) => [f, readJson<unknown>(path.join(examplesDir(dir, apiVersion), f))]),
+  );
+  const mod = await compareModJson({ frozenSchema: readJson<JsonSchema>(schemaFile(dir, apiVersion)), examples, current: input.currentSchema ?? modJsonSchema });
+  return mergeVerdicts(hh, mod);
+}
+
+export type AcceptResult = { verdict: Verdict | null; refused?: string };
+
+/**
+ * Freezes today's contract in `dir`. frozen false: rewrites the files of the contract's version (breaking is a warning).
+ * frozen true: same/additive rewrite them; breaking refuses until MOD_API_VERSION is bumped, and the bump writes the vN+1 files.
+ */
+export async function accept(input: { dir?: string; currentDts?: string; currentSchema?: ZodType; modApiVersion?: number } = {}): Promise<AcceptResult> {
+  const dir = input.dir ?? RELEASED_DIR;
+  const currentDts = input.currentDts ?? readFileSync(HH_DTS_FILE, "utf8");
+  const currentSchema = input.currentSchema ?? modJsonSchema;
+  const modApiVersion = input.modApiVersion ?? MOD_API_VERSION;
+  if (!existsSync(contractFile(dir))) writeFileSync(contractFile(dir), pretty({ apiVersion: 1, frozen: false } satisfies Contract));
+  const { apiVersion, frozen } = readContract(dir);
+  const bump = modApiVersion === apiVersion + 1;
+  if (frozen && !bump && modApiVersion !== apiVersion) throw new Error(`contracts accept: MOD_API_VERSION is ${modApiVersion} but contract.json says ${apiVersion}; a bump is by one`);
+  if (!frozen && modApiVersion !== apiVersion) throw new Error(`contracts accept: MOD_API_VERSION is ${modApiVersion} but contract.json says ${apiVersion}`);
+  const verdict = existsSync(hhFile(dir, apiVersion)) ? await checkRepo({ dir, currentDts, currentSchema }) : null;
+  if (frozen && !bump && verdict?.result === "breaking") {
+    return { verdict, refused: `breaking: ${verdict.names.join(", ")}. Bump MOD_API_VERSION in packages/mod-sdk/src/mod-json.ts, then run accept again.` };
+  }
+  const version = bump ? modApiVersion : apiVersion;
+  const names = publicNames(currentDts);
+  const types = new Set([...kindsOf(currentDts, names)].filter(([, k]) => k === "type").map(([n]) => n));
+  const rolesFile = path.join(dir, "roles.json");
+  const roles = Object.fromEntries(Object.entries(existsSync(rolesFile) ? readJson<Record<string, Role>>(rolesFile) : {}).filter(([n]) => types.has(n)).sort(([a], [b]) => a.localeCompare(b)));
+  writeFileSync(hhFile(dir, version), currentDts);
+  writeFileSync(rolesFile, pretty(roles));
+  writeFileSync(schemaFile(dir, version), pretty(z.toJSONSchema(currentSchema, { io: "input" })));
+  if (bump) {
+    // The examples are frozen inputs: a bump copies the previous version's, with the new apiVersion.
+    const to = examplesDir(dir, version);
+    mkdirSync(to, { recursive: true });
+    for (const f of readdirSync(examplesDir(dir, apiVersion)).filter((f) => f.endsWith(".json"))) {
+      writeFileSync(path.join(to, f), pretty({ ...readJson<Record<string, unknown>>(path.join(examplesDir(dir, apiVersion), f)), apiVersion: version }));
+    }
+    writeFileSync(contractFile(dir), pretty({ apiVersion: version, frozen } satisfies Contract));
+  }
+  return { verdict };
 }
 
 function line(v: Verdict): string {
@@ -248,9 +315,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     console.log(line(v));
     process.exitCode = v.result === "same" ? 0 : 1;
   } else if (cmd === "accept") {
-    const v = await accept();
-    if (v?.result === "breaking") console.log(`warning: breaking changes accepted while frozen is false: ${v.names.join(", ")}`);
-    console.log(`Wrote ${path.relative(process.cwd(), RELEASED_DIR)}${v ? ` (${line(v)})` : ""}`);
+    const { verdict: v, refused } = await accept();
+    if (refused) {
+      console.log(refused);
+      process.exitCode = 1;
+    } else {
+      if (v?.result === "breaking") console.log(`warning: breaking changes accepted while frozen is false: ${v.names.join(", ")}`);
+      console.log(`Wrote ${path.relative(process.cwd(), RELEASED_DIR)}${v ? ` (${line(v)})` : ""}`);
+    }
   } else {
     console.error("usage: contracts check|accept");
     process.exitCode = 2;

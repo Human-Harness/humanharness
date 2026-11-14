@@ -159,6 +159,32 @@ When a build or the new `main` fails, `ModBuilds.fail` writes `<file>.error` (th
 
 To regenerate `hh.d.ts` after a change to the mod API: `corepack pnpm --filter @humanharness/shell hh-dts`. `packages/shell/test/manual.test.ts` fails while the checked-in file is stale, and checks that `AGENTS.md` names every exported name of `hh.d.ts`.
 
+## The contract
+
+A mod written today must keep working after an update, unless `MOD_API_VERSION` says it won't. The frozen copy of the contract lives in `packages/mod-sdk/released/`, and `packages/shell/test/contracts.test.ts` compares today's contract with it. The folder holds five kinds of files, written only by `accept` (except `roles.json`, see below):
+
+- `contract.json`: `{ "apiVersion": 1, "frozen": false }`.
+- `hh.v1.d.ts`: a copy of `packages/shell/scripts/hh.d.ts`.
+- `mod-json.v1.schema.json`: `modJsonSchema` as JSON Schema (zod's input side).
+- `mod-json.v1.examples/*.json`: five valid `mod.json` files (minimal, `ui`, `requires`, `clonedFrom`, `history`). They are frozen inputs: `accept` never rewrites them.
+- `roles.json`: the role of each exported type. It is the one file edited by hand.
+
+The check gives one of three results, with the names behind it: **same**, **additive** (safe for existing mods) or **breaking**. A removed name, a removed `mod.json` property, a newly required one or a frozen example that no longer parses is breaking; a new name or a new optional property is additive. Exported types are compared by who fills them:
+
+| Role | Who fills it | Rule | Example |
+|---|---|---|---|
+| `host` | The host hands it to the mod | members may be added | `MainCtx` |
+| `mod` | The mod writes it | new members must be optional | `SendVerdict` |
+| `both` | Both | may not change | `Tier` |
+
+A new exported type needs a line in `roles.json` (`"host"`, `"mod"` or `"both"`); without it the check fails and names the file.
+
+`corepack pnpm --filter @humanharness/shell contracts check` prints the result (exit 1 unless same). `corepack pnpm --filter @humanharness/shell contracts accept` rewrites the `vN` files, so every contract change shows up as a diff of `released/` in its PR. While `frozen` is `false`, `accept` also takes a breaking change (with a warning). Once `frozen` is `true`, `accept` refuses a breaking change, writes nothing and asks to bump `MOD_API_VERSION` in `packages/mod-sdk/src/mod-json.ts`; after the bump it writes `hh.v<N>.d.ts`, `mod-json.v<N>.schema.json` and the examples copied with `apiVersion: N`, sets `apiVersion: N`, and leaves the older files as history.
+
+**Release checklist, step 1: set `frozen: true` in `packages/mod-sdk/released/contract.json` in a one-line PR (Marco's decision).**
+
+Known limits: the protocol types are not compared; generics are not compared at their constraints; literal constants are compared by type, not by value; names of `@humanharness/ui` are compared without `Strict`, so a method parameter there is checked bivariantly.
+
 ## The control channel
 
 `startControl` (`control.ts`): while the app runs, an HTTP server on 127.0.0.1 at a random port. It writes `<home>/.control.json` (`{ port, token, pid }`, mode 0600) and removes it on quit, only if the file still holds its own token. Every request needs `Authorization: Bearer <token>` (401 otherwise); bodies are JSON objects of at most 64 KB.

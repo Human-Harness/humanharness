@@ -48,11 +48,15 @@ function guideExports(): [string, string][] {
   return out;
 }
 
-function runTsc(outDir: string): void {
+/** The TypeScript compiler's CLI entry, run as `node <tscBin()> …`. */
+export function tscBin(): string {
   const req = createRequire(import.meta.url);
-  const tsc = path.join(path.dirname(req.resolve("typescript/package.json")), "bin", "tsc");
+  return path.join(path.dirname(req.resolve("typescript/package.json")), "bin", "tsc");
+}
+
+function runTsc(outDir: string): void {
   const args = [
-    tsc,
+    tscBin(),
     "--ignoreConfig",
     "--declaration",
     "--noUncheckedSideEffectImports",
@@ -190,6 +194,13 @@ function namesOf(mods: Map<string, string>, name: string, seen = new Set<string>
   for (const m of text.matchAll(/^ {2}export \* as (\w+) from/gm)) out.add(m[1]);
   for (const m of text.matchAll(/^ {2}export \* from "([^"]+)"/gm)) for (const n of namesOf(mods, m[1], seen)) out.add(n);
   return out;
+}
+
+/** The names each public module of a hh.d.ts text exports, sorted. */
+export function publicNamesByModule(dts: string): { "mod-sdk": string[]; ui: string[] } {
+  const mods = modules(dts);
+  const of = (name: string) => [...namesOf(mods, name)].filter((n) => n !== "default").sort();
+  return { "mod-sdk": of("@humanharness/mod-sdk"), ui: of("@humanharness/ui") };
 }
 
 /** Every name the two public modules of a hh.d.ts text export, sorted (spec §8: each must appear in AGENTS.md). */

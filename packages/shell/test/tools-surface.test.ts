@@ -58,9 +58,12 @@ describe("tools surface (tools spec §4, §5; D0)", () => {
 
   it("AppState.tools only under hasTools; the workspace's tools option only from toolsHost", async () => {
     const index = await read("index.ts");
-    const state = group(index, index.indexOf("async function appState(): Promise<AppState>"), /\{/);
-    expect(state).toContain("...(toolsHost ? { tools: toolsHost.info() } : {}),");
-    expect(count(index, /\btools: toolsHost\.info\(\)/)).toBe(1);
+    // app-state.ts holds appState; index.ts passes it the tools host.
+    const appState = await read("app-state.ts");
+    const state = group(appState, appState.indexOf("async function appState(): Promise<AppState>"), /\{/);
+    expect(state).toContain("...(d.toolsHost() ? { tools: d.toolsHost()!.info() } : {}),");
+    expect(count(appState, /\btools: d\.toolsHost\(\)!\.info\(\)/)).toBe(1);
+    expect(index).toMatch(/createAppState\(\{[^]*?\n  toolsHost: \(\) => toolsHost,\n/);
     const options = index.slice(index.indexOf("async function runtimeOptions("), index.indexOf("const runtime = memoise<HarnessRuntime>"));
     expect(options).toContain("const tools = await toolsHost?.workspaceOptions();");
     expect(options).toContain("...(tools ? { tools } : {}),");

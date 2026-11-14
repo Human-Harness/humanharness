@@ -48,15 +48,11 @@ import {
   hasProfiles,
   hasSecrets,
   hasTools,
-  inputSpecs,
-  interviewCollections,
   languageName,
   loadHarness,
   materialStageKey,
   pluginsAccepted,
-  profileFormSpec,
   resolveInHarness,
-  settingsView,
   sidekickCollection,
   stageTier,
 } from "@humanharness/harness-sdk";
@@ -86,7 +82,6 @@ import {
   type ConfiguredApp,
   type FolderPick,
   type ModelsView,
-  type ModeView,
   type ModsConfig,
   type ModsView,
   type MoveResult,
@@ -131,8 +126,6 @@ import {
   readSidekickEvents,
   runDataRequest,
   sidekickWorkDir,
-  syncLocations,
-  syncStatus,
   tasksFile,
   writeNote,
   writeSidekickBrief,
@@ -191,7 +184,7 @@ import { DocumentSessions } from "./document-sessions";
 import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
-import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
+import { type ResolvedReference, resolveReferences, usableReferences } from "./references";
 import { runFile } from "./plugin-exec";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
@@ -210,12 +203,12 @@ import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
 import { materialOwn, saveAppChange } from "./app-change";
-import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
-import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
+import { cleanCaps, engineHold } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
@@ -274,13 +267,14 @@ import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resol
 import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
 import { needsHost } from "./mods/wiring";
 import { SidekickStore } from "./sidekick-store";
-import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
+import { SetupSteps, recordSetup } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
+import { createAppState } from "./app-state";
 import { TranslationCache } from "./translation-cache";
 import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialAppState, materialIpc, materialItems, materialRecommended } from "./material-ipc";
+import { historyKeep, materialIpc, materialItems, materialRecommended } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
@@ -297,7 +291,6 @@ import {
   devEngine,
   fakeSetupResult,
   isMockEngine,
-  mockEngineText,
   mockModels,
   mockToolsDir,
   offeredEngines,
@@ -638,19 +631,6 @@ async function pickProfile(policyId: string | undefined, input: Omit<PickInput, 
   return modelPolicy(policyId).pick({ ...input, offer: { models: saved.models ?? [], efforts: engine ? engineOffer(engine, saved).efforts : [] } });
 }
 
-/** The folder's backup status and the synced places, each with the harness's folder name inside. Paths only (backup.ts). */
-async function backupView(folder: string | undefined): Promise<NonNullable<AppState["backup"]>> {
-  const home = os.homedir();
-  const name = path.basename(harness.folder.suggested);
-  try {
-    const [status, locations] = await Promise.all([folder ? syncStatus(folder, home) : Promise.resolve(null), syncLocations(home)]);
-    return { status, locations: locations.map((l) => ({ ...l, suggested: path.join(l.path, name) })) };
-  } catch (err) {
-    console.error("Could not read the backup status", err);
-    return { status: null, locations: [] };
-  }
-}
-
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;
 
@@ -686,141 +666,25 @@ async function documentRoots(): Promise<string[] | null> {
   return openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
 }
 
-async function appState(): Promise<AppState> {
-  const harnessImage = await harnessLogo();
-  const saved = await config.load();
-  jobSettings = saved.jobs;
-  const jobs = jobsInfo(harness);
-  const inputs = inputSpecs(harness.blocks);
-  const interviews = interviewCollections(harness);
-  const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
-  const hatches = hatchesState(harness);
-  const state: AppState = {
-    harness: {
-      id: harness.id,
-      name: harness.name,
-      ...(harness.tagline ? { tagline: harness.tagline } : {}),
-      ...(harnessImage ? { logo: harnessImage } : {}),
-      author: harness.author,
-      ...(harness.donate ? { donate: harness.donate } : {}),
-      version: app.getVersion(),
-    },
-    config: saved.models !== undefined ? { ...saved, models: cleanModels(saved.models) } : saved,
-    suggestedFolder: hooks.suggestedFolder ?? path.join(os.homedir(), harness.folder.suggested),
-    ...(hooks.mock ? { mock: true } : {}),
-    engines: await Promise.all(
-      offered().map(async (e) => {
-        // Mock mode: a faked engine is shown as the test engine, with no logo, install command or plan limits.
-        if (isMockEngine(hooks, e.id)) {
-          return {
-            id: e.id,
-            ...mockEngineText(),
-            status: e.status as "allowed" | "pending",
-            termsUrl: e.termsUrl,
-            privacyUrl: e.privacyUrl,
-            reportsLimits: false,
-            // Empty for Claude and Codex (D0); a mocked OpenCode keeps its cost and Terminal facts.
-            ...engineOptionExtras(e),
-            mock: true,
-          };
-        }
-        const image = await engineLogo(e);
-        return {
-          id: e.id,
-          name: e.name,
-          status: e.status as "allowed" | "pending",
-          provider: e.provider,
-          requires: e.requires,
-          dataLocation: e.dataLocation,
-          trainsOnData: e.trainsOnData,
-          termsUrl: e.termsUrl,
-          privacyUrl: e.privacyUrl,
-          reportsLimits: e.reportsLimits,
-          ...(e.plansUrl ? { plansUrl: e.plansUrl } : {}),
-          ...engineOptionExtras(e),
-          ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
-          ...(image ? { logo: image } : {}),
-        };
-      }),
-    ),
-    // What the screen needs of each action (never the prompt file).
-    actions: Object.fromEntries(
-      Object.entries(harness.actions).map(([id, a]) => [
-        id,
-        {
-          label: a.label,
-          cost: a.cost,
-          ...(a.description ? { description: a.description } : {}),
-          ...(a.tier ? { tier: a.tier } : {}),
-          ...(a.scope ? { scope: a.scope } : {}),
-          ...(a.modes ? { modes: a.modes } : {}),
-          ...(a.defaultMode ? { defaultMode: a.defaultMode } : {}),
-          // What the stepper shows of each phase (never its brief), and the time box's lengths (task-phases D0).
-          ...(a.phases
-            ? {
-                phases: a.phases.map((p) => ({
-                  id: p.id,
-                  label: p.label,
-                  ...(p.auto ? { auto: true as const } : {}),
-                  ...(p.close ? { close: true as const } : {}),
-                  ...(p.modes !== undefined ? { modes: p.modes } : {}),
-                })),
-              }
-            : {}),
-          ...(a.timeBox ? { timeBox: { options: a.timeBox.options, default: a.timeBox.default } } : {}),
-          // An interview step's action is no topic (setup-steps spec §3): the setup screen and Settings start it.
-          ...(Object.hasOwn(interviews, id) ? { setup: true as const } : {}),
-        },
-      ]),
-    ),
-    path: harness.path ?? [],
-    ...(harness.scopes ? { scopes: harness.scopes } : {}),
-    // Only a harness with input blocks sends their specs (spec D0).
-    ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
-    // Only a harness with settings gets its tab (harness-settings D0).
-    ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
-    // Sidekick shows only for a harness that declares it (a `sidekick` key, `{}` allowed); the window draws it only with this.
-    ...(sidekickView(harness) ? { sidekick: sidekickView(harness) } : {}),
-    // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
-    ...(hasModes(harness)
-      ? {
-          modes: Object.fromEntries(
-            Object.entries(harness.modes).map(([id, m]): [string, ModeView] => [
-              id,
-              { label: m.label, ...(m.description ? { description: m.description } : {}), ...(m.minTier ? { minTier: m.minTier } : {}) },
-            ]),
-          ),
-        }
-      : {}),
-    // Only a harness with setup steps sends them (setup-steps D0).
-    ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
-    // Only a harness with profiles sends them (profiles D4): what to call one, and its form.
-    ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
-    // Only a harness with material sends what it takes (material D0).
-    ...materialAppState(harness),
-    // Only a harness that takes plugins (or dev folders) sends this: the Plugins tab and the inbox (plugins D0).
-    ...(pluginsCtl ? { plugins: { local: pluginsAccepted(harness) && (harness.plugins?.local ?? false) } } : {}),
-    // Only a harness that declares `parallel` sends this: caps, the task inbox (parallel D7).
-    ...(parallel ? { parallel } : {}),
-    // Only a harness that declares jobs sends them: the Jobs tab and the inbox's Jobs section (part 3 D0).
-    ...(jobs ? { jobs } : {}),
-    // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
-    ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
-    // Documents can be reviewed only when the agent may edit the folder (review spec D0).
-    ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
-    // Only a harness that declares a hatch sends this: Scope settings (hatches D0).
-    ...(hatches ? { hatches } : {}),
-    // Only a harness that declares secrets sends this: Settings › Connections (tools spec §9, D0).
-    ...(hasSecrets(harness) ? { connections: { count: harness.secrets!.length } } : {}),
-    // Only a harness that declares tools sends this: their ids and why they are off, if they are (tools spec §5, D0).
-    ...(toolsHost ? { tools: toolsHost.info() } : {}),
-    references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
-    models: await modelsView(),
-    backup: await backupView(saved.folder),
-  };
-  lastAppState = state;
-  return state;
-}
+/** The window's app state; it keeps the job settings and the last state read here. */
+const appState = createAppState({
+  harness: () => harness,
+  config: () => config,
+  hooks,
+  pluginsCtl: () => pluginsCtl,
+  toolsHost: () => toolsHost,
+  offered,
+  harnessLogo,
+  engineLogo,
+  modelsView,
+  referencesFor,
+  setJobSettings: (jobs) => {
+    jobSettings = jobs;
+  },
+  setLastAppState: (state) => {
+    lastAppState = state;
+  },
+});
 
 /** The saved config, only when it is complete and valid (and, with profiles, names the active profile). */
 async function validConfig(): Promise<ConfiguredApp | null> {

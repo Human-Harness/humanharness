@@ -72,7 +72,8 @@ describe("hatches IPC surface (hatches D0)", () => {
   });
 
   it("appState carries hatches only when a hatch is declared (D0)", async () => {
-    const index = await read("index.ts");
+    // app-state.ts holds appState.
+    const index = await read("app-state.ts");
     const state = group(index, index.indexOf("async function appState(): Promise<AppState>"), /\{/);
     expect(state).toContain("const hatches = hatchesState(harness);");
     expect(state).toContain("...(hatches ? { hatches } : {}),");

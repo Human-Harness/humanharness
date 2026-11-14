@@ -59,7 +59,8 @@ describe("connections surface (tools spec §9, D0)", () => {
   });
 
   it("appState carries connections only when the harness declares secrets (D0)", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-state.ts, which holds appState.
+    const index = (await Promise.all(["index.ts", "app-state.ts"].map(read))).join("\n");
     const state = group(index, index.indexOf("async function appState(): Promise<AppState>"), /\{/);
     expect(state).toContain("...(hasSecrets(harness) ? { connections: { count: harness.secrets!.length } } : {}),");
     expect(count(index, /\bconnections: \{ count:/)).toBe(1);

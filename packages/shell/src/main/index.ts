@@ -253,6 +253,7 @@ import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { setupIpc } from "./setup-ipc";
+import { engineSetupIpc } from "./engine-setup-ipc";
 import { chatIpc } from "./chat-ipc";
 import { historyIpc } from "./history-ipc";
 import { dataIpc } from "./data-ipc";
@@ -317,9 +318,6 @@ declare const __SHELL_RESOURCES__: string;
 
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
-const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
-/** How long each setup step may run before it is stopped (a sign-in left open in the browser, a stuck download). */
-const SETUP_TIMEOUT_MS: Record<SetupStep, number> = { install: 20 * 60_000, update: 20 * 60_000, login: 10 * 60_000, logout: 60_000 };
 
 const requireFromHere = createRequire(import.meta.url);
 // The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
@@ -355,8 +353,6 @@ let backendStarted = false;
 const backendGen = new BackendGeneration();
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
-/** The first web address the running step printed, for a screen that reopens while it runs. */
-let setupUrl: string | undefined;
 /** How long quitting waits for the test prompt to clean up (its temporary folder, the CLI it started). */
 const QUIT_TEST_WAIT_MS = 5_000;
 /** Engine changes, setup steps and test prompts against turns (see EngineGuards). */
@@ -3048,127 +3044,30 @@ function registerIpc() {
   const jobsChannels = jobsIpc(() => jobsHost);
   handle("hh:jobsList", () => jobsChannels.list());
   handle("hh:jobsRun", (id: unknown, scope: unknown) => jobsChannels.run(id, scope));
-  handle("hh:engineStatus", async (engineId: string) => {
-    const engine = engineFor(engineId);
-    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id), hooks.engineProblem);
-    return detectEngine(engine, commandDeps, shared);
-  });
-  handle("hh:acceptNotice", async (engineId: string) => {
-    engineFor(engineId);
-    await shared.update(engineId, { notice: { version: NOTICE_VERSION, acceptedAt: new Date().toISOString() } });
-  });
-  handle("hh:runSetup", async (engineId: string, step: SetupStep) => {
-    const engine = engineFor(engineId);
-    if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
-    // A fake engine has nothing to install or sign in to, and no real CLI may run.
-    const fake = fakeSetupResult(hooks, engineId);
-    if (fake) return fake;
-    // A step the person runs in Terminal (OpenCode's provider picker) is never run by the app.
-    if (runsInTerminal(engine, step)) return { ok: false };
-    // Start and end are only reported by the call that holds the setup slot, so only it resets these.
-    const output = (o: SetupOutput) => {
-      if (o.kind === "start") setupUrl = undefined;
-      if (o.kind === "url") setupUrl ??= o.url;
-      if (o.kind === "end") {
-        setupRun = null;
-        setupUrl = undefined;
-      }
-      sendToWindow("hh:setupOutput", o);
-    };
-    return runSetupStep(
-      {
-        guards,
-        hasNotice,
-        currentEngine: async () => (await config.load()).engineId,
-        isBusy: hold.engineBusy,
-        quitting: () => quitting,
-        command: async () => {
-          const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
-          return setupCommand(engine, step, cli, await loginShellPath(commandDeps));
-        },
-        dropRuntime,
-        spawn: (cmd) => (setupRun = runSetupProcess(cmd, output, { timeoutMs: SETUP_TIMEOUT_MS[step] })),
-        output,
-      },
-      engineId,
-      step,
-    );
-  });
-  handle("hh:getSetup", (): SetupInfo | null => {
-    const s = guards.setup;
-    return s ? { ...s, ...(setupUrl ? { url: setupUrl } : {}) } : null;
-  });
-  handle("hh:setupInput", (text: string) => {
-    if (typeof text === "string") setupRun?.write(text.slice(0, 2000));
-  });
-  handle("hh:cancelSetup", () => {
-    // Remembered too, for a step whose process hasn't started yet.
-    guards.cancelSetup();
-    setupRun?.cancel();
-  });
-  handle("hh:testEngine", async (engineId: string) => {
-    const engine = engineFor(engineId);
-    if (quitting) throw new Error("The app is closing");
-    // A second request for the same engine (the screen was reopened) gets the running test's result.
-    return guards.runTest(engineId, async (signal): Promise<TestResult> => {
-      if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
-      // A fake engine is never tested against a real CLI.
-      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
-      if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
-      // The app may have started quitting while the CLI was being found.
-      if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
-      const result = fakeSetupResult(hooks, engineId) ? { ok: true } : await testPrompt(engine, cmd, { signal });
-      if (!result.ok) return result;
-      try {
-        await shared.update(engineId, { verifiedAt: new Date().toISOString() });
-      } catch (err) {
-        console.error("Could not record the test prompt", err);
-        return { ok: true, recorded: false };
-      }
-      return { ok: true };
-    });
-  });
-  handle("hh:getUsage", async (): Promise<UsageSummary> => {
-    const c = await validConfig();
-    if (!c) return { limits: null, estimates: {}, tokens: {} };
-    // A mock engine reports no limits, so it measures no window.
-    const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
-    const engineOnly = (records: UsageRecord[]) => records.filter((r) => r.engine === c.engineId);
-    // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
-    const ids = profilesCtl && c.profile ? await profilesCtl.state().then((s) => s.list.map((p) => p.id), () => null) : null;
-    // An unreadable registry: the active profile's own log, as without profiles.
-    // The 30-day spend reads every line, not only the latest 500 (OpenCode; spec §4).
-    const reportsCost = !isMockEngine(hooks, c.engineId) && getEngine(c.engineId).reportsCost === true;
-    if (ids && c.profile) {
-      const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(recentUsage(await new UsageLog(profileDir(c.folder, id)).load(Infinity), 500))] as const));
-      const folders = ids.map((id) => profileDir(c.folder, id));
-      return withSpent(profilesUsage(Object.fromEntries(logs), c.profile, primary), folders, c.engineId, reportsCost);
-    }
-    return withSpent(summarizeUsage(engineOnly(recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 500)), primary), [baseOf(c)], c.engineId, reportsCost);
-  });
-  handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
-  // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
-  // where the user pastes it. Nothing is run for them.
-  handle("hh:copyInstallCommand", (engineId: string) => clipboard.writeText(installCommandOf(engineFor(engineId))));
-  handle("hh:copySetupCommand", async (engineId: string, step: unknown) => {
-    if (step !== "login" && step !== "logout") throw new Error("Unknown setup step");
-    await copySetupStep(engineFor(engineId), step, {
-      copy: (text) => clipboard.writeText(text),
-      forgetVerified: async (id) => {
-        await shared.update(id, { verifiedAt: null });
-      },
-    });
-  });
-  handle("hh:openTerminal", async () => {
-    const terminal = terminalCommand(process.platform);
-    if (!terminal) throw new Error("No Terminal app to open here");
-    await new Promise<void>((resolve, reject) => execFile(terminal.command, terminal.args, (err) => (err ? reject(err) : resolve())));
-  });
-  handle("hh:resetSharedConfig", async () => {
-    // A reset drops the engine set-up: a translation run must not keep using it.
-    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
-    await shared.reset();
-  });
+  handleAll(
+    engineSetupIpc({
+      harness: () => harness,
+      config: () => config,
+      shared: () => shared,
+      quitting: () => quitting,
+      profilesCtl: () => profilesCtl,
+      setupRun: () => setupRun,
+      setSetupRun: (run) => (setupRun = run),
+      stopTranslation: () => translation?.stop(),
+      hooks,
+      commandDeps,
+      guards,
+      engineFor,
+      hasNotice,
+      engineBusy: hold.engineBusy,
+      dropRuntime,
+      sendToWindow,
+      validConfig,
+      baseOf,
+      clipboard,
+      shell,
+    }),
+  );
   handle("hh:revealFolder", async () => {
     const c = await validConfig();
     if (c) await shell.openPath(c.folder);

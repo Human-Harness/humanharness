@@ -1,0 +1,22 @@
+{
+  "docs/architecture/hatches.md": 94208,
+  "docs/architecture/plugins.md": 82944,
+  "docs/architecture/tools.md": 94208,
+  "packages/cli/test/run.test.ts": 53248,
+  "packages/engines/src/acp/client.ts": 50176,
+  "packages/engines/test/acp.test.ts": 93184,
+  "packages/engines/test/claude-cli.test.ts": 62464,
+  "packages/mods/home/test/HarnessApp.test.tsx": 58368,
+  "packages/protocol/src/views.ts": 72704,
+  "packages/shell/src/main/index.ts": 219136,
+  "packages/shell/src/main/plugins.ts": 84992,
+  "packages/shell/src/main/sidekick.ts": 97280,
+  "packages/shell/src/main/task-manager.ts": 136192,
+  "packages/shell/test/move-folder.test.ts": 51200,
+  "packages/shell/test/sidekick-controller.test.ts": 143360,
+  "packages/shell/test/task-manager.test.ts": 80896,
+  "packages/ui/src/ChatView.tsx": 112640,
+  "packages/ui/src/styles.css": 104448,
+  "packages/ui/test/fake-client.ts": 77824,
+  "packages/workspace/src/history.ts": 54272
+}

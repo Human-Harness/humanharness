@@ -1,8 +1,10 @@
 import path from "node:path";
-import { BACKEND_CALLS_IN_FLIGHT, BACKEND_LINE_MAX, type BackendInit, type BackendScope, hasBackend } from "@humanharness/harness-sdk";
+import type { Launcher } from "@humanharness/blocks";
+import { BACKEND_CALLS_IN_FLIGHT, BACKEND_LINE_MAX, type BackendInit, type BackendScope, type LoadedHarness, hasBackend, resolveInHarness } from "@humanharness/harness-sdk";
 import { type LinkedFolderEntry, type ScopeEntry, isProfileId } from "@humanharness/workspace";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
-import type { BackendLog } from "./backend-log";
+import { BackendLog } from "./backend-log";
+import { BackendProcess } from "./backend-process";
 import { isBackendName } from "./backend-protocol";
 import { BackendSupervisor, type BackendState, type SupervisedProcess } from "./backend-supervisor";
 
@@ -152,4 +154,35 @@ export class BackendGeneration {
     const value = await read();
     return gen === this.gen ? value : null;
   }
+}
+
+/** What `buildBackend` reads of the main entry. */
+export interface BackendHostDeps {
+  userData: string;
+  /** The launcher the MCP servers use (electronLauncher in the app). */
+  launcher: Launcher;
+  send: BackendWiringDeps["send"];
+}
+
+/**
+ * The harness's backend (hatches spec §4) over the app's own wiring: its log in the app's data folder, its process on
+ * the MCP servers' launcher, in the harness folder. Null without `backend` (D0).
+ */
+export function buildBackend(harness: LoadedHarness, d: BackendHostDeps): BackendSupervisor | null {
+  const backendLog = new BackendLog(d.userData);
+  return backendFor(harness, {
+    // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
+    startProcess: (init, onEvent) =>
+      BackendProcess.start({
+        launcher: d.launcher,
+        entry: resolveInHarness(harness, harness.backend!),
+        cwd: harness.root,
+        init,
+        log: backendLog,
+        onEvent,
+      }),
+    send: d.send,
+    log: backendLog,
+    mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
+  });
 }

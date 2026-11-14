@@ -210,9 +210,7 @@ import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
-import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
-import { BackendLog } from "./backend/backend-log";
-import { BackendProcess } from "./backend/backend-process";
+import { BackendGeneration, backendInit, buildBackend, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
 import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
@@ -2204,22 +2202,7 @@ function registerIpc() {
   if (hasEnginePresets(harness)) void pruneEngineConfig();
   // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
   if (hasBackend(harness)) {
-    const backendLog = new BackendLog(app.getPath("userData"));
-    backend = backendFor(harness, {
-      // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
-      startProcess: (init, onEvent) =>
-        BackendProcess.start({
-          launcher: electronLauncher(process.execPath),
-          entry: resolveInHarness(harness, harness.backend!),
-          cwd: harness.root,
-          init,
-          log: backendLog,
-          onEvent,
-        }),
-      send: sendToWindow,
-      log: backendLog,
-      mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
-    });
+    backend = buildBackend(harness, { userData: app.getPath("userData"), launcher: electronLauncher(process.execPath), send: sendToWindow });
     if (backend) registerBackendIpc(handle, { supervisor: backend });
   }
   handleAll(dataIpc({ harness: () => harness, scopesSettled, harnessUiData, currentHistory }));

@@ -124,20 +124,25 @@ describe("hatches IPC surface (hatches D0)", () => {
   it("backend channels are registered only under hasBackend (D0)", async () => {
     const index = await read("index.ts");
     expect(count(index, /registerBackendIpc\(/)).toBe(1);
-    expect(count(index, /\bbackendFor\(/)).toBe(1);
     const block = group(index, index.indexOf("if (hasBackend(harness))"), /\{/);
     expect(block).toContain("registerBackendIpc(handle, { supervisor: backend });");
-    // The supervisor is made only by backendFor, which answers null without a backend; nothing else spawns one.
+    // The supervisor is made only by buildBackend (backend-ipc.ts) through backendFor, which answers null without a
+    // backend; nothing else spawns one.
+    expect(count(index, /\bbuildBackend\(/)).toBe(1);
+    expect(count(block, /\bbuildBackend\(/)).toBe(1);
     expect(count(index, /\bbackend = /)).toBe(1);
-    expect(index).toMatch(/\bbackend = backendFor\(harness, \{/);
-    // The one spawn sits in that block, as backendFor's startProcess.
-    expect(count(index, /BackendProcess\.start\(/)).toBe(1);
-    expect(count(block, /BackendProcess\.start\(/)).toBe(1);
+    expect(index).toMatch(/\bbackend = buildBackend\(harness, \{/);
+    const ipc = await read(path.join("backend", "backend-ipc.ts"));
+    const build = group(ipc, ipc.indexOf("export function buildBackend("), /\{/);
+    expect(count(ipc, /\bbackendFor\(/)).toBe(2); // the definition and buildBackend's call
+    expect(build).toMatch(/return backendFor\(harness, \{/);
+    // The one spawn sits in buildBackend, as backendFor's startProcess.
+    expect(count(ipc, /BackendProcess\.start\(/)).toBe(1);
+    expect(count(build, /BackendProcess\.start\(/)).toBe(1);
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
       if (f.startsWith("backend")) continue;
       const text = await read(f);
-      expect(text, f).not.toMatch(/new BackendSupervisor|hh:backend/);
-      if (f !== "index.ts") expect(text, f).not.toMatch(/BackendProcess\.start/);
+      expect(text, f).not.toMatch(/new BackendSupervisor|hh:backend|BackendProcess\.start/);
     }
   });
 

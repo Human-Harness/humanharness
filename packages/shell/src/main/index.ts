@@ -21,7 +21,7 @@ import {
   shell,
   webContents,
 } from "electron";
-import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
+import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
@@ -57,7 +57,6 @@ import {
   stageTier,
 } from "@humanharness/harness-sdk";
 import { createI18n } from "@humanharness/i18n";
-import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, workerRunner } from "@humanharness/material/light";
 import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
@@ -68,10 +67,8 @@ import {
   type SessionSlot,
   SidekickSession,
   type SlotRef,
-  type SystemTaskResult,
   createRuntime,
   createWorkspace,
-  runSystemSession,
   runSystemTask,
 } from "@humanharness/runtime";
 import {
@@ -175,7 +172,6 @@ import {
   profilesUsage,
   recentUsage,
   summarizeUsage,
-  translateRecord,
   withSpent,
 } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
@@ -271,8 +267,7 @@ import { SetupSteps, recordSetup } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
 import { createAppState } from "./app-state";
-import { TranslationCache } from "./translation-cache";
-import { type Runner, TranslationService } from "./translation";
+import { type TranslationService, buildTranslation } from "./translation";
 import type { MaterialService } from "./material";
 import { historyKeep, materialIpc, materialItems, materialRecommended } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
@@ -1474,8 +1469,6 @@ const materialStageDeps: MaterialStageDeps = {
   log: (base, record) => new UsageLog(base).append(record),
 };
 
-/** The model key of a translation run (language spec §5): not listed in Settings › Models, so always the light tier. */
-const TRANSLATE_KEY = "_translate";
 /** How long an engine check is reused: the language state is read on every push, and a run pushes every turn. */
 const ENGINE_CHECK_MS = 30_000;
 
@@ -1526,76 +1519,6 @@ async function translateEngine(fresh = false): Promise<EngineDef | null> {
   if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
   const engine = getEngine(c.engineId);
   return (await engineReady(engine, fresh)) ? engine : null;
-}
-
-function buildTranslation(): TranslationService {
-  return new TranslationService({
-    cache: new TranslationCache(app.getPath("userData")),
-    core: CORE_EN,
-    ...(harness.tone ? { tone: harness.tone } : {}),
-    language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
-    saveLanguage: async (tag) => {
-      await config.save({ language: tag });
-    },
-    answerOffer: async () => {
-      await config.save({ languageOffered: true });
-    },
-    // Spec §3: "no-engine" also covers an engine with a problem; mock mode never translates.
-    available: async () => {
-      if (hooks.mock) return "mock";
-      return (await translateEngine()) ? true : "no-engine";
-    },
-    engineName: async () => {
-      const c = await config.load();
-      return isConfigured(c) ? getEngine(c.engineId).name : undefined;
-    },
-    prepare: async () => {
-      if (hooks.mock) return null;
-      const engine = await translateEngine(true);
-      if (!engine) return null;
-      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
-      if (!cmd) return null;
-      const c = await config.load();
-      const models = cleanModels(c.models);
-      const profile = await pickProfile(c.policies?.model, { engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models });
-      const launcher = electronLauncher(process.execPath);
-      // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
-      // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
-      // batch is 1-based.
-      const log = async (r: SystemTaskResult, turn: number, tag: string) => {
-        const c = await validConfig();
-        if (!c) return;
-        const record = translateRecord({
-          engine: engine.id,
-          language: tag,
-          batch: turn + 1,
-          profile,
-          ok: r.ok,
-          ...(r.ok && r.usage ? { usage: r.usage } : {}),
-          ...(r.limits ? { limits: r.limits } : {}),
-        });
-        await new UsageLog(baseOf(c)).append(record);
-      };
-      const run: Runner = (o) =>
-        runSystemSession({
-          engine,
-          command: cmd.command,
-          env: cmd.env,
-          server: (rpc) => translateServerSpec({ rpc, launcher, entry: path.join(here, "translate-server.js") }),
-          parent: path.join(app.getPath("userData"), "translate-work"),
-          handle: o.handle,
-          next: o.next,
-          signal: o.signal,
-          profile,
-          onTurn: async (r, turn) => {
-            await log(r, turn, o.tag).catch((err: unknown) => console.error("Could not record the translation turn", err));
-            await o.onTurn(r, turn);
-          },
-        });
-      return { engineName: engine.name, run };
-    },
-    send: (state) => sendToWindow("hh:language", state),
-  });
 }
 
 /** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
@@ -3166,7 +3089,19 @@ if (loaded) {
   }
   materialSvc = await buildMaterial();
   materialJobs = materialSvc ? buildMaterialJobs(materialSvc) : null;
-  translation = buildTranslation();
+  translation = buildTranslation({
+    userData: app.getPath("userData"),
+    ...(harness.tone ? { tone: harness.tone } : {}),
+    config: () => config,
+    mock: hooks.mock === true,
+    translateEngine,
+    command: async (engine) => hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null)),
+    pickProfile,
+    validConfig,
+    baseOf,
+    serverEntry: path.join(here, "translate-server.js"),
+    send: (state) => sendToWindow("hh:language", state),
+  });
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would

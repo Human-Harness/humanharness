@@ -167,7 +167,8 @@ import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { reviewHandlers } from "./review-ipc";
 import { workerDiff } from "./diff-runner";
-import { commitAnnouncer, fileHandlers } from "./file-ipc";
+import { commitAnnouncer, fileHandlers, openPathIpc } from "./file-ipc";
+import { documentIpc } from "./document-ipc";
 import { FileTimelineService } from "./file-timeline";
 import { CANCELLED, type GoBackAsk, askNatively, goBackHandlers, goBackText } from "./go-back";
 import { ReviewService } from "./reviews";
@@ -3047,64 +3048,13 @@ function registerIpc() {
     if (quitting) return false;
     return tasks.extendTimeBox();
   });
-  handle("hh:openPath", async (file: unknown) => {
-    const c = await validConfig();
-    if (!c) return false;
-    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
-    const target = await openableFile(file, roots);
-    if (!target) return false;
-    // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
-    return openIfStillSafe(target, roots, (p) => shell.openPath(p));
-  });
-  // Shows a file in Finder (it never opens it): any kind of file, with the same checks as hh:openPath.
-  handle("hh:revealPath", async (file: unknown) => {
-    const c = await validConfig();
-    if (!c) return false;
-    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
-    const target = await revealableFile(file, roots);
-    if (!target) return false;
-    return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));
-  });
-  // The reader (document-reader spec §5.3): it only ever reads, inside the folder or a reference folder. Every input
-  // is untrusted (documents.ts checks its shape first) and every failure is an answer, never a thrown error.
-  handle("hh:readDocument", async (rel: unknown): Promise<DocumentRead> => {
-    try {
-      const roots = await documentRoots();
-      if (!roots) return { ok: false, reason: "not-ready" };
-      return await readDocument(rel, roots);
-    } catch (err) {
-      console.error("Could not read the document", err);
-      return { ok: false, reason: "missing" };
-    }
-  });
-  handle("hh:readImage", async (rel: unknown): Promise<string | null> => {
-    try {
-      const roots = await documentRoots();
-      return roots ? await readImage(rel, roots) : null;
-    } catch {
-      return null;
-    }
-  });
-  handle("hh:documentsExist", async (paths: unknown): Promise<boolean[]> => {
-    if (!Array.isArray(paths)) return [];
-    // Too many to check: none counts as there (one answer per path, as the window expects).
-    if (paths.length > MAX_EXIST_PATHS) return paths.map(() => false);
-    try {
-      const roots = await documentRoots();
-      return roots ? await documentsExist(paths, roots) : paths.map(() => false);
-    } catch {
-      return paths.map(() => false);
-    }
-  });
-  handleFrom("hh:watchDocument", async (sender, rel): Promise<number | null> => {
-    try {
-      const roots = await documentRoots();
-      return roots ? await documentSessions.watch(sender.id, rel, roots) : null;
-    } catch {
-      return null;
-    }
-  });
-  handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
+  handleAll(openPathIpc({ validConfig, baseOf, workReferences, shell }));
+  const reader = documentIpc({ documentRoots, documentSessions });
+  handle("hh:readDocument", reader["hh:readDocument"]);
+  handle("hh:readImage", reader["hh:readImage"]);
+  handle("hh:documentsExist", reader["hh:documentsExist"]);
+  handleFrom("hh:watchDocument", reader["hh:watchDocument"]);
+  handleFrom("hh:unwatchDocument", reader["hh:unwatchDocument"]);
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
   handleAll(reviewHandlers(reviews, () => harness.permissions.edit === "folder"));
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.

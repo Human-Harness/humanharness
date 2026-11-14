@@ -26,7 +26,8 @@ describe("the shell's resources folder", () => {
   });
 
   it("main finds the plugin host, tool host and Dock icon files through it, never relative to the built main", async () => {
-    const index = await fs.readFile(path.join(shell, "src/main/index.ts"), "utf8");
+    // index.ts and app-lifecycle.ts, which holds its start-up blocks.
+    const index = (await Promise.all(["index.ts", "app-lifecycle.ts"].map((f) => fs.readFile(path.join(shell, "src/main", f), "utf8")))).join("\n");
     expect(index).not.toContain("../../resources");
     expect(index).toContain("shellResourcesDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __SHELL_RESOURCES__ })");
     expect([...index.matchAll(/resources: shellResources\b/g)]).toHaveLength(2);

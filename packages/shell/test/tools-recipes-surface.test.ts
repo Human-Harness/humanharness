@@ -33,8 +33,11 @@ describe("recipes surface (tools spec §7; D0)", () => {
     expect(count(wiring, /\brecipeTools\(/)).toBe(2);
     expect(count(index, /\brecipeTools\(/)).toBe(0);
     expect(index).toContain("  toolsHost: () => toolsHost,\n});");
-    // toolsHost is set (under hasTools) before buildJobsHost's first call, at "ready".
-    expect(index.indexOf("toolsHost = createToolsHost(")).toBeLessThan(index.indexOf("buildJobsHost(jobsWiring(), board.gate"));
+    // toolsHost is set (under hasTools) before buildJobsHost's first call, at "ready" (both in app-lifecycle.ts, the start-up).
+    const start = await read("app-lifecycle.ts");
+    expect(count(start, /\brecipeTools\(/)).toBe(0);
+    expect(start.indexOf("d.toolsHost = createToolsHost(")).toBeGreaterThan(0);
+    expect(start.indexOf("d.toolsHost = createToolsHost(")).toBeLessThan(start.indexOf("buildJobsHost(jobsWiring(), board.gate"));
   });
 
   it("readBrief reads a brief only for a prompt job", async () => {

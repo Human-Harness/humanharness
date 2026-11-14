@@ -113,7 +113,8 @@ describe("single mode's undo (part 3 Decision 12)", () => {
 });
 
 describe("index.ts: the app's own changes go through saveAppChange, board mode decided by the host", () => {
-  const index = fs.readFileSync(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
+  // index.ts and app-lifecycle.ts, which holds its start-up blocks.
+  const index = ["index.ts", "app-lifecycle.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
   it("material, Sidekick's decision note and learning, and a lane's note", () => {
     expect(index).not.toMatch(/\?\.save\(`Material:/);
     expect(index).not.toMatch(/\?\.save\(`Note: \$\{title\}`/);

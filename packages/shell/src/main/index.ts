@@ -251,6 +251,8 @@ import { instructionSubagentsOption } from "./instruction-subagents";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
+import { setupIpc } from "./setup-ipc";
+import { profilesIpc } from "./profiles-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
 import { sidekickView } from "./sidekick-view";
@@ -529,9 +531,6 @@ const rebasePlugins = (): Promise<void> => pluginsCtl?.rebase().catch((err: unkn
 let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
 let profilesCtl: Profiles | null = null;
-const NO_SETUP_STEPS: SetupStepsState = { steps: {}, blocking: [] };
-const NO_PROFILES: ProfilesState = { active: null, list: [] };
-const NO_SETUP_STEP: SetupStepResult = { ok: false, reason: "unknown" };
 
 /**
  * The reference folders usable with the working folder: one that is or contains it is left out (its
@@ -3071,41 +3070,8 @@ function registerIpc() {
       ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
     });
   }
-  // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
-  // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
-  // it stands, never a thrown error.
-  const stepRefused = (err: unknown): SetupStepResult => {
-    console.error("A setup step call failed", err);
-    return { ok: false, reason: "not-ready" };
-  };
-  const stepsAsTheyStand = (err: unknown): Promise<SetupStepsState> => {
-    console.error("A setup step call failed", err);
-    return setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : Promise.resolve(NO_SETUP_STEPS);
-  };
-  handle("hh:setupStepsGet", () => (setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : NO_SETUP_STEPS));
-  handle("hh:setupStepValues", (id: unknown) => (setupCtl ? setupCtl.values(id).catch(() => ({})) : {}));
-  handle("hh:setupStepSubmit", (id: unknown, value: unknown) => (setupCtl ? setupCtl.submit(id, value).catch(stepRefused) : NO_SETUP_STEP));
-  handle("hh:setupStepComplete", (id: unknown) => (setupCtl ? setupCtl.complete(id).catch(stepRefused) : NO_SETUP_STEP));
-  handle("hh:setupStepSkip", (id: unknown) => (setupCtl ? setupCtl.skip(id).catch(stepRefused) : NO_SETUP_STEP));
-  handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
-  handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
-  // Profiles (profiles spec §5). Without them, nothing to read and every change refused (D4). Refusals come back as data.
-  const profileAnswer = (outcome: Promise<ProfileOutcome>): Promise<ProfileResult> =>
-    profileResult(
-      outcome,
-      appState,
-      () => lastAppState,
-      async () => (profilesCtl ? (await profilesCtl.state()).active : null),
-    );
-  const noProfiles = (): ProfileResult => ({ ok: false, reason: "not-ready" });
-  handle("hh:profilesGet", () => (profilesCtl ? profilesCtl.state().catch(() => NO_PROFILES) : NO_PROFILES));
-  handle("hh:profileCreate", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.create(values)) : noProfiles()));
-  handle("hh:profileOpen", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.open(id)) : noProfiles()));
-  handle("hh:profileArchive", (id: unknown, archived: unknown) =>
-    profilesCtl && typeof archived === "boolean" ? profileAnswer(profilesCtl.setArchived(id, archived)) : noProfiles(),
-  );
-  handle("hh:profileEdit", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.edit(values)) : noProfiles()));
-  handle("hh:profileDelete", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.remove(id)) : noProfiles()));
+  handleAll(setupIpc({ setupCtl: () => setupCtl }));
+  handleAll(profilesIpc({ profilesCtl: () => profilesCtl, appState, lastAppState: () => lastAppState }));
   // The person's material (material spec §10). Answers are data; without material every call is "not-ready" (D0).
   const noMaterial = { ok: false, reason: "not-ready" } as const;
   handle("hh:materialList", async (scope: unknown) => (materialSvc && typeof scope === "string" ? materialSvc.list(scope) : null));

@@ -253,6 +253,7 @@ import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { setupIpc } from "./setup-ipc";
+import { chatIpc } from "./chat-ipc";
 import { historyIpc } from "./history-ipc";
 import { dataIpc } from "./data-ipc";
 import { settingsIpc } from "./settings-ipc";
@@ -2850,42 +2851,23 @@ function registerIpc() {
       appState,
     }),
   );
-  handle("hh:loadChat", async (): Promise<ChatLoad> => {
-    // After the migration: it opens `main`, whose chat is the one to show.
-    await scopesSettled();
-    const c = await validConfig();
-    if (!c) return { entries: [] };
-    // The engine change archives the chat; the check here only catches a change made while the app was closed.
-    const switchedFrom =
-      guards.takeSwitchedFrom() ?? (hold.engineBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
-    // Board mode: the focused task's own chat, and its turn still running to replay (read last).
-    if (host) return { ...(switchedFrom ? { switchedFrom } : {}), ...(await host.loadChat(baseOf(c))) };
-    return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
-  });
-  handle("hh:send", async (message: string, options?: SendOptions) => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
-    const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
-    // The mode the person picked for a new task ("ask"); one the action doesn't list is refused before anything closes.
-    const mode = action && typeof options?.mode === "string" && (harness.actions[action].modes ?? []).includes(options.mode) ? options.mode : undefined;
-    if (options?.mode !== undefined && mode === undefined) throw new Error("Unknown mode");
-    const scope = options?.scope;
-    if (scope !== undefined && !isScopeId(scope)) throw new Error("Unknown scope");
-    // The time box the person picked (task-phases spec §5): one the action doesn't offer is refused before anything closes.
-    const offered = action ? harness.actions[action].timeBox?.options : undefined;
-    const timeBox = options?.timeBox;
-    if (timeBox !== undefined && !timeBoxOffered(timeBox, offered)) throw new Error("Unknown time box");
-    // The mods' beforeSend (minimal-core spec §4.2): each may rewrite the text; the host refuses a blank or oversized one.
-    if (modHost) {
-      const running = await tasks.runningTask().catch(() => null);
-      message = await modHost.beforeSend({ text: message, ...(action ? { action } : {}), ...(scope ? { scope } : {}), task: running });
-    }
-    // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
-    const sent = action ? tasks.start(action, message, scope, mode, timeBox !== undefined ? { timeBox } : {}) : tasks.ask(message, undefined, scope);
-    return scope === undefined ? sent : sent.finally(() => void scopesChanged());
-  });
+  handleAll(
+    chatIpc({
+      harness: () => harness,
+      quitting: () => quitting,
+      turnBlocked,
+      tasks: () => tasks,
+      host: () => host,
+      modHost: () => modHost,
+      guards,
+      engineBusy: hold.engineBusy,
+      scopesSettled,
+      scopesChanged,
+      validConfig,
+      baseOf,
+      dropRuntime,
+    }),
+  );
   handle("hh:getTasks", () => tasks.view());
   handleAll(
     scopesIpc({
@@ -3005,16 +2987,6 @@ function registerIpc() {
   handle("hh:materialOpen", (scope: unknown, id: unknown) =>
     openMaterial(materialSvc, scope, id, (file) => shell.openPath(file), (file) => shell.showItemInFolder(file)),
   );
-  handle("hh:choose", (option: unknown, task: unknown) => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    const parsed = choiceOptionSchema.safeParse(option);
-    if (!parsed.success) throw new Error("Invalid choice");
-    // The task the block was shown for: a block of an earlier task is refused (TaskManager.choose).
-    if (typeof task !== "string" || !task || task.length > 100) throw new Error("Invalid choice");
-    return tasks.choose(parsed.data, task);
-  });
   handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
   // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
   handle(
@@ -3028,26 +3000,6 @@ function registerIpc() {
   );
   // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
   handle("hh:setPhase", setPhaseHandler({ quitting: () => quitting, blocked: turnBlocked, setPhase: (to, task) => tasks.setPhase(to, task) }));
-  // The stepper's Finish and the time box's controls.
-  handle("hh:finishTask", () => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    return tasks.finish();
-  });
-  // Quitting already paused the box (TaskManager.close): nothing may run it again.
-  handle("hh:pauseTask", () => {
-    if (quitting) return false;
-    return tasks.pauseTimeBox();
-  });
-  handle("hh:resumeTask", () => {
-    if (quitting) return false;
-    return tasks.resumeTimeBox();
-  });
-  handle("hh:extendTimeBox", () => {
-    if (quitting) return false;
-    return tasks.extendTimeBox();
-  });
   handleAll(openPathIpc({ validConfig, baseOf, workReferences, shell }));
   const reader = documentIpc({ documentRoots, documentSessions });
   handle("hh:readDocument", reader["hh:readDocument"]);

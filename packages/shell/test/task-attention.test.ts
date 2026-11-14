@@ -228,11 +228,16 @@ describe("D0: plain mode never sets the Dock badge, raises a task item or shares
   it("the Dock badge is set in one place, the task attention that only the board host gets", () => {
     expect(naming(/\.setBadge\(/)).toEqual(["index.ts"]);
     expect([...index.matchAll(/\.setBadge\(/g)]).toHaveLength(1);
-    expect(naming(/new TaskAttention\(/)).toEqual(["index.ts"]);
-    // Built only by buildTaskAttention, which only buildBoardHost calls (and that only in board mode, board-host.test.ts).
-    expect([...index.matchAll(/\bbuildTaskAttention\(/g)]).toHaveLength(2);
-    expect(index).toMatch(/function buildTaskAttention\(\): TaskAttention \{\n\s*const attention = new TaskAttention\(/);
-    expect(index).toMatch(/\n\s*attention: buildTaskAttention\(\),\n\s*\},\n\s*\{ engineId: c\.engineId, parallel: c\.parallel \},/);
+    // Built only by buildTaskAttention (task-attention.ts), which index.ts calls only as the board host's `attention`
+    // (and that host is built only in board mode, board-host.test.ts).
+    expect(naming(/new TaskAttention\(/)).toEqual(["task-attention.ts"]);
+    const own = fs.readFileSync(path.join(main, "task-attention.ts"), "utf8");
+    expect(own).toMatch(/function buildTaskAttention\(d: TaskAttentionWiringDeps\): TaskAttention \{\n\s*return new TaskAttention\(/);
+    expect(naming(/\bbuildTaskAttention\(/)).toEqual(["index.ts", "task-attention.ts"]);
+    expect([...index.matchAll(/\bbuildTaskAttention\(/g)]).toHaveLength(1);
+    expect(index).toMatch(/\n\s*attention: \(\) =>\n\s*\(taskAttention = buildTaskAttention\(\{/);
+    const wiring = fs.readFileSync(path.join(main, "board-host-wiring.ts"), "utf8");
+    expect(wiring).toMatch(/\n\s*attention: d\.attention\(\),\n\s*\},\n\s*\{ engineId: c\.engineId, parallel: c\.parallel \},/);
   });
 
   it("part 3: the badge outside the task attention is set only with jobs, and never in board mode", () => {

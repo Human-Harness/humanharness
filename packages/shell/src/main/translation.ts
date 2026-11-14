@@ -1,4 +1,9 @@
+import path from "node:path";
+import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
+import { type EngineDef, type ModelProfile, getEngine } from "@humanharness/engines";
+import { DEFAULT_LANGUAGE } from "@humanharness/harness-sdk";
 import { type Language, offeredLanguage } from "@humanharness/harness-sdk/language";
+import type { PickInput } from "@humanharness/policies";
 import {
   type PluralCategory,
   type TranslateItem,
@@ -9,10 +14,22 @@ import {
   pluralForms,
   toResourceEntries,
 } from "@humanharness/i18n/translate";
-import type { EngineError, SystemTaskResult } from "@humanharness/runtime";
-import type { GeneratedStrings, LanguageChoose, LanguageRun, LanguageStart, LanguageState } from "@humanharness/protocol";
+import { CORE_EN } from "@humanharness/i18n/translate";
+import { type EngineError, type SystemTaskResult, runSystemSession } from "@humanharness/runtime";
+import {
+  type ConfiguredApp,
+  type GeneratedStrings,
+  type LanguageChoose,
+  type LanguageRun,
+  type LanguageStart,
+  type LanguageState,
+  isConfigured,
+} from "@humanharness/protocol";
 import { translatePrompt } from "./task-prompts";
-import { type CacheFile, type TranslationCache, safeKey } from "./translation-cache";
+import { type CacheFile, TranslationCache, safeKey } from "./translation-cache";
+import type { ConfigStore } from "./config";
+import { cleanModels } from "./models";
+import { UsageLog, translateRecord } from "./usage-log";
 
 /** Runs one translation session (runSystemSession bound to the engine, model and log in index.ts). */
 export type Runner = (o: {
@@ -348,4 +365,99 @@ export class TranslationService {
     }
     await this.push(items);
   }
+}
+
+/** What `buildTranslation` reads of the main entry. Getters for what changes after it is built. */
+export interface TranslationWiringDeps {
+  userData: string;
+  /** The harness's `tone`, or none. */
+  tone?: string;
+  config(): ConfigStore;
+  /** Test mock mode: never translates. */
+  mock: boolean;
+  /** The set-up engine when a run could use it now, else null (`fresh` checks it again). */
+  translateEngine(fresh?: boolean): Promise<EngineDef | null>;
+  /** The engine's command (a test's fake engine first), or null when it can't be found. */
+  command(engine: EngineDef): Promise<{ command: string[]; env?: Record<string, string> } | null>;
+  pickProfile(policyId: string | undefined, input: Omit<PickInput, "offer">): Promise<ModelProfile>;
+  validConfig(): Promise<ConfiguredApp | null>;
+  baseOf(c: { folder: string; profile?: string }): string;
+  /** The built translate server's entry (beside the main entry). */
+  serverEntry: string;
+  send(state: LanguageState): void;
+}
+
+/** The model key of a translation run (language spec §5): not listed in Settings › Models, so always the light tier. */
+const TRANSLATE_KEY = "_translate";
+
+/** Language on demand's service over the app's own wiring (plan 5b). */
+export function buildTranslation(d: TranslationWiringDeps): TranslationService {
+  const { config, translateEngine, validConfig, baseOf } = d;
+  return new TranslationService({
+    cache: new TranslationCache(d.userData),
+    core: CORE_EN,
+    ...(d.tone ? { tone: d.tone } : {}),
+    language: async () => (await config().load()).language ?? DEFAULT_LANGUAGE,
+    saveLanguage: async (tag) => {
+      await config().save({ language: tag });
+    },
+    answerOffer: async () => {
+      await config().save({ languageOffered: true });
+    },
+    // Spec §3: "no-engine" also covers an engine with a problem; mock mode never translates.
+    available: async () => {
+      if (d.mock) return "mock";
+      return (await translateEngine()) ? true : "no-engine";
+    },
+    engineName: async () => {
+      const c = await config().load();
+      return isConfigured(c) ? getEngine(c.engineId).name : undefined;
+    },
+    prepare: async () => {
+      if (d.mock) return null;
+      const engine = await translateEngine(true);
+      if (!engine) return null;
+      const cmd = await d.command(engine);
+      if (!cmd) return null;
+      const c = await config().load();
+      const models = cleanModels(c.models);
+      const profile = await d.pickProfile(c.policies?.model, { engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models });
+      const launcher = electronLauncher(process.execPath);
+      // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
+      // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
+      // batch is 1-based.
+      const log = async (r: SystemTaskResult, turn: number, tag: string) => {
+        const c = await validConfig();
+        if (!c) return;
+        const record = translateRecord({
+          engine: engine.id,
+          language: tag,
+          batch: turn + 1,
+          profile,
+          ok: r.ok,
+          ...(r.ok && r.usage ? { usage: r.usage } : {}),
+          ...(r.limits ? { limits: r.limits } : {}),
+        });
+        await new UsageLog(baseOf(c)).append(record);
+      };
+      const run: Runner = (o) =>
+        runSystemSession({
+          engine,
+          command: cmd.command,
+          env: cmd.env,
+          server: (rpc) => translateServerSpec({ rpc, launcher, entry: d.serverEntry }),
+          parent: path.join(d.userData, "translate-work"),
+          handle: o.handle,
+          next: o.next,
+          signal: o.signal,
+          profile,
+          onTurn: async (r, turn) => {
+            await log(r, turn, o.tag).catch((err: unknown) => console.error("Could not record the translation turn", err));
+            await o.onTurn(r, turn);
+          },
+        });
+      return { engineName: engine.name, run };
+    },
+    send: d.send,
+  });
 }

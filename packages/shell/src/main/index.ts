@@ -21,7 +21,7 @@ import {
   shell,
   webContents,
 } from "electron";
-import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
+import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
@@ -57,8 +57,7 @@ import {
   stageTier,
 } from "@humanharness/harness-sdk";
 import { createI18n } from "@humanharness/i18n";
-import { CORE_EN } from "@humanharness/i18n/translate";
-import { type Job, MaterialStore, workerRunner } from "@humanharness/material/light";
+import { type Job, MaterialStore } from "@humanharness/material/light";
 import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
   type Event,
@@ -68,10 +67,8 @@ import {
   type SessionSlot,
   SidekickSession,
   type SlotRef,
-  type SystemTaskResult,
   createRuntime,
   createWorkspace,
-  runSystemSession,
   runSystemTask,
 } from "@humanharness/runtime";
 import {
@@ -171,11 +168,9 @@ import {
   capTokens,
   dayTokens,
   modRecord,
-  measuredMaterialCosts,
   profilesUsage,
   recentUsage,
   summarizeUsage,
-  translateRecord,
   withSpent,
 } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
@@ -196,33 +191,32 @@ import { testCrypto } from "./secrets/test-crypto";
 import { isPublicHost } from "./material-fetch";
 import { ToolHost } from "./tools/tool-host";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
-import { type ToolsHost, createToolsHost, jobLimits, lastCallOf, slotTaskOf } from "./tools/tools-host";
+import { type ToolsHost, createToolsHost, slotTaskOf } from "./tools/tools-host";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
-import { type BoardHost, createBoardHost, hostMode } from "./board-host";
+import { type BoardHost, hostMode } from "./board-host";
+import { buildBoardHost } from "./board-host-wiring";
 import { type AttentionStores, attentionStores } from "./attention-stores";
-import { keepNotification, TaskAttention } from "./task-attention";
-import { materialOwn, saveAppChange } from "./app-change";
-import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type TaskAttention, buildTaskAttention, keepNotification } from "./task-attention";
+import { saveAppChange } from "./app-change";
+import { type JobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps } from "./jobs/jobs-host";
+import { type JobsWiringDeps, buildJobsHost, buildSingleJobs } from "./jobs/jobs-wiring";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, linkedIpcDeps, linkedSecret, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
-import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
+import { type EngineIpc, engineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
-import { BackendGeneration, backendFor, backendInit, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
-import { BackendLog } from "./backend/backend-log";
-import { BackendProcess } from "./backend/backend-process";
+import { BackendGeneration, backendInit, buildBackend, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
-import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
+import { linkedHistoryDir, markRelinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
 import {
   type LinkedHistoryRef,
   linkedHistoriesFor,
-  linkedHistoryView,
   linkedOnlyRows,
   mergeTaskGroups,
   openLinkedHistory,
@@ -271,11 +265,11 @@ import { SetupSteps, recordSetup } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
 import { createAppState } from "./app-state";
-import { TranslationCache } from "./translation-cache";
-import { type Runner, TranslationService } from "./translation";
+import { type TranslationService, buildTranslation } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialIpc, materialItems, materialRecommended } from "./material-ipc";
-import { MaterialJobs } from "./material-jobs";
+import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
+import type { MaterialJobs } from "./material-jobs";
+import { buildMaterial, buildMaterialJobs } from "./material-wiring";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
 import { baseFor, isInsideFolder } from "./profile-base";
@@ -1474,8 +1468,6 @@ const materialStageDeps: MaterialStageDeps = {
   log: (base, record) => new UsageLog(base).append(record),
 };
 
-/** The model key of a translation run (language spec §5): not listed in Settings › Models, so always the light tier. */
-const TRANSLATE_KEY = "_translate";
 /** How long an engine check is reused: the language state is read on every push, and a run pushes every turn. */
 const ENGINE_CHECK_MS = 30_000;
 
@@ -1528,155 +1520,6 @@ async function translateEngine(fresh = false): Promise<EngineDef | null> {
   return (await engineReady(engine, fresh)) ? engine : null;
 }
 
-function buildTranslation(): TranslationService {
-  return new TranslationService({
-    cache: new TranslationCache(app.getPath("userData")),
-    core: CORE_EN,
-    ...(harness.tone ? { tone: harness.tone } : {}),
-    language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
-    saveLanguage: async (tag) => {
-      await config.save({ language: tag });
-    },
-    answerOffer: async () => {
-      await config.save({ languageOffered: true });
-    },
-    // Spec §3: "no-engine" also covers an engine with a problem; mock mode never translates.
-    available: async () => {
-      if (hooks.mock) return "mock";
-      return (await translateEngine()) ? true : "no-engine";
-    },
-    engineName: async () => {
-      const c = await config.load();
-      return isConfigured(c) ? getEngine(c.engineId).name : undefined;
-    },
-    prepare: async () => {
-      if (hooks.mock) return null;
-      const engine = await translateEngine(true);
-      if (!engine) return null;
-      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
-      if (!cmd) return null;
-      const c = await config.load();
-      const models = cleanModels(c.models);
-      const profile = await pickProfile(c.policies?.model, { engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models });
-      const launcher = electronLauncher(process.execPath);
-      // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
-      // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
-      // batch is 1-based.
-      const log = async (r: SystemTaskResult, turn: number, tag: string) => {
-        const c = await validConfig();
-        if (!c) return;
-        const record = translateRecord({
-          engine: engine.id,
-          language: tag,
-          batch: turn + 1,
-          profile,
-          ok: r.ok,
-          ...(r.ok && r.usage ? { usage: r.usage } : {}),
-          ...(r.limits ? { limits: r.limits } : {}),
-        });
-        await new UsageLog(baseOf(c)).append(record);
-      };
-      const run: Runner = (o) =>
-        runSystemSession({
-          engine,
-          command: cmd.command,
-          env: cmd.env,
-          server: (rpc) => translateServerSpec({ rpc, launcher, entry: path.join(here, "translate-server.js") }),
-          parent: path.join(app.getPath("userData"), "translate-work"),
-          handle: o.handle,
-          next: o.next,
-          signal: o.signal,
-          profile,
-          onTurn: async (r, turn) => {
-            await log(r, turn, o.tag).catch((err: unknown) => console.error("Could not record the translation turn", err));
-            await o.onTurn(r, turn);
-          },
-        });
-      return { engineName: engine.name, run };
-    },
-    send: (state) => sendToWindow("hh:language", state),
-  });
-}
-
-/** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
-async function buildMaterial(): Promise<MaterialService | null> {
-  const m = harness.material;
-  if (!m) return null;
-  const [{ MaterialService }, { fetchLink }] = await Promise.all([import("./material"), import("./material-fetch")]);
-  return new MaterialService({
-    material: m,
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    scopeOk: async (scope) => (scoped() ? activeScope(scope) : scope === MAIN_SCOPE),
-    pickFiles: async () => {
-      if (!window || window.isDestroyed()) return null;
-      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"] });
-      return r.canceled ? null : r.filePaths;
-    },
-    fetchLink: (url) => fetchLink(url),
-    send: sendToWindow,
-    provider: async () => {
-      const engineId = (await config.load()).engineId;
-      return engineId ? getEngine(engineId).provider : "";
-    },
-    window: async () => {
-      const c = await validConfig();
-      if (!c) return null;
-      const primary = getEngine(c.engineId).limits?.primary;
-      const last = recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 50).filter((r) => r.limits?.length).at(-1);
-      const w = last?.limits?.find((x) => x.kind === primary) ?? last?.limits?.[0];
-      return w && Date.parse(w.resetsAt) > Date.now() ? { kind: w.kind, utilization: w.utilization } : null;
-    },
-    afterChange: async (scope, what) => {
-      kickMaterial();
-      const history = await currentHistory();
-      // Board mode: only this scope's material, never another task's running work (parallel spec §5.3).
-      await saveAppChange(history, ownCommits(), materialOwn(scope), `Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) =>
-        console.error("Could not record the material change", err),
-      );
-    },
-    // The built converter worker (its own entry beside this file), at most CONVERT_AT_ONCE at a time.
-    runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
-    runStage: (job, prompt, tools, handle, signal, fragments) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal, fragments),
-    // The stages' costs measured in this base's log (§7): each profile's own.
-    measured: async () => {
-      const c = await validConfig();
-      return c ? measuredMaterialCosts(recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 500)) : undefined;
-    },
-    kick: kickMaterial,
-    trash: (file) => shell.trashItem(file),
-    // The links stage's items (§8), from the current base's data store; never throws.
-    ...(m.items
-      ? {
-          items: (scope: string) =>
-            materialItems(
-              m.items,
-              harness.data,
-              async () => {
-                const c = await validConfig();
-                return c ? dataStoreFor(baseOf(c)) : null;
-              },
-              scope,
-            ),
-        }
-      : {}),
-  });
-}
-
-/**
- * The queue of AI stages over the service (material spec §10): one at a time, started only when no turn, task
- * operation, hold, move or quit is under way.
- */
-function buildMaterialJobs(svc: MaterialService): MaterialJobs<Job> {
-  return new MaterialJobs<Job>({
-    idle: () => !quitting && moving === null && !tasks.isBusy() && hold.turnBlocked() === null && !hold.folderBusy(),
-    next: () => svc.nextJob(),
-    run: (job, signal) => svc.runJob(job, signal),
-  });
-}
-
 /** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
 async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
   if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
@@ -1715,131 +1558,28 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
   }
 }
 
-/**
- * Board mode's host (parallel spec §6) over the app's own wiring: the plain runtime's checks and options for its
- * workspace, today's turn and task deps for its lanes.
- */
-function buildBoardHost(c: AppConfig): BoardHost {
-  return createBoardHost(
-    {
-      suggested: harness.parallel ?? { tasks: 1, jobs: 1 },
-      config: () => config.load(),
-      base: currentBase,
-      taskStoreOptions,
-      openWorkspace: async (runningTask) => {
-        const p = await prepareEngine();
-        if (!p) return null;
-        const ws = await createWorkspace(
-          await runtimeOptions(p, (slot) => {
-            // A job run's slot: that run, in its scope (P3); never a lane's task.
-            const jobs = jobsHost;
-            if (slot && jobs && isJobSlot(slot.key)) return Promise.resolve(jobs.runningOf(slot.key));
-            return slot ? runningTask(slot) : Promise.resolve(null);
-          }),
-        );
-        // A new workspace: the material queue goes on (in this base), and its commits reach the file timelines, as with
-        // a new runtime.
-        announceCommits(ws.history);
-        kickMaterial();
-        return ws;
-      },
-      turnDeps,
-      checkTurn: async () => {
-        await checkTurn();
-        // A lane let in while an undo runs waits for it: it never edits a file being put back.
-        while (restores.turnBlocked()) await new Promise((r) => setTimeout(r, 50));
-      },
-      chatLog: (chat, task) => turnChatLog(chat, task),
-      taskDeps,
-      scoped,
-      scopeExists: activeScope,
-      emit,
-      send: sendToWindow,
-      label: (t) => (t.action && Object.hasOwn(harness.actions, t.action) ? harness.actions[t.action].label : (t.question ?? "").slice(0, 60)),
-      // A lane's note commits its file alone (parallel spec §5.3).
-      saveOwn: async (paths, message, trailer) => saveAppChange(await currentHistory(), true, paths, message, trailer),
-      attention: buildTaskAttention(),
-    },
-    { engineId: c.engineId, parallel: c.parallel },
-  );
-}
-
-/**
- * The jobs' wiring (part 3) over the app's own: the brief from the harness folder, the task deps' notes, data and
- * material for the first message, the active scopes. `workspace` is single mode's or the board's.
- */
-function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace>): JobsHost {
-  return createJobsHost({
-    jobs: harness.jobs ?? {},
-    actions: harness.actions,
-    // Only a prompt job's run reads a brief; a recipe has none (a job declares prompt or steps).
-    readBrief: (job) => (job.prompt !== undefined ? fs.readFile(resolveInHarness(harness, job.prompt), "utf8") : Promise.reject(new Error("A recipe has no brief"))),
-    workspace: async () => {
-      if (quitting) throw new Error("The app is closing");
-      const blocked = turnBlocked();
-      if (blocked) throw new Error(blocked);
-      await checkTurn();
-      // As a lane's turn: a run never edits a file an undo is putting back.
-      while (restores.turnBlocked()) await new Promise((r) => setTimeout(r, 50));
-      return workspace();
-    },
-    gate,
-    base: currentBase,
-    // A job is not a task (replaceable-parts §8 fixes ids per task): its picks read config.json's ids, as material does.
-    taskDeps: { ...taskDeps, profileFor: async (a, f, t) => taskDeps.profileFor!(a, f, t, (await config.load()).policies) },
-    scoped,
-    scopes: async () => {
-      const c = await validConfig();
-      if (!c) return [];
-      if (!scoped()) return [MAIN_SCOPE];
-      return (await scopeStoreFor(baseOf(c)).list()).filter((sc) => !sc.archived).map((sc) => sc.id);
-    },
-    scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
-    // A scoped run reaches its own scope's linked folders, checked as a task's turn (hatches). None without (D0).
-    ...(hasLinkedFolders(harness)
-      ? { linked: { access: async (sc: string) => linked_()?.access.access(sc), section: async (sc: string) => (await linked_()?.access.section(sc)) ?? "" } }
-      : {}),
-    engine: async () => (await config.load()).engineId ?? "",
-    // Settings › Jobs, read at each trigger: a change applies from the next one, without a restart.
-    settings: (id) => jobSettings?.[id],
-    changed: jobsChanged,
-    // Needs-you results in the base's shared store (Task 8), and the Dock badge.
-    attention: async (b) => sharedAttention?.forBase(b, true) ?? null,
-    needsYouChanged: () => void refreshJobBadge(),
-    // A recipe's tools (tools spec §7): only with tools (D0). toolsHost is set before "ready", so before this runs.
-    ...(toolsHost ? { tools: recipeTools(toolsHost) } : {}),
-  });
-}
-
-/**
- * What a recipe run needs of the tools host (tools spec §7): its registry, the run's trailer on its calls, the job's
- * limits, the run's last tool call (trace notes, such as an AI round's, skipped) and the AI step's brief.
- */
-function recipeTools(t: ToolsHost): NonNullable<JobsHostDeps["tools"]> {
-  return {
-    registry: t.registry,
-    withRunTrailer: (trailer, fn) => t.withRunTrailer(trailer, fn),
-    limits: (job) => jobLimits(harness, job),
-    lastCall: async (run) => lastCallOf(await t.trace(run)),
-    readAiBrief: (p) => fs.readFile(resolveInHarness(harness, p), "utf8"),
-  };
-}
-
-/**
- * `single` mode (Decision 12): the gate (tasks 1, the jobs' cap beside), today's TurnController through its `tasks` cap,
- * and the jobs host on the runtime's workspace.
- */
-function buildSingleJobs(c: AppConfig): JobsHost {
-  const gate = singleGate(c.engineId, c.parallel);
-  gate.setBeforeStart(singleBeforeStart(c.engineId, singleMainSlot));
-  single = { gate, turns: singleTurns(gate, turns, emit) };
-  return buildJobsHost(gate, async () => {
-    const rt = await runtime.get();
-    const parts = rt ? singleParts.get(rt) : undefined;
-    if (!parts) throw new Error("The engine isn't installed");
-    return parts.workspace;
-  });
-}
+/** The jobs' wiring over the app's own (jobs/jobs-wiring.ts): single mode's or the board's. */
+const jobsWiring = (): JobsWiringDeps => ({
+  harness: () => harness,
+  config: () => config,
+  validConfig,
+  baseOf,
+  quitting: () => quitting,
+  turnBlocked: () => turnBlocked(),
+  checkTurn,
+  restoreBlocked: () => restores.turnBlocked(),
+  currentBase,
+  taskDeps,
+  scoped,
+  activeScope,
+  scopeStoreFor,
+  linked: linked_,
+  jobSettings: () => jobSettings,
+  changed: jobsChanged,
+  sharedAttention: () => sharedAttention,
+  refreshJobBadge,
+  toolsHost: () => toolsHost,
+});
 
 /** Jobs (Decision 7): once the app is set up in this process, the `start` runs and the `every` timers; once only. */
 async function jobsReady(): Promise<void> {
@@ -1915,105 +1655,6 @@ async function backendScopes(): Promise<void> {
 async function backendLeaveBase(): Promise<void> {
   backendGen.bump();
   if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
-}
-
-/**
- * Board mode's waiting tasks (parallel spec §9.2, Decisions 10–11): an item in the base's shared Attention store, the
- * Dock badge (with the plugins' count) and, when Settings › General asks and the window isn't focused, a notification
- * whose click shows that task. Only a count and the task's label leave the board (P4).
- */
-function buildTaskAttention(): TaskAttention {
-  const attention = new TaskAttention({
-    store: async () => {
-      const base = await currentBase().catch(() => null);
-      return base && sharedAttention ? sharedAttention.forBase(base, true) : null;
-    },
-    badge: setDockBadge,
-    notify: ({ title, body }, id) => {
-      if (!Notification.isSupported()) return;
-      const n = keepNotification(new Notification({ title, body }), notifications);
-      n.on("click", () => {
-        if (window && !window.isDestroyed()) {
-          if (window.isMinimized()) window.restore();
-          window.show();
-          window.focus();
-        }
-        void host?.board.focus(id).catch((err: unknown) => console.error("Could not show the waiting task", err));
-      });
-      n.show();
-    },
-    notifyOn: async () => (await config.load()).notifyWaiting === true,
-    windowFocused: () => (window && !window.isDestroyed() ? window.isFocused() : false),
-    otherCount: () => pluginBadge + jobBadge,
-  });
-  taskAttention = attention;
-  return attention;
-}
-
-/** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
-function linkedIpcDeps(): LinkedIpcDeps {
-  // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
-  if (linkedDeps) return linkedDeps;
-  const userData = app.getPath("userData");
-  // Histories unlinked over 30 days ago go to the Trash first: no link handler runs before, so a relink never races it.
-  const ready = pruneUnlinked(userData, new Date(), (d) => shell.trashItem(d)).catch((err: unknown) =>
-    console.error("Could not prune the linked folders' histories", err),
-  );
-  linkedDeps = {
-    linkedFolders: harness.linkedFolders ?? {},
-    store: scopeStore,
-    // Links are signed per profile id (never its folder's path, so a move keeps them); "" without profiles.
-    profile: async () => {
-      const c = await validConfig();
-      if (!c) throw new Error("The app is not set up yet");
-      return profilesOn() ? (c.profile ?? "") : "";
-    },
-    // With profiles, every other profile's registry: a folder another profile changes or tracks counts.
-    otherStores: async () => {
-      const c = await validConfig();
-      if (!c || !profilesCtl) return [];
-      const out: { profile: string; store: ScopeStore }[] = [];
-      for (const p of (await profilesCtl.state()).list) {
-        const b = baseFor({ folder: c.folder, profile: p.id }, true);
-        if (b !== null && p.id !== c.profile) out.push({ profile: p.id, store: scopeStoreFor(b) });
-      }
-      return out;
-    },
-    context: async () => {
-      const c = await validConfig();
-      if (!c) throw new Error("The app is not set up yet");
-      return { home: os.homedir(), folder: baseOf(c), ...(profilesOn() ? { root: c.folder } : {}) };
-    },
-    references: async () => {
-      const c = await validConfig();
-      return c ? (await workReferences(c, baseOf(c))).map((r) => r.path) : [];
-    },
-    pick: async () => {
-      if (!window || window.isDestroyed()) return null;
-      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
-      return r.canceled ? null : (r.filePaths[0] ?? null);
-    },
-    userData,
-    signing: linkedSigning(userData),
-    now: () => new Date(),
-    ready,
-    changed: async () => {
-      await scopesChanged();
-      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks (never lost).
-      void linked_()?.instructions.changed();
-    },
-    unsupported: () => linkedUnsupported,
-    // Scope settings opening checks git again (Decision 13), as the scope's opening does.
-    checkGit: async (scope) => linked_()?.access.checkGit(scope),
-    dropped: async (scope) => (await linked_()?.access.dropped(scope)) ?? new Map(),
-    linkedHistory: async () => {
-      const linked = linked_();
-      if (!linked) return { uncovered: [], tasks: {} };
-      const scope = await tasks.currentScope();
-      return linkedHistoryView(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
-    },
-  };
-  return linkedDeps;
 }
 
 /**
@@ -2095,28 +1736,6 @@ async function pruneEngineConfig(): Promise<void> {
   } catch (err) {
     console.error("Could not prune the engine config snapshots", err);
   }
-}
-
-/**
- * The Engine config channels' deps (hatches spec §5.3), made only when they are registered (enginePresets). Approving
- * signs with the links' key, made then if there is none yet, for the same profile id the host checks it with.
- */
-function engineIpcDeps(): EngineIpcDeps {
-  const host = engineHost_()!;
-  const userData = app.getPath("userData");
-  return {
-    current: (scope) => host.current(scope),
-    store: async () => {
-      const c = await validConfig();
-      if (!c) throw new Error("The folder is not set up");
-      return { store: scopeStoreFor(baseOf(c)), profile: profilesOn() ? (c.profile ?? "") : "" };
-    },
-    secret: () => linkedSecret(userData)(true),
-    epochs: (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
-    codexLimit: () => harness.engines.includes("codex"),
-    activeEngine: async () => (await config.load()).engineId ?? "",
-    send: sendToWindow,
-  };
 }
 
 /**
@@ -2488,28 +2107,57 @@ function registerIpc() {
     }),
   );
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
-  if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
+  if (hasLinkedFolders(harness)) {
+    // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
+    linkedDeps ??= linkedIpcDeps({
+      userData: app.getPath("userData"),
+      home: os.homedir(),
+      linkedFolders: harness.linkedFolders ?? {},
+      store: scopeStore,
+      validConfig,
+      profilesOn,
+      profileIds: () => profilesCtl?.state().then((st) => st.list.map((p) => p.id)) ?? null,
+      baseFor: (c) => baseFor(c, true),
+      baseOf,
+      scopeStoreFor,
+      references: async (c, base) => (await workReferences(c, base)).map((r) => r.path),
+      pick: async () => {
+        if (!window || window.isDestroyed()) return null;
+        const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+        return r.canceled ? null : (r.filePaths[0] ?? null);
+      },
+      trash: (d) => shell.trashItem(d),
+      scopesChanged,
+      linked: linked_,
+      unsupported: () => linkedUnsupported,
+      currentScope: () => tasks.currentScope(),
+      openLinked,
+    });
+    registerLinkedIpc(handle, linkedDeps);
+  }
   // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
-  if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());
+  if (hasEnginePresets(harness)) {
+    const userData = app.getPath("userData");
+    engineIpc = registerEngineIpc(
+      handle,
+      engineIpcDeps({
+        host: engineHost_()!,
+        userData,
+        validConfig,
+        baseOf,
+        scopeStoreFor,
+        profilesOn,
+        epochs: () => (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
+        engines: () => harness.engines,
+        engineId: async () => (await config.load()).engineId,
+        send: sendToWindow,
+      }),
+    );
+  }
   if (hasEnginePresets(harness)) void pruneEngineConfig();
   // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
   if (hasBackend(harness)) {
-    const backendLog = new BackendLog(app.getPath("userData"));
-    backend = backendFor(harness, {
-      // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
-      startProcess: (init, onEvent) =>
-        BackendProcess.start({
-          launcher: electronLauncher(process.execPath),
-          entry: resolveInHarness(harness, harness.backend!),
-          cwd: harness.root,
-          init,
-          log: backendLog,
-          onEvent,
-        }),
-      send: sendToWindow,
-      log: backendLog,
-      mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
-    });
+    backend = buildBackend(harness, { userData: app.getPath("userData"), launcher: electronLauncher(process.execPath), send: sendToWindow });
     if (backend) registerBackendIpc(handle, { supervisor: backend });
   }
   handleAll(dataIpc({ harness: () => harness, scopesSettled, harnessUiData, currentHistory }));
@@ -3164,9 +2812,45 @@ if (loaded) {
       blocked: hold.profileChangeBlocked,
     });
   }
-  materialSvc = await buildMaterial();
-  materialJobs = materialSvc ? buildMaterialJobs(materialSvc) : null;
-  translation = buildTranslation();
+  materialSvc = await buildMaterial({
+    harness: () => harness,
+    config: () => config,
+    validConfig,
+    baseOf,
+    scoped,
+    activeScope,
+    pickFiles: async () => {
+      if (!window || window.isDestroyed()) return null;
+      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"] });
+      return r.canceled ? null : r.filePaths;
+    },
+    send: sendToWindow,
+    kick: kickMaterial,
+    currentHistory,
+    ownCommits,
+    trailerNow: () => tasks.trailerNow(),
+    here,
+    stageDeps: materialStageDeps,
+    trash: (file) => shell.trashItem(file),
+    dataStoreFor,
+  });
+  // The AI stages start only when no turn, task operation, hold, move or quit is under way.
+  materialJobs = materialSvc
+    ? buildMaterialJobs(materialSvc, () => !quitting && moving === null && !tasks.isBusy() && hold.turnBlocked() === null && !hold.folderBusy())
+    : null;
+  translation = buildTranslation({
+    userData: app.getPath("userData"),
+    ...(harness.tone ? { tone: harness.tone } : {}),
+    config: () => config,
+    mock: hooks.mock === true,
+    translateEngine,
+    command: async (engine) => hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null)),
+    pickProfile,
+    validConfig,
+    baseOf,
+    serverEntry: path.join(here, "translate-server.js"),
+    send: (state) => sendToWindow("hh:language", state),
+  });
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -3208,7 +2892,53 @@ if (primary) {
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
     // A harness that declares `parallel` runs the board (D7); any other keeps today's single task.
     if (hostMode(harness) === "board") {
-      const board = buildBoardHost(await config.load());
+      const board = buildBoardHost(
+        {
+          harness: () => harness,
+          config: () => config,
+          currentBase,
+          taskStoreOptions,
+          prepareEngine,
+          runtimeOptions,
+          jobsHost: () => jobsHost,
+          announceCommits,
+          kickMaterial,
+          turnDeps,
+          checkTurn,
+          restoreBlocked: () => restores.turnBlocked(),
+          turnChatLog,
+          taskDeps,
+          scoped,
+          activeScope,
+          emit,
+          send: sendToWindow,
+          currentHistory,
+          attention: () =>
+            (taskAttention = buildTaskAttention({
+              currentBase,
+              sharedAttention: () => sharedAttention,
+              badge: setDockBadge,
+              notify: ({ title, body }, onClick) => {
+                if (!Notification.isSupported()) return;
+                const n = keepNotification(new Notification({ title, body }), notifications);
+                n.on("click", onClick);
+                n.show();
+              },
+              showWindow: () => {
+                if (window && !window.isDestroyed()) {
+                  if (window.isMinimized()) window.restore();
+                  window.show();
+                  window.focus();
+                }
+              },
+              focusTask: (id) => host?.board.focus(id),
+              notifyOn: async () => (await config.load()).notifyWaiting === true,
+              windowFocused: () => (window && !window.isDestroyed() ? window.isFocused() : false),
+              otherCount: () => pluginBadge + jobBadge,
+            })),
+        },
+        await config.load(),
+      );
       host = board;
       tasks = board.board;
     }
@@ -3216,12 +2946,27 @@ if (primary) {
     if (hasJobs(harness)) {
       const board = host;
       jobsHost = board
-        ? buildJobsHost(board.gate, async () => {
+        ? buildJobsHost(jobsWiring(), board.gate, async () => {
             const ws = await board.workspace();
             if (!ws) throw new Error("The engine isn't installed");
             return ws;
           })
-        : buildSingleJobs(await config.load());
+        : buildSingleJobs(
+            jobsWiring(),
+            {
+              mainSlot: singleMainSlot,
+              turns,
+              emit,
+              workspace: async () => {
+                const rt = await runtime.get();
+                const parts = rt ? singleParts.get(rt) : undefined;
+                if (!parts) throw new Error("The engine isn't installed");
+                return parts.workspace;
+              },
+              setSingle: (s) => (single = s),
+            },
+            await config.load(),
+          );
     }
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
     const preselect = devEngine(process.env, app.isPackaged, offered().map((e) => e.id));

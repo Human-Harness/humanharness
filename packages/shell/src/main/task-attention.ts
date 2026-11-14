@@ -125,3 +125,44 @@ export function keepNotification<N extends { once(event: "click" | "close" | "fa
   }
   return n;
 }
+
+/** What `buildTaskAttention` reads of the main entry. Getters for what changes after it is built. */
+export interface TaskAttentionWiringDeps {
+  currentBase(): Promise<string | null>;
+  /** The bases' shared Attention stores, once made. */
+  sharedAttention(): { forBase(base: string, create: boolean): Promise<AttentionStore | null> } | null;
+  badge(count: number): void;
+  /** Shows a system notification whose click calls `onClick`; nothing where notifications are unsupported. */
+  notify(n: { title: string; body: string }, onClick: () => void): void;
+  /** Brings the window forward (restored, shown, focused), if it is open. */
+  showWindow(): void;
+  /** Shows that task on the board. */
+  focusTask(id: string): Promise<void> | undefined;
+  notifyOn(): Promise<boolean>;
+  windowFocused(): boolean;
+  otherCount(): number;
+}
+
+/**
+ * Board mode's waiting tasks (parallel spec §9.2, Decisions 10–11): an item in the base's shared Attention store, the
+ * Dock badge (with the plugins' count) and, when Settings › General asks and the window isn't focused, a notification
+ * whose click shows that task. Only a count and the task's label leave the board (P4).
+ */
+export function buildTaskAttention(d: TaskAttentionWiringDeps): TaskAttention {
+  return new TaskAttention({
+    store: async () => {
+      const base = await d.currentBase().catch(() => null);
+      const shared = d.sharedAttention();
+      return base && shared ? shared.forBase(base, true) : null;
+    },
+    badge: d.badge,
+    notify: (n, id) =>
+      d.notify(n, () => {
+        d.showWindow();
+        void d.focusTask(id)?.catch((err: unknown) => console.error("Could not show the waiting task", err));
+      }),
+    notifyOn: d.notifyOn,
+    windowFocused: d.windowFocused,
+    otherCount: d.otherCount,
+  });
+}

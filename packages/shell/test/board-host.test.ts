@@ -291,11 +291,12 @@ describe("hostMode (D7)", () => {
     const main = path.resolve(__dirname, "../src/main");
     const files = fs.readdirSync(main).filter((f) => f.endsWith(".ts"));
     const naming = (re: RegExp) => files.filter((f) => re.test(fs.readFileSync(path.join(main, f), "utf8"))).sort();
-    // Only index.ts builds the host.
-    expect(naming(/\bcreateBoardHost\(/)).toEqual(["board-host.ts", "index.ts"]);
+    // Only board-host-wiring.ts builds the host, through buildBoardHost.
+    expect(naming(/\bcreateBoardHost\(/)).toEqual(["board-host-wiring.ts", "board-host.ts"]);
+    expect(naming(/\bbuildBoardHost[<(]/)).toEqual(["board-host-wiring.ts", "index.ts"]);
     const index = fs.readFileSync(path.join(main, "index.ts"), "utf8");
     // index.ts builds it in one place, and calls that only when the harness is in board mode.
-    expect([...index.matchAll(/\bbuildBoardHost\(/g)]).toHaveLength(2);
+    expect([...index.matchAll(/\bbuildBoardHost\(/g)]).toHaveLength(1);
     expect(index).toMatch(/if \(hostMode\(harness\) === "board"\) \{\n\s*const board = buildBoardHost\(/);
   });
 });

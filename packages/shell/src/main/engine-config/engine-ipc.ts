@@ -2,6 +2,7 @@ import type { EngineApproval, ScopeStore } from "@humanharness/workspace";
 import { ENGINE_PREFIX, isScopeId } from "@humanharness/workspace";
 import type { EngineApproveResult, EngineConfigView, EngineRunsCommandView, EngineSkillView } from "@humanharness/protocol";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
+import { linkedSecret } from "../linked-ipc";
 import { engineApprovalTag } from "./approval";
 import type { Hooks } from "./clean";
 import { agentFromMarkdown, parseFrontmatter } from "./frontmatter";
@@ -289,5 +290,44 @@ export function registerEngineIpc(handle: (channel: InvokeChannel, fn: (...args:
       }
       for (const id of scopes) d.send(CHANGED, id);
     },
+  };
+}
+
+/** What `engineIpcDeps` reads of the main entry. Getters for what changes after they are built. */
+export interface EngineWiringDeps {
+  /** The engine host (made under enginePresets before the channels are registered). */
+  host: { current: EngineIpcDeps["current"] };
+  userData: string;
+  validConfig(): Promise<{ folder: string; profile?: string } | null>;
+  baseOf(c: { folder: string; profile?: string }): string;
+  scopeStoreFor(base: string): ScopeStore;
+  profilesOn(): boolean;
+  /** The approvals' epochs, the one store the engine host shares. */
+  epochs(): EngineIpcDeps["epochs"];
+  /** The engines the harness offers. */
+  engines(): readonly string[];
+  /** The saved engine's id, or none. */
+  engineId(): Promise<string | undefined>;
+  send: EngineIpcDeps["send"];
+}
+
+/**
+ * The Engine config channels' deps (hatches spec §5.3), made only when they are registered (enginePresets). Approving
+ * signs with the links' key, made then if there is none yet, for the same profile id the host checks it with.
+ */
+export function engineIpcDeps(d: EngineWiringDeps): EngineIpcDeps {
+  const { host, userData, validConfig, baseOf, profilesOn } = d;
+  return {
+    current: (scope) => host.current(scope),
+    store: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The folder is not set up");
+      return { store: d.scopeStoreFor(baseOf(c)), profile: profilesOn() ? (c.profile ?? "") : "" };
+    },
+    secret: () => linkedSecret(userData)(true),
+    epochs: d.epochs(),
+    codexLimit: () => d.engines().includes("codex"),
+    activeEngine: async () => (await d.engineId()) ?? "",
+    send: d.send,
   };
 }

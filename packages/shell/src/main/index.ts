@@ -252,6 +252,8 @@ import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { setupIpc } from "./setup-ipc";
+import { settingsIpc } from "./settings-ipc";
+import { scopesIpc } from "./scopes-ipc";
 import { profilesIpc } from "./profiles-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
@@ -2812,65 +2814,39 @@ function registerIpc() {
     if (!folder) return null;
     return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
   });
-  handle("hh:saveConfig", async (raw: unknown) => {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("A config change must be an object");
-    // The active profile changes only through a profile switch (profiles spec §4).
-    const { profile: _profile, ...input }: AppConfig = raw as AppConfig;
-    const problem = await configProblem(input, validation());
-    if (problem) throw new Error(problem);
-    // Spec §7: a bad entry under models is dropped, never stored.
-    const cleaned: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
-    // Parallel spec §7: the same for the caps; with none valid the key goes (the saved caps stay).
-    const { parallel: caps, ...rest } = cleaned;
-    const kept = caps !== undefined ? cleanCaps(caps) : undefined;
-    const capped: AppConfig = caps === undefined ? cleaned : { ...rest, ...(kept ? { parallel: kept } : {}) };
-    // Part 3: Settings › Jobs keeps only the harness's own jobs, each cleaned ({} turns every one back on); without
-    // jobs the key goes (D0).
-    const { jobs: jobChoices, ...noJobs } = capped;
-    const declared = harness.jobs;
-    const keptJobs = jobChoices !== undefined && declared && hasJobs(harness) ? cleanJobs(jobChoices, (id) => Object.hasOwn(declared, id)) : undefined;
-    const patch: AppConfig = jobChoices === undefined ? capped : { ...noJobs, ...(keptJobs ? { jobs: keptJobs } : {}) };
-    const before = await config.load();
-    const baseBefore = pluginsCtl ? await currentBase() : null;
-    // Spec §9: an engine is only used once its notice is accepted.
-    await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
-    // folder's task ends and its runtime goes.
-    try {
-      await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: interruptTasks, dropRuntime }, () =>
-        saveConfigPatch(patch, before),
-      );
-      if (patch.folder !== undefined && patch.folder !== before.folder) {
-        // The reader's watches were checked against the old folder.
-        documentSessions.closeAll();
-        if (before.folder) dropDataStoresUnder(before.folder);
-        await settleScopes()
-          .then(scopesChanged)
-          .catch((err: unknown) => console.error("Could not prepare the scopes", err));
-      }
-    } finally {
-      // Set up now, or another folder: the plugins follow the base, even when something above threw after the save.
-      if (pluginsCtl && (await currentBase().catch(() => null)) !== baseBefore) await rebasePlugins();
-    }
-    // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
-    await recordSetup(setupCtl, async () => (await validConfig()) !== null);
-    // Set up for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
-    void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
-    // The backend starts now that the app is set up, or follows a new folder. Without one, nothing (D0).
-    const folderChanged = patch.folder !== undefined && patch.folder !== before.folder;
-    void (folderChanged ? backendRebase() : backendReady()).catch((err: unknown) => console.error("Could not start the backend", err));
-    if (patch.appearance) applyAppearance(patch.appearance);
-    if (patch.textSize) applyTextSize(patch.textSize);
-    // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
-    if (host && patch.parallel !== undefined) host.capsChanged((await config.load()).parallel);
-    // Settings › Jobs reach the scheduler at once (its next trigger reads them), and the Jobs section and badge follow.
-    jobSettings = (await config.load()).jobs;
-    if (patch.jobs !== undefined) {
-      jobsChanged();
-      void refreshJobBadge();
-    }
-    return appState();
-  });
+  handleAll(
+    settingsIpc({
+      harness: () => harness,
+      config: () => config,
+      settingsCtl: () => settingsCtl,
+      pluginsCtl: () => pluginsCtl,
+      setupCtl: () => setupCtl,
+      host: () => host,
+      setJobSettings: (jobs) => (jobSettings = jobs),
+      validation,
+      currentBase,
+      hasNotice,
+      folderBusy: hold.folderBusy,
+      guards,
+      interruptTasks,
+      dropRuntime,
+      saveConfigPatch,
+      documentSessions,
+      dropDataStoresUnder,
+      settleScopes,
+      scopesChanged,
+      rebasePlugins,
+      validConfig,
+      jobsReady,
+      backendRebase,
+      backendReady,
+      applyAppearance,
+      applyTextSize,
+      jobsChanged,
+      refreshJobBadge,
+      appState,
+    }),
+  );
   handle("hh:loadChat", async (): Promise<ChatLoad> => {
     // After the migration: it opens `main`, whose chat is the one to show.
     await scopesSettled();
@@ -2908,56 +2884,18 @@ function registerIpc() {
     return scope === undefined ? sent : sent.finally(() => void scopesChanged());
   });
   handle("hh:getTasks", () => tasks.view());
-  handle("hh:scopes", async () => (await scopesView()).list);
-  handle("hh:scopeCurrent", async () => {
-    await scopesSettled();
-    return tasks.currentScope();
-  });
-  handle("hh:scopeCreate", async (title: unknown) => {
-    const created = await (await scopeStore()).create(title);
-    await scopesChanged();
-    return created;
-  });
-  handle("hh:scopeRename", async (id: unknown, title: unknown) => {
-    if (!isScopeId(id)) throw new Error("Unknown scope");
-    const renamed = await (await scopeStore()).rename(id, title);
-    await scopesChanged();
-    return renamed;
-  });
-  // A scope is never deleted (spec §3.4). Archiving the open one closes its task and the scope first.
-  handle("hh:scopeArchive", async (id: unknown, archived: unknown) => {
-    if (quitting) throw new Error("The app is closing");
-    if (!isScopeId(id) || typeof archived !== "boolean") throw new Error("Invalid scope change");
-    const store = await scopeStore();
-    const closeIfOpen = async () => {
-      if ((await tasks.currentScope()) !== id) return;
-      const blocked = turnBlocked();
-      if (blocked) throw new Error(blocked);
-      if (!(await tasks.switchScope(null))) throw new Error("The open task is still closing");
-    };
-    if (archived) await closeIfOpen();
-    await store.setArchived(id, archived);
-    // It may have been opened while the close ran (the scope was not archived yet): close it again.
-    if (archived) await closeIfOpen();
-    await scopesChanged();
-  });
-  handle("hh:scopeOpen", async (id: unknown) => {
-    if (quitting) throw new Error("The app is closing");
-    const blocked = turnBlocked();
-    if (blocked) throw new Error(blocked);
-    if (id !== null && !isScopeId(id)) throw new Error("Unknown scope");
-    const opened = await tasks.switchScope(id);
-    await scopesChanged();
-    // Linked folders: a folder that gained or lost git is marked (Decision 13); AGENTS.md lists the new scope's folders.
-    const linked = linked_();
-    if (linked && opened) {
-      void (async () => {
-        if (id !== null) await linked.access.checkGit(id).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
-        await linked.instructions.changed();
-      })();
-    }
-    return opened;
-  });
+  handleAll(
+    scopesIpc({
+      quitting: () => quitting,
+      turnBlocked,
+      tasks: () => tasks,
+      scopesView,
+      scopesSettled,
+      scopeStore,
+      scopesChanged,
+      linked_,
+    }),
+  );
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
   if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
   // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
@@ -2993,12 +2931,6 @@ function registerIpc() {
     const history = await currentHistory();
     return history ? dataDiffOf(history, taskId, dataCollections(harness)) : [];
   });
-  // The harness's Settings tab (harness-settings spec §4). Refusals come back as data: Electron flattens thrown errors.
-  handle("hh:settingsGet", () => (settingsCtl ? settingsCtl.state() : { values: {}, pending: [] }));
-  handle("hh:settingsSet", (field: unknown, value: unknown) =>
-    settingsCtl ? settingsCtl.set(field, value) : { ok: false, message: "This harness has no settings" },
-  );
-  handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
   // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
   registerSidekickIpc(handle, () => sidekickCtl);
   // The layout the screen shows (minimal-core spec §5.2).

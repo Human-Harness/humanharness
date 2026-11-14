@@ -41,34 +41,26 @@ import {
   dataCollections,
   hasBackend,
   hasEnginePresets,
-  hasExpects,
   hasJobs,
   hasLinkedFolders,
   hasModes,
   hasPhases,
-  hasPre,
   hasProfiles,
   hasSecrets,
   hasTools,
-  inputBlocks,
-  inputSpecs,
-  interviewCollections,
   languageName,
   loadHarness,
   materialStageKey,
   pluginsAccepted,
-  profileFormSpec,
   resolveInHarness,
-  settingsView,
   sidekickCollection,
   stageTier,
 } from "@humanharness/harness-sdk";
 import { createI18n } from "@humanharness/i18n";
 import { CORE_EN } from "@humanharness/i18n/translate";
-import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
+import { type Job, MaterialStore, workerRunner } from "@humanharness/material/light";
 import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
-  type EnginePreset,
   type Event,
   type HarnessRuntime,
   type HarnessWorkspace,
@@ -90,7 +82,6 @@ import {
   type ConfiguredApp,
   type FolderPick,
   type ModelsView,
-  type ModeView,
   type ModsConfig,
   type ModsView,
   type MoveResult,
@@ -122,12 +113,10 @@ import {
   ScopeStore,
   appendSidekickEvent,
   DEFAULT_PINNED_TOKENS,
-  buildDataContextParts,
   dataDiffOf,
   dataPath,
   dataRequestSchema,
   flushFileIndexes,
-  isScopeId,
   loadReview,
   migrateToScopes,
   notesPrefix,
@@ -137,8 +126,6 @@ import {
   readSidekickEvents,
   runDataRequest,
   sidekickWorkDir,
-  syncLocations,
-  syncStatus,
   tasksFile,
   writeNote,
   writeSidekickBrief,
@@ -147,14 +134,14 @@ import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, cleanJobs, historyDir } from "./config";
-import { agentDataRequest, dataWriteQueue, harnessUiDataRequests, personDataRequests, saveAnswerRecords, toolDataRequests } from "./data-requests";
+import { agentDataRequest, dataWriteQueue, harnessUiDataRequests, personDataRequests, toolDataRequests } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, engineSearchPath, loginShellPath, resolveBinary } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, manifestTier, nearestTier, offeredEffort, pinnedBudget } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, offeredEffort, pinnedBudget } from "./models";
 import { ContextService } from "./context";
 import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
 import { searchHandlers } from "./search/ipc";
@@ -182,18 +169,13 @@ import {
   type UsageRecord,
   UsageLog,
   capTokens,
-  compactionRecord,
   dayTokens,
   modRecord,
   measuredMaterialCosts,
-  policyMeta,
-  profileMeta,
   profilesUsage,
   recentUsage,
-  subagentRecord,
   summarizeUsage,
   translateRecord,
-  usageRecord,
   withSpent,
 } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
@@ -202,7 +184,7 @@ import { DocumentSessions } from "./document-sessions";
 import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
-import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
+import { type ResolvedReference, resolveReferences, usableReferences } from "./references";
 import { runFile } from "./plugin-exec";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
@@ -220,13 +202,13 @@ import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
-import { materialOwn, notePath, saveAppChange } from "./app-change";
-import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { materialOwn, saveAppChange } from "./app-change";
+import { type JobsHost, type JobsHostDeps, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
-import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
+import { cleanCaps, engineHold } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, hatchesState, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
@@ -283,14 +265,16 @@ import { registerModsIpc } from "./mods/mods-ipc";
 import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./mods/user-layer";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
 import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
-import { needsHost, toTurnEnd } from "./mods/wiring";
+import { needsHost } from "./mods/wiring";
 import { SidekickStore } from "./sidekick-store";
-import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
-import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./task-manager";
+import { SetupSteps, recordSetup } from "./setup-steps";
+import { type TaskDeps, TaskManager } from "./task-manager";
+import { createTaskDeps, createTurnDeps } from "./task-deps";
+import { createAppState } from "./app-state";
 import { TranslationCache } from "./translation-cache";
 import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialAppState, materialIpc, materialItems, materialRecommended } from "./material-ipc";
+import { historyKeep, materialIpc, materialItems, materialRecommended } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
@@ -307,7 +291,6 @@ import {
   devEngine,
   fakeSetupResult,
   isMockEngine,
-  mockEngineText,
   mockModels,
   mockToolsDir,
   offeredEngines,
@@ -648,19 +631,6 @@ async function pickProfile(policyId: string | undefined, input: Omit<PickInput, 
   return modelPolicy(policyId).pick({ ...input, offer: { models: saved.models ?? [], efforts: engine ? engineOffer(engine, saved).efforts : [] } });
 }
 
-/** The folder's backup status and the synced places, each with the harness's folder name inside. Paths only (backup.ts). */
-async function backupView(folder: string | undefined): Promise<NonNullable<AppState["backup"]>> {
-  const home = os.homedir();
-  const name = path.basename(harness.folder.suggested);
-  try {
-    const [status, locations] = await Promise.all([folder ? syncStatus(folder, home) : Promise.resolve(null), syncLocations(home)]);
-    return { status, locations: locations.map((l) => ({ ...l, suggested: path.join(l.path, name) })) };
-  } catch (err) {
-    console.error("Could not read the backup status", err);
-    return { status: null, locations: [] };
-  }
-}
-
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;
 
@@ -696,141 +666,25 @@ async function documentRoots(): Promise<string[] | null> {
   return openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
 }
 
-async function appState(): Promise<AppState> {
-  const harnessImage = await harnessLogo();
-  const saved = await config.load();
-  jobSettings = saved.jobs;
-  const jobs = jobsInfo(harness);
-  const inputs = inputSpecs(harness.blocks);
-  const interviews = interviewCollections(harness);
-  const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
-  const hatches = hatchesState(harness);
-  const state: AppState = {
-    harness: {
-      id: harness.id,
-      name: harness.name,
-      ...(harness.tagline ? { tagline: harness.tagline } : {}),
-      ...(harnessImage ? { logo: harnessImage } : {}),
-      author: harness.author,
-      ...(harness.donate ? { donate: harness.donate } : {}),
-      version: app.getVersion(),
-    },
-    config: saved.models !== undefined ? { ...saved, models: cleanModels(saved.models) } : saved,
-    suggestedFolder: hooks.suggestedFolder ?? path.join(os.homedir(), harness.folder.suggested),
-    ...(hooks.mock ? { mock: true } : {}),
-    engines: await Promise.all(
-      offered().map(async (e) => {
-        // Mock mode: a faked engine is shown as the test engine, with no logo, install command or plan limits.
-        if (isMockEngine(hooks, e.id)) {
-          return {
-            id: e.id,
-            ...mockEngineText(),
-            status: e.status as "allowed" | "pending",
-            termsUrl: e.termsUrl,
-            privacyUrl: e.privacyUrl,
-            reportsLimits: false,
-            // Empty for Claude and Codex (D0); a mocked OpenCode keeps its cost and Terminal facts.
-            ...engineOptionExtras(e),
-            mock: true,
-          };
-        }
-        const image = await engineLogo(e);
-        return {
-          id: e.id,
-          name: e.name,
-          status: e.status as "allowed" | "pending",
-          provider: e.provider,
-          requires: e.requires,
-          dataLocation: e.dataLocation,
-          trainsOnData: e.trainsOnData,
-          termsUrl: e.termsUrl,
-          privacyUrl: e.privacyUrl,
-          reportsLimits: e.reportsLimits,
-          ...(e.plansUrl ? { plansUrl: e.plansUrl } : {}),
-          ...engineOptionExtras(e),
-          ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
-          ...(image ? { logo: image } : {}),
-        };
-      }),
-    ),
-    // What the screen needs of each action (never the prompt file).
-    actions: Object.fromEntries(
-      Object.entries(harness.actions).map(([id, a]) => [
-        id,
-        {
-          label: a.label,
-          cost: a.cost,
-          ...(a.description ? { description: a.description } : {}),
-          ...(a.tier ? { tier: a.tier } : {}),
-          ...(a.scope ? { scope: a.scope } : {}),
-          ...(a.modes ? { modes: a.modes } : {}),
-          ...(a.defaultMode ? { defaultMode: a.defaultMode } : {}),
-          // What the stepper shows of each phase (never its brief), and the time box's lengths (task-phases D0).
-          ...(a.phases
-            ? {
-                phases: a.phases.map((p) => ({
-                  id: p.id,
-                  label: p.label,
-                  ...(p.auto ? { auto: true as const } : {}),
-                  ...(p.close ? { close: true as const } : {}),
-                  ...(p.modes !== undefined ? { modes: p.modes } : {}),
-                })),
-              }
-            : {}),
-          ...(a.timeBox ? { timeBox: { options: a.timeBox.options, default: a.timeBox.default } } : {}),
-          // An interview step's action is no topic (setup-steps spec §3): the setup screen and Settings start it.
-          ...(Object.hasOwn(interviews, id) ? { setup: true as const } : {}),
-        },
-      ]),
-    ),
-    path: harness.path ?? [],
-    ...(harness.scopes ? { scopes: harness.scopes } : {}),
-    // Only a harness with input blocks sends their specs (spec D0).
-    ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
-    // Only a harness with settings gets its tab (harness-settings D0).
-    ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
-    // Sidekick shows only for a harness that declares it (a `sidekick` key, `{}` allowed); the window draws it only with this.
-    ...(sidekickView(harness) ? { sidekick: sidekickView(harness) } : {}),
-    // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
-    ...(hasModes(harness)
-      ? {
-          modes: Object.fromEntries(
-            Object.entries(harness.modes).map(([id, m]): [string, ModeView] => [
-              id,
-              { label: m.label, ...(m.description ? { description: m.description } : {}), ...(m.minTier ? { minTier: m.minTier } : {}) },
-            ]),
-          ),
-        }
-      : {}),
-    // Only a harness with setup steps sends them (setup-steps D0).
-    ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
-    // Only a harness with profiles sends them (profiles D4): what to call one, and its form.
-    ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
-    // Only a harness with material sends what it takes (material D0).
-    ...materialAppState(harness),
-    // Only a harness that takes plugins (or dev folders) sends this: the Plugins tab and the inbox (plugins D0).
-    ...(pluginsCtl ? { plugins: { local: pluginsAccepted(harness) && (harness.plugins?.local ?? false) } } : {}),
-    // Only a harness that declares `parallel` sends this: caps, the task inbox (parallel D7).
-    ...(parallel ? { parallel } : {}),
-    // Only a harness that declares jobs sends them: the Jobs tab and the inbox's Jobs section (part 3 D0).
-    ...(jobs ? { jobs } : {}),
-    // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
-    ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
-    // Documents can be reviewed only when the agent may edit the folder (review spec D0).
-    ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
-    // Only a harness that declares a hatch sends this: Scope settings (hatches D0).
-    ...(hatches ? { hatches } : {}),
-    // Only a harness that declares secrets sends this: Settings › Connections (tools spec §9, D0).
-    ...(hasSecrets(harness) ? { connections: { count: harness.secrets!.length } } : {}),
-    // Only a harness that declares tools sends this: their ids and why they are off, if they are (tools spec §5, D0).
-    ...(toolsHost ? { tools: toolsHost.info() } : {}),
-    references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
-    models: await modelsView(),
-    backup: await backupView(saved.folder),
-  };
-  lastAppState = state;
-  return state;
-}
+/** The window's app state; it keeps the job settings and the last state read here. */
+const appState = createAppState({
+  harness: () => harness,
+  config: () => config,
+  hooks,
+  pluginsCtl: () => pluginsCtl,
+  toolsHost: () => toolsHost,
+  offered,
+  harnessLogo,
+  engineLogo,
+  modelsView,
+  referencesFor,
+  setJobSettings: (jobs) => {
+    jobSettings = jobs;
+  },
+  setLastAppState: (state) => {
+    lastAppState = state;
+  },
+});
 
 /** The saved config, only when it is complete and valid (and, with profiles, names the active profile). */
 async function validConfig(): Promise<ConfiguredApp | null> {
@@ -1476,37 +1330,20 @@ async function turnChatLog(chat: string | undefined, task?: string) {
 }
 
 /** The TurnController's deps; board mode's lanes reuse them with their own slot, chat and window routing. */
-const turnDeps: TurnDeps = {
-  ensureRuntime: async () => {
-    await checkTurn();
-    return runtime.get();
-  },
-  chatLog: (chat) => turnChatLog(chat),
+const turnDeps: TurnDeps = createTurnDeps({
+  harness: () => harness,
+  config: () => config,
+  shared: () => shared,
+  runtime,
+  checkTurn,
+  turnChatLog,
   stateBlocks,
-  inputBlocks: () => new Set(Object.keys(inputBlocks(harness.blocks))),
   emit,
-  recordUsage: async (entry, meta, firstLimits, subagents) => {
-    const c = await validConfig();
-    const record = c ? usageRecord(entry, c.engineId, meta, firstLimits) : null;
-    if (c && record) await new UsageLog(baseOf(c)).append(record);
-    // The subagents' tokens are their own lines, after the turn's (subagent plan D4).
-    if (c) for (const sub of subagents) await new UsageLog(baseOf(c)).append(subagentRecord(sub, c.engineId, meta, entry.at));
-  },
-  engineId: async () => (await config.load()).engineId,
-  sessionExpired: async (engineId) => {
-    await shared.update(engineId, { verifiedAt: null });
-  },
-  // A preset's agents get the subagent model of the turn's profile (subagent policy D2). Undefined without enginePresets (D0).
-  get presetFor() {
-    const host = engineHost_();
-    return host ? (engine: EnginePreset, profile: ModelProfile | undefined) => host.withSubagentModel(engine, profile) : undefined;
-  },
-  // The turn's own task scope's linked folders, checked each turn (hatches L5). A getter: undefined without them (D0).
-  get scopeAccess() {
-    const linked = linked_();
-    return linked ? (scope: string) => linked.access.access(scope) : undefined;
-  },
-};
+  validConfig,
+  baseOf,
+  engineHost: engineHost_,
+  linked: linked_,
+});
 const turns = new TurnController(turnDeps);
 /** Every turn ended and its chat writes settled: today's one, or in board mode each lane's. */
 const flushTurns = (): Promise<void> => (host ? host.flush() : turns.flush());
@@ -1518,267 +1355,44 @@ const readPhaseBrief = (action: string, phase: string): Promise<string> => {
   return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
 };
 /** The TaskManager's deps; board mode's lanes reuse them (getters kept), each with its own store, turns and routing. */
-const taskDeps: TaskDeps = {
-  store: {
-    load: async () => {
-      const c = await validConfig();
-      return c ? new TaskStore(baseOf(c), taskStoreOptions()).load() : emptyTasks();
-    },
-    save: async (state) => {
-      const c = await validConfig();
-      if (c) await new TaskStore(baseOf(c), taskStoreOptions()).save(state);
-    },
+const taskDeps: TaskDeps = createTaskDeps({
+  harness: () => harness,
+  config: () => config,
+  runtime,
+  hooks,
+  turns,
+  single: () => single,
+  singleNote: () => singleNote,
+  setSingleNote: (note) => {
+    singleNote = note;
   },
-  // `single` mode: through the gate's `tasks` cap, apart from the job turns. A getter: the mode is known once the app is ready.
-  get turns() {
-    return single?.turns ?? turns;
-  },
-  // A task closed with its note saved: the jobs' `afterTask` (Decision 6). A getter: undefined without jobs (D0).
-  // And the mods' taskClose hook (minimal-core spec §4).
-  get taskClosed() {
-    const jobs = jobsHost;
-    const mods = modHost;
-    if (!jobs && !mods) return undefined;
-    return (t: { id: string; action?: string; scope: string }) => {
-      jobs?.taskClosed(t);
-      if (mods) void mods.taskClose(t);
-    };
-  },
-  // The mods' taskOpen hook (minimal-core spec §4). A getter: undefined without a mod host (D0).
-  get taskOpened() {
-    const mods = modHost;
-    return mods ? (t: { id: string; action?: string; scope: string }) => void mods.taskOpen(t) : undefined;
-  },
-  get actions() {
-    return harness.actions;
-  },
-  get scoped() {
-    return scoped();
-  },
-  // An archived scope can't be opened (spec §3.4): it counts as missing here.
-  scopeExists: (id) => activeScope(id),
-  // A getter, because the harness is loaded after this object is built. Undefined without input blocks (D0).
-  get inputBlocks() {
-    const blocks = inputBlocks(harness.blocks);
-    return Object.keys(blocks).length > 0 ? blocks : undefined;
-  },
-  markAnswered: async (chat, answer) => {
-    const c = await validConfig();
-    // `false` means "no such block in the chat"; a missing folder is a different failure.
-    if (!c) throw new Error("No valid configuration: the chat log can't be found");
-    return new ChatLog(baseOf(c), c.engineId, chat).markAnswered(answer);
-  },
-  // As the person, through the data store's checks (spec §6); the write goes out with the follow-up's commit.
-  saveAnswer: (collection, records, scope) =>
-    saveAnswerRecords(
-      async () => {
-        const c = await validConfig();
-        return c ? dataStoreFor(baseOf(c)) : null;
-      },
-      collection,
-      records,
-      scope,
-    ),
-  // Spec §4.4: only a harness with a collection that goes into the context gets the hook (D2).
-  // A getter, because the harness is loaded after this object is built.
-  // Plugins' tables follow the harness's (Decision 16); none: "" adds nothing to the first message.
-  get dataContext() {
-    const own = Object.values(harness.data).some((c) => c.context !== false);
-    const plugins = pluginsCtl;
-    if (!own && !plugins) return undefined;
-    return async (scope: string, action: string | undefined) => {
-      const c = await validConfig();
-      // One part per collection: the context panel lists each (context-panel spec §3.1); the agent gets them joined.
-      const tables = c && own ? await buildDataContextParts(dataStoreFor(baseOf(c)), harness.data, scope, action) : [];
-      const extra = plugins ? await plugins.contextParts(action) : [];
-      return [...tables, ...extra];
-    };
-  },
-  // Context panel (context-panel spec §3.1): the size of AGENTS.md in the agent's working folder.
-  instructionsSize: async () => {
-    const c = await validConfig();
-    if (!c) return null;
-    const stat = await fs.stat(path.join(baseOf(c), "AGENTS.md")).catch(() => null);
-    return stat?.isFile() ? stat.size : null;
-  },
-  // Pins and exclusions for a new task (spec §4); `contextSvc` is built below, before any task can start.
-  personContext: (scope) => contextSvc.personContext(scope),
-  contextChanged: (id) => void sendContext(id),
-  // The agent's working folder: the engine's read paths become folder paths (spec §3.2).
-  folder: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  // Material spec §9 Load: only a harness with material gets the hook (D0). A getter: the harness loads later.
-  // Only usable sources' fragments make rows (`indexRows`); none: no section.
-  get materialContext() {
-    const m = harness.material;
-    if (!m) return undefined;
-    // `budgetTokens`: the task's context policy's (replaceable-parts §7.1); absent (a job run), the manifest's.
-    return async (scope: string, budgetTokens?: number) => {
-      const c = await validConfig();
-      if (!c || scope === APP_SCOPE || !isScopeId(scope)) return "";
-      const store = materialStore(baseOf(c), scope);
-      const rows = await store.indexRows();
-      if (rows.length === 0) return "";
-      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: budgetTokens ?? m.budget.indexTokens });
-    };
-  },
-  // The manifest's material index budget, which the default context policy's start plan passes back (replaceable-parts §7.1).
-  get materialIndexTokens() {
-    return harness.material?.budget.indexTokens;
-  },
-  // The scope's approved engine preset for each task (hatches spec §5.2). A getter: undefined without enginePresets (D0).
-  get enginePreset() {
-    return engineHost_();
-  },
-  // Board mode only (hatches Decision 6): AGENTS.md is shared by lanes in different scopes, so each task's first message
-  // names its own scope's folders. A getter: undefined without linked folders (D0) or outside board mode.
-  get linkedContext() {
-    const linked = linked_();
-    return linked && host ? (scope: string) => linked.access.section(scope) : undefined;
-  },
-  get path() {
-    return harness.path ?? [];
-  },
-  // A getter, because the harness is loaded after this object is built. Undefined without settings (D0).
-  get betweenTasks() {
-    const settings = settingsCtl;
-    const sidekick = sidekickCtl;
-    const plugins = pluginsCtl;
-    const linked = linked_();
-    if (!settings && !sidekick && !plugins && !linked) return undefined;
-    return async () => {
-      await settings?.betweenTasks();
-      // A link change a running turn kept from AGENTS.md, or another scope opened since it was written.
-      await linked?.instructions.betweenTasks();
-      await sidekick?.betweenTasks();
-      // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
-      await plugins?.betweenTasks();
-      // Board mode closes the workspace only once no task is open (Decision 13).
-      if (plugins?.takeRuntimeStale()) await (host ? host.runtimeStale() : closeRuntime());
-    };
-  },
-  // Sidekick's after-reply moment (sidekick spec §4.2) and the mods' turn hooks (minimal-core spec §4). Getters:
-  // undefined until the controller or the host exists (D0).
-  get turnStarting() {
-    const sidekick = sidekickCtl;
-    const mods = modHost;
-    if (!sidekick && !mods) return undefined;
-    return () => {
-      sidekick?.turnStarting();
-      if (mods) void tasks.runningTask().then((t) => t && mods.turnStart(t)).catch((err: unknown) => console.error("The mods' turnStart failed", err));
-    };
-  },
-  get turnEnded() {
-    const sidekick = sidekickCtl;
-    const mods = modHost;
-    if (!sidekick && !mods) return undefined;
-    return (end: TurnEnd) => {
-      if (sidekick) void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err));
-      if (mods) void mods.turnEnd(toTurnEnd(end));
-    };
-  },
-  // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard). A getter for the same reason (D0).
-  get phaseMoved() {
-    const sidekick = sidekickCtl;
-    return sidekick ? (e: PhaseMoved) => void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err)) : undefined;
-  },
-  // An action's pre-steps and a part's expects (tools spec §6, §6.1). Getters: undefined without tools (no toolsHost)
-  // or when no action declares them (D0).
-  get prepare() {
-    const tools = toolsHost;
-    return tools && hasPre(harness) ? tools.prepare : undefined;
-  },
-  get phaseEnded() {
-    const tools = toolsHost;
-    return tools && hasExpects(harness) ? tools.phaseEnded : undefined;
-  },
-  // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
-  get modes() {
-    return hasModes(harness) ? harness.modes : undefined;
-  },
-  readModeBrief: (mode) => {
-    if (!Object.hasOwn(harness.modes, mode)) return Promise.reject(new Error("Unknown mode"));
-    return fs.readFile(resolveInHarness(harness, harness.modes[mode].brief), "utf8");
-  },
+  jobsHost: () => jobsHost,
+  modHost: () => modHost,
+  pluginsCtl: () => pluginsCtl,
+  settingsCtl: () => settingsCtl,
+  sidekickCtl: () => sidekickCtl,
+  toolsHost: () => toolsHost,
+  host: () => host,
+  tasks: () => tasks,
+  contextSvc: () => contextSvc,
+  engineHost: engineHost_,
+  linked: linked_,
+  validConfig,
+  baseOf,
+  taskStoreOptions,
+  scoped,
+  activeScope,
+  dataStoreFor,
+  materialStore: (base, scope) => materialStore(base, scope),
+  sendContext,
+  closeRuntime,
   readPhaseBrief,
-  // Before the turn's events: the window draws the change's separator or the wrap-up line (task-phases spec §4.4, §5).
-  taskTurn: (notice) => sendToWindow("hh:taskTurn", notice),
-  ...(hooks.minuteMs ? { minuteMs: hooks.minuteMs } : {}),
-  // A getter, because the harness is loaded after this object is built. Undefined without interview steps (setup-steps D0).
-  get interviews() {
-    const map = interviewCollections(harness);
-    return Object.keys(map).length > 0 ? map : undefined;
-  },
-  // Mode settings live in the settings controller (harness-settings spec §6); without settings there are none.
-  modeSettings: async (mode) => (settingsCtl ? settingsCtl.modeSentences(mode) : []),
-  // Fast on purpose (it runs in the task queue): the saved model table only, never the engine's offer.
-  tierOf: async (profile) => nearestTier(profile, cleanModels((await config.load()).models)),
-  readPrompt: (action) => fs.readFile(resolveInHarness(harness, harness.actions[action].prompt), "utf8"),
-  language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
-  engine: async () => (await config.load()).engineId ?? "",
-  notes: async (scope) => {
-    const c = await validConfig();
-    return c ? readNotes(baseOf(c), notesPrefix(scoped(), scope)) : [];
-  },
-  writeNote: async (slug, note, meta, scope) => {
-    const c = await validConfig();
-    if (!c) throw new Error("The app is not set up yet");
-    await writeNote(baseOf(c), slug, note, meta, notesPrefix(scoped(), scope));
-    if (single) singleNote = notePath(scoped(), scope, slug);
-  },
-  noteExists: async (slug, scope) => {
-    const c = await validConfig();
-    return c ? fs.access(path.join(baseOf(c), notesPrefix(scoped(), scope), `${slug}.md`)).then(() => true, () => false) : false;
-  },
-  endSession: async () => {
-    const rt = await runtime.peek()?.catch(() => null);
-    await rt?.endSession();
-  },
-  saveHistory: async (message, trailer) => {
-    const own = singleNote;
-    singleNote = undefined;
-    // `single` mode while a job runs: the note's file alone, never the run's work (parallel spec §5.3).
-    if (jobsHost?.running()) return saveAppChange(await currentHistory(), true, own ? [own] : [], message, trailer);
-    await (await currentHistory())?.save(message, trailer);
-  },
-  changed: (view) => sendToWindow("hh:tasks", view),
+  sendToWindow,
+  currentHistory,
   emit,
-  // The ids a new task starts with (replaceable-parts §8): config.json's, already cleaned by ConfigStore.load().
-  policies: async () => (await config.load()).policies ?? {},
-  // `policies`: the task's own ids, fixed when it started; none passed runs the defaults (never config.json's now).
-  profileFor: async (action, floor, tier, policies) => {
-    const c = await config.load();
-    const engine = c.engineId ?? "";
-    const models = cleanModels(c.models);
-    // `tier`: a plugin action's prepared task (plugins spec §5.3) or a core review task (review spec §11.3); otherwise
-    // the action's, or the free questions'.
-    // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
-    // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
-    return pickProfile(policies?.model, { engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
-  },
-  fallbackFor: async (profile, tried, policies) => {
-    const c = await config.load();
-    const next = modelPolicy(policies?.model).fallback(profile, cleanModels(c.models), tried);
-    return next ? supportedEffort(next) : null;
-  },
-  fitProfile: (profile) => supportedEffort(profile),
-  recordCompaction: async (task) => {
-    const c = await validConfig();
-    if (!c) return;
-    await new UsageLog(baseOf(c)).append(
-      compactionRecord(c.engineId, {
-        ...(task.action ? { action: task.action } : {}),
-        task: task.id,
-        ...(task.mode ? { mode: task.mode } : {}),
-        ...(task.phase ? { taskPhase: task.phase.id } : {}),
-        ...(task.profile ? profileMeta(task.profile) : {}),
-        ...policyMeta(task.policies),
-      }),
-    );
-  },
-};
+  pickProfile,
+  supportedEffort: (p) => supportedEffort(p),
+});
 const plainTasks = new TaskManager(taskDeps);
 
 /** What the window, the controllers and the guards ask of the open task(s): a TaskManager, or board mode's TaskBoard. */

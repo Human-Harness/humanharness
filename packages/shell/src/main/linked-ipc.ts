@@ -7,7 +7,9 @@ import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView,
 import { type LinkedFolderEntry, type ScopeEntry, type ScopeStore, isScopeId } from "@humanharness/workspace";
 import type { InvokeChannel } from "@humanharness/protocol/channels";
 import { checkLink, isGitRepo } from "./linked-folders";
-import { linkedHistoryDir, markRelinked, markUnlinked } from "./linked-history";
+import { linkedHistoryDir, markRelinked, markUnlinked, pruneUnlinked } from "./linked-history";
+import { linkedHistoryView } from "./linked-restore";
+import type { ScopeAccess } from "./scope-access";
 import { sourceTagKey } from "./sidekick-import";
 
 /** The longest linked-folder key the window may send (the manifest's pattern allows 64). */
@@ -376,4 +378,90 @@ export function registerLinkedIpc(handle: (channel: InvokeChannel, fn: (...args:
       await d.changed();
     });
   });
+}
+
+/** What `linkedIpcDeps` reads of the main entry. Getters for what changes after they are built. */
+export interface LinkedWiringDeps<C extends { folder: string; profile?: string }> {
+  userData: string;
+  home: string;
+  linkedFolders: Record<string, LinkedFolderDecl>;
+  store(): Promise<ScopeStore>;
+  validConfig(): Promise<C | null>;
+  profilesOn(): boolean;
+  /** Every profile's id, with profiles; null without. */
+  profileIds(): Promise<string[]> | null;
+  /** A profile's base, or null when it has none (`baseFor` with profiles on). */
+  baseFor(c: { folder: string; profile: string }): string | null;
+  baseOf(c: { folder: string; profile?: string }): string;
+  scopeStoreFor(base: string): ScopeStore;
+  /** The reference folders the agent gets (real paths) for a base. */
+  references(c: C, base: string): Promise<string[]>;
+  pick: LinkedIpcDeps["pick"];
+  trash(dir: string): Promise<void>;
+  /** The scopes reach the window. */
+  scopesChanged(): Promise<void>;
+  /** The linked-folder parts, once the deps exist. */
+  linked(): { access: Pick<ScopeAccess, "checkGit" | "dropped" | "entries">; instructions: { changed(): unknown } } | null;
+  unsupported(): boolean;
+  currentScope(): Promise<string | null>;
+  /** A tracked linked folder's history (linked-restore.ts's Open). */
+  openLinked: Parameters<typeof linkedHistoryView>[3];
+}
+
+/** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
+export function linkedIpcDeps<C extends { folder: string; profile?: string }>(d: LinkedWiringDeps<C>): LinkedIpcDeps {
+  const { userData, validConfig, profilesOn, baseOf, linked: linked_ } = d;
+  // Histories unlinked over 30 days ago go to the Trash first: no link handler runs before, so a relink never races it.
+  const ready = pruneUnlinked(userData, new Date(), d.trash).catch((err: unknown) => console.error("Could not prune the linked folders' histories", err));
+  return {
+    linkedFolders: d.linkedFolders,
+    store: d.store,
+    // Links are signed per profile id (never its folder's path, so a move keeps them); "" without profiles.
+    profile: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      return profilesOn() ? (c.profile ?? "") : "";
+    },
+    // With profiles, every other profile's registry: a folder another profile changes or tracks counts.
+    otherStores: async () => {
+      const c = await validConfig();
+      const ids = c ? d.profileIds() : null;
+      if (!c || !ids) return [];
+      const out: { profile: string; store: ScopeStore }[] = [];
+      for (const id of await ids) {
+        const b = d.baseFor({ folder: c.folder, profile: id });
+        if (b !== null && id !== c.profile) out.push({ profile: id, store: d.scopeStoreFor(b) });
+      }
+      return out;
+    },
+    context: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      return { home: d.home, folder: baseOf(c), ...(profilesOn() ? { root: c.folder } : {}) };
+    },
+    references: async () => {
+      const c = await validConfig();
+      return c ? d.references(c, baseOf(c)) : [];
+    },
+    pick: d.pick,
+    userData,
+    signing: linkedSigning(userData),
+    now: () => new Date(),
+    ready,
+    changed: async () => {
+      await d.scopesChanged();
+      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks (never lost).
+      void linked_()?.instructions.changed();
+    },
+    unsupported: d.unsupported,
+    // Scope settings opening checks git again (Decision 13), as the scope's opening does.
+    checkGit: async (scope) => linked_()?.access.checkGit(scope),
+    dropped: async (scope) => (await linked_()?.access.dropped(scope)) ?? new Map(),
+    linkedHistory: async () => {
+      const linked = linked_();
+      if (!linked) return { uncovered: [], tasks: {} };
+      const scope = await d.currentScope();
+      return linkedHistoryView(await linked.access.entries(scope), scope, d.linkedFolders, d.openLinked, isGitRepo);
+    },
+  };
 }

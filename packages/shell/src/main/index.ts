@@ -205,19 +205,18 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, linkedSecret, linkedSigning, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, linkedIpcDeps, linkedSecret, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
-import { type EngineIpc, type EngineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
+import { type EngineIpc, engineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
 import { BackendGeneration, backendInit, buildBackend, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
-import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
+import { linkedHistoryDir, markRelinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
 import {
   type LinkedHistoryRef,
   linkedHistoriesFor,
-  linkedHistoryView,
   linkedOnlyRows,
   mergeTaskGroups,
   openLinkedHistory,
@@ -1658,72 +1657,6 @@ async function backendLeaveBase(): Promise<void> {
   if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
 }
 
-/** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
-function linkedIpcDeps(): LinkedIpcDeps {
-  // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
-  if (linkedDeps) return linkedDeps;
-  const userData = app.getPath("userData");
-  // Histories unlinked over 30 days ago go to the Trash first: no link handler runs before, so a relink never races it.
-  const ready = pruneUnlinked(userData, new Date(), (d) => shell.trashItem(d)).catch((err: unknown) =>
-    console.error("Could not prune the linked folders' histories", err),
-  );
-  linkedDeps = {
-    linkedFolders: harness.linkedFolders ?? {},
-    store: scopeStore,
-    // Links are signed per profile id (never its folder's path, so a move keeps them); "" without profiles.
-    profile: async () => {
-      const c = await validConfig();
-      if (!c) throw new Error("The app is not set up yet");
-      return profilesOn() ? (c.profile ?? "") : "";
-    },
-    // With profiles, every other profile's registry: a folder another profile changes or tracks counts.
-    otherStores: async () => {
-      const c = await validConfig();
-      if (!c || !profilesCtl) return [];
-      const out: { profile: string; store: ScopeStore }[] = [];
-      for (const p of (await profilesCtl.state()).list) {
-        const b = baseFor({ folder: c.folder, profile: p.id }, true);
-        if (b !== null && p.id !== c.profile) out.push({ profile: p.id, store: scopeStoreFor(b) });
-      }
-      return out;
-    },
-    context: async () => {
-      const c = await validConfig();
-      if (!c) throw new Error("The app is not set up yet");
-      return { home: os.homedir(), folder: baseOf(c), ...(profilesOn() ? { root: c.folder } : {}) };
-    },
-    references: async () => {
-      const c = await validConfig();
-      return c ? (await workReferences(c, baseOf(c))).map((r) => r.path) : [];
-    },
-    pick: async () => {
-      if (!window || window.isDestroyed()) return null;
-      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
-      return r.canceled ? null : (r.filePaths[0] ?? null);
-    },
-    userData,
-    signing: linkedSigning(userData),
-    now: () => new Date(),
-    ready,
-    changed: async () => {
-      await scopesChanged();
-      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks (never lost).
-      void linked_()?.instructions.changed();
-    },
-    unsupported: () => linkedUnsupported,
-    // Scope settings opening checks git again (Decision 13), as the scope's opening does.
-    checkGit: async (scope) => linked_()?.access.checkGit(scope),
-    dropped: async (scope) => (await linked_()?.access.dropped(scope)) ?? new Map(),
-    linkedHistory: async () => {
-      const linked = linked_();
-      if (!linked) return { uncovered: [], tasks: {} };
-      const scope = await tasks.currentScope();
-      return linkedHistoryView(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
-    },
-  };
-  return linkedDeps;
-}
-
 /**
  * A tracked linked folder's history (hatches spec §3.4): the open workspace's (board's or the runtime's) once a turn
  * opened it, else one over its gitdir in the app's data folder when that exists. Never makes one.
@@ -1803,28 +1736,6 @@ async function pruneEngineConfig(): Promise<void> {
   } catch (err) {
     console.error("Could not prune the engine config snapshots", err);
   }
-}
-
-/**
- * The Engine config channels' deps (hatches spec §5.3), made only when they are registered (enginePresets). Approving
- * signs with the links' key, made then if there is none yet, for the same profile id the host checks it with.
- */
-function engineIpcDeps(): EngineIpcDeps {
-  const host = engineHost_()!;
-  const userData = app.getPath("userData");
-  return {
-    current: (scope) => host.current(scope),
-    store: async () => {
-      const c = await validConfig();
-      if (!c) throw new Error("The folder is not set up");
-      return { store: scopeStoreFor(baseOf(c)), profile: profilesOn() ? (c.profile ?? "") : "" };
-    },
-    secret: () => linkedSecret(userData)(true),
-    epochs: (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
-    codexLimit: () => harness.engines.includes("codex"),
-    activeEngine: async () => (await config.load()).engineId ?? "",
-    send: sendToWindow,
-  };
 }
 
 /**
@@ -2196,9 +2107,53 @@ function registerIpc() {
     }),
   );
   // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
-  if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
+  if (hasLinkedFolders(harness)) {
+    // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
+    linkedDeps ??= linkedIpcDeps({
+      userData: app.getPath("userData"),
+      home: os.homedir(),
+      linkedFolders: harness.linkedFolders ?? {},
+      store: scopeStore,
+      validConfig,
+      profilesOn,
+      profileIds: () => profilesCtl?.state().then((st) => st.list.map((p) => p.id)) ?? null,
+      baseFor: (c) => baseFor(c, true),
+      baseOf,
+      scopeStoreFor,
+      references: async (c, base) => (await workReferences(c, base)).map((r) => r.path),
+      pick: async () => {
+        if (!window || window.isDestroyed()) return null;
+        const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+        return r.canceled ? null : (r.filePaths[0] ?? null);
+      },
+      trash: (d) => shell.trashItem(d),
+      scopesChanged,
+      linked: linked_,
+      unsupported: () => linkedUnsupported,
+      currentScope: () => tasks.currentScope(),
+      openLinked,
+    });
+    registerLinkedIpc(handle, linkedDeps);
+  }
   // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
-  if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());
+  if (hasEnginePresets(harness)) {
+    const userData = app.getPath("userData");
+    engineIpc = registerEngineIpc(
+      handle,
+      engineIpcDeps({
+        host: engineHost_()!,
+        userData,
+        validConfig,
+        baseOf,
+        scopeStoreFor,
+        profilesOn,
+        epochs: () => (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
+        engines: () => harness.engines,
+        engineId: async () => (await config.load()).engineId,
+        send: sendToWindow,
+      }),
+    );
+  }
   if (hasEnginePresets(harness)) void pruneEngineConfig();
   // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
   if (hasBackend(harness)) {

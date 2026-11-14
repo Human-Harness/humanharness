@@ -33,9 +33,11 @@ describe("hatches IPC surface (hatches D0)", () => {
   it("linked-folder channels are registered only under hasLinkedFolders (D0)", async () => {
     const index = await read("index.ts");
     expect(count(index, /registerLinkedIpc\(/)).toBe(1);
-    expect(index).toContain("  if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());\n");
-    // Its deps (and so the prune and the key) are built only there.
-    expect(count(index, /\blinkedIpcDeps\(\)/)).toBe(2); // the definition and that one call
+    const block = group(index, index.indexOf("  if (hasLinkedFolders(harness)) {\n    // Made once"), /\{/);
+    expect(block).toContain("registerLinkedIpc(handle, linkedDeps);");
+    // Its deps (and so the prune and the key) are built only there: linkedIpcDeps (linked-ipc.ts) is called once.
+    expect(count(index, /\blinkedIpcDeps\(/)).toBe(1);
+    expect(count(block, /\blinkedDeps \?\?= linkedIpcDeps\(\{/)).toBe(1);
     // No other file registers them, and the channel names appear nowhere else in main.
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
       const text = await read(f);
@@ -46,7 +48,11 @@ describe("hatches IPC surface (hatches D0)", () => {
 
   it("D0: the links' key, live set and the histories' prune are reached only from the hasLinkedFolders deps", async () => {
     const index = await read("index.ts");
-    const deps = group(index, index.indexOf("function linkedIpcDeps(): LinkedIpcDeps"), /\{/);
+    // linked-ipc.ts builds the links' deps; engine-config/engine-ipc.ts the engine channels'.
+    const ipc = await read("linked-ipc.ts");
+    const engineIpc = await read(path.join("engine-config", "engine-ipc.ts"));
+    // Its body: from the return type on (the generic's own braces come first).
+    const deps = group(ipc, ipc.indexOf("): LinkedIpcDeps {", ipc.indexOf("export function linkedIpcDeps<")), /\{/);
     // Engine approvals (hatches part 3) check their tag with the same key, only from the enginePresets-gated host.
     const engine = group(index, index.indexOf("function engineHost_(): EngineHost | undefined"), /\{/);
     expect(engine).toMatch(/^function engineHost_\(\): EngineHost \| undefined \{\s*if \(!hasEnginePresets\(harness\)\) return undefined;/);
@@ -54,16 +60,18 @@ describe("hatches IPC surface (hatches D0)", () => {
     // Only the key: no live set, no prune, no key file named there (the sum below can't hide one).
     for (const name of [/\blinkedSigning\(/, /\bpruneUnlinked\(/, /linked-key/, /linked-live\.json/]) expect(count(engine, name), String(name)).toBe(0);
     // Approving one signs with it, made then if needed: only from the engine channels' deps (registered under enginePresets).
-    const approve = group(index, index.indexOf("function engineIpcDeps(): EngineIpcDeps"), /\{/);
+    const approve = group(engineIpc, engineIpc.indexOf("export function engineIpcDeps("), /\{/);
     expect(count(approve, /\blinkedSecret\(userData\)\(true\)/)).toBe(1);
     expect(count(approve, /\blinkedSecret\(/)).toBe(1);
+    expect(count(engineIpc, /\blinkedSecret\(/)).toBe(2); // the deps doc and its one call
+    // index.ts names only the engine host's key; the deps' prune and signing are linked-ipc.ts's.
     for (const name of [/\blinkedSigning\(/, /\blinkedSecret\(/, /\bpruneUnlinked\(/, /"linked-key"/, /"linked-live\.json"/]) {
-      expect(count(index, name), String(name)).toBe(count(deps, name) + count(engine, name) + count(approve, name));
+      expect(count(index, name), String(name)).toBe(count(engine, name));
     }
     expect(count(deps, /\blinkedSigning\(/)).toBe(1);
     expect(count(deps, /\bpruneUnlinked\(/)).toBe(1);
+    expect(count(ipc, /\bpruneUnlinked\(/)).toBe(1);
     // The key and live-set files are named only in linked-ipc.ts, the key made by the same function as the other app keys.
-    const ipc = await read("linked-ipc.ts");
     expect(ipc).toContain('sourceTagKey(path.join(userData, "linked-key"), create)');
     expect(ipc).toContain('new LiveLinks(path.join(userData, "linked-live.json"))');
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts") && f !== "linked-ipc.ts")) {
@@ -87,9 +95,11 @@ describe("hatches IPC surface (hatches D0)", () => {
   it("engine channels are registered only under enginePresets", async () => {
     const index = await read("index.ts");
     expect(count(index, /registerEngineIpc\(/)).toBe(1);
-    expect(index).toContain("  if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());\n");
     // Its deps (and so the approval key) are built only there; the commit signal reaches it only once registered.
-    expect(count(index, /\bengineIpcDeps\(\)/)).toBe(2); // the definition and that one call
+    // engineIpcDeps (engine-config/engine-ipc.ts) is called once, inside that block.
+    expect(count(index, /\bengineIpcDeps\(/)).toBe(1);
+    const block = group(index, index.indexOf("  if (hasEnginePresets(harness)) {\n    const userData"), /\{/);
+    expect(block).toMatch(/engineIpc = registerEngineIpc\(\n\s*handle,\n\s*engineIpcDeps\(\{/);
     expect(count(index, /\bengineIpc = /)).toBe(1);
     expect(index).toMatch(/let engineIpc: EngineIpc \| null = null;/);
     // No other file registers or sends them: the channel names appear only in engine-ipc.ts (hh:engineStatus is the core's).
@@ -171,8 +181,9 @@ describe("hatches IPC surface (hatches D0)", () => {
   it("D0: turns, AGENTS.md, histories and jobs reach linked folders only through the registered deps", async () => {
     const index = await read("index.ts");
     // The deps are made only by linkedIpcDeps (called only under hasLinkedFolders); linked_ answers null without them.
-    expect(count(index, /\blinkedDeps = /)).toBe(1);
-    expect(group(index, index.indexOf("function linkedIpcDeps(): LinkedIpcDeps"), /\{/)).toContain("linkedDeps = {");
+    expect(count(index, /\blinkedDeps \?\?= /)).toBe(1);
+    expect(count(index, /\blinkedDeps = /)).toBe(0);
+    expect(index).toContain("    linkedDeps ??= linkedIpcDeps({");
     const parts = group(index, index.indexOf("function linked_()"), /\{/);
     expect(parts).toContain("if (linkedParts || !linkedDeps) return linkedParts;");
     expect(count(index, /\bcreateScopeAccess\(/)).toBe(count(parts, /\bcreateScopeAccess\(/));

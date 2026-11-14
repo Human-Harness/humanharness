@@ -125,8 +125,7 @@ describe("hatches IPC surface (hatches D0)", () => {
     expect(count(index, /registerBackendIpc\(/)).toBe(1);
     expect(count(index, /\bbackendFor\(/)).toBe(1);
     const block = group(index, index.indexOf("if (hasBackend(harness))"), /\{/);
-    // The supervisor is built by startBackendSupervisor (that block); registerIpc registers the channels with it.
-    expect(index).toContain("  if (supervisor) registerBackendIpc(handle, { supervisor });\n");
+    expect(block).toContain("registerBackendIpc(handle, { supervisor: backend });");
     // The supervisor is made only by backendFor, which answers null without a backend; nothing else spawns one.
     expect(count(index, /\bbackend = /)).toBe(1);
     expect(index).toMatch(/\bbackend = backendFor\(harness, \{/);

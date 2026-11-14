@@ -2335,29 +2335,6 @@ function buildTaskAttention(): TaskAttention {
   return attention;
 }
 
-/** The harness's backend supervisor (hatches spec §4), kept in `backend`; null without a backend (D0). */
-function startBackendSupervisor(): BackendSupervisor | null {
-  if (hasBackend(harness)) {
-    const backendLog = new BackendLog(app.getPath("userData"));
-    backend = backendFor(harness, {
-      // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
-      startProcess: (init, onEvent) =>
-        BackendProcess.start({
-          launcher: electronLauncher(process.execPath),
-          entry: resolveInHarness(harness, harness.backend!),
-          cwd: harness.root,
-          init,
-          log: backendLog,
-          onEvent,
-        }),
-      send: sendToWindow,
-      log: backendLog,
-      mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
-    });
-  }
-  return backend;
-}
-
 /** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
 function linkedIpcDeps(): LinkedIpcDeps {
   // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
@@ -2899,9 +2876,27 @@ function registerIpc() {
   if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
   // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
   if (hasEnginePresets(harness)) engineIpc = registerEngineIpc(handle, engineIpcDeps());
+  if (hasEnginePresets(harness)) void pruneEngineConfig();
   // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
-  const supervisor = startBackendSupervisor();
-  if (supervisor) registerBackendIpc(handle, { supervisor });
+  if (hasBackend(harness)) {
+    const backendLog = new BackendLog(app.getPath("userData"));
+    backend = backendFor(harness, {
+      // On the launcher the MCP servers use; the entry's real path must stay inside the harness folder (B1).
+      startProcess: (init, onEvent) =>
+        BackendProcess.start({
+          launcher: electronLauncher(process.execPath),
+          entry: resolveInHarness(harness, harness.backend!),
+          cwd: harness.root,
+          init,
+          log: backendLog,
+          onEvent,
+        }),
+      send: sendToWindow,
+      log: backendLog,
+      mainLog: (message, err) => console.error(`[backend] ${message}`, err ?? ""),
+    });
+    if (backend) registerBackendIpc(handle, { supervisor: backend });
+  }
   handleAll(dataIpc({ harness: () => harness, scopesSettled, harnessUiData, currentHistory }));
   // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
   registerSidekickIpc(handle, () => sidekickCtl);
@@ -3650,7 +3645,6 @@ if (primary) {
     // The home folder's layouts/ and settings.json (0b2): an edit or a pick redraws the window.
     watchUserLayouts();
     registerIpc();
-    if (hasEnginePresets(harness)) void pruneEngineConfig();
     // A task left open by an earlier run can't continue: its session is gone.
     void interruptTasks().catch((err: unknown) => console.error("Could not settle the last task", err));
     // After the interrupt (queued behind it): a scoped harness's earlier work moves into `main`.

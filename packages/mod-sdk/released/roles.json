@@ -1,0 +1,19 @@
+{
+  "AppValue": "host",
+  "BlockComponent": "mod",
+  "BlockContent": "mod",
+  "BlockProps": "host",
+  "Disposer": "both",
+  "EngineRunResult": "host",
+  "Layout": "mod",
+  "LayoutNode": "mod",
+  "MainCtx": "host",
+  "ModDefinition": "mod",
+  "ModJson": "mod",
+  "SendInfo": "host",
+  "SendVerdict": "mod",
+  "TaskRef": "host",
+  "Tier": "both",
+  "TurnEndInfo": "host",
+  "UiCtx": "host"
+}

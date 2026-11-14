@@ -1,0 +1,11 @@
+declare module "@humanharness/mod-sdk/_internal/src/index" {
+  export type Tier = "light" | "standard";
+  export function defineMod(def: { id: string }): { id: string };
+}
+
+declare module "@humanharness/mod-sdk" {
+  export * from "@humanharness/mod-sdk/_internal/src/index";
+}
+
+declare module "@humanharness/ui" {
+}

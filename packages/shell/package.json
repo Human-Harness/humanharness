@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "hh-dts": "node scripts/hh-dts.ts"
+    "hh-dts": "node scripts/hh-dts.ts",
+    "contracts": "node scripts/contracts.ts"
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "2.2.2",

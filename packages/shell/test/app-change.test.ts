@@ -98,7 +98,8 @@ describe("single mode's undo (part 3 Decision 12)", () => {
   });
 
   it("index.ts: single mode undoes by paths too, and a restore waits for the job runs", () => {
-    const index = fs.readFileSync(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
+    // index.ts and history-ipc.ts, which holds the hh:restoreTask handler.
+    const index = ["index.ts", "history-ipc.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
     // The by-paths branch serves the board and single mode; plain mode keeps the whole-folder restore (D0).
     // After master's go-back handlers: plain mode hands over to them; the rest of the handler is the by-paths branch.
     expect(index).toMatch(/const byPaths = undoByPaths\(\);\n(\s*\/\/[^\n]*\n)*\s*if \(!byPaths\) return goBacks\["hh:restoreTask"\]\(sender, taskId\);/);

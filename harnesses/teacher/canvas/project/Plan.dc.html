@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Plan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1000px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column; position: relative;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+    <a href="{{go.settings}}" aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
+      <a href="{{go.lib}}" aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
+      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
+      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    </nav>
+
+    <main style="flex-grow: 1; overflow: hidden; padding: 16px 32px; display: flex; gap: 24px; justify-content: center;">
+      <aside aria-label="Pedido" style="width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 28px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: 600;">Planificar</h1>
+          <span style="font-size: 14px; color: {{t.muted}};">Desde una clase hasta el año entero.</span>
+        </div>
+        <div role="tablist" aria-label="Alcance" style="display: flex; height: 32px; padding: 2px; box-sizing: border-box; border-radius: 12px; background: {{t.s2}}; font-size: 14px;">
+          <span role="tab" style="flex: 1; justify-content: center; padding: 0 8px; display: flex; align-items: center; color: {{t.muted}};">Algunas clases</span>
+          <span role="tab" style="flex: 1; justify-content: center; padding: 0 8px; display: flex; align-items: center; color: {{t.muted}};">Una unidad</span>
+          <span role="tab" style="flex: 1; justify-content: center; padding: 0 8px; display: flex; align-items: center; border-radius: 10px; background: {{t.active}}; font-weight: 600; color: {{t.activeInk}};">El año</span>
+        </div>
+        <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <sc-for list="{{ask}}" as="a" hint-placeholder-count="4">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">{{a.k}}</span>
+              <span style="font-size: 14px; line-height: 1.4;">{{a.v}}</span>
+            </div>
+          </sc-for>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Fuentes que usa</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              <sc-for list="{{srcs}}" as="s" hint-placeholder-count="4">
+                <sc-if value="{{s.plain}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; padding: 2px 8px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}};">{{s.label}}</span></sc-if><sc-if value="{{s.more}}" hint-placeholder-val="{{ false }}"><a href="{{s.href}}" aria-expanded="{{s.expanded}}" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; border: 1px solid {{t.lineS}}; background: {{t.s2}}; color: {{t.ink}}; text-decoration: none; cursor: pointer;">{{s.label}}</a></sc-if>
+              </sc-for>
+            </div>
+          </div>
+          <a href="{{go.planAsk}}" style="align-self: flex-start; height: 28px; padding: 0 10px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cambiar el pedido</a>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button style="align-self: flex-start; height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="{{t.activeInk}}" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Pedir cambios en el Asistente</button>
+          <span style="font-size: 14px; color: {{t.muted}};">Por ejemplo: juntá U1 y U2, o agregá una salida de campo en primavera.</span>
+        </div>
+      </aside>
+
+      <section aria-label="Propuesta" style="width: 720px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; height: 32px;">
+          <span style="font-size: 16px; font-weight: 600;">Propuesta para Biología 2º B</span>
+          <span style="font-size: 14px; color: {{t.muted}}; flex-grow: 1;">4 unidades · 32 clases</span>
+          <a href="{{go.created}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Crear las 32 clases</a>
+        </div>
+        <span style="font-size: 14px; color: {{t.muted}};">Se crean como pendientes en la materia; las armás cuando quieras. Las semanas son solo una guía, no fechas.</span>
+        <sc-for list="{{units}}" as="u" hint-placeholder-count="4">
+          <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+            <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{t.muted}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform: rotate({{u.rot}});"><path d="m9 6 6 6-6 6"></path></svg>
+              <span style="font-size: 14px; font-weight: 600; color: {{t.muted}}; width: 24px;">{{u.code}}</span>
+              <span style="font-size: 16px; font-weight: 600; flex-grow: 1;">{{u.name}}</span>
+              <span style="font-size: 12px; color: {{t.faint}};">{{u.weeks}}</span>
+              <span style="font-size: 14px; color: {{t.muted}}; width: 64px; text-align: right;">{{u.count}}</span>
+            </div>
+            <div style="padding: 0 16px 12px 80px; margin-top: -4px; font-size: 14px; color: {{t.muted}};">Sale de: {{u.from}} · <a href="{{go.source}}" style="color: inherit; text-decoration: underline; cursor: pointer;">ver el párrafo</a></div>
+            <sc-if value="{{u.open}}" hint-placeholder-val="{{ false }}">
+              <div style="border-top: 1px solid {{t.line}}; display: flex; flex-direction: column;">
+                <sc-for list="{{u.classes}}" as="c" hint-placeholder-count="4">
+                  <div style="padding: 8px 16px 8px 20px; display: flex; align-items: center; gap: 12px; border-top: {{c.border}};">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="{{t.faint}}" aria-label="Arrastrar para ordenar"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg>
+                    <span style="font-size: 12px; color: {{t.faint}}; width: 20px;">{{c.n}}</span>
+                    <span style="font-size: 14px; flex-grow: 1;">{{c.title}}</span>
+                    <span style="font-size: 14px; color: {{t.muted}};">{{c.meta}}</span>
+                    <sc-if value="{{c.isNew}}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.blue}}; color: {{t.blueInk}};">Agregada por vos</span>
+                    </sc-if>
+                    <button aria-label="Quitar" style="width: 24px; height: 24px; border: 0; background: transparent; color: {{t.faint}}; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+                  </div>
+                </sc-for>
+                <div style="padding: 8px 16px 10px 52px; border-top: 1px solid {{t.line}};">
+                  <span style="font-size: 14px; font-weight: 500; color: {{t.muted}};">+ Agregar una clase</span>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </section>
+    </main>
+  </div>
+  <sc-if value="{{cf.toast}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 32px; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; padding: 10px 12px 10px 16px; border-radius: 12px; background: {{t.ink}}; color: {{t.bg}}; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); white-space: nowrap; z-index: 5;"><span>{{cf.toastText}}</span><a href="{{cf.toastHref}}" style="color: {{cf.toastLink}}; font-weight: 600; text-decoration: none; cursor: pointer;">{{cf.toastAction}}</a></div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"confirm":{"editor":"text","default":""},"$preview":{"width":1280,"height":1000}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const ask = [
+      { k: 'Materia', v: 'Biología · 2º B · Colegio San Martín' },
+      { k: 'Qué cubrir', v: 'El diseño curricular de 2º año: célula, nutrición, herencia y ecosistemas' },
+      { k: 'Cuánto', v: '32 clases de 80 minutos, una por semana' },
+      { k: 'Además', v: 'Una evaluación al cierre de cada unidad' }
+    ];
+    const SRC = ['Diseño curricular 2º año', 'Curtis · Biología', 'Faggi · Ecología urbana', 'Campbell · Biología', 'Audesirk · Biología: la vida en la Tierra', 'Alberts · Introducción a la biología celular', 'Niemelä · Urban Ecology', 'Purves · Vida', 'Barderi · Biología 2', 'Odum · Ecología', 'NAP · Ciencias Naturales', 'Margulis · Microcosmos', 'Ferreyra · Actividades de genética', 'INTA · Huerta escolar', 'Ciencia Hoy · Ecosistemas urbanos', 'Guía de TP de genética', 'Mapa de la reserva costera', 'Láminas de la célula'];
+    const srcOpen = this.props.confirm === 'sources';
+    const srcs = (srcOpen ? SRC : SRC.slice(0, 3)).map((label) => ({ label, plain: true, more: false })).concat([{ label: srcOpen ? 'Ver menos' : (SRC.length - 3) + ' más', plain: false, more: true, expanded: srcOpen ? 'true' : 'false' }]);
+    const cls = (list) => list.map((c, i) => ({ n: c[0], title: c[1], meta: c[2], isNew: !!c[3], border: i === 0 ? '0' : '1px solid ' + t.line }));
+    const units = [
+      { code: 'U1', name: 'La célula', weeks: 'sem. 1–8 · sugerido', from: 'Diseño curricular 2º año, bloque 1', count: '8 clases', open: true, rot: '90deg', classes: cls([
+        ['1', 'Qué es un ser vivo', '3 fuentes'],
+        ['2', 'La célula y el microscopio', '2 fuentes'],
+        ['3', 'Práctica · observar células de cebolla', 'Guía de laboratorio', true],
+        ['4', 'Célula procariota y eucariota', '3 fuentes'],
+        ['5', 'Membrana y transporte', '2 fuentes'],
+        ['6', 'Organelas y sus funciones', '3 fuentes'],
+        ['7', 'La división celular', '2 fuentes'],
+        ['8', 'Evaluación · La célula', 'Examen']
+      ]) },
+      { code: 'U2', name: 'Nutrición y fotosíntesis', weeks: 'sem. 9–16 · sugerido', from: 'Diseño curricular 2º año, bloque 2', count: '8 clases', open: false, rot: '0deg', classes: [] },
+      { code: 'U3', name: 'Herencia y genética', weeks: 'sem. 17–24 · sugerido', from: 'Diseño curricular 2º año, bloque 3', count: '8 clases', open: false, rot: '0deg', classes: [] },
+      { code: 'U4', name: 'Ecosistemas', weeks: 'sem. 25–32 · sugerido', from: 'Diseño curricular 2º año, bloque 4', count: '8 clases', open: false, rot: '0deg', classes: [] }
+    ];
+    return { t, ask, srcs, units };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    
+    const c = this.props.confirm || '';
+    const CF = {"created":{"toast":"32 clases creadas en Biología 2º B, como pendientes","action":"Ver las clases","href":"subject"}};
+    const e = CF[c] || {};
+    o.cf = { ...e, toast: !!e.toast, toastText: e.toast || '', toastAction: e.action || '', toastHref: e.href ? g[e.href] : '', toastLink: this.props.dark ? '#7a4f00' : o.t.cta, draft: !e.approved };
+    g.created = b('PlanCreated');
+    o.srcs = o.srcs.map((s) => ({ ...s, href: s.more ? b(s.expanded === 'true' ? 'Plan' : 'PlanSources') : b('Source') }));
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Editor de clase</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.ed{color:inherit;text-decoration:none;cursor:text;border-radius:6px;outline:1px dashed transparent;outline-offset:4px}
+.ed:hover{outline-color:currentColor}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column; position: relative;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chatToggle}}" aria-pressed="{{chatPressed}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{chatBtnBg}}; color: {{chatBtnInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+    <a href="{{go.settings}}" aria-label="Ajustes" title="Ajustes" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
+      <a href="{{go.lib}}" aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
+      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
+      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    </nav>
+
+    <main style="flex-grow: 1; min-width: 0; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 14px; color: {{t.muted}};">Tus materias  ›  <a href="{{go.subject}}" style="color: inherit; text-decoration: none; cursor: pointer;">Biología 2º B</a>  ›  U4 Ecosistemas</span>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <h1 style="margin: 0; font-size: 20px; font-weight: 600;">Clase 27 · Ecosistemas urbanos</h1>
+        <sc-if value="{{cf.draft}}" hint-placeholder-val="{{ true }}">
+          <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.blue}}; color: {{t.blueInk}};">Borrador</span>
+        </sc-if>
+        <sc-if value="{{cf.approved}}" hint-placeholder-val="{{ false }}">
+          <span role="status" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}};">Aprobada</span>
+        </sc-if>
+        <sc-if value="{{notEditing}}" hint-placeholder-val="{{ true }}"><sc-if value="{{short}}" hint-placeholder-val="{{ false }}"><span role="status" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}};">40 min</span></sc-if><a href="{{go.date}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: none; cursor: pointer;">{{cf.meta}}</a></sc-if><sc-if value="{{editing}}" hint-placeholder-val="{{ false }}"><span role="status" style="font-size: 12px; display: inline-flex; gap: 8px; align-items: baseline;"><span style="color: {{t.greenInk}}; font-weight: 500;">Guardado · tu cambio en la diapositiva 3</span><a href="{{go.undoText}}" style="color: {{t.activeInk}}; text-decoration: underline; cursor: pointer;">Deshacer</a></span></sc-if>
+        <sc-if value="{{cf.approved}}" hint-placeholder-val="{{ false }}">
+          <a href="{{go.classEdit}}" style="font-size: 12px; font-weight: 500; color: {{t.ink}}; text-decoration: underline; cursor: pointer;">Deshacer</a>
+        </sc-if>
+        <sc-if value="{{cf.saved}}" hint-placeholder-val="{{ false }}">
+          <span role="status" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}}; display: inline-flex; align-items: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>{{cf.savedText}}</span>
+          <a href="{{go.classEdit}}" style="font-size: 12px; font-weight: 500; color: {{t.ink}}; text-decoration: underline; cursor: pointer;">Deshacer</a>
+        </sc-if>
+        <span style="flex-grow: 1;"></span>
+        <a href="{{go.export}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Exportar</a>
+        <sc-if value="{{cf.draft}}" hint-placeholder-val="{{ true }}">
+          <span style="position: relative; display: inline-flex;"><a href="{{go.approve}}" aria-haspopup="dialog" aria-expanded="{{cf.approvingAttr}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Aprobar</a><sc-if value="{{cf.approving}}" hint-placeholder-val="{{ false }}"><div role="dialog" aria-label="Aprobar la clase 27" style="position: absolute; top: 40px; right: 0; width: 320px; box-sizing: border-box; z-index: 6; background: {{t.surface}}; border: 1px solid {{t.lineS}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.16); color: {{t.ink}}; text-align: left; white-space: normal;"><span style="font-size: 16px; font-weight: 600;">Aprobar la clase 27</span><div style="display: flex; flex-direction: column; gap: 6px; font-size: 14px;"><div style="display: flex; gap: 8px; align-items: center;"><span style="width: 18px; height: 18px; flex-shrink: 0; border-radius: 9px; background: {{t.green}}; color: {{t.greenInk}}; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span><span>12 diapositivas</span></div><div style="display: flex; gap: 8px; align-items: center;"><span style="width: 18px; height: 18px; flex-shrink: 0; border-radius: 9px; background: {{t.green}}; color: {{t.greenInk}}; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span><span>Guion de 80 minutos</span></div><div style="display: flex; gap: 8px; align-items: center;"><span style="width: 18px; height: 18px; flex-shrink: 0; border-radius: 9px; background: {{t.green}}; color: {{t.greenInk}}; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span><span>Material para alumnos</span></div><div style="display: flex; gap: 8px; align-items: center;"><span style="width: 18px; height: 18px; flex-shrink: 0; border-radius: 9px; background: {{t.green}}; color: {{t.greenInk}}; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span><span>3 fuentes citadas · 0 datos sin fuente</span></div></div><span style="font-size: 14px; color: {{t.muted}}; line-height: 1.45;">Queda marcada como lista. No se manda a nadie.</span><div style="display: flex; justify-content: flex-end; gap: 8px;"><a href="{{go.keepReview}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Seguir revisando</a><a href="{{go.approveDo}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Aprobar</a></div></div></sc-if></span>
+        </sc-if>
+        <sc-if value="{{cf.approved}}" hint-placeholder-val="{{ false }}">
+          <span style="height: 32px; padding: 0 16px; border-radius: 12px; background: {{t.green}}; color: {{t.greenInk}}; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Aprobada</span>
+        </sc-if>
+      </div>
+
+      <div role="tablist" aria-label="Partes de la clase" style="display: flex; gap: 4px; border-bottom: 1px solid {{t.line}};">
+        <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="3">
+          <a href="{{tb.href}}" role="tab" style="padding: 8px 12px; font-size: 14px; font-weight: {{tb.w}}; color: {{tb.ink}}; border-bottom: 2px solid {{tb.bar}}; margin-bottom: -1px; text-decoration: none; cursor: pointer;">{{tb.label}}</a>
+        </sc-for>
+      </div>
+
+      <div style="flex-grow: 1; min-height: 0; display: flex; gap: 16px;">
+        <div aria-label="Diapositivas" style="width: 136px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
+          <sc-for list="{{thumbs}}" as="th" hint-placeholder-count="7">
+            <a href="{{go.slide}}" style="display: flex; gap: 6px; align-items: flex-start; color: inherit; text-decoration: none; cursor: pointer;">
+              <span style="font-size: 12px; color: {{t.faint}}; width: 14px; text-align: right;">{{th.n}}</span>
+              <div style="width: 112px; height: 63px; box-sizing: border-box; border-radius: 8px; background: {{p.surface}}; border: {{th.border}}; padding: 8px; display: flex; flex-direction: column; gap: 4px;">
+                <span style="height: 5px; width: {{th.w}}; border-radius: 2px; background: {{p.ink}};"></span>
+                <span style="height: 3px; width: 80%; border-radius: 2px; background: {{p.lineS}};"></span>
+                <span style="height: 3px; width: 64%; border-radius: 2px; background: {{p.lineS}};"></span>
+              </div>
+            </a>
+          </sc-for>
+        </div>
+
+        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+          <div style="aspect-ratio: 16 / 9; width: 100%; box-sizing: border-box; border-radius: 14px; background: {{p.surface}}; color: {{p.ink}}; border: 1px solid {{t.line}}; padding: 32px 40px 20px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: {{p.muted}};">
+              <span style="width: 20px; height: 20px; border-radius: 6px; background: {{p.s2}}; border: 1px solid {{p.lineS}};"></span>
+              <span>Colegio San Martín · Biología 2º B</span>
+              <span style="flex-grow: 1;"></span>
+              <span>3 / 12</span>
+            </div>
+            <a href="{{go.editText}}" class="ed" title="Editar" style="font-size: 28px; font-weight: 600; line-height: 1.2; width: max-content; max-width: 100%; {{edBox}}">¿Quién vive en una ciudad?<sc-if value="{{editing}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="display: inline-block; width: 2px; height: 28px; margin-left: 2px; vertical-align: -5px; background: {{p.ink}};"></span></sc-if></a>
+            <div style="display: flex; gap: 16px;">
+              <sc-for list="{{cards}}" as="c" hint-placeholder-count="3">
+                <div style="flex: 1; border-radius: 12px; background: {{p.s2}}; padding: 16px; display: flex; flex-direction: column; gap: 6px;">
+                  <a href="{{go.editText}}" class="ed" title="Editar" style="font-size: 16px; font-weight: 600;">{{c.h}}</a>
+                  <a href="{{go.editText}}" class="ed" title="Editar" style="font-size: 14px; line-height: 1.45; color: {{p.muted}};">{{c.b}}</a>
+                </div>
+              </sc-for>
+            </div>
+            <span style="flex-grow: 1;"></span>
+            <span style="font-size: 12px; color: {{p.muted}}; border-top: 1px solid {{p.line}}; padding-top: 8px;">¹ Faggi, A. y Perepelizin, P. (2006). Ecología urbana: la ciudad como ecosistema. Ciencia Hoy, 16(95).</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: {{t.muted}};">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg>
+            <span>{{edHint}}</span>
+            <span style="flex-grow: 1;"></span>
+            <span>En el guion: minutos 8 a 14</span>
+          </div>
+        </div>
+
+      </div>
+    </main>
+    <sc-if value="{{chatOpen}}" hint-placeholder-val="{{ true }}"><aside aria-label="Asistente" style="width: 360px; flex-shrink: 0; background: {{t.rail}}; border-left: 1px solid {{t.line}}; display: flex; flex-direction: column; min-height: 0;">
+      <div style="padding: 12px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid {{t.line}};">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="{{t.activeInk}}" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>
+        <span style="font-size: 16px; font-weight: 600; flex-grow: 1;">Asistente</span>
+        <a href="{{go.chatToggle}}" aria-label="Cerrar el Asistente" style="text-decoration: none; cursor: pointer; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></a>
+      </div>
+      <div style="flex-grow: 1; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+        <span style="align-self: flex-start; font-size: 12px; padding: 4px 10px; border-radius: 8px; background: {{t.s2}}; color: {{t.muted}};">Estás en Clase 27 · la IA usa esta clase y sus 3 fuentes</span>
+        <sc-for list="{{chat}}" as="m" hint-placeholder-count="3">
+              <div style="align-self: {{m.side}}; max-width: 290px; padding: 8px 12px; border-radius: 12px; background: {{m.bg}}; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; gap: 6px;">
+                <span>{{m.text}}</span>
+                <sc-if value="{{m.hasLink}}" hint-placeholder-val="{{ false }}">
+                  <a href="{{go.proposed}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: underline; text-decoration: none; cursor: pointer;">{{m.link}}</a>
+                </sc-if>
+              </div>
+            </sc-for>
+      </div>
+      <div style="padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid {{t.line}};">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+          <span style="font-size: 14px; color: {{t.muted}};">Cambiar:</span>
+          <span style="font-size: 12px; padding: 2px 8px; border-radius: 8px; background: {{t.s2}};">Diapositiva 3</span>
+          <span style="font-size: 12px; padding: 2px 8px; border-radius: 8px; color: {{t.muted}}; border: 1px solid {{t.line}};">Toda la clase</span>
+        </div>
+        <div style="min-height: 48px; box-sizing: border-box; border: 1px solid {{t.lineS}}; border-radius: 12px; background: {{t.surface}}; padding: 8px 8px 8px 12px; display: flex; align-items: flex-end; gap: 8px;">
+          <span style="flex-grow: 1; font-size: 14px; color: {{t.faint}}; padding-bottom: 6px;">Pedí crear, cambiar o preguntar cómo se hace algo…</span>
+          <button aria-label="Enviar" style="width: 32px; height: 32px; border: 0; border-radius: 10px; background: {{t.cta}}; color: {{t.ctaInk}}; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+        <sc-if value="{{notShort}}" hint-placeholder-val="{{ true }}"><a href="{{go.shortText}}" style="align-self: flex-start; font-size: 12px; padding: 2px 8px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}}; text-decoration: none; cursor: pointer;">Probá: «Acortala a 40 minutos»</a></sc-if>
+      </div>
+    </aside></sc-if>
+  </div>
+  <sc-if value="{{dim}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; background: {{scrim}};"></div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"dim":{"editor":"boolean","default":false},"confirm":{"editor":"text","default":""},"nochat":{"editor":"boolean","default":false},"editing":{"editor":"boolean","default":false},"short":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
+    const t = this.props.dark ? D : L;
+    const p = L;
+    const tabs = ['Diapositivas · 12', 'Guion · 80 min', 'Material para alumnos · 2 págs'].map((label, i) => ({ label, w: i === 0 ? '600' : '400', ink: i === 0 ? t.ink : t.muted, bar: i === 0 ? t.ink : 'transparent' }));
+    const thumbs = [1, 2, 3, 4, 5, 6, 7].map((n) => ({ n: String(n), border: n === 3 ? '2px solid ' + t.activeInk : '1px solid ' + t.line, w: ['60%', '72%', '50%', '66%', '44%', '70%', '56%'][n - 1] }));
+    const cards = [
+      { h: 'Plantas', b: 'Árboles de vereda, plazas y hasta musgo en las paredes¹' },
+      { h: 'Animales', b: 'Más de 280 especies de aves en la ciudad de Buenos Aires¹' },
+      { h: 'Nosotros', b: 'Somos la especie que más cambia el ecosistema urbano' }
+    ];
+    const chat = [
+      { side: 'flex-end', bg: t.s2, text: 'Hacé la diapositiva 3 más visual, con menos texto.', hasLink: false, link: '' },
+      { side: 'flex-start', bg: 'transparent', text: 'Listo: cambié la lista por tres tarjetas y dejé la cita en el pie.', hasLink: true, link: 'Ver antes y después · Deshacer' },
+      { side: 'flex-end', bg: t.s2, text: 'Sumá al guion 10 minutos para la salida al patio.', hasLink: false, link: '' },
+      { side: 'flex-start', bg: 'transparent', text: 'Agregué la salida en el minuto 45 y acorté el cierre a 5 minutos, así la clase sigue en 80. La guía del alumno ya tiene la tabla de observación.', hasLink: true, link: 'Ver en el guion' }
+    ];
+    if (this.props.short) {
+      chat.splice(0, 2);
+      chat.push({ side: 'flex-end', bg: t.s2, text: 'Acortala a 40 minutos.', hasLink: false, link: '' });
+      chat.push({ side: 'flex-start', bg: 'transparent', text: 'Listo: la clase dura 40 minutos. Saqué la salida al patio y junté las dos actividades del desarrollo.', hasLink: true, link: 'Ver antes y después · Deshacer' });
+    }
+    return { t, p, tabs, thumbs, cards, chat, dim: !!this.props.dim, scrim: this.props.dark ? 'rgba(0,0,0,0.6)' : 'rgba(27,28,30,0.4)' };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    o.tabs = (o.tabs || []).map((x) => ({ ...x, href: /^Guion/.test(x.label) ? g.guion : /^Material/.test(x.label) ? g.material : g.classEdit }));
+    const c = this.props.confirm || '';
+    o.cf = { draft: c !== 'approved', approved: c === 'approved', saved: c === 'saved', savedText: 'Datos de la clase guardados', meta: c === 'approved' ? '80 min · 3 fuentes · aprobada recién' : '80 min · 3 fuentes · guardado hace un momento' };
+    const open = !this.props.nochat;
+    o.chatOpen = open; o.chatPressed = open ? 'true' : 'false';
+    o.chatBtnBg = open ? o.t.active : 'transparent'; o.chatBtnInk = open ? o.t.activeInk : o.t.ink;
+    g.chatToggle = b(open ? 'ClassEditNoChat' : 'ClassEdit');
+    const ed = !!this.props.editing;
+    o.editing = ed; o.notEditing = !ed;
+    o.edBox = ed ? 'outline: 2px solid ' + o.t.activeInk + '; outline-offset: 4px; border-radius: 6px; cursor: text;' : '';
+    o.edHint = ed ? 'Escribí sobre el texto. Esc o un clic afuera lo cierra.' : 'Hacé clic en cualquier texto para editarlo a mano.';
+    g.editText = b('ClassEditText'); g.undoText = b('ClassEdit');
+    o.short = !!this.props.short; o.notShort = !o.short;
+    if (o.short) o.cf.meta = 'antes 80 · 3 fuentes · guardado recién';
+    g.shortText = b('ClassEditShort');
+    o.cf.approving = c === 'approving'; o.cf.approvingAttr = o.cf.approving ? 'true' : 'false';
+    g.approve = b(o.cf.approving ? 'ClassEdit' : 'ClassEditApproving');
+    g.approveDo = b('ClassEditApproved'); g.keepReview = b('ClassEdit');
+    if (c === 'approved') g.subject = b('SubjectApproved');
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

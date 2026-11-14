@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ficha de la fuente</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; position: relative; overflow: hidden; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif;">
+  <dc-import name="Library" dark="{{isDark}}" hint-size="1280px,900px"></dc-import>
+
+  <div style="position: absolute; inset: 0; background: {{t.scrim}};"></div>
+
+  <aside role="dialog" aria-label="{{title}}" style="position: absolute; top: 0; right: 0; bottom: 0; width: 520px; box-sizing: border-box; background: {{t.surface}}; border-left: 1px solid {{t.line}}; box-shadow: {{t.shadow}}; display: flex; flex-direction: column;">
+    <div style="padding: 20px 24px 16px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid {{t.line}};">
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 20px; font-weight: 600;">{{title}}</span>
+        <span style="font-size: 14px; color: {{t.muted}};">{{sub}}</span>
+      </div>
+      <a href="{{go.sheetBack}}" aria-label="Cerrar" style="width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: {{t.muted}}; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">×</a>
+    </div>
+
+    <div style="flex-grow: 1; min-height: 0; overflow: hidden; padding: 16px 24px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid {{t.line}}; border-radius: 12px;">
+        <span style="width: 32px; height: 32px; border-radius: 8px; background: {{t.s2}}; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">{{fileKind}}</span>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+          <span style="font-size: 14px; font-weight: 500;">{{fileName}}</span>
+          <span style="font-size: 14px; color: {{t.muted}};">{{fileLine}}</span>
+        </div>
+      </div>
+
+      <sc-if value="{{scan}}" hint-placeholder-val="{{ false }}">
+        <div role="status" style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: {{t.blue}}; color: {{t.blueInk}}; font-size: 14px; line-height: 1.45;">
+          <span style="font-weight: 600;">Es un escaneo de 18 páginas: estamos leyendo el texto.</span>
+          <span>Tarda unos 2 minutos. Podés cerrar esta ventana; cuando termine, te mostramos lo leído para que lo revises.</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 6px; border-radius: 3px; background: {{t.surface}}; overflow: hidden;"><div style="width: 62%; height: 6px; background: currentColor;"></div></div>
+            <span style="font-size: 12px; font-weight: 600; white-space: nowrap;">62% · falta 1 min</span>
+          </div>
+          <a href="{{go.ocr}}" style="align-self: flex-start; font-size: 12px; font-weight: 500; color: inherit; text-decoration: underline; cursor: pointer;">Ver lo leído hasta ahora</a>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{aiRead}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; font-size: 14px; line-height: 1.45;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink: 0; margin-top: 3px;"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path></svg>
+          <span>Leí el archivo y completé lo que figura en él. El año no aparece: no lo invento. Si lo sabés, escribilo; si no, se cita como «s. f.».</span>
+        </div>
+      </sc-if>
+
+      <sc-for list="{{fields}}" as="f" hint-placeholder-count="5">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 500; flex-grow: 1;">{{f.label}}</span>
+            <sc-if value="{{f.hasTag}}" hint-placeholder-val="{{ true }}">
+              <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{f.tagBg}}; color: {{f.tagInk}};">{{f.tag}}</span>
+            </sc-if>
+          </div>
+          <div style="min-height: 36px; box-sizing: border-box; padding: 7px 12px; border-radius: 12px; border: 1.5px solid {{f.line}}; font-size: 14px; color: {{f.ink}}; display: flex; align-items: center;">{{f.value}}</div>
+        </div>
+      </sc-for>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 14px; font-weight: 500; flex-grow: 1;">Categorías</span>
+          <span style="font-size: 14px; color: {{t.muted}}; text-decoration: underline;">Editar categorías</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+          <sc-for list="{{cats}}" as="c" hint-placeholder-count="3">
+            <span style="height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 8px; border: 1.5px {{c.style}} {{c.line}}; background: {{c.bg}}; color: {{c.ink}}; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500;">{{c.label}}<span style="color: {{c.noteInk}}; font-weight: 400;">{{c.note}}</span><span aria-hidden="true" style="color: {{t.muted}};">×</span></span>
+          </sc-for>
+          <span style="height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 8px; border: 1px dashed {{t.lineS}}; color: {{t.muted}}; display: flex; align-items: center; font-size: 12px;">+ Agregar</span>
+        </div>
+        <sc-if value="{{isNew}}" hint-placeholder-val="{{ true }}">
+          <span style="font-size: 14px; color: {{t.muted}};">Las punteadas son sugerencias de la IA. Tocalas para aceptarlas o sacalas con ×.</span>
+        </sc-if>
+      </div>
+    </div>
+
+    <div style="padding: 16px 24px; border-top: 1px solid {{t.line}}; display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 14px; color: {{t.muted}}; flex-grow: 1;">{{footNote}}</span>
+      <a href="{{go.sheetBack}}" style="height: 36px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
+      <a href="{{go.sheetSave}}" style="height: 36px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">{{saveLabel}}</a>
+    </div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"variant":{"editor":"text","default":"new"},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4',scrim:'rgba(27,28,30,0.45)',shadow:'-12px 0 40px rgba(27,28,30,0.18)'};
+    const D = {bg:'#121315',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff',scrim:'rgba(0,0,0,0.6)',shadow:'-12px 0 40px rgba(0,0,0,0.5)'};
+    const t = this.props.dark ? D : L;
+    const isNew = (this.props.variant || 'new') !== 'edit';
+    const scan = this.props.variant === 'scan';
+    const rows = scan ? [
+      ['Título', 'Guía de trabajos prácticos de genética', 'file'],
+      ['Autores', 'Se completa al terminar la lectura', 'wait'],
+      ['Año', 'Se completa al terminar la lectura', 'wait'],
+      ['Tipo', 'Fotocopia escaneada', 'file'],
+      ['Editorial o revista', 'Se completa al terminar la lectura', 'wait']
+    ] : !isNew ? [
+      ['Título', 'Fotosíntesis: la luz que alimenta al mundo', 'ok'],
+      ['Autores', 'Rodríguez, A.', 'ok'],
+      ['Año', '2021', 'ok'],
+      ['Tipo', 'Artículo de divulgación · web', 'ok'],
+      ['Editorial o revista', 'Ciencia Hoy', 'ok']
+    ] : [
+      ['Título', 'Patrones de paisaje y biodiversidad del Bajo Delta del Paraná', 'ai'],
+      ['Autores', 'Kandus, P., Quintana, R. D. y Bó, R. F.', 'ai'],
+      ['Año', isNew ? 'No figura en el archivo' : '2010', 'missing'],
+      ['Tipo', 'Libro', 'ai'],
+      ['Editorial o revista', 'Pablo Casamajor', 'ai']
+    ];
+    const fields = rows.map(([label, value, k]) => {
+      const miss = isNew && k === 'missing';
+      const wait = k === 'wait'; const file = k === 'file';
+      return {
+        label, value, hasTag: isNew && !wait,
+        ink: miss || wait ? t.faint : t.ink,
+        line: miss ? t.orangeInk : t.line,
+        tag: miss ? 'Falta' : file ? 'Del archivo' : 'Completó la IA',
+        tagBg: miss ? t.orange : file ? t.s2 : t.active,
+        tagInk: miss ? t.orangeInk : file ? t.muted : t.activeInk
+      };
+    });
+    const catRows = scan ? [['Genética', 'tuya', 'sug'], ['Actividades', 'tuya', 'sug']] : isNew
+      ? [['Ecología', 'tuya', 'sug'], ['Humedales', 'nueva', 'sug'], ['Artículos científicos', '', 'sug']]
+      : [['Artículos científicos', '', 'ok'], ['Célula', '', 'ok'], ['Fotosíntesis', '', 'ok']];
+    const cats = catRows.map(([label, note, k]) => ({
+      label, note: note ? '· ' + note : '',
+      style: k === 'sug' ? 'dashed' : 'solid',
+      line: k === 'sug' ? t.activeInk : t.line,
+      bg: k === 'sug' ? 'transparent' : t.s2,
+      ink: k === 'sug' ? t.activeInk : t.ink,
+      noteInk: t.muted
+    }));
+    return {
+      t, isNew, scan, aiRead: isNew && !scan, fields, cats, isDark: !!this.props.dark,
+      title: isNew ? 'Nueva fuente' : 'Editar ficha',
+      sub: isNew ? 'Biblioteca · se agrega a tus 146 fuentes' : 'Usada en 1 clase y 1 examen · los cambios se ven en sus citas',
+      fileKind: scan ? 'IMG' : isNew ? 'PDF' : 'WEB',
+      fileName: scan ? 'Guia_TP_genetica_fotocopias.pdf' : isNew ? 'Kandus_2010_humedales_delta.pdf' : 'cienciahoy.org.ar/fotosintesis',
+      fileLine: scan ? 'Escaneo de 18 páginas · subido recién' : isNew ? '32 páginas · leído recién' : 'Consultada el 4 de marzo de 2026',
+      footNote: scan ? 'Podés guardar ahora; los datos se completan al terminar.' : isNew ? 'Falta 1 dato. Se puede guardar igual.' : '',
+      saveLabel: isNew ? 'Guardar fuente' : 'Guardar cambios'
+    };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    const nw = this.props.variant !== 'edit'; g.sheetBack = nw ? g.lib : g.source; g.sheetSave = nw ? g.uploaded : b('SourceSaved');
+    if (this.props.variant === 'scan') g.sheetSave = g.lib;
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

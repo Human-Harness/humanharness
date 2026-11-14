@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Exportar · progreso, listo y examen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+@keyframes hhpulse{0%,100%{opacity:1}50%{opacity:.45}}
+</style>
+</helmet>
+<div style="width: 1280px; height: {{h}}; position: relative; overflow: hidden; background: {{t.bg}}; font-family: 'DM Sans', system-ui, sans-serif; color: {{t.ink}};">
+  <sc-if value="{{onClass}}" hint-placeholder-val="{{ true }}">
+    <dc-import name="ClassEdit" dark="{{dark}}" dim="{{yes}}" hint-size="1280px,900px"></dc-import>
+  </sc-if>
+  <sc-if value="{{isExam}}" hint-placeholder-val="{{ false }}">
+    <dc-import name="ExamReview" dark="{{dark}}" from="{{from}}" hint-size="1280px,1000px"></dc-import>
+    <div style="position: absolute; inset: 0; background: {{t.scrim}};"></div>
+  </sc-if>
+
+  <!-- exporting: small blocking dialog, same pattern as the AI at work -->
+  <sc-if value="{{isDoing}}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-label="Exportando la clase" style="position: absolute; left: 380px; top: 230px; width: 520px; box-sizing: border-box; background: {{t.surface}}; border-radius: 18px; box-shadow: {{t.shadow}}; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 20px; font-weight: 600;">Exportando la clase</span>
+        <span style="font-size: 14px; color: {{t.muted}};">3 PDF con el estilo del Colegio San Martín. Unos segundos.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <sc-for list="{{doingFiles}}" as="f" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: {{f.ink}};"><span style="width: 18px; text-align: center; color: {{f.mark}}; animation: {{f.anim}};">{{f.icon}}</span><span style="flex-grow: 1;">{{f.name}}</span><span style="font-size: 14px; color: {{t.muted}};">{{f.state}}</span></div>
+        </sc-for>
+      </div>
+      <div style="height: 8px; border-radius: 4px; background: {{t.barBg}};"><div style="width: 50%; height: 8px; border-radius: 4px; background: {{t.activeInk}};"></div></div>
+      <div style="display: flex; justify-content: flex-end;">
+        <a href="{{go.classEdit}}" style="height: 36px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- done: where the files are -->
+  <sc-if value="{{isDone}}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-label="Exportación lista" style="position: absolute; left: 340px; top: 190px; width: 600px; box-sizing: border-box; background: {{t.surface}}; border-radius: 18px; box-shadow: {{t.shadow}}; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="width: 32px; height: 32px; border-radius: 16px; background: {{t.ok}}; color: {{t.okInk}}; display: flex; align-items: center; justify-content: center; font-size: 16px;">✓</span>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 20px; font-weight: 600;">Listo: 3 archivos</span>
+          <span style="font-size: 14px; color: {{t.muted}};">Biología 2º B › U4 › Clase 27 › Exportados</span>
+        </div>
+      </div>
+      <div style="border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+        <sc-for list="{{doneFiles}}" as="f" hint-placeholder-count="3">
+          <div style="padding: 10px 12px; display: flex; align-items: center; gap: 12px; border-top: {{f.border}};">
+            <span style="width: 32px; height: 32px; border-radius: 8px; background: {{t.s2}}; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">PDF</span>
+            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 14px; font-weight: 500;">{{f.name}}</span>
+              <span style="font-size: 14px; color: {{t.muted}};">{{f.meta}}</span>
+            </div>
+            <button style="height: 28px; padding: 0 10px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500;">Abrir</button>
+          </div>
+        </sc-for>
+      </div>
+      <span style="font-size: 14px; color: {{t.muted}};">La clase sigue en Borrador. Si la cambiás, volvé a exportar: estos archivos no se actualizan solos.</span>
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button style="height: 36px; padding: 0 14px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500;">Mostrar en la carpeta</button>
+        <a href="{{go.classEdit}}" style="height: 36px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Listo</a>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- exam export form -->
+  <sc-if value="{{isExam}}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-label="Exportar el examen" style="position: absolute; left: 260px; top: 150px; width: 760px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: {{t.shadow}};">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 20px; font-weight: 600;">Exportar el examen</span>
+        <span style="font-size: 14px; color: {{t.muted}};">Evaluación · U4 Ecosistemas · Biología 2º B · borrador</span>
+      </div>
+      <div role="status" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; font-size: 14px; line-height: 1.45;"><span style="flex-grow: 1;">Este examen todavía no está aprobado. Podés exportarlo igual.</span><a href="{{go.examReview}}" style="font-weight: 600; color: inherit; text-decoration: underline; cursor: pointer; white-space: nowrap;">Revisar primero</a></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Formato</span>
+        <div role="radiogroup" style="display: flex; height: 32px; padding: 2px; box-sizing: border-box; border-radius: 12px; background: {{t.s2}}; font-size: 14px; align-self: flex-start;">
+          <span role="radio" style="padding: 0 12px; display: flex; align-items: center; border-radius: 10px; background: {{t.active}}; font-weight: 600; color: {{t.activeInk}};">PDF para imprimir</span>
+          <span role="radio" style="padding: 0 12px; display: flex; align-items: center; color: {{t.muted}};">Word</span>
+        </div>
+        <span style="font-size: 14px; color: {{t.muted}};">Word se puede bajar, pero lo que cambies afuera no vuelve a la app.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Qué incluir</span>
+        <div style="border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+          <sc-for list="{{examParts}}" as="pt" hint-placeholder-count="5">
+            <div style="padding: 10px 12px; display: flex; align-items: center; gap: 12px; border-top: {{pt.border}};">
+              <span style="width: 18px; height: 18px; box-sizing: border-box; border-radius: 6px; background: {{pt.boxBg}}; border: {{pt.boxBorder}}; color: {{t.ctaInk}}; display: flex; align-items: center; justify-content: center;"><sc-if value="{{pt.on}}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></sc-if></span>
+              <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 14px; font-weight: 500;">{{pt.name}}</span>
+                <span style="font-size: 14px; color: {{t.muted}};">{{pt.desc}}</span>
+              </div>
+              <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{pt.whoBg}}; color: {{pt.whoInk}};">{{pt.who}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: {{t.s2}};">
+        <span style="width: 32px; height: 32px; border-radius: 8px; background: {{t.surface}}; border: 1px solid {{t.lineS}}; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center;">SM</span>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 14px; font-weight: 500;">Estilo del Colegio San Martín</span>
+          <span style="font-size: 14px; color: {{t.muted}};">Encabezado con logo, nombre, curso y fecha</span>
+        </div>
+        <a href="{{go.settings}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: underline; text-decoration: none; cursor: pointer;">Cambiar en Ajustes</a>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; border-top: 1px solid {{t.line}}; padding-top: 16px;">
+        <span style="font-size: 14px; color: {{t.muted}};">Se guardan en la carpeta del examen.</span>
+        <span style="flex-grow: 1;"></span>
+        <a href="{{go.examReview}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
+        <a href="{{go.cfExported}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Exportar 4 PDF</a>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"variant":{"editor":"text","default":"doing"},"from":{"editor":"text","default":""},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',ok:'#e3f1e6',okInk:'#2c6b3c',barBg:'#ecebe6',scrim:'rgba(27,28,30,0.4)',shadow:'0 16px 48px rgba(27,28,30,0.18)'};
+    const D = {bg:'#121315',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',ok:'#1b3022',okInk:'#8fd3a0',barBg:'#2f3237',scrim:'rgba(0,0,0,0.6)',shadow:'0 16px 48px rgba(0,0,0,0.5)'};
+    const dark = !!this.props.dark;
+    const t = dark ? D : L;
+    const v = this.props.variant || 'doing';
+    const doingFiles = [['Diapositivas.pdf','done','12 págs'],['Guion para vos.pdf','now','armando'],['Material para alumnos.pdf','todo','']].map(([name, st, state]) => ({
+      name, state, icon: st === 'done' ? '✓' : st === 'now' ? '●' : '○',
+      mark: st === 'done' ? t.okInk : st === 'now' ? t.activeInk : t.faint,
+      ink: st === 'todo' ? t.muted : t.ink,
+      anim: st === 'now' ? 'hhpulse 1.6s ease-in-out infinite' : 'none'
+    }));
+    const doneFiles = [['Diapositivas.pdf','12 páginas · 2,4 MB'],['Guion para vos.pdf','4 páginas · 180 KB'],['Material para alumnos.pdf','2 páginas · 96 KB']].map(([name, meta], i) => ({ name, meta, border: i === 0 ? '0' : '1px solid ' + t.line }));
+    const forStudents = [t.s2, t.muted], forYou = [t.active, t.activeInk];
+    const examParts = [
+      ['Versión A', '14 preguntas, para imprimir', 'Alumnos', true, forStudents],
+      ['Versión B', 'Las mismas preguntas en otro orden y con otros datos', 'Alumnos', true, forStudents],
+      ['Clave de respuestas', 'Respuesta esperada de cada pregunta, versiones A y B', 'Solo vos', true, forYou],
+      ['Grilla de corrección', 'Puntaje por pregunta y criterios para el desarrollo', 'Solo vos', true, forYou],
+      ['Hoja de respuestas', 'Casilleros para marcar la opción múltiple', 'Alumnos', false, forStudents]
+    ].map(([name, desc, who, on, c], i) => ({ name, desc, who, on, whoBg: c[0], whoInk: c[1], border: i === 0 ? '0' : '1px solid ' + t.line, boxBg: on ? t.cta : 'transparent', boxBorder: on ? '0' : '1px solid ' + t.lineS }));
+    return {
+      t, dark, yes: true, from: this.props.from || '', doingFiles, doneFiles, examParts,
+      isDoing: v === 'doing', isDone: v === 'done', isExam: v === 'exam', onClass: v !== 'exam',
+      h: v === 'exam' ? '1000px' : '900px'
+    };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    
+    const M = this.props.from === 'material' ? 'Material' : '';
+    g.cfExported = b('ExamReview' + M + 'Exported');
+    if (M) g.examReview = b('ExamReviewMaterial');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Buscar · ventana ⌘K</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; position: relative; overflow: hidden; background: {{t.bg}}; font-family: 'DM Sans', system-ui, sans-serif; color: {{t.ink}};">
+  <dc-import name="OptB" dark="{{dark}}" hint-size="1280px,800px"></dc-import>
+  <a href="{{go.home}}" aria-label="Cerrar la búsqueda" style="position: absolute; inset: 0; background: {{t.scrim}}; cursor: pointer;"></a>
+  <div role="dialog" aria-label="Buscar" style="position: absolute; left: 320px; top: 96px; width: 640px; box-sizing: border-box; background: {{t.surface}}; border-radius: 18px; box-shadow: {{t.shadow}}; padding: 12px; display: flex; flex-direction: column; gap: 4px;">
+    <div style="height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 12px; border: 1.5px solid {{t.activeInk}}; display: flex; align-items: center; gap: 10px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="color: {{t.muted}};"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <span style="flex-grow: 1; font-size: 16px;">ecosistemas<span style="display: inline-block; width: 1.5px; height: 18px; margin-left: 1px; vertical-align: -3px; background: {{t.ink}};"></span></span>
+      <span style="font-size: 14px; color: {{t.muted}};">Esc para cerrar</span>
+    </div>
+    <sc-for list="{{groups}}" as="gr" hint-placeholder-count="4">
+      <div style="display: flex; flex-direction: column; padding-top: 8px;">
+        <span style="font-size: 14px; font-weight: 600; color: {{t.muted}}; padding: 0 12px 4px;">{{gr.label}}</span>
+        <sc-for list="{{gr.hits}}" as="h" hint-placeholder-count="2">
+          <a href="{{h.href}}" style="padding: 8px 12px; border-radius: 10px; background: {{h.bg}}; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; cursor: pointer;">
+            <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 14px; font-weight: 500;">{{h.title}}</span>
+              <span style="font-size: 14px; color: {{t.muted}};">{{h.meta}}</span>
+            </div>
+            <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{h.tagBg}}; color: {{h.tagInk}}; white-space: nowrap;">{{h.tag}}</span>
+          </a>
+        </sc-for>
+      </div>
+    </sc-for>
+    <div style="display: flex; align-items: center; gap: 16px; border-top: 1px solid {{t.line}}; margin-top: 8px; padding: 10px 12px 2px; font-size: 14px; color: {{t.muted}};">
+      <span>↑ ↓ para moverte · Enter para abrir</span>
+      <span style="flex-grow: 1;"></span>
+      <span>Buscás en todas tus materias, años y la Biblioteca</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',blue:'#e4ecfd',blueInk:'#2d55c4',scrim:'rgba(27,28,30,0.4)',shadow:'0 16px 48px rgba(27,28,30,0.18)'};
+    const D = {bg:'#121315',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',blue:'#1c2944',blueInk:'#a3beff',scrim:'rgba(0,0,0,0.6)',shadow:'0 16px 48px rgba(0,0,0,0.5)'};
+    const dark = !!this.props.dark;
+    const t = dark ? D : L;
+    const tags = { Borrador: [t.s2, t.muted], Aprobada: [t.green, t.greenInk], '2025': [t.blue, t.blueInk], Unidad: [t.s2, t.muted], Fuente: [t.s2, t.muted] };
+    let first = true;
+    const H = (title, meta, tag, key) => { const c = tags[tag] || [t.s2, t.muted]; const x = { title, meta, tag, key, tagBg: c[0], tagInk: c[1], bg: first ? t.s2 : 'transparent' }; first = false; return x; };
+    const groups = [
+      { label: 'Clases', hits: [
+        H('Clase 27 · Ecosistemas urbanos', 'Biología 2º B · U4 · 2026', 'Borrador', 'classEdit'),
+        H('Clase 27 · Ecosistemas urbanos', 'Biología 2º B · U4 · dada en 2025, solo lectura', '2025', 'subjectPast')
+      ] },
+      { label: 'Unidades', hits: [H('U4 · Ecosistemas', 'Biología 2º B · 8 clases · 2 de 8 aprobadas', 'Unidad', 'subject')] },
+      { label: 'Exámenes', hits: [H('Evaluación · U4 Ecosistemas', 'Biología 2º B · versiones A y B', 'Borrador', 'examReview')] },
+      { label: 'Biblioteca', hits: [H('Ecología urbana: la ciudad como ecosistema', 'Faggi y Perepelizin · 2006 · usada en 3 clases', 'Fuente', 'source')] }
+    ];
+    return { t, dark, groups };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), classEdit: b('ClassEdit'), subjectPast: b('SubjectPast'), subject: b('Subject'), examReview: b('ExamReview'), source: b('Source') };
+    o.groups = o.groups.map((gr) => ({ ...gr, hits: gr.hits.map((h) => ({ ...h, href: g[h.key] })) }));
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

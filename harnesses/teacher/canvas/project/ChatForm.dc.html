@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>La IA abre el formulario</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; background: {{t.bg}}; color: {{t.ink}}; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px; gap: 8px; border-bottom: 1px solid {{t.line}};">
+    <div style="display: flex; gap: 8px; width: 90px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: {{t.lineS}};"></span>
+    </div>
+    <span style="font-size: 14px; font-weight: 500;">Teacher</span>
+    <span style="flex-grow: 1;"></span>
+    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{t.active}}; color: {{t.activeInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
+        <a href="{{n.href}}" aria-label="{{n.label}}" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg></a>
+      </sc-for>
+    </nav>
+
+    <main style="flex-grow: 1; min-width: 0; padding: 16px 32px; display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
+      <span style="font-size: 14px; color: {{t.muted}};">Biología · 2º B  ›  Nuevo examen</span>
+      <h1 style="margin: 0; font-size: 20px; font-weight: 600;">Nuevo examen</h1>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; font-size: 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path></svg>
+        <span>La IA completó lo que entendió de tu pedido. Revisá y completá lo que falta.</span>
+      </div>
+
+      <section style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+        <sc-for list="{{fields}}" as="f" hint-placeholder-count="6">
+          <div style="padding: 12px 16px; display: flex; align-items: center; gap: 16px; border-top: {{f.border}};">
+            <span style="width: 180px; flex-shrink: 0; font-size: 14px; font-weight: 500;">{{f.label}}</span>
+            <div style="flex-grow: 1; min-width: 0; min-height: 32px; box-sizing: border-box; padding: 6px 12px; border-radius: 12px; border: 1.5px solid {{f.line}}; font-size: 14px; color: {{f.ink}}; display: flex; align-items: center;">{{f.value}}</div>
+            <span style="width: 112px; flex-shrink: 0; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{f.tagBg}}; color: {{f.tagInk}}; text-align: center;">{{f.tag}}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 14px; color: {{t.muted}}; flex-grow: 1;">Faltan 2 datos. Podés completarlos acá o decírselos al Asistente.</span>
+        <a href="{{go.workExam}}" style="height: 40px; padding: 0 20px; border: 0; border-radius: 12px; background: {{t.s2}}; color: {{t.faint}}; font-family: inherit; font-size: 16px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Generar examen</a>
+      </div>
+    </main>
+
+    <aside aria-label="Asistente" style="width: 360px; flex-shrink: 0; background: {{t.rail}}; border-left: 1px solid {{t.line}}; display: flex; flex-direction: column; min-height: 0;">
+      <div style="padding: 12px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid {{t.line}};">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="{{t.activeInk}}" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>
+        <span style="font-size: 16px; font-weight: 600; flex-grow: 1;">Asistente</span>
+        <a href="{{go.chatClosed}}" aria-label="Cerrar" style="width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></a>
+      </div>
+      <div style="flex-grow: 1; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; font-size: 14px; line-height: 1.45;">
+        <span style="align-self: flex-start; font-size: 12px; padding: 4px 10px; border-radius: 8px; background: {{t.s2}}; color: {{t.muted}};">Estás en Biología · 2º B</span>
+        <div style="align-self: flex-end; max-width: 85%; background: {{t.s2}}; border-radius: 14px; padding: 10px 12px;">Armame un examen de la U4 con el material del ciclo del carbono, 14 preguntas.</div>
+        <div style="max-width: 92%; display: flex; flex-direction: column; gap: 8px;">
+          <span>Te abrí el formulario con lo que entendí. Me faltan los tipos de pregunta y cuántas versiones: elegilos ahí o decímelos acá.</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <span style="font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}};">Opción múltiple y desarrollo</span>
+            <span style="font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}};">Versiones A y B</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 12px 16px 16px; border-top: 1px solid {{t.line}};">
+        <div style="min-height: 48px; box-sizing: border-box; border: 1px solid {{t.lineS}}; border-radius: 12px; background: {{t.surface}}; padding: 8px 8px 8px 12px; display: flex; align-items: flex-end; gap: 8px;">
+          <span style="flex-grow: 1; font-size: 14px; color: {{t.faint}}; padding-bottom: 6px;">Pedí crear, cambiar o preguntar cómo se hace algo…</span>
+          <button aria-label="Enviar" style="width: 32px; height: 32px; border: 0; border-radius: 10px; background: {{t.cta}}; color: {{t.ctaInk}}; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  __rv() {
+    const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',orange:'#fdebd7',orangeInk:'#a94f08'};
+    const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',orange:'#3a2715',orangeInk:'#f4b47e'};
+    const t = this.props.dark ? D : L;
+    const icons = [
+      ['Inicio', 'M3 11 12 4l9 7M5 10v10h14V10'],
+      ['Biblioteca', 'M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 3 15.5-3.5 1z'],
+      ['Exámenes', 'M6 3h9l4 4v14H6zM9 13l2 2 4-4'],
+      ['Plan del año', 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4']
+    ];
+    const rail = icons.map(([label, d], i) => ({ label, d, bg: i === 2 ? t.active : 'transparent', ink: i === 2 ? t.activeInk : t.muted }));
+    const rows = [
+      ['De dónde sale', 'Desde material elegido', 'ai'],
+      ['Material', 'Campbell, cap. 54 · Carbono en suelos urbanos · Guía de redes tróficas y 2 más', 'ai'],
+      ['Cantidad de preguntas', '14', 'ai'],
+      ['Tipos de pregunta', 'Elegí uno o más', 'missing'],
+      ['Versiones', 'Elegí cuántas', 'missing'],
+      ['Indicaciones', 'Solo sobre el ciclo del carbono', 'ai']
+    ];
+    const fields = rows.map((r, i) => {
+      const ai = r[2] === 'ai';
+      return {
+        label: r[0], value: r[1],
+        ink: ai ? t.ink : t.faint,
+        line: ai ? t.line : t.orangeInk,
+        tag: ai ? 'Completó la IA' : 'Falta',
+        tagBg: ai ? t.active : t.orange,
+        tagInk: ai ? t.activeInk : t.orangeInk,
+        border: i === 0 ? '0' : '1px solid ' + t.line
+      };
+    });
+    return { t, rail, fields };
+  }
+  renderVals() {
+    const o = this.__rv();
+    const sx = this.props.dark ? 'Dark' : '';
+    const b = (n) => n + sx + '.dc.html';
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    o.rail = (o.rail || []).map((n) => ({ ...n, href: ({'Inicio': g.home, 'Biblioteca': g.lib, 'Exámenes': g.exams, 'Plan del año': g.plan, 'Asistente': g.chat})[n.label] || '#' }));
+    g.search = b('Search');
+    o.go = g;
+    return o;
+  }
+}
+</script>
+</body>
+</html>

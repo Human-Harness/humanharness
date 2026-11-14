@@ -98,7 +98,6 @@ import {
   TEXT_SIZES,
   type TextSize,
   isConfigured,
-  stepTextSize,
 } from "@humanharness/protocol";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import {
@@ -250,11 +249,11 @@ import { harnessLayer, writeLayers } from "./mods/home-folder";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { shownLayout } from "./mods/layout";
 import { HomeHistory } from "./mods/home-history";
-import { enterSafeMode, isEscapeHatch, safeAtStart } from "./mods/safe";
+import { enterSafeMode, safeAtStart } from "./mods/safe";
 import { manualFiles } from "./mods/manual";
 import { startControl } from "./mods/control";
 import { ModHost } from "./mods/host";
-import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
+import { MOD_SCHEME } from "./mods/mod-scheme";
 import { registerModsIpc } from "./mods/mods-ipc";
 import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./mods/user-layer";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
@@ -279,7 +278,8 @@ import { holds } from "./holds";
 import { historyView } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
-import { textSizeShortcut, trafficLightY } from "./text-size";
+import { trafficLightY } from "./text-size";
+import { createWindow as createAppWindow } from "./window";
 import {
   MOCK_MODEL,
   devEngine,
@@ -878,8 +878,6 @@ function applyAppearance(appearance: AppConfig["appearance"]) {
   nativeTheme.themeSource = appearance ?? "system";
   window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light);
 }
-
-let textSizeSteps: Promise<void> = Promise.resolve();
 
 /** Settings › General › Text size zooms the whole page; the traffic lights follow the taller top bar. */
 function applyTextSize(size: TextSize | undefined) {
@@ -2350,93 +2348,40 @@ function registerIpc() {
   );
 }
 
-async function createWindow() {
-  const win = new BrowserWindow({
-    width: 1100,
-    height: 720,
-    minWidth: 900,
-    minHeight: 600,
-    title: harness.name,
-    // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the top bar (--hh-topbar-h, 40 px);
-    // y 13 centres the traffic lights in it; text size moves them with trafficLightY.
-    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 13 } } : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
-    // Test background mode (HH_TEST_BACKGROUND, development builds only): headless, the window is never shown,
-    // and it keeps rendering at full speed although nobody looks at it.
-    ...(hooks.background ? { show: false } : {}),
-    webPreferences: {
-      preload: path.join(here, "../preload/index.mjs"),
-      contextIsolation: true,
-      sandbox: false,
-      ...(hooks.background ? { backgroundThrottling: false } : {}),
+/** The app window (window.ts), with what it reads from here. */
+const createWindow = () =>
+  createAppWindow({
+    get harness() {
+      return harness;
     },
+    get config() {
+      return config;
+    },
+    hooks,
+    here,
+    paper: PAPER,
+    get window() {
+      return window;
+    },
+    set window(w) {
+      window = w;
+    },
+    get modHost() {
+      return modHost;
+    },
+    get pluginsCtl() {
+      return pluginsCtl;
+    },
+    pluginPanels,
+    documentSessions,
+    devUrl,
+    rendererFile,
+    appUrl,
+    sendToWindow,
+    pluginLog,
+    applyTextSize,
+    safeMode,
   });
-  window = win;
-  // Read now: once closed, the window's webContents can no longer be asked.
-  const contentsId = win.webContents.id;
-  // hh-mod (0b2): the built ui of an on, non-core mod, on the window's session; once per session.
-  const modProtocol = win.webContents.session.protocol;
-  if (!modProtocol.isProtocolHandled(MOD_SCHEME.scheme)) {
-    modProtocol.handle(MOD_SCHEME.scheme, (req) =>
-      serveModUi(req.url, { mod: (id) => modHost?.info(id), buildDir: (id) => path.join(modBuildRoot(app.getPath("userData"), harness.id), id) }),
-    );
-  }
-  win.on("closed", () => {
-    if (window === win) window = null;
-    documentSessions.closeOwner(contentsId);
-  });
-  // The agent may have edited attention.json (no listener fires for it): the inbox is read again when the window comes back.
-  const plugins = pluginsCtl;
-  if (plugins) {
-    // Every app window, once a plugin with panels has started: the panel-only handler, the request filter and the
-    // frame guard (D0: none without plugins, none while no plugin with panels has run).
-    pluginPanels.window(win);
-    win.on("focus", () => {
-      void plugins.attention.view().then(
-        (view) => sendToWindow("hh:attention", view),
-        (err: unknown) => pluginLog("Could not read the Attention inbox", err),
-      );
-    });
-  }
-  // A reload starts a new page with no watches of its own: the old page's go.
-  win.webContents.on("did-navigate", () => documentSessions.closeOwner(contentsId));
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  win.webContents.on("will-navigate", (event) => {
-    if (!appUrl(event.url)) event.preventDefault();
-  });
-  // A reload starts at the browser's zoom: put the saved size back.
-  win.webContents.on("did-finish-load", () => {
-    void config.load().then((c) => applyTextSize(c.textSize), () => applyTextSize(undefined));
-  });
-  // ⌘+, ⌘− and ⌘0 change the saved size (not the browser's own zoom, which would be forgotten).
-  win.webContents.on("before-input-event", (event, input) => {
-    // The escape hatch (0b2), before any other shortcut and never rebound: local mods off, the harness's layout.
-    if (isEscapeHatch(input, process.platform)) {
-      event.preventDefault();
-      void safeMode(true).catch((err: unknown) => console.error("Could not enter safe mode", err));
-      return;
-    }
-    const step = textSizeShortcut(input, process.platform);
-    if (!step) return;
-    event.preventDefault();
-    // One after another: a held key or quick presses each step from the size the last one saved.
-    textSizeSteps = textSizeSteps
-      .then(async () => {
-        const c = await config.load();
-        const textSize = stepTextSize(c.textSize, step);
-        if (textSize === (c.textSize ?? "normal")) return;
-        await config.save({ textSize });
-        applyTextSize(textSize);
-        sendToWindow("hh:textSize", textSize);
-      })
-      .catch((err: unknown) => console.error("Could not change the text size", err));
-  });
-  if (devUrl) await win.loadURL(devUrl);
-  else await win.loadFile(rendererFile);
-}
 
 // Each harness is its own app: keep its config, history and caches apart from other harnesses.
 // Set before "ready" (ESM top-level await delays it) so Chromium uses the same folder.

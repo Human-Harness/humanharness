@@ -91,11 +91,14 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     // needed() only from the controller's deps: a plugin with panels starting.
     expect([...index.matchAll(/\bpluginPanels\.needed\s*\(/g)].length).toBe(1);
     expect(index).toMatch(/panelsNeeded: \(\) => pluginPanels\.needed\(\),/);
-    const create = group(index, index.indexOf("async function createWindow()"), /\{/);
+    // window.ts holds createWindow; index.ts hands it pluginPanels and a getter over pluginsCtl.
+    const win = (await sources()).find(([n]) => n === "window.ts")![1];
+    const create = group(win, win.indexOf("export async function createWindow(d: WindowDeps)"), /\{/);
     const at = create.indexOf("if (plugins) {");
     expect(at).toBeGreaterThan(0);
-    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = pluginsCtl;\s*$/);
-    expect([...index.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
+    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = d\.pluginsCtl;\s*$/);
+    expect(index).not.toMatch(/\bpluginPanels\.window\s*\(/);
+    expect([...win.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
     expect(group(create, at, /\{/)).toMatch(/pluginPanels\.window\(win\)/);
   });
 

@@ -175,9 +175,13 @@ describe("hatches IPC surface (hatches D0)", () => {
     const runtime = index.slice(from, index.indexOf("\n}\n", from));
     expect(runtime).toContain("if (!linked) return {};");
     for (const key of [/\binstructionLinked:/, /\blinkedGitdir:/, /\bonLinkedUnsupported:/]) expect(count(index, key), String(key)).toBe(count(runtime, key));
-    // The turn's access and board mode's first-message section are getters that give undefined without them.
-    expect(group(index, index.indexOf("get scopeAccess()"), /\{/)).toContain("return linked ? ");
-    expect(group(index, index.indexOf("get linkedContext()"), /\{/)).toContain("return linked && host ? ");
+    // The turn's access and board mode's first-message section are getters that give undefined without them
+    // (task-deps.ts holds the turn and task deps; they get linked_ as `linked`).
+    const deps = await read("task-deps.ts");
+    expect(index).toMatch(/createTurnDeps\(\{[^}]*\n  linked: linked_,\n/);
+    expect(index).toMatch(/createTaskDeps\(\{[^]*?\n  linked: linked_,\n/);
+    expect(group(deps, deps.indexOf("get scopeAccess()"), /\{/)).toContain("return linked ? ");
+    expect(group(deps, deps.indexOf("get linkedContext()"), /\{/)).toContain("return linked && d.host() ? ");
   });
 
   it("en.json has one sentence per refusal reason, and the window's reasons cover the picker's", async () => {

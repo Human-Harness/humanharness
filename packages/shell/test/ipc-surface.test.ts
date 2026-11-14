@@ -100,9 +100,10 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
   });
 
   it("profileFor passes a prepared task's tier on as the manifest tier", async () => {
-    const index = (await sources()).find(([n]) => n === "index.ts")![1];
-    const profileFor = group(index, index.indexOf("profileFor: async (action, floor, tier, policies)"), /\{/);
-    expect(profileFor).toMatch(/manifestTier: manifestTier\(harness, action, tier\)/);
+    // task-deps.ts holds the TaskManager's deps.
+    const deps = (await sources()).find(([n]) => n === "task-deps.ts")![1];
+    const profileFor = group(deps, deps.indexOf("profileFor: async (action, floor, tier, policies)"), /\{/);
+    expect(profileFor).toMatch(/manifestTier: manifestTier\(d\.harness\(\), action, tier\)/);
   });
 });
 

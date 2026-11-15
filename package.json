@@ -1,11 +1,13 @@
 {
   "name": "humanharness",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.10.1",
   "engines": { "node": ">=22.18" },
   "scripts": {
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests && vitest run --config scripts/vitest.config.ts",
+    "release": "tsx scripts/release.ts",
     "typecheck": "tsc -p tsconfig.json",
     "size-baseline": "tsx scripts/size-baseline.ts",
     "humanharness": "node packages/cli/bin/humanharness.js",

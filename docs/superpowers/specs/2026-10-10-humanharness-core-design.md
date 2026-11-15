@@ -275,13 +275,14 @@ Subscription credentials never go into CI.
 **Releases:**
 - **Packages:** changesets → npm.
 - **Official harnesses:** tag → macOS Action → build, sign, notarize, GitHub Release → electron-updater.
+  Detailed in `docs/superpowers/specs/2026-11-15-release-and-updates-design.md`.
 - **Community harnesses:** `pnpm build` uses the developer's certificates if present; otherwise it produces an unsigned build with instructions to open it.
 
 ## 12. Out of scope (separate specs)
 
 - Human Harness website and catalog (official vs community, donation links).
 - Ariadna as a harness (replace the Python `ari` CLI with Node MCP).
-- Windows and Linux (packaging, signing, per-CLI prerequisites).
+- Linux (packaging, signing, per-CLI prerequisites). Windows is in v1: see `docs/superpowers/specs/2026-11-15-release-and-updates-design.md`.
 - API-key mode (only if the legal gate requires it).
 
 ## 13. Open items and what each one blocks

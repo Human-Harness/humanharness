@@ -61,7 +61,7 @@ import { createAppServices } from "./app-services";
 import { requireNoticeForTurn } from "./notice-policy";
 import { type RunningSetup } from "./setup-runner";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
-import { shellResourcesDir } from "./shell-resources";
+import { harnessDirFor, shellResourcesDir } from "./shell-resources";
 import { TurnController, type TurnDeps } from "./turn-controller";
 import {
   UsageLog,
@@ -132,11 +132,11 @@ declare const __SHELL_RESOURCES__: string;
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
 
-// The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
-// `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
+// The build's folder. Not `__dirname`: electron-vite's ESM shim for it once landed inside a bundled JSDoc comment.
 const here = import.meta.dirname;
-/** The plugin and tool hosts' files and the Dock icon: the build's packages/shell/resources, or the packaged app's. */
+/** The hosts' files and Dock icon, and the harness folder: the build's, or the packaged app's (shell-resources.ts). */
 const shellResources = shellResourcesDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __SHELL_RESOURCES__ });
+const harnessDir = harnessDirFor({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __HARNESS_DIR__ });
 const commandDeps = createCommandDeps(process.execPath);
 
 let harness: LoadedHarness;
@@ -1022,7 +1022,7 @@ const createWindow = () =>
 
 // Each harness is its own app: keep its config, history and caches apart from other harnesses.
 // Set before "ready" (ESM top-level await delays it) so Chromium uses the same folder.
-const loaded = await loadHarness(path.join(here, "harness.js"), { root: __HARNESS_DIR__ }).catch((err: unknown) => {
+const loaded = await loadHarness(path.join(here, "harness.js"), { root: harnessDir }).catch((err: unknown) => {
   // showErrorBox is safe before "ready".
   dialog.showErrorBox("This app could not start", err instanceof Error ? err.message : String(err));
   app.exit(1);
@@ -1256,7 +1256,7 @@ const lifecycle = {
   get window() {
     return window;
   },
-  harnessDir: __HARNESS_DIR__,
+  harnessDir,
   PAPER,
   QUIT_TEST_WAIT_MS,
   activeScope,

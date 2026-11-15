@@ -227,6 +227,7 @@ import { createTaskDeps, createTurnDeps } from "./task-deps";
 import { createAppState } from "./app-state";
 import { createScopeStores } from "./scope-stores";
 import { createRuntimeWiring } from "./runtime-wiring";
+import { createAppMods } from "./mods/app-mods";
 import { type TranslationService } from "./translation";
 import type { MaterialService } from "./material";
 import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
@@ -311,24 +312,8 @@ let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 let settingsCtl: SettingsController | null = null;
 /** Sidekick, the core's prompt coach: built only for a harness that declares `sidekick`. */
 let sidekickCtl: SidekickController | null = null;
-/** The mod host (minimal-core spec §4); null with no mod that could run (D0). */
-let modHost: ModHost | null = null;
-/** Folders `resolveMods` couldn't read as mods, for Settings › Mods (the user layer keeps its own). */
-let modProblems: ResolveProblem[] = [];
-/** The home folder's `mods/` as the host runs them (minimal-core 0b2); null without a host. */
-let userLayer: UserLayer | null = null;
-/** The watcher on the home folder's `mods/`; closed on quit. */
-let userLayerWatch: { close(): void } | null = null;
-/** The watch on the home folder's `layouts/` and `settings.json` (0b2). */
-let layoutsWatch: { close(): void } | null = null;
-/** The home folder's own history (0b2): every change to `mods/`, `layouts/` and `settings.json`, undoable. */
-let homeHistory: HomeHistory | null = null;
-/** Safe mode was entered this run (the escape hatch, `--safe` or HH_SAFE=1): the window shows its notice. */
-let safeEntered = false;
 /** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
 let control: { stop(): Promise<void> } | null = null;
-/** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
-let resolvedMods: ResolvedMod[] = [];
 /**
  * Plugins (plugins spec); null for a harness that takes none and no dev folders (D0): no `hh-plugin` scheme, no
  * backend window, no IPC handler, no file.
@@ -758,7 +743,7 @@ const { prepareEngine, runtimeOptions, runtime, closeRuntime, dropRuntime, undoB
     tasks: () => tasks,
     plainTasks: () => plainTasks,
     historyHeld: () => historyHeld,
-    resolvedMods: () => resolvedMods,
+    resolvedMods: () => appMods.state.resolvedMods,
     pluginLog,
     dataStoreFor,
     materialRequest: (base, request, runningTask) => materialRequest(base, request, runningTask),
@@ -786,163 +771,23 @@ function showNotice(text: string): void {
   keepNotification(new Notification({ title: harness.name, body: text.slice(0, 300) }), notifications).show();
 }
 
-/** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
-const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: [...modProblems, ...(userLayer?.problems() ?? [])] });
-
-/** A mod's own tool-less engine turn (minimal-core spec §5), on SidekickSession like Sidekick's; usage tagged `mod:<id>`. */
-const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, prompt, workDir, signal }) => {
-  const c = await validConfig();
-  if (!c) return { ok: false, text: "", error: "not set up" };
-  if (!(await hasNotice(c.engineId))) return { ok: false, text: "", error: "the engine notice is not accepted" };
-  const engine = getEngine(c.engineId);
-  const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
-  if (!cmd) return { ok: false, text: "", error: "the engine isn't installed" };
-  const saved = await config.load();
-  const profile = await pickProfile(saved.policies?.model, { engine: engine.id, tier, models: cleanModels(saved.models) });
-  await fs.mkdir(workDir, { recursive: true });
-  const session = new SidekickSession({ engine, command: cmd.command, env: cmd.env, folder: workDir, profile });
-  try {
-    const a = await session.ask(prompt, signal ?? new AbortController().signal);
-    if (a.usage) {
-      const record = modRecord({ engine: engine.id, process: proc as `mod:${string}`, profile, ok: a.ok, usage: a.usage, ...(a.limits ? { limits: a.limits } : {}) });
-      await new UsageLog(baseOf(c)).append(record).catch((err: unknown) => console.error("Could not record the mod's turn", err));
-    }
-    return a.ok ? { ok: true, text: a.text } : { ok: false, text: "", error: a.error ? (a.error.detail ?? a.error.code) : "failed" };
-  } finally {
-    await session.close();
-  }
-};
-
-/** Reads the mods again and builds the host when some mod could run (D0); without one, `modHost` stays null. */
-async function startModHost(): Promise<void> {
-  const modsConfig = (await config.load()).mods;
-  const local = modsConfig?.local ?? [];
-  const userData = app.getPath("userData");
-  const home = appHome(userData, harness.id);
-  const user = await userModFolders(home);
-  if (!needsHost({ declared: harness.mods, local: [...local, ...user], coreIds: Object.keys(CORE_MODS) })) {
-    resolvedMods = [];
-    modProblems = [];
-    userLayer = null;
-    return;
-  }
-  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, user, core: CORE_MODS });
-  for (const p of resolved.problems) console.error(`Mod ${p.id}: ${p.reason}`);
-  resolvedMods = resolved.mods;
-  // The user layer's folders that couldn't be read are its own (they come and go with the watcher).
-  modProblems = resolved.problems.filter((p) => path.dirname(p.id) !== userModsDir(home));
-  // A user-layer mod's main imports the app's own zod and mod-sdk, through small files beside its builds.
-  const buildRoot = modBuildRoot(userData, harness.id);
-  const resolveShared = await writeMainShims(path.join(buildRoot, ".shared"), MAIN_SHARED_MODULES);
-  const runningTask = async () => {
-    const t = await tasks.runningTask();
-    return t ? { id: t.id, scope: t.scope, ...(t.action ? { action: t.action } : {}) } : null;
-  };
-  const mods = new ModHost({
-    config: {
-      load: async () => (await config.load()).mods,
-      saveFailed: (id, reason) => saveMods((m) => ({ ...m, failed: { ...m?.failed, [id]: reason } })),
-    },
-    services: buildServices({
-      harnessId: harness.id,
-      userData: app.getPath("userData"),
-      base: async () => {
-        const c = await validConfig();
-        return c ? baseOf(c) : null;
-      },
-      engineRun: modEngineRun,
-      runningTask,
-      noteTitles: async (scope) => {
-        const c = await validConfig();
-        return c ? (await readNotes(baseOf(c), notesPrefix(scoped(), scope ?? MAIN_SCOPE)).catch(() => [])).map((n) => n.title) : [];
-      },
-      notify: showNotice,
-    }),
-    notice: showNotice,
-    changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
-    // A user-layer mod rebuilt after an edit: the window imports its ui again (hh:modReloaded, 0b2).
-    reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
-    builds: new ModBuilds(buildRoot, resolveShared),
-  });
-  modHost = mods;
-  userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
-  await mods.start(resolved.mods);
-}
-
-/** Watches the home folder's `mods/` once: a change syncs the folder with whatever host runs now. */
-function watchUserMods(): void {
-  if (userLayerWatch) return;
-  userLayerWatch = watchUserLayer(appHome(app.getPath("userData"), harness.id), (dir) => void userLayer?.sync(dir));
-}
-
-/** Watches the home folder's layouts and pick once: a change sends the layout to show now (hh:layoutChanged, 0b2). */
-function watchUserLayouts(): void {
-  if (layoutsWatch) return;
-  const home = appHome(app.getPath("userData"), harness.id);
-  layoutsWatch = watchLayouts(home, () => {
-    void shownLayout(home)
-      .then((v) => sendToWindow("hh:layoutChanged", v))
-      .catch((err: unknown) => console.error("Could not read the layout again", err));
-  });
-}
-
-/**
- * Safe mode (0b2): the layout pick goes and every local mod (the home folder's and the added folders) is set off; with
- * a running host, it restarts. The window gets the layout and shows the notice. At start it runs before the host.
- */
-async function safeMode(running: boolean): Promise<void> {
-  const home = appHome(app.getPath("userData"), harness.id);
-  const { layout } = await enterSafeMode({
-    home,
-    folders: [...((await config.load()).mods?.local ?? []), ...(await userModFolders(home))],
-    mods: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
-  });
-  safeEntered = true;
-  if (running) await restartModHost();
-  sendToWindow("hh:layoutChanged", layout);
-  sendToWindow("hh:safeModeEntered", true);
-}
-
-/** The home folder's history (0b2): made once, then every quiet change is committed; Settings › Mods hears each. */
-async function startHomeHistory(): Promise<void> {
-  const userData = app.getPath("userData");
-  const home = appHome(userData, harness.id);
-  const h = new HomeHistory(home, historyDir(userData, home));
-  await h.init();
-  h.onChange((c) => sendToWindow("hh:homeHistoryChanged", c));
-  h.watch();
-  homeHistory = h;
-}
-
-/** Stops the host and builds it again from config.json (a local mod added or removed). */
-async function restartModHost(): Promise<void> {
-  const old = modHost;
-  modHost = null;
-  await old?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
-  await startModHost();
-  sendToWindow("hh:modsChanged", await modsView());
-}
-
-/** Changes config.json's `mods` (cleaned, so an empty one goes away). */
-async function saveMods(fn: (m: ModsConfig | undefined) => ModsConfig | undefined): Promise<void> {
-  await config.save({ mods: cleanModsConfig(fn((await config.load()).mods)) });
-}
-
-/**
- * An id a local folder can't take: a resolved mod's, or one the manifest declares or the core ships even when it
- * couldn't be read (its `on` switch is that mod's).
- */
-const modIdTaken = (id: string): boolean =>
-  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id) || (modHost?.has(id) ?? false);
-
-/** The id in a folder's mod.json, or null when it has none. */
-async function modIdIn(folder: string): Promise<string | null> {
-  try {
-    return modJsonSchema.parse(JSON.parse(await fs.readFile(path.join(folder, "mod.json"), "utf8"))).id;
-  } catch {
-    return null;
-  }
-}
+/** The mod host, the home folder's mods, layouts and history, safe mode and Settings › Mods (mods/app-mods.ts). */
+const appMods = createAppMods({
+  harness: () => harness,
+  config: () => config,
+  hooks,
+  commandDeps,
+  window: () => window,
+  tasks: () => tasks,
+  validConfig,
+  baseOf,
+  scoped,
+  hasNotice: (engineId) => hasNotice(engineId),
+  pickProfile,
+  showNotice,
+  sendToWindow,
+});
+const { modsView, startModHost, watchUserMods, watchUserLayouts, safeMode, startHomeHistory } = appMods;
 // Mock mode: the test engine has no provider to disclose and nothing leaves the computer, so its notice counts as accepted.
 const hasNotice = async (engineId: string) => isMockEngine(hooks, engineId) || hasAcceptedNotice(shared, engineId);
 
@@ -1002,7 +847,7 @@ const taskDeps: TaskDeps = createTaskDeps({
     singleNote = note;
   },
   jobsHost: () => jobsHost,
-  modHost: () => modHost,
+  modHost: () => appMods.state.modHost,
   pluginsCtl: () => pluginsCtl,
   settingsCtl: () => settingsCtl,
   sidekickCtl: () => sidekickCtl,
@@ -1724,7 +1569,7 @@ function registerIpc() {
       turnBlocked,
       tasks: () => tasks,
       host: () => host,
-      modHost: () => modHost,
+      modHost: () => appMods.state.modHost,
       guards,
       engineBusy: hold.engineBusy,
       scopesSettled,
@@ -1809,50 +1654,9 @@ function registerIpc() {
   // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
   handle("hh:layoutPick", layoutIpc({ home: () => appHome(app.getPath("userData"), harness.id) })["hh:layoutPick"]);
   // Safe mode entered this run: the window shows its notice.
-  handle("hh:safeMode", () => safeEntered);
+  handle("hh:safeMode", () => appMods.state.safeEntered);
   // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
-  registerModsIpc(handle, {
-    view: modsView,
-    // A mod in the home folder's `mods/`: turned on the first time only through the warning (spec D2, `mods.trusted`).
-    ...userConsent({
-      config: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
-      host: { set: async (id, on) => modHost?.set(id, on) },
-      layer: { dirOf: (id) => userLayer?.dirOf(id) },
-    }),
-    set: async (id, on) => {
-      // Turning a mod on clears its three-strikes failure.
-      await saveMods((m) => ({ ...m, on: { ...m?.on, [id]: on }, ...(on && m?.failed ? { failed: Object.fromEntries(Object.entries(m.failed).filter(([k]) => k !== id)) } : {}) }));
-      await modHost?.set(id, on);
-    },
-    pickFolder: async () => {
-      if (!window || window.isDestroyed()) return null;
-      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
-      return r.canceled ? null : (r.filePaths[0] ?? null);
-    },
-    // The person confirmed the warning: the mod starts on.
-    addLocal: async (folder) => {
-      // Read again (the folder may have changed since the review); a taken id never reaches config.json.
-      const id = await modIdIn(folder);
-      if (!id) throw new Error("This folder has no valid mod.json");
-      if (modIdTaken(id)) throw new Error(`A mod with the id "${id}" is already in this app`);
-      await saveMods((m) => ({
-        ...m,
-        local: [...new Set([...(m?.local ?? []), folder])],
-        on: { ...m?.on, [id]: true },
-        failed: Object.fromEntries(Object.entries(m?.failed ?? {}).filter(([k]) => k !== id)),
-      }));
-      await restartModHost();
-    },
-    removeLocal: async (id) => {
-      const dir = resolvedMods.find((m) => m.json.id === id && m.shipped === "local")?.dir;
-      const drop = <T>(r: Record<string, T> | undefined) => Object.fromEntries(Object.entries(r ?? {}).filter(([k]) => k !== id));
-      await saveMods((m) => ({ ...m, local: (m?.local ?? []).filter((f) => f !== dir), on: drop(m?.on), failed: drop(m?.failed) }));
-      await restartModHost();
-    },
-    // A user-layer mod goes by deleting its folder, not from config.json's `local`.
-    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local" && !m.user),
-    taken: modIdTaken,
-  });
+  registerModsIpc(handle, appMods.modsIpcDeps());
   // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
   // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.
   if (pluginsCtl) {
@@ -1901,7 +1705,7 @@ function registerIpc() {
     quitting: () => quitting,
     tasksBusy: () => tasks.isBusy(),
     restoreHeld: hold.restoreHeld,
-    homeHistory: () => homeHistory,
+    homeHistory: () => appMods.state.homeHistory,
     linked_,
     currentHistory,
     linkedHistoriesOf,
@@ -2010,7 +1814,7 @@ const createWindow = () =>
       window = w;
     },
     get modHost() {
-      return modHost;
+      return appMods.state.modHost;
     },
     get pluginsCtl() {
       return pluginsCtl;
@@ -2056,7 +1860,7 @@ const lifecycle = {
     return harness;
   },
   get homeHistory() {
-    return homeHistory;
+    return appMods.state.homeHistory;
   },
   get host() {
     return host;
@@ -2080,10 +1884,10 @@ const lifecycle = {
     jobsHost = v;
   },
   get layoutsWatch() {
-    return layoutsWatch;
+    return appMods.state.layoutsWatch;
   },
   set layoutsWatch(v) {
-    layoutsWatch = v;
+    appMods.state.layoutsWatch = v;
   },
   get materialJobs() {
     return materialJobs;
@@ -2098,7 +1902,7 @@ const lifecycle = {
     materialSvc = v;
   },
   get modHost() {
-    return modHost;
+    return appMods.state.modHost;
   },
   get moving() {
     return moving;
@@ -2215,10 +2019,10 @@ const lifecycle = {
     translation = v;
   },
   get userLayerWatch() {
-    return userLayerWatch;
+    return appMods.state.userLayerWatch;
   },
   set userLayerWatch(v) {
-    userLayerWatch = v;
+    appMods.state.userLayerWatch = v;
   },
   get window() {
     return window;

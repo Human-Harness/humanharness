@@ -182,8 +182,11 @@ describe("the hh:layout channel", () => {
     expect(preload).toContain('layoutPick: (name) => invoke("hh:layoutPick", name)');
     expect(preload).toContain('onLayoutChanged: (fn) => subscribe("hh:layoutChanged", fn)');
     expect(preload).not.toMatch(/invoke\("hh:layoutChanged"/);
-    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    const all = await sources();
+    const index = all.find(([n]) => n === "index.ts")![1];
     expect(index).toMatch(/handle\("hh:layoutPick", /);
-    expect(index).toContain('sendToWindow("hh:layoutChanged"');
+    // mods/app-mods.ts holds the layouts' watch and safe mode, which send the layout.
+    const mods = all.find(([n]) => n === path.join("mods", "app-mods.ts"))![1];
+    expect(mods).toContain('sendToWindow("hh:layoutChanged"');
   });
 });

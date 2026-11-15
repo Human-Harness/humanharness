@@ -4,3 +4,4 @@ export { type AppStatus, appShot, appStatus } from "./app";
 export { type ModCheck, checkMod } from "./check";
 export { type ClonedLayout, type ClonedMod, assertLayoutName, assertModId, cloneLayout, cloneMod } from "./clone";
 export { type Catalog, type CatalogLayout, type CatalogMod, type CatalogType, catalog } from "./catalog";
+export { type NewMod, type NewModInput, newMod } from "./new-mod";

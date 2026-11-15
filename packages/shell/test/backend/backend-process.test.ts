@@ -214,9 +214,9 @@ describe("BackendProcess (hatches spec §4.2, §4.3)", () => {
   });
 
   it("stop sends SIGTERM; a backend that ignores SIGTERM is killed after 3 s (B8)", async () => {
-    const { p } = await start("ignore-term", { graceMs: 300 });
-    // Give it time to install its SIGTERM handler.
-    await new Promise((r) => setTimeout(r, 150));
+    const { p, log } = await start("ignore-term", { graceMs: 300 });
+    // Wait for its ready line: the SIGTERM handler is installed.
+    await until(() => log.has("ready"), 10_000);
     const t0 = Date.now();
     await p.stop();
     expect(Date.now() - t0).toBeLessThan(1000);
@@ -225,9 +225,9 @@ describe("BackendProcess (hatches spec §4.2, §4.3)", () => {
   });
 
   it("once stop is asked, its events are no longer heard", async () => {
-    const { p, events } = await start("term-events", { graceMs: 300 });
-    // Give it time to install its SIGTERM handler.
-    await new Promise((r) => setTimeout(r, 150));
+    const { p, events, log } = await start("term-events", { graceMs: 300 });
+    // Wait for its ready line: the SIGTERM handler is installed.
+    await until(() => log.has("ready"), 10_000);
     await p.stop();
     expect(events).toEqual([]);
   });

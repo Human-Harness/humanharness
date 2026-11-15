@@ -22,31 +22,33 @@ const count = (text: string, re: RegExp) => [...text.matchAll(new RegExp(re.sour
 
 describe("tools pre-steps surface (tools spec §6; D0)", () => {
   it("D0: prepare and phaseEnded are passed only under hasTools and hasPre/hasExpects", async () => {
-    const index = await read("index.ts");
+    // index.ts and task-deps.ts, which holds the TaskManager's deps.
+    const index = (await Promise.all(["index.ts", "task-deps.ts"].map(read))).join("\n");
     const deps = group(index, index.indexOf("const taskDeps: TaskDeps = {"), /\{/);
     // Each is a getter of taskDeps (board lanes copy its getters): defined only when toolsHost exists (built only under
     // hasTools) and the harness declares pre (or expects); otherwise undefined, and the TaskManager runs nothing.
     const prepare = group(deps, deps.indexOf("get prepare()"), /\{/);
-    expect(prepare).toContain("const tools = toolsHost;");
-    expect(prepare).toContain("return tools && hasPre(harness) ? tools.prepare : undefined;");
+    expect(prepare).toContain("const tools = d.toolsHost();");
+    expect(prepare).toContain("return tools && hasPre(d.harness()) ? tools.prepare : undefined;");
     const ended = group(deps, deps.indexOf("get phaseEnded()"), /\{/);
-    expect(ended).toContain("const tools = toolsHost;");
-    expect(ended).toContain("return tools && hasExpects(harness) ? tools.phaseEnded : undefined;");
+    expect(ended).toContain("const tools = d.toolsHost();");
+    expect(ended).toContain("return tools && hasExpects(d.harness()) ? tools.phaseEnded : undefined;");
     // Named nowhere else in index.ts.
     expect(count(index, /\.prepare\b/)).toBe(1);
     expect(count(index, /\.phaseEnded\b/)).toBe(1);
     expect(count(index, /\bhasPre\(/)).toBe(1);
     expect(count(index, /\bhasExpects\(/)).toBe(1);
     // The task deps' `actions` are the loaded harness's, whose entries carry `pre` (the TaskManager's gate reads it).
-    expect(deps).toContain("get actions() {\n    return harness.actions;\n  },");
+    expect(deps).toContain("get actions() {\n      return d.harness().actions;\n    },");
   });
 
   it("the tools host gets the usage log, the engine and the scopes from the app", async () => {
-    const index = await read("index.ts");
-    const deps = group(index, index.indexOf("toolsHost = createToolsHost("));
+    // app-lifecycle.ts, the main entry's start-up, builds the tools host.
+    const start = await read("app-lifecycle.ts");
+    const deps = group(start, start.indexOf("d.toolsHost = createToolsHost("));
     expect(deps).toContain("usage: async (record) => {");
     expect(deps).toContain("await new UsageLog(baseOf(c)).append(record);");
-    expect(deps).toContain('engine: async () => (await config.load()).engineId ?? "",');
+    expect(deps).toContain('engine: async () => (await d.config.load()).engineId ?? "",');
     expect(deps).toContain("scoped,");
   });
 

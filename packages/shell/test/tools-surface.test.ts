@@ -20,7 +20,7 @@ function group(text: string, start: number, opener = /[({]/): string {
 
 const count = (text: string, re: RegExp) => [...text.matchAll(new RegExp(re.source, "g"))].length;
 
-/** The `if (hasTools(harness)) { … }` blocks of index.ts, each from its `if` to its closing brace. */
+/** The `if (hasTools(harness)) { … }` blocks of a file, each from its `if` to its closing brace. */
 function toolsBlocks(index: string): string[] {
   const out: string[] = [];
   let at = index.indexOf("if (hasTools(harness)) {");
@@ -34,19 +34,25 @@ function toolsBlocks(index: string): string[] {
 describe("tools surface (tools spec §4, §5; D0)", () => {
   it("D0: tools channels, scheme and host exist only under hasTools", async () => {
     const index = await read("index.ts");
-    const blocks = toolsBlocks(index);
+    // app-lifecycle.ts, the main entry's start-up, builds them; index.ts only hands it a setter over toolsHost.
+    const start = await read("app-lifecycle.ts");
+    const blocks = toolsBlocks(start);
     expect(blocks.length).toBeGreaterThan(0);
     const inBlocks = blocks.join("\n");
     // The host, the IPC and the toolsHost itself: once each, inside a hasTools block.
-    for (const re of [/createToolsHost\(/, /registerToolsIpc\(/, /new ToolHost\(/, /\btoolsHost = /]) {
-      expect(count(index, re), re.source).toBe(1);
+    for (const re of [/createToolsHost\(/, /registerToolsIpc\(/, /new ToolHost\(/, /\bd\.toolsHost = /]) {
+      expect(count(index, re), re.source).toBe(0);
+      expect(count(start, re), re.source).toBe(1);
       expect(count(inBlocks, re), re.source).toBe(1);
     }
+    expect([...index.matchAll(/\btoolsHost = /g)].map((m) => index.slice(m.index, m.index + 15))).toEqual(["toolsHost = v;\n"]);
     // The scheme: alone inside the block, or beside the plugins' only when the harness has tools.
-    expect(count(index, /\bTOOL_SCHEME\b/)).toBe(3); // the import, the plugins' call and the tools-only call
+    expect(count(index, /\bTOOL_SCHEME\b/)).toBe(0);
+    expect(count(start, /\bTOOL_SCHEME\b/)).toBe(3); // the import, the plugins' call and the tools-only call
     expect(inBlocks).toContain("protocol.registerSchemesAsPrivileged([MOD_SCHEME, TOOL_SCHEME]);");
-    expect(index).toContain("protocol.registerSchemesAsPrivileged(hasTools(harness) ? [MOD_SCHEME, PLUGIN_SCHEME, TOOL_SCHEME] : [MOD_SCHEME, PLUGIN_SCHEME]);");
-    expect(count(index, /registerSchemesAsPrivileged\(/)).toBe(3); // and hh-mod alone when neither
+    expect(start).toContain("protocol.registerSchemesAsPrivileged(hasTools(harness) ? [MOD_SCHEME, PLUGIN_SCHEME, TOOL_SCHEME] : [MOD_SCHEME, PLUGIN_SCHEME]);");
+    expect(count(index, /registerSchemesAsPrivileged\(/)).toBe(0);
+    expect(count(start, /registerSchemesAsPrivileged\(/)).toBe(3); // and hh-mod alone when neither
     // toolsHost starts null and is set only there; everything else reads it through `toolsHost?.` or `toolsHost ?`.
     expect(index).toContain("let toolsHost: ToolsHost | null = null;");
     // index.ts never names a tools channel or the scheme in a string; only the tools/ files that own them do.
@@ -58,21 +64,28 @@ describe("tools surface (tools spec §4, §5; D0)", () => {
 
   it("AppState.tools only under hasTools; the workspace's tools option only from toolsHost", async () => {
     const index = await read("index.ts");
-    const state = group(index, index.indexOf("async function appState(): Promise<AppState>"), /\{/);
-    expect(state).toContain("...(toolsHost ? { tools: toolsHost.info() } : {}),");
-    expect(count(index, /\btools: toolsHost\.info\(\)/)).toBe(1);
-    const options = index.slice(index.indexOf("async function runtimeOptions("), index.indexOf("const runtime = memoise<HarnessRuntime>"));
-    expect(options).toContain("const tools = await toolsHost?.workspaceOptions();");
+    // app-state.ts holds appState; index.ts passes it the tools host.
+    const appState = await read("app-state.ts");
+    const state = group(appState, appState.indexOf("async function appState(): Promise<AppState>"), /\{/);
+    expect(state).toContain("...(d.toolsHost() ? { tools: d.toolsHost()!.info() } : {}),");
+    expect(count(appState, /\btools: d\.toolsHost\(\)!\.info\(\)/)).toBe(1);
+    expect(index).toMatch(/createAppState\(\{[^]*?\n  toolsHost: \(\) => toolsHost,\n/);
+    // runtime-wiring.ts holds runtimeOptions; index.ts passes it the tools host.
+    const wiring = await read("runtime-wiring.ts");
+    const options = wiring.slice(wiring.indexOf("async function runtimeOptions("), wiring.indexOf("const runtime = memoise<HarnessRuntime>"));
+    expect(options).toContain("const tools = await d.toolsHost()?.workspaceOptions();");
     expect(options).toContain("...(tools ? { tools } : {}),");
-    expect(count(index, /workspaceOptions\(\)/)).toBe(1);
+    expect(count(index + wiring, /workspaceOptions\(\)/)).toBe(1);
+    expect(index).toMatch(/createRuntimeWiring\(\{[^]*?\n    toolsHost: \(\) => toolsHost,\n/);
   });
 
   it("Decision 7: the tools' Attention item goes only to the shared store (board and single mode; plain mode has none, D0)", async () => {
-    const index = await read("index.ts");
-    expect(index).toContain('if (hasTools(harness)) stores.registerKnown("tool", (id) => id === harness.id);');
-    const deps = group(index, index.indexOf("toolsHost = createToolsHost("));
+    // app-lifecycle.ts, the main entry's start-up, builds the stores and the tools host.
+    const start = await read("app-lifecycle.ts");
+    expect(start).toContain('if (hasTools(harness)) stores.registerKnown("tool", (id) => id === harness.id);');
+    const deps = group(start, start.indexOf("d.toolsHost = createToolsHost("));
     // The dep exists only when the shared store does; it asks that store for the current base.
-    expect(deps).toContain("...(sharedAttention\n        ? {\n            attention: async (create: boolean) => {");
-    expect(deps).toContain("sharedAttention.forBase(base, create)");
+    expect(deps).toContain("...(d.sharedAttention\n        ? {\n            attention: async (create: boolean) => {");
+    expect(deps).toContain("d.sharedAttention.forBase(base, create)");
   });
 });

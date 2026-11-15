@@ -3,6 +3,7 @@ import { type Collection, type HarnessMaterial, MATERIAL_STAGES, type Tier, hasE
 import { LINK_MAX_ITEMS, type LinkItem, MAX_PAGES } from "@humanharness/material/light";
 import type { MaterialInfo, MaterialResult } from "@humanharness/protocol";
 import { type HistoryKeep, appHistoryKeep } from "@humanharness/workspace";
+import type { MaterialService } from "./material";
 
 // The material pieces of the main process that every harness runs at start: small and free of the material service
 // (loaded only when the harness has material), so a harness without it gets exactly today's lists and state (D0).
@@ -53,6 +54,38 @@ export async function openMaterial(
     return { ok: true };
   }
   return (await openPath(file)) ? { ok: false, reason: "invalid" } : { ok: true };
+}
+
+export interface MaterialIpcDeps {
+  /** The material service, or null without material (or before it is built). */
+  materialSvc(): MaterialService | null;
+  shell: { openPath(file: string): Promise<string>; showItemInFolder(file: string): void };
+}
+
+/** The person's material (material spec §10). Answers are data; without material every call is "not-ready" (D0). */
+export function materialIpc(d: MaterialIpcDeps) {
+  const { shell } = d;
+  const noMaterial = { ok: false, reason: "not-ready" } as const;
+  return {
+    "hh:materialList": async (scope: unknown) => {
+      const materialSvc = d.materialSvc();
+      return materialSvc && typeof scope === "string" ? materialSvc.list(scope) : null;
+    },
+    "hh:materialAdd": (scope: unknown) => d.materialSvc()?.add(scope) ?? noMaterial,
+    "hh:materialAddLink": (scope: unknown, url: unknown) => d.materialSvc()?.addLink(scope, url) ?? noMaterial,
+    "hh:materialConfirm": (scope: unknown, id: unknown, choice: unknown) => d.materialSvc()?.confirm(scope, id, choice) ?? noMaterial,
+    "hh:materialGrounding": (scope: unknown, mode: unknown) => d.materialSvc()?.setGrounding(scope, mode) ?? noMaterial,
+    "hh:materialRetry": (scope: unknown, id: unknown) => d.materialSvc()?.retry(scope, id) ?? noMaterial,
+    "hh:materialRemove": (scope: unknown, id: unknown) => d.materialSvc()?.remove(scope, id) ?? noMaterial,
+    "hh:materialDecide": (scope: unknown, id: unknown, fragment: unknown, choice: unknown) =>
+      d.materialSvc()?.decide(scope, id, fragment, choice) ?? noMaterial,
+    "hh:materialCite": async (scope: unknown, id: unknown) => {
+      const materialSvc = d.materialSvc();
+      return materialSvc ? materialSvc.cite(scope, id) : null;
+    },
+    "hh:materialOpen": (scope: unknown, id: unknown) =>
+      openMaterial(d.materialSvc(), scope, id, (file) => shell.openPath(file), (file) => shell.showItemInFolder(file)),
+  };
 }
 
 /** The part of the data store the items are read through. */

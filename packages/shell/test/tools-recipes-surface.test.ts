@@ -22,27 +22,35 @@ const count = (text: string, re: RegExp) => [...text.matchAll(new RegExp(re.sour
 
 describe("recipes surface (tools spec §7; D0)", () => {
   it("D0: buildJobsHost passes tools only when the tools host exists", async () => {
+    // jobs/jobs-wiring.ts builds the jobs host; index.ts passes it the tools host as a getter.
     const index = await read("index.ts");
-    const build = group(index, index.indexOf("function buildJobsHost("), /\{/);
-    expect(build).toContain("...(toolsHost ? { tools: recipeTools(toolsHost) } : {}),");
+    const wiring = await read("jobs/jobs-wiring.ts");
+    const build = group(wiring, wiring.indexOf("function buildJobsHost("), /\{/);
+    expect(build).toContain("const toolsHost = d.toolsHost();");
+    expect(build).toContain("...(toolsHost ? { tools: recipeTools(harness, toolsHost) } : {}),");
     // The jobs host's `tools` key is set there only; recipeTools is defined once and called once.
     expect(count(build, /\btools: /)).toBe(1);
-    expect(count(index, /\brecipeTools\(/)).toBe(2);
-    // toolsHost is set (under hasTools) before buildJobsHost's first call, at "ready".
-    expect(index.indexOf("toolsHost = createToolsHost(")).toBeLessThan(index.indexOf("buildJobsHost(board.gate"));
+    expect(count(wiring, /\brecipeTools\(/)).toBe(2);
+    expect(count(index, /\brecipeTools\(/)).toBe(0);
+    expect(index).toContain("  toolsHost: () => toolsHost,\n});");
+    // toolsHost is set (under hasTools) before buildJobsHost's first call, at "ready" (both in app-lifecycle.ts, the start-up).
+    const start = await read("app-lifecycle.ts");
+    expect(count(start, /\brecipeTools\(/)).toBe(0);
+    expect(start.indexOf("d.toolsHost = createToolsHost(")).toBeGreaterThan(0);
+    expect(start.indexOf("d.toolsHost = createToolsHost(")).toBeLessThan(start.indexOf("buildJobsHost(jobsWiring(), board.gate"));
   });
 
   it("readBrief reads a brief only for a prompt job", async () => {
-    const index = await read("index.ts");
-    const build = group(index, index.indexOf("function buildJobsHost("), /\{/);
+    const wiring = await read("jobs/jobs-wiring.ts");
+    const build = group(wiring, wiring.indexOf("function buildJobsHost("), /\{/);
     expect(build).toContain(
       'readBrief: (job) => (job.prompt !== undefined ? fs.readFile(resolveInHarness(harness, job.prompt), "utf8") : Promise.reject(new Error("A recipe has no brief"))),',
     );
   });
 
   it("a recipe's tools: the registry, the run's trailer, the job's limits, the trace's last call and the AI step's brief in the harness folder", async () => {
-    const index = await read("index.ts");
-    const fn = group(index, index.indexOf("function recipeTools("), /\{/);
+    const wiring = await read("jobs/jobs-wiring.ts");
+    const fn = group(wiring, wiring.indexOf("function recipeTools("), /\{/);
     expect(fn).toContain("registry: t.registry,");
     expect(fn).toContain("withRunTrailer: (trailer, fn) => t.withRunTrailer(trailer, fn),");
     expect(fn).toContain("limits: (job) => jobLimits(harness, job),");

@@ -213,26 +213,33 @@ describe("keepNotification: a shown notification stays referenced until clicked 
     expect([...kept]).toEqual(many.slice(2));
   });
 
-  it("index.ts holds the waiting task's notification through it", () => {
-    const index = fs.readFileSync(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
-    expect(index).toMatch(/const n = keepNotification\(new Notification\(\{ title, body \}\), notifications\);/);
+  it("the main entry's start-up (app-lifecycle.ts) holds the waiting task's notification through it", () => {
+    const start = fs.readFileSync(path.resolve(__dirname, "../src/main/app-lifecycle.ts"), "utf8");
+    expect(start).toMatch(/const n = keepNotification\(new Notification\(\{ title, body \}\), notifications\);/);
   });
 });
 
 describe("D0: plain mode never sets the Dock badge, raises a task item or shares the store", () => {
   const main = path.resolve(__dirname, "../src/main");
   const index = fs.readFileSync(path.join(main, "index.ts"), "utf8");
+  // The main entry's start-up blocks: index.ts hands them its state through getters and setters.
+  const start = fs.readFileSync(path.join(main, "app-lifecycle.ts"), "utf8");
   const files = fs.readdirSync(main).filter((f) => f.endsWith(".ts"));
   const naming = (re: RegExp) => files.filter((f) => re.test(fs.readFileSync(path.join(main, f), "utf8"))).sort();
 
   it("the Dock badge is set in one place, the task attention that only the board host gets", () => {
     expect(naming(/\.setBadge\(/)).toEqual(["index.ts"]);
     expect([...index.matchAll(/\.setBadge\(/g)]).toHaveLength(1);
-    expect(naming(/new TaskAttention\(/)).toEqual(["index.ts"]);
-    // Built only by buildTaskAttention, which only buildBoardHost calls (and that only in board mode, board-host.test.ts).
-    expect([...index.matchAll(/\bbuildTaskAttention\(/g)]).toHaveLength(2);
-    expect(index).toMatch(/function buildTaskAttention\(\): TaskAttention \{\n\s*const attention = new TaskAttention\(/);
-    expect(index).toMatch(/\n\s*attention: buildTaskAttention\(\),\n\s*\},\n\s*\{ engineId: c\.engineId, parallel: c\.parallel \},/);
+    // Built only by buildTaskAttention (task-attention.ts), which app-lifecycle.ts calls only as the board host's `attention`
+    // (and that host is built only in board mode, board-host.test.ts).
+    expect(naming(/new TaskAttention\(/)).toEqual(["task-attention.ts"]);
+    const own = fs.readFileSync(path.join(main, "task-attention.ts"), "utf8");
+    expect(own).toMatch(/function buildTaskAttention\(d: TaskAttentionWiringDeps\): TaskAttention \{\n\s*return new TaskAttention\(/);
+    expect(naming(/\bbuildTaskAttention\(/)).toEqual(["app-lifecycle.ts", "task-attention.ts"]);
+    expect([...start.matchAll(/\bbuildTaskAttention\(/g)]).toHaveLength(1);
+    expect(start).toMatch(/\n\s*attention: \(\) =>\n\s*\(d\.taskAttention = buildTaskAttention\(\{/);
+    const wiring = fs.readFileSync(path.join(main, "board-host-wiring.ts"), "utf8");
+    expect(wiring).toMatch(/\n\s*attention: d\.attention\(\),\n\s*\},\n\s*\{ engineId: c\.engineId, parallel: c\.parallel \},/);
   });
 
   it("part 3: the badge outside the task attention is set only with jobs, and never in board mode", () => {
@@ -243,14 +250,16 @@ describe("D0: plain mode never sets the Dock badge, raises a task item or shares
       /function refreshDockBadge\(\): void \{\n\s*if \(taskAttention\) return taskAttention\.refreshBadge\(\);\n\s*if \(!jobsHost \|\| host\) return;\n\s*try \{\n\s*setDockBadge\(pluginBadge \+ jobBadge\);/,
     );
     expect(index).toMatch(/const setDockBadge = \(n: number\): void => app\.dock\?\.setBadge\(/);
-    // jobsHost is assigned only where the harness has jobs.
-    expect([...index.matchAll(/\bjobsHost = /g)]).toHaveLength(1);
-    expect(index).toMatch(/if \(hasJobs\(harness\)\) \{\n\s*const board = host;\n\s*jobsHost = board/);
+    // jobsHost is assigned only where the harness has jobs (index.ts only through the start-up's setter).
+    expect([...index.matchAll(/\bjobsHost = /g)].map((m) => index.slice(m.index, m.index + 14))).toEqual(["jobsHost = v;\n"]);
+    expect([...start.matchAll(/\bjobsHost = /g)]).toHaveLength(1);
+    expect(start).toMatch(/if \(hasJobs\(harness\)\) \{\n\s*const board = d\.host;\n\s*d\.jobsHost = board/);
   });
 
   it("the shared stores exist only in board (and, part 3, single) mode; plain mode's plugins build their own", () => {
-    expect([...index.matchAll(/\bsharedAttention = /g)]).toHaveLength(1);
-    expect(index).toMatch(/if \(hostMode\(harness\) !== "plain"\) \{\n\s*const stores = attentionStores\(/);
-    expect(index).toMatch(/\.\.\.\(attentionShared\n\s*\? \{\n\s*attentionStoreFor:/);
+    expect([...index.matchAll(/\bsharedAttention = /g)].map((m) => index.slice(m.index, m.index + 21))).toEqual(["sharedAttention = v;\n"]);
+    expect([...start.matchAll(/\bsharedAttention = /g)]).toHaveLength(1);
+    expect(start).toMatch(/if \(hostMode\(harness\) !== "plain"\) \{\n\s*const stores = attentionStores\(/);
+    expect(start).toMatch(/\.\.\.\(attentionShared\n\s*\? \{\n\s*attentionStoreFor:/);
   });
 });

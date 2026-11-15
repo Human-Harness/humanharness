@@ -27,7 +27,8 @@ describe("the IPC surface (plugins spec B5)", () => {
 
   it("ipcMain is named only where those channels are registered", async () => {
     const named = (await sources()).filter(([, text]) => /\bipcMain\b/.test(text)).map(([f]) => f);
-    expect(named.sort()).toEqual(["index.ts", "plugin-host.ts", "tools/tool-host.ts"]);
+    // app-lifecycle.ts only hands ipcMain to the plugin and tool hosts it builds.
+    expect(named.sort()).toEqual(["app-lifecycle.ts", "index.ts", "plugin-host.ts", "tools/tool-host.ts"]);
     // An alias (`const x = wc.ipc; x.on(…)`) would pass the test above: name `.ipc` only where it is allowed too.
     // plugin-host.ts registers on ipcMain, not on a webContents' own `.ipc`: nothing names `.ipc`.
     const ipc = (await sources()).filter(([, text]) => /\.ipc\b/.test(text)).map(([f]) => f);
@@ -55,7 +56,7 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     // A call by name, optional (`?.(`) or by bracket (`["startPrepared"](`) all count.
     const CALL = /(?:\bstartPrepared|\[\s*(["'`])startPrepared\1\s*\])\s*(?:\?\.\s*)?\(/g;
     const calling = all.filter(([, text]) => new RegExp(CALL.source).test(text)).map(([f]) => f);
-    expect(calling.sort()).toEqual(["index.ts", "plugin-ipc.ts", "task-board.ts", "task-manager.ts"]);
+    expect(calling.sort()).toEqual(["app-ipc.ts", "plugin-ipc.ts", "task-board.ts", "task-manager.ts"]);
     const text = (f: string) => all.find(([n]) => n === f)![1];
     const count = (t: string) => [...t.matchAll(CALL)].length;
 
@@ -64,8 +65,9 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect(count(handler)).toBeGreaterThan(0);
     expect(count(ipc)).toBe(count(handler));
 
-    const index = text("index.ts");
-    const register = group(index, index.indexOf("registerPluginsIpc(handle, pluginsCtl"));
+    // app-ipc.ts registers the app's channels.
+    const index = text("app-ipc.ts");
+    const register = group(index, index.indexOf("registerPluginsIpc(d.handle, d.pluginsCtl"));
     expect(count(register)).toBe(1);
     expect(count(index)).toBe(1);
     // task-manager.ts only declares it.
@@ -88,21 +90,27 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect(index).not.toMatch(/\.installPanels\s*\(/);
     expect([...index.matchAll(/\binstallPluginPanels\s*\(/g)].length).toBe(1);
     expect(index).toMatch(/new PluginPanelsOnDemand<BrowserWindow>\(\s*\(win\) => installPluginPanels\(win, pluginHost, pluginsCtl\),/);
-    // needed() only from the controller's deps: a plugin with panels starting.
-    expect([...index.matchAll(/\bpluginPanels\.needed\s*\(/g)].length).toBe(1);
-    expect(index).toMatch(/panelsNeeded: \(\) => pluginPanels\.needed\(\),/);
-    const create = group(index, index.indexOf("async function createWindow()"), /\{/);
+    // needed() only from the controller's deps (app-lifecycle.ts builds the controller): a plugin with panels starting.
+    const lifecycle = (await sources()).find(([n]) => n === "app-lifecycle.ts")![1];
+    expect(index).not.toMatch(/\bpluginPanels\.needed\s*\(/);
+    expect([...lifecycle.matchAll(/\bpluginPanels\.needed\s*\(/g)].length).toBe(1);
+    expect(lifecycle).toMatch(/panelsNeeded: \(\) => pluginPanels\.needed\(\),/);
+    // window.ts holds createWindow; index.ts hands it pluginPanels and a getter over pluginsCtl.
+    const win = (await sources()).find(([n]) => n === "window.ts")![1];
+    const create = group(win, win.indexOf("export async function createWindow(d: WindowDeps)"), /\{/);
     const at = create.indexOf("if (plugins) {");
     expect(at).toBeGreaterThan(0);
-    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = pluginsCtl;\s*$/);
-    expect([...index.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
+    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = d\.pluginsCtl;\s*$/);
+    expect(index).not.toMatch(/\bpluginPanels\.window\s*\(/);
+    expect([...win.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
     expect(group(create, at, /\{/)).toMatch(/pluginPanels\.window\(win\)/);
   });
 
   it("profileFor passes a prepared task's tier on as the manifest tier", async () => {
-    const index = (await sources()).find(([n]) => n === "index.ts")![1];
-    const profileFor = group(index, index.indexOf("profileFor: async (action, floor, tier, policies)"), /\{/);
-    expect(profileFor).toMatch(/manifestTier: manifestTier\(harness, action, tier\)/);
+    // task-deps.ts holds the TaskManager's deps.
+    const deps = (await sources()).find(([n]) => n === "task-deps.ts")![1];
+    const profileFor = group(deps, deps.indexOf("profileFor: async (action, floor, tier, policies)"), /\{/);
+    expect(profileFor).toMatch(/manifestTier: manifestTier\(d\.harness\(\), action, tier\)/);
   });
 });
 
@@ -136,7 +144,8 @@ describe("the home history and safe-mode channels", () => {
   it("are declared, sent by the preload and handled in main", async () => {
     const channels = await fs.readFile(path.resolve(__dirname, "../../protocol/src/channels.ts"), "utf8");
     const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
-    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    // app-ipc.ts registers the app's channels.
+    const index = (await sources()).find(([n]) => n === "app-ipc.ts")![1];
     for (const [ch, call] of [
       ["hh:homeHistory", 'homeHistory: () => invoke("hh:homeHistory")'],
       ["hh:homeUndo", 'homeUndo: () => invoke("hh:homeUndo")'],
@@ -164,7 +173,8 @@ describe("the hh:layout channel", () => {
     expect(channels).toMatch(/^\s*"hh:layout":/m);
     const preload = await fs.readFile(path.resolve(__dirname, "../src/preload/index.ts"), "utf8");
     expect(preload).toContain('layout: () => invoke("hh:layout")');
-    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    // app-ipc.ts registers the app's channels.
+    const index = (await sources()).find(([n]) => n === "app-ipc.ts")![1];
     expect(index).toMatch(/handle\("hh:layout", \(\) => shownLayout\(/);
   });
   it("hh:layoutPick is an invoke channel and hh:layoutChanged one the preload only listens on (0b2)", async () => {
@@ -175,8 +185,11 @@ describe("the hh:layout channel", () => {
     expect(preload).toContain('layoutPick: (name) => invoke("hh:layoutPick", name)');
     expect(preload).toContain('onLayoutChanged: (fn) => subscribe("hh:layoutChanged", fn)');
     expect(preload).not.toMatch(/invoke\("hh:layoutChanged"/);
-    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    const all = await sources();
+    const index = all.find(([n]) => n === "app-ipc.ts")![1];
     expect(index).toMatch(/handle\("hh:layoutPick", /);
-    expect(index).toContain('sendToWindow("hh:layoutChanged"');
+    // mods/app-mods.ts holds the layouts' watch and safe mode, which send the layout.
+    const mods = all.find(([n]) => n === path.join("mods", "app-mods.ts"))![1];
+    expect(mods).toContain('sendToWindow("hh:layoutChanged"');
   });
 });

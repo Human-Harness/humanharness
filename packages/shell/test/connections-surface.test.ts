@@ -22,7 +22,8 @@ const count = (text: string, re: RegExp) => [...text.matchAll(new RegExp(re.sour
 
 describe("connections surface (tools spec §9, D0)", () => {
   it("D0: connections channels are registered only under hasSecrets", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-lifecycle.ts, which holds its start-up blocks.
+    const index = (await Promise.all(["index.ts", "app-lifecycle.ts"].map(read))).join("\n");
     expect(count(index, /registerConnectionsIpc\(/)).toBe(1);
     expect(index).toContain("  if (hasSecrets(harness)) registerConnectionsIpc(handle, connections());\n");
     // The controller (and so the push) is built only there, or by a connect step's check, also under hasSecrets.
@@ -36,13 +37,14 @@ describe("connections surface (tools spec §9, D0)", () => {
     expect(count(ctl, /"hh:connectionsChange"/)).toBe(1);
     // No other main file registers or names a connections channel (in a string; a comment may mention one).
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
-      if (f === "index.ts" || f === path.join("secrets", "connections-ipc.ts")) continue;
+      if (f === "index.ts" || f === "app-lifecycle.ts" || f === path.join("secrets", "connections-ipc.ts")) continue;
       expect(await read(f), f).not.toMatch(/["'`]hh:connections/);
     }
   });
 
   it("D0: the SecretStore is built only for plugins or secrets", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-lifecycle.ts, which holds its start-up blocks.
+    const index = (await Promise.all(["index.ts", "app-lifecycle.ts"].map(read))).join("\n");
     expect(count(index, /new SecretStore\(/)).toBe(1);
     const store = group(index, index.indexOf("function secretStore(): SecretStore | null"), /\{/);
     expect(store).toMatch(
@@ -53,13 +55,14 @@ describe("connections surface (tools spec §9, D0)", () => {
     // (built only under hasTools, tools-surface.test.ts).
     expect(count(index, /\bsecretStore\(\)/)).toBe(4); // the definition and those three
     // No other main file builds one.
-    for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts") && f !== "index.ts")) {
+    for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts") && f !== "index.ts" && f !== "app-lifecycle.ts")) {
       expect(await read(f), f).not.toMatch(/new SecretStore\(/);
     }
   });
 
   it("appState carries connections only when the harness declares secrets (D0)", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-state.ts, which holds appState.
+    const index = (await Promise.all(["index.ts", "app-state.ts"].map(read))).join("\n");
     const state = group(index, index.indexOf("async function appState(): Promise<AppState>"), /\{/);
     expect(state).toContain("...(hasSecrets(harness) ? { connections: { count: harness.secrets!.length } } : {}),");
     expect(count(index, /\bconnections: \{ count:/)).toBe(1);

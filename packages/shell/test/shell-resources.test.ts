@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { shellResourcesDir } from "../src/main/shell-resources";
+import { harnessDirFor, shellResourcesDir } from "../src/main/shell-resources";
 
 const shell = path.resolve(__dirname, "..");
 
@@ -32,5 +32,28 @@ describe("the shell's resources folder", () => {
     expect(index).toContain("shellResourcesDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __SHELL_RESOURCES__ })");
     expect([...index.matchAll(/resources: shellResources\b/g)]).toHaveLength(2);
     expect(index).toContain('path.join(shellResources, "hh-logo.png")');
+  });
+});
+
+// A packaged app carries its harness in its own resources (the packager copies it to harness/); the folder the build
+// wrote in names the build machine and does not exist on the user's.
+describe("the harness folder", () => {
+  it("a packaged app reads <resourcesPath>/harness", () => {
+    expect(harnessDirFor({ packaged: true, resourcesPath: "/R", built: "/B" })).toBe(path.join("/R", "harness"));
+  });
+
+  it("a development build reads the harness folder its build named", () => {
+    expect(harnessDirFor({ packaged: false, resourcesPath: "/R", built: "/B" })).toBe("/B");
+  });
+
+  it("main reads __HARNESS_DIR__ in one place only: its declare and the one harnessDirFor call", async () => {
+    const dir = path.join(shell, "src/main");
+    const files = (await fs.readdir(dir, { recursive: true })).filter((f) => f.endsWith(".ts"));
+    const texts = await Promise.all(files.map(async (f) => ({ f, text: await fs.readFile(path.join(dir, f), "utf8") })));
+    const hits = texts.flatMap(({ f, text }) => text.split("\n").filter((l) => l.includes("__HARNESS_DIR__")).map((l) => `${f}: ${l.trim()}`));
+    expect(hits).toEqual([
+      "index.ts: declare const __HARNESS_DIR__: string;",
+      "index.ts: const harnessDir = harnessDirFor({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, built: __HARNESS_DIR__ });",
+    ]);
   });
 });

@@ -119,6 +119,7 @@ import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, offeredEffort, pinnedBudget } from "./models";
+import { createAppServices } from "./app-services";
 import { ContextService } from "./context";
 import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
 import { searchHandlers } from "./search/ipc";
@@ -780,7 +781,7 @@ const taskDeps: TaskDeps = createTaskDeps({
   activeScope,
   dataStoreFor,
   materialStore: (base, scope) => materialStore(base, scope),
-  sendContext,
+  sendContext: (task) => sendContext(task),
   closeRuntime,
   readPhaseBrief,
   sendToWindow,
@@ -1214,234 +1215,54 @@ function handleAll<K extends InvokeChannel>(handlers: Record<K, (...args: never[
   for (const channel of Object.keys(handlers) as K[]) handle(channel, handlers[channel]);
 }
 
-/**
- * What waits for what (profiles spec §5): turns, restores, profile switches, engine changes, folder moves, archives and
- * deletes. Each source is read only when a guard asks, after all of them exist.
- */
-const hold = holds({
+const {
+  hold,
+  restores,
+  restoreWith,
+  afterRestore,
+  switches,
+  turnBlocked,
+  dataWrites,
+  personData,
+  harnessUiData,
+  reviews,
+  fileTimelines,
+  contextSvc,
+  searchSvc,
+  sendContext,
+  commitAnnouncements,
+  announceCommits,
+} = createAppServices({
+  harness: () => harness,
+  config: () => config,
+  here,
+  guards,
   quitting: () => quitting,
-  tasksBusy: () => tasks.isBusy(),
-  moving: () => moving !== null,
-  engine: () => guards.turnBlocked(),
-  restore: () => restores.turnBlocked(),
-  profileSwitch: () => switches.turnBlocked(),
-  profileChange: () => profilesCtl?.changing() ?? false,
-});
-
-/**
- * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
- * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
- */
-const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy() || (jobsHost?.running() ?? false), turnBlocked: hold.restoreHeld });
-const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
-/** A restore changes tracked files with no data event: the settings and Sidekick's settings may have changed. */
-function afterRestore(): void {
-  void settingsCtl?.changed();
-  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-  // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
-  searchSvc.committed(null);
-}
-
-/**
- * Profile switches (profiles spec §5): one at a time, refused while a turn, a restore, a move, an engine change, an
- * archive or a delete runs, and holding all of them off.
- */
-const switches = new ProfileSwitch({
-  quitting: () => quitting,
-  busy: hold.switchBusy,
-  turnBlocked: hold.switchHeld,
-  closeTask: () => tasks.finish(),
+  moving: () => moving,
+  window: () => window,
+  tasks: () => tasks,
+  jobsHost: () => jobsHost,
+  profilesCtl: () => profilesCtl,
+  settingsCtl: () => settingsCtl,
+  sidekickCtl: () => sidekickCtl,
+  pluginsCtl: () => pluginsCtl,
+  engineIpc: () => engineIpc,
+  validConfig,
+  baseOf,
+  scoped,
+  activeScope,
+  dataStoreFor,
+  sidekickStoreFor,
+  scopeStoreFor,
+  scopesView,
+  currentHistory,
+  currentBase,
+  ownCommits,
   closeRuntime,
-  saveActive: async (id) => void (await config.setProfile(id)),
-  arrived: () => arrivedInProfile(),
+  arrivedInProfile,
+  workReferences,
+  sendToWindow,
 });
-
-/** Why a new turn can't start now (engine change, folder move, engine update, a restore, a profile switch), or null. */
-const turnBlocked = hold.turnBlocked;
-
-/** The person's data writes and the tools' (tools spec §8.3) in one order: no commit holds the other's write. */
-const dataWrites = dataWriteQueue();
-/** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
-const personData = personDataRequests({
-  serial: dataWrites,
-  store: async () => {
-    const c = await validConfig();
-    return c ? dataStoreFor(baseOf(c)) : null;
-  },
-  chatScope: () => tasks.chatScope(),
-  trailer: () => tasks.trailerNow(),
-  history: () => currentHistory(),
-  // Board mode, or a job running beside the single task: a write commits only its collection's file (parallel spec §5.3).
-  board: ownCommits,
-  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-  // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
-  scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
-  // The reserved `sidekick` collection lives in its own store (sidekick spec §6.4); every other collection as before.
-  storeFor: (collection) =>
-    collection === SIDEKICK_COLLECTION ? validConfig().then((c) => (c ? sidekickStoreFor(baseOf(c)) : null)) : undefined,
-});
-/** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
-const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
-
-/** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
-const reviews = new ReviewService({
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  history: () => currentHistory(),
-  trailer: () => tasks.trailerNow(),
-  openTask: async () => {
-    const t = await tasks.runningTask();
-    return t ? { id: t.id, scope: t.scope } : null;
-  },
-  busy: () => tasks.isBusy(),
-  whenSettled: (write) => tasks.whenSettled(write),
-  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-  // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
-  round: (r) => tasks.reviewRound(r),
-  approved: (a) => void tasks.documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
-  reviewTier: (kind) => {
-    const kinds = harness.documents?.kinds;
-    return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
-  },
-  changed: (p) => sendToWindow("hh:reviewChanged", p),
-});
-
-/** File timelines (file-timeline spec): read from the history; a one-file go-back goes through the restore guard. */
-const fileTimelines = new FileTimelineService({
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  history: () => currentHistory(),
-  actionLabel: (id) => (id === null ? "A question" : Object.hasOwn(harness.actions, id) ? harness.actions[id].label : id),
-  approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
-  busy: () => quitting || tasks.isBusy() || turnBlocked() !== null,
-  restore: (run) => restoreWith(run),
-  restored: () => afterRestore(),
-  // Diffs run in a worker thread of their own: jsdiff's budget and the Markdown parse never block Electron main.
-  diff: workerDiff({ entry: path.join(here, "diff-worker.js") }),
-});
-
-/** The context panel (context-panel spec): the person's pins and exclusions and the open task's record. */
-const contextSvc = new ContextService({
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  scoped,
-  scopeExists: (id) => activeScope(id),
-  budget: async () => pinnedBudget(cleanModels((await config.load()).models), harness.context),
-  record: (id) => tasks.contextRecord(id),
-  openTask: async () => (await tasks.runningTask())?.id ?? null,
-  noteTitles: async (scope) => {
-    const c = await validConfig();
-    if (!c) return new Map<string, string>();
-    const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
-    return new Map(notes.map((n) => [n.path, n.title]));
-  },
-  history: () => currentHistory(),
-  trailer: () => tasks.trailerNow(),
-  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-  add: (taskId, file) => {
-    const { accepted, done } = tasks.addContext(taskId, file);
-    // Closing ends the operation before it runs: not a failure worth a log line.
-    done.catch((err: unknown) => {
-      if (!quitting) console.error("The Add now turn failed", err);
-    });
-    return accepted;
-  },
-  pickFile: async (base) => {
-    if (!window || window.isDestroyed()) return null;
-    const result = await dialog.showOpenDialog(window, { defaultPath: base, properties: ["openFile"] });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  },
-  changed: (task) => void sendContext(task),
-});
-
-/** What search finds among the tasks, built when the palette opens (search spec §4.2): actions, the open task, past tasks. */
-async function searchMemory(): Promise<SearchDoc[]> {
-  const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
-  const view = await tasks.view();
-  const actions = actionDocs(
-    Object.entries(harness.actions).map(([id, a]) => ({
-      id,
-      label: a.label,
-      ...(a.description ? { description: a.description } : {}),
-      ...(a.tier ? { tier: a.tier } : {}),
-      ...(view.actions[id] ? { status: view.actions[id] } : {}),
-      scope: scopeOf(undefined),
-    })),
-  );
-  const current = view.current;
-  const label = (id: string | null | undefined) => (id && Object.hasOwn(harness.actions, id) ? harness.actions[id].label : undefined);
-  const open = current && label(current.action) ? [openTaskDoc({ id: current.id, title: label(current.action)!, scope: scopeOf(current.scope), at: 0 })] : [];
-  const history = await currentHistory();
-  const rows = history ? historyView(await history.tasks()) : [];
-  const past = pastTaskDocs(
-    rows.flatMap((r) => {
-      const title = r.noteTitle ?? label(r.actionId);
-      return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
-    }),
-  );
-  return [...actions, ...open, ...past];
-}
-
-/** Global search's collections (search spec D4): the harness's, then each running plugin's, of the live index's base only. */
-const searchDataDeps = searchData({
-  current: () => currentBase(),
-  collections: () => dataCollections(harness),
-  scoped,
-  scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
-  store: (base) => dataStoreFor(base),
-  plugins: () => pluginsCtl ?? null,
-});
-
-/** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
-const searchSvc = new SearchService({
-  userData: () => app.getPath("userData"),
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  scoped,
-  openScope: () => tasks.currentScope(),
-  scopeTitles: async () => new Map((await scopesView()).list.map((s) => [s.id, s.title])),
-  references: async () => {
-    const c = await validConfig();
-    return c ? (await workReferences(c, baseOf(c))).map((r) => ({ id: r.id, label: r.label, path: r.path })) : [];
-  },
-  memory: () => searchMemory(),
-  extraDenied: async () => {
-    // Same rule as the history's ignore list: the engine's instructions file is the app's, not the person's.
-    const c = await validConfig();
-    const extra = c ? getEngine(c.engineId).instructionsFile?.path : undefined;
-    return extra ? [extra] : [];
-  },
-  status: (s) => sendToWindow("hh:searchStatus", s),
-  runner: workerBuild({ entry: path.join(here, "search-worker.js") }),
-  reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
-  data: searchDataDeps,
-  // A burst of writes (an import, a plugin run) is one refresh.
-  dataDelayMs: 500,
-});
-
-/** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
-async function sendContext(task: string): Promise<void> {
-  const got = await contextSvc.get(task).catch(() => null);
-  if (got?.ok) sendToWindow("hh:context", { task, context: got.context });
-}
-
-/** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
-const commitAnnouncements = commitAnnouncer((paths) => {
-  sendToWindow("hh:fileCommits", paths);
-  // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
-  engineIpc?.committed(paths);
-  // Search (D0): a no-op until the palette first opened; then the commit's paths are read again.
-  searchSvc.committed(paths);
-});
-const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
 function registerIpc() {
   handle("hh:getState", () => appState());

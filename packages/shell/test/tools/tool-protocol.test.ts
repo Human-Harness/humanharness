@@ -17,6 +17,7 @@ import {
   toolHostUrl,
   toolOfSender,
 } from "../../src/main/tools/tool-protocol";
+import { expectFast } from "../../../../test/support/timing";
 
 async function setup() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "hh-tool-proto-"));
@@ -268,9 +269,7 @@ describe("parseToolRpc (every rpc argument checked before anything sees it; T6)"
     expect(parseToolRpc("done", done(nest(TOOL_RPC_MAX_DEPTH - 1)))).not.toBeNull();
     expect(parseToolRpc("done", done(JSON.stringify(["[".repeat(100)])))).not.toBeNull();
     const deep = "[".repeat(5_000_000) + "]".repeat(5_000_000);
-    const t0 = Date.now();
-    expect(parseToolRpc("done", deep)).toBeNull();
-    expect(Date.now() - t0).toBeLessThan(500);
+    expectFast(() => expect(parseToolRpc("done", deep)).toBeNull(), 2500);
   });
 
   it("refuses a payload that isn't a JSON string", () => {

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
+  type DocumentWatch,
   DocumentWatchers,
   MAX_DOCUMENT_BYTES,
   MAX_EXIST_PATHS,
@@ -204,48 +205,105 @@ describe("documentsExist", () => {
   });
 });
 
+/** A watcher the test drives: every watch made, its folder, what it reports (`emit`) and whether it was closed. */
+function fakeWatch() {
+  const made: { dir: string; emit: (file: string | null) => void; closed: boolean }[] = [];
+  const watch: DocumentWatch = (dir, listener) => {
+    const entry = { dir, emit: (file: string | null) => listener("change", file), closed: false };
+    made.push(entry);
+    return { close: () => void (entry.closed = true), on: () => undefined };
+  };
+  return { watch, made };
+}
+
+/** Only the debounce timers are fake for the length of `body`: `locate`'s file reads stay real. */
+function withFakeTimers(body: () => void) {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    body();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe("DocumentWatchers (live reload)", () => {
   it("tells once after a quiet moment when the file changes, also through a rename; not for other files", async () => {
-    // Wide margins: under a full-repo run the rename and the append can land far apart, and a short quiet window
-    // would tell twice.
-    const QUIET_MS = 500;
-    const SETTLE_MS = 1_000;
+    const f = fakeWatch();
     const changed = vi.fn();
-    const w = new DocumentWatchers(changed, QUIET_MS);
+    const w = new DocumentWatchers(changed, 150, f.watch);
     const id = await w.watch("docs/plan.md", roots);
     expect(id).toEqual(expect.any(Number));
-    fs.writeFileSync(path.join(folder, "docs", "other.md"), "x");
-    await new Promise((r) => setTimeout(r, SETTLE_MS));
-    expect(changed).not.toHaveBeenCalled();
-    const tmp = path.join(folder, "docs", "plan.md.tmp");
-    fs.writeFileSync(tmp, "# Plan v2\n");
-    fs.renameSync(tmp, path.join(folder, "docs", "plan.md"));
-    fs.appendFileSync(path.join(folder, "docs", "plan.md"), "more\n");
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(id), { timeout: 10_000 });
-    await new Promise((r) => setTimeout(r, SETTLE_MS));
-    expect(changed).toHaveBeenCalledTimes(1);
-    w.unwatch(id);
-    fs.appendFileSync(path.join(folder, "docs", "plan.md"), "again\n");
-    await new Promise((r) => setTimeout(r, SETTLE_MS));
-    expect(changed).toHaveBeenCalledTimes(1);
-    w.closeAll();
+    // The folder is watched, not the file: a file replaced by a rename keeps being seen.
+    expect(f.made.map((m) => m.dir)).toEqual([path.join(folder, "docs")]);
+    const [watcher] = f.made;
+    withFakeTimers(() => {
+      watcher.emit("other.md");
+      vi.advanceTimersByTime(1_000);
+      expect(changed).not.toHaveBeenCalled();
+      // A rename (the tmp file, then the name) and an append, 100 ms apart: one quiet period, one call.
+      watcher.emit("plan.md.tmp");
+      watcher.emit("plan.md");
+      vi.advanceTimersByTime(100);
+      watcher.emit("plan.md");
+      vi.advanceTimersByTime(149);
+      expect(changed).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(changed.mock.calls).toEqual([[id]]);
+      // No name: the platform didn't say which file, so it counts.
+      watcher.emit(null);
+      vi.advanceTimersByTime(150);
+      expect(changed.mock.calls).toEqual([[id], [id]]);
+      // Unwatching closes the watcher and drops a pending call.
+      watcher.emit("plan.md");
+      w.unwatch(id);
+      expect(watcher.closed).toBe(true);
+      vi.advanceTimersByTime(1_000);
+      expect(changed).toHaveBeenCalledTimes(2);
+      expect(w.size).toBe(0);
+    });
   });
 
+  it("with the real watcher, a change to the file is seen", async () => {
+    const changed = vi.fn();
+    const w = new DocumentWatchers(changed, 50);
+    try {
+      const id = await w.watch("docs/plan.md", roots);
+      // Appends again on every try: the OS may start delivering a little after the watch is made.
+      await vi.waitFor(
+        () => {
+          fs.appendFileSync(path.join(folder, "docs", "plan.md"), "more\n");
+          expect(changed).toHaveBeenCalledWith(id);
+        },
+        { timeout: 30_000, interval: 300 },
+      );
+    } finally {
+      w.closeAll();
+    }
+  }, 60_000);
+
   it(`keeps at most ${MAX_WATCHES} watches, closing the oldest`, async () => {
+    const f = fakeWatch();
     const changed = vi.fn();
     const closed = vi.fn();
-    const w = new DocumentWatchers(changed, 20);
+    const w = new DocumentWatchers(changed, 20, f.watch);
     w.onClosed = closed;
     const ids: (number | null)[] = [];
     for (let i = 0; i <= MAX_WATCHES; i++) ids.push(await w.watch("docs/plan.md", roots));
+    expect(f.made).toHaveLength(MAX_WATCHES + 1);
     expect(w.size).toBe(MAX_WATCHES);
     expect(closed.mock.calls).toEqual([[ids[0]]]);
-    fs.appendFileSync(path.join(folder, "docs", "plan.md"), "cap\n");
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(ids[MAX_WATCHES]), { timeout: 2000 });
-    expect(changed).not.toHaveBeenCalledWith(ids[0]);
+    expect(f.made.map((m) => m.closed)).toEqual([true, ...Array(MAX_WATCHES).fill(false)]);
+    withFakeTimers(() => {
+      f.made[MAX_WATCHES].emit("plan.md");
+      vi.advanceTimersByTime(20);
+    });
+    expect(changed.mock.calls).toEqual([[ids[MAX_WATCHES]]]);
     w.unwatch(ids[1]);
+    expect(f.made[1].closed).toBe(true);
     w.closeAll();
     expect(w.size).toBe(0);
+    expect(f.made.every((m) => m.closed)).toBe(true);
+    // Only the watch closed to make room was told: unwatch and closeAll were asked for.
     expect(closed).toHaveBeenCalledTimes(1);
   });
 

@@ -1,4 +1,4 @@
-import { type FSWatcher, existsSync, watch as fsWatch, promises as fs, mkdirSync } from "node:fs";
+import { existsSync, watch as fsWatch, promises as fs, mkdirSync } from "node:fs";
 import path from "node:path";
 import { bundleMod } from "@humanharness/mod-sdk/bundle";
 import type { ModReview } from "@humanharness/protocol";
@@ -110,17 +110,25 @@ export class ModBuilds implements UserBuilds {
   }
 }
 
+/** What the user layer's watchers need of `fs.watch`; tests pass a fake one. */
+export type LayerWatch = (
+  dir: string,
+  opts: { recursive?: boolean },
+  listener: (event: string, name: string | Buffer | null) => void,
+) => { close(): void; on(event: "error", fn: (err: Error) => void): unknown };
+const realWatch: LayerWatch = (dir, opts, listener) => fsWatch(dir, opts, listener);
+
 /**
  * Watches `app/mods/` (recursive) and calls `onChange` with a mod folder's path once its files have been quiet for
  * `ms` (per folder). A `.error` file the app writes is not a change.
  */
-export function watchUserLayer(home: string, onChange: (dir: string) => void, ms = USER_DEBOUNCE_MS): { close(): void } {
+export function watchUserLayer(home: string, onChange: (dir: string) => void, ms = USER_DEBOUNCE_MS, watch: LayerWatch = realWatch): { close(): void } {
   const root = userModsDir(home);
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  let w: FSWatcher | undefined;
+  let w: ReturnType<LayerWatch> | undefined;
   try {
     mkdirSync(root, { recursive: true });
-    w = fsWatch(root, { recursive: true }, (_event, name) => {
+    w = watch(root, { recursive: true }, (_event, name) => {
       if (!name) return;
       const rel = name.toString();
       if (rel.endsWith(".error")) return;
@@ -154,7 +162,7 @@ export function watchUserLayer(home: string, onChange: (dir: string) => void, ms
  * Watches the person's layouts (0b2): any file in `app/layouts/` and `app/settings.json` (the pick). `onChange` runs
  * once the burst has been quiet for `ms`. A `.error` (the app's) or `.tmp` (an atomic write's) file is not a change.
  */
-export function watchLayouts(home: string, onChange: () => void, ms = USER_DEBOUNCE_MS): { close(): void } {
+export function watchLayouts(home: string, onChange: () => void, ms = USER_DEBOUNCE_MS, watch: LayerWatch = realWatch): { close(): void } {
   const dir = path.join(home, "layouts");
   let timer: ReturnType<typeof setTimeout> | undefined;
   const fire = () => {
@@ -164,10 +172,10 @@ export function watchLayouts(home: string, onChange: () => void, ms = USER_DEBOU
       onChange();
     }, ms);
   };
-  const watchers: FSWatcher[] = [];
+  const watchers: ReturnType<LayerWatch>[] = [];
   const add = (folder: string, keep: (name: string) => boolean) => {
     try {
-      const w = fsWatch(folder, (_event, name) => {
+      const w = watch(folder, {}, (_event, name) => {
         if (name && keep(name.toString())) fire();
       });
       w.on("error", (err) => console.error(`The watcher of ${folder} stopped`, err));

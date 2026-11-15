@@ -28,6 +28,10 @@ function files(dir: string, rel = ""): string[] {
 /** Local noon on that day: the plugin asks for the person's local date. */
 const day = (year: number, month = 10, date = 27) => new Date(year, month - 1, date, 12);
 
+/** Each committed dist/ file with its mtime: nothing in this file (or the suite) may rewrite the committed build. */
+const distStamps = () => files(path.join(DIR, "dist")).map((f) => [f, fs.statSync(path.join(DIR, "dist", f)).mtimeMs] as const);
+const stampsBefore = distStamps();
+
 describe("the on-this-day plugin as committed", () => {
   let tmp: string;
   beforeAll(() => {
@@ -123,5 +127,12 @@ describe("the demo lists it", () => {
     expect(pluginsAccepted(h)).toBe(true);
     expect(h.plugins).toMatchObject({ bundled: ["on-this-day"], local: true });
     expect(h.plugins?.on ?? []).toEqual([]);
+  });
+});
+
+// Last in the file: the byte-identical check builds into a temp folder, never into the committed dist/.
+describe("the committed dist/", () => {
+  it("is untouched by this file: same files, same mtimes as when it started", () => {
+    expect(distStamps()).toEqual(stampsBefore);
   });
 });

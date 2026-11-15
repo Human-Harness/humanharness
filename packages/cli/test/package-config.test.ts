@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FEED, packageConfig } from "../src/package-config";
+import { DEFAULT_FEED, X64_ARCH_FILES, packageConfig } from "../src/package-config";
 
 const harnessDir = "/repo/harnesses/teacher";
 const appDir = "/repo/packages/shell";
@@ -41,6 +41,11 @@ describe("packageConfig (release spec §3.1)", () => {
       { target: "dmg", arch: ["universal"] },
       { target: "zip", arch: ["universal"] },
     ]);
+  });
+
+  it("the universal app keeps the per-arch native packages installed for both arches as they are", () => {
+    expect(packageConfig(base).mac?.x64ArchFiles).toBe(X64_ARCH_FILES);
+    expect(X64_ARCH_FILES).toContain("@esbuild/darwin-*");
   });
 
   it("mac uses the hardened runtime and the shell's entitlements files", () => {

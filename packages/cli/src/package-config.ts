@@ -4,6 +4,9 @@ import type { Configuration } from "electron-builder";
 /** Where installed apps look for updates: the latest GitHub release of the core repo (release spec §3.1). */
 export const DEFAULT_FEED = "https://github.com/Human-Harness/humanharness/releases/latest/download";
 
+/** Per-arch native packages (and the already universal fsevents) that the universal app keeps as they are. */
+export const X64_ARCH_FILES = "Contents/Resources/app.asar.unpacked/node_modules/{@esbuild/darwin-*,@napi-rs/canvas-darwin-*,@openai/codex-darwin-*,esbuild/bin,fsevents}/**";
+
 export interface PackageConfigInput {
   /** The manifest fields the app is named and branded by. */
   harness: { id: string; name: string; logo?: string };
@@ -50,6 +53,8 @@ export function packageConfig(o: PackageConfigInput): Configuration {
       ],
       icon,
       artifactName: "${productName}-${version}-universal-mac.${ext}",
+      // Prebuilt binaries installed for both arches (pnpm supportedArchitectures) are the same file in both builds.
+      x64ArchFiles: X64_ARCH_FILES,
       hardenedRuntime: true,
       entitlements: path.join(o.appDir, "build", "entitlements.mac.plist"),
       entitlementsInherit: path.join(o.appDir, "build", "entitlements.mac.inherit.plist"),

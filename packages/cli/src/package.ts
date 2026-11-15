@@ -105,7 +105,8 @@ function defaultDeps(out: Writable): PackageDeps {
     build: async ({ config, publish }) => {
       // Loaded only here: the rest of the CLI never pays for electron-builder.
       const builder = await import("electron-builder");
-      return builder.build({ mac: [], config, publish });
+      // projectDir: the shell, where electron is installed (its version names the Electron to package).
+      return builder.build({ mac: [], config, publish, projectDir: config.directories?.app ?? undefined });
     },
   };
 }

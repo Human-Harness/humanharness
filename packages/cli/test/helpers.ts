@@ -20,6 +20,16 @@ export function memoryStream(): { stream: Writable; text: () => string } {
   return { stream, text: () => text };
 }
 
+/** An output that copies into `out` and calls `seen` with each chunk, after it is kept. */
+export const watch = (out: ReturnType<typeof memoryStream>, seen: (text: string) => void) =>
+  new Writable({
+    write(chunk, _encoding, callback) {
+      out.stream.write(chunk);
+      seen(String(chunk));
+      callback();
+    },
+  });
+
 /** An Io over memory: `input` is what the person types (already ended). */
 export function memoryIo(cwd: string, input = "") {
   const out = memoryStream();

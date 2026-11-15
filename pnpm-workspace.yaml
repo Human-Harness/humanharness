@@ -2,9 +2,13 @@ packages:
   - "packages/*"
   - "packages/mods/*"
   - "harnesses/*"
+supportedArchitectures:
+  os: [current, darwin]
+  cpu: [current, arm64, x64]
 allowBuilds:
   electron: true
   esbuild: true
+  electron-winstaller: false
 minimumReleaseAgeExclude:
   - "@types/node@26.6.5"
   - isomorphic-git@1.43.3

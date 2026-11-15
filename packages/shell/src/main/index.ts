@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -14,27 +12,16 @@ import {
   ipcMain,
   nativeTheme,
   safeStorage,
-  session,
   shell,
   webContents,
 } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
-import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
-import { type PickInput, modelPolicy } from "@humanharness/policies";
+import { type EngineDef, availableEngines, getEngine } from "@humanharness/engines";
 import {
   type BackendInit,
   DEFAULT_LANGUAGE,
   type LoadedHarness,
-  PROFILE_COLLECTION,
-  SETTINGS_COLLECTION,
-  SIDEKICK_COLLECTION,
-  SIDEKICK_PROCESS,
-  TIERS,
-  type Tier,
   allBlocks,
-  choiceOptionSchema,
-  dataCollections,
   hasBackend,
   hasEnginePresets,
   hasLinkedFolders,
@@ -46,119 +33,62 @@ import {
   materialStageKey,
   pluginsAccepted,
   resolveInHarness,
-  sidekickCollection,
   stageTier,
 } from "@humanharness/harness-sdk";
 import { createI18n } from "@humanharness/i18n";
 import { type Job, MaterialStore } from "@humanharness/material/light";
-import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
   type Event,
   type HarnessRuntime,
   type HarnessWorkspace,
   type RuntimeOptions,
   type SessionSlot,
-  SidekickSession,
-  type SlotRef,
-  createRuntime,
-  createWorkspace,
   runSystemTask,
 } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
-  type DocumentRead,
-  type ChatLoad,
   type ConfiguredApp,
-  type FolderPick,
-  type ModelsView,
-  type ModsConfig,
-  type ModsView,
-  type MoveResult,
-  type ProfileResult,
-  type ProfilesState,
-  type RunningSetup as SetupInfo,
-  type ScopesView,
-  type SendOptions,
-  type SetupOutput,
-  type SetupStep,
-  type SetupStepResult,
-  type SetupStepsState,
-  type TestResult,
-  type UsageSummary,
-  RESTORE_POINT,
-  RESTORE_TASK,
   TEXT_SIZES,
   type TextSize,
   isConfigured,
 } from "@humanharness/protocol";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import {
-  APP_SCOPE,
-  DataStore,
-  History,
-  MAIN_SCOPE,
-  ScopeStore,
-  DEFAULT_PINNED_TOKENS,
-  dataDiffOf,
   flushFileIndexes,
-  loadReview,
-  migrateToScopes,
-  notesPrefix,
   profileDir,
-  readNotes,
 } from "@humanharness/workspace";
-import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
-import { ConfigStore, cleanJobs, historyDir } from "./config";
-import { agentDataRequest, dataWriteQueue, harnessUiDataRequests, personDataRequests } from "./data-requests";
-import { testPrompt } from "./engine-check";
+import { ConfigStore } from "./config";
 import { createCommandDeps } from "./command-deps";
-import { cliCommand, engineCommand, engineSearchPath } from "./engine-command";
+import { engineCommand, engineSearchPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, offeredEffort, pinnedBudget } from "./models";
+import { cleanModels } from "./models";
 import { createAppServices } from "./app-services";
-import { ContextService } from "./context";
-import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
 import { searchHandlers } from "./search/ipc";
-import { workerBuild } from "./search/runner";
-import { SearchService } from "./search/service";
 import { contextHandlers } from "./context-ipc";
 import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
-import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
-import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
+import { setPhaseHandler } from "./phase-ipc";
+import { requireNoticeForTurn } from "./notice-policy";
 import { reviewHandlers } from "./review-ipc";
-import { workerDiff } from "./diff-runner";
-import { commitAnnouncer, fileHandlers, openPathIpc } from "./file-ipc";
+import { fileHandlers, openPathIpc } from "./file-ipc";
 import { documentIpc } from "./document-ipc";
-import { FileTimelineService } from "./file-timeline";
-import { CANCELLED, type GoBackAsk, askNatively, goBackHandlers, goBackText } from "./go-back";
-import { ReviewService } from "./reviews";
-import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
-import { type RunningSetup, runSetupProcess, setupCommand } from "./setup-runner";
-import { runSetupStep } from "./setup-step";
-import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
+import { type GoBackAsk, askNatively, goBackText } from "./go-back";
+import { archiveChatsOnEngineChange, startNewChatIfEngineChanged } from "./engine-switch";
+import { type RunningSetup } from "./setup-runner";
+import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { shellResourcesDir } from "./shell-resources";
-import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
+import { TurnController, type TurnDeps } from "./turn-controller";
 import {
-  type UsageRecord,
   UsageLog,
-  capTokens,
-  modRecord,
-  profilesUsage,
-  summarizeUsage,
-  withSpent,
 } from "./usage-log";
-import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
-import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
+import { type ValidationContext, configProblem, isAppUrl } from "./validate";
+import { openRoots } from "./open-path";
 import { DocumentSessions } from "./document-sessions";
-import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
-import { saveWithFolderChange } from "./folder-change";
-import { type MoveDeps, guardedMove, moveFolder, precheckMove } from "./move-folder";
-import { type ResolvedReference, usableReferences } from "./references";
+import { DocumentWatchers } from "./documents";
+import { type ResolvedReference } from "./references";
 import { PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { SecretStore } from "./plugin-secrets";
@@ -168,12 +98,10 @@ import { type ToolsHost } from "./tools/tools-host";
 import { type BoardHost } from "./board-host";
 import { type AttentionStores } from "./attention-stores";
 import { type TaskAttention, keepNotification } from "./task-attention";
-import { type JobsHost, isJobSlot, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps } from "./jobs/jobs-host";
+import { type JobsHost, coalescedSender, jobsIpc } from "./jobs/jobs-host";
 import { type JobsWiringDeps } from "./jobs/jobs-wiring";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
-import { cleanCaps, engineHold } from "./parallel-config";
-import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, linkedIpcDeps, linkedSecret, registerLinkedIpc } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc, engineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
@@ -186,15 +114,10 @@ import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessB
 import {
   type LinkedHistoryRef,
   linkedHistoriesFor,
-  linkedOnlyRows,
-  mergeTaskGroups,
   openLinkedHistory,
-  restoreLinkedTask,
-  restoreTaskWithLinked,
 } from "./linked-restore";
 import { isGitRepo } from "./linked-folders";
-import { instructionSubagentsOption } from "./instruction-subagents";
-import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
+import { tasksIpc } from "./tasks-ipc";
 import { PluginsController } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { layoutIpc } from "./layout-ipc";
@@ -210,18 +133,9 @@ import { profilesIpc } from "./profiles-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController } from "./sidekick";
 import { registerSidekickIpc } from "./sidekick-ipc";
-import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
-import { type ModsSettings, cleanModsConfig } from "./mods/config";
-import { CORE_MODS } from "./mods/core-mods";
 import { shownLayout } from "./mods/layout";
-import { HomeHistory } from "./mods/home-history";
-import { enterSafeMode } from "./mods/safe";
-import { ModHost } from "./mods/host";
 import { registerModsIpc } from "./mods/mods-ipc";
-import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./mods/user-layer";
-import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
-import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
-import { needsHost } from "./mods/wiring";
+import { appHome } from "./mods/services";
 import { SetupSteps } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
@@ -232,28 +146,19 @@ import { createAppMods } from "./mods/app-mods";
 import { createAppViews } from "./app-views";
 import { type TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
+import { materialIpc } from "./material-ipc";
 import type { MaterialJobs } from "./material-jobs";
-import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
+import { type MaterialStageDeps } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
-import { baseFor, isInsideFolder } from "./profile-base";
-import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
-import { ProfileSwitch } from "./profile-switch";
-import { holds } from "./holds";
-import { historyView } from "./history-view";
-import { RestoreGuard, lastOpened } from "./restore-guard";
-import { TaskStore, emptyTasks } from "./task-store";
+import { baseFor } from "./profile-base";
+import { Profiles } from "./profiles";
 import { trafficLightY } from "./text-size";
 import { createWindow as createAppWindow } from "./window";
 import { onLoaded, onPrimary } from "./app-lifecycle";
 import {
-  MOCK_MODEL,
-  fakeSetupResult,
   isMockEngine,
-  mockModels,
   offeredEngines,
   readTestHooks,
-  testEngineStatus,
 } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;

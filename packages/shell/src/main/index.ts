@@ -7,7 +7,6 @@ import {
   Notification,
   type WebContents,
   app,
-  clipboard,
   dialog,
   ipcMain,
   nativeTheme,
@@ -22,9 +21,7 @@ import {
   DEFAULT_LANGUAGE,
   type LoadedHarness,
   allBlocks,
-  hasBackend,
   hasEnginePresets,
-  hasLinkedFolders,
   hasModes,
   hasPhases,
   hasProfiles,
@@ -55,7 +52,6 @@ import {
 } from "@humanharness/protocol";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
 import {
-  flushFileIndexes,
   profileDir,
 } from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
@@ -65,16 +61,9 @@ import { engineCommand, engineSearchPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { cleanModels } from "./models";
+import { registerAppIpc } from "./app-ipc";
 import { createAppServices } from "./app-services";
-import { searchHandlers } from "./search/ipc";
-import { contextHandlers } from "./context-ipc";
-import { languageHandlers } from "./language-ipc";
-import { chooseModeHandler } from "./mode-ipc";
-import { setPhaseHandler } from "./phase-ipc";
 import { requireNoticeForTurn } from "./notice-policy";
-import { reviewHandlers } from "./review-ipc";
-import { fileHandlers, openPathIpc } from "./file-ipc";
-import { documentIpc } from "./document-ipc";
 import { type GoBackAsk, askNatively, goBackText } from "./go-back";
 import { archiveChatsOnEngineChange, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup } from "./setup-runner";
@@ -90,7 +79,7 @@ import { DocumentSessions } from "./document-sessions";
 import { DocumentWatchers } from "./documents";
 import { type ResolvedReference } from "./references";
 import { PluginBackendHost } from "./plugin-host";
-import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
+import { PluginPanelsOnDemand, installPluginPanels, safeStorageCrypto } from "./plugin-ipc";
 import { SecretStore } from "./plugin-secrets";
 import { ConnectionsController, connectTests } from "./secrets/connections";
 import { testCrypto } from "./secrets/test-crypto";
@@ -98,16 +87,16 @@ import { type ToolsHost } from "./tools/tools-host";
 import { type BoardHost } from "./board-host";
 import { type AttentionStores } from "./attention-stores";
 import { type TaskAttention, keepNotification } from "./task-attention";
-import { type JobsHost, coalescedSender, jobsIpc } from "./jobs/jobs-host";
+import { type JobsHost, coalescedSender } from "./jobs/jobs-host";
 import { type JobsWiringDeps } from "./jobs/jobs-wiring";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
-import { type LinkedIpcDeps, linkedIpcDeps, linkedSecret, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, linkedSecret } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
-import { type EngineIpc, engineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
+import { type EngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
-import { BackendGeneration, backendInit, buildBackend, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
+import { BackendGeneration, backendInit, usableLinks } from "./backend/backend-ipc";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
 import { linkedHistoryDir, markRelinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
@@ -117,25 +106,9 @@ import {
   openLinkedHistory,
 } from "./linked-restore";
 import { isGitRepo } from "./linked-folders";
-import { tasksIpc } from "./tasks-ipc";
 import { PluginsController } from "./plugins";
-import { respondHandler } from "./respond-ipc";
-import { layoutIpc } from "./layout-ipc";
-import { setupIpc } from "./setup-ipc";
-import { folderIpc } from "./folder-ipc";
-import { engineSetupIpc } from "./engine-setup-ipc";
-import { chatIpc } from "./chat-ipc";
-import { historyIpc } from "./history-ipc";
-import { dataIpc } from "./data-ipc";
-import { settingsIpc } from "./settings-ipc";
-import { scopesIpc } from "./scopes-ipc";
-import { profilesIpc } from "./profiles-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController } from "./sidekick";
-import { registerSidekickIpc } from "./sidekick-ipc";
-import { shownLayout } from "./mods/layout";
-import { registerModsIpc } from "./mods/mods-ipc";
-import { appHome } from "./mods/services";
 import { SetupSteps } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
@@ -146,7 +119,6 @@ import { createAppMods } from "./mods/app-mods";
 import { createAppViews } from "./app-views";
 import { type TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { materialIpc } from "./material-ipc";
 import type { MaterialJobs } from "./material-jobs";
 import { type MaterialStageDeps } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
@@ -1169,274 +1141,6 @@ const {
   sendToWindow,
 });
 
-function registerIpc() {
-  handle("hh:getState", () => appState());
-  handleAll(
-    settingsIpc({
-      harness: () => harness,
-      config: () => config,
-      settingsCtl: () => settingsCtl,
-      pluginsCtl: () => pluginsCtl,
-      setupCtl: () => setupCtl,
-      host: () => host,
-      setJobSettings: (jobs) => (jobSettings = jobs),
-      validation,
-      currentBase,
-      hasNotice,
-      folderBusy: hold.folderBusy,
-      guards,
-      interruptTasks,
-      dropRuntime,
-      saveConfigPatch,
-      documentSessions,
-      dropDataStoresUnder,
-      settleScopes,
-      scopesChanged,
-      rebasePlugins,
-      validConfig,
-      jobsReady,
-      backendRebase,
-      backendReady,
-      applyAppearance,
-      applyTextSize,
-      jobsChanged,
-      refreshJobBadge,
-      appState,
-    }),
-  );
-  handleAll(
-    chatIpc({
-      harness: () => harness,
-      quitting: () => quitting,
-      turnBlocked,
-      tasks: () => tasks,
-      host: () => host,
-      modHost: () => appMods.state.modHost,
-      guards,
-      engineBusy: hold.engineBusy,
-      scopesSettled,
-      scopesChanged,
-      validConfig,
-      baseOf,
-      dropRuntime,
-    }),
-  );
-  handle("hh:getTasks", () => tasks.view());
-  handleAll(
-    scopesIpc({
-      quitting: () => quitting,
-      turnBlocked,
-      tasks: () => tasks,
-      scopesView,
-      scopesSettled,
-      scopeStore,
-      scopesChanged,
-      linked_,
-    }),
-  );
-  // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
-  if (hasLinkedFolders(harness)) {
-    // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
-    linkedDeps ??= linkedIpcDeps({
-      userData: app.getPath("userData"),
-      home: os.homedir(),
-      linkedFolders: harness.linkedFolders ?? {},
-      store: scopeStore,
-      validConfig,
-      profilesOn,
-      profileIds: () => profilesCtl?.state().then((st) => st.list.map((p) => p.id)) ?? null,
-      baseFor: (c) => baseFor(c, true),
-      baseOf,
-      scopeStoreFor,
-      references: async (c, base) => (await workReferences(c, base)).map((r) => r.path),
-      pick: async () => {
-        if (!window || window.isDestroyed()) return null;
-        const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
-        return r.canceled ? null : (r.filePaths[0] ?? null);
-      },
-      trash: (d) => shell.trashItem(d),
-      scopesChanged,
-      linked: linked_,
-      unsupported: () => linkedUnsupported,
-      currentScope: () => tasks.currentScope(),
-      openLinked,
-    });
-    registerLinkedIpc(handle, linkedDeps);
-  }
-  // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
-  if (hasEnginePresets(harness)) {
-    const userData = app.getPath("userData");
-    engineIpc = registerEngineIpc(
-      handle,
-      engineIpcDeps({
-        host: engineHost_()!,
-        userData,
-        validConfig,
-        baseOf,
-        scopeStoreFor,
-        profilesOn,
-        epochs: () => (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
-        engines: () => harness.engines,
-        engineId: async () => (await config.load()).engineId,
-        send: sendToWindow,
-      }),
-    );
-  }
-  if (hasEnginePresets(harness)) void pruneEngineConfig();
-  // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
-  if (hasBackend(harness)) {
-    backend = buildBackend(harness, { userData: app.getPath("userData"), launcher: electronLauncher(process.execPath), send: sendToWindow });
-    if (backend) registerBackendIpc(handle, { supervisor: backend });
-  }
-  handleAll(dataIpc({ harness: () => harness, scopesSettled, harnessUiData, currentHistory }));
-  // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
-  registerSidekickIpc(handle, () => sidekickCtl);
-  // The layout the screen shows (minimal-core spec §5.2).
-  handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
-  // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
-  handle("hh:layoutPick", layoutIpc({ home: () => appHome(app.getPath("userData"), harness.id) })["hh:layoutPick"]);
-  // Safe mode entered this run: the window shows its notice.
-  handle("hh:safeMode", () => appMods.state.safeEntered);
-  // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
-  registerModsIpc(handle, appMods.modsIpcDeps());
-  // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
-  // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.
-  if (pluginsCtl) {
-    registerPluginsIpc(handle, pluginsCtl, {
-      startPrepared: (p) => tasks.startPrepared(p),
-      // Board mode: a prepared task starts in a lane of its own, whatever another lane runs.
-      startBlocked: () => (quitting ? "The app is closing" : (turnBlocked() ?? (!host && tasks.isBusy() ? "A turn is already running" : null))),
-      ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
-    });
-  }
-  handleAll(setupIpc({ setupCtl: () => setupCtl }));
-  handleAll(profilesIpc({ profilesCtl: () => profilesCtl, appState, lastAppState: () => lastAppState }));
-  // The person's material (material spec §10).
-  handleAll(materialIpc({ materialSvc: () => materialSvc, shell }));
-  handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
-  // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
-  handle(
-    "hh:chooseMode",
-    chooseModeHandler({
-      quitting: () => quitting,
-      blocked: turnBlocked,
-      openTask: async () => (await tasks.runningTask())?.id ?? null,
-      choose: (mode, choice, task) => tasks.chooseMode(mode, choice, task),
-    }),
-  );
-  // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
-  handle("hh:setPhase", setPhaseHandler({ quitting: () => quitting, blocked: turnBlocked, setPhase: (to, task) => tasks.setPhase(to, task) }));
-  handleAll(openPathIpc({ validConfig, baseOf, workReferences, shell }));
-  const reader = documentIpc({ documentRoots, documentSessions });
-  handle("hh:readDocument", reader["hh:readDocument"]);
-  handle("hh:readImage", reader["hh:readImage"]);
-  handle("hh:documentsExist", reader["hh:documentsExist"]);
-  handleFrom("hh:watchDocument", reader["hh:watchDocument"]);
-  handleFrom("hh:unwatchDocument", reader["hh:unwatchDocument"]);
-  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
-  handleAll(reviewHandlers(reviews, () => harness.permissions.edit === "folder"));
-  // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
-  handleAll(fileHandlers(fileTimelines));
-  handleAll(contextHandlers(contextSvc));
-  handleAll(searchHandlers(searchSvc));
-  // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
-  if (translation) handleAll(languageHandlers(translation));
-  // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
-  handle("hh:cancel", () => tasks.cancel());
-  const history = historyIpc({
-    quitting: () => quitting,
-    tasksBusy: () => tasks.isBusy(),
-    restoreHeld: hold.restoreHeld,
-    homeHistory: () => appMods.state.homeHistory,
-    linked_,
-    currentHistory,
-    linkedHistoriesOf,
-    confirmGoBack,
-    restoreWith,
-    afterRestore,
-    restores,
-    undoByPaths,
-    fileTimelines,
-  });
-  handleFrom("hh:restore", history["hh:restore"]);
-  handleFrom("hh:fileRestore", history["hh:fileRestore"]);
-  handle("hh:historyTasks", history["hh:historyTasks"]);
-  handleFrom("hh:restoreTask", history["hh:restoreTask"]);
-  handle("hh:homeHistory", history["hh:homeHistory"]);
-  handle("hh:homeUndo", history["hh:homeUndo"]);
-  // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.
-  const inbox = tasksIpc(() => host);
-  handle("hh:tasksList", () => inbox.list());
-  handle("hh:tasksFocus", (id: unknown) => inbox.focus(id));
-  handle("hh:tasksCancelQueued", (id: unknown) => inbox.cancelQueued(id));
-  handle("hh:tasksResume", () => inbox.resume());
-  // The jobs channels (parallel spec §9.1, J4): a declared manual job in an existing scope; without jobs, refused (D0).
-  const jobsChannels = jobsIpc(() => jobsHost);
-  handle("hh:jobsList", () => jobsChannels.list());
-  handle("hh:jobsRun", (id: unknown, scope: unknown) => jobsChannels.run(id, scope));
-  handleAll(
-    engineSetupIpc({
-      harness: () => harness,
-      config: () => config,
-      shared: () => shared,
-      quitting: () => quitting,
-      profilesCtl: () => profilesCtl,
-      setupRun: () => setupRun,
-      setSetupRun: (run) => (setupRun = run),
-      stopTranslation: () => translation?.stop(),
-      hooks,
-      commandDeps,
-      guards,
-      engineFor,
-      hasNotice,
-      engineBusy: hold.engineBusy,
-      dropRuntime,
-      sendToWindow,
-      validConfig,
-      baseOf,
-      clipboard,
-      shell,
-    }),
-  );
-  handleAll(
-    folderIpc({
-      window: () => window,
-      config: () => config,
-      quitting: () => quitting,
-      profilesCtl: () => profilesCtl,
-      pluginsCtl: () => pluginsCtl,
-      backend: () => backend,
-      host: () => host,
-      tasks: () => tasks,
-      moving: () => moving,
-      setMoving: (run) => (moving = run),
-      setHistoryHeld: (held) => (historyHeld = held),
-      pluginStateRoot: () => pluginStateRoot,
-      userData: () => app.getPath("userData"),
-      dialog,
-      shell,
-      guards,
-      folderBusy: hold.folderBusy,
-      plainTasks,
-      restores,
-      documentSessions,
-      searchSvc,
-      validConfig,
-      baseOf,
-      standaloneHistory,
-      openHistory,
-      flushTurns,
-      flushFileIndexes,
-      closeRuntime,
-      pluginLog,
-      rebasePlugins,
-      backendRebase,
-      appState,
-      dropDataStoresUnder,
-    }),
-  );
-}
-
 /** The app window (window.ts), with what it reads from here. */
 const createWindow = () =>
   createAppWindow({
@@ -1485,6 +1189,39 @@ const loaded = await loadHarness(path.join(here, "harness.js"), { root: __HARNES
 const lifecycle = {
   get backend() {
     return backend;
+  },
+  set backend(v) {
+    backend = v;
+  },
+  get engineEpochs() {
+    return engineEpochs;
+  },
+  set engineEpochs(v) {
+    engineEpochs = v;
+  },
+  get engineIpc() {
+    return engineIpc;
+  },
+  set engineIpc(v) {
+    engineIpc = v;
+  },
+  get historyHeld() {
+    return historyHeld;
+  },
+  set historyHeld(v) {
+    historyHeld = v;
+  },
+  get lastAppState() {
+    return lastAppState;
+  },
+  get linkedDeps() {
+    return linkedDeps;
+  },
+  set linkedDeps(v) {
+    linkedDeps = v;
+  },
+  get linkedUnsupported() {
+    return linkedUnsupported;
   },
   get config() {
     return config;
@@ -1549,6 +1286,9 @@ const lifecycle = {
   get moving() {
     return moving;
   },
+  set moving(v) {
+    moving = v;
+  },
   get pluginBadge() {
     return pluginBadge;
   },
@@ -1611,6 +1351,9 @@ const lifecycle = {
   },
   get setupRun() {
     return setupRun;
+  },
+  set setupRun(v) {
+    setupRun = v;
   },
   get shared() {
     return shared;
@@ -1712,7 +1455,7 @@ const lifecycle = {
   prepareEngine,
   readPhaseBrief,
   refreshDockBadge,
-  registerIpc,
+  registerIpc: (): void => registerAppIpc(lifecycle),
   restores,
   runtime,
   runtimeOptions,
@@ -1745,6 +1488,41 @@ const lifecycle = {
   watchUserLayouts,
   watchUserMods,
   workReferences,
+  afterRestore,
+  appMods,
+  appState,
+  applyAppearance,
+  applyTextSize,
+  backendRebase,
+  confirmGoBack,
+  contextSvc,
+  documentRoots,
+  documentSessions,
+  dropDataStoresUnder,
+  engineFor,
+  engineHost_,
+  fileTimelines,
+  handleAll,
+  handleFrom,
+  harnessUiData,
+  jobsChanged,
+  linkedHistoriesOf,
+  linked_,
+  openHistory,
+  openLinked,
+  profilesOn,
+  pruneEngineConfig,
+  rebasePlugins,
+  refreshJobBadge,
+  restoreWith,
+  reviews,
+  saveConfigPatch,
+  scopeStore,
+  scopesSettled,
+  scopesView,
+  standaloneHistory,
+  undoByPaths,
+  validation,
 };
 export type LifecycleDeps = typeof lifecycle;
 

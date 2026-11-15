@@ -1,7 +1,7 @@
 # Release and updates — design
 
 Date: 2026-11-15
-Status: approved by Marco section by section on 2026-11-15; written spec under review
+Status: approved by Marco on 2026-11-15
 Source: roadmap plan 4b ("Release") and the core spec (`2026-10-10-humanharness-core-design.md`, §4, §9 "Updates", §11 "Releases", §12 "Windows and Linux"). This spec replaces plan 4b and brings Windows into v1.
 
 ## 1. Goal

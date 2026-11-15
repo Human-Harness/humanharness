@@ -7,6 +7,7 @@ import { initCommand } from "./init";
 import { mcpCommand } from "./mcp/server";
 import { measureCommand } from "./measure";
 import { layoutCommand, modCommand } from "./mod-command";
+import { packageCommandLine } from "./package";
 import { pluginCommand } from "./plugin";
 import { runCommand } from "./run";
 import { toolCommand } from "./tool-command";
@@ -26,6 +27,7 @@ export const USAGE = [
   "                                           Check the harness, then open the app with it (--mock: replay mock/, no AI;",
   "                                           --safe: the home folder's mods off and its layout pick cleared)",
   "  build [--harness <dir>]                  Bundle the harness's tools into dist/ (tools.json)",
+  "  package [--harness <dir>] [--publish] [--feed <url>] [--out <dir>]  Check the harness, then build its macOS app",
   "  measure [--folder <dir>]                 Print first-turn tokens with and without pre-steps, per action",
   "  plugin <command>                         Build, check and try a plugin (humanharness plugin --help)",
   "  tool <command>                           Test and run the harness's tools (humanharness tool --help)",
@@ -49,6 +51,7 @@ const COMMANDS: Record<string, Command> = {
   dev: devCommandLine,
   plugin: pluginCommand,
   build: buildCommand,
+  package: packageCommandLine,
   measure: measureCommand,
   tool: toolCommand,
   mod: modCommand,

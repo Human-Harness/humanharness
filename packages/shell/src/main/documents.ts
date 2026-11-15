@@ -1,4 +1,4 @@
-import nodeFs, { type FSWatcher, promises as fs } from "node:fs";
+import nodeFs, { promises as fs } from "node:fs";
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
 import type { DocumentRead } from "@humanharness/protocol";
@@ -77,6 +77,12 @@ export async function documentsExist(paths: unknown, roots: string[]): Promise<b
   return Promise.all(paths.map(async (p) => (await locate(p, roots)).ok));
 }
 
+/** What DocumentWatchers needs of `fs.watch` (a folder, no options); tests pass a fake one. */
+export type DocumentWatch = (
+  dir: string,
+  listener: (event: string, file: string | Buffer | null) => void,
+) => { close(): void; on(event: "error", fn: (err: Error) => void): unknown };
+
 /** Most documents watched at once; a new watch over this closes the oldest. */
 export const MAX_WATCHES = 16;
 
@@ -100,6 +106,8 @@ export class DocumentWatchers {
   constructor(
     private readonly onChange: (id: number) => void,
     private readonly quietMs = 150,
+    /** Absent: `fs.watch`, looked up on each watch. */
+    private readonly watchFn?: DocumentWatch,
   ) {}
 
   async watch(rel: unknown, roots: string[]): Promise<number | null> {
@@ -109,9 +117,10 @@ export class DocumentWatchers {
     const name = path.basename(at.file);
     const id = this.next++;
     let timer: NodeJS.Timeout | null = null;
-    let watcher: FSWatcher;
+    let watcher: ReturnType<DocumentWatch>;
     try {
-      watcher = nodeFs.watch(path.dirname(at.file), (_event, file) => {
+      const watch: DocumentWatch = this.watchFn ?? ((dir, listener) => nodeFs.watch(dir, listener));
+      watcher = watch(path.dirname(at.file), (_event, file) => {
         if (file !== null && file !== undefined && String(file) !== name) return;
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => this.onChange(id), this.quietMs);

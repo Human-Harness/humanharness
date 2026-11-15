@@ -18,7 +18,6 @@ import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, availableEngines, getEngine } from "@humanharness/engines";
 import {
   type BackendInit,
-  DEFAULT_LANGUAGE,
   type LoadedHarness,
   allBlocks,
   hasEnginePresets,
@@ -32,7 +31,6 @@ import {
   resolveInHarness,
   stageTier,
 } from "@humanharness/harness-sdk";
-import { createI18n } from "@humanharness/i18n";
 import { type Job, MaterialStore } from "@humanharness/material/light";
 import {
   type Event,
@@ -51,21 +49,17 @@ import {
   isConfigured,
 } from "@humanharness/protocol";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
-import {
-  profileDir,
-} from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
 import { ConfigStore } from "./config";
 import { createCommandDeps } from "./command-deps";
 import { engineCommand, engineSearchPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { detectEngine, hasAcceptedNotice } from "./engine-status";
+import { hasAcceptedNotice } from "./engine-status";
 import { cleanModels } from "./models";
 import { registerAppIpc } from "./app-ipc";
+import { createEngineChange } from "./engine-change";
 import { createAppServices } from "./app-services";
 import { requireNoticeForTurn } from "./notice-policy";
-import { type GoBackAsk, askNatively, goBackText } from "./go-back";
-import { archiveChatsOnEngineChange, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup } from "./setup-runner";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { shellResourcesDir } from "./shell-resources";
@@ -748,95 +742,11 @@ const materialStageDeps: MaterialStageDeps = {
   log: (base, record) => new UsageLog(base).append(record),
 };
 
-/** How long an engine check is reused: the language state is read on every push, and a run pushes every turn. */
-const ENGINE_CHECK_MS = 30_000;
-
 /** Language on demand (plan 5b); built once the harness is loaded. Nothing is written until a run saves (D0). */
 let translation: TranslationService | null = null;
-let engineCheck: { id: string; at: number; ready: Promise<boolean> } | null = null;
 
-/**
- * Asks before a go-back, with a native dialog on the window that asked (go-back.ts). The words are the core's, in the
- * person's language: the cached translation when there is one, else English. Any failure to ask is a no.
- */
-async function confirmGoBack(sender: WebContents, ask: GoBackAsk): Promise<boolean> {
-  try {
-    const language = (await config.load()).language ?? DEFAULT_LANGUAGE;
-    const generated = translation ? await translation.strings(language, {}).catch(() => ({})) : {};
-    const i18n = await createI18n(language, {}, generated);
-    const t = (key: string, values?: Record<string, unknown>) => String(i18n.t(key, values ?? {}));
-    const text = goBackText(t, ask, harness.actions, i18n.resolvedLanguage ?? "en");
-    return await askNatively(dialog, BrowserWindow.fromWebContents(sender), text);
-  } catch (err) {
-    console.error("Could not ask before going back", err);
-    return false;
-  }
-}
-
-/**
- * Whether the engine could run a translation now: installed, not outdated, not signed out (the runtime's own start
- * checks). A fake engine (tests, mock mode) always can. Reused for ENGINE_CHECK_MS unless `fresh`.
- */
-function engineReady(engine: EngineDef, fresh = false): Promise<boolean> {
-  if (hooks.engines?.[engine.id]) return Promise.resolve(true);
-  const now = Date.now();
-  if (!fresh && engineCheck?.id === engine.id && now - engineCheck.at < ENGINE_CHECK_MS) return engineCheck.ready;
-  const ready = detectEngine(engine, commandDeps, shared).then(
-    (s) => s.installed && !s.outdated && s.loggedIn !== false,
-    () => false,
-  );
-  engineCheck = { id: engine.id, at: now, ready };
-  return ready;
-}
-
-/**
- * The set-up engine when a run could use it (the app is set up, its notice accepted), else null. It reads the
- * saved config, not validConfig(): with profiles and no active profile there is no base, but the engine is ready.
- */
-async function translateEngine(fresh = false): Promise<EngineDef | null> {
-  const c = await config.load();
-  if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
-  const engine = getEngine(c.engineId);
-  return (await engineReady(engine, fresh)) ? engine : null;
-}
-
-/** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
-async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
-  if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
-    const engineId = patch.engineId;
-    // A translation run belongs to the old engine: it stops, what it saved stays (plan Decision 12).
-    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
-    await guards.switchEngine(
-      {
-        // A profile switch counts too: once its task has closed nothing runs, yet its runtime and profile are pending.
-        isBusy: hold.engineBusy,
-        idle: async () => {
-          await tasks.idle();
-          await flushTurns();
-        },
-        save: () => config.save(patch).then(() => undefined),
-        dropRuntime,
-        archiveChat: async () => {
-          const c = await validConfig();
-          if (!c || c.engineId !== engineId) return null;
-          // D0: one folder, as before. With profiles, every profile's chat (spec §5).
-          if (!profilesCtl) return startNewChatIfEngineChanged(baseOf(c), engineId);
-          // With no active profile baseOf throws and nothing is archived here: each profile's chat is archived lazily
-          // when it is next loaded (archiveStaleChat in hh:loadChat).
-          const active = baseOf(c);
-          // An unreadable registry still starts the active chat over; the others are archived lazily the same way.
-          const list = await profilesCtl.state().then((s) => s.list, () => []);
-          const others = list.map((p) => profileDir(c.folder, p.id)).filter((f) => f !== active);
-          return archiveChatsOnEngineChange(active, others, engineId);
-        },
-      },
-      // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
-      (err) => console.error("Could not finish changing the engine", err),
-    );
-  } else {
-    await config.save(patch);
-  }
-}
+/** Asking before a go-back, the translation's engine and a config save that changes the engine (engine-change.ts). */
+const engineChange = createEngineChange(() => lifecycle);
 
 /** The jobs' wiring over the app's own (jobs/jobs-wiring.ts): single mode's or the board's. */
 const jobsWiring = (): JobsWiringDeps => ({
@@ -1479,7 +1389,7 @@ const lifecycle = {
   taskDeps,
   taskStoreOptions,
   toolsLog,
-  translateEngine,
+  translateEngine: engineChange.translateEngine,
   turnBlocked,
   turnChatLog,
   turnDeps,
@@ -1494,7 +1404,7 @@ const lifecycle = {
   applyAppearance,
   applyTextSize,
   backendRebase,
-  confirmGoBack,
+  confirmGoBack: engineChange.confirmGoBack,
   contextSvc,
   documentRoots,
   documentSessions,
@@ -1516,7 +1426,7 @@ const lifecycle = {
   refreshJobBadge,
   restoreWith,
   reviews,
-  saveConfigPatch,
+  saveConfigPatch: engineChange.saveConfigPatch,
   scopeStore,
   scopesSettled,
   scopesView,

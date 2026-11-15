@@ -167,13 +167,13 @@ describe("hatches IPC surface (hatches D0)", () => {
   });
 
   it("the window's scope list never carries links (only signed ones, through hh:scopeLinked)", async () => {
-    const index = await read("index.ts");
+    const index = await read("scope-stores.ts");
     const view = group(index, index.indexOf("async function scopesView(): Promise<ScopesView>"), /\{/);
     expect(view).toContain(".map(({ linked: _linked, ...s }) => s)");
   });
 
   it("the window's scope list never carries an engine approval (only the Engine config view says approved)", async () => {
-    const index = await read("index.ts");
+    const index = await read("scope-stores.ts");
     const view = group(index, index.indexOf("async function scopesView(): Promise<ScopesView>"), /\{/);
     expect(view).toContain(".map(({ engineApproval: _approval, ...s }) => s)");
   });

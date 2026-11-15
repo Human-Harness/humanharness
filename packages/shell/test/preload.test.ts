@@ -91,7 +91,7 @@ describe("the preload's jobs namespace", () => {
   });
 
   it("uses only channels main registers through handle() or sends", async () => {
-    const main = await fs.readFile(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
+    const main = (await Promise.all(["index.ts", "scope-stores.ts"].map((f) => fs.readFile(path.resolve(__dirname, "../src/main", f), "utf8")))).join("\n");
     for (const ch of ["hh:jobsList", "hh:jobsRun"]) expect(main).toContain(`handle("${ch}"`);
     // The jobs host's `changed` is the one sender, and it sends only with a jobs host (never in plain mode, D0).
     expect(main).toContain('sendToWindow("hh:jobsChange"');

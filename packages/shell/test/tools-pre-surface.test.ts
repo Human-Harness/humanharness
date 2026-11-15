@@ -43,11 +43,12 @@ describe("tools pre-steps surface (tools spec §6; D0)", () => {
   });
 
   it("the tools host gets the usage log, the engine and the scopes from the app", async () => {
-    const index = await read("index.ts");
-    const deps = group(index, index.indexOf("toolsHost = createToolsHost("));
+    // app-lifecycle.ts, the main entry's start-up, builds the tools host.
+    const start = await read("app-lifecycle.ts");
+    const deps = group(start, start.indexOf("d.toolsHost = createToolsHost("));
     expect(deps).toContain("usage: async (record) => {");
     expect(deps).toContain("await new UsageLog(baseOf(c)).append(record);");
-    expect(deps).toContain('engine: async () => (await config.load()).engineId ?? "",');
+    expect(deps).toContain('engine: async () => (await d.config.load()).engineId ?? "",');
     expect(deps).toContain("scoped,");
   });
 

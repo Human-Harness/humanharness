@@ -27,7 +27,8 @@ describe("the IPC surface (plugins spec B5)", () => {
 
   it("ipcMain is named only where those channels are registered", async () => {
     const named = (await sources()).filter(([, text]) => /\bipcMain\b/.test(text)).map(([f]) => f);
-    expect(named.sort()).toEqual(["index.ts", "plugin-host.ts", "tools/tool-host.ts"]);
+    // app-lifecycle.ts only hands ipcMain to the plugin and tool hosts it builds.
+    expect(named.sort()).toEqual(["app-lifecycle.ts", "index.ts", "plugin-host.ts", "tools/tool-host.ts"]);
     // An alias (`const x = wc.ipc; x.on(…)`) would pass the test above: name `.ipc` only where it is allowed too.
     // plugin-host.ts registers on ipcMain, not on a webContents' own `.ipc`: nothing names `.ipc`.
     const ipc = (await sources()).filter(([, text]) => /\.ipc\b/.test(text)).map(([f]) => f);
@@ -88,14 +89,19 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect(index).not.toMatch(/\.installPanels\s*\(/);
     expect([...index.matchAll(/\binstallPluginPanels\s*\(/g)].length).toBe(1);
     expect(index).toMatch(/new PluginPanelsOnDemand<BrowserWindow>\(\s*\(win\) => installPluginPanels\(win, pluginHost, pluginsCtl\),/);
-    // needed() only from the controller's deps: a plugin with panels starting.
-    expect([...index.matchAll(/\bpluginPanels\.needed\s*\(/g)].length).toBe(1);
-    expect(index).toMatch(/panelsNeeded: \(\) => pluginPanels\.needed\(\),/);
-    const create = group(index, index.indexOf("async function createWindow()"), /\{/);
+    // needed() only from the controller's deps (app-lifecycle.ts builds the controller): a plugin with panels starting.
+    const lifecycle = (await sources()).find(([n]) => n === "app-lifecycle.ts")![1];
+    expect(index).not.toMatch(/\bpluginPanels\.needed\s*\(/);
+    expect([...lifecycle.matchAll(/\bpluginPanels\.needed\s*\(/g)].length).toBe(1);
+    expect(lifecycle).toMatch(/panelsNeeded: \(\) => pluginPanels\.needed\(\),/);
+    // window.ts holds createWindow; index.ts hands it pluginPanels and a getter over pluginsCtl.
+    const win = (await sources()).find(([n]) => n === "window.ts")![1];
+    const create = group(win, win.indexOf("export async function createWindow(d: WindowDeps)"), /\{/);
     const at = create.indexOf("if (plugins) {");
     expect(at).toBeGreaterThan(0);
-    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = pluginsCtl;\s*$/);
-    expect([...index.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
+    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = d\.pluginsCtl;\s*$/);
+    expect(index).not.toMatch(/\bpluginPanels\.window\s*\(/);
+    expect([...win.matchAll(/\bpluginPanels\.window\s*\(/g)].length).toBe(1);
     expect(group(create, at, /\{/)).toMatch(/pluginPanels\.window\(win\)/);
   });
 

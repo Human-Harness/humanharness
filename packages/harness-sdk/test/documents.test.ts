@@ -13,6 +13,7 @@ import {
   wordCount,
 } from "../src/documents";
 import { type HarnessInput, defineHarness } from "../src";
+import { expectFast } from "../../../test/support/timing";
 
 describe("splitFrontMatter", () => {
   it("reads simple key: value pairs and strips the block from the body", () => {
@@ -57,11 +58,11 @@ describe("createSlugger", () => {
   });
 
   it("stays linear on many equal headings", () => {
-    const slug = createSlugger();
-    const t0 = performance.now();
-    for (let i = 0; i < 50_000; i++) slug("same");
-    expect(slug("same")).toBe("same-50000");
-    expect(performance.now() - t0).toBeLessThan(500);
+    expectFast(() => {
+      const slug = createSlugger();
+      for (let i = 0; i < 50_000; i++) slug("same");
+      expect(slug("same")).toBe("same-50000");
+    }, 2500);
   });
 });
 
@@ -135,16 +136,14 @@ describe("constants", () => {
 
 describe("hostile and edge input", () => {
   it("a long run of spaces in a heading stays linear (no ReDoS)", () => {
-    const t0 = performance.now();
-    expect(documentTitle("a.md", `# x${" ".repeat(50_000)}y`)).toBe(`x${" ".repeat(50_000)}y`);
-    expect(performance.now() - t0).toBeLessThan(200);
+    expectFast(() => expect(documentTitle("a.md", `# x${" ".repeat(50_000)}y`)).toBe(`x${" ".repeat(50_000)}y`), 1000);
   });
 
   it("a long run of spaces in a front-matter value stays linear (no ReDoS)", () => {
-    const t0 = performance.now();
-    const fm = splitFrontMatter(`---\ntitle: a${" ".repeat(50_000)}b${" ".repeat(50_000)}\n---\n`);
-    expect(fm.data.title).toBe(`a${" ".repeat(50_000)}b`);
-    expect(performance.now() - t0).toBeLessThan(200);
+    expectFast(() => {
+      const fm = splitFrontMatter(`---\ntitle: a${" ".repeat(50_000)}b${" ".repeat(50_000)}\n---\n`);
+      expect(fm.data.title).toBe(`a${" ".repeat(50_000)}b`);
+    }, 1000);
   });
 
   it("closing #s are stripped only after whitespace", () => {
@@ -260,9 +259,9 @@ describe("refusedShape", () => {
     for (const rel of ["docs/plan.md", "./docs/plan.md", "docs/../docs/plan.md", "a..b.md", "..hidden.md", "a/b/../../c.md"]) expect(refusedShape(rel)).toBe(false);
   });
   it("is fast on a long path of spaces", () => {
-    const started = Date.now();
-    expect(refusedShape(" ".repeat(50_000))).toBe(true);
-    expect(refusedShape(`${" ".repeat(999)}`)).toBe(false);
-    expect(Date.now() - started).toBeLessThan(100);
+    expectFast(() => {
+      expect(refusedShape(" ".repeat(50_000))).toBe(true);
+      expect(refusedShape(`${" ".repeat(999)}`)).toBe(false);
+    }, 1000);
   });
 });

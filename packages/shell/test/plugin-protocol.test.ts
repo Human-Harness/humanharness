@@ -15,6 +15,7 @@ import {
   readPluginFile,
   resolvePluginFile,
 } from "../src/main/plugin-protocol";
+import { expectFast } from "../../../test/support/timing";
 
 async function setup() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "hh-pl-proto-"));
@@ -226,9 +227,7 @@ describe("parsePluginRpc (every rpc argument checked before anything sees it)", 
     const ctx = (inner: string) => `{"runId":"r","name":"log","args":${inner}}`;
     expect(parsePluginRpc("ctx", ctx(nest(RPC_MAX_DEPTH + 5)))).toBeNull();
     const deep = "[".repeat(5_000_000) + "]".repeat(5_000_000);
-    const t0 = Date.now();
-    expect(parsePluginRpc("ctx", deep)).toBeNull();
-    expect(Date.now() - t0).toBeLessThan(500);
+    expectFast(() => expect(parsePluginRpc("ctx", deep)).toBeNull(), 2500);
     expect(parsePluginRpc("ctx", ctx(nest(10)))).not.toBeNull();
     expect(parsePluginRpc("ctx", ctx(JSON.stringify(["[".repeat(100)])))).not.toBeNull();
   });

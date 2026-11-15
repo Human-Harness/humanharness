@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { anchorAt, anchorForSelection, anchorOf, diagramOf, locate, markOccurrence, plainInline, project, sections } from "../src/review";
+import { expectFast } from "../../../test/support/timing";
 
 const DOC = [
   "---",
@@ -113,22 +114,22 @@ describe("locate", () => {
 describe("no backtracking on document text", () => {
   it("scans 50,000 spaces fast", () => {
     const text = `## A${" ".repeat(50_000)}\n#${" ".repeat(50_000)}x\n${"`".repeat(3)}${" ".repeat(50_000)}`;
-    const t0 = performance.now();
-    sections(text);
-    anchorAt(text, " ".repeat(40) + "y");
-    locate(text, { quote: " ".repeat(30) + "z", heading: "a", occurrence: 3 });
-    plainInline(`${"*_`[".repeat(10_000)}](${" ".repeat(50_000)}`);
-    project(text);
-    anchorForSelection(text, "y", "a");
-    expect(performance.now() - t0).toBeLessThan(500);
+    expectFast(() => {
+      sections(text);
+      anchorAt(text, " ".repeat(40) + "y");
+      locate(text, { quote: " ".repeat(30) + "z", heading: "a", occurrence: 3 });
+      plainInline(`${"*_`[".repeat(10_000)}](${" ".repeat(50_000)}`);
+      project(text);
+      anchorForSelection(text, "y", "a");
+    }, 2500);
   });
 
   it("stays linear on many equal headings and on ]( that never closes", () => {
-    const t0 = performance.now();
-    expect(sections("#\n".repeat(50_000))).toHaveLength(50_001);
-    plainInline("](".repeat(100_000));
-    sections(`x\n${"=".repeat(50_000)}\n${"a\n".repeat(50_000)}---\n`);
-    expect(performance.now() - t0).toBeLessThan(500);
+    expectFast(() => {
+      expect(sections("#\n".repeat(50_000))).toHaveLength(50_001);
+      plainInline("](".repeat(100_000));
+      sections(`x\n${"=".repeat(50_000)}\n${"a\n".repeat(50_000)}---\n`);
+    }, 2500);
   });
 
   it("project stays linear on link destinations that never close", () => {

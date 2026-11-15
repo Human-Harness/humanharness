@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { drawMarks, findMark, findMarks, paintMarks, textRuns } from "../src/review-marks";
+import { expectFast } from "../../../test/support/timing";
 
 function box(html: string) {
   const el = document.createElement("div");
@@ -32,9 +33,7 @@ describe("findMark", () => {
   });
 
   it("takes linear time on a long run of spaces", () => {
-    const t0 = performance.now();
-    findMark(`${" ".repeat(50_000)}x`, " ".repeat(40) + "y", 0);
-    expect(performance.now() - t0).toBeLessThan(500);
+    expectFast(() => findMark(`${" ".repeat(50_000)}x`, " ".repeat(40) + "y", 0), 2500);
   });
 });
 

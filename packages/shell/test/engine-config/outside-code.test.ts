@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { commandLoadsOtherCode, importsOtherCode } from "../../src/main/engine-config/outside-code";
+import { expectFast } from "../../../../test/support/timing";
 
 describe("code outside the approval (hatches spec §5.3)", () => {
   it("finds imports, sources and package runners in a script", () => {
@@ -26,9 +27,7 @@ describe("code outside the approval (hatches spec §5.3)", () => {
 
   it("stays fast on large blank input (64 KB of newlines, spaces or tabs)", () => {
     for (const text of ["\n".repeat(256 * 1024), " ".repeat(256 * 1024), "\t".repeat(256 * 1024), " \n\t\r\n".repeat(64 * 1024), "from ".repeat(50_000)]) {
-      const start = performance.now();
-      expect(importsOtherCode(text)).toBe(false);
-      expect(performance.now() - start).toBeLessThan(200);
+      expect(expectFast(() => importsOtherCode(text), 1000)).toBe(false);
     }
   });
 

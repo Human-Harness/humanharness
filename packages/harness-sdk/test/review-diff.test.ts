@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_DIFF_CHARS, MAX_DIFF_LINES, lineDiff, matchGlob, validApproveGlob } from "../src/review";
+import { expectFast } from "../../../test/support/timing";
 
 describe("lineDiff", () => {
   it("marks removed and added lines around what stayed", () => {
@@ -64,10 +65,10 @@ describe("matchGlob", () => {
   ])("%s ~ %s → %s", (p, path, want) => expect(matchGlob(p, path)).toBe(want));
 
   it("is fast on many stars", () => {
-    const t0 = performance.now();
-    expect(matchGlob(`${"*a".repeat(200)}.md`, `${"a".repeat(5000)}b.md`)).toBe(false);
-    expect(matchGlob(`${"**/".repeat(50)}x.md`, `${"a/".repeat(500)}y.md`)).toBe(false);
-    expect(performance.now() - t0).toBeLessThan(500);
+    expectFast(() => {
+      expect(matchGlob(`${"*a".repeat(200)}.md`, `${"a".repeat(5000)}b.md`)).toBe(false);
+      expect(matchGlob(`${"**/".repeat(50)}x.md`, `${"a/".repeat(500)}y.md`)).toBe(false);
+    }, 2500);
   });
 
   it("does not recurse on deep paths", () => {

@@ -29,6 +29,7 @@
     "@humanharness/search": "workspace:*",
     "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
+    "electron-updater": "6.8.11",
     "esbuild": "^0.28.2",
     "pdfjs-dist": "^6.4.299",
     "zod": "^4.6.5"

@@ -18,6 +18,7 @@ import { SidekickStore } from "./sidekick-store";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
 import { ToolHost } from "./tools/tool-host";
+import { startPackagedUpdater } from "./updater";
 import { UsageLog, dayTokens, recentUsage } from "./usage-log";
 import { appHome } from "./mods/services";
 import { attentionStores } from "./attention-stores";
@@ -654,9 +655,13 @@ export function onPrimary(d: LifecycleDeps): void {
     void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
     // The harness's backend, the same moment (hatches Decision 5). Without one, nothing (D0).
     void backendReady().catch((err: unknown) => console.error("Could not start the backend", err));
+    // A packaged app checks GitHub Releases at start and every 6 hours; a dev run never does.
+    if (app.isPackaged) void startPackagedUpdater((m, err) => console.error(m, err)).then((stop) => { stopUpdater = stop; }, (err: unknown) => console.error("Could not start the updater", err));
     // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
     void d.sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
+
+  let stopUpdater: () => void = () => undefined;
 
   app.on("window-all-closed", () => app.quit());
 
@@ -664,6 +669,7 @@ export function onPrimary(d: LifecycleDeps): void {
     if (d.quitting) return;
     d.quitting = true;
     event.preventDefault();
+    stopUpdater();
     // Jobs (Decision 11): no run starts from now on; the running ones are cancelled, the queued ones dropped.
     d.jobsHost?.stopAll();
     d.single?.gate.dropAll();

@@ -226,6 +226,7 @@ import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
 import { createAppState } from "./app-state";
 import { createScopeStores } from "./scope-stores";
+import { createRuntimeWiring } from "./runtime-wiring";
 import { type TranslationService } from "./translation";
 import type { MaterialService } from "./material";
 import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
@@ -730,246 +731,45 @@ function applyTextSize(size: TextSize | undefined) {
   if (process.platform === "darwin") window.setWindowButtonPosition({ x: 14, y: trafficLightY(factor) });
 }
 
-/**
- * What a runtime (or board mode's workspace) starts with: the config's checks, the engine's command and the plugin
- * catalogue. Null when the engine CLI isn't installed.
- */
-async function prepareEngine() {
-  const c = await config.load();
-  if (!isConfigured(c)) throw new Error("The app is not set up yet");
-  const problem = await configProblem(c, validation());
-  if (problem) throw new Error(problem);
-  // With profiles, the runtime works in the active profile's folder, with that folder's history (spec D2, D5).
-  const base = baseFor(c, profilesOn());
-  if (base === null) throw new Error("Choose a profile first");
-  await restores.settled();
-  const engine = getEngine(c.engineId);
-  let cmd: { command: string[]; env: Record<string, string> } | null;
-  const fake = hooks.engines?.[engine.id];
-  if (fake) cmd = fake;
-  else {
-    // Spec §9 "every start": enforce detect.minVersion and a signed-in CLI before the first turn.
-    const status = await detectEngine(engine, commandDeps, shared);
-    if (!status.installed) return null;
-    if (status.outdated) throw new EngineUnavailable("outdated-version");
-    if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
-    cmd = await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
-  }
-  if (!cmd) return null;
-  const plugins = pluginsCtl;
-  // The running plugins' collections the agent reads (plugins spec §3.2), written for this base; none: no file (D0).
-  const extra = plugins ? await plugins.catalogueFile(base).catch((err: unknown) => (pluginLog("Could not write the plugin data catalogue", err), null)) : null;
-  plugins?.markRuntimeBuilt(extra !== null);
-  return { c, base, engine, cmd, extra };
-}
-
-/**
- * The runtime's options (and board mode's workspace's), its session aside. `runningTask` names the task a data or
- * material request is for: the open task's, or in board mode the asking slot's (P3).
- */
-async function runtimeOptions(
-  { c, base, engine, cmd, extra }: NonNullable<Awaited<ReturnType<typeof prepareEngine>>>,
-  runningTask: (slot?: SlotRef) => Promise<{ id: string; action?: string; scope: string } | null>,
-) {
-  const settings = settingsCtl;
-  const plugins = pluginsCtl;
-  // The core `tools` server for task and job slots (tools spec §5): only with an `agent: "call"` tool (D0).
-  const tools = await toolsHost?.workspaceOptions();
-  return {
-    harness,
-    engine,
-    folder: base,
-    gitdir: historyDir(app.getPath("userData"), base),
-    language: c.language,
-    launcher: electronLauncher(process.execPath),
-    uiServerEntry: path.join(here, "ui-server.js"),
-    dataServerEntry: path.join(here, "data-server.js"),
-    // The person's store (one write queue per base), for the folder this runtime runs in.
-    // A dotted collection name is a running plugin's (read only); absent without plugins (D0).
-    data: (request: unknown, slot?: SlotRef) =>
-      agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => runningTask(slot), ...(plugins ? { plugin: (r: unknown) => plugins.agentData(r) } : {}) }, request),
-    ...(extra ? { extraData: { catalogue: extra } } : {}),
-    // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
-    // built for, so a request never reaches another profile's material. Absent without material (D0).
-    ...(harness.material
-      ? { material: { request: (request: unknown, slot?: SlotRef) => materialRequest(base, request, () => runningTask(slot)), entry: path.join(here, "material-server.js") } }
-      : {}),
-    // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
-    // when the agent may edit the folder (review spec D0); the runtime checks the same.
-    ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => reviews.agent(base, request) } : {}),
-    command: cmd.command,
-    env: cmd.env,
-    references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
-    // The settings' sentences, read now and on every refresh (harness-settings spec §5). Absent without settings (D0).
-    // Plugins' sentences follow the harness's own (Decision 16); none on: the same AGENTS.md as without them.
-    ...(settings || plugins
-      ? { instructionSettings: async () => [...(settings ? await settings.sentences() : []), ...(plugins ? await plugins.sentences() : [])] }
-      : {}),
-    // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
-    ...linkedRuntimeOptions(),
-    // The Subagents part of AGENTS.md follows the open scope's engine preset (agentsFile) when the manifest is silent.
-    ...(hasEnginePresets(harness)
-      ? { instructionSubagents: instructionSubagentsOption({ engineHost: engineHost_, currentScope: () => tasks.currentScope(), boardMode: () => !!host }) }
-      : {}),
-    // The asking slot names the caller (P3); createRuntime's only slot is "main".
-    ...(tools ? { tools } : {}),
-    onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
-      void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
-  };
-}
-
-const runtime = memoise<HarnessRuntime>(async () => {
-  const p = await prepareEngine();
-  if (!p) return null;
-  const rt = single
-    ? await openSingle(p)
-    : await createRuntime({
-        ...(await runtimeOptions(p, () => tasks.runningTask())),
-        onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
-      });
-  announceCommits(rt.history);
-  // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
-  kickMaterial();
-  return rt;
-});
-
-/**
- * `single` mode's runtime (Decision 12): a workspace whose `"main"` slot runs the task, as `createRuntime`'s; a data or
- * material request from a job's slot is that run's, in its scope (P3), never the open task's.
- */
-async function openSingle(p: NonNullable<Awaited<ReturnType<typeof prepareEngine>>>): Promise<HarnessRuntime> {
-  const ws = await createWorkspace(
-    await runtimeOptions(p, (slot) => {
-      const jobs = jobsHost;
-      return slot && jobs && isJobSlot(slot.key) ? Promise.resolve(jobs.runningOf(slot.key)) : tasks.runningTask();
-    }),
-  );
-  const { runtime: rt, slot } = await openSingleRuntime(ws, {
-    onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
+/** The runtime, its options and close, and the histories opened beside it (runtime-wiring.ts). */
+const { prepareEngine, runtimeOptions, runtime, closeRuntime, dropRuntime, undoByPaths, singleMainSlot, standaloneHistory, currentHistory, openHistory } =
+  createRuntimeWiring({
+    harness: () => harness,
+    config: () => config,
+    shared: () => shared,
+    hooks,
+    commandDeps,
+    here,
+    validation,
+    profilesOn,
+    validConfig,
+    baseOf,
+    restores: () => restores,
+    pluginsCtl: () => pluginsCtl,
+    settingsCtl: () => settingsCtl,
+    toolsHost: () => toolsHost,
+    reviews: () => reviews,
+    host: () => host,
+    single: () => single,
+    singleParts,
+    jobsHost: () => jobsHost,
+    materialJobs: () => materialJobs,
+    materialSvc: () => materialSvc,
+    tasks: () => tasks,
+    plainTasks: () => plainTasks,
+    historyHeld: () => historyHeld,
+    resolvedMods: () => resolvedMods,
+    pluginLog,
+    dataStoreFor,
+    materialRequest: (base, request, runningTask) => materialRequest(base, request, runningTask),
+    workReferences,
+    linkedRuntimeOptions,
+    engineHost: engineHost_,
+    kickMaterial,
+    announceCommits: (history) => announceCommits(history),
+    stopAnnouncing: (history) => commitAnnouncements.stop(history),
   });
-  singleParts.set(rt, { workspace: ws, slot });
-  return rt;
-}
 
-/**
- * Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). First
- * the person's material stops (material spec §10): its AI stage and its conversions, which belong to this base.
- */
-async function closeRuntime() {
-  // Job runs on this workspace end first and are logged "Cancelled" (Decision 11): none is cut off by its slot
-  // closing, none queued for this folder or profile runs after. Without jobs, nothing (D0).
-  await jobsHost?.cancelAndSettle();
-  await materialJobs?.stop();
-  await materialSvc?.stop();
-  // Board mode: the shared workspace (every lane's slot) closes; the open tasks stay, as today's task does.
-  if (host) {
-    await host.closeWorkspace();
-    // As below: not when a lane has already opened a new workspace, which wrote its own AGENTS.md.
-    if (!host.workspaceOpen()) settingsCtl?.forget();
-    return;
-  }
-  const rt = await runtime.peek()?.catch(() => null);
-  runtime.clear();
-  await rt?.close();
-  // A closed runtime's history keeps no listener of main's.
-  if (rt) commitAnnouncements.stop(rt.history);
-  // The next runtime writes AGENTS.md afresh: nothing is pending against this one's. Only once close() resolved (a
-  // running refresh would set what was applied again), and not when a new runtime has already written its own.
-  if (!runtime.peek()) settingsCtl?.forget();
-}
-
-/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
-async function dropRuntime() {
-  // Jobs (Decision 11): the runs queued or running are cancelled ("Cancelled"); the `every` timers stay.
-  jobsHost?.cancelRuns();
-  // Board mode: every lane ends, the queues empty, the workspace closes; a new engine brings its caps (spec §10).
-  if (host) {
-    await host.dropAll();
-    return closeRuntime();
-  }
-  single?.gate.dropAll();
-  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
-  await closeRuntime();
-  if (single) {
-    // A new engine brings its own hold: one session in all (tasks and jobs together) or two at once.
-    const c = await config.load();
-    single.gate.setCaps(singleCaps(c.engineId, c.parallel), engineHold(c.engineId));
-    single.gate.setBeforeStart(singleBeforeStart(c.engineId, singleMainSlot));
-  }
-}
-
-/**
- * "Undo this task" by its own paths (parallel spec §5.3): board mode, and `single` mode, where job runs commit beside
- * the task. Null in plain mode: the whole folder back to the task's start, as always (D0). `busy`: the task's own lane
- * (single mode: the task) or the job run being undone is still running.
- */
-function undoByPaths(): {
-  running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
-  /** The same in a tracked linked folder (hatches spec §3.4), relative to it. */
-  linkedRunning: (realPath: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
-  busy: (id: string) => boolean;
-} | null {
-  const jobRunning = (id: string) => (jobsHost?.runningOf(`job:${id}`) ?? null) !== null;
-  const board = host;
-  if (board)
-    return {
-      running: () => board.runningPaths(),
-      linkedRunning: (p) => board.linkedRunningPaths(p),
-      busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id),
-    };
-  if (!single) return null;
-  return {
-    running: async () => {
-      const rt = await runtime.peek()?.catch(() => null);
-      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
-      return ws ? ws.runningPaths() : [];
-    },
-    linkedRunning: async (p) => {
-      const rt = await runtime.peek()?.catch(() => null);
-      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
-      return ws ? ws.linkedRunningPaths(p) : [];
-    },
-    busy: (id) => tasks.isBusy() || jobRunning(id),
-  };
-}
-
-/** `single` mode: the running runtime's `"main"` slot, if one is open (never opens one). */
-async function singleMainSlot(): Promise<SessionSlot | null> {
-  const rt = await runtime.peek()?.catch(() => null);
-  return rt ? (singleParts.get(rt)?.slot ?? null) : null;
-}
-
-/** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
-const standaloneHistory = lastOpened(async (key) => {
-  const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
-  const history = new History(folder, historyDir(app.getPath("userData"), folder), [...ignore, ...modHistoryIgnores(resolvedMods.map((m) => ({ id: m.json.id, history: m.json.history })))], historyKeep(harness));
-  await history.init();
-  announceCommits(history);
-  return history;
-});
-
-/**
- * The running runtime's history, or the one opened on the configured folder; none while the folder moves
- * (from the end of its checkpoint turn, whose commit still goes in).
- */
-async function currentHistory(): Promise<History | null> {
-  return historyHeld ? null : openHistory();
-}
-
-async function openHistory(): Promise<History | null> {
-  const rt = host ? null : await runtime.peek()?.catch(() => null);
-  if (rt) return rt.history;
-  // Board mode: the shared workspace's history while it is open.
-  if (host) {
-    const open = await host.history();
-    if (open) return open;
-  }
-  const c = await validConfig();
-  if (!c) return null;
-  const extra = getEngine(c.engineId).instructionsFile?.path;
-  // Same ignore list as the runtime's: its files under .harness/ and the generated instructions.
-  return standaloneHistory(JSON.stringify({ folder: baseOf(c), ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
-}
 
 function sendToWindow(channel: PushChannel, value: unknown) {
   try {

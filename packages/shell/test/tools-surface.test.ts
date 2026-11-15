@@ -70,10 +70,13 @@ describe("tools surface (tools spec §4, §5; D0)", () => {
     expect(state).toContain("...(d.toolsHost() ? { tools: d.toolsHost()!.info() } : {}),");
     expect(count(appState, /\btools: d\.toolsHost\(\)!\.info\(\)/)).toBe(1);
     expect(index).toMatch(/createAppState\(\{[^]*?\n  toolsHost: \(\) => toolsHost,\n/);
-    const options = index.slice(index.indexOf("async function runtimeOptions("), index.indexOf("const runtime = memoise<HarnessRuntime>"));
-    expect(options).toContain("const tools = await toolsHost?.workspaceOptions();");
+    // runtime-wiring.ts holds runtimeOptions; index.ts passes it the tools host.
+    const wiring = await read("runtime-wiring.ts");
+    const options = wiring.slice(wiring.indexOf("async function runtimeOptions("), wiring.indexOf("const runtime = memoise<HarnessRuntime>"));
+    expect(options).toContain("const tools = await d.toolsHost()?.workspaceOptions();");
     expect(options).toContain("...(tools ? { tools } : {}),");
-    expect(count(index, /workspaceOptions\(\)/)).toBe(1);
+    expect(count(index + wiring, /workspaceOptions\(\)/)).toBe(1);
+    expect(index).toMatch(/createRuntimeWiring\(\{[^]*?\n    toolsHost: \(\) => toolsHost,\n/);
   });
 
   it("Decision 7: the tools' Attention item goes only to the shared store (board and single mode; plain mode has none, D0)", async () => {

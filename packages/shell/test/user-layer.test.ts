@@ -7,7 +7,7 @@ import { type ModsSettings, cleanModsConfig } from "../src/main/mods/config";
 import { ModHost } from "../src/main/mods/host";
 import { registerModsIpc } from "../src/main/mods/mods-ipc";
 import { resolveMods } from "../src/main/mods/resolve";
-import { ModBuilds, UserLayer, userConsent, userModFolders, watchLayouts, watchUserLayer, writeMainShims } from "../src/main/mods/user-layer";
+import { type LayerWatch, ModBuilds, UserLayer, userConsent, userModFolders, watchLayouts, watchUserLayer, writeMainShims } from "../src/main/mods/user-layer";
 
 let tmp: string;
 let home: string;
@@ -183,49 +183,121 @@ describe("the user layer", BUNDLING, () => {
   });
 });
 
-describe("watchUserLayer", BUNDLING, () => {
-  it("calls back once per mod folder for a burst of changes, and never for a .error file", async () => {
+/** A watcher the test drives: `emit(dir, name)` is what fs.watch on `dir` would report. */
+function fakeWatch() {
+  const listeners = new Map<string, (event: string, name: string | null) => void>();
+  const watch: LayerWatch = (dir, _opts, listener) => {
+    listeners.set(dir, listener);
+    return { close: () => void listeners.delete(dir), on: () => undefined };
+  };
+  return { watch, listeners, emit: (dir: string, name: string | null) => listeners.get(dir)?.("change", name) };
+}
+
+/** The debounce runs on fake timers for the length of `body`. */
+function withFakeTimers(body: () => void) {
+  vi.useFakeTimers();
+  try {
+    body();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+describe("watchUserLayer", () => {
+  it("calls back once per mod folder for a burst of changes, and never for a .error file", () => {
+    const f = fakeWatch();
+    const root = path.join(home, "mods");
+    const seen: string[] = [];
+    withFakeTimers(() => {
+      const w = watchUserLayer(home, (dir) => void seen.push(dir), 100, f.watch);
+      expect([...f.listeners.keys()]).toEqual([root]);
+      f.emit(root, "greet/main.ts");
+      f.emit(root, "greet/lib/x.ts");
+      vi.advanceTimersByTime(50);
+      f.emit(root, "greet/main.ts");
+      f.emit(root, "other/mod.json");
+      // The first quiet period (ending at 100) was cancelled by the change at 50.
+      vi.advanceTimersByTime(99);
+      expect(seen).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(seen).toEqual([modDir("greet"), modDir("other")]);
+      expect(vi.getTimerCount()).toBe(0);
+      // Not changes: an app-written .error, a dot-folder, no name, and macOS naming the watched folder itself.
+      for (const name of ["greet/main.ts.error", "greet/mod.json.error", ".cache/x", null, "mods"]) f.emit(root, name);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(1_000);
+      expect(seen).toEqual([modDir("greet"), modDir("other")]);
+      // Closing drops a pending callback.
+      f.emit(root, "greet/main.ts");
+      w.close();
+      vi.advanceTimersByTime(1_000);
+      expect(seen).toHaveLength(2);
+      expect(f.listeners.size).toBe(0);
+    });
+  });
+
+  it("with the real watcher, a change in a mod folder is seen", BUNDLING, async () => {
     await writeMod("greet", { "mod.json": modJson("greet") });
     const seen: string[] = [];
     const w = watchUserLayer(home, (dir) => void seen.push(dir), 100);
     try {
-      // macOS may still report the files written before the watch started: let those pass first.
-      await new Promise((r) => setTimeout(r, 600));
-      seen.length = 0;
-      await writeMod("greet", { "main.ts": "a", "lib/x.ts": "b" });
-      await writeMod("greet", { "main.ts": "c" });
-      await vi.waitFor(() => expect(seen).toEqual([modDir("greet")]), { timeout: 15_000 });
-      await new Promise((r) => setTimeout(r, 300));
-      expect(seen).toEqual([modDir("greet")]);
-      await writeMod("greet", { "main.ts.error": "x" });
-      await new Promise((r) => setTimeout(r, 400));
-      expect(seen).toEqual([modDir("greet")]);
+      // Writes again on every try: the OS may start delivering a little after the watch is made.
+      await vi.waitFor(
+        async () => {
+          await writeMod("greet", { "main.ts": `// ${Date.now()}` });
+          expect(seen).toContain(modDir("greet"));
+        },
+        { timeout: 30_000, interval: 500 },
+      );
     } finally {
       w.close();
     }
   });
 });
 
-describe("watchLayouts", BUNDLING, () => {
-  it("calls back once for a burst under layouts/ or to settings.json, never for a .error file", async () => {
+describe("watchLayouts", () => {
+  it("calls back once for a burst under layouts/ or to settings.json, never for a .error or .tmp file", () => {
+    const f = fakeWatch();
+    const layouts = path.join(home, "layouts");
+    let calls = 0;
+    withFakeTimers(() => {
+      const w = watchLayouts(home, () => void (calls += 1), 100, f.watch);
+      expect([...f.listeners.keys()].sort()).toEqual([home, layouts].sort());
+      f.emit(layouts, "mine.json");
+      vi.advanceTimersByTime(50);
+      f.emit(layouts, "mine.json");
+      vi.advanceTimersByTime(99);
+      expect(calls).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(calls).toBe(1);
+      for (const name of ["mine.json.error", "mine.json.tmp", "layouts", null]) f.emit(layouts, name);
+      for (const name of ["notes.md", "settings.json.tmp", null]) f.emit(home, name);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(1_000);
+      expect(calls).toBe(1);
+      // settings.json and a layout in the same burst: one call.
+      f.emit(home, "settings.json");
+      f.emit(layouts, "theirs.json");
+      vi.advanceTimersByTime(100);
+      expect(calls).toBe(2);
+      f.emit(home, "settings.json");
+      w.close();
+      vi.advanceTimersByTime(1_000);
+      expect(calls).toBe(2);
+    });
+  });
+
+  it("with the real watcher, a change under layouts/ is seen", BUNDLING, async () => {
     let calls = 0;
     const w = watchLayouts(home, () => void (calls += 1), 100);
     try {
-      await new Promise((r) => setTimeout(r, 600));
-      calls = 0;
-      await fs.writeFile(path.join(home, "layouts", "mine.json"), "{}");
-      await fs.writeFile(path.join(home, "layouts", "mine.json"), "{ }");
-      await vi.waitFor(() => expect(calls).toBe(1), { timeout: 15_000 });
-      await new Promise((r) => setTimeout(r, 300));
-      expect(calls).toBe(1);
-      await fs.writeFile(path.join(home, "layouts", "mine.json.error"), "x");
-      await new Promise((r) => setTimeout(r, 400));
-      expect(calls).toBe(1);
-      await fs.writeFile(path.join(home, "settings.json"), "{}");
-      await vi.waitFor(() => expect(calls).toBe(2), { timeout: 15_000 });
-      await fs.writeFile(path.join(home, "notes.md"), "x");
-      await new Promise((r) => setTimeout(r, 400));
-      expect(calls).toBe(2);
+      await vi.waitFor(
+        async () => {
+          await fs.writeFile(path.join(home, "layouts", "mine.json"), JSON.stringify({ at: Date.now() }));
+          expect(calls).toBeGreaterThan(0);
+        },
+        { timeout: 30_000, interval: 500 },
+      );
     } finally {
       w.close();
     }

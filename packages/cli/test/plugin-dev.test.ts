@@ -51,7 +51,6 @@ function fakeWatch() {
   return { watch, state, change: (file: string | null) => state.listener?.(file), fail: () => state.onError?.(new Error("EPERM")) };
 }
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** One turn of the event loop; not a timer, so fake timers don't hold it. */
 const tick = () => new Promise((r) => setImmediate(r));
 
@@ -78,8 +77,7 @@ async function withFakeTimers(body: () => Promise<void>) {
 /** Waits until the fake app has been spawned (the check and build ran). */
 async function spawned(calls: unknown[]) {
   // The first one builds the plugin and the harness's tools for real (the rest hit the caches): ~10 s alone, a lot more under a parallel run. Polls, so a fast run never waits.
-  for (let i = 0; i < 2000 && calls.length === 0; i++) await wait(25);
-  expect(calls).toHaveLength(1);
+  await vi.waitFor(() => expect(calls).toHaveLength(1), { timeout: 50_000, interval: 25 });
 }
 
 describe("humanharness plugin dev", () => {

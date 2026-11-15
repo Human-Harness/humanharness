@@ -279,10 +279,12 @@ describe("PluginsController dev watcher (Decision 22)", () => {
     } finally {
       vi.useRealTimers();
     }
-    await until(() => t.ctl.surface().reloads.devp === 1, 2000);
+    await until(() => t.ctl.surface().reloads.devp === 1, 10_000);
     expect(t.host.started).toEqual(["devp", "devp"]);
-    await new Promise((r) => setTimeout(r, 400));
-    expect(t.ctl.surface().reloads.devp).toBe(1);
+    // One burst, one reload: the next change is the next reload, not a third.
+    fire("dist");
+    await until(() => (t.ctl.surface().reloads.devp ?? 0) >= 2, 10_000);
+    expect(t.ctl.surface().reloads.devp).toBe(2);
     await t.ctl.stop();
     expect(w.unwatched).toEqual([real]);
   });
@@ -293,13 +295,19 @@ describe("PluginsController dev watcher (Decision 22)", () => {
     const t = await setup({ over: { devDirs: [path.dirname(dist)], watch: w.watch } });
     await t.ctl.start();
     const fire = w.watched.get(path.dirname(await fs.realpath(dist)))!;
-    for (const name of ["dist.tmp-1a2b", path.join("dist.tmp-1a2b", "backend.js"), "dist.old-3c4d", path.join("dist.old-3c4d", "plugin.json"), "backend.ts", path.join("fixtures", "s", "001.json"), "distx"]) fire(name);
-    await new Promise((r) => setTimeout(r, 450));
+    // None of these starts the 300 ms debounce: no timer is set, so no reload can follow.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      for (const name of ["dist.tmp-1a2b", path.join("dist.tmp-1a2b", "backend.js"), "dist.old-3c4d", path.join("dist.old-3c4d", "plugin.json"), "backend.ts", path.join("fixtures", "s", "001.json"), "distx"]) fire(name);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(t.ctl.surface().reloads.devp ?? 0).toBe(0);
     expect(t.host.started).toEqual(["devp"]);
     // The swap landing: the rename into dist/ is the change.
     fire("dist");
-    await until(() => t.ctl.surface().reloads.devp === 1, 2000);
+    await until(() => t.ctl.surface().reloads.devp === 1, 10_000);
   });
 
   it("reload survives repeated build swaps (out.tmp → out, old → out.old) with the app's real watcher", async () => {
@@ -309,9 +317,9 @@ describe("PluginsController dev watcher (Decision 22)", () => {
     const t = await setup({ over: { devDirs: [folder], watch: watchPluginFolder, log } });
     await t.ctl.start();
     // As `plugin build` does: build into dist.tmp-<hex>, move dist/ away, move the new one in, delete the old.
-    // Counted from before each swap: the OS may still deliver events from writing the plugin in the first place.
+    // Counted from before each swap, as a lower bound: the OS may still deliver events from writing the plugin in the
+    // first place, or from the swap before.
     for (let i = 1; i <= 3; i++) {
-      await new Promise((r) => setTimeout(r, 400));
       const reloads = t.ctl.surface().reloads.devp ?? 0;
       const started = t.host.started.length;
       const tmpDir = path.join(folder, `dist.tmp-${i}abc`);
@@ -322,7 +330,7 @@ describe("PluginsController dev watcher (Decision 22)", () => {
       await fs.rename(dist, oldDir);
       await fs.rename(tmpDir, dist);
       await fs.rm(oldDir, { recursive: true });
-      await until(() => (t.ctl.surface().reloads.devp ?? 0) > reloads && t.host.started.length > started, 4000);
+      await until(() => (t.ctl.surface().reloads.devp ?? 0) > reloads && t.host.started.length > started, 15_000);
     }
     await t.ctl.stop();
     expect(log.mock.calls.map((c) => String(c[0]))).toEqual([]);

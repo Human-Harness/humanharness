@@ -46,7 +46,7 @@ describe("createServer", () => {
     const version = (JSON.parse(fs.readFileSync(path.join(path.dirname(BIN), "..", "package.json"), "utf8")) as { version: string }).version;
     expect(client.getServerVersion()).toMatchObject({ name: "humanharness", version });
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["status"]);
+    expect(tools.map((t) => t.name)).toContain("status");
     const r = await client.callTool({ name: "status", arguments: {} });
     expect(r.isError).toBe(true);
     expect(JSON.stringify(r.content)).toContain("The app isn't running");

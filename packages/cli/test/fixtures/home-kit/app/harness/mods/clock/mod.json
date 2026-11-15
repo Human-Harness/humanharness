@@ -1,0 +1,11 @@
+{
+  "id": "clock",
+  "name": "Clock",
+  "description": "Shows the time a task has run.",
+  "version": "1.2.0",
+  "apiVersion": 1,
+  "main": "main.js",
+  "blocks": ["clock", "timer"],
+  "hooks": ["turnEnd"],
+  "settings": ["format"]
+}

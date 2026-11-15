@@ -1,0 +1,1 @@
+{ "mods": { "on": { "notes": true, "home": true, "clock": false }, "trusted": ["notes"] } }

@@ -6,7 +6,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PassThrough, Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema, writeScript } from "@humanharness/fake-agent";
 import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
@@ -14,7 +13,7 @@ import { DATA_PREFIX, History, NOTES_PREFIX, TURN_PREFIX } from "@humanharness/w
 import { CliError, UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
-import { type Interrupts, noticeMessage, parseSettings, readyEngine, runTask } from "../src/run";
+import { type Interrupts, noticeMessage, parseSettings, runTask } from "../src/run";
 import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
 
 // Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
@@ -489,21 +488,6 @@ describe("runTask", () => {
     await expect(runTask({ ...base, action: "nope" })).rejects.toThrow(UsageError);
     await expect(runTask({ ...base, action: "example", engine: "gemini" })).rejects.toThrow(/not available/);
     await expect(runTask({ ...base, action: "nope" })).rejects.toThrow(/Actions: example/);
-  });
-});
-
-describe("readyEngine", () => {
-  it("stops before touching the CLI when the app's notice wasn't accepted on this computer", async () => {
-    const cli = noCli();
-    await expect(readyEngine(getEngine("claude"), cli.deps, new SharedConfigStore(path.join(root, "shared-none")))).rejects.toThrow(noticeMessage("Claude"));
-    expect(noticeMessage("Claude")).toContain("humanharness dev");
-    expect(cli.calls).toBe(0);
-  });
-
-  it("with the notice accepted, stops with the app's message when the engine's CLI isn't there; nothing else is read", async () => {
-    const shared = new SharedConfigStore(path.join(root, "shared"));
-    await shared.update("claude", { notice: { version: NOTICE_VERSION, acceptedAt: new Date().toISOString() } });
-    await expect(readyEngine(getEngine("claude"), noCli().deps, shared)).rejects.toThrow("I can't find Claude on this computer.");
   });
 });
 

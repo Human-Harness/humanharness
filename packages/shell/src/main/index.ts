@@ -17,7 +17,6 @@ import {
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, availableEngines, getEngine } from "@humanharness/engines";
 import {
-  type BackendInit,
   type LoadedHarness,
   allBlocks,
   hasEnginePresets,
@@ -90,7 +89,7 @@ import { EngineHost } from "./engine-config/engine-host";
 import { type EngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
-import { BackendGeneration, backendInit, usableLinks } from "./backend/backend-ipc";
+import { createBackendWiring } from "./backend/backend-wiring";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
 import { linkedHistoryDir, markRelinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
@@ -160,10 +159,6 @@ let engineIpc: EngineIpc | null = null;
 let linkedDeps: LinkedIpcDeps | null = null;
 /** The harness's backend (hatches spec §4); null without `backend` (D0: no process, no file, no channel). */
 let backend: BackendSupervisor | null = null;
-/** The backend was started in this process (Decision 5): from then on a base change is a rebase. */
-let backendStarted = false;
-/** Bumped when the backend's base changes: a scopes update read before it is stale and dropped. */
-const backendGen = new BackendGeneration();
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** How long quitting waits for the test prompt to clean up (its temporary folder, the CLI it started). */
@@ -486,9 +481,9 @@ const {
   kickMaterial,
   interruptTasks: () => interruptTasks(),
   rebasePlugins,
-  backendScopes,
-  backendLeaveBase,
-  backendRebase,
+  backendScopes: () => backendScopes(),
+  backendLeaveBase: () => backendLeaveBase(),
+  backendRebase: () => backendRebase(),
 });
 
 function applyAppearance(appearance: AppConfig["appearance"]) {
@@ -783,69 +778,8 @@ async function jobsReady(): Promise<void> {
   await jobs.appReady();
 }
 
-/**
- * The backend's `init` for the base the app is in now (hatches Decisions 3, 4), its data folder made; null before
- * setup. Each scope's links are the ones a turn there would use (the scope access's checks), none without linked folders.
- */
-async function backendInitNow(): Promise<BackendInit | null> {
-  await scopesSettled();
-  const c = await validConfig();
-  if (!c) return null;
-  const base = baseOf(c);
-  const profile = profilesOn() ? (c.profile ?? "") : "";
-  const scopes = scoped() ? await scopeStoreFor(base).list() : [];
-  const access = linked_()?.access;
-  const init = backendInit({
-    base,
-    scopes,
-    ...(access ? { links: await usableLinks(scopes, (id) => access.entries(id)) } : {}),
-    language: c.language,
-    coreVersion: app.getVersion(),
-    userData: app.getPath("userData"),
-    ...(profile ? { profile } : {}),
-    mock: hooks.mock === true,
-  });
-  await fs.mkdir(init.dataDir, { recursive: true });
-  return init;
-}
-
-/** The backend starts the first time the app is set up in this process (Decision 5); never while quitting. */
-async function backendReady(): Promise<void> {
-  const b = backend;
-  if (!b || quitting || backendStarted) return;
-  backendGen.bump();
-  // Null when another start, rebase or profile switch began meanwhile: that one's base wins.
-  const init = await backendGen.readFresh(backendInitNow);
-  if (!init || quitting || backendStarted) return;
-  backendStarted = true;
-  await b.start(init);
-}
-
-/** The base changed (profile switch, another folder, a move's end): a started backend starts again there. */
-async function backendRebase(): Promise<void> {
-  const b = backend;
-  if (!b || quitting) return;
-  if (!backendStarted) return backendReady();
-  backendGen.bump();
-  // Null when a later rebase or profile switch began meanwhile: this base is already stale.
-  const init = await backendGen.readFresh(backendInitNow);
-  if (init && !quitting) await b.rebase(init);
-}
-
-async function backendScopes(): Promise<void> {
-  const b = backend;
-  if (!b || !backendStarted || quitting) return;
-  // Null when a rebase began meanwhile: its own init is newer than these scopes.
-  const init = await backendGen.readFresh(backendInitNow);
-  // The supervisor drops scopes of another folder (Settings changed it; the rebase comes after).
-  if (init) b.scopesChanged(init.scopes, init.folder);
-}
-
-/** A profile switch begins: a started backend stops before anything reads the new base (backendRebase starts it). */
-async function backendLeaveBase(): Promise<void> {
-  backendGen.bump();
-  if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
-}
+/** The backend's start, rebase, scopes and stop for a profile switch (backend/backend-wiring.ts). */
+const { backendReady, backendRebase, backendScopes, backendLeaveBase } = createBackendWiring(() => lifecycle);
 
 /**
  * A tracked linked folder's history (hatches spec §3.4): the open workspace's (board's or the runtime's) once a turn

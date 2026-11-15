@@ -228,6 +228,7 @@ import { createAppState } from "./app-state";
 import { createScopeStores } from "./scope-stores";
 import { createRuntimeWiring } from "./runtime-wiring";
 import { createAppMods } from "./mods/app-mods";
+import { createAppViews } from "./app-views";
 import { type TranslationService } from "./translation";
 import type { MaterialService } from "./material";
 import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
@@ -260,7 +261,6 @@ declare const __SHELL_RESOURCES__: string;
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
 
-const requireFromHere = createRequire(import.meta.url);
 // The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
 // `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
 const here = import.meta.dirname;
@@ -298,8 +298,6 @@ let setupRun: RunningSetup | null = null;
 const QUIT_TEST_WAIT_MS = 5_000;
 /** Engine changes, setup steps and test prompts against turns (see EngineGuards). */
 const guards = new EngineGuards();
-/** Logos as data: URLs, read once. */
-const logos = new Map<string, Promise<string | null>>();
 /** End-to-end test settings (development builds only; see test-hooks.ts). */
 const hooks = readTestHooks(process.env, app.isPackaged);
 /** The folder move running now (hh:moveFolder): quitting waits for it. */
@@ -459,26 +457,6 @@ let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
 let profilesCtl: Profiles | null = null;
 
-/**
- * The reference folders usable with the working folder: one that is or contains it is left out (its
- * read-only rules would block the person's own files), with `log` saying why.
- */
-async function referencesFor(folder: string | undefined, log = false): Promise<ResolvedReference[]> {
-  const refs = await references;
-  if (!folder) return refs;
-  return usableReferences(refs, folder, log ? (message) => console.error(message) : undefined);
-}
-
-/**
- * The reference folders the agent and `hh:openPath`/`hh:revealPath` use: those usable with the working folder `base`
- * and, with profiles, none inside the app's folder (another profile's folder never reaches them). Without profiles,
- * `referencesFor(base)` as before (D0).
- */
-async function workReferences(c: AppConfig, base: string, log = false): Promise<ResolvedReference[]> {
-  if (!profilesOn() || !c.folder) return referencesFor(base, log);
-  return usableReferences(await references, base, log ? (message) => console.error(message) : undefined, c.folder);
-}
-
 const mode = () => (app.isPackaged ? "distribution" : "development");
 /** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
 const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
@@ -499,77 +477,15 @@ function engineFor(id: unknown): EngineDef {
   return engine;
 }
 
-function logo(key: string, file: () => string): Promise<string | null> {
-  if (!logos.has(key)) {
-    logos.set(
-      key,
-      (async () => {
-        try {
-          return await imageDataUrl(file());
-        } catch {
-          return null;
-        }
-      })(),
-    );
-  }
-  return logos.get(key)!;
-}
-
-const harnessLogo = () => (harness.logo ? logo("harness", () => resolveInHarness(harness, harness.logo!)) : Promise.resolve(null));
-// Engine logos ship in the engines package (exported as "./assets/*").
-const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.resolve(`@humanharness/engines/${e.logo}`)) : Promise.resolve(null));
-
-/** What the engine was saved offering (engines.json); empty when the file can't be read. */
-const savedOffer = (engineId: string) => shared.engine(engineId).catch((): SharedEngineRecord => ({}));
-
-/** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
-async function modelsView(): Promise<ModelsView> {
-  const engines = offered();
-  const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
-  // Mock mode: a faked engine offers only the test model, and every tier uses it (effort and cap kept).
-  const tierSpec = (engineId: string, tier: Tier): ModelSpec =>
-    isMockEngine(hooks, engineId) ? { ...defaultTier(engineId, tier), model: MOCK_MODEL } : defaultTier(engineId, tier);
-  const offer = (e: EngineDef) => {
-    const real = engineOffer(e, saved.engines[e.id] ?? {});
-    return isMockEngine(hooks, e.id) ? { ...real, models: mockModels() } : real;
-  };
-  return {
-    recommended: {
-      ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
-      [QUESTIONS]: harness.questions?.tier ?? "standard",
-      // Material spec §8: each AI stage is a process, only with material (D0); links only with items.
-      ...(harness.material ? materialRecommended(harness.material) : {}),
-      // Sidekick is a process of its own (sidekick spec §5), light by default.
-      [SIDEKICK_PROCESS]: "light",
-    },
-    defaults: Object.fromEntries(
-      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
-    ),
-    offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
-    pinnedTokens: harness.context?.pinnedTokens ?? DEFAULT_PINNED_TOKENS,
-  };
-}
-
-/**
- * `p` with an effort its engine offers, so an unsupported one never reaches argv or CODEX_CONFIG. An engine
- * this build doesn't offer leaves `p` as it is (its turn fails on the engine check anyway).
- */
-async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Promise<ModelProfile> {
-  const engine = offered().find((e) => e.id === p.engine);
-  return engine ? offeredEffort(p, engine, saved ?? (await savedOffer(p.engine))) : p;
-}
-
-/**
- * The profile `input` runs on, picked by the model policy `policyId` (spec §6; config.json's, cleaned when read).
- * The offer is what the engine was saved offering: a model off its saved list (Codex) falls back before the turn,
- * then the effort is fitted as `supportedEffort` does (none for an engine this build doesn't offer: an empty list
- * fits nothing).
- */
-async function pickProfile(policyId: string | undefined, input: Omit<PickInput, "offer">): Promise<ModelProfile> {
-  const saved = await savedOffer(input.engine);
-  const engine = offered().find((e) => e.id === input.engine);
-  return modelPolicy(policyId).pick({ ...input, offer: { models: saved.models ?? [], efforts: engine ? engineOffer(engine, saved).efforts : [] } });
-}
+/** Settings › Modelos, the profile a turn runs on, the logos and the reference folders (app-views.ts). */
+const { referencesFor, workReferences, harnessLogo, engineLogo, modelsView, supportedEffort, pickProfile } = createAppViews({
+  harness: () => harness,
+  shared: () => shared,
+  hooks,
+  references: () => references,
+  profilesOn: () => profilesOn(),
+  offered,
+});
 
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;

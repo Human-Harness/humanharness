@@ -55,9 +55,9 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** One turn of the event loop; not a timer, so fake timers don't hold it. */
 const tick = () => new Promise((r) => setImmediate(r));
 
-/** Turns the event loop (calling `poke` each turn) until `done()`, for at most 10 s of real time. */
+/** Turns the event loop (calling `poke` every 200 turns) until `done()`, for at most 30 s of real time: a loaded machine delivers fs.watch events late. */
 async function until(done: () => boolean, poke: () => void = () => {}) {
-  const deadline = performance.now() + 10_000;
+  const deadline = performance.now() + 30_000;
   for (let i = 0; !done() && performance.now() < deadline; i++) {
     if (i % 200 === 0) poke();
     await tick();

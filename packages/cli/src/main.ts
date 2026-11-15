@@ -4,6 +4,7 @@ import { CliError, type Io, UsageError } from "./cli";
 import { checkCommand } from "./check";
 import { devCommandLine } from "./dev";
 import { initCommand } from "./init";
+import { mcpCommand } from "./mcp/server";
 import { measureCommand } from "./measure";
 import { layoutCommand, modCommand } from "./mod-command";
 import { pluginCommand } from "./plugin";
@@ -33,9 +34,10 @@ export const USAGE = [
   "  layout clone <name> [as]                 Copy a harness or core layout into the home folder's layouts/",
   "  status                                   Print the running app's mods, their problems and its layout",
   "  shot [file.png]                          Save the running app's window as a PNG and print the path",
+  "  mcp [--config claude|codex]              Serve the app's kit to an agent over MCP (stdio); --config prints its setup",
   "",
   "check, run and dev take --harness <dir> to work on another folder than the current one.",
-  "mod clone, layout clone, status and shot take --home <dir> outside the app's home folder.",
+  "mod clone, layout clone, status, shot and mcp take --home <dir> outside the app's home folder.",
   "",
 ].join("\n");
 
@@ -53,6 +55,7 @@ const COMMANDS: Record<string, Command> = {
   layout: layoutCommand,
   status: statusCommand,
   shot: shotCommand,
+  mcp: mcpCommand,
 };
 
 /**

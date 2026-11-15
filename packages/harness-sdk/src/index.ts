@@ -296,6 +296,8 @@ const manifestSchema = z.object({
   tone: z.string().min(1).max(300).optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
   logo: z.string().optional(),
+  /** Published by the release workflow (official harness). */
+  release: z.boolean({ error: "release must be true or false" }).optional(),
   mcp: z.array(z.string()).default([]),
   ui: z.string().optional(),
   locales: z.string().optional(),

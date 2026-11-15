@@ -2,6 +2,8 @@
 
 Status: approved by Marco, 2026-11-05, section by section in a brainstorming session and then as a written spec.
 
+Amended 2026-11-15 by the approved 0c spec: the in-app "Change this app" action is dropped (D7 and §5.5 deleted). Outside agents change the app through `humanharness mcp` and the home folder's manual; step 0c is the kit for them.
+
 Human Harness grew features into the core one spec at a time: Sidekick, search, history views, jobs, reviews, translation, material. Each is off unless a harness declares it (the "D0" rule), so a harness pays nothing at runtime. But every one of them branches through `shell/src/main/index.ts` and `task-manager.ts`, every one is code the core must keep working, and none of them can be changed by the person who uses the app.
 
 This spec does two things:
@@ -26,7 +28,6 @@ Together with harnesses this gives three layers: the **core** runs tasks; a **ha
 - **D4. History splits.** The snapshot per turn and "undo the last turn" stay in the core. The History panel, the file timeline and restore-any-point go to a mod.
 - **D5. The herdr layer.** The app's home folder is its interface as files. The app writes `AGENTS.md` and `hh.d.ts` into it on every start. Core and harness mods are read-only and cloned to edit. Changes reload live, and the app keeps the last good version and writes `<file>.error` when a change is invalid. The CLI has `check` and `shot`. There is an escape hatch, and the home folder has a git history of its own.
 - **D6. Only the task view is native.** The task view (chat, decision blocks, input) is the core's own component. Home, side panels, the top bar and each feature's Settings tab are mods placed by a layout.
-- **D7. Users change the app from inside and outside.** A core action, "Change this app", runs an agent that may edit only the user layer. Any outside agent pointed at the folder also works, since the folder carries its own manual.
 - **D8. Codex and OpenCode stay core.** Choosing an engine is part of "the agent you already pay for". Claude, Codex and OpenCode keep living in `packages/engines`.
 - **D9. Radix stage 4 pauses after 4b1.** PR #136 (History and timeline) merges. Then nothing else that leaves the core gets restyled until it lives in its mod (4b2 Files/Notes waits).
 - **D10. Delete `chat-migration.ts`.** Nothing was ever released, so no chat is in the old format. Marco's own folder is migrated once by hand first if it needs it.
@@ -49,7 +50,7 @@ Together with harnesses this gives three layers: the **core** runs tasks; a **ha
 | Workspace history: the snapshot per turn and undo of the last turn | The safety net (D4) |
 | Markdown in the chat (with Mermaid) | Agent output |
 | `usage.jsonl` | Pillar 3 needs the numbers; the mods read them |
-| The mod host, the home folder, the layout, "Change this app" | §5 |
+| The mod host, the home folder, the layout | §5 |
 | The CLI and `harness-sdk` | Authors |
 | i18n with English only | The core ships in English; translation is a mod |
 
@@ -168,7 +169,7 @@ app/
 
 - **Read-only layers.** Editing a file under `core/` or `harness/` is undone on the next start: the edited copy moves to `mods/<id>-edited` (or `layouts/<name>-edited.json`), the original comes back, and a notice says so.
 - **Cloning.** `mod clone <id> [as]` and `layout clone <name> [as]` copy into the user layer and record `clonedFrom: { id, version }`. Clones are never updated. A clone's own paths are rewritten to its new id.
-- **History.** The home folder has a git history of its own (the workspace's `history.ts` machinery, its data next to the work folder's history). Every write by "Change this app" is a turn commit, so undo works there as in the work folder.
+- **History.** The home folder has a git history of its own (the workspace's `history.ts` machinery, its data next to the work folder's history).
 
 ### 5.2 The layout
 
@@ -191,16 +192,6 @@ app/
 - `humanharness shot [file.png]`: the running app saves its window as a PNG (`webContents.capturePage`) and prints the path.
 - `humanharness status`: which mods run, which failed and why, the shown layout.
 
-### 5.5 "Change this app"
-
-A core action, offered in Home and Settings › Mods:
-
-- The agent runs at tier `standard`, with `cwd` = the home folder, edit access only to `mods/`, `layouts/` and `settings.json`, and the tools `check`, `shot` and `status`. Its brief is `AGENTS.md`.
-- Each turn commits to the home folder's history, so "undo" reverts the last change to the app.
-- A new mod that the agent writes is a local mod. The agent explains what it does and the person turns it on in a decision block. The block shows the warning of D2.
-
-Outside the app, any agent works: the folder holds its manual and its types.
-
 ### 5.6 Failing safe
 
 - **Escape hatch:** ⌘⌥⇧Esc (Ctrl+Alt+Shift+Esc elsewhere) can't be rebound. It sets the shown layout to the harness's `main`, turns off every user mod, and says how to turn them back on. `humanharness dev --safe` and launching the app with `--safe` do the same.
@@ -214,7 +205,6 @@ Mods are trusted code with the app's full access: files, network, processes, key
 
 - Core and harness mods are trusted as the app is.
 - A local mod is turned on only after a warning the person must confirm. Settings › Mods marks it "Local" and lists what it registers (hooks, tools, blocks).
-- "Change this app" writes only the user layer, and every write can be undone.
 - The engines' legal rules don't change: no mod may read engine credentials, and `ctx` gives no way to.
 
 ## 7. Order
@@ -225,7 +215,7 @@ One plan and one PR per step. Marco reviews between plans.
 |---|---|---|
 | 0a | `mod-sdk`, `defineMod`, the host in main, hooks and services of §4 that step 1 needs, Settings › Mods, the local-mod warning, three strikes. No feature moves | The API compiles against a test mod |
 | 0b | The home folder, the layers, the layout and its renderer, live reload, `AGENTS.md`/`hh.d.ts`, `check`/`shot`/`status`, the escape hatch, the home history. Delete `chat-migration.ts` | A hand-written user mod reloads live and can be undone |
-| 0c | "Change this app" | The AI changes a cloned mod; undo restores it |
+| 0c | The kit for outside agents | an agent with only the MCP server and the manual creates a mod that passes check and shows in a layout |
 | 1 | `sidekick` (pilot) | `beforeSend`, `engine.run`, blocks in the layout, a Settings tab |
 | 2 | `history-view` | The history service and the split of D4 |
 | 3 | `usage`, `context-panel`, `search` | Read-only mods; the `overlay` block |
@@ -250,7 +240,7 @@ Home and each feature's Settings tab become mods together with their feature. Ho
 
 - **Core alone:** an e2e with no mods. The app starts, runs a task, undoes the turn, and no `.harness/mods/` folder, no mod section in `AGENTS.md` and no mod block appear.
 - **Moved, not changed:** each feature's unit and e2e tests move into its mod's package and pass without edits, except imports and how the mod is turned on. A moved feature behaves as before; new behaviour waits for its own spec.
-- **The user layer:** an e2e where a user clones a mod, "Change this app" edits it (the fake agent), the block reloads, and undo restores it. Another breaks a mod on purpose and checks the `.error` file, the last good version and the escape hatch.
+- **The user layer:** an e2e where a user clones a mod and edits it, the block reloads, and undo restores it. Another breaks a mod on purpose and checks the `.error` file, the last good version and the escape hatch.
 - **Core size ratchet:** a test counts the lines of the core packages and fails if they grow beyond the recorded number. It uses the same mechanism as the file-size ratchet. Each migration step lowers the number.
 - **Docs:** each mod's `docs/architecture/<feature>.md` moves to `packages/mods/<id>/README.md`. `docs/architecture/mods.md` describes the API and the layers. The generated `AGENTS.md` is checked against `hh.d.ts`: each exported name must appear in it.
 
@@ -260,4 +250,4 @@ Home and each feature's Settings tab become mods together with their feature. Ho
 - No painting in layouts (backgrounds, borders): the theme decides the look.
 - No new behaviour in any moved feature.
 - No runtime outside Electron (herdr's improvement 4 stays "not now").
-- No translation of `AGENTS.md`: the manual is English, like every prompt. The person talks to "Change this app" in their language.
+- No translation of `AGENTS.md`: the manual is English, like every prompt.

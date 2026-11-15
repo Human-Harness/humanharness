@@ -2,6 +2,7 @@ import { promises as fs, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registeredToolNames } from "../../cli/src/mcp/tool-names";
 import { HH_DTS_COMMAND, HH_DTS_FILE, generateHhDts, publicNames } from "../scripts/hh-dts";
 import { writeLayers } from "../src/main/mods/home-folder";
 import { agentsMd, manualFiles } from "../src/main/mods/manual";
@@ -29,6 +30,23 @@ describe("AGENTS.md", () => {
     const text = agentsMd();
     const missing = publicNames(manualFiles()["hh.d.ts"]).filter((n) => !new RegExp(`\\b${n}\\b`).test(text));
     expect(missing).toEqual([]);
+  });
+
+  it("names every tool `humanharness mcp` registers", async () => {
+    const text = agentsMd();
+    const names = await registeredToolNames();
+    expect(names).toContain("catalog");
+    expect(names.filter((n) => !text.includes(`\`${n}\``))).toEqual([]);
+  });
+
+  it("teaches the agent loop after the layers, and Commands points to it", () => {
+    const text = agentsMd();
+    const at = (s: string) => text.indexOf(s);
+    expect(at("## Working with an agent")).toBeGreaterThan(at("## The layers"));
+    expect(at("## Working with an agent")).toBeLessThan(at("## Layouts"));
+    for (const s of ["humanharness mcp --config claude", "humanharness mcp --config codex"]) expect(text).toContain(s);
+    const commands = text.slice(at("## Commands"));
+    expect(commands).toContain("Working with an agent");
   });
 
   it("covers the layers, the layout, the imports, consent, reload, the commands and the ways back", () => {

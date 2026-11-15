@@ -40,6 +40,34 @@ Other files:
 - \`.control.json\`: while the app runs, how the \`status\` and \`shot\` commands reach it. Private to you.
 - \`shots/\`: screenshots \`humanharness shot\` saved.
 
+## Working with an agent
+
+An agent that speaks MCP (Claude Code, Codex, ...) works on this folder through \`humanharness mcp\`. Connect it once:
+\`humanharness mcp --config claude\` prints the \`claude mcp add\` command, \`humanharness mcp --config codex\` the block for
+Codex's config (add \`--home <dir>\` to either when the agent runs outside this folder). Paste it, and the agent has
+these tools:
+
+| Tool | What it does | Needs the app open |
+|---|---|---|
+| \`catalog\` | Every mod of the three layers (blocks, hooks, settings, on or off, its \`.error\`), every layout with the one shown, and the names \`hh.d.ts\` exports | No |
+| \`mod_new\` | Creates \`mods/<id>/\` from the template: \`mod.json\`, \`main.ts\`, \`ui.tsx\` with one block, a README | No |
+| \`mod_clone\` | Copies a core or harness mod into \`mods/<as>/\`, to change it | No |
+| \`layout_clone\` | Copies a harness or core layout into \`layouts/<as>.json\`, to place blocks | No |
+| \`mod_check\` | Checks a mod as \`humanharness mod check\` does; any failed check is an error | No |
+| \`status\` | Which mods run, which failed and why, the layout shown | Yes |
+| \`shot\` | The window as a PNG image, saved under \`shots/\` | Yes |
+
+The loop:
+
+1. \`catalog\`: find what is there, a block to place, a mod to start from, the type to read in \`hh.d.ts\`.
+2. \`mod_clone\` to change a core or harness mod, or \`mod_new\` to add something new.
+3. Edit the files in \`mods/<id>/\` (and a layout in \`layouts/\` to place a block).
+4. \`mod_check\` after every change, until it passes.
+5. A new or cloned mod starts off: ask the person to turn it on in Settings › Mods (and the original off, for a
+   clone). Never turn a mod on yourself.
+6. \`status\` and \`shot\`: see that the app took the change and what the person sees.
+7. To undo: Settings › Mods undoes the last change to the app.
+
 ## Layouts
 
 A layout is a JSON tree of nodes. Each node has a \`type\`:
@@ -134,7 +162,8 @@ the last good version and writes \`<file>.error\` beside it with why (\`mod.json
 
 ## Commands
 
-Run them in this folder (or pass \`--home <dir>\`):
+Run them in this folder (or pass \`--home <dir>\`). An agent connected through \`humanharness mcp\` has the same as
+tools (see "Working with an agent" above).
 
 - \`humanharness mod check <folder>\`: checks a mod without the app: \`mod.json\`, the bundle of each part, \`main\`
   against a fake \`ctx\`, and each block rendered once. One line per check; exit 1 on any failure.

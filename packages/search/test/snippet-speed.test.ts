@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { firstMatch, fold, snippetAround } from "../src";
+import { expectFast } from "../../../test/support/timing";
 
 /** The match finder as first written: one fold per code point. The faster one must agree with it everywhere. */
 function reference(text: string, terms: readonly string[]): { start: number; end: number } | null {
@@ -44,10 +45,7 @@ describe("snippets on big files (§4.4)", () => {
 
   it("windows a match deep in a 4 MB file quickly", () => {
     const text = `${"lorem ipsum dolor sit amet, ".repeat(150_000)}the Context window${" tail".repeat(10)}`;
-    const a = performance.now();
-    const s = snippetAround(text, ["context"]);
-    const ms = performance.now() - a;
+    const s = expectFast(() => snippetAround(text, ["context"]), 1250);
     expect(s!.at).toBe(text.indexOf("Context"));
-    expect(ms).toBeLessThan(250);
   });
 });

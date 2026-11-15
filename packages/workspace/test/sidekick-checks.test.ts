@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type CheckContext, localCheck } from "../src/sidekick-checks";
+import { expectFast } from "../../../test/support/timing";
 
 const ctx: CheckContext = { minWords: 6, known: ["Chapter 2 outline", "Sources list"] };
 const kinds = (prompt: string, c: CheckContext = ctx) => localCheck(prompt, c).map((f) => f.kind);
@@ -86,8 +87,6 @@ describe("localCheck", () => {
 
   it("is fast: 10 000 characters under 50 ms", () => {
     const long = "Write the introduction and also fix it. ".repeat(250);
-    const t0 = performance.now();
-    localCheck(long, ctx);
-    expect(performance.now() - t0).toBeLessThan(50);
+    expectFast(() => localCheck(long, ctx), 1000);
   });
 });

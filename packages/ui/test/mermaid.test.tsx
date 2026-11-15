@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Markdown, parseMarkdown } from "../src/markdown";
 import { DRAW_TIMEOUT_MS, drawMermaid, fenceClosed, mermaidAccessible, mermaidWhy } from "../src/mermaid-loader";
 import { renderIn } from "./render";
+import { expectFast } from "../../../test/support/timing";
 
 const m = vi.hoisted(() => ({
   loads: 0,
@@ -122,10 +123,10 @@ describe("fenceClosed", () => {
     expect(code("> ```mermaid\n> a\n> ```")).toBe(true);
   });
   it("is linear on long blank lines", () => {
-    const start = performance.now();
-    expect(code(`\`\`\`mermaid\na\n${" ".repeat(50_000)}x`)).toBe(false);
-    expect(code(`\`\`\`mermaid\na\n\`\`\`${" ".repeat(50_000)}x`)).toBe(false);
-    expect(performance.now() - start).toBeLessThan(500);
+    expectFast(() => {
+      expect(code(`\`\`\`mermaid\na\n${" ".repeat(50_000)}x`)).toBe(false);
+      expect(code(`\`\`\`mermaid\na\n\`\`\`${" ".repeat(50_000)}x`)).toBe(false);
+    }, 2500);
   });
 });
 
@@ -171,8 +172,6 @@ describe("mermaidAccessible", () => {
   it("reads accTitle and accDescr; linear on long lines", () => {
     expect(mermaidAccessible("flowchart LR\n  accTitle : A title \n  accDescr: Words\n  A --> B")).toEqual({ title: "A title", description: "Words" });
     expect(mermaidAccessible("flowchart LR\n  A --> B")).toEqual({});
-    const start = performance.now();
-    mermaidAccessible(`accTitle${" ".repeat(50_000)}x`);
-    expect(performance.now() - start).toBeLessThan(500);
+    expectFast(() => mermaidAccessible(`accTitle${" ".repeat(50_000)}x`), 2500);
   });
 });

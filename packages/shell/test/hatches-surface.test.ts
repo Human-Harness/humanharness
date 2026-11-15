@@ -31,13 +31,14 @@ const base = {
 
 describe("hatches IPC surface (hatches D0)", () => {
   it("linked-folder channels are registered only under hasLinkedFolders (D0)", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-ipc.ts, which registers the channels.
+    const index = (await read("index.ts")) + (await read("app-ipc.ts"));
     expect(count(index, /registerLinkedIpc\(/)).toBe(1);
-    const block = group(index, index.indexOf("  if (hasLinkedFolders(harness)) {\n    // Made once"), /\{/);
-    expect(block).toContain("registerLinkedIpc(handle, linkedDeps);");
+    const block = group(index, index.indexOf("  if (hasLinkedFolders(d.harness)) {\n    // Made once"), /\{/);
+    expect(block).toContain("registerLinkedIpc(d.handle, d.linkedDeps);");
     // Its deps (and so the prune and the key) are built only there: linkedIpcDeps (linked-ipc.ts) is called once.
     expect(count(index, /\blinkedIpcDeps\(/)).toBe(1);
-    expect(count(block, /\blinkedDeps \?\?= linkedIpcDeps\(\{/)).toBe(1);
+    expect(count(block, /\bd\.linkedDeps \?\?= linkedIpcDeps\(\{/)).toBe(1);
     // No other file registers them, and the channel names appear nowhere else in main.
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
       const text = await read(f);
@@ -93,14 +94,19 @@ describe("hatches IPC surface (hatches D0)", () => {
   });
 
   it("engine channels are registered only under enginePresets", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-ipc.ts, which registers the channels.
+    const ipcSrc = await read("app-ipc.ts");
+    const index = (await read("index.ts")) + ipcSrc;
     expect(count(index, /registerEngineIpc\(/)).toBe(1);
     // Its deps (and so the approval key) are built only there; the commit signal reaches it only once registered.
     // engineIpcDeps (engine-config/engine-ipc.ts) is called once, inside that block.
     expect(count(index, /\bengineIpcDeps\(/)).toBe(1);
-    const block = group(index, index.indexOf("  if (hasEnginePresets(harness)) {\n    const userData"), /\{/);
-    expect(block).toMatch(/engineIpc = registerEngineIpc\(\n\s*handle,\n\s*engineIpcDeps\(\{/);
-    expect(count(index, /\bengineIpc = /)).toBe(1);
+    const block = group(index, index.indexOf("  if (hasEnginePresets(d.harness)) {\n    const userData"), /\{/);
+    expect(block).toMatch(/d\.engineIpc = registerEngineIpc\(\n\s*d\.handle,\n\s*engineIpcDeps\(\{/);
+    // Set there, through the start-up blocks' setter (index.ts's lifecycle), and nowhere else.
+    expect(count(ipcSrc, /\bengineIpc = /)).toBe(1);
+    expect(count(index, /\bengineIpc = /)).toBe(2);
+    expect(index).toContain("set engineIpc(v) {\n    engineIpc = v;");
     expect(index).toMatch(/let engineIpc: EngineIpc \| null = null;/);
     // No other file registers or sends them: the channel names appear only in engine-ipc.ts (hh:engineStatus is the core's).
     for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts"))) {
@@ -113,8 +119,9 @@ describe("hatches IPC surface (hatches D0)", () => {
   });
 
   it("engine snapshots are pruned at start only under enginePresets (Decision 13, D0)", async () => {
-    const index = await read("index.ts");
-    expect(index).toContain("  if (hasEnginePresets(harness)) void pruneEngineConfig();\n");
+    // index.ts and app-ipc.ts, which calls it.
+    const index = (await read("index.ts")) + (await read("app-ipc.ts"));
+    expect(index).toContain("  if (hasEnginePresets(d.harness)) void d.pruneEngineConfig();\n");
     expect(count(index, /\bpruneEngineConfig\(\)/)).toBe(2); // the definition and that one call
     expect(count(index, /\bpruneEngineSnapshots\(/)).toBe(1);
     const prune = group(index, index.indexOf("async function pruneEngineConfig(): Promise<void>"), /\{/);
@@ -132,16 +139,21 @@ describe("hatches IPC surface (hatches D0)", () => {
   });
 
   it("backend channels are registered only under hasBackend (D0)", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-ipc.ts, which registers the channels.
+    const ipcSrc = await read("app-ipc.ts");
+    const index = (await read("index.ts")) + ipcSrc;
     expect(count(index, /registerBackendIpc\(/)).toBe(1);
-    const block = group(index, index.indexOf("if (hasBackend(harness))"), /\{/);
-    expect(block).toContain("registerBackendIpc(handle, { supervisor: backend });");
+    const block = group(index, index.indexOf("if (hasBackend(d.harness))"), /\{/);
+    expect(block).toContain("registerBackendIpc(d.handle, { supervisor: d.backend });");
     // The supervisor is made only by buildBackend (backend-ipc.ts) through backendFor, which answers null without a
     // backend; nothing else spawns one.
     expect(count(index, /\bbuildBackend\(/)).toBe(1);
     expect(count(block, /\bbuildBackend\(/)).toBe(1);
-    expect(count(index, /\bbackend = /)).toBe(1);
-    expect(index).toMatch(/\bbackend = buildBackend\(harness, \{/);
+    // Set there, through the start-up blocks' setter (index.ts's lifecycle), and nowhere else.
+    expect(count(ipcSrc, /\bbackend = /)).toBe(1);
+    expect(count(index, /\bbackend = /)).toBe(2);
+    expect(index).toContain("set backend(v) {\n    backend = v;");
+    expect(index).toMatch(/\bd\.backend = buildBackend\(d\.harness, \{/);
     const ipc = await read(path.join("backend", "backend-ipc.ts"));
     const build = group(ipc, ipc.indexOf("export function buildBackend("), /\{/);
     expect(count(ipc, /\bbackendFor\(/)).toBe(2); // the definition and buildBackend's call
@@ -167,23 +179,26 @@ describe("hatches IPC surface (hatches D0)", () => {
   });
 
   it("the window's scope list never carries links (only signed ones, through hh:scopeLinked)", async () => {
-    const index = await read("index.ts");
+    const index = await read("scope-stores.ts");
     const view = group(index, index.indexOf("async function scopesView(): Promise<ScopesView>"), /\{/);
     expect(view).toContain(".map(({ linked: _linked, ...s }) => s)");
   });
 
   it("the window's scope list never carries an engine approval (only the Engine config view says approved)", async () => {
-    const index = await read("index.ts");
+    const index = await read("scope-stores.ts");
     const view = group(index, index.indexOf("async function scopesView(): Promise<ScopesView>"), /\{/);
     expect(view).toContain(".map(({ engineApproval: _approval, ...s }) => s)");
   });
 
   it("D0: turns, AGENTS.md, histories and jobs reach linked folders only through the registered deps", async () => {
-    const index = await read("index.ts");
+    // index.ts and app-ipc.ts, which makes the deps.
+    const index = (await read("index.ts")) + (await read("app-ipc.ts"));
     // The deps are made only by linkedIpcDeps (called only under hasLinkedFolders); linked_ answers null without them.
     expect(count(index, /\blinkedDeps \?\?= /)).toBe(1);
-    expect(count(index, /\blinkedDeps = /)).toBe(0);
-    expect(index).toContain("    linkedDeps ??= linkedIpcDeps({");
+    // Only the start-up blocks' setter (index.ts's lifecycle), which that `??=` goes through.
+    expect(count(index, /\blinkedDeps = /)).toBe(1);
+    expect(index).toContain("set linkedDeps(v) {\n    linkedDeps = v;");
+    expect(index).toContain("    d.linkedDeps ??= linkedIpcDeps({");
     const parts = group(index, index.indexOf("function linked_()"), /\{/);
     expect(parts).toContain("if (linkedParts || !linkedDeps) return linkedParts;");
     expect(count(index, /\bcreateScopeAccess\(/)).toBe(count(parts, /\bcreateScopeAccess\(/));

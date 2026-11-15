@@ -282,9 +282,9 @@ describe("createJobsHost (part 3 Task 7)", () => {
     expect(t.gate.queued("jobs")).toEqual([]);
   });
 
-  it("index.ts: closing the runtime (a profile switch, a folder move, a plugin change) settles the job runs first", () => {
-    const index = fs.readFileSync(path.resolve(__dirname, "../../src/main/index.ts"), "utf8");
-    expect(index).toMatch(/async function closeRuntime\(\) \{\n(\s*\/\/.*\n)*\s*await jobsHost\?\.cancelAndSettle\(\);\n\s*await materialJobs\?\.stop\(\);/);
+  it("runtime-wiring.ts: closing the runtime (a profile switch, a folder move, a plugin change) settles the job runs first", () => {
+    const wiring = fs.readFileSync(path.resolve(__dirname, "../../src/main/runtime-wiring.ts"), "utf8");
+    expect(wiring).toMatch(/async function closeRuntime\(\) \{\n(\s*\/\/.*\n)*\s*await d\.jobsHost\(\)\?\.cancelAndSettle\(\);\n\s*await d\.materialJobs\(\)\?\.stop\(\);/);
   });
 
   it("Settings › Jobs: off only when true, a cap only as a whole number ≥ 1", async () => {

@@ -98,23 +98,24 @@ describe("single mode's undo (part 3 Decision 12)", () => {
   });
 
   it("index.ts: single mode undoes by paths too, and a restore waits for the job runs", () => {
-    // index.ts and history-ipc.ts, which holds the hh:restoreTask handler.
-    const index = ["index.ts", "history-ipc.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
+    // index.ts, history-ipc.ts, which holds the hh:restoreTask handler, runtime-wiring.ts, which holds undoByPaths, and
+    // app-services.ts, which holds the restore guard.
+    const index = ["index.ts", "history-ipc.ts", "runtime-wiring.ts", "app-services.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
     // The by-paths branch serves the board and single mode; plain mode keeps the whole-folder restore (D0).
     // After master's go-back handlers: plain mode hands over to them; the rest of the handler is the by-paths branch.
     expect(index).toMatch(/const byPaths = undoByPaths\(\);\n(\s*\/\/[^\n]*\n)*\s*if \(!byPaths\) return goBacks\["hh:restoreTask"\]\(sender, taskId\);/);
-    expect(index).toMatch(/if \(!single\) return null;/);
+    expect(index).toMatch(/if \(!d\.single\(\)\) return null;/);
     expect(index).toMatch(/running: async \(\) => \{\n\s*const rt = await runtime\.peek\(\)\?\.catch\(\(\) => null\);\n\s*const ws = rt \? singleParts\.get\(rt\)\?\.workspace : undefined;/);
     // The run being undone, still running, refuses its own undo (its paths are its own, so P2 doesn't catch it).
-    expect(index).toMatch(/const jobRunning = \(id: string\) => \(jobsHost\?\.runningOf\(`job:\$\{id\}`\) \?\? null\) !== null;/);
+    expect(index).toMatch(/const jobRunning = \(id: string\) => \(d\.jobsHost\(\)\?\.runningOf\(`job:\$\{id\}`\) \?\? null\) !== null;/);
     // "Go back here" is refused while a job runs.
-    expect(index).toMatch(/new RestoreGuard\(\{ quitting: \(\) => quitting, busy: \(\) => tasks\.isBusy\(\) \|\| \(jobsHost\?\.running\(\) \?\? false\)/);
+    expect(index).toMatch(/new RestoreGuard\(\{ quitting: \(\) => d\.quitting\(\), busy: \(\) => d\.tasks\(\)\.isBusy\(\) \|\| \(d\.jobsHost\(\)\?\.running\(\) \?\? false\)/);
   });
 });
 
 describe("index.ts: the app's own changes go through saveAppChange, board mode decided by the host", () => {
-  // index.ts and app-lifecycle.ts, which holds its start-up blocks.
-  const index = ["index.ts", "app-lifecycle.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
+  // index.ts, app-lifecycle.ts, which holds its start-up blocks, and app-services.ts, which holds the data requests.
+  const index = ["index.ts", "app-lifecycle.ts", "app-services.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
   it("material, Sidekick's decision note and learning, and a lane's note", () => {
     expect(index).not.toMatch(/\?\.save\(`Material:/);
     expect(index).not.toMatch(/\?\.save\(`Note: \$\{title\}`/);
@@ -130,6 +131,6 @@ describe("index.ts: the app's own changes go through saveAppChange, board mode d
     const board = fs.readFileSync(path.resolve(__dirname, "../src/main/board-host-wiring.ts"), "utf8");
     expect(board).toMatch(/saveOwn: async \(paths, message, trailer\) => saveAppChange\(await currentHistory\(\), true, paths, message, trailer\)/);
     // The person's data writes: board mode is the host's (and a running job's, part 3).
-    expect(index).toMatch(/\n  board: ownCommits,\n/);
+    expect(index).toMatch(/\n    board: ownCommits,\n/);
   });
 });

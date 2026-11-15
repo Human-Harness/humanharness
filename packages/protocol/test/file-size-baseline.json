@@ -8,7 +8,6 @@
   "packages/engines/test/claude-cli.test.ts": 62464,
   "packages/mods/home/test/HarnessApp.test.tsx": 58368,
   "packages/protocol/src/views.ts": 72704,
-  "packages/shell/src/main/index.ts": 113664,
   "packages/shell/src/main/plugins.ts": 84992,
   "packages/shell/src/main/sidekick.ts": 97280,
   "packages/shell/src/main/task-manager.ts": 136192,

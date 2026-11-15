@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -9,35 +7,19 @@ import {
   Notification,
   type WebContents,
   app,
-  clipboard,
   dialog,
   ipcMain,
   nativeTheme,
   safeStorage,
-  session,
   shell,
   webContents,
 } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
-import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
-import { type PickInput, modelPolicy } from "@humanharness/policies";
+import { type EngineDef, availableEngines, getEngine } from "@humanharness/engines";
 import {
-  type BackendInit,
-  DEFAULT_LANGUAGE,
   type LoadedHarness,
-  PROFILE_COLLECTION,
-  SETTINGS_COLLECTION,
-  SIDEKICK_COLLECTION,
-  SIDEKICK_PROCESS,
-  TIERS,
-  type Tier,
   allBlocks,
-  choiceOptionSchema,
-  dataCollections,
-  hasBackend,
   hasEnginePresets,
-  hasLinkedFolders,
   hasModes,
   hasPhases,
   hasProfiles,
@@ -46,120 +28,51 @@ import {
   materialStageKey,
   pluginsAccepted,
   resolveInHarness,
-  sidekickCollection,
   stageTier,
 } from "@humanharness/harness-sdk";
-import { createI18n } from "@humanharness/i18n";
 import { type Job, MaterialStore } from "@humanharness/material/light";
-import { modJsonSchema } from "@humanharness/mod-sdk";
 import {
   type Event,
   type HarnessRuntime,
   type HarnessWorkspace,
   type RuntimeOptions,
   type SessionSlot,
-  SidekickSession,
-  type SlotRef,
-  createRuntime,
-  createWorkspace,
   runSystemTask,
 } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
-  type DocumentRead,
-  type ChatLoad,
   type ConfiguredApp,
-  type FolderPick,
-  type ModelsView,
-  type ModsConfig,
-  type ModsView,
-  type MoveResult,
-  type ProfileResult,
-  type ProfilesState,
-  type RunningSetup as SetupInfo,
-  type ScopesView,
-  type SendOptions,
-  type SetupOutput,
-  type SetupStep,
-  type SetupStepResult,
-  type SetupStepsState,
-  type TestResult,
-  type UsageSummary,
-  RESTORE_POINT,
-  RESTORE_TASK,
   TEXT_SIZES,
   type TextSize,
   isConfigured,
 } from "@humanharness/protocol";
 import type { InvokeChannel, PushChannel } from "@humanharness/protocol/channels";
-import {
-  APP_SCOPE,
-  DataStore,
-  History,
-  MAIN_SCOPE,
-  ScopeStore,
-  DEFAULT_PINNED_TOKENS,
-  dataDiffOf,
-  flushFileIndexes,
-  loadReview,
-  migrateToScopes,
-  notesPrefix,
-  profileDir,
-  readNotes,
-} from "@humanharness/workspace";
-import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
-import { ConfigStore, cleanJobs, historyDir } from "./config";
-import { agentDataRequest, dataWriteQueue, harnessUiDataRequests, personDataRequests } from "./data-requests";
-import { testPrompt } from "./engine-check";
+import { ConfigStore } from "./config";
 import { createCommandDeps } from "./command-deps";
-import { cliCommand, engineCommand, engineSearchPath } from "./engine-command";
+import { engineCommand, engineSearchPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
-import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, offeredEffort, pinnedBudget } from "./models";
-import { ContextService } from "./context";
-import { runningPlugins, searchData, searchableCollection } from "./search/data-sources";
-import { searchHandlers } from "./search/ipc";
-import { workerBuild } from "./search/runner";
-import { SearchService } from "./search/service";
-import { contextHandlers } from "./context-ipc";
-import { languageHandlers } from "./language-ipc";
-import { chooseModeHandler } from "./mode-ipc";
-import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
-import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
-import { reviewHandlers } from "./review-ipc";
-import { workerDiff } from "./diff-runner";
-import { commitAnnouncer, fileHandlers, openPathIpc } from "./file-ipc";
-import { documentIpc } from "./document-ipc";
-import { FileTimelineService } from "./file-timeline";
-import { CANCELLED, type GoBackAsk, askNatively, goBackHandlers, goBackText } from "./go-back";
-import { ReviewService } from "./reviews";
-import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
-import { type RunningSetup, runSetupProcess, setupCommand } from "./setup-runner";
-import { runSetupStep } from "./setup-step";
-import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
+import { hasAcceptedNotice } from "./engine-status";
+import { cleanModels } from "./models";
+import { registerAppIpc } from "./app-ipc";
+import { createEngineChange } from "./engine-change";
+import { createAppServices } from "./app-services";
+import { requireNoticeForTurn } from "./notice-policy";
+import { type RunningSetup } from "./setup-runner";
+import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { shellResourcesDir } from "./shell-resources";
-import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
+import { TurnController, type TurnDeps } from "./turn-controller";
 import {
-  type UsageRecord,
   UsageLog,
-  capTokens,
-  modRecord,
-  profilesUsage,
-  summarizeUsage,
-  withSpent,
 } from "./usage-log";
-import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
-import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
+import { type ValidationContext, configProblem, isAppUrl } from "./validate";
+import { openRoots } from "./open-path";
 import { DocumentSessions } from "./document-sessions";
-import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
-import { saveWithFolderChange } from "./folder-change";
-import { type MoveDeps, guardedMove, moveFolder, precheckMove } from "./move-folder";
-import { type ResolvedReference, usableReferences } from "./references";
+import { DocumentWatchers } from "./documents";
+import { type ResolvedReference } from "./references";
 import { PluginBackendHost } from "./plugin-host";
-import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
+import { PluginPanelsOnDemand, installPluginPanels, safeStorageCrypto } from "./plugin-ipc";
 import { SecretStore } from "./plugin-secrets";
 import { ConnectionsController, connectTests } from "./secrets/connections";
 import { testCrypto } from "./secrets/test-crypto";
@@ -167,88 +80,50 @@ import { type ToolsHost } from "./tools/tools-host";
 import { type BoardHost } from "./board-host";
 import { type AttentionStores } from "./attention-stores";
 import { type TaskAttention, keepNotification } from "./task-attention";
-import { type JobsHost, isJobSlot, coalescedSender, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps } from "./jobs/jobs-host";
+import { type JobsHost, coalescedSender } from "./jobs/jobs-host";
 import { type JobsWiringDeps } from "./jobs/jobs-wiring";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
-import { cleanCaps, engineHold } from "./parallel-config";
-import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, linkedIpcDeps, linkedSecret, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, linkedSecret } from "./linked-ipc";
 import { EngineHost } from "./engine-config/engine-host";
-import { type EngineIpc, engineIpcDeps, registerEngineIpc } from "./engine-config/engine-ipc";
+import { type EngineIpc } from "./engine-config/engine-ipc";
 import { EPOCHS_FILE, EngineEpochs } from "./engine-config/epochs";
 import { type PruneBase, pruneEngineSnapshots } from "./engine-config/prune";
-import { BackendGeneration, backendInit, buildBackend, registerBackendIpc, usableLinks } from "./backend/backend-ipc";
+import { createBackendWiring } from "./backend/backend-wiring";
 import type { BackendSupervisor } from "./backend/backend-supervisor";
 import { linkedHistoryDir, markRelinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
 import {
   type LinkedHistoryRef,
   linkedHistoriesFor,
-  linkedOnlyRows,
-  mergeTaskGroups,
   openLinkedHistory,
-  restoreLinkedTask,
-  restoreTaskWithLinked,
 } from "./linked-restore";
 import { isGitRepo } from "./linked-folders";
-import { instructionSubagentsOption } from "./instruction-subagents";
-import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController } from "./plugins";
-import { respondHandler } from "./respond-ipc";
-import { layoutIpc } from "./layout-ipc";
-import { setupIpc } from "./setup-ipc";
-import { folderIpc } from "./folder-ipc";
-import { engineSetupIpc } from "./engine-setup-ipc";
-import { chatIpc } from "./chat-ipc";
-import { historyIpc } from "./history-ipc";
-import { dataIpc } from "./data-ipc";
-import { settingsIpc } from "./settings-ipc";
-import { scopesIpc } from "./scopes-ipc";
-import { profilesIpc } from "./profiles-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController } from "./sidekick";
-import { registerSidekickIpc } from "./sidekick-ipc";
-import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
-import { type ModsSettings, cleanModsConfig } from "./mods/config";
-import { CORE_MODS } from "./mods/core-mods";
-import { shownLayout } from "./mods/layout";
-import { HomeHistory } from "./mods/home-history";
-import { enterSafeMode } from "./mods/safe";
-import { ModHost } from "./mods/host";
-import { registerModsIpc } from "./mods/mods-ipc";
-import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./mods/user-layer";
-import { type ResolveProblem, type ResolvedMod, resolveMods } from "./mods/resolve";
-import { type ServiceDeps, appHome, buildServices, modHistoryIgnores } from "./mods/services";
-import { needsHost } from "./mods/wiring";
 import { SetupSteps } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
 import { createAppState } from "./app-state";
+import { createScopeStores } from "./scope-stores";
+import { createRuntimeWiring } from "./runtime-wiring";
+import { createAppMods } from "./mods/app-mods";
+import { createAppViews } from "./app-views";
 import { type TranslationService } from "./translation";
 import type { MaterialService } from "./material";
-import { historyKeep, materialIpc, materialRecommended } from "./material-ipc";
 import type { MaterialJobs } from "./material-jobs";
-import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
+import { type MaterialStageDeps } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
-import { baseFor, isInsideFolder } from "./profile-base";
-import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
-import { ProfileSwitch } from "./profile-switch";
-import { holds } from "./holds";
-import { historyView } from "./history-view";
-import { RestoreGuard, lastOpened } from "./restore-guard";
-import { TaskStore, emptyTasks } from "./task-store";
+import { baseFor } from "./profile-base";
+import { Profiles } from "./profiles";
 import { trafficLightY } from "./text-size";
 import { createWindow as createAppWindow } from "./window";
 import { onLoaded, onPrimary } from "./app-lifecycle";
 import {
-  MOCK_MODEL,
-  fakeSetupResult,
   isMockEngine,
-  mockModels,
   offeredEngines,
   readTestHooks,
-  testEngineStatus,
 } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
@@ -257,7 +132,6 @@ declare const __SHELL_RESOURCES__: string;
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
 
-const requireFromHere = createRequire(import.meta.url);
 // The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
 // `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
 const here = import.meta.dirname;
@@ -285,18 +159,12 @@ let engineIpc: EngineIpc | null = null;
 let linkedDeps: LinkedIpcDeps | null = null;
 /** The harness's backend (hatches spec §4); null without `backend` (D0: no process, no file, no channel). */
 let backend: BackendSupervisor | null = null;
-/** The backend was started in this process (Decision 5): from then on a base change is a rebase. */
-let backendStarted = false;
-/** Bumped when the backend's base changes: a scopes update read before it is stale and dropped. */
-const backendGen = new BackendGeneration();
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** How long quitting waits for the test prompt to clean up (its temporary folder, the CLI it started). */
 const QUIT_TEST_WAIT_MS = 5_000;
 /** Engine changes, setup steps and test prompts against turns (see EngineGuards). */
 const guards = new EngineGuards();
-/** Logos as data: URLs, read once. */
-const logos = new Map<string, Promise<string | null>>();
 /** End-to-end test settings (development builds only; see test-hooks.ts). */
 const hooks = readTestHooks(process.env, app.isPackaged);
 /** The folder move running now (hh:moveFolder): quitting waits for it. */
@@ -309,24 +177,8 @@ let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 let settingsCtl: SettingsController | null = null;
 /** Sidekick, the core's prompt coach: built only for a harness that declares `sidekick`. */
 let sidekickCtl: SidekickController | null = null;
-/** The mod host (minimal-core spec §4); null with no mod that could run (D0). */
-let modHost: ModHost | null = null;
-/** Folders `resolveMods` couldn't read as mods, for Settings › Mods (the user layer keeps its own). */
-let modProblems: ResolveProblem[] = [];
-/** The home folder's `mods/` as the host runs them (minimal-core 0b2); null without a host. */
-let userLayer: UserLayer | null = null;
-/** The watcher on the home folder's `mods/`; closed on quit. */
-let userLayerWatch: { close(): void } | null = null;
-/** The watch on the home folder's `layouts/` and `settings.json` (0b2). */
-let layoutsWatch: { close(): void } | null = null;
-/** The home folder's own history (0b2): every change to `mods/`, `layouts/` and `settings.json`, undoable. */
-let homeHistory: HomeHistory | null = null;
-/** Safe mode was entered this run (the escape hatch, `--safe` or HH_SAFE=1): the window shows its notice. */
-let safeEntered = false;
 /** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
 let control: { stop(): Promise<void> } | null = null;
-/** The last resolved mods: their data folders stay out of the work-folder history unless a mod asks (spec §4.1). */
-let resolvedMods: ResolvedMod[] = [];
 /**
  * Plugins (plugins spec); null for a harness that takes none and no dev folders (D0): no `hh-plugin` scheme, no
  * backend window, no IPC handler, no file.
@@ -472,26 +324,6 @@ let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
 let profilesCtl: Profiles | null = null;
 
-/**
- * The reference folders usable with the working folder: one that is or contains it is left out (its
- * read-only rules would block the person's own files), with `log` saying why.
- */
-async function referencesFor(folder: string | undefined, log = false): Promise<ResolvedReference[]> {
-  const refs = await references;
-  if (!folder) return refs;
-  return usableReferences(refs, folder, log ? (message) => console.error(message) : undefined);
-}
-
-/**
- * The reference folders the agent and `hh:openPath`/`hh:revealPath` use: those usable with the working folder `base`
- * and, with profiles, none inside the app's folder (another profile's folder never reaches them). Without profiles,
- * `referencesFor(base)` as before (D0).
- */
-async function workReferences(c: AppConfig, base: string, log = false): Promise<ResolvedReference[]> {
-  if (!profilesOn() || !c.folder) return referencesFor(base, log);
-  return usableReferences(await references, base, log ? (message) => console.error(message) : undefined, c.folder);
-}
-
 const mode = () => (app.isPackaged ? "distribution" : "development");
 /** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
 const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
@@ -512,77 +344,15 @@ function engineFor(id: unknown): EngineDef {
   return engine;
 }
 
-function logo(key: string, file: () => string): Promise<string | null> {
-  if (!logos.has(key)) {
-    logos.set(
-      key,
-      (async () => {
-        try {
-          return await imageDataUrl(file());
-        } catch {
-          return null;
-        }
-      })(),
-    );
-  }
-  return logos.get(key)!;
-}
-
-const harnessLogo = () => (harness.logo ? logo("harness", () => resolveInHarness(harness, harness.logo!)) : Promise.resolve(null));
-// Engine logos ship in the engines package (exported as "./assets/*").
-const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.resolve(`@humanharness/engines/${e.logo}`)) : Promise.resolve(null));
-
-/** What the engine was saved offering (engines.json); empty when the file can't be read. */
-const savedOffer = (engineId: string) => shared.engine(engineId).catch((): SharedEngineRecord => ({}));
-
-/** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
-async function modelsView(): Promise<ModelsView> {
-  const engines = offered();
-  const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
-  // Mock mode: a faked engine offers only the test model, and every tier uses it (effort and cap kept).
-  const tierSpec = (engineId: string, tier: Tier): ModelSpec =>
-    isMockEngine(hooks, engineId) ? { ...defaultTier(engineId, tier), model: MOCK_MODEL } : defaultTier(engineId, tier);
-  const offer = (e: EngineDef) => {
-    const real = engineOffer(e, saved.engines[e.id] ?? {});
-    return isMockEngine(hooks, e.id) ? { ...real, models: mockModels() } : real;
-  };
-  return {
-    recommended: {
-      ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
-      [QUESTIONS]: harness.questions?.tier ?? "standard",
-      // Material spec §8: each AI stage is a process, only with material (D0); links only with items.
-      ...(harness.material ? materialRecommended(harness.material) : {}),
-      // Sidekick is a process of its own (sidekick spec §5), light by default.
-      [SIDEKICK_PROCESS]: "light",
-    },
-    defaults: Object.fromEntries(
-      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
-    ),
-    offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
-    pinnedTokens: harness.context?.pinnedTokens ?? DEFAULT_PINNED_TOKENS,
-  };
-}
-
-/**
- * `p` with an effort its engine offers, so an unsupported one never reaches argv or CODEX_CONFIG. An engine
- * this build doesn't offer leaves `p` as it is (its turn fails on the engine check anyway).
- */
-async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Promise<ModelProfile> {
-  const engine = offered().find((e) => e.id === p.engine);
-  return engine ? offeredEffort(p, engine, saved ?? (await savedOffer(p.engine))) : p;
-}
-
-/**
- * The profile `input` runs on, picked by the model policy `policyId` (spec §6; config.json's, cleaned when read).
- * The offer is what the engine was saved offering: a model off its saved list (Codex) falls back before the turn,
- * then the effort is fitted as `supportedEffort` does (none for an engine this build doesn't offer: an empty list
- * fits nothing).
- */
-async function pickProfile(policyId: string | undefined, input: Omit<PickInput, "offer">): Promise<ModelProfile> {
-  const saved = await savedOffer(input.engine);
-  const engine = offered().find((e) => e.id === input.engine);
-  return modelPolicy(policyId).pick({ ...input, offer: { models: saved.models ?? [], efforts: engine ? engineOffer(engine, saved).efforts : [] } });
-}
+/** Settings › Modelos, the profile a turn runs on, the logos and the reference folders (app-views.ts). */
+const { referencesFor, workReferences, harnessLogo, engineLogo, modelsView, supportedEffort, pickProfile } = createAppViews({
+  harness: () => harness,
+  shared: () => shared,
+  hooks,
+  references: () => references,
+  profilesOn: () => profilesOn(),
+  offered,
+});
 
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;
@@ -678,160 +448,43 @@ const taskStoreOptions = (): { modes?: string[]; phases?: Record<string, string[
     : {}),
 });
 
-/** One registry per base, so its write queue orders every change. */
-/** Whether `id` is in the configured folder's registry and not archived. */
-async function activeScope(id: string): Promise<boolean> {
-  const c = await validConfig();
-  return c ? (await scopeStoreFor(baseOf(c)).list()).some((s) => s.id === id && !s.archived) : false;
-}
-
-const scopeStores = new Map<string, ScopeStore>();
-function scopeStoreFor(base: string): ScopeStore {
-  let store = scopeStores.get(base);
-  if (!store) {
-    store = new ScopeStore(base);
-    scopeStores.set(base, store);
-  }
-  return store;
-}
-
-/**
- * One data store per base, so its write queue orders every write: the person's (hh:data) and the agent's
- * (its data tools). Every caller gets the store from here, never with `new DataStore`.
- */
-const dataStores = new Map<string, { store: DataStore; off: () => void }>();
-function dataStoreFor(base: string): DataStore {
-  let entry = dataStores.get(base);
-  if (!entry) {
-    // The harness's collections, plus the reserved `settings` one when it declares settings (D0: harness.data itself).
-    const store = new DataStore(base, dataCollections(harness));
-    // Spec §4.5 `subscribe`: every write, from any writer, reaches the window. A settings write also reaches AGENTS.md
-    // once no task is open (harness-settings D4): the controller only marks it stale and queues the rewrite.
-    entry = {
-      store,
-      off: store.onChange((change) => {
-        sendToWindow("hh:dataChange", change);
-        // Search (D0): a no-op until the palette first opened; then a searchable collection is read again.
-        if (searchableCollection(dataCollections(harness), change.collection)) searchSvc.dataChanged();
-        if (change.collection === SETTINGS_COLLECTION) void settingsCtl?.changed();
-        // Profiles: the registry copies the record's name and colour (spec §4), whoever wrote it. Never rejects.
-        if (change.collection === PROFILE_COLLECTION) void profilesCtl?.sync(path.resolve(base));
-      }),
-    };
-    dataStores.set(base, entry);
-  }
-  return entry.store;
-}
-
-/**
- * Sidekick's own store per base (plan Decision 8): never in dataCollections, so harness rules, the data diff and the
- * harness UI never see it. Its file sits with the others (`.harness/data/_app/`), so undo restores it like any data.
- */
-const sidekickStores = new Map<string, DataStore>();
-function sidekickStoreFor(base: string): DataStore {
-  let s = sidekickStores.get(base);
-  if (!s) {
-    s = new DataStore(base, { [SIDEKICK_COLLECTION]: sidekickCollection() });
-    sidekickStores.set(base, s);
-  }
-  return s;
-}
-
-/** The folder changed or moved: the old base's store goes, with its listener. */
-function dropDataStore(base: string): void {
-  dataStores.get(base)?.off();
-  dataStores.delete(base);
-  sidekickStores.delete(base);
-}
-
-/** Every store under `root` (the folder itself, or each profile's): a moved or changed folder drops them all. */
-function dropDataStoresUnder(root: string): void {
-  for (const base of [...dataStores.keys()]) if (isInsideFolder(base, root)) dropDataStore(base);
-}
-
-/** The last migration run (settleScopes). Scope requests wait for it, whether it worked or not. */
-let scopesReady: Promise<unknown> = Promise.resolve();
-const scopesSettled = (): Promise<void> => scopesReady.then(() => undefined, () => undefined);
-
-async function scopesView(): Promise<ScopesView> {
-  await scopesSettled();
-  const c = await validConfig();
-  if (!c || !scoped()) return { open: null, list: [] };
-  // Linked folders reach the window only through their own channel, signed ones only (hatches L1); an engine approval
-  // only through the Engine config view (its tag is the app's). D0: no key to drop.
-  const list = (await scopeStoreFor(baseOf(c)).list())
-    .map(({ linked: _linked, ...s }) => s)
-    .map(({ engineApproval: _approval, ...s }) => s);
-  return { open: await tasks.currentScope(), list };
-}
-
-async function scopesChanged(): Promise<void> {
-  // A scope made, archived or brought back: the Jobs section's rows follow (each active scope has its own).
-  jobsChanged();
-  // A running backend hears the active scopes and their links (hatches spec §4.2). Without one, nothing (D0).
-  void backendScopes().catch((err: unknown) => console.error("Could not tell the backend the scopes", err));
-  try {
-    sendToWindow("hh:scopes", await scopesView());
-  } catch (err) {
-    console.error("Could not send the scopes to the window", err);
-  }
-}
-
-/**
- * A profile switch arrived (profiles spec §5): a task left open there by a crash ends, the settings and AGENTS.md are
- * read afresh, the scopes migrate and are sent, and the setup steps and tasks of the new folder reach the window.
- */
-async function arrivedInProfile(): Promise<void> {
-  // Before anything reads the new base: the old profile's plugins stop, and nothing of theirs reaches the new one.
-  await rebasePlugins();
-  // The old profile's backend too: stopped now, started in the new one once its scopes are settled (below).
-  await backendLeaveBase();
-  // Another profile is another folder: the reader's watches were checked against the old one.
-  documentSessions.closeAll();
-  await interruptTasks();
-  settingsCtl?.forget();
-  await settingsCtl?.changed();
-  // The new profile's open scope and links reach AGENTS.md (hatches). Nothing without linked folders.
-  void linked_()?.instructions.changed();
-  await settleScopes();
-  await scopesChanged();
-  if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
-  sendToWindow("hh:tasks", await tasks.view());
-  // The new profile's material: what an earlier run (or the switch) left converting resumes, and its AI stages run.
-  // Without material, nothing (D0).
-  void materialSvc?.settle().catch((err: unknown) => console.error("Could not resume the material", err));
-  kickMaterial();
-  // The new profile's Sidekick settings; the old base's sessions close.
-  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-  // A profile chosen for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
-  void jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
-  // The backend follows the base: started, or stopped and started in the new profile. Without one, nothing (D0).
-  void backendRebase().catch((err: unknown) => console.error("Could not move the backend to the profile", err));
-}
-
-async function scopeStore(): Promise<ScopeStore> {
-  // A scope created before the migration ran would write scopes.json first and leave the earlier notes behind.
-  await scopesSettled();
-  const c = await validConfig();
-  if (!c) throw new Error("The app is not set up yet");
-  if (!scoped()) throw new Error("This harness has no scopes");
-  return scopeStoreFor(baseOf(c));
-}
-
-/**
- * A harness with scopes in a folder used without them (spec §3.2): earlier work moves into `main`, which opens.
- * `main` is registered through the app's own store, so it queues with the person's changes.
- */
-function settleScopes(): Promise<void> {
-  const run = scopesSettled().then(async () => {
-    const c = await validConfig();
-    if (!c || !scoped()) return;
-    const base = baseOf(c);
-    if (await migrateToScopes(base, undefined, scopeStoreFor(base))) await tasks.switchScope(MAIN_SCOPE);
-  });
-  scopesReady = run;
-  return run;
-}
+/** The per-base scope, data and Sidekick stores, and the scopes' migration and view (scope-stores.ts). */
+const {
+  activeScope,
+  scopeStoreFor,
+  dataStoreFor,
+  sidekickStoreFor,
+  dropDataStoresUnder,
+  scopesSettled,
+  scopesView,
+  scopesChanged,
+  arrivedInProfile,
+  scopeStore,
+  settleScopes,
+} = createScopeStores({
+  harness: () => harness,
+  validConfig,
+  baseOf,
+  scoped,
+  sendToWindow,
+  searchSvc: () => searchSvc,
+  settingsCtl: () => settingsCtl,
+  profilesCtl: () => profilesCtl,
+  setupCtl: () => setupCtl,
+  sidekickCtl: () => sidekickCtl,
+  materialSvc: () => materialSvc,
+  tasks: () => tasks,
+  linked_,
+  documentSessions,
+  jobsChanged,
+  jobsReady,
+  kickMaterial,
+  interruptTasks: () => interruptTasks(),
+  rebasePlugins,
+  backendScopes: () => backendScopes(),
+  backendLeaveBase: () => backendLeaveBase(),
+  backendRebase: () => backendRebase(),
+});
 
 function applyAppearance(appearance: AppConfig["appearance"]) {
   nativeTheme.themeSource = appearance ?? "system";
@@ -846,246 +499,45 @@ function applyTextSize(size: TextSize | undefined) {
   if (process.platform === "darwin") window.setWindowButtonPosition({ x: 14, y: trafficLightY(factor) });
 }
 
-/**
- * What a runtime (or board mode's workspace) starts with: the config's checks, the engine's command and the plugin
- * catalogue. Null when the engine CLI isn't installed.
- */
-async function prepareEngine() {
-  const c = await config.load();
-  if (!isConfigured(c)) throw new Error("The app is not set up yet");
-  const problem = await configProblem(c, validation());
-  if (problem) throw new Error(problem);
-  // With profiles, the runtime works in the active profile's folder, with that folder's history (spec D2, D5).
-  const base = baseFor(c, profilesOn());
-  if (base === null) throw new Error("Choose a profile first");
-  await restores.settled();
-  const engine = getEngine(c.engineId);
-  let cmd: { command: string[]; env: Record<string, string> } | null;
-  const fake = hooks.engines?.[engine.id];
-  if (fake) cmd = fake;
-  else {
-    // Spec §9 "every start": enforce detect.minVersion and a signed-in CLI before the first turn.
-    const status = await detectEngine(engine, commandDeps, shared);
-    if (!status.installed) return null;
-    if (status.outdated) throw new EngineUnavailable("outdated-version");
-    if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
-    cmd = await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) });
-  }
-  if (!cmd) return null;
-  const plugins = pluginsCtl;
-  // The running plugins' collections the agent reads (plugins spec §3.2), written for this base; none: no file (D0).
-  const extra = plugins ? await plugins.catalogueFile(base).catch((err: unknown) => (pluginLog("Could not write the plugin data catalogue", err), null)) : null;
-  plugins?.markRuntimeBuilt(extra !== null);
-  return { c, base, engine, cmd, extra };
-}
-
-/**
- * The runtime's options (and board mode's workspace's), its session aside. `runningTask` names the task a data or
- * material request is for: the open task's, or in board mode the asking slot's (P3).
- */
-async function runtimeOptions(
-  { c, base, engine, cmd, extra }: NonNullable<Awaited<ReturnType<typeof prepareEngine>>>,
-  runningTask: (slot?: SlotRef) => Promise<{ id: string; action?: string; scope: string } | null>,
-) {
-  const settings = settingsCtl;
-  const plugins = pluginsCtl;
-  // The core `tools` server for task and job slots (tools spec §5): only with an `agent: "call"` tool (D0).
-  const tools = await toolsHost?.workspaceOptions();
-  return {
-    harness,
-    engine,
-    folder: base,
-    gitdir: historyDir(app.getPath("userData"), base),
-    language: c.language,
-    launcher: electronLauncher(process.execPath),
-    uiServerEntry: path.join(here, "ui-server.js"),
-    dataServerEntry: path.join(here, "data-server.js"),
-    // The person's store (one write queue per base), for the folder this runtime runs in.
-    // A dotted collection name is a running plugin's (read only); absent without plugins (D0).
-    data: (request: unknown, slot?: SlotRef) =>
-      agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => runningTask(slot), ...(plugins ? { plugin: (r: unknown) => plugins.agentData(r) } : {}) }, request),
-    ...(extra ? { extraData: { catalogue: extra } } : {}),
-    // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
-    // built for, so a request never reaches another profile's material. Absent without material (D0).
-    ...(harness.material
-      ? { material: { request: (request: unknown, slot?: SlotRef) => materialRequest(base, request, () => runningTask(slot)), entry: path.join(here, "material-server.js") } }
-      : {}),
-    // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
-    // when the agent may edit the folder (review spec D0); the runtime checks the same.
-    ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => reviews.agent(base, request) } : {}),
-    command: cmd.command,
-    env: cmd.env,
-    references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
-    // The settings' sentences, read now and on every refresh (harness-settings spec §5). Absent without settings (D0).
-    // Plugins' sentences follow the harness's own (Decision 16); none on: the same AGENTS.md as without them.
-    ...(settings || plugins
-      ? { instructionSettings: async () => [...(settings ? await settings.sentences() : []), ...(plugins ? await plugins.sentences() : [])] }
-      : {}),
-    // Linked folders (hatches spec §3.3, §3.4): absent without them (D0).
-    ...linkedRuntimeOptions(),
-    // The Subagents part of AGENTS.md follows the open scope's engine preset (agentsFile) when the manifest is silent.
-    ...(hasEnginePresets(harness)
-      ? { instructionSubagents: instructionSubagentsOption({ engineHost: engineHost_, currentScope: () => tasks.currentScope(), boardMode: () => !!host }) }
-      : {}),
-    // The asking slot names the caller (P3); createRuntime's only slot is "main".
-    ...(tools ? { tools } : {}),
-    onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
-      void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
-  };
-}
-
-const runtime = memoise<HarnessRuntime>(async () => {
-  const p = await prepareEngine();
-  if (!p) return null;
-  const rt = single
-    ? await openSingle(p)
-    : await createRuntime({
-        ...(await runtimeOptions(p, () => tasks.runningTask())),
-        onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
-      });
-  announceCommits(rt.history);
-  // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
-  kickMaterial();
-  return rt;
-});
-
-/**
- * `single` mode's runtime (Decision 12): a workspace whose `"main"` slot runs the task, as `createRuntime`'s; a data or
- * material request from a job's slot is that run's, in its scope (P3), never the open task's.
- */
-async function openSingle(p: NonNullable<Awaited<ReturnType<typeof prepareEngine>>>): Promise<HarnessRuntime> {
-  const ws = await createWorkspace(
-    await runtimeOptions(p, (slot) => {
-      const jobs = jobsHost;
-      return slot && jobs && isJobSlot(slot.key) ? Promise.resolve(jobs.runningOf(slot.key)) : tasks.runningTask();
-    }),
-  );
-  const { runtime: rt, slot } = await openSingleRuntime(ws, {
-    onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
+/** The runtime, its options and close, and the histories opened beside it (runtime-wiring.ts). */
+const { prepareEngine, runtimeOptions, runtime, closeRuntime, dropRuntime, undoByPaths, singleMainSlot, standaloneHistory, currentHistory, openHistory } =
+  createRuntimeWiring({
+    harness: () => harness,
+    config: () => config,
+    shared: () => shared,
+    hooks,
+    commandDeps,
+    here,
+    validation,
+    profilesOn,
+    validConfig,
+    baseOf,
+    restores: () => restores,
+    pluginsCtl: () => pluginsCtl,
+    settingsCtl: () => settingsCtl,
+    toolsHost: () => toolsHost,
+    reviews: () => reviews,
+    host: () => host,
+    single: () => single,
+    singleParts,
+    jobsHost: () => jobsHost,
+    materialJobs: () => materialJobs,
+    materialSvc: () => materialSvc,
+    tasks: () => tasks,
+    plainTasks: () => plainTasks,
+    historyHeld: () => historyHeld,
+    resolvedMods: () => appMods.state.resolvedMods,
+    pluginLog,
+    dataStoreFor,
+    materialRequest: (base, request, runningTask) => materialRequest(base, request, runningTask),
+    workReferences,
+    linkedRuntimeOptions,
+    engineHost: engineHost_,
+    kickMaterial,
+    announceCommits: (history) => announceCommits(history),
+    stopAnnouncing: (history) => commitAnnouncements.stop(history),
   });
-  singleParts.set(rt, { workspace: ws, slot });
-  return rt;
-}
 
-/**
- * Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). First
- * the person's material stops (material spec §10): its AI stage and its conversions, which belong to this base.
- */
-async function closeRuntime() {
-  // Job runs on this workspace end first and are logged "Cancelled" (Decision 11): none is cut off by its slot
-  // closing, none queued for this folder or profile runs after. Without jobs, nothing (D0).
-  await jobsHost?.cancelAndSettle();
-  await materialJobs?.stop();
-  await materialSvc?.stop();
-  // Board mode: the shared workspace (every lane's slot) closes; the open tasks stay, as today's task does.
-  if (host) {
-    await host.closeWorkspace();
-    // As below: not when a lane has already opened a new workspace, which wrote its own AGENTS.md.
-    if (!host.workspaceOpen()) settingsCtl?.forget();
-    return;
-  }
-  const rt = await runtime.peek()?.catch(() => null);
-  runtime.clear();
-  await rt?.close();
-  // A closed runtime's history keeps no listener of main's.
-  if (rt) commitAnnouncements.stop(rt.history);
-  // The next runtime writes AGENTS.md afresh: nothing is pending against this one's. Only once close() resolved (a
-  // running refresh would set what was applied again), and not when a new runtime has already written its own.
-  if (!runtime.peek()) settingsCtl?.forget();
-}
-
-/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
-async function dropRuntime() {
-  // Jobs (Decision 11): the runs queued or running are cancelled ("Cancelled"); the `every` timers stay.
-  jobsHost?.cancelRuns();
-  // Board mode: every lane ends, the queues empty, the workspace closes; a new engine brings its caps (spec §10).
-  if (host) {
-    await host.dropAll();
-    return closeRuntime();
-  }
-  single?.gate.dropAll();
-  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
-  await closeRuntime();
-  if (single) {
-    // A new engine brings its own hold: one session in all (tasks and jobs together) or two at once.
-    const c = await config.load();
-    single.gate.setCaps(singleCaps(c.engineId, c.parallel), engineHold(c.engineId));
-    single.gate.setBeforeStart(singleBeforeStart(c.engineId, singleMainSlot));
-  }
-}
-
-/**
- * "Undo this task" by its own paths (parallel spec §5.3): board mode, and `single` mode, where job runs commit beside
- * the task. Null in plain mode: the whole folder back to the task's start, as always (D0). `busy`: the task's own lane
- * (single mode: the task) or the job run being undone is still running.
- */
-function undoByPaths(): {
-  running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
-  /** The same in a tracked linked folder (hatches spec §3.4), relative to it. */
-  linkedRunning: (realPath: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
-  busy: (id: string) => boolean;
-} | null {
-  const jobRunning = (id: string) => (jobsHost?.runningOf(`job:${id}`) ?? null) !== null;
-  const board = host;
-  if (board)
-    return {
-      running: () => board.runningPaths(),
-      linkedRunning: (p) => board.linkedRunningPaths(p),
-      busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id),
-    };
-  if (!single) return null;
-  return {
-    running: async () => {
-      const rt = await runtime.peek()?.catch(() => null);
-      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
-      return ws ? ws.runningPaths() : [];
-    },
-    linkedRunning: async (p) => {
-      const rt = await runtime.peek()?.catch(() => null);
-      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
-      return ws ? ws.linkedRunningPaths(p) : [];
-    },
-    busy: (id) => tasks.isBusy() || jobRunning(id),
-  };
-}
-
-/** `single` mode: the running runtime's `"main"` slot, if one is open (never opens one). */
-async function singleMainSlot(): Promise<SessionSlot | null> {
-  const rt = await runtime.peek()?.catch(() => null);
-  return rt ? (singleParts.get(rt)?.slot ?? null) : null;
-}
-
-/** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
-const standaloneHistory = lastOpened(async (key) => {
-  const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
-  const history = new History(folder, historyDir(app.getPath("userData"), folder), [...ignore, ...modHistoryIgnores(resolvedMods.map((m) => ({ id: m.json.id, history: m.json.history })))], historyKeep(harness));
-  await history.init();
-  announceCommits(history);
-  return history;
-});
-
-/**
- * The running runtime's history, or the one opened on the configured folder; none while the folder moves
- * (from the end of its checkpoint turn, whose commit still goes in).
- */
-async function currentHistory(): Promise<History | null> {
-  return historyHeld ? null : openHistory();
-}
-
-async function openHistory(): Promise<History | null> {
-  const rt = host ? null : await runtime.peek()?.catch(() => null);
-  if (rt) return rt.history;
-  // Board mode: the shared workspace's history while it is open.
-  if (host) {
-    const open = await host.history();
-    if (open) return open;
-  }
-  const c = await validConfig();
-  if (!c) return null;
-  const extra = getEngine(c.engineId).instructionsFile?.path;
-  // Same ignore list as the runtime's: its files under .harness/ and the generated instructions.
-  return standaloneHistory(JSON.stringify({ folder: baseOf(c), ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
-}
 
 function sendToWindow(channel: PushChannel, value: unknown) {
   try {
@@ -1102,163 +554,23 @@ function showNotice(text: string): void {
   keepNotification(new Notification({ title: harness.name, body: text.slice(0, 300) }), notifications).show();
 }
 
-/** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
-const modsView = async (): Promise<ModsView> => ({ mods: modHost?.view() ?? [], problems: [...modProblems, ...(userLayer?.problems() ?? [])] });
-
-/** A mod's own tool-less engine turn (minimal-core spec §5), on SidekickSession like Sidekick's; usage tagged `mod:<id>`. */
-const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, prompt, workDir, signal }) => {
-  const c = await validConfig();
-  if (!c) return { ok: false, text: "", error: "not set up" };
-  if (!(await hasNotice(c.engineId))) return { ok: false, text: "", error: "the engine notice is not accepted" };
-  const engine = getEngine(c.engineId);
-  const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }).catch(() => null));
-  if (!cmd) return { ok: false, text: "", error: "the engine isn't installed" };
-  const saved = await config.load();
-  const profile = await pickProfile(saved.policies?.model, { engine: engine.id, tier, models: cleanModels(saved.models) });
-  await fs.mkdir(workDir, { recursive: true });
-  const session = new SidekickSession({ engine, command: cmd.command, env: cmd.env, folder: workDir, profile });
-  try {
-    const a = await session.ask(prompt, signal ?? new AbortController().signal);
-    if (a.usage) {
-      const record = modRecord({ engine: engine.id, process: proc as `mod:${string}`, profile, ok: a.ok, usage: a.usage, ...(a.limits ? { limits: a.limits } : {}) });
-      await new UsageLog(baseOf(c)).append(record).catch((err: unknown) => console.error("Could not record the mod's turn", err));
-    }
-    return a.ok ? { ok: true, text: a.text } : { ok: false, text: "", error: a.error ? (a.error.detail ?? a.error.code) : "failed" };
-  } finally {
-    await session.close();
-  }
-};
-
-/** Reads the mods again and builds the host when some mod could run (D0); without one, `modHost` stays null. */
-async function startModHost(): Promise<void> {
-  const modsConfig = (await config.load()).mods;
-  const local = modsConfig?.local ?? [];
-  const userData = app.getPath("userData");
-  const home = appHome(userData, harness.id);
-  const user = await userModFolders(home);
-  if (!needsHost({ declared: harness.mods, local: [...local, ...user], coreIds: Object.keys(CORE_MODS) })) {
-    resolvedMods = [];
-    modProblems = [];
-    userLayer = null;
-    return;
-  }
-  const resolved = await resolveMods({ declared: harness.mods, harnessModsDir: path.join(harness.root, "mods"), local, user, core: CORE_MODS });
-  for (const p of resolved.problems) console.error(`Mod ${p.id}: ${p.reason}`);
-  resolvedMods = resolved.mods;
-  // The user layer's folders that couldn't be read are its own (they come and go with the watcher).
-  modProblems = resolved.problems.filter((p) => path.dirname(p.id) !== userModsDir(home));
-  // A user-layer mod's main imports the app's own zod and mod-sdk, through small files beside its builds.
-  const buildRoot = modBuildRoot(userData, harness.id);
-  const resolveShared = await writeMainShims(path.join(buildRoot, ".shared"), MAIN_SHARED_MODULES);
-  const runningTask = async () => {
-    const t = await tasks.runningTask();
-    return t ? { id: t.id, scope: t.scope, ...(t.action ? { action: t.action } : {}) } : null;
-  };
-  const mods = new ModHost({
-    config: {
-      load: async () => (await config.load()).mods,
-      saveFailed: (id, reason) => saveMods((m) => ({ ...m, failed: { ...m?.failed, [id]: reason } })),
-    },
-    services: buildServices({
-      harnessId: harness.id,
-      userData: app.getPath("userData"),
-      base: async () => {
-        const c = await validConfig();
-        return c ? baseOf(c) : null;
-      },
-      engineRun: modEngineRun,
-      runningTask,
-      noteTitles: async (scope) => {
-        const c = await validConfig();
-        return c ? (await readNotes(baseOf(c), notesPrefix(scoped(), scope ?? MAIN_SCOPE)).catch(() => [])).map((n) => n.title) : [];
-      },
-      notify: showNotice,
-    }),
-    notice: showNotice,
-    changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
-    // A user-layer mod rebuilt after an edit: the window imports its ui again (hh:modReloaded, 0b2).
-    reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
-    builds: new ModBuilds(buildRoot, resolveShared),
-  });
-  modHost = mods;
-  userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
-  await mods.start(resolved.mods);
-}
-
-/** Watches the home folder's `mods/` once: a change syncs the folder with whatever host runs now. */
-function watchUserMods(): void {
-  if (userLayerWatch) return;
-  userLayerWatch = watchUserLayer(appHome(app.getPath("userData"), harness.id), (dir) => void userLayer?.sync(dir));
-}
-
-/** Watches the home folder's layouts and pick once: a change sends the layout to show now (hh:layoutChanged, 0b2). */
-function watchUserLayouts(): void {
-  if (layoutsWatch) return;
-  const home = appHome(app.getPath("userData"), harness.id);
-  layoutsWatch = watchLayouts(home, () => {
-    void shownLayout(home)
-      .then((v) => sendToWindow("hh:layoutChanged", v))
-      .catch((err: unknown) => console.error("Could not read the layout again", err));
-  });
-}
-
-/**
- * Safe mode (0b2): the layout pick goes and every local mod (the home folder's and the added folders) is set off; with
- * a running host, it restarts. The window gets the layout and shows the notice. At start it runs before the host.
- */
-async function safeMode(running: boolean): Promise<void> {
-  const home = appHome(app.getPath("userData"), harness.id);
-  const { layout } = await enterSafeMode({
-    home,
-    folders: [...((await config.load()).mods?.local ?? []), ...(await userModFolders(home))],
-    mods: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
-  });
-  safeEntered = true;
-  if (running) await restartModHost();
-  sendToWindow("hh:layoutChanged", layout);
-  sendToWindow("hh:safeModeEntered", true);
-}
-
-/** The home folder's history (0b2): made once, then every quiet change is committed; Settings › Mods hears each. */
-async function startHomeHistory(): Promise<void> {
-  const userData = app.getPath("userData");
-  const home = appHome(userData, harness.id);
-  const h = new HomeHistory(home, historyDir(userData, home));
-  await h.init();
-  h.onChange((c) => sendToWindow("hh:homeHistoryChanged", c));
-  h.watch();
-  homeHistory = h;
-}
-
-/** Stops the host and builds it again from config.json (a local mod added or removed). */
-async function restartModHost(): Promise<void> {
-  const old = modHost;
-  modHost = null;
-  await old?.stop().catch((err: unknown) => console.error("Could not stop the mods", err));
-  await startModHost();
-  sendToWindow("hh:modsChanged", await modsView());
-}
-
-/** Changes config.json's `mods` (cleaned, so an empty one goes away). */
-async function saveMods(fn: (m: ModsConfig | undefined) => ModsConfig | undefined): Promise<void> {
-  await config.save({ mods: cleanModsConfig(fn((await config.load()).mods)) });
-}
-
-/**
- * An id a local folder can't take: a resolved mod's, or one the manifest declares or the core ships even when it
- * couldn't be read (its `on` switch is that mod's).
- */
-const modIdTaken = (id: string): boolean =>
-  resolvedMods.some((m) => m.json.id === id) || Object.hasOwn(harness.mods ?? {}, id) || Object.hasOwn(CORE_MODS, id) || (modHost?.has(id) ?? false);
-
-/** The id in a folder's mod.json, or null when it has none. */
-async function modIdIn(folder: string): Promise<string | null> {
-  try {
-    return modJsonSchema.parse(JSON.parse(await fs.readFile(path.join(folder, "mod.json"), "utf8"))).id;
-  } catch {
-    return null;
-  }
-}
+/** The mod host, the home folder's mods, layouts and history, safe mode and Settings › Mods (mods/app-mods.ts). */
+const appMods = createAppMods({
+  harness: () => harness,
+  config: () => config,
+  hooks,
+  commandDeps,
+  window: () => window,
+  tasks: () => tasks,
+  validConfig,
+  baseOf,
+  scoped,
+  hasNotice: (engineId) => hasNotice(engineId),
+  pickProfile,
+  showNotice,
+  sendToWindow,
+});
+const { modsView, startModHost, watchUserMods, watchUserLayouts, safeMode, startHomeHistory } = appMods;
 // Mock mode: the test engine has no provider to disclose and nothing leaves the computer, so its notice counts as accepted.
 const hasNotice = async (engineId: string) => isMockEngine(hooks, engineId) || hasAcceptedNotice(shared, engineId);
 
@@ -1318,7 +630,7 @@ const taskDeps: TaskDeps = createTaskDeps({
     singleNote = note;
   },
   jobsHost: () => jobsHost,
-  modHost: () => modHost,
+  modHost: () => appMods.state.modHost,
   pluginsCtl: () => pluginsCtl,
   settingsCtl: () => settingsCtl,
   sidekickCtl: () => sidekickCtl,
@@ -1335,7 +647,7 @@ const taskDeps: TaskDeps = createTaskDeps({
   activeScope,
   dataStoreFor,
   materialStore: (base, scope) => materialStore(base, scope),
-  sendContext,
+  sendContext: (task) => sendContext(task),
   closeRuntime,
   readPhaseBrief,
   sendToWindow,
@@ -1425,95 +737,11 @@ const materialStageDeps: MaterialStageDeps = {
   log: (base, record) => new UsageLog(base).append(record),
 };
 
-/** How long an engine check is reused: the language state is read on every push, and a run pushes every turn. */
-const ENGINE_CHECK_MS = 30_000;
-
 /** Language on demand (plan 5b); built once the harness is loaded. Nothing is written until a run saves (D0). */
 let translation: TranslationService | null = null;
-let engineCheck: { id: string; at: number; ready: Promise<boolean> } | null = null;
 
-/**
- * Asks before a go-back, with a native dialog on the window that asked (go-back.ts). The words are the core's, in the
- * person's language: the cached translation when there is one, else English. Any failure to ask is a no.
- */
-async function confirmGoBack(sender: WebContents, ask: GoBackAsk): Promise<boolean> {
-  try {
-    const language = (await config.load()).language ?? DEFAULT_LANGUAGE;
-    const generated = translation ? await translation.strings(language, {}).catch(() => ({})) : {};
-    const i18n = await createI18n(language, {}, generated);
-    const t = (key: string, values?: Record<string, unknown>) => String(i18n.t(key, values ?? {}));
-    const text = goBackText(t, ask, harness.actions, i18n.resolvedLanguage ?? "en");
-    return await askNatively(dialog, BrowserWindow.fromWebContents(sender), text);
-  } catch (err) {
-    console.error("Could not ask before going back", err);
-    return false;
-  }
-}
-
-/**
- * Whether the engine could run a translation now: installed, not outdated, not signed out (the runtime's own start
- * checks). A fake engine (tests, mock mode) always can. Reused for ENGINE_CHECK_MS unless `fresh`.
- */
-function engineReady(engine: EngineDef, fresh = false): Promise<boolean> {
-  if (hooks.engines?.[engine.id]) return Promise.resolve(true);
-  const now = Date.now();
-  if (!fresh && engineCheck?.id === engine.id && now - engineCheck.at < ENGINE_CHECK_MS) return engineCheck.ready;
-  const ready = detectEngine(engine, commandDeps, shared).then(
-    (s) => s.installed && !s.outdated && s.loggedIn !== false,
-    () => false,
-  );
-  engineCheck = { id: engine.id, at: now, ready };
-  return ready;
-}
-
-/**
- * The set-up engine when a run could use it (the app is set up, its notice accepted), else null. It reads the
- * saved config, not validConfig(): with profiles and no active profile there is no base, but the engine is ready.
- */
-async function translateEngine(fresh = false): Promise<EngineDef | null> {
-  const c = await config.load();
-  if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
-  const engine = getEngine(c.engineId);
-  return (await engineReady(engine, fresh)) ? engine : null;
-}
-
-/** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
-async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
-  if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
-    const engineId = patch.engineId;
-    // A translation run belongs to the old engine: it stops, what it saved stays (plan Decision 12).
-    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
-    await guards.switchEngine(
-      {
-        // A profile switch counts too: once its task has closed nothing runs, yet its runtime and profile are pending.
-        isBusy: hold.engineBusy,
-        idle: async () => {
-          await tasks.idle();
-          await flushTurns();
-        },
-        save: () => config.save(patch).then(() => undefined),
-        dropRuntime,
-        archiveChat: async () => {
-          const c = await validConfig();
-          if (!c || c.engineId !== engineId) return null;
-          // D0: one folder, as before. With profiles, every profile's chat (spec §5).
-          if (!profilesCtl) return startNewChatIfEngineChanged(baseOf(c), engineId);
-          // With no active profile baseOf throws and nothing is archived here: each profile's chat is archived lazily
-          // when it is next loaded (archiveStaleChat in hh:loadChat).
-          const active = baseOf(c);
-          // An unreadable registry still starts the active chat over; the others are archived lazily the same way.
-          const list = await profilesCtl.state().then((s) => s.list, () => []);
-          const others = list.map((p) => profileDir(c.folder, p.id)).filter((f) => f !== active);
-          return archiveChatsOnEngineChange(active, others, engineId);
-        },
-      },
-      // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
-      (err) => console.error("Could not finish changing the engine", err),
-    );
-  } else {
-    await config.save(patch);
-  }
-}
+/** Asking before a go-back, the translation's engine and a config save that changes the engine (engine-change.ts). */
+const engineChange = createEngineChange(() => lifecycle);
 
 /** The jobs' wiring over the app's own (jobs/jobs-wiring.ts): single mode's or the board's. */
 const jobsWiring = (): JobsWiringDeps => ({
@@ -1550,69 +778,8 @@ async function jobsReady(): Promise<void> {
   await jobs.appReady();
 }
 
-/**
- * The backend's `init` for the base the app is in now (hatches Decisions 3, 4), its data folder made; null before
- * setup. Each scope's links are the ones a turn there would use (the scope access's checks), none without linked folders.
- */
-async function backendInitNow(): Promise<BackendInit | null> {
-  await scopesSettled();
-  const c = await validConfig();
-  if (!c) return null;
-  const base = baseOf(c);
-  const profile = profilesOn() ? (c.profile ?? "") : "";
-  const scopes = scoped() ? await scopeStoreFor(base).list() : [];
-  const access = linked_()?.access;
-  const init = backendInit({
-    base,
-    scopes,
-    ...(access ? { links: await usableLinks(scopes, (id) => access.entries(id)) } : {}),
-    language: c.language,
-    coreVersion: app.getVersion(),
-    userData: app.getPath("userData"),
-    ...(profile ? { profile } : {}),
-    mock: hooks.mock === true,
-  });
-  await fs.mkdir(init.dataDir, { recursive: true });
-  return init;
-}
-
-/** The backend starts the first time the app is set up in this process (Decision 5); never while quitting. */
-async function backendReady(): Promise<void> {
-  const b = backend;
-  if (!b || quitting || backendStarted) return;
-  backendGen.bump();
-  // Null when another start, rebase or profile switch began meanwhile: that one's base wins.
-  const init = await backendGen.readFresh(backendInitNow);
-  if (!init || quitting || backendStarted) return;
-  backendStarted = true;
-  await b.start(init);
-}
-
-/** The base changed (profile switch, another folder, a move's end): a started backend starts again there. */
-async function backendRebase(): Promise<void> {
-  const b = backend;
-  if (!b || quitting) return;
-  if (!backendStarted) return backendReady();
-  backendGen.bump();
-  // Null when a later rebase or profile switch began meanwhile: this base is already stale.
-  const init = await backendGen.readFresh(backendInitNow);
-  if (init && !quitting) await b.rebase(init);
-}
-
-async function backendScopes(): Promise<void> {
-  const b = backend;
-  if (!b || !backendStarted || quitting) return;
-  // Null when a rebase began meanwhile: its own init is newer than these scopes.
-  const init = await backendGen.readFresh(backendInitNow);
-  // The supervisor drops scopes of another folder (Settings changed it; the rebase comes after).
-  if (init) b.scopesChanged(init.scopes, init.folder);
-}
-
-/** A profile switch begins: a started backend stops before anything reads the new base (backendRebase starts it). */
-async function backendLeaveBase(): Promise<void> {
-  backendGen.bump();
-  if (backend && backendStarted) await backend.stop().catch((err: unknown) => console.error("Could not stop the backend", err));
-}
+/** The backend's start, rebase, scopes and stop for a profile switch (backend/backend-wiring.ts). */
+const { backendReady, backendRebase, backendScopes, backendLeaveBase } = createBackendWiring(() => lifecycle);
 
 /**
  * A tracked linked folder's history (hatches spec §3.4): the open workspace's (board's or the runtime's) once a turn
@@ -1769,543 +936,54 @@ function handleAll<K extends InvokeChannel>(handlers: Record<K, (...args: never[
   for (const channel of Object.keys(handlers) as K[]) handle(channel, handlers[channel]);
 }
 
-/**
- * What waits for what (profiles spec §5): turns, restores, profile switches, engine changes, folder moves, archives and
- * deletes. Each source is read only when a guard asks, after all of them exist.
- */
-const hold = holds({
+const {
+  hold,
+  restores,
+  restoreWith,
+  afterRestore,
+  switches,
+  turnBlocked,
+  dataWrites,
+  personData,
+  harnessUiData,
+  reviews,
+  fileTimelines,
+  contextSvc,
+  searchSvc,
+  sendContext,
+  commitAnnouncements,
+  announceCommits,
+} = createAppServices({
+  harness: () => harness,
+  config: () => config,
+  here,
+  guards,
   quitting: () => quitting,
-  tasksBusy: () => tasks.isBusy(),
-  moving: () => moving !== null,
-  engine: () => guards.turnBlocked(),
-  restore: () => restores.turnBlocked(),
-  profileSwitch: () => switches.turnBlocked(),
-  profileChange: () => profilesCtl?.changing() ?? false,
-});
-
-/**
- * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
- * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
- */
-const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy() || (jobsHost?.running() ?? false), turnBlocked: hold.restoreHeld });
-const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
-/** A restore changes tracked files with no data event: the settings and Sidekick's settings may have changed. */
-function afterRestore(): void {
-  void settingsCtl?.changed();
-  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-  // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
-  searchSvc.committed(null);
-}
-
-/**
- * Profile switches (profiles spec §5): one at a time, refused while a turn, a restore, a move, an engine change, an
- * archive or a delete runs, and holding all of them off.
- */
-const switches = new ProfileSwitch({
-  quitting: () => quitting,
-  busy: hold.switchBusy,
-  turnBlocked: hold.switchHeld,
-  closeTask: () => tasks.finish(),
+  moving: () => moving,
+  window: () => window,
+  tasks: () => tasks,
+  jobsHost: () => jobsHost,
+  profilesCtl: () => profilesCtl,
+  settingsCtl: () => settingsCtl,
+  sidekickCtl: () => sidekickCtl,
+  pluginsCtl: () => pluginsCtl,
+  engineIpc: () => engineIpc,
+  validConfig,
+  baseOf,
+  scoped,
+  activeScope,
+  dataStoreFor,
+  sidekickStoreFor,
+  scopeStoreFor,
+  scopesView,
+  currentHistory,
+  currentBase,
+  ownCommits,
   closeRuntime,
-  saveActive: async (id) => void (await config.setProfile(id)),
-  arrived: () => arrivedInProfile(),
+  arrivedInProfile,
+  workReferences,
+  sendToWindow,
 });
-
-/** Why a new turn can't start now (engine change, folder move, engine update, a restore, a profile switch), or null. */
-const turnBlocked = hold.turnBlocked;
-
-/** The person's data writes and the tools' (tools spec §8.3) in one order: no commit holds the other's write. */
-const dataWrites = dataWriteQueue();
-/** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
-const personData = personDataRequests({
-  serial: dataWrites,
-  store: async () => {
-    const c = await validConfig();
-    return c ? dataStoreFor(baseOf(c)) : null;
-  },
-  chatScope: () => tasks.chatScope(),
-  trailer: () => tasks.trailerNow(),
-  history: () => currentHistory(),
-  // Board mode, or a job running beside the single task: a write commits only its collection's file (parallel spec §5.3).
-  board: ownCommits,
-  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-  // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
-  scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
-  // The reserved `sidekick` collection lives in its own store (sidekick spec §6.4); every other collection as before.
-  storeFor: (collection) =>
-    collection === SIDEKICK_COLLECTION ? validConfig().then((c) => (c ? sidekickStoreFor(baseOf(c)) : null)) : undefined,
-});
-/** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
-const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
-
-/** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
-const reviews = new ReviewService({
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  history: () => currentHistory(),
-  trailer: () => tasks.trailerNow(),
-  openTask: async () => {
-    const t = await tasks.runningTask();
-    return t ? { id: t.id, scope: t.scope } : null;
-  },
-  busy: () => tasks.isBusy(),
-  whenSettled: (write) => tasks.whenSettled(write),
-  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-  // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
-  round: (r) => tasks.reviewRound(r),
-  approved: (a) => void tasks.documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
-  reviewTier: (kind) => {
-    const kinds = harness.documents?.kinds;
-    return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
-  },
-  changed: (p) => sendToWindow("hh:reviewChanged", p),
-});
-
-/** File timelines (file-timeline spec): read from the history; a one-file go-back goes through the restore guard. */
-const fileTimelines = new FileTimelineService({
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  history: () => currentHistory(),
-  actionLabel: (id) => (id === null ? "A question" : Object.hasOwn(harness.actions, id) ? harness.actions[id].label : id),
-  approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
-  busy: () => quitting || tasks.isBusy() || turnBlocked() !== null,
-  restore: (run) => restoreWith(run),
-  restored: () => afterRestore(),
-  // Diffs run in a worker thread of their own: jsdiff's budget and the Markdown parse never block Electron main.
-  diff: workerDiff({ entry: path.join(here, "diff-worker.js") }),
-});
-
-/** The context panel (context-panel spec): the person's pins and exclusions and the open task's record. */
-const contextSvc = new ContextService({
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  scoped,
-  scopeExists: (id) => activeScope(id),
-  budget: async () => pinnedBudget(cleanModels((await config.load()).models), harness.context),
-  record: (id) => tasks.contextRecord(id),
-  openTask: async () => (await tasks.runningTask())?.id ?? null,
-  noteTitles: async (scope) => {
-    const c = await validConfig();
-    if (!c) return new Map<string, string>();
-    const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
-    return new Map(notes.map((n) => [n.path, n.title]));
-  },
-  history: () => currentHistory(),
-  trailer: () => tasks.trailerNow(),
-  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-  add: (taskId, file) => {
-    const { accepted, done } = tasks.addContext(taskId, file);
-    // Closing ends the operation before it runs: not a failure worth a log line.
-    done.catch((err: unknown) => {
-      if (!quitting) console.error("The Add now turn failed", err);
-    });
-    return accepted;
-  },
-  pickFile: async (base) => {
-    if (!window || window.isDestroyed()) return null;
-    const result = await dialog.showOpenDialog(window, { defaultPath: base, properties: ["openFile"] });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  },
-  changed: (task) => void sendContext(task),
-});
-
-/** What search finds among the tasks, built when the palette opens (search spec §4.2): actions, the open task, past tasks. */
-async function searchMemory(): Promise<SearchDoc[]> {
-  const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
-  const view = await tasks.view();
-  const actions = actionDocs(
-    Object.entries(harness.actions).map(([id, a]) => ({
-      id,
-      label: a.label,
-      ...(a.description ? { description: a.description } : {}),
-      ...(a.tier ? { tier: a.tier } : {}),
-      ...(view.actions[id] ? { status: view.actions[id] } : {}),
-      scope: scopeOf(undefined),
-    })),
-  );
-  const current = view.current;
-  const label = (id: string | null | undefined) => (id && Object.hasOwn(harness.actions, id) ? harness.actions[id].label : undefined);
-  const open = current && label(current.action) ? [openTaskDoc({ id: current.id, title: label(current.action)!, scope: scopeOf(current.scope), at: 0 })] : [];
-  const history = await currentHistory();
-  const rows = history ? historyView(await history.tasks()) : [];
-  const past = pastTaskDocs(
-    rows.flatMap((r) => {
-      const title = r.noteTitle ?? label(r.actionId);
-      return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
-    }),
-  );
-  return [...actions, ...open, ...past];
-}
-
-/** Global search's collections (search spec D4): the harness's, then each running plugin's, of the live index's base only. */
-const searchDataDeps = searchData({
-  current: () => currentBase(),
-  collections: () => dataCollections(harness),
-  scoped,
-  scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
-  store: (base) => dataStoreFor(base),
-  plugins: () => pluginsCtl ?? null,
-});
-
-/** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
-const searchSvc = new SearchService({
-  userData: () => app.getPath("userData"),
-  base: async () => {
-    const c = await validConfig();
-    return c ? baseOf(c) : null;
-  },
-  scoped,
-  openScope: () => tasks.currentScope(),
-  scopeTitles: async () => new Map((await scopesView()).list.map((s) => [s.id, s.title])),
-  references: async () => {
-    const c = await validConfig();
-    return c ? (await workReferences(c, baseOf(c))).map((r) => ({ id: r.id, label: r.label, path: r.path })) : [];
-  },
-  memory: () => searchMemory(),
-  extraDenied: async () => {
-    // Same rule as the history's ignore list: the engine's instructions file is the app's, not the person's.
-    const c = await validConfig();
-    const extra = c ? getEngine(c.engineId).instructionsFile?.path : undefined;
-    return extra ? [extra] : [];
-  },
-  status: (s) => sendToWindow("hh:searchStatus", s),
-  runner: workerBuild({ entry: path.join(here, "search-worker.js") }),
-  reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
-  data: searchDataDeps,
-  // A burst of writes (an import, a plugin run) is one refresh.
-  dataDelayMs: 500,
-});
-
-/** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
-async function sendContext(task: string): Promise<void> {
-  const got = await contextSvc.get(task).catch(() => null);
-  if (got?.ok) sendToWindow("hh:context", { task, context: got.context });
-}
-
-/** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
-const commitAnnouncements = commitAnnouncer((paths) => {
-  sendToWindow("hh:fileCommits", paths);
-  // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
-  engineIpc?.committed(paths);
-  // Search (D0): a no-op until the palette first opened; then the commit's paths are read again.
-  searchSvc.committed(paths);
-});
-const announceCommits = (history: History) => commitAnnouncements.watch(history);
-
-function registerIpc() {
-  handle("hh:getState", () => appState());
-  handleAll(
-    settingsIpc({
-      harness: () => harness,
-      config: () => config,
-      settingsCtl: () => settingsCtl,
-      pluginsCtl: () => pluginsCtl,
-      setupCtl: () => setupCtl,
-      host: () => host,
-      setJobSettings: (jobs) => (jobSettings = jobs),
-      validation,
-      currentBase,
-      hasNotice,
-      folderBusy: hold.folderBusy,
-      guards,
-      interruptTasks,
-      dropRuntime,
-      saveConfigPatch,
-      documentSessions,
-      dropDataStoresUnder,
-      settleScopes,
-      scopesChanged,
-      rebasePlugins,
-      validConfig,
-      jobsReady,
-      backendRebase,
-      backendReady,
-      applyAppearance,
-      applyTextSize,
-      jobsChanged,
-      refreshJobBadge,
-      appState,
-    }),
-  );
-  handleAll(
-    chatIpc({
-      harness: () => harness,
-      quitting: () => quitting,
-      turnBlocked,
-      tasks: () => tasks,
-      host: () => host,
-      modHost: () => modHost,
-      guards,
-      engineBusy: hold.engineBusy,
-      scopesSettled,
-      scopesChanged,
-      validConfig,
-      baseOf,
-      dropRuntime,
-    }),
-  );
-  handle("hh:getTasks", () => tasks.view());
-  handleAll(
-    scopesIpc({
-      quitting: () => quitting,
-      turnBlocked,
-      tasks: () => tasks,
-      scopesView,
-      scopesSettled,
-      scopeStore,
-      scopesChanged,
-      linked_,
-    }),
-  );
-  // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
-  if (hasLinkedFolders(harness)) {
-    // Made once: the turns' scope access (linked_) shares these deps, so the prune runs once and one signing writes.
-    linkedDeps ??= linkedIpcDeps({
-      userData: app.getPath("userData"),
-      home: os.homedir(),
-      linkedFolders: harness.linkedFolders ?? {},
-      store: scopeStore,
-      validConfig,
-      profilesOn,
-      profileIds: () => profilesCtl?.state().then((st) => st.list.map((p) => p.id)) ?? null,
-      baseFor: (c) => baseFor(c, true),
-      baseOf,
-      scopeStoreFor,
-      references: async (c, base) => (await workReferences(c, base)).map((r) => r.path),
-      pick: async () => {
-        if (!window || window.isDestroyed()) return null;
-        const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
-        return r.canceled ? null : (r.filePaths[0] ?? null);
-      },
-      trash: (d) => shell.trashItem(d),
-      scopesChanged,
-      linked: linked_,
-      unsupported: () => linkedUnsupported,
-      currentScope: () => tasks.currentScope(),
-      openLinked,
-    });
-    registerLinkedIpc(handle, linkedDeps);
-  }
-  // A scope's engine config (hatches spec §5.3): only a harness that declares `enginePresets` has these channels (D0).
-  if (hasEnginePresets(harness)) {
-    const userData = app.getPath("userData");
-    engineIpc = registerEngineIpc(
-      handle,
-      engineIpcDeps({
-        host: engineHost_()!,
-        userData,
-        validConfig,
-        baseOf,
-        scopeStoreFor,
-        profilesOn,
-        epochs: () => (engineEpochs ??= new EngineEpochs(path.join(userData, EPOCHS_FILE))),
-        engines: () => harness.engines,
-        engineId: async () => (await config.load()).engineId,
-        send: sendToWindow,
-      }),
-    );
-  }
-  if (hasEnginePresets(harness)) void pruneEngineConfig();
-  // The harness's backend (hatches spec §4): only a harness that declares one has a supervisor and these channels (D0).
-  if (hasBackend(harness)) {
-    backend = buildBackend(harness, { userData: app.getPath("userData"), launcher: electronLauncher(process.execPath), send: sendToWindow });
-    if (backend) registerBackendIpc(handle, { supervisor: backend });
-  }
-  handleAll(dataIpc({ harness: () => harness, scopesSettled, harnessUiData, currentHistory }));
-  // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
-  registerSidekickIpc(handle, () => sidekickCtl);
-  // The layout the screen shows (minimal-core spec §5.2).
-  handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), harness.id)));
-  // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
-  handle("hh:layoutPick", layoutIpc({ home: () => appHome(app.getPath("userData"), harness.id) })["hh:layoutPick"]);
-  // Safe mode entered this run: the window shows its notice.
-  handle("hh:safeMode", () => safeEntered);
-  // Settings › Mods (minimal-core spec §4, §6): registered with or without a host, so the page always answers (empty).
-  registerModsIpc(handle, {
-    view: modsView,
-    // A mod in the home folder's `mods/`: turned on the first time only through the warning (spec D2, `mods.trusted`).
-    ...userConsent({
-      config: { load: async () => (await config.load()).mods as ModsSettings | undefined, save: async (m) => void (await config.save({ mods: cleanModsConfig(m) })) },
-      host: { set: async (id, on) => modHost?.set(id, on) },
-      layer: { dirOf: (id) => userLayer?.dirOf(id) },
-    }),
-    set: async (id, on) => {
-      // Turning a mod on clears its three-strikes failure.
-      await saveMods((m) => ({ ...m, on: { ...m?.on, [id]: on }, ...(on && m?.failed ? { failed: Object.fromEntries(Object.entries(m.failed).filter(([k]) => k !== id)) } : {}) }));
-      await modHost?.set(id, on);
-    },
-    pickFolder: async () => {
-      if (!window || window.isDestroyed()) return null;
-      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
-      return r.canceled ? null : (r.filePaths[0] ?? null);
-    },
-    // The person confirmed the warning: the mod starts on.
-    addLocal: async (folder) => {
-      // Read again (the folder may have changed since the review); a taken id never reaches config.json.
-      const id = await modIdIn(folder);
-      if (!id) throw new Error("This folder has no valid mod.json");
-      if (modIdTaken(id)) throw new Error(`A mod with the id "${id}" is already in this app`);
-      await saveMods((m) => ({
-        ...m,
-        local: [...new Set([...(m?.local ?? []), folder])],
-        on: { ...m?.on, [id]: true },
-        failed: Object.fromEntries(Object.entries(m?.failed ?? {}).filter(([k]) => k !== id)),
-      }));
-      await restartModHost();
-    },
-    removeLocal: async (id) => {
-      const dir = resolvedMods.find((m) => m.json.id === id && m.shipped === "local")?.dir;
-      const drop = <T>(r: Record<string, T> | undefined) => Object.fromEntries(Object.entries(r ?? {}).filter(([k]) => k !== id));
-      await saveMods((m) => ({ ...m, local: (m?.local ?? []).filter((f) => f !== dir), on: drop(m?.on), failed: drop(m?.failed) }));
-      await restartModHost();
-    },
-    // A user-layer mod goes by deleting its folder, not from config.json's `local`.
-    isLocal: (id) => resolvedMods.some((m) => m.json.id === id && m.shipped === "local" && !m.user),
-    taken: modIdTaken,
-  });
-  // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
-  // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.
-  if (pluginsCtl) {
-    registerPluginsIpc(handle, pluginsCtl, {
-      startPrepared: (p) => tasks.startPrepared(p),
-      // Board mode: a prepared task starts in a lane of its own, whatever another lane runs.
-      startBlocked: () => (quitting ? "The app is closing" : (turnBlocked() ?? (!host && tasks.isBusy() ? "A turn is already running" : null))),
-      ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
-    });
-  }
-  handleAll(setupIpc({ setupCtl: () => setupCtl }));
-  handleAll(profilesIpc({ profilesCtl: () => profilesCtl, appState, lastAppState: () => lastAppState }));
-  // The person's material (material spec §10).
-  handleAll(materialIpc({ materialSvc: () => materialSvc, shell }));
-  handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
-  // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
-  handle(
-    "hh:chooseMode",
-    chooseModeHandler({
-      quitting: () => quitting,
-      blocked: turnBlocked,
-      openTask: async () => (await tasks.runningTask())?.id ?? null,
-      choose: (mode, choice, task) => tasks.chooseMode(mode, choice, task),
-    }),
-  );
-  // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
-  handle("hh:setPhase", setPhaseHandler({ quitting: () => quitting, blocked: turnBlocked, setPhase: (to, task) => tasks.setPhase(to, task) }));
-  handleAll(openPathIpc({ validConfig, baseOf, workReferences, shell }));
-  const reader = documentIpc({ documentRoots, documentSessions });
-  handle("hh:readDocument", reader["hh:readDocument"]);
-  handle("hh:readImage", reader["hh:readImage"]);
-  handle("hh:documentsExist", reader["hh:documentsExist"]);
-  handleFrom("hh:watchDocument", reader["hh:watchDocument"]);
-  handleFrom("hh:unwatchDocument", reader["hh:unwatchDocument"]);
-  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
-  handleAll(reviewHandlers(reviews, () => harness.permissions.edit === "folder"));
-  // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
-  handleAll(fileHandlers(fileTimelines));
-  handleAll(contextHandlers(contextSvc));
-  handleAll(searchHandlers(searchSvc));
-  // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
-  if (translation) handleAll(languageHandlers(translation));
-  // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
-  handle("hh:cancel", () => tasks.cancel());
-  const history = historyIpc({
-    quitting: () => quitting,
-    tasksBusy: () => tasks.isBusy(),
-    restoreHeld: hold.restoreHeld,
-    homeHistory: () => homeHistory,
-    linked_,
-    currentHistory,
-    linkedHistoriesOf,
-    confirmGoBack,
-    restoreWith,
-    afterRestore,
-    restores,
-    undoByPaths,
-    fileTimelines,
-  });
-  handleFrom("hh:restore", history["hh:restore"]);
-  handleFrom("hh:fileRestore", history["hh:fileRestore"]);
-  handle("hh:historyTasks", history["hh:historyTasks"]);
-  handleFrom("hh:restoreTask", history["hh:restoreTask"]);
-  handle("hh:homeHistory", history["hh:homeHistory"]);
-  handle("hh:homeUndo", history["hh:homeUndo"]);
-  // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.
-  const inbox = tasksIpc(() => host);
-  handle("hh:tasksList", () => inbox.list());
-  handle("hh:tasksFocus", (id: unknown) => inbox.focus(id));
-  handle("hh:tasksCancelQueued", (id: unknown) => inbox.cancelQueued(id));
-  handle("hh:tasksResume", () => inbox.resume());
-  // The jobs channels (parallel spec §9.1, J4): a declared manual job in an existing scope; without jobs, refused (D0).
-  const jobsChannels = jobsIpc(() => jobsHost);
-  handle("hh:jobsList", () => jobsChannels.list());
-  handle("hh:jobsRun", (id: unknown, scope: unknown) => jobsChannels.run(id, scope));
-  handleAll(
-    engineSetupIpc({
-      harness: () => harness,
-      config: () => config,
-      shared: () => shared,
-      quitting: () => quitting,
-      profilesCtl: () => profilesCtl,
-      setupRun: () => setupRun,
-      setSetupRun: (run) => (setupRun = run),
-      stopTranslation: () => translation?.stop(),
-      hooks,
-      commandDeps,
-      guards,
-      engineFor,
-      hasNotice,
-      engineBusy: hold.engineBusy,
-      dropRuntime,
-      sendToWindow,
-      validConfig,
-      baseOf,
-      clipboard,
-      shell,
-    }),
-  );
-  handleAll(
-    folderIpc({
-      window: () => window,
-      config: () => config,
-      quitting: () => quitting,
-      profilesCtl: () => profilesCtl,
-      pluginsCtl: () => pluginsCtl,
-      backend: () => backend,
-      host: () => host,
-      tasks: () => tasks,
-      moving: () => moving,
-      setMoving: (run) => (moving = run),
-      setHistoryHeld: (held) => (historyHeld = held),
-      pluginStateRoot: () => pluginStateRoot,
-      userData: () => app.getPath("userData"),
-      dialog,
-      shell,
-      guards,
-      folderBusy: hold.folderBusy,
-      plainTasks,
-      restores,
-      documentSessions,
-      searchSvc,
-      validConfig,
-      baseOf,
-      standaloneHistory,
-      openHistory,
-      flushTurns,
-      flushFileIndexes,
-      closeRuntime,
-      pluginLog,
-      rebasePlugins,
-      backendRebase,
-      appState,
-      dropDataStoresUnder,
-    }),
-  );
-}
 
 /** The app window (window.ts), with what it reads from here. */
 const createWindow = () =>
@@ -2326,7 +1004,7 @@ const createWindow = () =>
       window = w;
     },
     get modHost() {
-      return modHost;
+      return appMods.state.modHost;
     },
     get pluginsCtl() {
       return pluginsCtl;
@@ -2356,6 +1034,39 @@ const lifecycle = {
   get backend() {
     return backend;
   },
+  set backend(v) {
+    backend = v;
+  },
+  get engineEpochs() {
+    return engineEpochs;
+  },
+  set engineEpochs(v) {
+    engineEpochs = v;
+  },
+  get engineIpc() {
+    return engineIpc;
+  },
+  set engineIpc(v) {
+    engineIpc = v;
+  },
+  get historyHeld() {
+    return historyHeld;
+  },
+  set historyHeld(v) {
+    historyHeld = v;
+  },
+  get lastAppState() {
+    return lastAppState;
+  },
+  get linkedDeps() {
+    return linkedDeps;
+  },
+  set linkedDeps(v) {
+    linkedDeps = v;
+  },
+  get linkedUnsupported() {
+    return linkedUnsupported;
+  },
   get config() {
     return config;
   },
@@ -2372,7 +1083,7 @@ const lifecycle = {
     return harness;
   },
   get homeHistory() {
-    return homeHistory;
+    return appMods.state.homeHistory;
   },
   get host() {
     return host;
@@ -2396,10 +1107,10 @@ const lifecycle = {
     jobsHost = v;
   },
   get layoutsWatch() {
-    return layoutsWatch;
+    return appMods.state.layoutsWatch;
   },
   set layoutsWatch(v) {
-    layoutsWatch = v;
+    appMods.state.layoutsWatch = v;
   },
   get materialJobs() {
     return materialJobs;
@@ -2414,10 +1125,13 @@ const lifecycle = {
     materialSvc = v;
   },
   get modHost() {
-    return modHost;
+    return appMods.state.modHost;
   },
   get moving() {
     return moving;
+  },
+  set moving(v) {
+    moving = v;
   },
   get pluginBadge() {
     return pluginBadge;
@@ -2482,6 +1196,9 @@ const lifecycle = {
   get setupRun() {
     return setupRun;
   },
+  set setupRun(v) {
+    setupRun = v;
+  },
   get shared() {
     return shared;
   },
@@ -2531,10 +1248,10 @@ const lifecycle = {
     translation = v;
   },
   get userLayerWatch() {
-    return userLayerWatch;
+    return appMods.state.userLayerWatch;
   },
   set userLayerWatch(v) {
-    userLayerWatch = v;
+    appMods.state.userLayerWatch = v;
   },
   get window() {
     return window;
@@ -2582,7 +1299,7 @@ const lifecycle = {
   prepareEngine,
   readPhaseBrief,
   refreshDockBadge,
-  registerIpc,
+  registerIpc: (): void => registerAppIpc(lifecycle),
   restores,
   runtime,
   runtimeOptions,
@@ -2606,7 +1323,7 @@ const lifecycle = {
   taskDeps,
   taskStoreOptions,
   toolsLog,
-  translateEngine,
+  translateEngine: engineChange.translateEngine,
   turnBlocked,
   turnChatLog,
   turnDeps,
@@ -2615,6 +1332,41 @@ const lifecycle = {
   watchUserLayouts,
   watchUserMods,
   workReferences,
+  afterRestore,
+  appMods,
+  appState,
+  applyAppearance,
+  applyTextSize,
+  backendRebase,
+  confirmGoBack: engineChange.confirmGoBack,
+  contextSvc,
+  documentRoots,
+  documentSessions,
+  dropDataStoresUnder,
+  engineFor,
+  engineHost_,
+  fileTimelines,
+  handleAll,
+  handleFrom,
+  harnessUiData,
+  jobsChanged,
+  linkedHistoriesOf,
+  linked_,
+  openHistory,
+  openLinked,
+  profilesOn,
+  pruneEngineConfig,
+  rebasePlugins,
+  refreshJobBadge,
+  restoreWith,
+  reviews,
+  saveConfigPatch: engineChange.saveConfigPatch,
+  scopeStore,
+  scopesSettled,
+  scopesView,
+  standaloneHistory,
+  undoByPaths,
+  validation,
 };
 export type LifecycleDeps = typeof lifecycle;
 

@@ -62,7 +62,7 @@ The AI recommends from topic + profile and explains why; the learner always deci
 ## 6. Grounding
 
 - **Strict**: only the material; the AI cites the fragment ("your notebook, p. 2") and says when something is not there.
-- **Notebook + AI** (shown as "Mi cuaderno + lo que falte"; formerly "Mixed"): material and AI knowledge are marked apart, and each AI-added concept can be removed.
+- **Material + AI** (shown as "Mi material + lo que falte"; formerly "Mixed"): material and AI knowledge are marked apart, and each AI-added concept can be removed.
 - When material and AI disagree (notation, a teacher's method), follow the material and flag the difference; never correct silently.
 - No material: the AI's own knowledge, marked as such.
 

@@ -996,7 +996,7 @@
    "y": 2000,
    "w": 1280,
    "h": 900,
-   "title": "2.2c · Nuevo tema · paso 3: fotos del cuaderno (claro)",
+   "title": "2.2c · Nuevo tema · paso 3: fotos o archivos del material (claro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -1005,7 +1005,7 @@
    "y": 3000,
    "w": 1280,
    "h": 900,
-   "title": "2.2c · Nuevo tema · paso 3: fotos del cuaderno (oscuro)",
+   "title": "2.2c · Nuevo tema · paso 3: fotos o archivos del material (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -1266,7 +1266,7 @@
    "y": 30000,
    "w": 1280,
    "h": 900,
-   "title": "3.6b · Foto del cuaderno (claro)",
+   "title": "3.6b · Foto del material (claro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -1275,7 +1275,7 @@
    "y": 31000,
    "w": 1280,
    "h": 900,
-   "title": "3.6b · Foto del cuaderno (oscuro)",
+   "title": "3.6b · Foto del material (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
   },

@@ -51,6 +51,40 @@ const SIZES = [
 
 const box = (page: Page) => page.locator("form.hh-composer textarea");
 
+/**
+ * The text contrast of the first element `selector` matches against the first opaque background under it (WCAG 2
+ * ratio). `pseudo` reads a pseudo-element's colour, such as the placeholder's.
+ */
+async function contrast(page: Page, selector: string, pseudo?: string): Promise<number> {
+  return page.evaluate(
+    ([sel, pse]) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`no ${sel}`);
+      const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number);
+      let bg: number[] | null = null;
+      for (let n: Element | null = el; n && !bg; n = n.parentElement) {
+        const c = rgb(getComputedStyle(n).backgroundColor);
+        if (c.length === 3 || (c.length === 4 && c[3] === 1)) bg = c.slice(0, 3);
+      }
+      bg ??= [255, 255, 255];
+      const fg = rgb(getComputedStyle(el, pse ?? null).color);
+      // A translucent text colour is blended over the background first.
+      const a = fg[3] ?? 1;
+      const mixed = fg.slice(0, 3).map((v, i) => v * a + bg![i]! * (1 - a));
+      const lum = (c: number[]) => {
+        const [r, g, b] = c.map((v) => {
+          const x = v / 255;
+          return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+      };
+      const [hi, lo] = [lum(mixed), lum(bg)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    },
+    [selector, pseudo] as const,
+  );
+}
+
 for (const theme of ["light", "dark"] as const) {
   for (const size of SIZES) {
     const tag = `${theme}-${size.width}x${size.height}`;
@@ -88,10 +122,16 @@ for (const theme of ["light", "dark"] as const) {
         await conversation.getByRole("heading", { name: "Cómo se arma el manifiesto" }).scrollIntoViewIfNeeded();
         await page.waitForTimeout(300);
         await shot("long-answer");
+        // AA (4.5:1) for the small grey text: the composer's hint and placeholder, the bar's status, the caption under it.
+        expect(await contrast(page, ".hh-composer-send-hint")).toBeGreaterThanOrEqual(4.5);
+        expect(await contrast(page, "form.hh-composer textarea", "::placeholder")).toBeGreaterThanOrEqual(4.5);
+        expect(await contrast(page, ".hh-tb-status")).toBeGreaterThanOrEqual(4.5);
+        expect(await contrast(page, ".hh-composer-hint")).toBeGreaterThanOrEqual(4.5);
 
         // 3. The path overlay open over the column.
         await page.getByRole("button", { name: /^Path · \d+ \/ \d+$/ }).click();
         await expect(page.getByRole("complementary", { name: "Path" })).toBeVisible();
+        await expect(page.getByRole("complementary", { name: "Path" }).getByRole("button", { name: "Close" })).toBeVisible();
         await page.waitForTimeout(300);
         await shot("path-open");
         await page.keyboard.press("Escape");
@@ -107,6 +147,8 @@ for (const theme of ["light", "dark"] as const) {
 
         // 5. The task's Notes page, from the rail's TASK group.
         await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: /^Notes/ }).click();
+        // The page is named by its h1, which takes the focus on the rail pick.
+        await expect(page.getByRole("heading", { name: "Notes", level: 1 })).toBeFocused();
         await expect(page.getByRole("button", { name: /Manifest basics/ })).toBeVisible();
         await shot("notes");
         await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Tasks" }).click();
@@ -118,6 +160,7 @@ for (const theme of ["light", "dark"] as const) {
         await expect(page.locator(".hh-working-line").getByRole("status")).toHaveText(/^Working · /);
         await expect(conversation.getByText("Estoy leyendo el manifiesto para responderte.")).toBeVisible();
         await shot("streaming");
+        expect(await contrast(page, ".hh-working-text")).toBeGreaterThanOrEqual(4.5);
       } finally {
         await closeAndClean(app, s);
       }

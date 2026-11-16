@@ -1,4 +1,5 @@
 import { type ComponentType, type FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
 import { isMarkdownPath } from "@humanharness/harness-sdk/documents";
@@ -7,7 +8,6 @@ import { findAnswer } from "./annotate";
 import { cleanDocumentCards } from "./card-shape";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { CitationContext, type CitationResolver } from "./citations";
-import { SidekickToggle } from "./chrome";
 import {
   type AppState,
   type ChatEntry,
@@ -39,7 +39,7 @@ import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { ToolCallLines } from "./tools/ToolCallLine";
 import { FileTimelineSplit } from "./FileTimelineSplit";
-import { ContextMeter, FlowSide } from "./FlowSide";
+import { FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPage } from "./HistoryPage";
 import { type AnswerHold, pruneDrafts } from "./InputForm";
@@ -67,8 +67,8 @@ import { useSidekick } from "./sidekick/useSidekick";
 import type { SearchIntent } from "./search/intent";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, isToolLine, reduceChat } from "./state";
-import { TaskHeader } from "./TaskHeader";
-import { UsageMeter } from "./UsageMeter";
+import { ContextChip } from "./task-view/ContextChip";
+import { TaskBar, type TaskBarSlot } from "./task-view/TaskBar";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 import { Button } from "./guide/Button";
 import { Option, OptionGroup } from "./guide/Option";
@@ -88,8 +88,10 @@ export type SendFn = (text: string, options?: SendOptions) => boolean;
 export interface ChatPage {
   title: string;
   back: () => void;
+  /** A rail pick: to the chat. */
+  close: () => void;
   backLabel?: string;
-  rail?: "notes";
+  rail?: "notes" | "task-notes" | "task-history";
 }
 
 /** What the shell's top bar asks of the chat on screen (see `shellRef`). */
@@ -131,16 +133,15 @@ export function ChatView({
   startRef,
   searchRef,
   searchContextRef,
-  taskStrip,
-  onNewTask,
-  title,
+  bar,
+  taskPage,
   draftKeep,
   openScope = null,
   notesRequest,
   pluginsRequest,
   onPluginPanels,
   onPage,
-  onTaskLabel,
+  onTask,
   onSidekickSettings,
   onFixEngine,
   onTurnOk,
@@ -172,12 +173,10 @@ export function ChatView({
   searchRef?: { current: ((intent: SearchIntent) => boolean) | null };
   /** Set by the chat: what it says about itself for the palette's actions (search spec §6); null once this view is gone. */
   searchContextRef?: { current: (() => ChatSearchContext) | null };
-  /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
-  taskStrip?: ReactNode;
-  /** Board mode: the task header's New task (parallel spec §9.1); absent, the header has none (D0). */
-  onNewTask?: () => void;
-  /** The task header's title (the breadcrumb's screen); absent, the open task's label, else the start view's title. */
-  title?: string;
+  /** The open task's bar, drawn in the top bar's slot (task view one column); absent, no bar. */
+  bar?: TaskBarSlot;
+  /** The rail's task Notes or History: each new `n` opens that page. */
+  taskPage?: { page: "notes" | "history"; n: number } | null;
   /**
    * Board mode: this view remounts on every change of task shown, and the box starts empty as always, except for a
    * message the inbox put back (Decision 7): that text, and what is typed after it, goes to the next view once. Absent:
@@ -192,13 +191,10 @@ export function ChatView({
   pluginsRequest?: number;
   /** Told whether a running plugin has a panel in the Plugins section (the rail's Plugins entry), and false when gone. */
   onPluginPanels?: (has: boolean) => void;
-  /**
-   * A page of the chat's own took the work screen (History, stage 4b1; Files, 4b2): its title and the way back, for the
-   * top bar's Volver; null when the chat shows again (and on unmount).
-   */
+  /** A page of the chat's own took the work screen (History, Files): its title and the way back; null when gone. */
   onPage?: (page: ChatPage | null) => void;
-  /** The open task's label, null with none (and on unmount): the top bar's breadcrumb names it. */
-  onTaskLabel?: (label: string | null) => void;
+  /** The open task's label and note count, null with none (and on unmount): the switcher and the rail's TASK group. */
+  onTask?: (task: { label: string; notes: number } | null) => void;
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
@@ -236,7 +232,7 @@ export function ChatView({
   const [historyTask, setHistoryTask] = useState<string | undefined>(undefined);
   /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
-  const [notesPage, setNotesPage] = useState<{ open?: string } | null>(null);
+  const [notesPage, setNotesPage] = useState<{ open?: string; task?: boolean } | null>(null);
   /** The context panel is open (context-panel spec §5.1); it shares the reader's slot. */
   const [contextOpen, setContextOpen] = useState(false);
   /** The meter that opened the context panel: it gets focus back when the panel closes. */
@@ -1624,10 +1620,7 @@ export function ChatView({
     blockedTo.current?.(now);
   });
   useEffect(() => () => blockedTo.current?.(false), []);
-  /**
-   * History (stage 4b1) and Files (4b2) are pages: the chat stays mounted under them, hidden, and the top bar shows
-   * Volver. One at a time.
-   */
+  /** History and Files are pages, one at a time: the chat stays mounted under them, hidden. */
   const historyPage = showHistory && !slim;
   const notesShown = notesPage !== null && !slim && !historyPage;
   const paged = historyPage || notesShown;
@@ -1637,19 +1630,19 @@ export function ChatView({
     setHistoryTask(undefined);
   }, []);
   const closeNotes = useCallback(() => setNotesPage(null), []);
-  const toNotesList = useCallback(() => setNotesPage({}), []);
+  const toNotesList = useCallback(() => setNotesPage((p) => (p?.task ? { task: true } : {})), []);
   const pageTo = useRef(onPage);
   pageTo.current = onPage;
   useEffect(() => {
     pageTo.current?.(
       historyPage
-        ? { title: t("history.title"), back: closeHistory }
+        ? { title: t("history.title"), back: closeHistory, close: closeHistory, rail: "task-history" }
         : notesShown
           ? // From a note's detail, Volver goes to the list and says its name (DESIGN.md "Secondary pages").
-            { title: t("files.title"), rail: "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
+            { title: t("files.title"), close: closeNotes, rail: notesPage.task ? "task-notes" : "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
           : null,
     );
-  }, [historyPage, notesShown, noteOpen, closeHistory, closeNotes, toNotesList, t]);
+  }, [historyPage, notesShown, noteOpen, notesPage?.task, closeHistory, closeNotes, toNotesList, t]);
   useEffect(() => () => pageTo.current?.(null), []);
   /** What had focus when a page opened (read before the page's title takes it): it gets focus back on leaving. */
   const pageOpener = useRef<HTMLElement | null>(null);
@@ -1673,53 +1666,51 @@ export function ChatView({
     const back = pageOpener.current;
     (back?.isConnected ? back : document.querySelector<HTMLElement>(".hh-composer textarea"))?.focus();
   }, [paged]);
-  /** The open task's name for the breadcrumb (a harness without `parallel` has no task list to read it from). */
+  /** The open task's name and its own notes, for the switcher and the rail's TASK group. */
   const taskLabel = tasks.current ? (tasks.current.action ? labelOf(tasks.current.action) : t("history.question")) : null;
-  const taskLabelTo = useRef(onTaskLabel);
-  taskLabelTo.current = onTaskLabel;
+  const taskNotes = tasks.notes.filter((n) => (n.action ?? null) === (tasks.current?.action ?? null));
+  const taskTo = useRef(onTask);
+  taskTo.current = onTask;
   useEffect(() => {
-    taskLabelTo.current?.(taskLabel);
-  }, [taskLabel]);
-  useEffect(() => () => taskLabelTo.current?.(null), []);
+    taskTo.current?.(taskLabel === null ? null : { label: taskLabel, notes: taskNotes.length });
+  }, [taskLabel, taskNotes.length]);
+  useEffect(() => () => taskTo.current?.(null), []);
+  // The rail's task Notes and History: full pages, one at a time, the bar kept.
+  const taskPageSeen = useRef(taskPage?.n);
+  useEffect(() => {
+    if (!taskPage || taskPage.n === taskPageSeen.current || slim) return;
+    taskPageSeen.current = taskPage.n;
+    setContextOpen(false);
+    setTimelineFile(null);
+    setNotesPage(taskPage.page === "notes" ? { task: true } : null);
+    setShowHistory(taskPage.page === "history");
+  }, [taskPage]);
 
   return (
     <DocumentContext.Provider value={documentHost}>
       <div className={slim ? "hh-app hh-app-slim" : `hh-app${paged ? " hh-app-paged" : ""}`}>
-        {!slim && (
-          <TaskHeader
-            title={title ?? taskLabel ?? (startView?.title ? t(startView.title, { ns: "harness" }) : t("rail.tasks"))}
-            leading={scopeBar?.(blocked())}
-            meters={
-              <>
-                {/* The context panel's one button. In flow mode the flow side draws the ring, so the pill is text only. */}
-                {tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} pill ring={!flow} />}
-                <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
-              </>
-            }
-            sidekick={
-              sidekick && (
-                <SidekickToggle
-                  on={sidekick.settings.on}
-                  label={t(sidekick.settings.on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
-                  onToggle={() => {
+        {bar &&
+          !slim &&
+          createPortal(
+            <TaskBar
+              {...bar}
+              working={tasks.current ? Boolean(chat.live) : null}
+              scope={scopeBar?.(blocked())}
+              context={tasks.current?.context && <ContextChip {...tasks.current.context} engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} onOpen={openContext} />}
+              chips={surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
+              sidekick={
+                sidekick && {
+                  on: sidekick.settings.on,
+                  onToggle: () => {
                     const on = !sidekick.settings.on;
                     void client.sidekick.set(on ? { on, introSeen: true } : { on }).catch(() => undefined);
                     setSkOpen(on);
-                  }}
-                />
-              )
-            }
-            chips={surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
-            onHistory={() => {
-              // One panel at a time: Escape closes the one on screen.
-              setNotesPage(null);
-              setTimelineFile(null);
-              setContextOpen(false);
-              setShowHistory(true);
-            }}
-            {...(onNewTask ? { onNewTask } : {})}
-          />
-        )}
+                  },
+                }
+              }
+            />,
+            bar.el,
+          )}
         <div
           className={`hh-body${(reader || contextOpen || timelineFile !== null) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
         >
@@ -1747,7 +1738,6 @@ export function ChatView({
             </nav>
           )}
           <Main className="hh-main">
-            {taskStrip}
             {/* The task runs without its scope's engine config (hatches spec §5.3): only with enginePresets (D0). */}
             {state.hatches?.enginePresets && !slim && tasks.current?.engineNotice && tasks.current.scope && (
               <EngineNotice client={client} state={state} scope={tasks.current.scope} notice={tasks.current.engineNotice} />
@@ -2257,11 +2247,11 @@ export function ChatView({
         )}
         {notesShown && (
           <NotesPage
-            notes={tasks.notes}
+            notes={notesPage.task ? taskNotes : tasks.notes}
             {...(noteOpen ? { open: noteOpen } : {})}
             focusKey={notesRequest}
             disabled={blocked()}
-            onPick={(slug) => setNotesPage(slug ? { open: slug } : {})}
+            onPick={(slug) => setNotesPage((p) => ({ ...(p?.task ? { task: true } : {}), ...(slug ? { open: slug } : {}) }))}
             onResume={resume}
             onOpenFile={openFile}
             onBack={closeNotes}

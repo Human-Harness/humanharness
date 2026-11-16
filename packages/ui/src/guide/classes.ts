@@ -38,6 +38,18 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-inbox-row",
   "hh-inbox-head",
   "hh-rail-count",
+  // The task's one bar in the top bar's slot, its switcher and status, the context popover, the rail's TASK group (task view one column)
+  "hh-topbar-slot",
+  "hh-crumbs",
+  "hh-crumb",
+  "hh-crumb-sep",
+  "hh-spacer",
+  "hh-tb-switch",
+  "hh-tb-title",
+  "hh-tb-status",
+  "hh-tb-popover",
+  "hh-rail-divider",
+  "hh-rail-group",
   // History as a page: its task rows, a row's body, a changed file, a point's time; the chat hidden under it (stage 4b1)
   "hh-history-row",
   "hh-history-body",

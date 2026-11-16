@@ -48,7 +48,6 @@ async function open(c: FakeClient) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  await screen.findByRole("button", { name: "History" });
 }
 const card = () => screen.queryByRole("region", { name: "Prepared task" });
 const startButton = (r: HTMLElement) => within(r).getByRole("button", { name: "Start" }) as HTMLButtonElement;

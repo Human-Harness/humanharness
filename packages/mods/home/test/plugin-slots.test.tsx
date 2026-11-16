@@ -62,7 +62,6 @@ async function open(c: FakeClient, props: Partial<HarnessAppProps> = {}) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  await screen.findByRole("button", { name: "History" });
 }
 const frames = () => [...document.querySelectorAll("iframe")];
 const section = () => screen.queryByRole("region", { name: "Plugins" });
@@ -181,7 +180,7 @@ describe("plugin slots", () => {
     expect(within(side).queryByText("3 open")).toBeNull();
   });
 
-  it("draws chips after the usage meter: a button opens its panel's tab, one without a panel is text", async () => {
+  it("draws chips in the one bar: a button opens its panel's tab, one without a panel is text", async () => {
     const c = makeClient({
       view: surface({
         panels: [DIGEST, QUEUE],
@@ -196,9 +195,10 @@ describe("plugin slots", () => {
     const quiet = screen.getByText("Quiet");
     expect(quiet.tagName).toBe("SPAN");
     expect(quiet.className).toBe("hh-pl-chip info");
-    // Right after the usage meter in the top bar.
+    // No task open: in the top bar's slot, right after its spacer (task view one column).
     const chips = button.closest(".hh-pl-chips") as HTMLElement;
-    expect(chips.previousElementSibling?.className).toMatch(/hh-usage/);
+    const slot = chips.closest(".hh-topbar-slot") as HTMLElement;
+    expect(slot.previousElementSibling?.className).toMatch(/hh-spacer/);
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
     fireEvent.click(button);
     await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));

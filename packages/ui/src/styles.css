@@ -195,6 +195,18 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 .hh-crumb { min-height: 32px; padding: 0 4px; border: 0; background: transparent; color: var(--hh-muted); }
 .hh-crumb-sep { color: var(--hh-faint); }
 .hh-crumb-here { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+/* The task's one bar (task view one column, DESIGN.md §10): drawn by the chat into the top bar's slot. */
+.hh-topbar-slot { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
+.hh-topbar-slot:empty { display: none; }
+.hh-spacer + .hh-topbar-slot { flex: 0 0 auto; }
+.hh-topbar-slot .hh-crumbs { flex: 0 1 auto; }
+.hh-tb-switch { min-width: 0; max-width: 100%; font-weight: 600; color: var(--hh-ink); }
+.hh-tb-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-tb-status { flex: none; font-size: 12px; color: var(--hh-muted); white-space: nowrap; }
+.hh-tb-popover { width: 320px; }
+/* The rail's TASK group: a divider and its small label before the open task's entries. */
+.hh-rail-divider { margin: 8px 0; }
+.hh-rail-group { font-size: 12px; text-transform: uppercase; color: var(--hh-muted); }
 .hh-topbar .hh-spacer { display: flex; justify-content: center; }
 /* Icon rail (UI refresh spec §4.2): a column on the left, a row under the top bar on narrow windows. */
 .hh-rail { flex: 0 0 var(--hh-rail-w); width: var(--hh-rail-w); box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0; background: var(--hh-rail); border-right: 1px solid var(--hh-line); }
@@ -205,14 +217,9 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 .hh-shell-main { min-width: 0; min-height: 0; display: flex; }
 .hh-shell-chat { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .hh-shell-chat[hidden] { display: none; }
-.hh-shell-chat > .hh-app { flex: 1; min-width: 0; height: 100%; grid-template-rows: auto minmax(0, 1fr); }
-/* The task header (spec §5.1): what left the top bar, next to the work it is about. */
-.hh-task-head { box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; padding: 12px 20px; border-bottom: 1px solid var(--hh-line); }
-.hh-task-head-text { display: grid; gap: 2px; margin-right: auto; min-width: 0; }
-.hh-task-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.5px; overflow-wrap: anywhere; }
+.hh-shell-chat > .hh-app { flex: 1; min-width: 0; height: 100%; grid-template-rows: minmax(0, 1fr); }
 .hh-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
 [aria-pressed="true"] > .hh-dot, .hh-sk-toggle[data-on="true"] > .hh-dot { background: var(--hh-t-green-ink); }
-.hh-task-head .hh-ctxp-meter.hh-pill { padding: 0 14px; border: 1px solid var(--hh-line); background: var(--hh-surface); }
 /* The top bar's profile avatar (spec §4.1): the switcher opens under it. */
 .hh-avatar-menu { position: relative; display: flex; }
 .hh-avatar.hh-avatar-button { width: var(--hh-control-h); padding: 0; border: 0; font-size: 15px; }
@@ -339,7 +346,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 
 /* Work screen: the 2a chat layout with the tokens (its own design comes later). */
 /* minmax(0, 1fr): the column is the window's width, never its content's (a big text size would push the page sideways). */
-.hh-app { display: grid; grid-template-rows: 52px 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; }
+.hh-app { display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100vh; }
 /* An interview inside the setup screen (setup-steps spec §3): the chat only, in the step's column. */
 .hh-app.hh-app-slim { grid-template-rows: minmax(0, 1fr); height: min(60vh, 520px); border: 1px solid var(--hh-line); border-radius: 12px; }
 .hh-slim-start { display: grid; place-items: center; padding: 24px; }

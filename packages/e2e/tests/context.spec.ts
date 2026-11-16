@@ -1,10 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { closeAndClean, launchMock, makeSandbox } from "./helpers";
 
 const START = "Which part do you want to understand?";
 const PANEL = "What the AI takes into account";
+/** The bar's context chip (task view one column): its popover's Open context opens the panel. */
+async function openPanel(page: Page) {
+  await page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: /^Context \d+%$/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Open context" }).click();
+}
 
 test("the context panel: what the task loaded and read, Add now, a pin and an exclusion for the next task", async () => {
   const s = makeSandbox("context");
@@ -16,7 +21,7 @@ test("the context panel: what the task loaded and read, Add now, a pin and an ex
     await expect(page.getByRole("main").getByText(/El manifiesto declara todo el harness/)).toBeVisible();
 
     // The meter opens the panel: the start and the recorded read.
-    await page.getByRole("button", { name: PANEL }).click();
+    await openPanel(page);
     const panel = page.getByRole("region", { name: PANEL });
     const start = panel.getByRole("region", { name: "At the start" });
     await expect(start.getByText("What the task is about")).toBeVisible();
@@ -51,7 +56,7 @@ test("the context panel: what the task loaded and read, Add now, a pin and an ex
 
     // The walk opens the next topic, which starts with the pin and the notes index; exclude the note.
     await expect(page.getByRole("main").getByText(/Los motores se detectan en cada inicio/)).toBeVisible();
-    await page.getByRole("button", { name: PANEL }).click();
+    await openPanel(page);
     const next = page.getByRole("region", { name: PANEL }).getByRole("region", { name: "At the start" });
     await expect(next.getByText("Pinned · conventions.md")).toBeVisible();
     await next.getByRole("button", { name: "Exclude El manifiesto" }).click();

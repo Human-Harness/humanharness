@@ -110,13 +110,14 @@ async function focusTask(page: Page, label: string) {
   const dialog = await openInbox(page);
   await dialog.getByRole("button", { name: new RegExp(`^${label}`) }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("group", { name: "Task on screen" })).toContainText(label);
+  await expect(page.locator(".hh-shell header.hh-topbar .hh-tb-title")).toContainText(label);
 }
 /** The start view's topic `label`. */
 const topic = (page: Page, label: string) => page.getByRole("region", { name: "Where do we start?" }).getByRole("button", { name: new RegExp(label) });
-/** "New task" in the task header: the start view. */
+/** "New task" in the bar's task switcher (task view one column): the start view. */
 async function newTask(page: Page) {
-  await page.locator("header.hh-task-head").getByRole("button", { name: "New task" }).click();
+  await page.locator(".hh-shell header.hh-topbar .hh-tb-switch").click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "New task" }).click();
   await expect(page.getByRole("region", { name: "Where do we start?" })).toBeVisible();
 }
 const userLines = (page: Page) => page.getByRole("main").locator('[data-role="user"]');

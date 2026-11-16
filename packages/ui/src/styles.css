@@ -608,7 +608,6 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-step-mark.hh-flow-mark { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-size: 12px; }
 .hh-step-mark.hh-flow-mark.done { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
 .hh-nav-item[aria-current="step"] .hh-flow-mark { background: var(--hh-cta); color: var(--hh-cta-ink); }
-/* The step on screen can't be picked again, but it is not unavailable: it keeps its full colour. */
 .hh-nav-item[data-selected="true"]:disabled { opacity: 1; }
 /* Task view one column: one 680 reading column (the card), centred; in a narrow window it gives way, never scrolls sideways. */
 .hh-app:not(.hh-app-slim) .hh-main { flex: 0 1 728px; box-sizing: border-box; margin: 0 auto; padding: 0 24px; }
@@ -620,17 +619,14 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-composer > .hh-composer-field { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .hh-composer-field > .hh-composer-send-hint { align-self: flex-end; }
 .hh-composer textarea { border-color: transparent; padding: 4px 0; }
-/* One field: the focus ring goes round the composer card, not round the textarea inside it. */
 .hh-composer textarea:focus-visible { outline: none; }
 .hh-composer textarea::placeholder { color: var(--hh-muted); opacity: 1; }
 .hh-composer:has(textarea:focus-visible) { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-composer-send-hint { color: var(--hh-muted); font-size: 12px; }
 @media (max-width: 640px) { .hh-chat, .hh-chat.hh-conversation { padding: 16px; } }
-/* The working line: 44 high (4 + 40). */
 .hh-working-line { position: sticky; bottom: 0; z-index: 1; box-sizing: content-box; height: 40px; padding-top: 4px; display: flex; align-items: center; gap: 8px; background: var(--hh-surface); color: var(--hh-muted); font-size: 12px; }
 .hh-working-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-shell-main > .hh-working-line { flex: none; position: static; padding-inline: 24px; border-top: 1px solid var(--hh-line); }
-/* The jump pill: centred, 16 above the card's bottom while scrolled up. */
 .hh-chat > .hh-jump-pill { position: sticky; bottom: 16px; z-index: 2; justify-self: center; }
 /* The folded overlays (task view one column): a 280 panel over the content, the path on the left, Sidekick on the right. */
 .hh-overlay { position: absolute; top: 0; bottom: 0; z-index: 5; width: var(--hh-column-w); max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; background: var(--hh-rail); box-shadow: var(--hh-shadow); }

@@ -11,7 +11,7 @@ Sofi, age band "Hasta 12", language Español. Interview result: goes slowly with
 
 | Topic | Grounding | Material | Concepts mastered | Flashcards | Sessions |
 |---|---|---|---|---|---|
-| Fracciones | Material + IA, level "algo sé" | 2 material photos (a 3rd, `material-3.jpg`, is only offered in "Cambios propuestos al mapa") | 2 of 6 | 14 (4 due today: 2 on equivalentes, numerador, "¿Cómo comparo 1/3 y 1/2?" which is rated Difícil) | 5 |
+| Fracciones | Material + IA, level "algo sé" | 2 material files (a 3rd, `material-3.jpg`, is only offered in "Cambios propuestos al mapa") | 2 of 6 | 14 (4 due today: 2 on equivalentes, numerador, "¿Cómo comparo 1/3 y 1/2?" which is rated Difícil) | 5 |
 | Seres vivos y ambiente | — | — | 7 of 12 | 3 due today | — |
 
 Today's review = 7 flashcards (4 Fracciones + 3 Seres vivos). Rated 2 Fácil, 4 Bien, 1 Difícil. Intervals 1 / 3 / 7 / 14 days. Next due: 19 November.
@@ -20,12 +20,12 @@ Today's review = 7 flashcards (4 Fracciones + 3 Seres vivos). Rated 2 Fácil, 4 
 
 | # | Concept | State | Evidence | Source |
 |---|---|---|---|---|
-| 1 | Leer y escribir fracciones | Dominado | 2 de 2 días (2 and 4 Nov) | material, foto 1 |
-| 2 | Fracciones equivalentes | Dominado + "Toca repasar" flag (due today) | 9 Nov recuperación, 11 Nov elaboración; mastered 11 Nov, flag appears when the interval passes | material, foto 1 |
-| 3 | Comparar fracciones | Practicando | 1 de 2 días (12 Nov) | material, foto 2 |
-| 4 | Sumar con igual denominador | Por ver | none | material, foto 2 |
+| 1 | Leer y escribir fracciones | Dominado | 2 de 2 días (2 and 4 Nov) | material, archivo 1 |
+| 2 | Fracciones equivalentes | Dominado + "Toca repasar" flag (due today) | 9 Nov recuperación, 11 Nov elaboración; mastered 11 Nov, flag appears when the interval passes | material, archivo 1 |
+| 3 | Comparar fracciones | Practicando | 1 de 2 días (12 Nov) | material, archivo 2 |
+| 4 | Sumar con igual denominador | Por ver | none | material, archivo 2 |
 | 5 | Fracciones en la recta numérica | Por ver | none | added by the AI |
-| 6 | Sumar con distinto denominador | Por ver, needs 2 | none | material, foto 2 |
+| 6 | Sumar con distinto denominador | Por ver, needs 2 | none | material, archivo 2 |
 
 Removed in the proposed map (with Deshacer): "Dividir fracciones" (not in the topic afterwards). "Sumar un concepto" only shows the form with an example name ("Por ejemplo: Fracciones mixtas"); nothing is added to the map. Proposed from notebook photo 3 in "Cambios propuestos al mapa": new "Restar con igual denominador" (after #6) and a rename of #6.
 

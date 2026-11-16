@@ -62,7 +62,7 @@ All other numbers cross-checked by the testers held: 14 flashcards (4 today, 10 
 - Two clicks from Inicio to studying with defaults preselected (Tomás, Ernesto).
 - "Lo que ya hiciste queda guardado y cuenta"; "Se guarda en Fracciones. No se manda a nadie." (Mía, Tomás, Ernesto).
 - "No sé · Está bien" in the diagnostic; "No hace falta que esté perfecto" (Mía, Ernesto).
-- Source traceability per photo and AI-added items marked (Lucía, Ernesto).
+- Source traceability per file and AI-added items marked (Lucía, Ernesto).
 - Proposed changes with before/after; "Sacado · Deshacer" (Lucía, Tomás).
 - Limit notice says what is saved and when it renews (Lucía).
 - Offline strip: "Tu último mensaje quedó guardado…" (Ernesto).

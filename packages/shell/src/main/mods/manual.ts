@@ -40,6 +40,38 @@ Other files:
 - \`.control.json\`: while the app runs, how the \`status\` and \`shot\` commands reach it. Private to you.
 - \`shots/\`: screenshots \`humanharness shot\` saved.
 
+## Working with an agent
+
+An agent (Claude Code, Codex or any other that speaks MCP) works on this folder through \`humanharness mcp\`, a server
+that runs on your computer and reads and writes only this folder. To connect one, run in this folder the line for
+your agent and paste what it prints:
+
+- \`humanharness mcp --config claude\`: the \`claude mcp add\` command to run.
+- \`humanharness mcp --config codex\`: the \`[mcp_servers.humanharness]\` block for Codex's \`config.toml\`.
+
+Add \`--home <dir>\` when you run it elsewhere. The tools:
+
+| Tool | What it does | Needs the app open |
+|---|---|---|
+| \`catalog\` | What the app is made of: every mod of the three layers with its blocks, hooks and any \`.error\`, the layouts and which one shows, the names \`hh.d.ts\` types | No |
+| \`mod_new\` | A new mod in \`mods/<id>/\` from the template, with one block | No |
+| \`mod_clone\` | A core or harness mod copied into \`mods/<as>/\` to change it | No |
+| \`layout_clone\` | A harness or core layout copied into \`layouts/<as>.json\` | No |
+| \`mod_check\` | Checks a mod without the app: \`mod.json\`, the bundles, \`main\` against a fake \`ctx\`, each block rendered once | No |
+| \`status\` | Which mods run, which failed and why, and the layout shown | Yes |
+| \`shot\` | A screenshot of the window, as an image the agent sees, saved under \`shots/\` | Yes |
+
+The loop:
+
+1. \`catalog\` first: see what exists before you make anything.
+2. \`mod_clone\` to change a core or harness mod, or \`mod_new\` for something new (\`layout_clone\` to place a block).
+3. Edit the files in \`mods/<id>/\` (and \`layouts/<name>.json\`).
+4. \`mod_check\` after every edit, until each check is ok.
+5. A new mod or clone starts off: ask the person to turn it on in Settings › Mods (and the original off, for a clone),
+   and to pick a new layout there. Say what the mod does; never turn it on yourself.
+6. \`status\` to see that the app runs it, \`shot\` to see what the screen shows; read any \`.error\`.
+7. To go back, the person undoes the last change in Settings › Mods.
+
 ## Layouts
 
 A layout is a JSON tree of nodes. Each node has a \`type\`:
@@ -134,7 +166,8 @@ the last good version and writes \`<file>.error\` beside it with why (\`mod.json
 
 ## Commands
 
-Run them in this folder (or pass \`--home <dir>\`):
+The same kit from a terminal (an agent uses the tools of "Working with an agent" instead). Run them in this folder (or
+pass \`--home <dir>\`):
 
 - \`humanharness mod check <folder>\`: checks a mod without the app: \`mod.json\`, the bundle of each part, \`main\`
   against a fake \`ctx\`, and each block rendered once. One line per check; exit 1 on any failure.

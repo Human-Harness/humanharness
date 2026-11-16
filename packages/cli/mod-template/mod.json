@@ -1,0 +1,1 @@
+{ "id": "__ID__", "name": "__NAME__", "version": "0.1.0", "apiVersion": 1, "main": "main.ts", "ui": "ui.tsx" }

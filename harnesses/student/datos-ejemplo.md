@@ -35,7 +35,7 @@ Removed in the proposed map (with Deshacer): "Dividir fracciones" (not in the to
 
 ## Today's session
 
-Time box 30 min. Recommended and chosen: Socrático. Warm-up: 2 questions on Fracciones equivalentes (passed → back to Dominado, next review in 7 days). Stuck on 2/5 + 1/5 after 2 hints → switch to Ejemplos resueltos. Closes at 28 of 30 min; end screen says 28 minutes, 1 summary, 2 new flashcards; "Sumar con igual denominador" goes Por ver → Practicando.
+Time box 30 min. Recommended and chosen: Socrático. Warm-up: 2 questions on Fracciones equivalentes (passed → back to Dominado, next review in 7 days). Stuck on 2/5 + 1/5 after 2 hints → switch to Ejemplos resueltos. The Cierre starts at minute 28 (the 2 left go to the summary and flashcards); the end screen says 30 minutes, 1 summary, 2 new flashcards; "Sumar con igual denominador" goes Por ver → Practicando.
 
 Boards for the other five methods, the help ladder, the end of time, the usage limit and the offline state are alternative branches of this session on the same topic: each shows its own method and its own minute count inside the 30 min.
 
@@ -49,7 +49,7 @@ Topic tabs (14 flashcards, 5 sessions, 3 summaries) show the state before the se
 - Inicio shows due flashcards per topic: Fracciones 4, Seres vivos y ambiente 3 (never "Al día" while cards are due).
 - Next flashcard review after today: 19 November. FinSesion says the 2 new flashcards join that review.
 - "Te concentrás mejor en sesiones de 15 a 30 minutos" is the only wording for that finding.
-- Consistency pass 2026-11-16 (before user testing): Cierre says 28 of 30 min (as FinSesion); photo 2 covers Comparar and both Sumar concepts; "Sumar un concepto" shows the Nombre field empty with an example, because "Fracciones mixtas" is not in the final map; the open question dates from 11 Nov (Elaboración on equivalentes); retrieval practice asks about Fracciones equivalentes and interleaved practice starts with Leer y escribir fracciones (a learner cannot "recall" a concept still Por ver); Inicio and EmpezarSesion say Comparar is being practiced, not known; Contexto % grows with the minute of the session (5% at min 2, 13% at 8, 20% at 14, 39% at 30); Bienvenida says "pasa a Dominado".
+- Consistency pass 2026-11-16 (before user testing): Cierre starts at 28 of 30 min and FinSesion says 30 minutes (same as FinTiempo); Cierre says the method switched mid-session and shows "2 (1 para corregir)" flashcards; photo 2 covers Comparar and both Sumar concepts; "Sumar un concepto" shows the Nombre field empty with an example, because "Fracciones mixtas" is not in the final map; the open question dates from 11 Nov (Elaboración on equivalentes); retrieval practice asks about Fracciones equivalentes and interleaved practice starts with Leer y escribir fracciones (a learner cannot "recall" a concept still Por ver); Inicio and EmpezarSesion say Comparar is being practiced, not known; Contexto % grows with the minute of the session (5% at min 2, 13% at 8, 20% at 14, 39% at 30); Bienvenida says "pasa a Dominado".
 - "Camino · 4 / 6" is the position of today's concept in the map (Sumar con igual denominador is #4), not a count of mastered concepts (1 of 6).
 - Settings: Tutor tab hints = 2 and questions per message = 1, equal to the Socrático settings in Métodos and to the help ladder (Pista 1 de 2, 2 de 2).
 - Internal notes (e.g. legal review pending on AvisoMenores) live here, never on a board.

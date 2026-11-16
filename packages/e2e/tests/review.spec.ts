@@ -306,7 +306,7 @@ test("a harness whose agent can't edit the folder (D0): no review in the reader,
 
     // The ui server has no ask_in_document: the recorded call fails the turn, and no review record exists.
     await page.getByPlaceholder("Ask about this topic…").fill("Ask me about it.");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("main").getByText("Something failed and I didn't change anything.")).toBeVisible({ timeout: 30_000 });
     expect(fs.existsSync(path.join(s.folder, ".harness", "reviews"))).toBe(false);
     // The file timeline's index (core, every harness) sits in the history's data, never in the person's folder.

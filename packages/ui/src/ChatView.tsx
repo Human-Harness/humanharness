@@ -1371,8 +1371,8 @@ export function ChatView({
   const lastUser = chat.entries.findLast((e) => e.role === "user");
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);
-  // Finished messages only: a long answer counts once, when it ends.
-  const fresh = useNewSinceScroll(shown.length);
+  // Finished messages only, never the reader's own: a long answer counts once, when it ends.
+  const fresh = useNewSinceScroll(chat.entries.filter((e) => e.role !== "user").length);
   const onScroll = () => {
     const el = chatRef.current;
     if (!el) return;

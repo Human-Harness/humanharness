@@ -98,7 +98,7 @@ test("the harness's echo mod rewrites a send: ping reaches the agent as pong", a
     await expect(page.getByRole("main").getByText("Una pregunta corta.")).toBeVisible();
 
     await page.getByRole("main").getByRole("textbox").fill("ping");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("main").getByText("The agent got pong.")).toBeVisible();
     const prompts = readJsonl<{ prompt: string }>(s.claudePrompts).map((p) => p.prompt);
     expect(prompts.at(-1)).toMatch(/\bpong\b/);

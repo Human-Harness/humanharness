@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -311,8 +312,9 @@ test("a harness whose agent can't edit the folder (D0): no review in the reader,
     // The file timeline's index (core, every harness) sits in the history's data, never in the person's folder.
     const named = (dir: string) => fs.readdirSync(dir, { recursive: true }).map(String).filter((f) => path.basename(f) === "hh-file-index.json");
     expect(named(s.folder)).toEqual([]);
-    // Written a moment after the commits, off their path.
-    await expect.poll(() => named(s.userData)).toHaveLength(1);
+    // Written a moment after the commits, off their path, in the folder's own history (the mods home folder has another).
+    const gitdir = path.join(s.userData, "history", createHash("sha256").update(s.folder).digest("hex").slice(0, 16));
+    await expect.poll(() => named(gitdir)).toEqual(["hh-file-index.json"]);
   } finally {
     await closeAndClean(app, s);
   }

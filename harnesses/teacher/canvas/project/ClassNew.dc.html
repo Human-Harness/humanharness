@@ -90,6 +90,7 @@ body{margin:0}
                   <span style="font-size: 14px; font-weight: 600; text-decoration: {{s.deco}};">{{s.title}}</span>
                   <span style="font-size: 14px; color: {{t.muted}};">{{s.cite}}</span>
                   <span style="font-size: 12px; color: {{t.ink}}; line-height: 1.5;">{{s.why}}</span>
+                  <sc-if value="{{s.pending}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; font-weight: 600; color: {{t.muted}};">Si no la elegís, queda afuera</span></sc-if>
                 </div>
                 <sc-if value="{{s.chosen}}" hint-placeholder-val="{{ false }}">
                   <div role="group" aria-label="Usar esta fuente" style="display: flex; padding: 2px; border-radius: 8px; background: {{t.s2}}; flex-shrink: 0;"><button aria-pressed="true" style="height: 22px; padding: 0 10px; border: 0; font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; background: {{t.active}}; color: {{t.activeInk}}; font-weight: 600;">Usar</button><button aria-pressed="false" style="height: 22px; padding: 0 10px; border: 0; font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; background: transparent; color: {{t.muted}}; font-weight: 500;">No usar</button></div>
@@ -105,7 +106,7 @@ body{margin:0}
             <div style="padding: 12px 16px; border-top: 1px solid {{t.line}}; display: flex; align-items: center; gap: 8px;">
               <span style="font-size: 14px; color: {{t.muted}};">Las fuentes elegidas se guardan en tu Biblioteca.</span>
               <span style="flex-grow: 1;"></span>
-              <a href="{{go.sourcesChat}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Buscar más</a>
+              <a href="{{go.classSearch}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Buscar más</a>
             </div>
           </section>
         </div>
@@ -113,7 +114,7 @@ body{margin:0}
         <div style="display: flex; align-items: center; gap: 12px;">
           <span style="font-size: 14px; color: {{t.muted}};">Tarda unos 3 minutos. Podés seguir con otra cosa: te avisamos en Para revisar.</span>
           <span style="flex-grow: 1;"></span>
-          <a href="{{go.subject}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Guardar como pendiente</a>
+          <a href="{{go.subject}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Guardar sin armar</a>
           <a href="{{go.workA}}" style="height: 40px; padding: 0 20px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 16px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Armar la clase con 3 fuentes</a>
         </div>
       </div>
@@ -130,11 +131,11 @@ class Component extends DCLogic {
     const fields = [
       { label: 'Dónde va', value: 'Biología 2º B  ›  U4 Ecosistemas  ›  clase 27', hint: 'Sale de: la clase 26 es la última de U4 que armaste.' },
       { label: 'Curso y nivel', value: '2º año de secundaria · 14 y 15 años', hint: 'Sale de: la materia Biología 2º B. Cambialo si esta clase es distinta.' },
-      { label: 'Duración', value: '80 minutos · 2 módulos', hint: 'Sale de: tus clases de esta materia, que duran 2 módulos.' }
+      { label: 'Duración', value: '80 minutos (2 horas cátedra)', hint: 'Sale de: tus clases de esta materia, que duran 2 horas cátedra.' }
     ];
     const outputs = [
       { name: 'Diapositivas para proyectar', desc: 'Unas 12, cada dato con su cita al pie' },
-      { name: 'Guion para vos', desc: 'Qué decir, cuánto dura cada parte y la actividad del patio' },
+      { name: 'Secuencia para vos', desc: 'Qué decir, cuánto dura cada parte y la actividad del patio' },
       { name: 'Material para alumnos', desc: 'Una guía de observación de 2 páginas' }
     ];
     const S = (title, cite, why, st) => ({ title, cite, why, chosen: st === 'c', pending: st === 'p', dropped: st === 'd', op: st === 'd' ? '0.55' : '1', deco: st === 'd' ? 'line-through' : 'none' });
@@ -154,6 +155,7 @@ class Component extends DCLogic {
     const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
     
     g.search = b('Search');
+    g.classSearch = b('GapClassSearch');
     o.go = g;
     return o;
   }

@@ -78,9 +78,9 @@ a{color:#7a4f00}a:hover{color:#3b2a06}
             <div style="display: flex; flex-direction: column; gap: 8px;">
               <div style="display: flex; align-items: baseline; gap: 8px;">
                 <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Para revisar</span>
-                <span style="font-size: 14px; font-weight: 600; padding: 0 6px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.muted}};">7</span>
+                <span style="font-size: 14px; font-weight: 600; padding: 0 6px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.muted}};">10</span>
                 <span style="flex-grow: 1;"></span>
-                <a href="#" style="font-size: 14px; color: {{t.muted}};">Ver las 7</a>
+                <a href="#" style="font-size: 14px; color: {{t.muted}};">Ver las 10</a>
               </div>
               <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
                 <sc-for list="{{review}}" as="r" hint-placeholder-count="3">
@@ -165,8 +165,9 @@ class Component extends DCLogic {
     const sc = this.props.scenario || 'normal';
     const tg = (label) => {
       const k = label.split(' ').slice(1).join(' ');
-      const c = k.startsWith('borrador') ? [t.blue, t.blueInk] : k.startsWith('aprobada') ? [t.green, t.greenInk] : k.startsWith('desactualizada') ? [t.orange, t.orangeInk] : [t.s2, t.ink];
-      return { label, bg: c[0], ink: c[1], isLink: k.startsWith('desactualizada'), notLink: !k.startsWith('desactualizada') };
+      const rv = k.startsWith('para revisar');
+      const c = k.startsWith('aprobada') ? [t.green, t.greenInk] : rv ? [t.orange, t.orangeInk] : [t.s2, t.ink];
+      return { label, bg: c[0], ink: c[1], isLink: rv, notLink: !rv };
     };
     const subj = (list) => list.map((s) => ({ ...s, tags: s.tags.map(tg) }));
     const stateCol = (k) => k.startsWith('Cambi') ? [t.orange, t.orangeInk] : k === 'Borrador' ? [t.blue, t.blueInk] : [t.s2, t.ink];
@@ -174,31 +175,33 @@ class Component extends DCLogic {
 
     let groups = [], review = [], subline = '';
     if (sc === 'normal') {
-      subline = '2 materias y 3 clases sin materia · 2 cosas para revisar';
+      subline = '2 materias y 3 clases sin materia · 4 cosas para revisar';
       groups = [{ hasLabel: false, label: '', subjects: subj([
-        { name: 'Biología', meta: '2º B · 4 unidades', pct: '81%', done: '26 de 32 clases aprobadas', tags: ['26 aprobadas', '2 borradores', '4 pendientes'], next: 'U4 · Clase 27 · Ecosistemas urbanos' },
-        { name: 'Historia', meta: '4º A · 5 unidades', pct: '86%', done: '24 de 28 clases aprobadas', tags: ['24 aprobadas', '1 desactualizada', '3 pendientes'], next: 'U4 · Clase 25 · La Ley Sáenz Peña' },
-        { name: 'Clases sin materia', meta: '3 clases', pct: '66%', done: '2 de 3 clases aprobadas', tags: ['2 aprobadas', '1 borrador'], next: 'Taller de lectura crítica' }
+        { name: 'Biología', meta: '2º B · 4 unidades', pct: '81%', done: '26 de 32 clases aprobadas', tags: ['26 aprobadas', '3 para revisar', '4 sin armar'], next: 'U4 · Clase 27 · Ecosistemas urbanos' },
+        { name: 'Historia', meta: '4º A · 5 unidades', pct: '86%', done: '24 de 28 clases aprobadas', tags: ['24 aprobadas', '1 para revisar', '4 sin armar'], next: 'U4 · Clase 25 · La Ley Sáenz Peña' },
+        { name: 'Clases sin materia', meta: '3 clases', pct: '66%', done: '2 de 3 clases aprobadas', tags: ['2 aprobadas', '1 sin armar'], next: 'Taller de lectura crítica' }
       ]) }];
       review = rev([
-        { tag: 'Borrador', title: 'Clase 27 · Ecosistemas urbanos', why: 'Biología · 2º B · faltan el guion y el material para alumnos', when: 'Mañana, lun 16', soon: true },
-        { tag: 'Cambió una fuente', title: 'Examen · Revolución de Mayo', why: 'Una fuente de la Unidad 1, después de aprobarlo', when: 'Jue 26' }
+        { tag: 'Borrador', title: 'Clase 27 · Ecosistemas urbanos', why: 'Biología · 2º B · faltan la secuencia y el material para alumnos', when: 'Mañana, lun 16', soon: true },
+        { tag: 'Borrador', title: 'Clase 28 · Ciclo del carbono', why: 'Biología · 2º B · traída de 2025, revisá las fuentes', when: 'Lun 23' },
+        { tag: 'Borrador', title: 'Evaluación · U4 Ecosistemas', why: 'Biología · 2º B · 14 preguntas para mirar antes de aprobar', when: 'Jue 26' },
+        { tag: 'Cambió una fuente', title: 'Examen · Revolución de Mayo', why: 'Historia · 4º A · una fuente de la Unidad 1, después de aprobarlo', when: 'Jue 26' }
       ]);
     } else if (sc === 'full') {
       subline = '6 materias y 14 clases sin materia en 2026 · 181 clases · 31 exámenes · 146 fuentes';
       groups = [
         { hasLabel: true, label: 'Colegio San Martín', subjects: subj([
-          { name: 'Biología', meta: '2º B · 4 unidades', pct: '81%', done: '26 de 32 clases aprobadas', tags: ['26 aprobadas', '2 borradores', '4 pendientes'], next: 'U4 · Clase 27 · Ecosistemas urbanos' },
-          { name: 'Biología', meta: '2º C · 4 unidades · copia de 2º B', pct: '78%', done: '25 de 32 clases aprobadas', tags: ['25 aprobadas', '2 desactualizadas', '5 pendientes'], next: 'U4 · Clase 26 · Cadenas y redes tróficas' },
-          { name: 'Taller de ciencias', meta: 'Optativa · 3 unidades', pct: '90%', done: '18 de 20 clases aprobadas', tags: ['18 aprobadas', '2 pendientes'], next: 'U3 · Clase 19 · Feria de ciencias' }
+          { name: 'Biología', meta: '2º B · 4 unidades', pct: '81%', done: '26 de 32 clases aprobadas', tags: ['26 aprobadas', '3 para revisar', '4 sin armar'], next: 'U4 · Clase 27 · Ecosistemas urbanos' },
+          { name: 'Biología', meta: '2º C · 4 unidades · copia de 2º B', pct: '78%', done: '25 de 32 clases aprobadas', tags: ['25 aprobadas', '2 para revisar', '5 sin armar'], next: 'U4 · Clase 26 · Cadenas y redes tróficas' },
+          { name: 'Taller de ciencias', meta: 'Optativa · 3 unidades', pct: '90%', done: '18 de 20 clases aprobadas', tags: ['18 aprobadas', '2 sin armar'], next: 'U3 · Clase 19 · Feria de ciencias' }
         ]) },
         { hasLabel: true, label: 'Instituto Belgrano', subjects: subj([
-          { name: 'Historia', meta: '4º A · 5 unidades', pct: '86%', done: '24 de 28 clases aprobadas', tags: ['24 aprobadas', '1 desactualizada', '3 pendientes'], next: 'U4 · Clase 25 · La Ley Sáenz Peña' },
-          { name: 'Historia', meta: '5º B · 5 unidades', pct: '58%', done: '18 de 31 clases aprobadas', tags: ['18 aprobadas', '2 borradores', '11 pendientes'], next: 'U3 · Clase 19 · El primer peronismo' },
-          { name: 'Educación cívica', meta: '3º C · 4 unidades', pct: '45%', done: '11 de 24 clases aprobadas', tags: ['11 aprobadas', '13 pendientes'], next: 'U2 · Clase 12 · La Constitución de 1853' }
+          { name: 'Historia', meta: '4º A · 5 unidades', pct: '86%', done: '24 de 28 clases aprobadas', tags: ['24 aprobadas', '1 para revisar', '4 sin armar'], next: 'U4 · Clase 25 · La Ley Sáenz Peña' },
+          { name: 'Historia', meta: '5º B · 5 unidades', pct: '58%', done: '18 de 31 clases aprobadas', tags: ['18 aprobadas', '2 para revisar', '11 sin armar'], next: 'U3 · Clase 19 · El primer peronismo' },
+          { name: 'Educación cívica', meta: '3º C · 4 unidades', pct: '45%', done: '11 de 24 clases aprobadas', tags: ['11 aprobadas', '13 sin armar'], next: 'U2 · Clase 12 · La Constitución de 1853' }
         ]) },
         { hasLabel: true, label: 'Sin materia', subjects: subj([
-          { name: 'Clases sin materia', meta: '14 clases', pct: '86%', done: '12 de 14 clases aprobadas', tags: ['12 aprobadas', '2 borradores'], next: 'Charla · Uso responsable de IA' }
+          { name: 'Clases sin materia', meta: '14 clases', pct: '86%', done: '12 de 14 clases aprobadas', tags: ['12 aprobadas', '2 para revisar'], next: 'Charla · Uso responsable de IA' }
         ]) }
       ];
       review = rev([
@@ -211,7 +214,7 @@ class Component extends DCLogic {
     const steps = [
       { n: '1', text: 'Decís el tema, el curso y cuánto dura la clase' },
       { n: '2', text: 'La IA busca fuentes con autor y te las muestra para aprobar' },
-      { n: '3', text: 'Arma diapositivas, guion y material; vos editás a mano o pidiendo cambios' }
+      { n: '3', text: 'Arma diapositivas, secuencia y material; vos editás a mano o pidiendo cambios' }
     ];
     return {
       t, groups, review, subline, steps,
@@ -228,7 +231,7 @@ class Component extends DCLogic {
     o.review = (o.review || []).map((r) => ({ ...r, href: /^(Examen|Evaluación)/.test(r.title) ? g.examReview : g.classEdit }));
     o.groups = (o.groups || []).map((gr) => ({ ...gr, subjects: (gr.subjects || []).map((s) => ({ ...s, tags: (s.tags || []).map((x) => ({ ...x, href: g.examReview })) })) }));
     o.starts = [
-      { title: 'Una clase', who: 'Para la semana que viene', what: 'Decís el tema y el curso. La IA busca fuentes citables y arma diapositivas, guion y material.', cta: 'Crear una clase', href: g.classNew },
+      { title: 'Una clase', who: 'Para la semana que viene', what: 'Decís el tema y el curso. La IA busca fuentes citables y arma diapositivas, secuencia y material.', cta: 'Crear una clase', href: g.classNew },
       { title: 'La materia', who: 'Para planificar el año', what: 'Cargás el programa y la IA propone las unidades y las clases de todo el año.', cta: 'Crear la materia', href: g.subjectNew },
       { title: 'Tus materiales', who: 'Si ya tenés PDFs', what: 'Subís lo que ya usás. La IA lo ordena y lo cita en todo lo que arme.', cta: 'Ir a la Biblioteca', href: g.lib }
     ];

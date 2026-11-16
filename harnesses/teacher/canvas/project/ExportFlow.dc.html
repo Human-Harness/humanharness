@@ -75,9 +75,9 @@ body{margin:0}
 
   <!-- exam export form -->
   <sc-if value="{{isExam}}" hint-placeholder-val="{{ false }}">
-    <div role="dialog" aria-label="Exportar el examen" style="position: absolute; left: 260px; top: 150px; width: 760px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: {{t.shadow}};">
+    <div role="dialog" aria-label="Descargar el examen en PDF" style="position: absolute; left: 260px; top: 150px; width: 760px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: {{t.shadow}};">
       <div style="display: flex; flex-direction: column; gap: 4px;">
-        <span style="font-size: 20px; font-weight: 600;">Exportar el examen</span>
+        <span style="font-size: 20px; font-weight: 600;">Descargar el examen en PDF</span>
         <span style="font-size: 14px; color: {{t.muted}};">Evaluación · U4 Ecosistemas · Biología 2º B · borrador</span>
       </div>
       <div role="status" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; font-size: 14px; line-height: 1.45;"><span style="flex-grow: 1;">Este examen todavía no está aprobado. Podés exportarlo igual.</span><a href="{{go.examReview}}" style="font-weight: 600; color: inherit; text-decoration: underline; cursor: pointer; white-space: nowrap;">Revisar primero</a></div>
@@ -116,7 +116,7 @@ body{margin:0}
         <span style="font-size: 14px; color: {{t.muted}};">Se guardan en la carpeta del examen.</span>
         <span style="flex-grow: 1;"></span>
         <a href="{{go.examReview}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
-        <a href="{{go.cfExported}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Exportar 4 PDF</a>
+        <a href="{{go.cfExported}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Descargar 5 PDF</a>
       </div>
     </div>
   </sc-if>
@@ -130,20 +130,20 @@ class Component extends DCLogic {
     const dark = !!this.props.dark;
     const t = dark ? D : L;
     const v = this.props.variant || 'doing';
-    const doingFiles = [['Diapositivas.pdf','done','12 págs'],['Guion para vos.pdf','now','armando'],['Material para alumnos.pdf','todo','']].map(([name, st, state]) => ({
+    const doingFiles = [['Diapositivas.pdf','done','12 págs'],['Secuencia para vos.pdf','now','armando'],['Material para alumnos.pdf','todo','']].map(([name, st, state]) => ({
       name, state, icon: st === 'done' ? '✓' : st === 'now' ? '●' : '○',
       mark: st === 'done' ? t.okInk : st === 'now' ? t.activeInk : t.faint,
       ink: st === 'todo' ? t.muted : t.ink,
       anim: st === 'now' ? 'hhpulse 1.6s ease-in-out infinite' : 'none'
     }));
-    const doneFiles = [['Diapositivas.pdf','Para proyectar en el aula · 12 páginas · 2,4 MB'],['Guion para vos.pdf','Para leer vos, no se reparte · 4 páginas · 180 KB'],['Material para alumnos.pdf','Para imprimir, una por alumno · 2 páginas · 96 KB']].map(([name, meta], i) => ({ name, meta, border: i === 0 ? '0' : '1px solid ' + t.line }));
+    const doneFiles = [['Diapositivas.pdf','Para proyectar en el aula · 12 páginas · 2,4 MB'],['Secuencia para vos.pdf','Para leer vos, no se reparte · 4 páginas · 180 KB'],['Material para alumnos.pdf','Para imprimir, una por alumno · 2 páginas · 96 KB']].map(([name, meta], i) => ({ name, meta, border: i === 0 ? '0' : '1px solid ' + t.line }));
     const forStudents = [t.s2, t.muted], forYou = [t.active, t.activeInk];
     const examParts = [
       ['Tema A', '14 preguntas, para imprimir', 'Alumnos', true, forStudents],
       ['Tema B', 'Otras preguntas, con los mismos contenidos y la misma dificultad', 'Alumnos', true, forStudents],
       ['Clave de respuestas', 'Respuesta esperada de cada pregunta, temas A y B', 'Solo vos', true, forYou],
       ['Grilla de corrección', 'Puntaje por pregunta y criterios para el desarrollo', 'Solo vos', true, forYou],
-      ['Hoja de respuestas', 'Casilleros para marcar la opción múltiple', 'Alumnos', false, forStudents]
+      ['Hoja de respuestas', 'Casilleros para las 8 de opción múltiple', 'Alumnos', true, forStudents]
     ].map(([name, desc, who, on, c], i) => ({ name, desc, who, on, whoBg: c[0], whoInk: c[1], border: i === 0 ? '0' : '1px solid ' + t.line, boxBg: on ? t.cta : 'transparent', boxBorder: on ? '0' : '1px solid ' + t.lineS }));
     return {
       t, dark, yes: true, from: this.props.from || '', doingFiles, doneFiles, examParts,

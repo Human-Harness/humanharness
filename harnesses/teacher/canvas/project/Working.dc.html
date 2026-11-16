@@ -67,7 +67,7 @@ body{margin:0}
             <div style="height: 6px; border-radius: 3px; background: {{t.barBg}};"><div style="width: 40%; height: 6px; border-radius: 3px; background: {{t.activeInk}};"></div></div>
           </div>
           <span style="font-size: 12px;">Faltan unos 2 min</span>
-          <button style="height: 32px; padding: 0 12px; border: 1px solid {{t.activeInk}}; border-radius: 12px; background: transparent; color: {{t.activeInk}}; font-family: inherit; font-size: 14px; font-weight: 500;">Seguir en segundo plano</button>
+          <button style="height: 32px; padding: 0 12px; border: 1px solid {{t.activeInk}}; border-radius: 12px; background: transparent; color: {{t.activeInk}}; font-family: inherit; font-size: 14px; font-weight: 500;">Seguir trabajando</button>
         </div>
         <div style="flex-grow: 1; min-height: 0; display: flex; gap: 24px; padding: 16px 32px;">
           <div style="width: 160px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;">
@@ -153,9 +153,9 @@ body{margin:0}
         </div>
         <div style="height: 8px; border-radius: 4px; background: {{t.barBg}};"><div style="width: {{dPct}}; height: 8px; border-radius: 4px; background: {{t.activeInk}};"></div></div>
         <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
-          <span style="flex-grow: 1; font-size: 14px; color: {{t.muted}};">Si seguís en segundo plano: cuando esté lista, te avisamos y queda en Para revisar.</span>
+          <span style="flex-grow: 1; font-size: 14px; color: {{t.muted}};">Si seguís trabajando: cuando esté lista, te avisamos y queda en Para revisar.</span>
           <a href="{{go.workCancel}}" style="height: 36px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
-          <a href="{{go.workBg}}" style="height: 36px; padding: 0 14px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Seguir en segundo plano</a>
+          <a href="{{go.workBg}}" style="height: 36px; padding: 0 14px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Seguir trabajando</a>
         </div>
       </div>
     </div>
@@ -193,9 +193,9 @@ class Component extends DCLogic {
     const K = {
       a: { crumb: 'Biología · 2º B  ›  Nueva clase', title: 'Nueva clase', askLabel: 'Qué querés enseñar',
            ask: 'Una clase de 80 minutos sobre los humedales del Delta: qué son, qué servicios dan y por qué se queman. Con una actividad en grupos.',
-           chipsLabel: 'Fuentes · 3', chips: ['Humedales del Delta del Paraná · INTA','Kandus et al., 2010','Campbell, cap. 55'],
+           chipsLabel: 'Fuentes · 3', chips: ['Humedales del Delta del Paraná · INTA','Kandus y otros, s. f.','Campbell, cap. 55'],
            dTitle: 'Armando tu clase', dSub: 'Clase 29 · Humedales del Delta. Tarda unos 2 minutos más.', pct: '40%',
-           steps: [['Leer las 3 fuentes','done'],['Armar el guion de 80 minutos','done'],['Escribir las diapositivas · 5 de 12','now'],['Material para alumnos','todo'],['Verificar cada cita contra su fuente','todo']] },
+           steps: [['Leer las 3 fuentes','done'],['Armar la secuencia de 80 minutos','done'],['Escribir las diapositivas · 5 de 12','now'],['Material para alumnos','todo'],['Verificar cada cita contra su fuente','todo']] },
       exam: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
            ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos temas, A y B.',
            chipsLabel: 'Desde clases · 3', chips: ['23 · Cruzamientos','25 · Qué es un ecosistema','26 · Cadenas y redes tróficas'],

@@ -50,6 +50,15 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-tb-popover",
   "hh-rail-divider",
   "hh-rail-group",
+  // The folded overlays, the Sidekick button and the plugin chips row (task view one column)
+  "hh-overlay",
+  "hh-overlay-left",
+  "hh-overlay-right",
+  "hh-overlay-head",
+  "hh-overlay-title",
+  "hh-overlay-section",
+  "hh-sk-open",
+  "hh-chips-row",
   // History as a page: its task rows, a row's body, a changed file, a point's time; the chat hidden under it (stage 4b1)
   "hh-history-row",
   "hh-history-body",

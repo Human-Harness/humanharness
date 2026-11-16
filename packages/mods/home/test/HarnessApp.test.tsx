@@ -8,7 +8,7 @@ import { HarnessApp, type BlockProps } from "../../../ui/src";
 import { resetWorkDetail } from "../../../ui/src/ActivityList";
 import { formatReset } from "../../../ui/src/usage";
 import { FakeClient } from "../../../ui/test/fake-client";
-import { openUsage, railHistory, seeUsage } from "./one-bar";
+import { openSide, openUsage, railHistory, seeUsage } from "./one-bar";
 
 afterEach(() => {
   cleanup();
@@ -43,6 +43,12 @@ async function breakEngine(client: FakeClient, status: Partial<FakeClient["statu
   client.status = { ...client.status, ...status };
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
+}
+
+/** The harness side's heavy action, in the left overlay (task view one column). */
+async function tidy() {
+  await openSide();
+  return screen.getByRole("button", { name: "tidy" });
 }
 
 describe("HarnessApp", () => {
@@ -149,6 +155,7 @@ describe("HarnessApp", () => {
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     act(() => client.emit({ type: "block", name: "progress", data: { percent: 40 } }));
+    await openSide();
     expect(screen.getByText("Progress 40%")).toBeTruthy();
   });
 
@@ -632,13 +639,13 @@ describe("HarnessApp", () => {
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 }, tokens: {} };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
     await seeUsage(client, /5 h: 75% used/);
-    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    fireEvent.click(await tidy());
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog.textContent).toContain('"Tidy up" usually uses about 8% of your 5-hour window. You have 25% left.');
     fireEvent.click(within(dialog).getByRole("button", { name: "Not now" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(client.sent).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    fireEvent.click(await tidy());
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
     expect(client.sentOptions).toEqual([{ action: "tidy" }]);
@@ -656,7 +663,7 @@ describe("HarnessApp", () => {
     try {
       await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
       await seeUsage(client, /5 h: 75% used/);
-      const opener = screen.getByRole("button", { name: "tidy" });
+      const opener = await tidy();
       opener.focus();
       fireEvent.click(opener);
       const dialog = await screen.findByRole("alertdialog");
@@ -692,7 +699,7 @@ describe("HarnessApp", () => {
     expect(within(pop).queryByText(/5 h:/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Context \d+%$/ }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    fireEvent.click(await tidy());
     await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
   });
 
@@ -702,7 +709,7 @@ describe("HarnessApp", () => {
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {}, tokens: {} };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
     await seeUsage(client, /5 h: 20% used/);
-    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    fireEvent.click(await tidy());
     await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
@@ -929,6 +936,7 @@ describe("HarnessApp", () => {
     await startWork(
       <HarnessApp client={client} stateBlocks={["progress"]} renderSide={(s) => <p>Progress {(s.progress as { percent: number } | undefined)?.percent ?? 0}%</p>} />,
     );
+    await openSide();
     await screen.findByText("Progress 60%");
   });
 });

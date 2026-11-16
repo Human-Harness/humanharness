@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type BlockProps, type HarnessAppProps, HarnessApp } from "../../../ui/src";
 import type { TaskStatus } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 afterEach(cleanup);
 
@@ -64,6 +65,7 @@ describe("flow mode", () => {
     const start = await startRegion();
     expect(within(start).getByRole("button", { name: /The manifest/ }).textContent).toContain("Done");
     expect(within(start).getByRole("button", { name: /Engines/ }).textContent).toContain("Next on the path");
+    await openSide();
     expect(within(screen.getByRole("list", { name: "Guided path" })).getByRole("button", { name: /Engines/ }).getAttribute("aria-current")).toBe("step");
     expect(screen.getByText("~/code/humanharness")).toBeTruthy();
     expect(screen.getByText("Answers can be wrong.")).toBeTruthy();
@@ -173,6 +175,7 @@ describe("flow mode", () => {
     };
     await startWork(client);
     await startRegion();
+    await openSide();
     fireEvent.click(within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" }));
     // The note's detail on the Files page (stage 4b2).
     const panel = await screen.findByRole("region", { name: "Where chats live" });
@@ -262,6 +265,7 @@ describe("flow mode", () => {
     client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
     await startWork(client);
     await startRegion();
+    await openSide();
     const chats = within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" });
     chats.focus();
     fireEvent.click(chats);

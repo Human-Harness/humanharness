@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { PluginPanelView, PluginSurfaceView, SearchAnswer, SearchHitView } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 /**
  * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
@@ -73,6 +74,7 @@ describe("a plugin record picked away from the work screen (search spec §3 Data
   it("opens nothing when the loaded surface doesn't have its panel", async () => {
     const release = await pickFromHome(surface([DIGEST]));
     await act(async () => release());
+    await openSide();
     await screen.findByRole("tab", tab("Digest"));
     await act(async () => {});
     expect(screen.getByRole("tab", tab("Digest")).getAttribute("aria-selected")).toBe("true");

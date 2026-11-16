@@ -16,9 +16,11 @@ export interface TaskBarSlot {
 
 /**
  * The one bar of an open task (task view one column), inside the top bar, from the left: the harness crumb, the task
- * switcher, the status, the scope picker when declared, a spacer, the context chip, plugin chips, the Sidekick toggle
- * when declared. The bell, the avatar and the test tag follow it, as the top bar's own trailing pieces. With no task
- * open the top bar keeps its crumbs and Volver, and the slot holds only the scope picker, the chips and the toggle.
+ * switcher, the status, the Path button that opens the left overlay, the scope picker when declared, a spacer, the
+ * context chip, the Sidekick toggle and the button that opens its overlay when declared. The bell, the avatar and the
+ * test tag follow it, as the top bar's own trailing pieces. With no task open the top bar keeps its crumbs and Volver,
+ * and the slot holds only the Path button, the scope picker and the Sidekick pieces. Plugin chips sit in a row above
+ * the conversation.
  */
 export function TaskBar({
   open,
@@ -28,20 +30,24 @@ export function TaskBar({
   working,
   scope,
   context,
-  chips,
+  path,
+  sidekickButton,
   sidekick,
 }: Omit<TaskBarSlot, "el"> & {
   working: boolean | null;
   scope?: ReactNode;
   context?: ReactNode;
-  chips?: ReactNode;
+  /** The Path button (PathButton), when the task has a left overlay. */
+  path?: ReactNode;
+  /** The button that opens Sidekick's overlay (SidekickButton), when the harness has Sidekick. */
+  sidekickButton?: ReactNode;
   sidekick?: { on: boolean; onToggle: () => void } | null | undefined;
 }) {
   const { t } = useTranslation();
   const tail = (
     <>
+      {!open && path}
       {!open && scope}
-      {chips}
       {sidekick && (
         <SidekickToggle
           on={sidekick.on}
@@ -49,6 +55,7 @@ export function TaskBar({
           onToggle={sidekick.onToggle}
         />
       )}
+      {sidekickButton}
     </>
   );
   if (!open) return tail;
@@ -68,6 +75,7 @@ export function TaskBar({
           {t(working ? "home.status.working" : "home.status.waiting")}
         </span>
       )}
+      {path}
       {scope}
       <span className="hh-spacer" />
       {context}

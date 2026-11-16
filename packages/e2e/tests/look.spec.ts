@@ -25,9 +25,9 @@ for (const theme of ["light", "dark"] as const) {
       await start.getByRole("button", { name: /The manifest/ }).click();
       await expect(page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
       await page.screenshot({ path: path.join(lookDir, `chat-${theme}.png`) });
-      // The chat card keeps room to read at the default window: the side columns give way first.
+      // One 680 reading column at the default window (task view one column): no side columns take from it.
       const card = await page.locator(".hh-conversation").boundingBox();
-      expect(card!.width).toBeGreaterThanOrEqual(340);
+      expect(card!.width).toBeGreaterThanOrEqual(680);
     } finally {
       await closeAndClean(app, s);
     }
@@ -86,8 +86,9 @@ for (const theme of ["light", "dark"] as const) {
       const answer = page.getByRole("main").getByText("Los motores se detectan en cada inicio.");
       await expect(answer).toBeVisible();
 
-      // Settings is a page opened from the top bar gear, not a dialog over the chat.
-      await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+      // Settings is a page, not a dialog over the chat. With a task open the gear leaves the bar: the rail's TASK group
+      // has Task settings (task view one column).
+      await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Task settings" }).click();
       const settings = page.getByRole("main", { name: "Settings" });
       await expect(settings).toBeVisible();
       await expect(page.getByRole("dialog", { name: "Settings" })).toHaveCount(0);

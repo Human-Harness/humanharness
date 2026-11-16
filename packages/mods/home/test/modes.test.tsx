@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { CurrentTaskView } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 afterEach(cleanup);
 
@@ -169,6 +170,7 @@ describe("task modes in the chat", () => {
   it("'ask': starting the action shows its modes first and sends the pick with it", async () => {
     const client = coachClient({ current: null, defaultMode: "ask" });
     await open(client, "");
+    await openSide();
     fireEvent.click((await screen.findAllByRole("button", { name: "Study" }))[0]);
     const dialog = await screen.findByRole("dialog", { name: "How do you want to work?" });
     expect(client.sent).toEqual([]);
@@ -182,9 +184,11 @@ describe("task modes in the chat", () => {
   it("'ask': Escape and Not now send nothing", async () => {
     const client = coachClient({ current: null, defaultMode: "ask" });
     await open(client, "");
+    await openSide();
     fireEvent.click((await screen.findAllByRole("button", { name: "Study" }))[0]);
     fireEvent.keyDown(await screen.findByRole("dialog", { name: "How do you want to work?" }), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "How do you want to work?" })).toBeNull();
+    await openSide();
     fireEvent.click((await screen.findAllByRole("button", { name: "Study" }))[0]);
     const dialog = await screen.findByRole("dialog", { name: "How do you want to work?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Not now" }));

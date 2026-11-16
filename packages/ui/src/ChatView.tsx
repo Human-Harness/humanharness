@@ -60,7 +60,7 @@ import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
 import { FirstOpenOffer } from "./sidekick/PresetOffer";
 import { ReviewHint } from "./sidekick/ReviewHint";
-import { SidekickPanel, SidekickRail, waitingCards } from "./sidekick/SidekickPanel";
+import { SidekickButton, SidekickPanel, waitingCards } from "./sidekick/SidekickPanel";
 import { useNarrow } from "./sidekick/useNarrow";
 import { EngineNotice } from "./hatches/EngineNotice";
 import { useSidekick } from "./sidekick/useSidekick";
@@ -69,6 +69,9 @@ import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, isToolLine, reduceChat } from "./state";
 import { ContextChip } from "./task-view/ContextChip";
 import { TaskBar, type TaskBarSlot } from "./task-view/TaskBar";
+import { Overlay } from "./task-view/Overlay";
+import { PathButton } from "./task-view/PathButton";
+import { useFolded } from "./task-view/useFolded";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 import { Button } from "./guide/Button";
 import { Option, OptionGroup } from "./guide/Option";
@@ -78,6 +81,8 @@ const STICK_THRESHOLD = 80;
 /** A turn's own entry: never an app notice or a tool call's line that came with no turn (tools spec §8.2). */
 const isReply = (e: ChatEntry): boolean => isTurnEntry(e) && !isToolLine(e);
 const NO_TASKS: TaskView = { current: null, actions: {}, notes: [] };
+const PATH_ID = "hh-overlay-path";
+const SK_ID = "hh-overlay-sidekick";
 
 export type SendFn = (text: string, options?: SendOptions) => boolean;
 
@@ -344,7 +349,7 @@ export function ChatView({
     () => surface && { surface, client, target, open: openPanel },
     [surface, client, target, openPanel],
   );
-  /** Under 720 px the panel can't show: no paid review the person can't see (styles.css). */
+  /** Under 720 px Sidekick has no overlay: no paid review the person can't see. */
   const narrow = useNarrow();
   const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
   /** A review in flight: until when the countdown runs (null: "always wait"). */
@@ -354,10 +359,15 @@ export function ChatView({
   const answerSeq = useRef(0);
   const answerRun = useRef<{ seq: number; composerSeq: number } | null>(null);
   const answerHold = useRef<{ cardId: string; hold: AnswerHold } | null>(null);
-  /** The panel opened or collapsed by the person; null: expanded when Sidekick is on. */
-  const [skOpen, setSkOpen] = useState<boolean | null>(null);
-  const [skView, setSkView] = useState<"sidekick" | "harness">("sidekick");
-  const skExpanded = sidekick !== null && (skOpen ?? sidekick.settings.on);
+  // Sidekick's overlay: not in a window too narrow for it (no review there either, useNarrow).
+  const skShown = sidekick !== null && !narrow && !slim;
+  const { overlay, skView, setSkView, showSk, holdRecord } = useFolded({
+    taskKey: tasks.current?.id,
+    skShown,
+    panelTarget,
+    surface,
+    openRecord: (r) => client.search.openRecord(r.collection, r.key, r.scope),
+  });
   const skCard = sidekick?.card?.id;
   /** Queued asks "For later" (spec §4.1): the live card's, then those of cards that were sent, which outlive them. */
   const [later, setLater] = useState<{ key: string; text: string }[]>([]);
@@ -396,18 +406,6 @@ export function ChatView({
     skFrame.current = requestAnimationFrame(() => setAnnouncement(text));
   }, [skWaitingIds, skCard, t]);
   useEffect(() => () => cancelAnimationFrame(skFrame.current), []);
-  /** Collapse ↔ open unmounts the focused button: focus moves to its counterpart (rail ↔ collapse). */
-  const skFocus = useRef(false);
-  const railRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!skFocus.current) return;
-    skFocus.current = false;
-    (skExpanded ? document.querySelector<HTMLButtonElement>(".hh-sk-collapse") : railRef.current)?.focus();
-  }, [skExpanded]);
-  const toggleSk = (open: boolean) => {
-    skFocus.current = true;
-    setSkOpen(open);
-  };
   /** Away from a turn just sent (loading, a notice): new content keeps the chat at the bottom while the user is there. */
   const stick = useRef(true);
   /** Set on send: the question that goes on screen next is pinned to the top of the chat. */
@@ -1135,7 +1133,12 @@ export function ChatView({
         requestAnimationFrame(() => inputRef.current?.focus());
         return true;
       case "record":
-        // The harness view's own handler (client.search.onOpenRecord); none listening: nothing opens (§3).
+        // The harness view's own handler (client.search.onOpenRecord); none listening: nothing opens (§3). A folded
+        // side view isn't mounted: its overlay unfolds, and the record goes once the view listens.
+        if (renderSide && !slim && !client.search.handlesRecord(intent.collection)) {
+          holdRecord(intent);
+          return true;
+        }
         return client.search.openRecord(intent.collection, intent.key, intent.scope);
       case "panel":
         // Picked before the first surface read came back (from Home): it waits for that read, then opens or drops.
@@ -1218,8 +1221,7 @@ export function ChatView({
     }
     const cardId = r.card.id;
     answerHold.current = { cardId, hold };
-    setSkOpen(true);
-    setSkView("sidekick");
+    showSk();
     // Skip on the held answer: the card leaves with it.
     const drop = () => {
       if (answerHold.current?.cardId !== cardId) return;
@@ -1329,8 +1331,7 @@ export function ChatView({
     if (seq !== reviewSeq.current) return;
     setReviewing(null);
     if (r.kind === "card") {
-      setSkOpen(true);
-      setSkView("sidekick");
+      showSk();
       return;
     }
     // Anything else, a `cancelled` from main included (Sidekick turned off mid-review), sends as typed. The latest
@@ -1686,6 +1687,43 @@ export function ChatView({
     setShowHistory(taskPage.page === "history");
   }, [taskPage]);
 
+  const ownSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
+  // The harness's `<PluginSlot>`s read the surface from here; without one, exactly its side panel (D0).
+  const harnessSide = ownSide !== undefined && surfaceCtx ? <PluginSurfaceContext.Provider value={surfaceCtx}>{ownSide}</PluginSurfaceContext.Provider> : ownSide;
+  // Without Sidekick's overlay, the harness's side panel goes in the left one, after the path.
+  const sideOnLeft = !skShown && harnessSide !== undefined;
+  const leftBody = slim ? null : flow ? (
+    <FlowSide
+      state={state}
+      tasks={tasks}
+      disabled={blocked() || !loaded}
+      onStart={startTopic}
+      onOpenNote={(slug) => {
+        setShowHistory(false);
+        setTimelineFile(null);
+        setContextOpen(false);
+        setNotesPage({ open: slug });
+      }}
+      material={material}
+      {...(pluginsSection ? { plugins: pluginsSection } : {})}
+    />
+  ) : material || pluginsSection ? (
+    // Without actions there is no path: the material panel (and the Plugins section) get a nav of their own.
+    <nav className="hh-flow-side" aria-label={material ? t("material.title") : t("plugins.panels.section")}>
+      {material}
+      {pluginsSection}
+    </nav>
+  ) : null;
+  const hasLeft = leftBody !== null || sideOnLeft;
+  const leftName = flow ? t("reader.path") : material ? t("material.title") : pluginsSection ? t("plugins.panels.section") : t("sidekick.switch.harness");
+  const pathButton = hasLeft && (
+    <PathButton state={state} tasks={tasks} name={leftName} expanded={overlay.open === "path"} controls={PATH_ID} onClick={() => overlay.toggle("path")} buttonRef={overlay.trigger("path")} />
+  );
+  const skButton = skShown && (
+    <SidekickButton state={sidekick} expanded={overlay.open === "sidekick"} controls={SK_ID} onOpen={() => overlay.toggle("sidekick")} buttonRef={overlay.trigger("sidekick")} />
+  );
+  const chips = surfaceCtx ? surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT) : [];
+
   return (
     <DocumentContext.Provider value={documentHost}>
       <div className={slim ? "hh-app hh-app-slim" : `hh-app${paged ? " hh-app-paged" : ""}`}>
@@ -1697,14 +1735,16 @@ export function ChatView({
               working={tasks.current ? Boolean(chat.live) : null}
               scope={scopeBar?.(blocked())}
               context={tasks.current?.context && <ContextChip {...tasks.current.context} engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} onOpen={openContext} />}
-              chips={surfaceCtx && <PluginChips chips={surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT)} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />}
+              path={pathButton}
+              sidekickButton={skButton}
               sidekick={
                 sidekick && {
                   on: sidekick.settings.on,
                   onToggle: () => {
                     const on = !sidekick.settings.on;
                     void client.sidekick.set(on ? { on, introSeen: true } : { on }).catch(() => undefined);
-                    setSkOpen(on);
+                    if (on && !narrow) overlay.show("sidekick");
+                    else if (overlay.open === "sidekick") overlay.hide();
                   },
                 }
               }
@@ -1714,28 +1754,11 @@ export function ChatView({
         <div
           className={`hh-body${(reader || contextOpen || timelineFile !== null) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
         >
-          {flow && !slim && (
-            <FlowSide
-              state={state}
-              tasks={tasks}
-              disabled={blocked() || !loaded}
-              onStart={startTopic}
-              onOpenNote={(slug) => {
-                setShowHistory(false);
-                setTimelineFile(null);
-                setContextOpen(false);
-                setNotesPage({ open: slug });
-              }}
-              material={material}
-              {...(pluginsSection ? { plugins: pluginsSection } : {})}
-            />
-          )}
-          {/* Without actions there is no flow side panel: the material panel (and the Plugins section) get one of their own. */}
-          {!flow && (material || pluginsSection) && (
-            <nav className="hh-flow-side" aria-label={material ? t("material.title") : t("plugins.panels.section")}>
-              {material}
-              {pluginsSection}
-            </nav>
+          {overlay.open === "path" && hasLeft && (
+            <Overlay side="left" id={PATH_ID} name={leftName} closeLabel={t("reader.close")} onClose={overlay.close} autoFocus={overlay.focusIn}>
+              {leftBody}
+              {sideOnLeft && <div className="hh-overlay-section">{harnessSide}</div>}
+            </Overlay>
           )}
           <Main className="hh-main">
             {/* The task runs without its scope's engine config (hatches spec §5.3): only with enginePresets (D0). */}
@@ -1768,6 +1791,11 @@ export function ChatView({
                 disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
                 onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
               />
+            )}
+            {chips.length > 0 && surfaceCtx && (
+              <div className="hh-chips-row">
+                <PluginChips chips={chips} onOpen={(plugin, panel) => surfaceCtx.open(plugin, panel)} />
+              </div>
             )}
             <section className="hh-chat hh-card hh-conversation" aria-label={t("chat.conversation")} ref={chatRef} onScroll={onScroll}>
               {loadFailed && (
@@ -2078,30 +2106,15 @@ export function ChatView({
             {reviewing && <ReviewHint until={reviewing.until} sendKey={SEND_KEY} />}
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
           </Main>
-          {(() => {
-            const ownSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
-            // The harness's `<PluginSlot>`s read the surface from here; without one, exactly its side panel (D0).
-            const harnessSide =
-              ownSide !== undefined && surfaceCtx ? <PluginSurfaceContext.Provider value={surfaceCtx}>{ownSide}</PluginSurfaceContext.Provider> : ownSide;
-            // D0: without Sidekick, exactly the harness's side panel as before.
-            // Narrow, the panel and rail hide (styles.css): the harness's side panel shows as before (D0).
-            if (!sidekick || narrow) return harnessSide !== undefined ? <aside className="hh-side">{harnessSide}</aside> : null;
-            if (!skExpanded) {
-              return (
-                <>
-                  {harnessSide !== undefined && <aside className="hh-side">{harnessSide}</aside>}
-                  <SidekickRail state={sidekick} buttonRef={railRef} onOpen={() => toggleSk(true)} />
-                </>
-              );
-            }
-            return (
+          {skShown && overlay.open === "sidekick" && (
+            <Overlay side="right" id={SK_ID} name={sidekick.info.name} closeLabel={t("sidekick.collapse")} onClose={overlay.close} autoFocus={overlay.focusIn} bare>
               <SidekickPanel
                 state={sidekick}
                 view={harnessSide !== undefined ? skView : "sidekick"}
                 onView={setSkView}
                 {...(harnessSide !== undefined ? { harnessSide } : {})}
                 sendKey={SEND_KEY}
-                onCollapse={() => toggleSk(false)}
+                onCollapse={overlay.close}
                 offer={<FirstOpenOffer client={client} offered={sidekick.settings.presetsOffered} />}
                 onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
                 onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(() => undefined)}
@@ -2119,7 +2132,7 @@ export function ChatView({
                 onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
                 onNotNow={() => {
                   void client.sidekick.set({ introSeen: true }).catch(() => undefined);
-                  toggleSk(false);
+                  overlay.close();
                 }}
                 // A suggestion goes through `send`, never `submit`: it is never reviewed again.
                 // The card leaves only once the send went: a refused one keeps the rewrite.
@@ -2168,8 +2181,8 @@ export function ChatView({
                   inputRef.current?.focus();
                 }}
               />
-            );
-          })()}
+            </Overlay>
+          )}
           {reader && !slim && (
             <DocumentReader
               client={client}

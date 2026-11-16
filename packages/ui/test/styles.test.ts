@@ -162,10 +162,13 @@ describe("start view in the chat column", () => {
 });
 
 describe("flow layout (UI refresh spec §5.1)", () => {
-  it("the side columns give way to the chat card, never grow against it", () => {
-    expect(css).toMatch(/^\.hh-main\s*{[^}]*flex:\s*1 1 400px[^}]*min-width:\s*0/m);
-    expect(css).toMatch(/^\.hh-side\s*{[^}]*box-sizing:\s*border-box[^}]*flex:\s*0 4 var\(--hh-column-w\)[^}]*min-width:\s*220px[^}]*max-width:\s*320px/m);
-    expect(css).toMatch(/^\.hh-flow-side\s*{[^}]*flex:\s*0 4 var\(--hh-column-w\)[^}]*min-width:\s*220px[^}]*max-width:\s*320px/m);
+  it("one centred 680 column (task view one column): no side columns, the path and Sidekick are 280 overlays", () => {
+    // 728 less 24 on each side: the conversation card is 680 wide, and gives way in a narrow window.
+    expect(css).toMatch(/^\.hh-app:not\(\.hh-app-slim\) \.hh-main\s*{[^}]*flex:\s*0 1 728px[^}]*margin:\s*0 auto[^}]*padding:\s*0 24px/m);
+    expect(css).not.toMatch(/^\.hh-side\s*{/m);
+    expect(css).not.toMatch(/\.hh-sk-rail/);
+    expect(css).toMatch(/^\.hh-overlay\s*{[^}]*position:\s*absolute[^}]*width:\s*var\(--hh-column-w\)/m);
+    expect(css).toMatch(/--hh-column-w:\s*280px/);
   });
 
   it("in a setup step (slim) the chat card and the composer get no margins or shadow", () => {

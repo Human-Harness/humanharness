@@ -126,7 +126,10 @@ test("a review that takes too long: the countdown, then the prompt goes as typed
     await expect(page.getByRole("button", { name: "Reviewing…" })).toBeVisible();
     await expect(page.getByText(/Sends anyway in \d+ s/)).toBeVisible();
     await expect(page.getByRole("main").getByText("Listo.")).toHaveCount(2, { timeout: 15_000 });
-    await expect(page.getByText("Sidekick took too long. Your prompt went as typed.")).toBeVisible();
+    // The notice is in Sidekick's panel, folded in its overlay (task view one column): its button in the bar opens it.
+    await page.getByRole("button", { name: /^(Open Sidekick|Sidekick · )/ }).click();
+    await expect(page.getByRole("complementary", { name: "Sidekick" }).getByText("Sidekick took too long. Your prompt went as typed.")).toBeVisible();
+    await page.keyboard.press("Escape");
     const sent = readJsonl<Run>(s.claudePrompts).filter((r) => !isSidekick(r));
     expect(sent.map((r) => r.prompt)).toContainEqual(expect.stringContaining("make it better"));
 

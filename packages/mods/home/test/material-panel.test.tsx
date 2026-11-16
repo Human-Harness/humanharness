@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp, type HarnessAppProps, type MaterialView } from "../../../ui/src";
 import { MaterialPanel } from "../../../ui/src/MaterialPanel";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 afterEach(cleanup);
 
@@ -391,6 +392,9 @@ describe("where the panel goes", () => {
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
+    // The path, material and their panels are folded in the left overlay (task view one column): unfold it if there.
+    await screen.findByRole("textbox");
+    if (document.querySelector('button[aria-controls="hh-overlay-path"]')) await openSide();
   }
 
   it("in the flow side panel with material and an open scope; never without material (D0)", async () => {
@@ -426,6 +430,8 @@ describe("where the panel goes", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Link" }), { target: { value: "https://example.org/z" } });
     fireEvent.change(await screen.findByRole("spinbutton", { name: "From page" }), { target: { value: "7" } });
     fireEvent.change(await screen.findByRole("combobox", { name: "Choose topic" }), { target: { value: "decimals" } });
+    // Another scope is another task: it shows folded.
+    await openSide();
     expect(await screen.findByText("ch2.pdf has 90 pages. Checking and labelling it will use about 50,000 tokens.")).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Link" })).toBeNull();
     expect((screen.getByRole("spinbutton", { name: "From page" }) as HTMLInputElement).value).toBe("1");
@@ -439,6 +445,7 @@ describe("where the panel goes", () => {
     await screen.findByRole("navigation", { name: "Guided path" });
     expect(screen.queryByText(/Own panel for/)).toBeNull();
     fireEvent.change(await screen.findByRole("combobox", { name: "Choose topic" }), { target: { value: "fractions" } });
+    await openSide();
     expect(await screen.findByText("Own panel for fractions")).toBeTruthy();
   });
 

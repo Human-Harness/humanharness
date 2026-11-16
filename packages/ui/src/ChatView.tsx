@@ -1652,7 +1652,7 @@ export function ChatView({
         ? { title: t("history.title"), back: closeHistory, close: closeHistory, rail: "task-history" }
         : notesShown
           ? // From a note's detail, Volver goes to the list and says its name (DESIGN.md "Secondary pages").
-            { title: t("files.title"), close: closeNotes, rail: notesPage.task ? "task-notes" : "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
+            { title: t(notesPage.task ? "notes.list" : "files.title"), close: closeNotes, rail: notesPage.task ? "task-notes" : "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
           : null,
     );
   }, [historyPage, notesShown, noteOpen, notesPage?.task, closeHistory, closeNotes, toNotesList, t]);
@@ -2239,6 +2239,7 @@ export function ChatView({
         {notesShown && (
           <NotesPage
             notes={notesPage.task ? taskNotes : tasks.notes}
+            title={t(notesPage.task ? "notes.list" : "files.title")}
             {...(noteOpen ? { open: noteOpen } : {})}
             focusKey={notesRequest}
             disabled={blocked()}

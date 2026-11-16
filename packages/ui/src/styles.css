@@ -608,6 +608,8 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-step-mark.hh-flow-mark { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-size: 12px; }
 .hh-step-mark.hh-flow-mark.done { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
 .hh-nav-item[aria-current="step"] .hh-flow-mark { background: var(--hh-cta); color: var(--hh-cta-ink); }
+/* The step on screen can't be picked again, but it is not unavailable: it keeps its full colour. */
+.hh-nav-item[data-selected="true"]:disabled { opacity: 1; }
 /* Task view one column: one 680 reading column (the card), centred; in a narrow window it gives way, never scrolls sideways. */
 .hh-app:not(.hh-app-slim) .hh-main { flex: 0 1 728px; box-sizing: border-box; margin: 0 auto; padding: 0 24px; }
 .hh-chat.hh-conversation { padding: 24px clamp(16px, 2.5vw, 32px); }
@@ -618,6 +620,9 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-composer > .hh-composer-field { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .hh-composer-field > .hh-composer-send-hint { align-self: flex-end; }
 .hh-composer textarea { border-color: transparent; padding: 4px 0; }
+/* One field: the focus ring goes round the composer card, not round the textarea inside it. */
+.hh-composer textarea:focus-visible { outline: none; }
+.hh-composer:has(textarea:focus-visible) { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-composer-send-hint { color: var(--hh-muted); font-size: 12px; }
 @media (max-width: 640px) { .hh-chat, .hh-chat.hh-conversation { padding: 16px; } }
 /* The working line: 44 high (4 + 40). */

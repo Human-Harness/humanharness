@@ -11,7 +11,7 @@ Sofi, age band "Hasta 12", language Español. Interview result: goes slowly with
 
 | Topic | Grounding | Material | Concepts mastered | Flashcards | Sessions |
 |---|---|---|---|---|---|
-| Fracciones | Mixto, level "algo sé" | 2 notebook photos (a 3rd, `cuaderno-pagina-3.jpg`, is only offered in "Cambios propuestos al mapa") | 2 of 6 | 14 (4 due today: 2 on equivalentes, numerador, "¿Cómo comparo 1/3 y 1/2?" which is rated Difícil) | 5 |
+| Fracciones | Cuaderno + IA, level "algo sé" | 2 notebook photos (a 3rd, `cuaderno-pagina-3.jpg`, is only offered in "Cambios propuestos al mapa") | 2 of 6 | 14 (4 due today: 2 on equivalentes, numerador, "¿Cómo comparo 1/3 y 1/2?" which is rated Difícil) | 5 |
 | Seres vivos y ambiente | — | — | 7 of 12 | 3 due today | — |
 
 Today's review = 7 flashcards (4 Fracciones + 3 Seres vivos). Rated 2 Fácil, 4 Bien, 1 Difícil. Intervals 1 / 3 / 7 / 14 days. Next due: 19 November.

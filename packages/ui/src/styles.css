@@ -602,7 +602,7 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-time-box { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--hh-muted); font-size: 13px; }
 /* Notes' drawer body (UI refresh spec §5.7): the frame is the drawer's. */
 /* Flow mode in the soft-cards look (UI refresh spec §5.1): flow side, choices, conversation, composer, side column. */
-.hh-flow-side { width: auto; border-right: 0; padding: 12px 18px 28px 20px; gap: 26px; overflow-y: visible; }
+.hh-flow-side { width: auto; border-right: 0; padding: 12px 16px 24px; gap: 24px; overflow-y: visible; }
 .hh-flow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
 .hh-flow-head .hh-flow-heading { margin: 0; }
 .hh-step-mark.hh-flow-mark { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-size: 12px; }
@@ -612,7 +612,7 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-nav-item[data-selected="true"]:disabled { opacity: 1; }
 /* Task view one column: one 680 reading column (the card), centred; in a narrow window it gives way, never scrolls sideways. */
 .hh-app:not(.hh-app-slim) .hh-main { flex: 0 1 728px; box-sizing: border-box; margin: 0 auto; padding: 0 24px; }
-.hh-chat.hh-conversation { padding: 24px clamp(16px, 2.5vw, 32px); }
+.hh-chat.hh-conversation { padding: 24px 32px; }
 /* Inside a setup step (slim) the chat already sits in the step's framed box: no margins, no shadow. */
 .hh-app:not(.hh-app-slim) .hh-chat.hh-conversation { margin: 16px 0 12px; box-shadow: var(--hh-shadow); }
 .hh-app:not(.hh-app-slim) .hh-composer { margin: 0 0 16px; box-shadow: var(--hh-shadow); }

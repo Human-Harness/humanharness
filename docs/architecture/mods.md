@@ -224,10 +224,50 @@ At start this runs before the host starts (and before the home history's first c
 
 Settings › Mods ends with a "Changes" card: the row "Undo the last change to the app", its hint the last change's message and time, and an Undo button, disabled when there is none.
 
-## What 0c adds
+## `humanharness mcp`
 
-"Change this app" (spec §5.5, step 0c), not built yet: a core action in Home and Settings › Mods that runs an agent at tier `standard` with the home folder as `cwd`, edit access only to `mods/`, `layouts/` and `settings.json`, the tools `check`, `shot` and `status`, and `AGENTS.md` as its brief. Each of its turns commits to the home history above, so Undo reverts it; a mod it writes is a local mod the person turns on after the D2 warning.
+The kit for outside agents (step 0c1; the spec's in-app "Change this app" action was dropped). `packages/cli/src/mcp/`:
+an MCP server (`@modelcontextprotocol/sdk`'s `McpServer`) over stdio, so an agent the person already uses (Claude Code,
+Codex, any MCP client) can learn what the app is made of, make or clone a mod, check it and see it running.
+
+- **Modes** (`mode.ts`, `findMode`): only `app` for now: the home folder from `--home <dir>`, else the nearest folder
+  from the current one up that holds `.layers.json` (`findHome`). `--harness` is reserved and refused ("harness mode
+  isn't available yet").
+- **Connecting** (`config-snippet.ts`): `humanharness mcp --config claude` prints the `claude mcp add humanharness --
+  <node> <bin> mcp [--home <dir>]` command, `--config codex` the `[mcp_servers.humanharness]` TOML block. Both run
+  this node with the bin's absolute path (`BIN_PATH`), shell-quoted where a path has a space.
+- **Serving** (`server.ts`, `mcpCommand`): `createServer(mode)` registers the tools and connects a
+  `StdioServerTransport` on the command's stdin and stdout; the server ends when stdin ends.
+
+The tools, in the order `TOOL_NAMES` (`tool-names.ts`) lists them. Each answers its data as JSON text, or the kit's
+`CliError` message with `isError` (an app that isn't running reads "The app isn't running: open it and try again"):
+
+| Tool | Kit function | Needs the app |
+|---|---|---|
+| `status` (read-only) | `appStatus` | Yes, through the control channel |
+| `catalog` (read-only) | `catalog`: every mod of the three layers with its blocks, hooks, settings, on/off state from `config.json` and any `.error`; the layouts and which one shows; the names `hh.d.ts` types | No |
+| `mod_new` | `newMod`: `mods/<id>/` from `packages/cli/mod-template` (`mod.json`, `main.ts`, `ui.tsx` with one block, default `main`, and a README); refuses a core or harness mod's id | No |
+| `mod_check` (read-only) | `checkMod` | No |
+| `mod_clone` | `cloneMod` | No |
+| `layout_clone` | `cloneLayout` | No |
+| `shot` (read-only) | `appShot`, then the saved PNG read back: an `image` content (base64 PNG) and the path as text | Yes |
+
+The read-only tools carry `readOnlyHint`. The descriptions of `mod_new` and `mod_clone` tell the agent a new mod or
+clone starts off and that turning it on is the person's step in Settings › Mods; `layout_clone`'s, to ask before
+changing the person's pick in `settings.json`.
+
+**The kit** (`packages/cli/src/kit/`) holds the data functions the CLI and the server share: each takes the home
+folder, returns data, and throws a `CliError` with the message to show. The CLI commands (`app-commands.ts`,
+`mod-command.ts`) print what they return; the server answers it as JSON. `catalog` and `newMod` have no CLI command
+yet.
+
+**Adding a tool:** write the data function in `kit/` (exported from `kit/index.ts`) with its tests; add the name to
+`TOOL_NAMES`; add its entry to `tools()` in `server.ts` (a description for the agent, a zod `inputSchema`, `readOnly`
+when it changes nothing, `run` through `answer`); add it to the "Working with an agent" table and loop of `AGENTS.md`
+(`packages/shell/src/main/mods/manual.ts`): `manual.test.ts` fails while a registered name is missing there.
+`mcp-tools.test.ts` checks the list and each tool through an in-process client; the e2e `mod-kit.spec.ts` drives
+the real server over stdio against the running app.
 
 ## What is still to come
 
-See the spec's §7 order: 0c ("Change this app"), step 1 (`sidekick` as a core mod), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`).
+See the spec's §7 order: 0c2 (the harness kit: `humanharness mcp` over a harness project), step 1 (`sidekick` as a core mod), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`).

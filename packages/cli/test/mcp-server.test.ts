@@ -8,7 +8,7 @@ import { CliError } from "../src/cli";
 import { main } from "../src/main";
 import { configSnippet } from "../src/mcp/config-snippet";
 import { findMode } from "../src/mcp/mode";
-import { createServer } from "../src/mcp/server";
+import { TOOL_NAMES, createServer } from "../src/mcp/server";
 import { memoryIo, tempRoot } from "./helpers";
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../bin/humanharness.js");
@@ -37,7 +37,7 @@ describe("findMode", () => {
 });
 
 describe("createServer", () => {
-  it("is named humanharness and lists the status tool to an in-process client", async () => {
+  it("is named humanharness and lists the kit's tools to an in-process client", async () => {
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const server = createServer({ mode: "app", home });
     await server.connect(serverSide);
@@ -46,7 +46,7 @@ describe("createServer", () => {
     const version = (JSON.parse(fs.readFileSync(path.join(path.dirname(BIN), "..", "package.json"), "utf8")) as { version: string }).version;
     expect(client.getServerVersion()).toMatchObject({ name: "humanharness", version });
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["status"]);
+    expect(tools.map((t) => t.name)).toEqual([...TOOL_NAMES]);
     const r = await client.callTool({ name: "status", arguments: {} });
     expect(r.isError).toBe(true);
     expect(JSON.stringify(r.content)).toContain("The app isn't running");

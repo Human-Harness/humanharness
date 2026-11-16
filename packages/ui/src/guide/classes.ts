@@ -65,6 +65,7 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-composer-send-hint",
   "hh-working-line",
   "hh-working-text",
+  "hh-jump-pill",
   // History as a page: its task rows, a row's body, a changed file, a point's time; the chat hidden under it (stage 4b1)
   "hh-history-row",
   "hh-history-body",

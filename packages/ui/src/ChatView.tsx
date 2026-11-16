@@ -72,6 +72,8 @@ import { TaskBar, type TaskBarSlot } from "./task-view/TaskBar";
 import { Overlay } from "./task-view/Overlay";
 import { PathButton } from "./task-view/PathButton";
 import { useFolded } from "./task-view/useFolded";
+import { JumpPill } from "./task-view/JumpPill";
+import { useNewSinceScroll } from "./task-view/useNewSinceScroll";
 import { WorkingLine, stepOf } from "./task-view/WorkingLine";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 import { Button } from "./guide/Button";
@@ -1365,14 +1367,24 @@ export function ChatView({
     }
     void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
   };
-  const onScroll = () => {
-    const el = chatRef.current;
-    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
-  };
   const last = chat.entries.findLast(isReply);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);
+  // Finished messages only: a long answer counts once, when it ends.
+  const fresh = useNewSinceScroll(shown.length);
+  const onScroll = () => {
+    const el = chatRef.current;
+    if (!el) return;
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
+    fresh.report(stick.current);
+  };
+  const jump = () => {
+    const el = chatRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    stick.current = true;
+    fresh.report(true);
+  };
   const liveEntry: ChatEntry | null = chat.live
     ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "", ...(chat.live.tools ? { tools: chat.live.tools } : {}) }
     : null;
@@ -2025,6 +2037,7 @@ export function ChatView({
               )}
               <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
               {/* The turn's one working line, pinned to the card's bottom; a closing or checkpoint turn is quiet but stoppable. */}
+              {fresh.newCount > 0 && <JumpPill count={fresh.newCount} onJump={jump} />}
               {working && <WorkingLine step={working.step} onStop={() => void client.cancel()} />}
             </section>
             {/* A plugin's prepared task (plugins part 2): only while main sends one, and nothing starts without Start (P6). */}

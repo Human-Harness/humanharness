@@ -624,6 +624,8 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-working-line { position: sticky; bottom: 0; z-index: 1; box-sizing: content-box; height: 40px; padding-top: 4px; display: flex; align-items: center; gap: 8px; background: var(--hh-surface); color: var(--hh-muted); font-size: 12px; }
 .hh-working-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-shell-main > .hh-working-line { flex: none; position: static; padding-inline: 24px; border-top: 1px solid var(--hh-line); }
+/* The jump pill: centred, 16 above the card's bottom while scrolled up. */
+.hh-chat > .hh-jump-pill { position: sticky; bottom: 16px; z-index: 2; justify-self: center; }
 /* The folded overlays (task view one column): a 280 panel over the content, the path on the left, Sidekick on the right. */
 .hh-overlay { position: absolute; top: 0; bottom: 0; z-index: 5; width: var(--hh-column-w); max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; background: var(--hh-rail); box-shadow: var(--hh-shadow); }
 .hh-overlay-left { left: 0; border-right: 1px solid var(--hh-line); }

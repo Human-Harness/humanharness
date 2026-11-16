@@ -27,7 +27,7 @@ Out of scope: doing homework, producing documents for the student, dates/calenda
 - **Profile**: name, age band, language, how I learn (from the onboarding interview), tutor tone (patient / neutral / demanding), explanation length, hint and explanation thresholds, questions per message.
 - **Topic** (the scope): title, why, level for this topic, what I already know, strict/mixed grounding, material, map, sessions, summaries, flashcards, glossary, open questions.
 - **Concept** (map node): name, prerequisites, source tag (from my material / added by the AI), state, evidence list, "this is hard for me" flag.
-- **Concept states**: not seen → seen → practising → mastered → review due. Up only with evidence (D5): correct recall on 2 different days; a Feynman explanation without gaps; an exercise solved without hints. The learner cannot mark mastered; can flag "hard". Mastered drops to review due by interval.
+- **Concept states**: not seen → seen → practising → mastered. Up only with evidence (D5): correct recall on 2 different days; a Feynman explanation without gaps; an exercise solved without hints. The learner cannot mark mastered; can flag "hard". Mastered is earned once and never lost; when the review interval passes, a separate "Toca repasar" flag appears on the concept (it is not a state) and clears after a good review.
 - **Flashcard**: written by the learner, corrected by the AI; linked to a concept; 4 ratings (again / hard / good / easy) set the next interval; review interleaves topics.
 - **Summary**: written by the learner at session close, corrected by the AI inline.
 - **Topic note** (from Sócrates): the learner's real answers, including wrong ones; open questions; glossary entries (by abstraction level where the topic has levels).

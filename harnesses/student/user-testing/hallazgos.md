@@ -25,6 +25,7 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 - **History split** (Ernesto, Lucía): the left menu "Historial", the tab "Sesiones" and the search icon look like duplicates; Inicio says nothing about recent study.
   - **Decided 2026-11-16 (Marco: the left-menu "Historial" must stay):** Historial is now a global item in the left menu, always visible (new board 5.7), with every session of every topic and a filter by topic. The per-topic tab "Sesiones" and board 3.8 are removed. Inicio gets "Lo último que estudiaste" (2 latest sessions, link to Historial).
 - **"Dominado" definition** (Lucía): the concept detail says "ya los tenés" and also "vuelve a Para repasar".
+  - **Decided 2026-11-16 (option A):** Dominado is earned once and never lost. "Para repasar" is no longer a state: it is an orange "Toca repasar" flag next to Dominado that clears after a good review. Fracciones now counts 2 of 6 dominados. Updated Inicio, Tema, Concepto, EditarMapa, SesionCamino, FinSesion, PrepararPrueba, `definition.md` and `datos-ejemplo.md`.
 - **Source choice** (Lucía, Ernesto): "Solo mi material" vs "Mi material y la IA" — unclear what happens to the AI item; "Mixto" names the same thing.
 - **Sizes** (Ernesto): 12px gray text under fields, "Sin enviar", "Usa: tu cuaderno" is too small at zoom.
 

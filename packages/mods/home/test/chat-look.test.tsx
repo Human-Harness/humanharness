@@ -10,15 +10,15 @@ afterEach(cleanup);
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 
 describe("the conversation and the composer in the soft-cards look (UI refresh spec §5.1)", () => {
-  it("the messages sit in one conversation card; the composer has ⏎ to send and the amber Send", async () => {
+  it("the messages sit in one conversation card; the composer is one field with the hint inside, no Send", async () => {
     render(<HarnessApp client={new FakeClient(ready)} locales={{ en: {} }} />);
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
     const conversation = await screen.findByRole("region", { name: "Conversation" });
     expect(conversation.className).toContain("hh-card");
-    const form = (await screen.findByRole("button", { name: "Send" })).closest("form")!;
-    expect(within(form).getByRole("button", { name: "Send" }).getAttribute("data-kind")).toBe("primary");
-    expect(within(form).getByText("⏎ to send")).toBeTruthy();
+    const form = (await screen.findByRole("textbox", { name: "Write a message…" })).closest("form")!;
+    expect(within(form).queryByRole("button", { name: "Send" })).toBeNull();
+    expect(within(form).getByText("↵ send · ⇧↵ new line")).toBeTruthy();
   });
 });

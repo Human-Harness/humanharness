@@ -59,6 +59,12 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-overlay-section",
   "hh-sk-open",
   "hh-chips-row",
+  // The one-field composer, the turn's working line and the jump pill (task view one column)
+  "hh-composer",
+  "hh-composer-field",
+  "hh-composer-send-hint",
+  "hh-working-line",
+  "hh-working-text",
   // History as a page: its task rows, a row's body, a changed file, a point's time; the chat hidden under it (stage 4b1)
   "hh-history-row",
   "hh-history-body",

@@ -19,6 +19,7 @@ import { JobsPage } from "./parallel/JobsPage";
 import { useJobs } from "./parallel/useJobs";
 import { Icon, Rx } from "./guide";
 import { TaskSwitcher } from "./task-view/TaskSwitcher";
+import { WorkingLine } from "./task-view/WorkingLine";
 import { useFocusEpoch, useTasks } from "./parallel/useTasks";
 import { shownLanguage, systemLanguage } from "./language";
 import { type LanguageControl, useLanguage } from "./language-control";
@@ -68,6 +69,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [pluginPanels, setPluginPanels] = useState(false);
   /** A page of the chat's own on screen (History, stage 4b1; Files, 4b2): its title and the way back, for the top bar's Volver. */
   const [chatPage, setChatPage] = useState<ChatPage | null>(null);
+  /** The chat's turn, while one runs: its working line goes on the pages that hide the conversation (no app redraw). */
+  const chatWorking = useRef<Working>({ now: null, listener: null });
   /** The chat's open task as it reports it: its label (the switcher's fallback without `parallel`) and its notes. Null: none open. */
   const [chatTask, setChatTask] = useState<{ label: string; notes: number } | null>(null);
   const chatTaskLabel = chatTask?.label ?? null;
@@ -639,8 +642,14 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                       onFixEngine={() => setSettings("engine")}
                       onSidekickSettings={() => setSettings("sidekick")}
                       onTurnOk={checkEngine}
+                      onWorking={(w) => {
+                        chatWorking.current.now = w;
+                        chatWorking.current.listener?.(w);
+                      }}
                     />
                   </div>
+                  {/* The conversation's working line, at the bottom of the page that hides it (task view one column). */}
+                  {(view.kind !== "chat" || chatPage !== null) && <PageWorkingLine working={chatWorking.current} onStop={() => void client.cancel()} />}
                 </div>
               </div>
               )}
@@ -702,6 +711,25 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 interface Blocked {
   now: boolean;
   listener: ((blocked: boolean) => void) | null;
+}
+
+/** The chat's turn as it reports it, and who follows it. */
+interface Working {
+  now: { step: string | null } | null;
+  listener: ((w: { step: string | null } | null) => void) | null;
+}
+
+/** The working line under a page that hides the conversation: only it redraws with the turn's steps. */
+function PageWorkingLine({ working, onStop }: { working: Working; onStop: () => void }) {
+  const [now, setNow] = useState(working.now);
+  useEffect(() => {
+    working.listener = setNow;
+    setNow(working.now);
+    return () => {
+      working.listener = null;
+    };
+  }, [working]);
+  return now && <WorkingLine step={now.step} onStop={onStop} />;
 }
 
 /** The top bar's avatar, disabled while the chat is busy (it alone redraws when that changes). */

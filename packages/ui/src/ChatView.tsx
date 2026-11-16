@@ -1,4 +1,4 @@
-import { type ComponentType, type FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { type ComponentType, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
@@ -57,7 +57,6 @@ import { PluginsSection } from "./plugins/PluginsSection";
 import { PreparedTask } from "./plugins/PreparedTask";
 import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, reloadOf, usePluginSurface } from "./plugins/surface";
 import { RecommendModeBlock } from "./RecommendModeBlock";
-import { FlaggedText } from "./sidekick/FlaggedText";
 import { FirstOpenOffer } from "./sidekick/PresetOffer";
 import { ReviewHint } from "./sidekick/ReviewHint";
 import { SidekickButton, SidekickPanel, waitingCards } from "./sidekick/SidekickPanel";
@@ -67,11 +66,13 @@ import { useSidekick } from "./sidekick/useSidekick";
 import type { SearchIntent } from "./search/intent";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, isToolLine, reduceChat } from "./state";
+import { Composer } from "./task-view/Composer";
 import { ContextChip } from "./task-view/ContextChip";
 import { TaskBar, type TaskBarSlot } from "./task-view/TaskBar";
 import { Overlay } from "./task-view/Overlay";
 import { PathButton } from "./task-view/PathButton";
 import { useFolded } from "./task-view/useFolded";
+import { WorkingLine, stepOf } from "./task-view/WorkingLine";
 import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 import { Button } from "./guide/Button";
 import { Option, OptionGroup } from "./guide/Option";
@@ -150,6 +151,7 @@ export function ChatView({
   onSidekickSettings,
   onFixEngine,
   onTurnOk,
+  onWorking,
   slim,
   materialPanel,
 }: {
@@ -203,6 +205,8 @@ export function ChatView({
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
+  /** A turn runs (its step, null before the first) or none (null): the shell draws the working line on its pages. */
+  onWorking?: (working: { step: string | null } | null) => void;
   /**
    * An interview on the setup screen (setup-steps spec §3): only this action's task, with no top bar, side panel,
    * history or topics. A button starts it (or continues it) when it isn't on screen.
@@ -1361,10 +1365,6 @@ export function ChatView({
     }
     void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
   };
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    void submit(draft);
-  };
   const onScroll = () => {
     const el = chatRef.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
@@ -1687,6 +1687,22 @@ export function ChatView({
     setShowHistory(taskPage.page === "history");
   }, [taskPage]);
 
+  /** The turn's working line: what it does now, while a turn runs or the task saves its note. */
+  const working = chat.live
+    ? { step: checkpoint ? t("flow.checkpoint") : stepOf(chat.live.activities, t) }
+    : closing
+      ? { step: t("flow.closing") }
+      : checkpoint
+        ? { step: t("flow.checkpoint") }
+        : null;
+  const workingStep = working ? working.step : undefined;
+  const workingTo = useRef(onWorking);
+  workingTo.current = onWorking;
+  useEffect(() => {
+    workingTo.current?.(workingStep === undefined ? null : { step: workingStep });
+  }, [workingStep]);
+  useEffect(() => () => workingTo.current?.(null), []);
+
   const ownSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
   // The harness's `<PluginSlot>`s read the surface from here; without one, exactly its side panel (D0).
   const harnessSide = ownSide !== undefined && surfaceCtx ? <PluginSurfaceContext.Provider value={surfaceCtx}>{ownSide}</PluginSurfaceContext.Provider> : ownSide;
@@ -1847,7 +1863,7 @@ export function ChatView({
                       entry={entry}
                       components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
                       actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
-                      live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
+                      live={entry === liveEntry ? { activities: chat.live!.activities } : undefined}
                       reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
                       documents={cardsFor(entry)}
                     />
@@ -1878,16 +1894,6 @@ export function ChatView({
                   {fallback.tier
                     ? t("models.fallbackNotice", { model: fallback.model, tier: t(`models.tier.${fallback.tier}`) })
                     : t("models.fallbackDefault", { model: fallback.model })}
-                </p>
-              )}
-              {closing && !chat.live && (
-                <p className="hh-working" role="status">
-                  {t("flow.closing")}
-                </p>
-              )}
-              {checkpoint && !chat.live && (
-                <p className="hh-working" role="status">
-                  {t("flow.checkpoint")}
                 </p>
               )}
               {pending && (
@@ -2018,6 +2024,8 @@ export function ChatView({
                 </div>
               )}
               <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
+              {/* The turn's one working line, pinned to the card's bottom; a closing or checkpoint turn is quiet but stoppable. */}
+              {working && <WorkingLine step={working.step} onStop={() => void client.cancel()} />}
             </section>
             {/* A plugin's prepared task (plugins part 2): only while main sends one, and nothing starts without Start (P6). */}
             {surfaceCtx?.surface.prepared && (
@@ -2048,60 +2056,17 @@ export function ChatView({
               />
             )}
             {composer && (
-              <form className="hh-composer" onSubmit={onSubmit}>
-                {(() => {
-                  const field = (
-                    <textarea
-                      ref={inputRef}
-                      aria-label={placeholder}
-                      placeholder={placeholder}
-                      value={draft}
-                      readOnly={reviewing !== null}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter" || e.shiftKey) return;
-                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                        e.preventDefault();
-                        // ⌘⏎ / Ctrl⏎ sends at once; ⌥⏎ asks for a review even without flags (spec §4.1).
-                        if (sidekick && (e.metaKey || e.ctrlKey)) sendNow(draft);
-                        else void submit(draft, e.altKey);
-                      }}
-                    />
-                  );
-                  // D0: without Sidekick, the bare textarea as before. Wrapped from the first render (not once the state
-                  // loads) so the field is never remounted under the person's cursor.
-                  if (!skEnabled) return field;
-                  const card = sidekick?.card;
-                  const spans = card && sidekick?.settings.on && card.prompt === draft ? cardSpans(card) : [];
-                  return (
-                    <FlaggedText text={draft} spans={spans}>
-                      {field}
-                    </FlaggedText>
-                  );
-                })()}
-                {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
-                {chat.live || closing || checkpoint ? (
-                  <button type="button" onClick={() => void client.cancel()}>
-                    {t("chat.stop")}
-                  </button>
-                ) : reviewing ? (
-                  <button type="button" disabled>
-                    {t("sidekick.composer.reviewing")}
-                  </button>
-                ) : (
-                  <>
-                    {reviewOn && (
-                      <button type="button" onClick={() => void submit(draft, true)}>
-                        {t("sidekick.composer.review")}
-                      </button>
-                    )}
-                    <span className="hh-caption hh-composer-send-hint">{t("chat.enterToSend")}</span>
-                    <Button type="submit" kind="primary">
-                      {t("chat.send")}
-                    </Button>
-                  </>
-                )}
-              </form>
+              <Composer
+                draft={draft}
+                onDraft={setDraft}
+                inputRef={inputRef}
+                placeholder={placeholder}
+                onEnter={(text, force) => void submit(text, force)}
+                onSendNow={sendNow}
+                onReview={(text) => void submit(text, true)}
+                sidekick={skEnabled ? { spans: sidekick?.card && sidekick.settings.on && sidekick.card.prompt === draft ? cardSpans(sidekick.card) : [] } : undefined}
+                review={reviewing ? "reviewing" : reviewOn && !(chat.live || closing || checkpoint) ? "idle" : undefined}
+              />
             )}
             {reviewing && <ReviewHint until={reviewing.until} sendKey={SEND_KEY} />}
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}

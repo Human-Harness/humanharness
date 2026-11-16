@@ -15,6 +15,8 @@ afterEach(() => {
   resetWorkDetail();
 });
 
+/** Enter in the composer: it sends (no Send button). */
+const enter = () => fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 const Note = ({ data, respond }: BlockProps) => (
   <div>
@@ -79,7 +81,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} blocks={{ note: Note }} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "make a note" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     await waitFor(() => expect(client.sent).toEqual(["make a note"]));
     act(() => {
       client.emit({ type: "text", delta: "Here it is" });
@@ -98,10 +100,10 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     act(() => client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "start" }));
-    expect(screen.getByRole("status").textContent).toContain("Working…");
-    expect(screen.queryByText("Reading notes.md")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Working · Reading notes.md");
+    expect(screen.queryByRole("listitem")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(screen.getByText("Reading notes.md")).toBeTruthy();
     act(() => {
@@ -119,7 +121,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     act(() => {
       client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "start" });
       client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "end", error: false });
@@ -137,7 +139,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "hola" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     act(() => client.emit({ type: "done", ok: false, error: { code: "out-of-quota" } }));
     expect(screen.getByText(/You've reached your plan's limit for now/)).toBeTruthy();
   });
@@ -153,7 +155,7 @@ describe("HarnessApp", () => {
     );
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     act(() => client.emit({ type: "block", name: "progress", data: { percent: 40 } }));
     await openSide();
     expect(screen.getByText("Progress 40%")).toBeTruthy();
@@ -200,7 +202,7 @@ describe("HarnessApp", () => {
   const typeAndSend = async (client: FakeClient, text: string) => {
     const input = (await screen.findByPlaceholderText("Write a message…")) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: text } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     return input;
   };
 
@@ -215,7 +217,7 @@ describe("HarnessApp", () => {
     expect(client.sent).toEqual(["first"]);
     expect(input.value).toBe("second");
     act(() => client.emit({ type: "done", ok: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     await waitFor(() => expect(client.sent).toEqual(["first", "second"]));
     expect(input.value).toBe("");
   });
@@ -291,7 +293,8 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     await screen.findByText("Something failed and I didn't change anything.");
-    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect((screen.getByRole("textbox", { name: "Write a message…" }) as HTMLTextAreaElement).readOnly).toBe(false);
   });
 
   it("shows a loading state, then a translated error if the state cannot load", async () => {
@@ -364,10 +367,10 @@ describe("HarnessApp", () => {
     const input = (await screen.findByLabelText("Write a message…")) as HTMLTextAreaElement;
     const region = container.querySelector('[aria-live="polite"]') as HTMLElement;
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     expect(document.activeElement).toBe(input);
-    // "Working…" is announced once, by the status row; the shared region doesn't repeat it.
-    expect(screen.getByRole("status").textContent).toContain("Working…");
+    // The working line announces the turn; the shared region doesn't repeat it.
+    expect(screen.getByRole("status").textContent).toBe("Working");
     expect(region.textContent).toBe("");
     input.blur();
     act(() => {
@@ -884,7 +887,7 @@ describe("HarnessApp", () => {
     await waitFor(() => expect(select().disabled).toBe(false));
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "go" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    enter();
     await waitFor(() => expect(select().disabled).toBe(true));
     expect((screen.getByRole("button", { name: "Add student" }) as HTMLButtonElement).disabled).toBe(true);
     act(() => client.emit({ type: "done", ok: true }));

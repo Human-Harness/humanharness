@@ -37,7 +37,7 @@ describe("focus mode (review spec §6.2)", () => {
     const client = await chat(true);
     const composer = screen.getByRole("textbox");
     fireEvent.change(composer, { target: { value: "Go on" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     const reader = await openReader();
     fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
     expect(document.querySelector(".hh-body.hh-focus")).not.toBeNull();
@@ -116,7 +116,7 @@ describe("focus mode (review spec §6.2)", () => {
   it("counts the task waiting after the turn's end (afterRun sets it after `done`), and says it out loud on leaving", async () => {
     const client = await chat(true);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Go on" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     const reader = await openReader();
     fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
     act(() => client.emit({ type: "done", ok: true }));

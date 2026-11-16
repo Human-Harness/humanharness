@@ -71,7 +71,7 @@ export function TaskBar({
         {switcher}
       </nav>
       {working !== null && (
-        <span className="hh-tb-status" role="status">
+        <span className="hh-tb-status" role="status" data-working={working}>
           {t(working ? "home.status.working" : "home.status.waiting")}
         </span>
       )}

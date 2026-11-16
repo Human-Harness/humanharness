@@ -174,7 +174,7 @@ describe("prepared-task card", () => {
     fireEvent.click(startButton(r));
     await within(r).findByRole("alert");
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Something else" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     await waitFor(() => expect(c.sent).toEqual(["Something else"]));
   });
 
@@ -191,7 +191,7 @@ describe("prepared-task card", () => {
     expect(userLines()).toEqual([expect.stringContaining("On this day · Explain this event")]);
     await waitFor(() => expect(document.querySelector('[data-role="assistant"]')).not.toBeNull());
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Try again" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     await waitFor(() => expect(c.sent).toEqual(["Try again"]));
   });
 
@@ -211,7 +211,7 @@ describe("prepared-task card", () => {
     arm();
     expect(startButton(r).disabled).toBe(false);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     act(() => c.emit({ type: "text", delta: "Working on it" }));
     await screen.findByRole("button", { name: "Stop" });
     expect(startButton(r).disabled).toBe(true);

@@ -82,7 +82,7 @@ Round 4 · 2026-11-15 · same personas, tasks and start boards · canvas v64 · 
 | H59 | "Estilo de cita" nombra tres cosas: el general, el del colegio y el de la materia; en Editar materia la sección "Estilo de cita" cambia colores, tipografía y logo, y más abajo hay otro "Estilo de cita" (APA 7) | R4: Laura, Graciela | Fricción | diseño | abierto |
 | H60 | Categorías: "La IA sugiere solo las que existen, salvo que marque «nueva»" no se entiende; "tuya / nueva" en Nueva fuente tampoco | R4: Graciela, Laura | Fricción | diseño | abierto |
 | H61 | "Buscar más" en Nueva clase la deja en la Biblioteca sin camino de vuelta a la clase que estaba armando | R4: Sofía | Fricción | diseño | abierto |
-| H62 | "Descartar" en Fuentes en el chat no muestra ningún cambio | R4: Sofía | Fricción | maqueta | abierto |
+| H62 | "Descartar" en Fuentes en el chat no muestra ningún cambio | R4: Sofía | Fricción | maqueta | descartado · 2026-11-16: maqueta (Marco) |
 | H63 | Nueva clase: "1 por decidir" no dice qué pasa si no la decide; "Armar la clase con 3 fuentes" no avisa que la cuarta queda afuera | R4: Sofía | Fricción | diseño | abierto |
 | H64 | Qué falta revisar: "2 cosas para revisar" arriba y "4 pendientes" en las tarjetas parecen dos listas; la clase con fuente cambiada de Historia no está en Para revisar; el plan del año no muestra lo pendiente | R4: Laura | Fricción | diseño | abierto |
 | H65 | Buscar: dos resultados "Clase 27 · Ecosistemas urbanos" (2026 y 2025) sin decir cuál es del año actual | R4: Matías | Fricción | diseño | abierto |
@@ -94,7 +94,7 @@ Round 4 · 2026-11-15 · same personas, tasks and start boards · canvas v64 · 
 | H71 | Exámenes: solo 2026, sin forma visible de ver otros años; "Tomado" no dice si ya está corregido | R4: Graciela | Ruido | diseño | abierto |
 | H72 | El examen desde material se llama "Evaluación · U4 Ecosistemas", como si saliera de una unidad | R4: Graciela | Ruido | diseño | abierto |
 | H73 | Exportar el examen: "Hoja de respuestas" sin tildar aunque hay 8 preguntas de opción múltiple | R4: Matías | Ruido | diseño | abierto |
-| H74 | "Seguir en segundo plano" se parte en tres renglones en Armando tu clase | R4: Sofía | Ruido | maqueta | abierto |
+| H74 | "Seguir en segundo plano" se parte en tres renglones en Armando tu clase | R4: Sofía | Ruido | maqueta | descartado · 2026-11-16: maqueta (Marco) |
 
 ## Pre-filtro ronda 3 · 2026-11-15
 
@@ -109,6 +109,10 @@ against the real app, and anything about real AI behaviour belongs to implementa
 - **Protocolo de prueba (hecho, `protocol.md` §3 y `README.md`):** H27, H41, H55, H49 (página 2 de 2): avisar a los testers que es una maqueta de diseño con datos de ejemplo; que juzguen si lo que ven es razonable y entendible, no si los datos cuadran o todo responde. Los números se verifican contra la app real.
 - **Implementación real:** H46 (detectar preguntas con dos respuestas válidas).
 - **Descartado:** H14 (formulario primero, chat como alternativa; lo de Sofía va con el aviso de maqueta), H52 (la revisión del escaneo se queda).
+
+## Pre-filtro ronda 4 · 2026-11-16
+
+Marco: every mock observation from round 4 is dropped (H62, H74, the "Problemas de la maqueta, ronda 4" list, and the mock parts of the R4 notes: fields that do not type, links to the wrong subject, the "3 / 12" counter, "Un capítulo" not responding, "Rodríguez, A." vs "Rodríguez, Ana"). H69 stays `implementación real`. Design rows left: H57–H61, H63–H68, H70–H73, and the R4 `sigue` rows H01, H03, H20, H21, H40, H45, H47, H48, H51.
 
 ## Palabras
 

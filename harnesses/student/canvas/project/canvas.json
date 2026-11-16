@@ -1,0 +1,1151 @@
+{
+ "v": 3,
+ "boards": {
+  "Cierre.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "4.4 · Cierre: resumen y flashcards del alumno",
+   "w": 1440,
+   "x": 4560,
+   "y": 3729
+  },
+  "Conocerte.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "1.3 · Conocerte (tipo de estudiante)",
+   "w": 1440,
+   "x": 3040,
+   "y": 0
+  },
+  "EmpezarSesion.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "3.2 · Empezar sesión: objetivo, tiempo, método",
+   "w": 1440,
+   "x": 1520,
+   "y": 2486
+  },
+  "FinSesion.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "4.5 · Fin de sesión: qué cambió en el mapa",
+   "w": 1440,
+   "x": 6080,
+   "y": 3729
+  },
+  "Flashcards.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "5.1 · Repaso de flashcards",
+   "w": 1440,
+   "x": 0,
+   "y": 4972
+  },
+  "InicioCamino.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "page": "layout-v3",
+   "title": "2.1 v3 · Inicio: siguiente paso + caminos (Math Academy, Duolingo)",
+   "w": 1440,
+   "x": 0,
+   "y": 0
+  },
+  "SesionTresPaneles.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "page": "layout-v3",
+   "title": "4.1 v3 · Sesión: Fuentes | Tutor | Mapa (NotebookLM, Khanmigo, Brilliant)",
+   "w": 1440,
+   "x": 0,
+   "y": 1243
+  },
+  "Inicio.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "2.1 · Inicio: temas abiertos y para hoy",
+   "w": 1440,
+   "x": 0,
+   "y": 1243
+  },
+  "Main.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "1.1 · Bienvenida",
+   "w": 1440,
+   "x": 0,
+   "y": 0
+  },
+  "MapaInicial.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "2.3 · Nuevo tema: mapa propuesto",
+   "w": 1440,
+   "x": 3040,
+   "y": 1243
+  },
+  "NuevoTema.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "2.2 · Nuevo tema: qué, nivel, material",
+   "w": 1440,
+   "x": 1520,
+   "y": 1243
+  },
+  "Perfil.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "5.2 · Perfil: estilo y ajustes de métodos",
+   "w": 1440,
+   "x": 1520,
+   "y": 4972
+  },
+  "Perfiles.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "1.2 · ¿Quién va a estudiar? (perfiles)",
+   "w": 1440,
+   "x": 1520,
+   "y": 0
+  },
+  "SesionEjemplos.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "4.3 · Sesión — ejemplos resueltos",
+   "w": 1440,
+   "x": 3040,
+   "y": 3729
+  },
+  "SesionFeynman.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "4.2 · Sesión — técnica Feynman",
+   "w": 1440,
+   "x": 1520,
+   "y": 3729
+  },
+  "SesionSocratica.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "4.1 · Sesión — método socrático",
+   "w": 1440,
+   "x": 0,
+   "y": 3729
+  },
+  "Tema.dc.html": {
+   "h": 900,
+   "is_interactive": true,
+   "title": "3.1 · Tema: mapa de dominio",
+   "w": 1440,
+   "x": 0,
+   "y": 2486
+  },
+  "ThemeAtardecer.dc.html": {
+   "h": 1100,
+   "page": "themes",
+   "title": "B · Atardecer",
+   "w": 1440,
+   "x": 1520,
+   "y": 0
+  },
+  "ThemeBiblioteca.dc.html": {
+   "h": 1100,
+   "page": "themes",
+   "title": "C · Biblioteca",
+   "w": 1440,
+   "x": 3040,
+   "y": 0
+  },
+  "ThemeManana.dc.html": {
+   "h": 1100,
+   "page": "themes",
+   "title": "A · Mañana (elegido)",
+   "w": 1440,
+   "x": 0,
+   "y": 0
+  },
+  "K-Conocerte.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1280,
+   "h": 900,
+   "title": "1.3 · Conocerte (entrevista de setup del core) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ConocerteDark.dc.html": {
+   "x": 0,
+   "y": 1000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.3 · Conocerte (entrevista de setup del core) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Inicio.dc.html": {
+   "x": 1360,
+   "y": 0,
+   "w": 1280,
+   "h": 900,
+   "title": "2.1 · Inicio (bloque home) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-InicioDark.dc.html": {
+   "x": 1360,
+   "y": 1000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.1 · Inicio (bloque home) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema.dc.html": {
+   "x": 2720,
+   "y": 0,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2 · Nuevo tema (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTemaDark.dc.html": {
+   "x": 2720,
+   "y": 1000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2 · Nuevo tema (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-MapaInicial.dc.html": {
+   "x": 4080,
+   "y": 0,
+   "w": 1280,
+   "h": 900,
+   "title": "2.3 · Mapa propuesto (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-MapaInicialDark.dc.html": {
+   "x": 4080,
+   "y": 1000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.3 · Mapa propuesto (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Tema.dc.html": {
+   "x": 0,
+   "y": 2000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.1 · Tema (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaDark.dc.html": {
+   "x": 0,
+   "y": 3000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.1 · Tema (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-EmpezarSesion.dc.html": {
+   "x": 1360,
+   "y": 2000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.2 · Empezar sesión (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-EmpezarSesionDark.dc.html": {
+   "x": 1360,
+   "y": 3000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.2 · Empezar sesión (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Sesion.dc.html": {
+   "x": 2720,
+   "y": 2000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.1 · Sesión socrática (tarea, una columna) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionDark.dc.html": {
+   "x": 2720,
+   "y": 3000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.1 · Sesión socrática (tarea, una columna) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionCamino.dc.html": {
+   "x": 4080,
+   "y": 2000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.1b · Sesión con el Camino abierto (overlay izquierdo) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionCaminoDark.dc.html": {
+   "x": 4080,
+   "y": 3000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.1b · Sesión con el Camino abierto (overlay izquierdo) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Cierre.dc.html": {
+   "x": 0,
+   "y": 4000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.2 · Cierre: resumen y flashcards (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-CierreDark.dc.html": {
+   "x": 0,
+   "y": 5000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.2 · Cierre: resumen y flashcards (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FinSesion.dc.html": {
+   "x": 1360,
+   "y": 4000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.3 · Fin de sesión (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FinSesionDark.dc.html": {
+   "x": 1360,
+   "y": 5000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.3 · Fin de sesión (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Flashcards.dc.html": {
+   "x": 2720,
+   "y": 4000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.1 · Repaso de flashcards (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FlashcardsDark.dc.html": {
+   "x": 2720,
+   "y": 5000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.1 · Repaso de flashcards (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Perfil.dc.html": {
+   "x": 4080,
+   "y": 4000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.2 · Ajustes del tutor (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-PerfilDark.dc.html": {
+   "x": 4080,
+   "y": 5000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.2 · Ajustes del tutor (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-InicioVacio.dc.html": {
+   "x": 0,
+   "y": 6000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.0 · Inicio la primera vez (¿Por dónde empezás?) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-InicioVacioDark.dc.html": {
+   "x": 0,
+   "y": 7000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.0 · Inicio la primera vez (¿Por dónde empezás?) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SinConexion.dc.html": {
+   "x": 1360,
+   "y": 6000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.1 · Sin conexión durante una sesión (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SinConexionDark.dc.html": {
+   "x": 1360,
+   "y": 7000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.1 · Sin conexión durante una sesión (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Busqueda.dc.html": {
+   "x": 2720,
+   "y": 6000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.2 · Búsqueda ⌘K (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-BusquedaDark.dc.html": {
+   "x": 2720,
+   "y": 7000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.2 · Búsqueda ⌘K (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Bienvenida.dc.html": {
+   "x": 4080,
+   "y": 6000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.1 · Bienvenida (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-BienvenidaDark.dc.html": {
+   "x": 4080,
+   "y": 7000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.1 · Bienvenida (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-QuienEstudia.dc.html": {
+   "x": 0,
+   "y": 8000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.2 · Quién estudia (nombre, edad, idioma) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-QuienEstudiaDark.dc.html": {
+   "x": 0,
+   "y": 9000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.2 · Quién estudia (nombre, edad, idioma) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AvisoMenores.dc.html": {
+   "x": 1360,
+   "y": 8000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.2b · Aviso: estudiá con un adulto (menores) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AvisoMenoresDark.dc.html": {
+   "x": 1360,
+   "y": 9000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.2b · Aviso: estudiá con un adulto (menores) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ConocerteResultado.dc.html": {
+   "x": 2720,
+   "y": 8000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.4 · Lo que entendí de vos (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ConocerteResultadoDark.dc.html": {
+   "x": 2720,
+   "y": 9000,
+   "w": 1280,
+   "h": 900,
+   "title": "1.4 · Lo que entendí de vos (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Diagnostico.dc.html": {
+   "x": 4080,
+   "y": 8000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.4 · Diagnóstico de 5 preguntas (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-DiagnosticoDark.dc.html": {
+   "x": 4080,
+   "y": 9000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.4 · Diagnóstico de 5 preguntas (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SumarConcepto.dc.html": {
+   "x": 0,
+   "y": 10000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.5 · Editar mapa: sumar un concepto (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SumarConceptoDark.dc.html": {
+   "x": 0,
+   "y": 11000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.5 · Editar mapa: sumar un concepto (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Concepto.dc.html": {
+   "x": 1360,
+   "y": 10000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.3 · Detalle de concepto (evidencia) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ConceptoDark.dc.html": {
+   "x": 1360,
+   "y": 11000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.3 · Detalle de concepto (evidencia) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaResumenes.dc.html": {
+   "x": 2720,
+   "y": 10000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.4 · Tema › Resúmenes (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaResumenesDark.dc.html": {
+   "x": 2720,
+   "y": 11000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.4 · Tema › Resúmenes (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaFlashcards.dc.html": {
+   "x": 4080,
+   "y": 10000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.5 · Tema › Flashcards (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaFlashcardsDark.dc.html": {
+   "x": 4080,
+   "y": 11000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.5 · Tema › Flashcards (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaMaterial.dc.html": {
+   "x": 0,
+   "y": 12000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.6 · Tema › Material (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaMaterialDark.dc.html": {
+   "x": 0,
+   "y": 13000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.6 · Tema › Material (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-CambiosMapa.dc.html": {
+   "x": 1360,
+   "y": 12000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.7 · Cambios propuestos al mapa (material nuevo) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-CambiosMapaDark.dc.html": {
+   "x": 1360,
+   "y": 13000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.7 · Cambios propuestos al mapa (material nuevo) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaSesiones.dc.html": {
+   "x": 2720,
+   "y": 12000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.8 · Tema › Sesiones anteriores (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaSesionesDark.dc.html": {
+   "x": 2720,
+   "y": 13000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.8 · Tema › Sesiones anteriores (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaGlosario.dc.html": {
+   "x": 4080,
+   "y": 12000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.9 · Tema › Preguntas abiertas y glosario (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaGlosarioDark.dc.html": {
+   "x": 4080,
+   "y": 13000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.9 · Tema › Preguntas abiertas y glosario (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-Calentamiento.dc.html": {
+   "x": 0,
+   "y": 14000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.0 · Calentamiento (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-CalentamientoDark.dc.html": {
+   "x": 0,
+   "y": 15000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.0 · Calentamiento (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionFeynman.dc.html": {
+   "x": 1360,
+   "y": 14000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.4 · Sesión Feynman (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionFeynmanDark.dc.html": {
+   "x": 1360,
+   "y": 15000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.4 · Sesión Feynman (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionEjemplos.dc.html": {
+   "x": 2720,
+   "y": 14000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.5 · Sesión ejemplos resueltos (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionEjemplosDark.dc.html": {
+   "x": 2720,
+   "y": 15000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.5 · Sesión ejemplos resueltos (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionRecuperacion.dc.html": {
+   "x": 4080,
+   "y": 14000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.6 · Sesión práctica de recuperación (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionRecuperacionDark.dc.html": {
+   "x": 4080,
+   "y": 15000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.6 · Sesión práctica de recuperación (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionElaboracion.dc.html": {
+   "x": 0,
+   "y": 16000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.7 · Sesión elaboración (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionElaboracionDark.dc.html": {
+   "x": 0,
+   "y": 17000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.7 · Sesión elaboración (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionIntercalada.dc.html": {
+   "x": 1360,
+   "y": 16000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.8 · Sesión práctica intercalada (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionIntercaladaDark.dc.html": {
+   "x": 1360,
+   "y": 17000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.8 · Sesión práctica intercalada (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionProblemas.dc.html": {
+   "x": 2720,
+   "y": 16000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.9 · Sesión basada en problemas (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionProblemasDark.dc.html": {
+   "x": 2720,
+   "y": 17000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.9 · Sesión basada en problemas (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-EscaleraAyuda.dc.html": {
+   "x": 4080,
+   "y": 16000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.10 · Escalera de ayuda (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-EscaleraAyudaDark.dc.html": {
+   "x": 4080,
+   "y": 17000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.10 · Escalera de ayuda (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-CambiarMetodo.dc.html": {
+   "x": 0,
+   "y": 18000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.11 · Cambiar de método a mitad (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-CambiarMetodoDark.dc.html": {
+   "x": 0,
+   "y": 19000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.11 · Cambiar de método a mitad (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FinTiempo.dc.html": {
+   "x": 1360,
+   "y": 18000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.12 · Fin del tiempo (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FinTiempoDark.dc.html": {
+   "x": 1360,
+   "y": 19000,
+   "w": 1280,
+   "h": 900,
+   "title": "4.12 · Fin del tiempo (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-LimiteUso.dc.html": {
+   "x": 2720,
+   "y": 18000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.3 · Límite de uso (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-LimiteUsoDark.dc.html": {
+   "x": 2720,
+   "y": 19000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.3 · Límite de uso (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-RepasoTerminado.dc.html": {
+   "x": 4080,
+   "y": 18000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.3 · Repaso terminado (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-RepasoTerminadoDark.dc.html": {
+   "x": 4080,
+   "y": 19000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.3 · Repaso terminado (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AjustesPerfil.dc.html": {
+   "x": 0,
+   "y": 20000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.4 · Ajustes › Perfil (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AjustesPerfilDark.dc.html": {
+   "x": 0,
+   "y": 21000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.4 · Ajustes › Perfil (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AjustesMetodos.dc.html": {
+   "x": 1360,
+   "y": 20000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.5 · Ajustes › Métodos (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AjustesMetodosDark.dc.html": {
+   "x": 1360,
+   "y": 21000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.5 · Ajustes › Métodos (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  }
+ },
+ "createdOnFiles": {
+  "at": "2026-10-20T16:00:00Z",
+  "v": 1
+ },
+ "designSystems": [],
+ "launch": {
+  "page": "mockup",
+  "view": "canvas"
+ },
+ "notes": {
+  "row1": {
+   "kind": "title1",
+   "maxW": 4480,
+   "text": "1 · First run (engine step = core, not shown)",
+   "w": 240,
+   "x": 0,
+   "y": -260
+  },
+  "row2": {
+   "kind": "title1",
+   "maxW": 4480,
+   "text": "2 · Home and new topic",
+   "w": 240,
+   "x": 0,
+   "y": 983
+  },
+  "row3": {
+   "kind": "title1",
+   "maxW": 2960,
+   "text": "3 · Topic and starting a session",
+   "w": 240,
+   "x": 0,
+   "y": 2226
+  },
+  "row4": {
+   "kind": "title1",
+   "maxW": 7520,
+   "text": "4 · Session (three of the seven methods) and close",
+   "w": 240,
+   "x": 0,
+   "y": 3469
+  },
+  "row5": {
+   "kind": "title1",
+   "maxW": 2960,
+   "text": "5 · Review and profile",
+   "w": 240,
+   "x": 0,
+   "y": 4712
+  },
+  "v3row1": {
+   "kind": "title1",
+   "maxW": 1440,
+   "page": "layout-v3",
+   "text": "Home: one next step, topics as paths",
+   "x": 0,
+   "y": -260
+  },
+  "v3row2": {
+   "kind": "title1",
+   "maxW": 1440,
+   "page": "layout-v3",
+   "text": "Session: the study IDE",
+   "x": 0,
+   "y": 983
+  },
+  "v3n1": {
+   "fill": "orange",
+   "page": "layout-v3",
+   "size": "m",
+   "w": 380,
+   "x": 1520,
+   "y": 0,
+   "text": "Compare with 2.1 (Mockup v2).\n• One next step with the why; the map decides, the learner can opt out.\n• Each topic is a path of concepts with state, not a bar.\n• Review, a gentle weekly record (no streak) and open questions on the side."
+  },
+  "v3n2": {
+   "fill": "orange",
+   "page": "layout-v3",
+   "size": "m",
+   "w": 380,
+   "x": 1520,
+   "y": 1243,
+   "text": "Compare with 4.1 (Mockup v2).\n• Left: topic sources with the passage the tutor cites (NotebookLM). Collapsible.\n• Center: the exercise is the main thing; chat is small at the bottom (Brilliant, Khanmigo).\n• Right: topic map + evidence still missing for Dominado (Math Academy).\n• Bottom: IDE-style status bar (method, phase, time, context, ⌘K)."
+  },
+  "themes": {
+   "kind": "title1",
+   "maxW": 4480,
+   "page": "themes",
+   "text": "Themes: serif on a paper sheet, light + dark",
+   "w": 240,
+   "x": 0,
+   "y": -260
+  },
+  "corev1": {
+   "kind": "title1",
+   "maxW": 5440,
+   "page": "core-v1",
+   "text": "Core style v1: the same screens, built from the core pieces (DM Sans, amber, one column task view)",
+   "w": 240,
+   "x": 0,
+   "y": -260
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "Perfiles.dc.html",
+  "Conocerte.dc.html",
+  "Inicio.dc.html",
+  "NuevoTema.dc.html",
+  "MapaInicial.dc.html",
+  "Tema.dc.html",
+  "EmpezarSesion.dc.html",
+  "SesionSocratica.dc.html",
+  "SesionFeynman.dc.html",
+  "SesionEjemplos.dc.html",
+  "Cierre.dc.html",
+  "FinSesion.dc.html",
+  "Flashcards.dc.html",
+  "Perfil.dc.html",
+  "ThemeManana.dc.html",
+  "ThemeAtardecer.dc.html",
+  "ThemeBiblioteca.dc.html",
+  "InicioCamino.dc.html",
+  "SesionTresPaneles.dc.html",
+  "K-Conocerte.dc.html",
+  "K-ConocerteDark.dc.html",
+  "K-Inicio.dc.html",
+  "K-InicioDark.dc.html",
+  "K-NuevoTema.dc.html",
+  "K-NuevoTemaDark.dc.html",
+  "K-MapaInicial.dc.html",
+  "K-MapaInicialDark.dc.html",
+  "K-Tema.dc.html",
+  "K-TemaDark.dc.html",
+  "K-EmpezarSesion.dc.html",
+  "K-EmpezarSesionDark.dc.html",
+  "K-Sesion.dc.html",
+  "K-SesionDark.dc.html",
+  "K-SesionCamino.dc.html",
+  "K-SesionCaminoDark.dc.html",
+  "K-Cierre.dc.html",
+  "K-CierreDark.dc.html",
+  "K-FinSesion.dc.html",
+  "K-FinSesionDark.dc.html",
+  "K-Flashcards.dc.html",
+  "K-FlashcardsDark.dc.html",
+  "K-Perfil.dc.html",
+  "K-PerfilDark.dc.html",
+  "K-InicioVacio.dc.html",
+  "K-InicioVacioDark.dc.html",
+  "K-SinConexion.dc.html",
+  "K-SinConexionDark.dc.html",
+  "K-Busqueda.dc.html",
+  "K-BusquedaDark.dc.html",
+  "K-Bienvenida.dc.html",
+  "K-BienvenidaDark.dc.html",
+  "K-QuienEstudia.dc.html",
+  "K-QuienEstudiaDark.dc.html",
+  "K-AvisoMenores.dc.html",
+  "K-AvisoMenoresDark.dc.html",
+  "K-ConocerteResultado.dc.html",
+  "K-ConocerteResultadoDark.dc.html",
+  "K-Diagnostico.dc.html",
+  "K-DiagnosticoDark.dc.html",
+  "K-SumarConcepto.dc.html",
+  "K-SumarConceptoDark.dc.html",
+  "K-Concepto.dc.html",
+  "K-ConceptoDark.dc.html",
+  "K-TemaResumenes.dc.html",
+  "K-TemaResumenesDark.dc.html",
+  "K-TemaFlashcards.dc.html",
+  "K-TemaFlashcardsDark.dc.html",
+  "K-TemaMaterial.dc.html",
+  "K-TemaMaterialDark.dc.html",
+  "K-CambiosMapa.dc.html",
+  "K-CambiosMapaDark.dc.html",
+  "K-TemaSesiones.dc.html",
+  "K-TemaSesionesDark.dc.html",
+  "K-TemaGlosario.dc.html",
+  "K-TemaGlosarioDark.dc.html",
+  "K-Calentamiento.dc.html",
+  "K-CalentamientoDark.dc.html",
+  "K-SesionFeynman.dc.html",
+  "K-SesionFeynmanDark.dc.html",
+  "K-SesionEjemplos.dc.html",
+  "K-SesionEjemplosDark.dc.html",
+  "K-SesionRecuperacion.dc.html",
+  "K-SesionRecuperacionDark.dc.html",
+  "K-SesionElaboracion.dc.html",
+  "K-SesionElaboracionDark.dc.html",
+  "K-SesionIntercalada.dc.html",
+  "K-SesionIntercaladaDark.dc.html",
+  "K-SesionProblemas.dc.html",
+  "K-SesionProblemasDark.dc.html",
+  "K-EscaleraAyuda.dc.html",
+  "K-EscaleraAyudaDark.dc.html",
+  "K-CambiarMetodo.dc.html",
+  "K-CambiarMetodoDark.dc.html",
+  "K-FinTiempo.dc.html",
+  "K-FinTiempoDark.dc.html",
+  "K-LimiteUso.dc.html",
+  "K-LimiteUsoDark.dc.html",
+  "K-RepasoTerminado.dc.html",
+  "K-RepasoTerminadoDark.dc.html",
+  "K-AjustesPerfil.dc.html",
+  "K-AjustesPerfilDark.dc.html",
+  "K-AjustesMetodos.dc.html",
+  "K-AjustesMetodosDark.dc.html"
+ ],
+ "pages": [
+  {
+   "id": "mockup",
+   "name": "Mockup v2"
+  },
+  {
+   "id": "layout-v3",
+   "name": "Layout v3 (study IDE)"
+  },
+  {
+   "id": "themes",
+   "name": "Themes"
+  },
+  {
+   "id": "core-v1",
+   "name": "Core style v1"
+  }
+ ],
+ "title": "Student harness canvas"
+}

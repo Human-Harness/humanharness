@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Theme Atardecer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#4E3F7A}a:hover{color:#2A2430}
+.th{font-family:"Manrope",system-ui,sans-serif}
+.th h1,.th h2{letter-spacing:-.02em}
+.th p,.th .me{font-family:"Fraunces",Georgia,serif}
+.light{--bd:radial-gradient(60% 50% at 0% 30%,#F6D9CF 0%,transparent 70%),radial-gradient(60% 45% at 80% 0%,#E3D8F2 0%,transparent 70%),radial-gradient(60% 50% at 90% 100%,#F7E9D2 0%,transparent 70%),#F3EEF2;--sh:#FBF8F4;--pn:#F3EEE8;--fd:#FEFCFA;--ln:#E9E2DA;--tx:#2A2430;--mu:#6E6672;--ac:#C5B4EE;--on:#2A2140;--so:#EEE8FA;--st:#4E3F7A;--m1:#7A63B8;--m2:#C5B4EE;--m3:#E9B08F;--m4:#9CC7C0;--m5:#E9E2DA;--shadow:0 1px 2px rgba(60,40,50,.04),0 24px 60px rgba(80,50,70,.08)}
+.dark{--bd:radial-gradient(60% 50% at 0% 30%,#3A2722 0%,transparent 70%),radial-gradient(60% 45% at 80% 0%,#2A2240 0%,transparent 70%),radial-gradient(60% 50% at 90% 100%,#33291A 0%,transparent 70%),#17141A;--sh:#201D22;--pn:#28242B;--fd:#2F2B33;--ln:#39343D;--tx:#EEE9F0;--mu:#ABA3AF;--ac:#BBA8EC;--on:#1E1730;--so:#322B45;--st:#CFC2F5;--m1:#BBA8EC;--m2:#5E4E8E;--m3:#C48D6C;--m4:#5E928A;--m5:#39343D;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.half{background:var(--bd);padding:28px;box-sizing:border-box;display:flex}
+.sheet{flex:1;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;gap:28px;padding:28px 32px 28px 22px}
+.rail{display:flex;flex-direction:column;gap:10px;align-items:center}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ib.on{background:var(--ac);color:var(--on)}
+.k{font-size:13px;color:var(--mu);margin:0}
+.btn{font:inherit;font-size:16px;padding:11px 20px;border-radius:12px;border:0;background:var(--fd);color:var(--tx);cursor:pointer}
+.btn.p{background:var(--ac);color:var(--on);font-weight:500}
+.btn.s{background:var(--so);color:var(--st)}
+.btn.g{background:transparent;color:var(--mu);text-decoration:underline;text-underline-offset:4px}
+.pill{font-size:14px;padding:5px 14px;border-radius:999px;background:var(--pn);color:var(--mu)}
+.pill.done{background:var(--so);color:var(--st)}
+.pill.cur{background:var(--ac);color:var(--on);font-weight:500}
+.panel{background:var(--pn);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px}
+.lg{display:flex;gap:12px;font-size:13px;color:var(--mu);flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.o{font:inherit;text-align:left;font-size:16px;padding:11px 14px;border-radius:12px;border:1.5px solid transparent;background:var(--pn);color:var(--tx);cursor:pointer}
+.o.sel{border-color:var(--ac);background:var(--so);color:var(--st)}
+.me{align-self:flex-end;max-width:340px;background:var(--pn);border-radius:16px 16px 4px 16px;padding:11px 16px;font-size:16px;line-height:1.45}
+.in{font:inherit;font-size:16px;padding:11px 16px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);flex:1;min-width:0}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ac);outline-offset:1px}
+.sw{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 1px var(--ln)}
+.swl{font-size:12px;color:var(--mu);line-height:1.3}
+.sr{position:absolute;left:-9999px}
+</style>
+</helmet>
+<div class="th" style="width:1440px;height:1100px;display:flex;flex-direction:column;background:#FBF8F4">
+  <header style="padding:24px 40px 20px;display:flex;align-items:baseline;gap:20px;color:#2A2430">
+    <h1 style="margin:0;font-size:30px;font-weight:500">B · Atardecer</h1>
+    <p style="margin:0;font-size:16px;color:#6E6672">Hoja marfil sobre bruma durazno y lila. Acento lila, letra más redonda y cálida. Manrope + Fraunces en párrafos.</p>
+  </header>
+  <div style="flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))">
+    <sc-for list="{{modes}}" as="m" hint-placeholder-count="2">
+      <section class="half {{m.cls}}" aria-label="{{m.label}}">
+        <div class="sheet">
+          <nav class="rail" aria-label="Navegación">
+            <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true" style="margin-bottom:22px"><circle cx="20" cy="20" r="16" fill="currentColor"></circle><circle cx="20" cy="20" r="6" fill="var(--sh)"></circle></svg>
+            <button class="ib on" aria-label="Inicio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg></button>
+            <button class="ib" aria-label="Temas"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h13"></path></svg></button>
+            <button class="ib" aria-label="Flashcards"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="14" rx="2"></rect><path d="M8 3h11a2 2 0 0 1 2 2v12"></path></svg></button>
+            <button class="ib" aria-label="Perfil"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg></button>
+          </nav>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:16px;color:var(--mu)">› Fracciones</span>
+              <span class="pill">{{m.label}}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <h2 style="margin:0;font-size:42px;font-weight:500;letter-spacing:-.01em;line-height:1.1">Hola, Sofi</h2>
+              <p style="margin:0;font-size:17px;line-height:1.5;color:var(--mu)">Hoy seguimos con fracciones equivalentes. Vamos a tu ritmo.</p>
+            </div>
+            <section class="panel" aria-label="Para hoy">
+              <div style="display:flex;align-items:center;gap:16px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+                  <span class="k">Para hoy · unos 20 minutos</span>
+                  <strong style="font-size:19px;font-weight:600">Repasar "Leer y escribir"</strong>
+                </div>
+                <button class="btn p">Empezar</button>
+              </div>
+              <div class="bar" role="img" aria-label="2 dominados, 1 para repasar, 2 practicando, 1 visto, 2 sin ver"><span style="flex:2;background:var(--m1)"></span><span style="flex:1;background:var(--m2)"></span><span style="flex:2;background:var(--m3)"></span><span style="flex:1;background:var(--m4)"></span><span style="flex:2;background:var(--m5)"></span></div>
+              <div class="lg"><span><span class="dot" style="background:var(--m1)"></span>Dominado</span><span><span class="dot" style="background:var(--m2)"></span>Para repasar</span><span><span class="dot" style="background:var(--m3)"></span>Practicando</span><span><span class="dot" style="background:var(--m4)"></span>Visto</span><span><span class="dot" style="background:var(--m5)"></span>Sin ver</span></div>
+            </section>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn p">Empezar</button>
+              <button class="btn s">Necesito una pista</button>
+              <button class="btn">Ir al cierre</button>
+              <button class="btn g">Saltar</button>
+            </div>
+            <ol aria-label="Partes de la sesión" style="display:flex;gap:6px;margin:0;padding:0;list-style:none">
+              <li class="pill done">✓ Calentamiento</li><li class="pill cur">Bloque principal</li><li class="pill">Cierre</li>
+            </ol>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <p style="margin:0;font-size:18px;line-height:1.55;max-width:460px">Una pizza en 2 partes, comés 1. Otra igual en 4, comés 2. ¿Quién comió más?</p>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+                <button class="o">Yo</button><button class="o sel">Las dos igual</button><button class="o">Mi amiga</button>
+              </div>
+              <div class="me">Porque 2 pedazos chiquitos son como uno grande</div>
+              <div style="display:flex;gap:8px">
+                <label class="sr" for="{{m.inputId}}">Escribile a la IA</label>
+                <input class="in" id="{{m.inputId}}" placeholder="Escribí una duda…">
+                <button class="btn p">Enviar</button>
+              </div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid var(--ln);padding-top:14px">
+              <sc-for list="{{m.swatches}}" as="s" hint-placeholder-count="7">
+                <div style="display:flex;gap:6px;align-items:center"><div class="sw" style="background:{{s.hex}}"></div><div class="swl">{{s.name}}<br>{{s.hex}}</div></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </section>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+renderVals() {
+  const sw = (a) => a.map(([name, hex]) => ({ name, hex }));
+  return { modes: [
+    { cls: 'light', label: 'Claro', inputId: 'msg-l', swatches: sw([['Hoja','#FBF8F4'],['Panel','#F3EEE8'],['Texto','#2A2430'],['Secundario','#6E6672'],['Acento','#C5B4EE'],['Acento suave','#EEE8FA']]) },
+    { cls: 'dark', label: 'Oscuro', inputId: 'msg-d', swatches: sw([['Hoja','#201D22'],['Panel','#28242B'],['Texto','#EEE9F0'],['Secundario','#ABA3AF'],['Acento','#BBA8EC'],['Acento suave','#322B45']]) }
+  ] };
+}
+}
+</script>
+</body>
+</html>

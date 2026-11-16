@@ -1,0 +1,1 @@
+{ "type": "stack", "children": [ { "id": "home", "type": "block", "content": { "mod": "home", "block": "home" } }, { "id": "work", "type": "block", "content": { "core": "task" } } ] }

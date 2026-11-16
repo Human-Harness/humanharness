@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ElectronApplication, type FrameLocator, type Page, expect, test } from "@playwright/test";
 import { type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
-import { type Sandbox, closeAndClean, launch, launchMock, makeSandbox, profileFlags, readJsonl, shellDir } from "./helpers";
+import { type Sandbox, closeAndClean, closeLeft, launch, launchMock, makeSandbox, openLeft, profileFlags, readJsonl, shellDir } from "./helpers";
 import { claudeScript } from "./scripts";
 
 // Plugins, part 2 (plugins spec §10.2): what a running plugin draws in the app window. The demo's bundled on-this-day
@@ -165,6 +165,8 @@ test("the demo's On this day: off draws nothing; on, its panel, chip and inbox i
 
     // On, after its review: the section's tab, 25 rows from the fixture, the chip, and an info item (no badge).
     await turnOnOnThisDay(page);
+    // The Plugins section is in the left overlay (task view one column).
+    await openLeft(page);
     await expect(page.getByRole("tablist", { name: "Plugin panels" }).getByRole("tab", { name: OTD })).toBeVisible();
     const frame = otdFrame(page);
     await expect(frame.locator("tbody tr")).toHaveCount(25);
@@ -212,6 +214,8 @@ test("the demo's On this day: off draws nothing; on, its panel, chip and inbox i
     const exact = (await prompt.textContent())!;
     const start = card.getByRole("button", { name: "Start" });
     await expect(start).toBeEnabled();
+    // The left overlay, open for the panel, covers the card: fold it first.
+    await closeLeft(page);
     await start.click();
     await expect(card).toHaveCount(0);
     await expect(page.getByRole("main").getByText(title)).toBeVisible();
@@ -287,6 +291,7 @@ test("panel boundaries P1–P7: a hostile panel reaches no network, no app, no o
   const { app, page } = await launch(s, { claude: claudeScript }, undefined, { HH_PLUGIN_DIRS: dirs, HH_PLUGIN_FIXTURES: "1" });
   try {
     await page.getByRole("button", { name: "Start Demo" }).click();
+    await openLeft(page);
     await expect(page.getByRole("tab", { name: "Probe panel" })).toBeVisible();
     const frame = page.frameLocator('iframe[title="Probe panel · Probe"]');
 
@@ -322,6 +327,7 @@ test("mock mode: the demo's plugin, turned on, fills its panel from its fixtures
   try {
     await turnOnOnThisDay(page);
     await page.getByRole("button", { name: "Start Demo" }).click();
+    await openLeft(page);
     const frame = otdFrame(page);
     await expect(frame.locator("tbody tr")).toHaveCount(25);
     await expect(frame.getByText("Sample event for the demo (fixture), 1901.")).toBeVisible();

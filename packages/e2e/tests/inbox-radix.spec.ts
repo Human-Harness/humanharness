@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import type { ClaudeScript } from "@humanharness/fake-agent";
-import { closeAndClean, launch, makeSandbox, shellDir } from "./helpers";
+import { closeAndClean, launch, makeSandbox, newTaskFromSwitcher, shellDir } from "./helpers";
 
 // Radix + Impeccable stage 4a: the Inbox and Jobs pages (DESIGN.md "Secondary pages"), built from the guide's Radix
 // pieces. The screenshots go next to look.spec's (gitignored) for the critique round and the PR.
@@ -41,7 +41,7 @@ for (const theme of ["light", "dark"] as const) {
       // One task working, one waiting for the person.
       await topic("Write A").click();
       await expect(page.getByRole("main").locator('[data-role="user"]')).toHaveCount(1);
-      await page.locator("header.hh-task-head").getByRole("button", { name: "New task" }).click();
+      await newTaskFromSwitcher(page);
       await topic("Write B").click();
       await expect(page.getByRole("main").getByText("Wrote b.")).toBeVisible();
 

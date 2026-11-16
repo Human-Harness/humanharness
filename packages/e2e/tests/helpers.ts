@@ -190,3 +190,33 @@ export function profileFlags(argv: string[]): (string | undefined)[] {
 }
 
 export const usageFile = (s: Sandbox) => path.join(s.folder, ".harness", "usage.jsonl");
+
+/**
+ * Unfolds the left overlay (task view one column): the path, the material panel or the Plugins section, by its button in
+ * the bar ("Path · 1 / 6", "Material", …). A no-op when it is already open.
+ */
+export async function openLeft(page: Page, name: string | RegExp = /^(Path|Material|Plugins|Harness)\b/): Promise<void> {
+  const label = typeof name === "string" ? new RegExp(`^${name}\\b`) : name;
+  const overlay = page.locator("aside.hh-overlay-left");
+  if ((await overlay.count()) === 0) await page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: label }).click();
+  await overlay.waitFor({ state: "visible" });
+}
+
+/** The bar's context chip (task view one column): its popover's Open context opens the context panel. */
+export async function openContextPanel(page: Page): Promise<void> {
+  await page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: /^Context \d+%$/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Open context" }).click();
+}
+
+/** "New task" in the bar's task switcher (task view one column, parallel harnesses): back to the start view. */
+export async function newTaskFromSwitcher(page: Page): Promise<void> {
+  await page.locator(".hh-shell header.hh-topbar .hh-tb-switch").click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "New task" }).click();
+}
+
+/** Folds the left overlay back (its close button), so it no longer covers the column. */
+export async function closeLeft(page: Page): Promise<void> {
+  const overlay = page.locator("aside.hh-overlay-left");
+  await overlay.locator(".hh-overlay-head").getByRole("button").click();
+  await overlay.waitFor({ state: "detached" });
+}

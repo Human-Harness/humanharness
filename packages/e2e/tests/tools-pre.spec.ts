@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ElectronApplication, type Page, expect, test } from "@playwright/test";
 import { type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
-import { type Sandbox, closeAndClean, launch, makeSandbox, readJsonl, shellDir, usageFile } from "./helpers";
+import { type Sandbox, closeAndClean, launch, makeSandbox, openContextPanel, readJsonl, shellDir, usageFile } from "./helpers";
 
 // Harness tools, slice 3 (tools spec §6, §6.1, §8.2, §10, §13): pre-steps run when the person presses Start, before the
 // session opens. The tools fixture's Study prepares two items (the second reads the first through `input`): both reach
@@ -113,7 +113,7 @@ test("the chat shows one folded group above the first answer", async () => {
 });
 
 test("the context panel lists the prepared items", async () => {
-  await page.getByRole("button", { name: PANEL }).click();
+  await openContextPanel(page);
   const start = page.getByRole("region", { name: PANEL }).getByRole("region", { name: "At the start" });
   for (const name of ["today", "warmup"]) {
     const item = start.getByRole("listitem").filter({ hasText: `Prepared · ${name}` });

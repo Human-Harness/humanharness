@@ -15,7 +15,7 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 
 ## B. Friction in flows
 
-- **Setup weight** (Mía): "Nuevo tema" has six questions on one screen; "Nueva sesión" three choices before the first question. *Nuevo tema decided (Marco, 2026-11-16): option A, four steps, boards 2.2a–2d. Nueva sesión still open.*
+- **Setup weight** (Mía): "Nuevo tema" has six questions on one screen; "Nueva sesión" three choices before the first question. *Nuevo tema decided (Marco, 2026-11-16): option A, four steps, boards 2.2a–2d. Nueva sesión decided too: option A, one question + summary line "30 min · Socrático · Cambiar", board 3.2a for time and method.*
 - **No skip** (Tomás): the 2-question warm-up and "Confirmar mi predicción" cannot be skipped; two hints are forced before the explanation.
 - **Method switch** (Tomás): a small arrow next to the title does not read as a button.
 - **Flashcard review** (Mía, Tomás): "Correcta" followed by Otra vez/Difícil/Bien/Fácil is two judgments; must type every answer; "Difícil" embarrasses in front of others.

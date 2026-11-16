@@ -23,6 +23,7 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 - **Diagnóstico** (Ernesto): "Hacer diagnóstico de 5 preguntas" beside "Confirmar el mapa" does not say it is optional or that it is not graded. *Decided (Marco, 2026-11-16): option A, own card "¿Querés un diagnóstico? · Opcional · 5 preguntas, sin nota".*
 - **Three equal start cards** on the empty Inicio (Ernesto). *Decided (Marco, 2026-11-16): option A, one main card "Armar mi primer tema" plus a line for "Preparar una prueba" and the Asistente. The prueba link has no entry flow from an empty Inicio yet.*
 - **History split** (Ernesto, Lucía): the left menu "Historial", the tab "Sesiones" and the search icon look like duplicates; Inicio says nothing about recent study.
+  - **Decided 2026-11-16 (Marco: the left-menu "Historial" must stay):** Historial is now a global item in the left menu, always visible (new board 5.7), with every session of every topic and a filter by topic. The per-topic tab "Sesiones" and board 3.8 are removed. Inicio gets "Lo último que estudiaste" (2 latest sessions, link to Historial).
 - **"Dominado" definition** (Lucía): the concept detail says "ya los tenés" and also "vuelve a Para repasar".
 - **Source choice** (Lucía, Ernesto): "Solo mi material" vs "Mi material y la IA" — unclear what happens to the AI item; "Mixto" names the same thing.
 - **Sizes** (Ernesto): 12px gray text under fields, "Sin enviar", "Usa: tu cuaderno" is too small at zoom.

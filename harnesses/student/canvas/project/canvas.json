@@ -362,8 +362,8 @@
    "page": "core-v1"
   },
   "K-Perfil.dc.html": {
-   "x": 4080,
-   "y": 8000,
+   "x": 0,
+   "y": 10000,
    "w": 1280,
    "h": 900,
    "title": "5.2 · Ajustes del tutor (claro)",
@@ -371,8 +371,8 @@
    "page": "core-v1"
   },
   "K-PerfilDark.dc.html": {
-   "x": 4080,
-   "y": 9000,
+   "x": 0,
+   "y": 11000,
    "w": 1280,
    "h": 900,
    "title": "5.2 · Ajustes del tutor (oscuro)",
@@ -380,7 +380,7 @@
    "page": "core-v1"
   },
   "K-InicioVacio.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 10000,
    "w": 1280,
    "h": 900,
@@ -389,7 +389,7 @@
    "page": "core-v1"
   },
   "K-InicioVacioDark.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 11000,
    "w": 1280,
    "h": 900,
@@ -398,7 +398,7 @@
    "page": "core-v1"
   },
   "K-SinConexion.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 10000,
    "w": 1280,
    "h": 900,
@@ -407,7 +407,7 @@
    "page": "core-v1"
   },
   "K-SinConexionDark.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 11000,
    "w": 1280,
    "h": 900,
@@ -416,7 +416,7 @@
    "page": "core-v1"
   },
   "K-Busqueda.dc.html": {
-   "x": 2720,
+   "x": 4080,
    "y": 10000,
    "w": 1280,
    "h": 900,
@@ -425,7 +425,7 @@
    "page": "core-v1"
   },
   "K-BusquedaDark.dc.html": {
-   "x": 2720,
+   "x": 4080,
    "y": 11000,
    "w": 1280,
    "h": 900,
@@ -434,8 +434,8 @@
    "page": "core-v1"
   },
   "K-Bienvenida.dc.html": {
-   "x": 4080,
-   "y": 10000,
+   "x": 0,
+   "y": 12000,
    "w": 1280,
    "h": 900,
    "title": "1.1 · Bienvenida (claro)",
@@ -443,8 +443,8 @@
    "page": "core-v1"
   },
   "K-BienvenidaDark.dc.html": {
-   "x": 4080,
-   "y": 11000,
+   "x": 0,
+   "y": 13000,
    "w": 1280,
    "h": 900,
    "title": "1.1 · Bienvenida (oscuro)",
@@ -452,7 +452,7 @@
    "page": "core-v1"
   },
   "K-QuienEstudia.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 12000,
    "w": 1280,
    "h": 900,
@@ -461,7 +461,7 @@
    "page": "core-v1"
   },
   "K-QuienEstudiaDark.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 13000,
    "w": 1280,
    "h": 900,
@@ -470,7 +470,7 @@
    "page": "core-v1"
   },
   "K-AvisoMenores.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 12000,
    "w": 1280,
    "h": 900,
@@ -479,7 +479,7 @@
    "page": "core-v1"
   },
   "K-AvisoMenoresDark.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 13000,
    "w": 1280,
    "h": 900,
@@ -488,7 +488,7 @@
    "page": "core-v1"
   },
   "K-ConocerteResultado.dc.html": {
-   "x": 2720,
+   "x": 4080,
    "y": 12000,
    "w": 1280,
    "h": 900,
@@ -497,7 +497,7 @@
    "page": "core-v1"
   },
   "K-ConocerteResultadoDark.dc.html": {
-   "x": 2720,
+   "x": 4080,
    "y": 13000,
    "w": 1280,
    "h": 900,
@@ -506,8 +506,8 @@
    "page": "core-v1"
   },
   "K-Diagnostico.dc.html": {
-   "x": 4080,
-   "y": 12000,
+   "x": 0,
+   "y": 14000,
    "w": 1280,
    "h": 900,
    "title": "2.4 · Diagnóstico de 5 preguntas (claro)",
@@ -515,8 +515,8 @@
    "page": "core-v1"
   },
   "K-DiagnosticoDark.dc.html": {
-   "x": 4080,
-   "y": 13000,
+   "x": 0,
+   "y": 15000,
    "w": 1280,
    "h": 900,
    "title": "2.4 · Diagnóstico de 5 preguntas (oscuro)",
@@ -524,7 +524,7 @@
    "page": "core-v1"
   },
   "K-SumarConcepto.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 14000,
    "w": 1280,
    "h": 900,
@@ -533,7 +533,7 @@
    "page": "core-v1"
   },
   "K-SumarConceptoDark.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 15000,
    "w": 1280,
    "h": 900,
@@ -542,7 +542,7 @@
    "page": "core-v1"
   },
   "K-Concepto.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 14000,
    "w": 1280,
    "h": 900,
@@ -551,7 +551,7 @@
    "page": "core-v1"
   },
   "K-ConceptoDark.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 15000,
    "w": 1280,
    "h": 900,
@@ -560,7 +560,7 @@
    "page": "core-v1"
   },
   "K-TemaResumenes.dc.html": {
-   "x": 2720,
+   "x": 4080,
    "y": 14000,
    "w": 1280,
    "h": 900,
@@ -569,7 +569,7 @@
    "page": "core-v1"
   },
   "K-TemaResumenesDark.dc.html": {
-   "x": 2720,
+   "x": 4080,
    "y": 15000,
    "w": 1280,
    "h": 900,
@@ -578,8 +578,8 @@
    "page": "core-v1"
   },
   "K-TemaFlashcards.dc.html": {
-   "x": 4080,
-   "y": 14000,
+   "x": 0,
+   "y": 16000,
    "w": 1280,
    "h": 900,
    "title": "3.5 · Tema › Flashcards (claro)",
@@ -587,8 +587,8 @@
    "page": "core-v1"
   },
   "K-TemaFlashcardsDark.dc.html": {
-   "x": 4080,
-   "y": 15000,
+   "x": 0,
+   "y": 17000,
    "w": 1280,
    "h": 900,
    "title": "3.5 · Tema › Flashcards (oscuro)",
@@ -596,7 +596,7 @@
    "page": "core-v1"
   },
   "K-TemaMaterial.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 16000,
    "w": 1280,
    "h": 900,
@@ -605,7 +605,7 @@
    "page": "core-v1"
   },
   "K-TemaMaterialDark.dc.html": {
-   "x": 0,
+   "x": 1360,
    "y": 17000,
    "w": 1280,
    "h": 900,
@@ -614,7 +614,7 @@
    "page": "core-v1"
   },
   "K-CambiosMapa.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 16000,
    "w": 1280,
    "h": 900,
@@ -623,29 +623,11 @@
    "page": "core-v1"
   },
   "K-CambiosMapaDark.dc.html": {
-   "x": 1360,
+   "x": 2720,
    "y": 17000,
    "w": 1280,
    "h": 900,
    "title": "3.7 · Cambios propuestos al mapa (material nuevo) (oscuro)",
-   "is_interactive": true,
-   "page": "core-v1"
-  },
-  "K-TemaSesiones.dc.html": {
-   "x": 2720,
-   "y": 16000,
-   "w": 1280,
-   "h": 900,
-   "title": "3.8 · Tema › Sesiones anteriores (claro)",
-   "is_interactive": true,
-   "page": "core-v1"
-  },
-  "K-TemaSesionesDark.dc.html": {
-   "x": 2720,
-   "y": 17000,
-   "w": 1280,
-   "h": 900,
-   "title": "3.8 · Tema › Sesiones anteriores (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -1080,6 +1062,24 @@
    "title": "5.1 · Repaso · la pregunta (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
+  },
+  "K-Historial.dc.html": {
+   "x": 4080,
+   "y": 8000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.7 · Historial (menú izquierdo) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-HistorialDark.dc.html": {
+   "x": 4080,
+   "y": 9000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.7 · Historial (menú izquierdo) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
   }
  },
  "createdOnFiles": {
@@ -1244,6 +1244,8 @@
   "K-FlashcardsPreguntaDark.dc.html",
   "K-Flashcards.dc.html",
   "K-FlashcardsDark.dc.html",
+  "K-Historial.dc.html",
+  "K-HistorialDark.dc.html",
   "K-Perfil.dc.html",
   "K-PerfilDark.dc.html",
   "K-InicioVacio.dc.html",
@@ -1274,8 +1276,6 @@
   "K-TemaMaterialDark.dc.html",
   "K-CambiosMapa.dc.html",
   "K-CambiosMapaDark.dc.html",
-  "K-TemaSesiones.dc.html",
-  "K-TemaSesionesDark.dc.html",
   "K-TemaGlosario.dc.html",
   "K-TemaGlosarioDark.dc.html",
   "K-Calentamiento.dc.html",

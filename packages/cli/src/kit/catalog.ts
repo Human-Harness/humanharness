@@ -157,7 +157,7 @@ async function modsOf(home: string, layer: Layer, config: Awaited<ReturnType<typ
   const root = path.join(home, LAYER_DIRS[layer], "mods");
   const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
   const out: CatalogMod[] = [];
-  for (const e of entries.filter((x) => x.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const e of entries.filter((x) => x.isDirectory() && !x.name.startsWith(".")).sort((a, b) => a.name.localeCompare(b.name))) {
     const dir = path.join(root, e.name);
     const files = await filesUnder(dir);
     const errors: string[] = [];

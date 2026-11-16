@@ -4,6 +4,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "bin": { "humanharness": "./bin/humanharness.js" },
+  "files": ["bin", "src", "guide", "template", "plugin-template", "mod-template"],
   "exports": { ".": "./src/index.ts", "./sdk": "./src/sdk.ts", "./ui": "./src/ui.ts", "./tool": "./src/tool.ts" },
   "dependencies": {
     "@humanharness/engines": "workspace:*",

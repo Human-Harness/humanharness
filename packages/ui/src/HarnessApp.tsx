@@ -530,7 +530,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                         />
                       )}
                       {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
-                      {!slotted && <SettingsGear onClick={() => setSettings("general")} />}
+                      {!(slotted && chatTask) && <SettingsGear onClick={() => setSettings("general")} />}
                     </>
                   }
                 />

@@ -44,6 +44,25 @@ async function breakEngine(client: FakeClient, status: Partial<FakeClient["statu
   fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
 }
 
+/** The rail's History (task view one column): only while a task is open, so one opens first. */
+async function railHistory(client: FakeClient) {
+  if (!client.taskView.current) act(() => client.emitTasks({ current: { id: "t1", status: "waiting" }, actions: {}, notes: [] }));
+  fireEvent.click(await within(screen.getByRole("navigation", { name: "App" })).findByRole("button", { name: "History" }));
+}
+
+/** The plan's usage sits in the bar's context chip (task view one column): a task with context opens, the chip opens. */
+async function openUsage(client: FakeClient) {
+  if (!client.taskView.current) act(() => client.emitTasks({ current: { id: "t1", status: "waiting", context: { used: 40_000, cap: 200_000 } }, actions: {}, notes: [] }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Context \d+%$/ }));
+  return screen.findByRole("dialog");
+}
+/** Waits until the chip's popover shows `text`, then closes it again. */
+async function seeUsage(client: FakeClient, text: string | RegExp) {
+  await within(await openUsage(client)).findByText(text);
+  fireEvent.click(screen.getByRole("button", { name: /^Context \d+%$/ }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+}
+
 describe("HarnessApp", () => {
   it("shows a text size changed from the keyboard in Settings", async () => {
     const client = new FakeClient(ready);
@@ -155,7 +174,7 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
+    await railHistory(client);
     await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
@@ -165,7 +184,7 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
+    await railHistory(client);
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
     await screen.findByText("I went back to before that task. Everything it changed in your files was undone.");
@@ -176,7 +195,7 @@ describe("HarnessApp", () => {
     client.restoreError = new Error("busy");
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
+    await railHistory(client);
     await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't go back/i);
@@ -262,7 +281,7 @@ describe("HarnessApp", () => {
     client.confirmGoBack = async () => false;
     await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
-    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
+    await railHistory(client);
     await screen.findByText("The AI finished");
     expect((screen.getByRole("button", { name: "Go back here" }) as HTMLButtonElement).disabled).toBe(true);
     act(() => client.emit({ type: "done", ok: true }));
@@ -371,19 +390,20 @@ describe("HarnessApp", () => {
     expect(within(container.querySelector(".hh-chat") as HTMLElement).getByText("All done")).toBeTruthy();
   });
 
-  it("history is a secondary page: its title takes focus, the top bar's Volver and Escape go back to the chat", async () => {
+  it("history is a secondary page: its title takes focus, the rail's Tasks and Escape go back to the chat", async () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
+    await railHistory(client);
     const title = await screen.findByRole("heading", { level: 1, name: "History" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(title);
     expect(document.querySelector(".hh-app-paged")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Back to / }));
+    // The one bar has no Volver (task view one column): the rail's Tasks goes back to the chat.
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "Tasks" }));
     await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
     expect(document.querySelector(".hh-app-paged")).toBeNull();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
+    await railHistory(client);
     fireEvent.keyDown(await screen.findByRole("heading", { level: 1, name: "History" }), { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
     expect(screen.queryByRole("button", { name: /^Back to / })).toBeNull();
@@ -581,14 +601,17 @@ describe("HarnessApp", () => {
       estimates: {}, tokens: {},
     };
     await startWork(<HarnessApp client={client} />);
-    await screen.findByText(`5 h: 16% used · resets at ${formatReset(fiveHourReset, "en")} — week: 9% used`);
+    const pop = await openUsage(client);
+    await within(pop).findByText(`5 h: 16% used · resets at ${formatReset(fiveHourReset, "en")}`);
+    expect(within(pop).getByText("week: 9% used")).toBeTruthy();
     act(() => client.emit({ type: "limits", status: "allowed", windows: [{ kind: "five_hour", utilization: 0.85, resetsAt: fiveHourReset }] }));
-    expect(screen.getByText(/Close to your limit/)).toBeTruthy();
+    expect(within(pop).getByText(/5 h: 85% used/)).toBeTruthy();
   });
 
   it("before any message, says usage shows up later", async () => {
-    await startWork(<HarnessApp client={new FakeClient(ready)} />);
-    await screen.findByText("Your plan's usage shows up after the first message.");
+    const client = new FakeClient(ready);
+    await startWork(<HarnessApp client={client} />);
+    await seeUsage(client, "Your plan's usage shows up after the first message.");
   });
 
   it("says when the engine doesn't report limits and shows the last reply's tokens", async () => {
@@ -598,7 +621,7 @@ describe("HarnessApp", () => {
       { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
     ];
     await startWork(<HarnessApp client={client} />);
-    await screen.findByText(/Codex doesn't report your plan's limits\. Last message: 1\.2K tokens\./);
+    await seeUsage(client, /Codex doesn't report your plan's limits\. Last message: 1\.2K tokens\./);
   });
 
   it("for the test engine, says test mode uses none of the plan and keeps the last reply's tokens", async () => {
@@ -608,7 +631,7 @@ describe("HarnessApp", () => {
       { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
     ];
     await startWork(<HarnessApp client={client} />);
-    await screen.findByText(/^Test mode: uses none of your plan\. Last message: 1\.2K tokens\.$/);
+    await seeUsage(client, /^Test mode: uses none of your plan\. Last message: 1\.2K tokens\.$/);
     expect(screen.queryByText(/doesn't report your plan's limits/)).toBeNull();
   });
 
@@ -619,7 +642,7 @@ describe("HarnessApp", () => {
       { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
     ];
     await startWork(<HarnessApp client={client} />);
-    await screen.findByText(/^Test mode: uses none of your plan\. Last message: 1\.2K tokens\.$/);
+    await seeUsage(client, /^Test mode: uses none of your plan\. Last message: 1\.2K tokens\.$/);
   });
 
   it("asks before a heavy action when the 5-hour window is high, and sends only on Continue", async () => {
@@ -627,7 +650,7 @@ describe("HarnessApp", () => {
     client.state.actions = { tidy: { label: "Tidy up", cost: "heavy" } };
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 }, tokens: {} };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
-    await screen.findByText(/5 h: 75% used/);
+    await seeUsage(client, /5 h: 75% used/);
     fireEvent.click(screen.getByRole("button", { name: "tidy" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog.textContent).toContain('"Tidy up" usually uses about 8% of your 5-hour window. You have 25% left.');
@@ -651,7 +674,7 @@ describe("HarnessApp", () => {
     };
     try {
       await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
-      await screen.findByText(/5 h: 75% used/);
+      await seeUsage(client, /5 h: 75% used/);
       const opener = screen.getByRole("button", { name: "tidy" });
       opener.focus();
       fireEvent.click(opener);
@@ -671,7 +694,8 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: "Tidy up", cost: "heavy" } };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
-    await screen.findByText("Your plan's usage shows up after the first message.");
+    const pop = await openUsage(client);
+    await within(pop).findByText("Your plan's usage shows up after the first message.");
     const past = new Date(Date.now() - 60_000).toISOString();
     act(() =>
       client.emit({
@@ -683,8 +707,10 @@ describe("HarnessApp", () => {
         ],
       }),
     );
-    expect(screen.getByText("week: 9% used")).toBeTruthy();
-    expect(screen.queryByText(/Almost at your limit/)).toBeNull();
+    expect(within(pop).getByText("week: 9% used")).toBeTruthy();
+    expect(within(pop).queryByText(/5 h:/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Context \d+%$/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "tidy" }));
     await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
   });
@@ -694,7 +720,7 @@ describe("HarnessApp", () => {
     client.state.actions = { tidy: { label: "Tidy up", cost: "heavy" } };
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {}, tokens: {} };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
-    await screen.findByText(/5 h: 20% used/);
+    await seeUsage(client, /5 h: 20% used/);
     fireEvent.click(screen.getByRole("button", { name: "tidy" }));
     await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -705,7 +731,7 @@ describe("HarnessApp", () => {
     const reset = in2h();
     client.usage = { limits: [{ kind: "five_hour", utilization: 1, resetsAt: reset }], estimates: {}, tokens: {} };
     await startWork(<HarnessApp client={client} />);
-    await screen.findByText(/5 h: 100% used/);
+    await seeUsage(client, /5 h: 100% used/);
     await typeAndSend(client, "go");
     act(() => client.emit({ type: "done", ok: false, error: { code: "out-of-quota" } }));
     expect(screen.getByText(`Your limit resets: ${formatReset(reset, "en")}.`)).toBeTruthy();
@@ -819,7 +845,8 @@ describe("HarnessApp", () => {
     // Spans the window above the rail: the rail is not inside it, and both are the shell's children.
     expect(bar.parentElement?.className).toBe("hh-shell");
     expect(within(bar).getByRole("button", { name: "Demo" })).toBeTruthy();
-    expect(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" })).toBeTruthy();
+    // History is the rail's TASK group's, only while a task is open (task view one column).
+    expect(within(screen.getByRole("navigation", { name: "App" })).queryByRole("button", { name: "History" })).toBeNull();
   });
 
   it("the top bar's avatar opens the profile switcher; D0: no avatar without profiles (spec §4.1, Q2)", async () => {
@@ -845,8 +872,10 @@ describe("HarnessApp", () => {
     client.state.actions = { manifest: { label: "The manifest", cost: "medium" } };
     client.state.path = ["manifest"];
     await startWork(<HarnessApp client={client} />);
-    const nav = await screen.findByRole("navigation", { name: "Breadcrumb" });
-    const here = () => nav.querySelector("[aria-current=page]")?.textContent;
+    // Without a task the crumbs end on Tasks; with one, the one bar's switcher names it (task view one column).
+    const here = () =>
+      document.querySelector(".hh-topbar-slot:not([hidden]) .hh-tb-title")?.textContent ??
+      screen.queryByRole("navigation", { name: "Breadcrumb" })?.querySelector("[aria-current=page]")?.textContent;
     await waitFor(() => expect(here()).toBe("Tasks"));
     await act(() => client.emitTasks({ current: { id: "t1", action: "manifest", status: "waiting" }, actions: {}, notes: [] }));
     await waitFor(() => expect(here()).toBe("The manifest"));
@@ -888,7 +917,7 @@ describe("HarnessApp", () => {
     expect(await screen.findByRole("button", { name: /Start/ })).toBeTruthy();
   });
 
-  it("Rail › Files opens the Files page, only for a harness with actions (D0); a note's Volver goes to the list", async () => {
+  it("Rail › Files opens the Files page, only for a harness with actions (D0); the rail goes back to the list", async () => {
     await startWork(<HarnessApp client={new FakeClient(ready)} />);
     expect(within(await screen.findByRole("navigation", { name: "App" })).queryByRole("button", { name: "Files" })).toBeNull();
     cleanup();
@@ -908,9 +937,10 @@ describe("HarnessApp", () => {
     expect(within(rail).getByRole("button", { name: "Files" }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(within(files).getByRole("button", { name: /The manifest/ }));
     expect(await screen.findByRole("region", { name: "The manifest" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Back to Notes" }));
+    // Under the one bar there is no Volver: the rail goes back to the list, and to the chat.
+    fireEvent.click(within(rail).getByRole("button", { name: "Files" }));
     expect(await screen.findByRole("region", { name: "Files" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Back to (?!Notes)/ }));
+    fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Files" })).toBeNull());
     expect(within(rail).getByRole("button", { name: "Tasks" }).getAttribute("aria-current")).toBe("page");
   });

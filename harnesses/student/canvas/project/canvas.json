@@ -366,7 +366,7 @@
    "y": 10000,
    "w": 1280,
    "h": 900,
-   "title": "5.2 · Ajustes del tutor (claro)",
+   "title": "5.2 · Ajustes › Tutor (claro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -375,7 +375,7 @@
    "y": 11000,
    "w": 1280,
    "h": 900,
-   "title": "5.2 · Ajustes del tutor (oscuro)",
+   "title": "5.2 · Ajustes › Tutor (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -1080,6 +1080,258 @@
    "title": "5.7 · Historial (menú izquierdo) (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
+  },
+  "K-Repaso.dc.html": {
+   "x": 4080,
+   "y": 24000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.8 · Repaso (menú izquierdo) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-RepasoDark.dc.html": {
+   "x": 4080,
+   "y": 25000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.8 · Repaso (menú izquierdo) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-RepasoVacio.dc.html": {
+   "x": 0,
+   "y": 26000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.8b · Repaso sin flashcards para hoy (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-RepasoVacioDark.dc.html": {
+   "x": 0,
+   "y": 27000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.8b · Repaso sin flashcards para hoy (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FlashcardsRevision.dc.html": {
+   "x": 1360,
+   "y": 26000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.1b · Repaso · revisé tu respuesta (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FlashcardsRevisionDark.dc.html": {
+   "x": 1360,
+   "y": 27000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.1b · Repaso · revisé tu respuesta (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-PrepararPruebaTema.dc.html": {
+   "x": 2720,
+   "y": 26000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.2c · Preparar una prueba · ¿de qué tema? (desde Inicio) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-PrepararPruebaTemaDark.dc.html": {
+   "x": 2720,
+   "y": 27000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.2c · Preparar una prueba · ¿de qué tema? (desde Inicio) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-PlanPrueba.dc.html": {
+   "x": 4080,
+   "y": 26000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.2d · Plan para la prueba (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-PlanPruebaDark.dc.html": {
+   "x": 4080,
+   "y": 27000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.2d · Plan para la prueba (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaSeres.dc.html": {
+   "x": 0,
+   "y": 28000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.1c · Tema · Seres vivos y ambiente (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-TemaSeresDark.dc.html": {
+   "x": 0,
+   "y": 29000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.1c · Tema · Seres vivos y ambiente (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-MenuTema.dc.html": {
+   "x": 1360,
+   "y": 28000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.1d · Menú del tema (renombrar, archivar, borrar) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-MenuTemaDark.dc.html": {
+   "x": 1360,
+   "y": 29000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.1d · Menú del tema (renombrar, archivar, borrar) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionPasada.dc.html": {
+   "x": 2720,
+   "y": 28000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.7b · Sesión pasada (solo lectura) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SesionPasadaDark.dc.html": {
+   "x": 2720,
+   "y": 29000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.7b · Sesión pasada (solo lectura) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ArmandoMapa.dc.html": {
+   "x": 4080,
+   "y": 28000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2e · Armando el mapa (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ArmandoMapaDark.dc.html": {
+   "x": 4080,
+   "y": 29000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2e · Armando el mapa (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ResumenAbierto.dc.html": {
+   "x": 0,
+   "y": 30000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.4b · Resumen abierto (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-ResumenAbiertoDark.dc.html": {
+   "x": 0,
+   "y": 31000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.4b · Resumen abierto (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FotoMaterial.dc.html": {
+   "x": 1360,
+   "y": 30000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.6b · Foto del cuaderno (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-FotoMaterialDark.dc.html": {
+   "x": 1360,
+   "y": 31000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.6b · Foto del cuaderno (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SubirMaterial.dc.html": {
+   "x": 2720,
+   "y": 30000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.6c · Material nuevo leyéndose (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-SubirMaterialDark.dc.html": {
+   "x": 2720,
+   "y": 31000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.6c · Material nuevo leyéndose (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevaFlashcard.dc.html": {
+   "x": 4080,
+   "y": 30000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.5b · Nueva flashcard (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevaFlashcardDark.dc.html": {
+   "x": 4080,
+   "y": 31000,
+   "w": 1280,
+   "h": 900,
+   "title": "3.5b · Nueva flashcard (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-BusquedaVacia.dc.html": {
+   "x": 0,
+   "y": 32000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.2b · Búsqueda sin resultados (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-BusquedaVaciaDark.dc.html": {
+   "x": 0,
+   "y": 33000,
+   "w": 1280,
+   "h": 900,
+   "title": "6.2b · Búsqueda sin resultados (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
   }
  },
  "createdOnFiles": {
@@ -1307,7 +1559,35 @@
   "K-AjustesMetodos.dc.html",
   "K-AjustesMetodosDark.dc.html",
   "K-AjustesUso.dc.html",
-  "K-AjustesUsoDark.dc.html"
+  "K-AjustesUsoDark.dc.html",
+  "K-Repaso.dc.html",
+  "K-RepasoDark.dc.html",
+  "K-RepasoVacio.dc.html",
+  "K-RepasoVacioDark.dc.html",
+  "K-FlashcardsRevision.dc.html",
+  "K-FlashcardsRevisionDark.dc.html",
+  "K-PrepararPruebaTema.dc.html",
+  "K-PrepararPruebaTemaDark.dc.html",
+  "K-PlanPrueba.dc.html",
+  "K-PlanPruebaDark.dc.html",
+  "K-TemaSeres.dc.html",
+  "K-TemaSeresDark.dc.html",
+  "K-MenuTema.dc.html",
+  "K-MenuTemaDark.dc.html",
+  "K-SesionPasada.dc.html",
+  "K-SesionPasadaDark.dc.html",
+  "K-ArmandoMapa.dc.html",
+  "K-ArmandoMapaDark.dc.html",
+  "K-ResumenAbierto.dc.html",
+  "K-ResumenAbiertoDark.dc.html",
+  "K-FotoMaterial.dc.html",
+  "K-FotoMaterialDark.dc.html",
+  "K-SubirMaterial.dc.html",
+  "K-SubirMaterialDark.dc.html",
+  "K-NuevaFlashcard.dc.html",
+  "K-NuevaFlashcardDark.dc.html",
+  "K-BusquedaVacia.dc.html",
+  "K-BusquedaVaciaDark.dc.html"
  ],
  "pages": [
   {

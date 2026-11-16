@@ -26,3 +26,7 @@ Walked every click from Inicio over the 51 boards. A click that leads nowhere is
 
 - 5.2 "Ajustes del tutor" and 5.4 "Ajustes › Perfil" are two Ajustes boards with overlapping tabs (Perfil, Tutor, Métodos, Uso). Merge or rename.
 - Core-owned and out of scope here: Sidekick, Contexto %, Camino, Te espera.
+
+## Status 2026-11-16
+
+Drawn (14 new screens, canvas now 65 screens): Repaso landing + empty state, Preparar una prueba entry (Inicio, Tema) + topic chooser + plan, Seres vivos tema, past session, building the map, flashcard answer review, open summary, photo, new flashcard, upload reading, topic menu, empty search. 5.2 renamed "Ajustes > Tutor" (it is the Tutor tab, not a duplicate). Decisions: Repaso A, Preparar una prueba entry C. Topic menu trigger is a ghost "..." button (not yet confirmed by Marco).

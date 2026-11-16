@@ -24,7 +24,7 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 |---|---|---|---|
 | dev | parked (rounds 1–3 done) | v2 canvas + clickable prototype | draft |
 | student | rounds 1–3 done | layout v3 ("study IDE") on the canvas, review pending | draft |
-| teacher | – | – | – |
+| teacher | round 1 done (2026-11-12) | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
@@ -346,7 +346,127 @@ Reference: socrates-app inventory (read from `workspace/socrates-app`, 2026-10-2
 
 ### teacher
 
-_not started_
+Started 2026-11-12. Mockups will use the current HH style (Radix + Impeccable, `DESIGN.md`), not the 2026-10 canvas style.
+
+Questions asked, round 1 (2026-11-12): who the teacher is; which jobs (plan, prepare, build a course, adapt, assess, track students, communicate, reuse, admin); students inside the app; input material; AI role and limits; organization; what stays; output formats; usage rhythm; first run and home.
+
+Answers, round 1 (2026-11-12):
+
+- **Who / purpose.** Someone who prepares classes and plans their teaching. No student management at all: no students, grades, tracking or communication. Only planning, preparing classes, and exams.
+- **Sources.** Documents the teacher uploads; documents the app finds on the internet at the teacher's request; scans that need OCR, stored as text. These sources feed everything else.
+- **Outputs.** Classes in several formats: PPT, PDF, DOCX, Markdown, HTML.
+- **Planning.** From the sources: a group of classes, a whole year, etc. Also helps the teacher organize their work.
+- **Exams.** Built from the uploaded material.
+- Related: `2026-10-25-core-material-processing.md` (student material ingestion) likely covers part of the sources step. **Conflict:** that doc rules out OCR and scans ("no OCR, no photos, no scans"); teacher needs OCR. Asked in round 2.
+
+Questions asked, round 2 (2026-11-12): OCR how and where; web search approval and citation; source organization; what "a class" is; formats; editing; style/template; what "plan the year" means; plan-first or any order; "organize work"; exam contents; several subjects.
+
+Answers, round 2 (2026-11-12):
+
+- **OCR.** Not in the core: a plugin (now a mod). Done by a free local program, not by the AI. The core rule "no OCR" stays.
+- **Web search.** Only citable material with an author, never Wikipedia-style sources. Everything is stored locally; online items also keep URL + author.
+- **Sources.** A library where material can be organized; each item can carry several categories. Exact storage decided later.
+- **A class.** Any of: projectable material, a teacher's script (maybe with activities), material for students.
+- **Formats.** Decided later. Marco asked for research on libraries that produce good-quality output with little effort on our side. Style/template decided after that research.
+- **Editing.** Inside the app, by hand or by asking the AI.
+- **Year plan.** Not clear yet. Something flexible without being too complex.
+- **Order.** Any order: some plan a single class, others the whole year.
+- **Organize work.** Yes: see which classes are ready and which are missing, pending items.
+- **Exams.** Per exam the teacher picks the topics or material it draws from, plus format, question types, number of topics.
+- **Subjects.** Several subjects at once.
+- **Prior art.** Much of this was designed in Ariadna (`~/Documents/workspace/ariadna`). Where Ariadna contradicts these answers, these answers win.
+
+Ariadna survey (2026-11-12, `~/Documents/workspace/ariadna`, docs `docs/flujo.md` v0.2, `docs/examenes.md` v0.3): chat-only Claude Code project + Python CLI `./ari`; builds **one class** for a university humanities teacher.
+- **Contradicts Marco's answers (Marco wins):** the class is the top unit (no subject/unit/year; materia is a label); sources live per class, no shared library, no reuse of earlier classes; no OCR; web search only for an optional "guía inicial"; exports are one-way (pptx edits never come back); exams belong to one class; no multi-subject handling.
+- **Candidates to carry over (not confirmed):** source metadata (`tipo` libro/capítulo/artículo/web/apunte/programa, authors, year, URL + capture date, missing data asked, never invented); citation markers `[F01, p. 34]` with literal quotes checked by a script against the source text; citation style applied only at export; step states pendiente → borrador → aprobado → desactualizado; `decisiones.md` log; time budget per class in minutes with a meter; class pieces sent to clase / alumnos / descartada; exam engine (MC / MCJ / desarrollo, difficulty by demand, 1–6 versions distintas or mezcladas, correct letter assigned by script with a seed, anti-pattern checker, answer key with distractor errors + rubrics); principle "what a script can check, a script checks, not the AI"; talk-to-teacher rules (one question at a time, no paths/JSON).
+
+Export research (2026-11-12, subagent, web-verified versions: Pandoc 3.10.1, Typst 0.15, marp-cli 4.5.1, pptxgenjs 4.0.1, docx 9.15.3). Recommendation, pending Marco's call:
+- **Source of truth:** Markdown + YAML frontmatter (slides split by `---`, notes in `::: notes`); exams as a YAML question bank (type, points, answer, rubric).
+- **PPTX / DOCX / MD / HTML:** Pandoc (GPL-2, one ~40 MB binary). Styles via the school's `reference.pptx` / `reference.docx` + CSS. PPTX is native and editable but plain (only the reference deck's layouts).
+- **PDF:** Pandoc → HTML → Electron `printToPDF` with CSS (no LaTeX, Chromium already shipped).
+- **Exams:** ~100 lines of our own TS: YAML → student version + answer key, seeded shuffle for versions.
+- **Rejected:** Marp/Slidev PPTX (images, not editable); Presenton/Gamma (generate their own decks, not our content; Gamma sends content to the cloud); Quarto (adds only weight over Pandoc). Fallback if Pandoc PPTX is too plain: pptxgenjs + slide JSON (own layout mapper).
+- **Risks:** plain PPTX; Pandoc GPL-2 distribution terms (check with legal); small rendering differences across formats. Suggested next step: 1-day spike with one sample class (10 slides + handout + exam).
+
+Answers, round 3 (2026-11-12):
+
+- **Export.** Marco does not like Pandoc. He is interested in **Presenton** (presenton.ai), run locally. Gamma is paid (API on Pro and above, per third-party sources), so out. Checked: Presenton is open source (Apache-2 per most sources; one listing says MIT), runs locally via Docker (or an Electron build), API with file upload + `files` + `template`, custom templates from an uploaded PPTX, exports PPTX and PDF, LLM via Ollama/OpenAI/Anthropic/Gemini etc. (its own LLM call, separate from the HH engine). Covers slides only: scripts, handouts and exams still need a DOCX/PDF path.
+- **Ariadna.** All candidates listed above carry over: source sheet, verified citations, step states, time budget, exam engine, the script-checks principle.
+- **Audience.** Any level, any subject.
+- **Organization.** Subject → units → classes, and the teacher can also create standalone classes, inside or outside a subject.
+
+Answers, round 4 (2026-11-12):
+
+- **Presenton rejected** (own LLM key + cost, Docker, slides only). Gamma rejected (paid). Pandoc rejected (round 3).
+- **Requirement:** free, and presentations must be **visually attractive**.
+- **Who writes the slides:** option A — our AI writes each slide's content (grounded, verified citations); the tool only designs/renders. (Marco answered "4. A"; read as the "who builds the slides" question, the only one with an A option.)
+- New research launched for a free, local, attractive slide renderer that takes our content.
+
+Slide renderer research (2026-11-12, subagent; nothing was run, look ratings from docs/reputation). No tool is both designer-quality out of the box and natively editable in PPTX.
+- **Option 1 (recommended):** own HTML/CSS layout kit (~10 layouts: title, section, two-column, image+text, quote, timeline, comparison, big number…), themed by a few CSS tokens + logo; the AI fills named layouts as JSON. Rendered in a hidden Electron window: HTML to project, PDF via `printToPDF`, editable PPTX via **dom-to-pptx** 2.0.3 (MIT, on PptxGenJS; computed styles → native shapes, embeds fonts; fidelity on complex layouts untested), image PPTX as fallback. Zero extra footprint. ~1–1.5 weeks.
+- **Option 2:** Slidev 53.1.0 (MIT) with a custom theme; Markdown authoring; ~3–5 days; adds Vite + playwright-chromium (~150 MB); `pptx` is image-only, `pptx-editable` is CLI-only and partly rasterized; developer feel.
+- **Fallback for max editability:** pptxgenjs with own layout functions (native, plainer; PDF needs LibreOffice).
+- **Ruled out:** Marp (plain themes, editable mode needs LibreOffice), reveal.js (basic themes, no PPTX), Quarto (Pandoc), Typst+Touying (PDF only, academic look), Spectacle; free template packs (SlidesCarnival CC-BY forbids unchanged redistribution, Slidesgo forbids bundling); Anthropic's pptx skill no longer ships html2pptx; no open-source Gamma alternative renders without its own LLM.
+- **Spike (1 day):** 8-slide HTML deck, 5 layouts → dom-to-pptx + printToPDF; open in PowerPoint/Keynote; compare with Slidev pptx-editable; gate: acceptable → option 1, else image PPTX only or pptxgenjs.
+- **Slidev editable PPTX, checked in official docs (sli.dev/guide/exporting, 2026-11-12):** `--format pptx-editable` rebuilds slides as native shapes: text selectable/editable, boxes movable/recolorable, presenter notes kept. Stay pictures (that element only): SVG (Mermaid, icons), canvas, iframe, video, KaTeX, CSS gradients, filters, blend modes, clip-path. A slide that cannot be rebuilt safely falls back to an image for that slide. Fonts are named, not embedded; long paragraphs may wrap differently; theme `::before/::after` decorations are dropped. Third-party blogs saying "images only" describe plain `--format pptx`. Marco likes Slidev's look.
+- **Decision (Marco, 2026-11-12), provisional:** Slidev + own theme for slides. Revisited when the export module is implemented. Implications listed for that moment: Vite server process managed by the app; ~150 MB playwright-chromium unless Electron's Chromium can be reused (unverified); slide Markdown may carry Vue/JS, so content must be restricted to our layouts; theme must avoid gradients and `::before/::after` so editable PPTX matches; the teacher never sees Markdown/Vue, so in-app hand editing needs a visual per-slide editor; PPTX edits never come back; handouts, script and exams still need their own DOCX/PDF path (open).
+
+Answers, round 6 (2026-11-12):
+
+- **No Word.** Slidev's PDF is enough; DOCX is not needed. (Still open: handouts, script and exams are page documents, not slides; their PDF path is decided at export time.)
+- **First run.** The app's job is to help the teacher work by creating their classes (no questionnaire stated).
+- **Home.** Decided through the mockups.
+- **Source view.** Shows the information stored about the source; the teacher can download the original if they uploaded it (the app keeps it in a folder), or open the URL for web sources.
+
+Mockup plan (approved by Marco 2026-11-12): screens only, no code, to understand the whole flow. Screens: 1 first run (straight into "create your first class"), 2 home (options), 3 library, 4 one source, 5 subject (units + classes + states, standalone classes), 6 plan (a group of classes or the year), 7 create/edit a class (AI work, time budget, slides, script, student material; hand or AI edits), 8 exam (pick topics/sources, types, count, versions; review + key), 9 export (PDF/PPTX/HTML), 10 settings (school style, citation style, OCR mod). Style: current HH (Radix + Impeccable, `PRODUCT.md`, `DESIGN.md`), light + dark, as Artifacts. Start with home options.
+
+Home (round 1 of mockups, 2026-11-12): Marco chose **B, subject board**. The rail is there from the start (Home, Library, Exams, Plan). Each subject is a card with its progress, its state counts and the next class, standalone classes get their own card, and "To review" sits below. This needs a teacher home template, because the core Inicio template has no rail. Also drawn: first run (one card that leads straight to "Create my first class", with 3 steps and "Create a subject" / "Start with the Library") and heavy use (8 subjects from 2 schools grouped by school, standalone classes apart, "To review" moved to the top, a "This year / Previous years" switch). Canvas: artifact L6ecCUaJuku6Cq5xnME2kL.
+
+Years (Marco, 2026-11-12): the year lives inside each subject, not on the home. Home shows only the present, plus a quiet "Subjects you no longer teach" link. A subject has year tabs (2026 · 2025 · 2024); a past year is read-only, and each class has "Copy to 2026" and each unit "Copy the unit to 2026". A copy arrives as a draft and its sources get re-checked; copied items show "Already in 2026", and the copy in 2026 shows "Brought from 2025". Open: how a subject continues into a new year (who creates 2027 and with what).
+
+Subject view (drawn 2026-11-12): units are collapsible cards with progress; the current unit is open with each class, its sources and its state. A subject without units shows one flat list of classes in order (classes have no dates yet), and "New unit" stays available. Exams live in an "Exams" section below the classes of each subject (states Taken, Draft, Approved; "Copy to 2026" in past years). The rail's "Exams" entry gathers the exams of every subject. The home shows no exam summary, because "To review" already surfaces pending ones.
+
+First pass of the remaining screens (2026-11-12, one proposal each, light + dark, same canvas), waiting for Marco's comments: Library, One source, New class (request + AI-proposed sources to approve), Class editor (slides / script / student material + AI change panel), Export dialog (PDF or HTML, school style, bibliography), Exam setup and review (traceable questions, answer key, versions), Year plan (AI proposal, suggested weeks only), Settings (schools with export style, citation style, export defaults, mods incl. OCR, AI). Open: free vs suggested categories; source↔subject link;
+
+Exams have two generation paths (Marco, 2026-11-12). Each exam starts with one choice of origin:
+- **From classes.** Pick units and classes; the exam draws on what was taught plus the sources those classes used.
+- **From chosen material.** Pick sources straight from the Library, with search and a category filter. No class is needed.
+
+Both paths share the rest of the setup (question types, topics, versions, notes for the AI), and the AI cites where each question comes from. Open: whether a material-only exam must belong to a subject (the mockup saves it in one).
+
+**Rule (Marco, 2026-11-12): everything the app can create can also be created by asking the AI.** A chat is reachable from any screen to create, edit, or ask how to do something in the app. It knows which screen the teacher is on, and what it creates arrives as a draft with an "Open" action. This is a core candidate: every harness object needs an AI path, not only a form. Options drawn: A side panel, B floating sheet, C own page.
+
+**Decision (Marco, 2026-11-12): A.**
+- On every screen the chat opens as a right-hand panel. It is opened from "Assistant ⌘J" in the top bar.
+- **Every screen must be responsive:** content reflows when the chat opens or closes. With the chat closed, content uses the full width.
+
+Decisions (Marco, 2026-11-12):
+- **Narrow windows.** When the window is narrow, the chat lies on top of the screen instead of pushing it.
+- **One chat for every AI interaction.** Every AI interaction goes through the same app chat, to keep the app simple to use.
+  - The class editor has no AI panel of its own: changes are asked in the app chat, scoped to the open class (slide or whole class).
+  - The plan's inline "ask the AI for changes" box became a button that opens the chat.
+
+**Decision (Marco, 2026-11-12): create by form or by AI, and the AI can open the form prefilled.**
+- Every object can be created two ways: by filling its form, or by asking the app chat.
+- When the teacher asks the chat, the AI can open the creation form with the data it understood already filled in.
+  - Fields the AI filled carry a "Filled by the AI" tag; fields it could not infer are marked "Missing".
+  - The teacher completes the missing fields in the form or tells the chat; either way the form updates.
+  - The main action stays disabled until required fields are complete.
+- So generation forms stay forms. The AI is one more way to fill them, through the same single chat. Mockup: "The AI opens the form" in the chat row.
+- Core candidate: forms must accept prefilled values with a source mark per field (AI / user / missing).
+
+Flow review (2026-11-13): every teacher operation was traced step by step against the canvas screens (artifact ULXM45E1PZtWgUDxCj798u). 32 operations: 8 complete, 23 missing at least one screen, 1 blocked by an open question; 26 screens to draw before the demo.
+
+Answers, round 7 (Marco, 2026-11-13):
+1. **A new school year.** The subject offers "Start 2027"; the teacher picks what to bring from 2026 (units, classes, exams) and everything arrives as a draft. The same must work by asking the chat, with the AI running the operations.
+2. **Approving web sources** happens where they were asked for: the source list in "New class" (Use / Discard), or cards in the chat when asked there.
+3. **Library categories** are free; the AI suggests some when a source is added, and the teacher accepts or changes them.
+4. **Class dates.** Classes always have an order; a date is an optional field.
+5. **AI at work.** Live, but the teacher can leave and it continues in the background. Marco leans to blocking the app for inexperienced users so it is clear the request is being worked on. Mockups asked: A blocking dialog, B live editor with the rest of the app dimmed, C progress card in the chat; plus the background state (top-bar chip, progress on the class row, done notice). **Chosen: A** (2026-11-13), because a blocking dialog is the clearest for inexperienced users. It lists the steps with a progress bar; "Keep working in the background" closes it and the background state takes over. The same dialog serves exam generation and plan building.
+6. **A material-only exam** may belong to a subject or stay standalone, like a standalone class.
+7. **Export style** is per school, and a subject can override it.
+8. **Bibliography placement** is chosen at export time.
+9. **PPTX** can be downloaded, but edits made outside the app never come back.
 
 ### thinker
 

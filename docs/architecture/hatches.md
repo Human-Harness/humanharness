@@ -327,7 +327,7 @@ End to end: `packages/e2e/tests/backend.spec.ts` (mock mode) runs the demo's ech
 - `packages/shell/src/main/backend/`: `backend-protocol.ts`, `backend-log.ts`, `backend-process.ts`, `backend-supervisor.ts`, `backend-ipc.ts` (`backendFor`, `registerBackendIpc`, `usableLinks`, `backendInit`, `BackendGeneration`); wiring in `index.ts` (`backendReady`, `backendRebase`, `backendScopes`, `backendLeaveBase`, the move's `closeRuntime`, `before-quit`).
 - `packages/shell/src/preload/backend.ts`; `packages/ui/src/hatches/useBackend.ts`, `BackendCard.tsx`; `en.json` `hatches.backend*`.
 - Tests: `packages/shell/test/backend/` with fixtures in `packages/shell/test/fixtures/backends/`; `packages/ui/test/backend-ui.test.tsx`; `packages/e2e/tests/backend.spec.ts`.
-- The demo: `harnesses/demo/backend/index.ts` and its side panel, `harnesses/demo/ui/BackendPanel.tsx`.
+- The fixture: `packages/fake-agent/fixtures/backend-harness/` (`backend/index.ts` and its panel, `ui/BackendPanel.tsx`); the demo has no backend.
 
 ## H3: engine config per scope
 

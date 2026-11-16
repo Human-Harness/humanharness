@@ -1,13 +1,17 @@
 import { type HarnessClient, useBackend } from "@humanharness/ui";
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import en from "../locales/en.json";
+
+type Key = keyof typeof en.backend;
+/** The fixture's own strings: the panel sits outside HarnessApp, so it has no i18n provider to read them from. */
+const t = (key: `backend.${Key}`, vars: Record<string, unknown> = {}) =>
+  en.backend[key.slice("backend.".length) as Key].replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(vars[name]));
 
 /**
- * The side panel's Backend section: "Echo" calls the demo's backend and shows its answer, "Stream" asks for three
+ * The fixture panel's Backend section: "Echo" calls the fixture's backend and shows its answer, "Stream" asks for three
  * `tick` events and lists them as they come (hatches spec §4).
  */
 export function BackendPanel({ client }: { client: HarnessClient }) {
-  const { t } = useTranslation("harness");
   const backend = useBackend(client);
   const [echo, setEcho] = useState<string | null>(null);
   const [ticks, setTicks] = useState<number[]>([]);
@@ -30,9 +34,9 @@ export function BackendPanel({ client }: { client: HarnessClient }) {
     backend.call("stream", { n: 3 }).then((r) => setSent(Number((r as { sent?: unknown }).sent)), fail);
   };
   return (
-    <section className="demo-backend" aria-label={t("backend.title")}>
-      <span className="demo-kicker">{t("backend.title")}</span>
-      <div className="demo-backend-buttons">
+    <section className="fx-backend" aria-label={t("backend.title")}>
+      <span className="fx-backend-kicker">{t("backend.title")}</span>
+      <div className="fx-backend-buttons">
         <button type="button" onClick={doEcho}>
           {t("backend.echo")}
         </button>
@@ -40,7 +44,7 @@ export function BackendPanel({ client }: { client: HarnessClient }) {
           {t("backend.stream")}
         </button>
       </div>
-      {echo !== null && <p data-testid="demo-backend-echo">{echo}</p>}
+      {echo !== null && <p data-testid="fx-backend-echo">{echo}</p>}
       {ticks.length > 0 && (
         <ol aria-label={t("backend.ticks")}>
           {ticks.map((i, n) => (
@@ -48,7 +52,7 @@ export function BackendPanel({ client }: { client: HarnessClient }) {
           ))}
         </ol>
       )}
-      {sent !== null && <p data-testid="demo-backend-sent">{t("backend.sent", { n: sent })}</p>}
+      {sent !== null && <p data-testid="fx-backend-sent">{t("backend.sent", { n: sent })}</p>}
       {error !== null && <p role="alert">{error}</p>}
     </section>
   );

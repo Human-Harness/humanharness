@@ -48,7 +48,12 @@ you to the next screen.
   subject or class than the one you chose, or a field will not type, continue as if it were yours
   and as if you had typed it. Do not report these as findings. List them once, at the end of the
   report, under `## Problemas de la maqueta`. Do report what the screen itself tells you, or fails
-  to tell you: a missing confirmation, a wrong count, a word you do not understand.
+  to tell you: a missing confirmation, a count that contradicts itself on the same screen, a word
+  you do not understand.
+- Judge whether what you see is reasonable and understandable, not whether the sample data adds up
+  across screens (a class count here, a page number there). Those numbers are checked against the
+  real app, not in this mockup. If a mismatch made you doubt or stop, say so once under
+  `## Problemas de la maqueta` and move on.
 - The canvas can take up to a minute to load and may open zoomed far out. Wait, then zoom to fit
   before looking for the start board. What works: shift+1 (fit all), click a screen near the start
   board, shift+2 (zoom to selection), find the start board, then its Play menu › "Play full

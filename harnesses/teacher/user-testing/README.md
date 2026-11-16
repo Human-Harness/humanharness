@@ -40,6 +40,27 @@ Together they cover every task in `tasks.md` (T01–T34).
   | Laura, Diego | `B · Tablero de materias (claro)` |
   | Matías, Graciela (dark) | `B · Tablero de materias (oscuro)` |
 
+  Tasks that start elsewhere, because no click reaches their screen:
+
+  | Task | Start board |
+  |---|---|
+  | T34 | `Sin conexión (claro)`, or `Sin conexión (oscuro)` for a dark-mode persona |
+
+  Before launching, check on the canvas that each start board exists with exactly that title.
+
+- **Known mock limits as of canvas v62.** Not findings. The protocol tells testers to list them
+  under `## Problemas de la maqueta`; when one shows up as a finding anyway, triage it as `maqueta`:
+
+  | Where | What the mockup does | From |
+  |---|---|---|
+  | Nuevo examen, from Biología 3º A | The class picker shows Biología 2º B's classes | H43 |
+  | Nuevo examen, quick picks | Only "Las últimas 3 dadas" is wired | H44 |
+  | Editar ficha of a book | "Un capítulo" does not switch | H47 |
+  | Ajustes › Con estilo propio | Historia 4º A › Cambiar opens Biología 2º B's dialog | H48 |
+  | Material para alumnos | Opens on page 2 of 2; "No poner" (Fuentes) is not wired | H49 |
+  | Exportar la clase › Cambiar formato, partes o bibliografía | The choices do not change | H54 |
+  | Across screens | Sample counts and names do not always match (classes, questions, pages) | H27, H41, H55 |
+
   The links were added by `demo/linkify.py` (op list per component, line-anchored to canvas
   version 29) and checked by `demo/check.js` (every href resolves to an existing board, dark links
   to dark). If the canvas session reworks a screen, its line numbers shift: update the ops and

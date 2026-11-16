@@ -29,11 +29,11 @@ body{margin:0}
   </div>
 
   <div style="flex-grow: 1; display: flex; min-height: 0;">
-    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
-      <a href="{{go.home}}" aria-label="Inicio" title="Inicio" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg></a>
-      <a href="{{go.lib}}" aria-label="Biblioteca" title="Biblioteca" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg></a>
-      <a href="{{go.exams}}" aria-label="Exámenes" title="Exámenes" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg></a>
-      <a href="{{go.plan}}" aria-label="Plan del año" title="Plan del año" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></a>
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px;">
+      <a href="{{go.home}}" style="width: 56px; border: 0; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">Inicio</span></a>
+      <a href="{{go.lib}}" style="width: 56px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4z"></path><path d="m16 5 3.5-1 3 15.5-3.5 1z"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">Biblioteca</span></a>
+      <a href="{{go.exams}}" style="width: 56px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="m9 13 2 2 4-4"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">Exámenes</span></a>
+      <a href="{{go.plan}}" style="width: 56px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">Plan del año</span></a>
     </nav>
 
     <main style="flex-grow: 1; overflow: hidden; padding: 16px 32px; display: flex; justify-content: center;">
@@ -176,7 +176,7 @@ class Component extends DCLogic {
     const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
     const t = this.props.dark ? D : L;
     const past = this.props.year === 'past';
-    const col = { Aprobada: [t.green, t.greenInk], Borrador: [t.blue, t.blueInk], Desactualizada: [t.orange, t.orangeInk], Pendiente: [t.s2, t.ink], Dada: [t.s2, t.muted] };
+    const col = { Aprobada: [t.green, t.greenInk], Borrador: [t.blue, t.blueInk], Desactualizada: [t.orange, t.orangeInk], Pendiente: [t.s2, t.ink], 'Dada en el aula': [t.s2, t.muted] };
     const cls = (list, opts) => list.map((c, i) => {
       const k = c[2]; const cc = col[k];
       const copied = past && (opts.copied || []).includes(c[0]);
@@ -233,19 +233,19 @@ class Component extends DCLogic {
       ]);
       examHint = '3 en 2026';
     } else {
-      subline = 'Colegio San Martín · 2025 · 29 clases dadas · 2 exámenes';
+      subline = 'Colegio San Martín · 2025 · 29 clases dadas en el aula · 2 exámenes';
       yearHint = 'Solo lectura';
       units = [
         unit('U1', 'La célula', '8 clases', '100%', false, [], true),
         unit('U2', 'Nutrición y fotosíntesis', '7 clases', '100%', false, [], true),
         unit('U3', 'Herencia y genética', '8 clases', '100%', false, [], true),
         unit('U4', 'Ecosistemas', '6 clases', '100%', true, cls([
-          ['24', 'Qué es un ecosistema', 'Dada', '3 fuentes'],
-          ['25', 'Cadenas y redes tróficas', 'Dada', '3 fuentes'],
-          ['26', 'Ciclo del carbono', 'Dada', '2 fuentes'],
-          ['27', 'Ciclo del agua', 'Dada', '2 fuentes'],
-          ['28', 'Especies en peligro', 'Dada', '4 fuentes'],
-          ['29', 'Salida de campo · Reserva Costanera', 'Dada', 'Guía + actividad']
+          ['24', 'Qué es un ecosistema', 'Dada en el aula', '3 fuentes'],
+          ['25', 'Cadenas y redes tróficas', 'Dada en el aula', '3 fuentes'],
+          ['26', 'Ciclo del carbono', 'Dada en el aula', '2 fuentes'],
+          ['27', 'Ciclo del agua', 'Dada en el aula', '2 fuentes'],
+          ['28', 'Especies en peligro', 'Dada en el aula', '4 fuentes'],
+          ['29', 'Salida de campo · Reserva Costanera', 'Dada en el aula', 'Guía + actividad']
         ], { copied: ['26'] }), true)
       ];
       exams = ex([

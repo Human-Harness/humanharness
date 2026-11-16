@@ -28,9 +28,9 @@ body{margin:0}
   </div>
 
   <div style="flex-grow: 1; display: flex; min-height: 0;">
-    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px;">
       <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
-        <a href="{{n.href}}" aria-label="{{n.label}}" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg></a>
+        <a href="{{n.href}}" style="width: 56px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
       </sc-for>
     </nav>
 

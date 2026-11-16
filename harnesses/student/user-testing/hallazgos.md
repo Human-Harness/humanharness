@@ -17,8 +17,8 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 
 - **Setup weight** (Mía): "Nuevo tema" has six questions on one screen; "Nueva sesión" three choices before the first question. *Nuevo tema decided (Marco, 2026-11-16): option A, four steps, boards 2.2a–2d. Nueva sesión decided too: option A, one question + summary line "30 min · Socrático · Cambiar", board 3.2a for time and method.*
 - **No skip** (Tomás): the 2-question warm-up and "Confirmar mi predicción" cannot be skipped; two hints are forced before the explanation. *Decided (Marco, 2026-11-16): "Saltear el calentamiento" and "Saltear predicción" links in session (skipped counts as not done); hint control is two real buttons, "Pedir una pista (quedan 2)" and "Explicámelo".*
-- **Method switch** (Tomás): a small arrow next to the title does not read as a button.
-- **Flashcard review** (Mía, Tomás): "Correcta" followed by Otra vez/Difícil/Bien/Fácil is two judgments; must type every answer; "Difícil" embarrasses in front of others.
+- **Method switch** (Tomás): a small arrow next to the title does not read as a button. *Decided (Marco, 2026-11-16): option A, "Método: Socrático ▾" button in the session header.*
+- **Flashcard review** (Mía, Tomás): "Correcta" followed by Otra vez/Difícil/Bien/Fácil is two judgments; must type every answer; "Difícil" embarrasses in front of others. *Decided (Marco, 2026-11-16): option B, "Escribir mi respuesta" or "Mostrar la respuesta", then two buttons "No la sabía · mañana" / "La sabía · en 7 días"; boards 5.1 and 5.1a. The written-answer review flow is not drawn yet.*
 - **Hint control** (Mía): "Pedir una pista · 1 de 2" looks like text, not a button, and does not say what happens at 2 of 2. *Decided together with "No skip" above.*
 - **Diagnóstico** (Ernesto): "Hacer diagnóstico de 5 preguntas" beside "Confirmar el mapa" does not say it is optional or that it is not graded.
 - **Three equal start cards** on the empty Inicio (Ernesto).

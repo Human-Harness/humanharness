@@ -20,8 +20,8 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 - **Method switch** (Tomás): a small arrow next to the title does not read as a button. *Decided (Marco, 2026-11-16): option A, "Método: Socrático ▾" button in the session header.*
 - **Flashcard review** (Mía, Tomás): "Correcta" followed by Otra vez/Difícil/Bien/Fácil is two judgments; must type every answer; "Difícil" embarrasses in front of others. *Decided (Marco, 2026-11-16): option B, "Escribir mi respuesta" or "Mostrar la respuesta", then two buttons "No la sabía · mañana" / "La sabía · en 7 días"; boards 5.1 and 5.1a. The written-answer review flow is not drawn yet.*
 - **Hint control** (Mía): "Pedir una pista · 1 de 2" looks like text, not a button, and does not say what happens at 2 of 2. *Decided together with "No skip" above.*
-- **Diagnóstico** (Ernesto): "Hacer diagnóstico de 5 preguntas" beside "Confirmar el mapa" does not say it is optional or that it is not graded.
-- **Three equal start cards** on the empty Inicio (Ernesto).
+- **Diagnóstico** (Ernesto): "Hacer diagnóstico de 5 preguntas" beside "Confirmar el mapa" does not say it is optional or that it is not graded. *Decided (Marco, 2026-11-16): option A, own card "¿Querés un diagnóstico? · Opcional · 5 preguntas, sin nota".*
+- **Three equal start cards** on the empty Inicio (Ernesto). *Decided (Marco, 2026-11-16): option A, one main card "Armar mi primer tema" plus a line for "Preparar una prueba" and the Asistente. The prueba link has no entry flow from an empty Inicio yet.*
 - **History split** (Ernesto, Lucía): the left menu "Historial", the tab "Sesiones" and the search icon look like duplicates; Inicio says nothing about recent study.
 - **"Dominado" definition** (Lucía): the concept detail says "ya los tenés" and also "vuelve a Para repasar".
 - **Source choice** (Lucía, Ernesto): "Solo mi material" vs "Mi material y la IA" — unclear what happens to the AI item; "Mixto" names the same thing.

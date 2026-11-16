@@ -30,3 +30,7 @@ Walked every click from Inicio over the 51 boards. A click that leads nowhere is
 ## Status 2026-11-16
 
 Drawn (14 new screens, canvas now 65 screens): Repaso landing + empty state, Preparar una prueba entry (Inicio, Tema) + topic chooser + plan, Seres vivos tema, past session, building the map, flashcard answer review, open summary, photo, new flashcard, upload reading, topic menu, empty search. 5.2 renamed "Ajustes > Tutor" (it is the Tutor tab, not a duplicate). Decisions: Repaso A, Preparar una prueba entry C. Topic menu trigger is a ghost "..." button (not yet confirmed by Marco).
+
+## Clickable prototype (2026-11-16)
+
+The prototype lives inside the canvas Artifact: every board links to its target boards with `<a href>` (light boards to light, dark to dark). Play from "1.0 Bienvenida" or "Inicio". Notas is a core placeholder board. Simulated transitions: "Armando el mapa" advances by clicking "Podés esperar acá…", upload reading by clicking the photo row, and flashcard answer review ends on its rating buttons. Controls with no board yet do nothing.

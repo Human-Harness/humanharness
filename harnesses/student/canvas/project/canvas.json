@@ -936,6 +936,24 @@
    "title": "3.2b · Preparar una prueba (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
+  },
+  "K-AjustesUso.dc.html": {
+   "x": 4080,
+   "y": 20000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.6 · Ajustes › Uso (pestaña del core) (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-AjustesUsoDark.dc.html": {
+   "x": 4080,
+   "y": 21000,
+   "w": 1280,
+   "h": 900,
+   "title": "5.6 · Ajustes › Uso (pestaña del core) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
   }
  },
  "createdOnFiles": {
@@ -1147,7 +1165,9 @@
   "K-AjustesPerfil.dc.html",
   "K-AjustesPerfilDark.dc.html",
   "K-AjustesMetodos.dc.html",
-  "K-AjustesMetodosDark.dc.html"
+  "K-AjustesMetodosDark.dc.html",
+  "K-AjustesUso.dc.html",
+  "K-AjustesUsoDark.dc.html"
  ],
  "pages": [
   {

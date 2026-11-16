@@ -58,3 +58,4 @@ Topic tabs (14 flashcards, 5 sessions, 3 summaries) show the state before the se
 
 States: Dominado, Practicando, Para repasar, Por ver. Tags: De tu cuaderno, Agregado por la IA, Agregado por vos. Mastery rule: "2 días distintos". Help ladder: Pista 1 de 2, Pista 2 de 2, then explanation (counts as help, no mastery evidence that day).
 - Round 1 user testing (2026-11-16): new board 3.2b PrepararPrueba (option A, one screen): test Tuesday 24 Nov (8 days from Mon 16), 4 concepts fit at ~25 min/day, adding a 5th needs 35 min; the plan screen after "Armar mi plan" is not drawn yet. EmpezarSesion's option says "Decís la fecha y elegís lo que entra."
+- Board 5.6 AjustesUso mirrors the core Usage tab (spec 2026-10-14): one 5-hour window at 100% used, renews today 18:00; per-action cost ("≈ 8 % de 5 h") and "no entra entero" because the limit is reached; it is the target of "Ver uso" on LimiteUso.

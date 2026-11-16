@@ -9,7 +9,7 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 |---|---|---|---|
 | A1 | **Prepare a test has no continuation (done: board 3.2b, option A; entry from Inicio/topic still open)**: no entry on Inicio with topics, "Preparar una prueba" asks for no date, no screen for the plan (date, concepts that enter). Blocking. | Tomás, Lucía | New screen(s): test date + concepts + plan; entry from Inicio and topic. |
 | A2 | **Ajustes › Uso** has no board; "Ver uso" on the limit notice leads nowhere. | Lucía (known) | Done: board 5.6 mirrors the core Usage tab (teacher has no own screen). |
-| A3 | **Map of an existing topic** has no remove/add/rename; rename is promised in copy but no control exists. | Tomás, Lucía | Decide: edit controls on the topic Mapa, or drop "renombrar" from the copy. |
+| A3 | **Map of an existing topic** has no remove/add/rename; rename is promised in copy but no control exists. | Tomás, Lucía | Decided (Marco, 2026-11-16): option A, "Editar mapa" button on the topic opens board 3.1b (remove/add/rename, then review changes). |
 | A4 | **No visible "end session" control**; only the Calentamiento/Principal/Cierre bar. | Ernesto | Add a "Terminar por hoy" control to the session header. |
 | A5 | Cambios propuestos: "Aplicar 2 cambios" cannot accept the rename separately. | Lucía | Per-item accept. |
 

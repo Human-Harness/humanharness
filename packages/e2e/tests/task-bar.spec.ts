@@ -49,6 +49,8 @@ test("one bar with the switcher and the context chip; the rail's TASK group open
     await rail.getByRole("button", { name: /^Notes/ }).click();
     await expect(page.getByRole("region", { name: "History", exact: true })).toHaveCount(0);
     await expect(rail.getByRole("button", { name: /^Notes/ })).toHaveAttribute("aria-current", "page");
+    // The page says the name of the entry that opened it: the task's Notes, not Files.
+    await expect(page.getByRole("heading", { name: "Notes", level: 1 })).toBeVisible();
     await expect(switcher).toBeVisible();
     // A note open on that page: Tasks still goes back to the conversation, not to the list.
     await page.getByRole("button", { name: /Manifest basics/ }).click();

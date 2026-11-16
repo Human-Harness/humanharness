@@ -325,9 +325,6 @@ importers:
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk
-      '@humanharness/ui':
-        specifier: workspace:*
-        version: link:../ui
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.1
         version: 1.32.1(supports-color@7.2.0)(zod@4.6.5)

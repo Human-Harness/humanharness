@@ -1,4 +1,6 @@
-import { type HarnessClient, useBackend } from "@humanharness/ui";
+// A type-only import: the parent passes `useBackend(client)` in, so this file needs no value import from the core
+// (and the fake-agent package needs no dependency on the UI package, which would loop its node_modules).
+import type { UseBackend } from "@humanharness/ui";
 import { useEffect, useState } from "react";
 import en from "../locales/en.json";
 
@@ -11,8 +13,7 @@ const t = (key: `backend.${Key}`, vars: Record<string, unknown> = {}) =>
  * The fixture panel's Backend section: "Echo" calls the fixture's backend and shows its answer, "Stream" asks for three
  * `tick` events and lists them as they come (hatches spec §4).
  */
-export function BackendPanel({ client }: { client: HarnessClient }) {
-  const backend = useBackend(client);
+export function BackendPanel({ backend }: { backend: UseBackend }) {
   const [echo, setEcho] = useState<string | null>(null);
   const [ticks, setTicks] = useState<number[]>([]);
   const [sent, setSent] = useState<number | null>(null);

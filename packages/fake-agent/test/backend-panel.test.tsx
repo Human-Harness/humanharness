@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HarnessClient } from "@humanharness/ui";
+import type { UseBackend } from "@humanharness/ui";
 import { BackendPanel } from "../fixtures/backend-harness/ui/BackendPanel";
 
 afterEach(cleanup);
 
-/** Only `client.backend`, which is all the panel touches; `emit` plays an event from the backend. */
+/** The `useBackend` result, which is all the panel touches; `emit` plays an event from the backend. */
 function stubClient(call: (method: string, params?: unknown) => Promise<unknown>) {
   const listeners = new Map<string, Set<(data: unknown) => void>>();
   const backend = {
@@ -24,11 +24,11 @@ function stubClient(call: (method: string, params?: unknown) => Promise<unknown>
   const emit = (event: string, data: unknown) => {
     for (const cb of listeners.get(event) ?? []) cb(data);
   };
-  return { client: { backend } as unknown as HarnessClient, backend, emit };
+  return { client: backend as unknown as UseBackend, backend, emit };
 }
 
-function renderPanel(client: HarnessClient) {
-  return render(<BackendPanel client={client} />);
+function renderPanel(client: UseBackend) {
+  return render(<BackendPanel backend={client} />);
 }
 
 describe("BackendPanel", () => {

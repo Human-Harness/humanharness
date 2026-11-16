@@ -88,6 +88,8 @@ export type SendFn = (text: string, options?: SendOptions) => boolean;
 export interface ChatPage {
   title: string;
   back: () => void;
+  /** A rail pick: to the chat. */
+  close: () => void;
   backLabel?: string;
   rail?: "notes" | "task-notes" | "task-history";
 }
@@ -1634,10 +1636,10 @@ export function ChatView({
   useEffect(() => {
     pageTo.current?.(
       historyPage
-        ? { title: t("history.title"), back: closeHistory, rail: "task-history" }
+        ? { title: t("history.title"), back: closeHistory, close: closeHistory, rail: "task-history" }
         : notesShown
           ? // From a note's detail, Volver goes to the list and says its name (DESIGN.md "Secondary pages").
-            { title: t("files.title"), rail: notesPage.task ? "task-notes" : "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
+            { title: t("files.title"), close: closeNotes, rail: notesPage.task ? "task-notes" : "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
           : null,
     );
   }, [historyPage, notesShown, noteOpen, notesPage?.task, closeHistory, closeNotes, toNotesList, t]);

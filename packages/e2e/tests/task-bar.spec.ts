@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { closeAndClean, launchMock, makeSandbox } from "./helpers";
 
@@ -8,6 +10,10 @@ const START = "Which part do you want to understand?";
 test("one bar with the switcher and the context chip; the rail's TASK group opens its pages", async () => {
   test.setTimeout(120_000);
   const s = makeSandbox("task-bar");
+  // A note of the manifest's task: the rail's Notes lists it while that task is open.
+  const notes = path.join(s.folder, ".harness", "notes");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.writeFileSync(path.join(notes, "manifest.md"), "---\ntitle: Manifest basics\ndate: 2026-10-28\naction: manifest\n---\n## Summary\n- defineHarness validates it.\n");
   const { app, page } = await launchMock(s);
   try {
     await page.setViewportSize({ width: 1100, height: 720 });
@@ -44,7 +50,12 @@ test("one bar with the switcher and the context chip; the rail's TASK group open
     await expect(page.getByRole("region", { name: "History", exact: true })).toHaveCount(0);
     await expect(rail.getByRole("button", { name: /^Notes/ })).toHaveAttribute("aria-current", "page");
     await expect(switcher).toBeVisible();
+    // A note open on that page: Tasks still goes back to the conversation, not to the list.
+    await page.getByRole("button", { name: /Manifest basics/ }).click();
+    await expect(page.getByRole("region", { name: "Manifest basics", exact: true })).toBeVisible();
     await rail.getByRole("button", { name: "Tasks" }).click();
+    await expect(page.getByRole("region", { name: "Manifest basics", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Files", exact: true })).toHaveCount(0);
     await expect(page.getByRole("main").getByText(/El manifiesto declara todo el harness/)).toBeVisible();
     await rail.getByRole("button", { name: "Task settings" }).click();
     await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();

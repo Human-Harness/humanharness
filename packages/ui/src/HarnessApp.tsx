@@ -438,9 +438,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       setView({ kind: "chat" });
       return setTaskPage((p) => ({ page: e === "task-notes" ? "notes" : "history", n: (p?.n ?? 0) + 1 }));
     }
-    // A rail pick leaves the chat's own page (History, Files) too: coming back from another page shows the chat. Files
+    // A rail pick leaves the chat's own page (History, Files, a note) for the chat, not Volver's step back. Files
     // picked on Files only goes back to its list (below).
-    if (!(e === "notes" && chatPage?.rail === "notes")) chatPage?.back();
+    if (e === "notes" && chatPage?.rail === "notes") chatPage.back();
+    else chatPage?.close();
     if (e === "inbox" || e === "jobs") return setView({ kind: e, request: ++inboxPicks.current });
     // Notes, Plugins and Tasks are the chat's: a page gives way to it.
     setView({ kind: "chat" });

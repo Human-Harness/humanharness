@@ -43,6 +43,12 @@ for (const theme of ["light", "dark"] as const) {
         await expect(page.locator('[data-layout-id="home"]')).toHaveCount(0);
       }
       await page.waitForTimeout(400);
+      // Task view one column: the reading column is 680 and centred, with no side column beside it.
+      if (checkLayout) {
+        const main = (await page.locator(".hh-main").boundingBox())!;
+        expect(main.width - 48).toBeCloseTo(680, 0);
+        await expect(page.locator("aside.hh-side, .hh-sk-rail")).toHaveCount(0);
+      }
       await shot(page, `work-${theme}`);
     } finally {
       await closeAndClean(app, s);

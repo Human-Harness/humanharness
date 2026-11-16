@@ -66,9 +66,9 @@ body{margin:0}
       <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: inherit; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
     </div>
     <div style="display: flex; height: 860px;">
-      <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;">
+      <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px;">
         <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
-          <a href="{{n.href}}" aria-label="{{n.label}}" style="width: 40px; height: 40px; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg></a>
+          <a href="{{n.href}}" style="width: 56px; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
         </sc-for>
       </nav>
       <main style="flex-grow: 1; padding: 16px 32px; display: flex; justify-content: center;">
@@ -83,7 +83,7 @@ body{margin:0}
               <span style="font-size: 20px; font-weight: 600;">¿Por dónde empezás?</span>
               <span style="font-size: 14px; color: {{t.muted}};">La materia está vacía. Elegí una forma; las otras siguen disponibles después.</span>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
               <sc-for list="{{starts}}" as="s" hint-placeholder-count="3">
                 <a href="{{s.href}}" style="border: 1.5px solid {{s.line}}; background: {{s.bg}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px; color: inherit; text-decoration: none; cursor: pointer;">
                   <span style="font-size: 16px; font-weight: 600; color: {{s.ink}};">{{s.name}}</span>
@@ -91,11 +91,37 @@ body{margin:0}
                 </a>
               </sc-for>
             </div>
-            <span style="font-size: 14px; color: {{t.muted}};">¿La diste otro año en otra materia? Pedile al Asistente que traiga esas clases como borrador.</span>
           </div>
         </div>
       </main>
     </div>
+
+    <sc-if value="{{isBring}}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: {{t.scrim}};"></div>
+      <div role="dialog" aria-label="Traer de otro año" style="position: absolute; left: 340px; top: 110px; width: 600px; box-sizing: border-box; background: {{t.surface}}; border-radius: 18px; box-shadow: {{t.shadow}}; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 20px; font-weight: 600;">Traer de otro año · Biología 3º A</span>
+          <span style="font-size: 14px; color: {{t.muted}}; line-height: 1.4;">Elegí de qué materia. En el paso siguiente elegís qué traer. Todo llega como borrador: nada se da sin que lo revises.</span>
+        </div>
+        <div role="radiogroup" aria-label="De qué materia" style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{sources}}" as="o" hint-placeholder-count="3">
+            <div role="radio" style="padding: 10px 12px; border-radius: 12px; border: 1.5px solid {{o.line}}; background: {{o.bg}}; display: flex; gap: 10px; align-items: flex-start;">
+              <span style="width: 14px; height: 14px; margin-top: 3px; flex-shrink: 0; box-sizing: border-box; border-radius: 7px; border: {{o.dot}};"></span>
+              <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 14px; font-weight: 500;">{{o.name}}</span>
+                <span style="font-size: 14px; color: {{t.muted}};">{{o.meta}}</span>
+              </div>
+              <span style="font-size: 12px; color: {{t.muted}}; white-space: nowrap;">{{o.state}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; border-top: 1px solid {{t.line}}; padding-top: 16px;">
+          <span style="font-size: 14px; color: {{t.muted}}; flex-grow: 1; line-height: 1.4;">La materia de la que traés queda como estaba.</span>
+          <a href="{{go.subjectEmpty}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: {{t.muted}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Cancelar</a>
+          <a href="{{go.yearStart}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 12px; background: {{t.cta}}; color: {{t.ctaInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Seguir</a>
+        </div>
+      </div>
+    </sc-if>
   </sc-if>
 
   <!-- New unit: small dialog over the subject -->
@@ -151,14 +177,20 @@ class Component extends DCLogic {
     ].map(([name, desc, on]) => ({ name, desc, line: on ? t.activeInk : t.line, bg: on ? t.active : 'transparent', dot: on ? '4px solid ' + t.activeInk : '1px solid ' + t.lineS }));
     const starts = [
       ['Pedir un plan del año', 'La IA propone unidades y clases a partir del diseño curricular. Vos lo revisás antes de crear nada.', true],
+      ['Traer de otro año', 'Elegís una materia que ya diste y qué traer de ella. Todo llega como borrador.', false],
       ['Crear la primera unidad', 'Le ponés nombre y después agregás clases de a una.', false],
       ['Crear una clase', 'Arrancás por la clase de la semana que viene y ordenás después.', false]
     ].map(([name, desc, main]) => ({ name, desc, line: main ? t.activeInk : t.line, bg: main ? t.active : t.surface, ink: main ? t.activeInk : t.ink }));
+    const sources = [
+      ['Biología · 2º B', '2026 · 4 unidades, 32 clases, 3 exámenes', 'La seguís dando', true],
+      ['Biología · 1º C', '2025 · 3 unidades, 24 clases, 2 exámenes', 'Ya no la das', false],
+      ['Química · 4º A', '2024 · 5 unidades, 30 clases, 4 exámenes', 'Ya no la das', false]
+    ].map(([name, meta, state, on]) => ({ name, meta, state, line: on ? t.activeInk : t.line, bg: on ? t.active : 'transparent', dot: on ? '4px solid ' + t.activeInk : '1px solid ' + t.lineS }));
     const icons = [['Inicio','M3 11 12 4l9 7M5 10v10h14V10'],['Biblioteca','M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 3 15.5-3.5 1z'],['Exámenes','M6 3h9l4 4v14H6zM9 13l2 2 4-4'],['Plan del año','M3 5h18v16H3zM3 10h18M8 3v4M16 3v4']];
     const rail = icons.map(([label, d], i) => ({ label, d, bg: i === 0 ? t.active : 'transparent', ink: i === 0 ? t.activeInk : t.muted }));
     return {
       t, dark, newFields, orgs, starts, rail,
-      isNew: v === 'new', isEmpty: v === 'empty', isUnit: v === 'unit',
+      isNew: v === 'new', isEmpty: v === 'empty' || v === 'bring', isBring: v === 'bring', isUnit: v === 'unit', sources,
       h: v === 'new' ? '800px' : v === 'unit' ? '1000px' : '900px'
     };
   }
@@ -167,7 +199,7 @@ class Component extends DCLogic {
     const sx = this.props.dark ? 'Dark' : '';
     const b = (n) => n + sx + '.dc.html';
     const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
-    o.rail = (o.rail || []).map((n) => ({ ...n, href: ({'Inicio': g.home, 'Biblioteca': g.lib, 'Exámenes': g.exams, 'Plan del año': g.plan, 'Asistente': g.chat})[n.label] || '#' })); o.starts = (o.starts || []).map((x) => ({ ...x, href: /plan/i.test(x.name) ? g.planAsk : /unidad/i.test(x.name) ? g.unitNew : g.classNew }));
+    o.rail = (o.rail || []).map((n) => ({ ...n, href: ({'Inicio': g.home, 'Biblioteca': g.lib, 'Exámenes': g.exams, 'Plan del año': g.plan, 'Asistente': g.chat})[n.label] || '#' })); o.starts = (o.starts || []).map((x) => ({ ...x, href: /otro año/i.test(x.name) ? b('SubjectBring') : /plan/i.test(x.name) ? g.planAsk : /unidad/i.test(x.name) ? g.unitNew : g.classNew }));
     g.cfUnit = b('SubjectUnit');
     o.go = g;
     return o;

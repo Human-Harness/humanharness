@@ -33,9 +33,9 @@ body{margin:0}
   </div>
 
   <div style="flex-grow: 1; display: flex; min-height: 0;">
-    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px; opacity: {{chromeOp}};">
+    <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px; opacity: {{chromeOp}};">
       <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
-        <a href="{{n.href}}" aria-label="{{n.label}}" style="width: 40px; height: 40px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg></a>
+        <a href="{{n.href}}" style="width: 56px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
       </sc-for>
     </nav>
 
@@ -198,14 +198,14 @@ class Component extends DCLogic {
            steps: [['Leer las 3 fuentes','done'],['Armar el guion de 80 minutos','done'],['Escribir las diapositivas · 5 de 12','now'],['Material para alumnos','todo'],['Verificar cada cita contra su fuente','todo']] },
       exam: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
            ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos versiones, A y B.',
-           chipsLabel: 'Desde clases · 6', chips: ['22 · Leyes de Mendel','23 · Cruzamientos','25 · Qué es un ecosistema','26 · Cadenas y redes tróficas','27 · Ecosistemas urbanos','28 · Ciclo del carbono'],
+           chipsLabel: 'Desde clases · 3', chips: ['23 · Cruzamientos','25 · Qué es un ecosistema','26 · Cadenas y redes tróficas'],
            dTitle: 'Armando tu examen', dSub: 'Evaluación · U4 Ecosistemas. Tarda alrededor de 1 minuto más.', pct: '55%',
-           steps: [['Leer las 6 clases','done'],['Elegir qué evaluar de cada clase','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
+           steps: [['Leer las 3 clases','done'],['Elegir qué evaluar de cada clase','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
       examMat: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
            ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos versiones, A y B.',
-           chipsLabel: 'Material elegido · 5', chips: ['Campbell · cap. 54','Carbono en suelos urbanos','Guía de actividades: redes tróficas','Informe ambiental de la ciudad','Cómo funciona un humedal'],
+           chipsLabel: 'Material elegido · 3', chips: ['Carbono en suelos urbanos','Guía de actividades: redes tróficas','Informe ambiental de la ciudad'],
            dTitle: 'Armando tu examen', dSub: 'Evaluación · U4 Ecosistemas. Tarda alrededor de 1 minuto más.', pct: '55%',
-           steps: [['Leer las 5 fuentes','done'],['Elegir qué evaluar de cada fuente','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
+           steps: [['Leer las 3 fuentes','done'],['Elegir qué evaluar de cada fuente','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
       plan: { crumb: 'Plan del año  ›  Pedir un plan', title: 'Pedir un plan', askLabel: 'Qué querés planificar',
            ask: 'Biología de 2º B para todo 2026: 32 clases de 80 minutos, siguiendo el diseño curricular de la provincia. Con un examen al cierre de cada unidad.',
            chipsLabel: 'Fuentes · 2', chips: ['Diseño curricular · Biología 2º año','Campbell, Biología'],

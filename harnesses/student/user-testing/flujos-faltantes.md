@@ -8,10 +8,10 @@ Walked every click from Inicio over the 51 boards. A click that leads nowhere is
 |---|---|---|---|
 | 1 | Inicio › "Seres vivos y ambiente" | Tema board for that topic (7 of 12, 3 cards due) | No, same pattern as Tema |
 | 2 | Left menu › "Repaso" | Repaso landing (due per topic, "Empezar repaso", empty state "Hoy no tenés repaso") | Yes |
-| 3 | Anywhere › Ajustes | No visible entry from Inicio or the menu; the Ajustes boards exist but nothing leads to them | Yes (where it lives) |
+| 3 | Top bar › gear (top right) | Core already places Ajustes there; the Ajustes boards exist. Only the link is missing in the demo | No, core-owned |
 | 4 | Inicio › "Lo último que estudiaste", Historial rows, old session rows | Past session, read-only: conversation + summary | No |
 | 5 | Inicio / Tema / InicioVacio › "Preparar una prueba" | No entry from Inicio with topics or from Tema; plan screen after "Armar mi plan" not drawn | Entry: yes. Plan screen: no |
-| 6 | Task rail › "Notas" | Notas screen (harness-owned notes) | Yes |
+| 6 | Task rail › "Notas" | Core-owned page (Notes), not drawn by the student harness; the demo shows a placeholder | No, core-owned |
 
 ## Dead ends deeper in
 

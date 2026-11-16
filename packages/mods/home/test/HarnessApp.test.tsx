@@ -155,7 +155,7 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
@@ -165,7 +165,7 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
     await screen.findByText("I went back to before that task. Everything it changed in your files was undone.");
@@ -176,7 +176,7 @@ describe("HarnessApp", () => {
     client.restoreError = new Error("busy");
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't go back/i);
@@ -262,7 +262,7 @@ describe("HarnessApp", () => {
     client.confirmGoBack = async () => false;
     await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
     expect((screen.getByRole("button", { name: "Go back here" }) as HTMLButtonElement).disabled).toBe(true);
     act(() => client.emit({ type: "done", ok: true }));
@@ -375,7 +375,7 @@ describe("HarnessApp", () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
     const title = await screen.findByRole("heading", { level: 1, name: "History" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(title);
@@ -383,7 +383,7 @@ describe("HarnessApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Back to / }));
     await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
     expect(document.querySelector(".hh-app-paged")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" }));
     fireEvent.keyDown(await screen.findByRole("heading", { level: 1, name: "History" }), { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
     expect(screen.queryByRole("button", { name: /^Back to / })).toBeNull();
@@ -819,7 +819,7 @@ describe("HarnessApp", () => {
     // Spans the window above the rail: the rail is not inside it, and both are the shell's children.
     expect(bar.parentElement?.className).toBe("hh-shell");
     expect(within(bar).getByRole("button", { name: "Demo" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
+    expect(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "History" })).toBeTruthy();
   });
 
   it("the top bar's avatar opens the profile switcher; D0: no avatar without profiles (spec §4.1, Q2)", async () => {

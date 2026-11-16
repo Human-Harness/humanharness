@@ -49,7 +49,6 @@ async function open(c: FakeClient) {
   fireEvent.click(start);
   await screen.findByRole("textbox");
   // The top bar is up (the History button sits right after the inbox).
-  await screen.findByRole("button", { name: "History" });
 }
 const bell = () => screen.findByRole("button", { name: "Attention" });
 

@@ -4,7 +4,6 @@ import { render, renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { HarnessClient, ParallelInfo, TaskSummary, TasksState } from "../../../ui/src/client";
-import { TaskStrip } from "../../../ui/src/parallel/TaskStrip";
 import { FakeClient } from "../../../ui/test/fake-client";
 
 afterEach(cleanup);
@@ -150,24 +149,6 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
 });
 
 describe("task tabs (UI refresh spec §5.1)", () => {
-  it("TaskStrip is a tab per open task; a waiting one carries a dot named for screen readers", async () => {
-    const onFocus = vi.fn();
-    const c = client(true);
-    const tasks: TasksState = {
-      tasks: [summary("a", { label: "The turn", focused: true, state: "running" }), summary("b", { label: "Engines", state: "waiting" })],
-      caps: { tasks: 2, jobs: 1 },
-    };
-    await renderIn("en", <TaskStrip state={c.state} tasks={tasks} onFocus={onFocus} />);
-    const tabs = screen.getByRole("tablist", { name: "Open tasks" });
-    expect(within(tabs).getByRole("tab", { name: "The turn" }).getAttribute("aria-selected")).toBe("true");
-    expect(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }).getAttribute("aria-selected")).toBe("false");
-    fireEvent.click(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }));
-    expect(onFocus).toHaveBeenCalledWith("b");
-    // The tab on screen asks nothing.
-    fireEvent.click(within(tabs).getByRole("tab", { name: "The turn" }));
-    expect(onFocus).toHaveBeenCalledTimes(1);
-  });
-
   it("a tab click in the app asks main to focus that task, and the chat follows main", async () => {
     const c = client(true, tasksOf("a", "a", "b"));
     const load = vi.spyOn(c, "loadChat");

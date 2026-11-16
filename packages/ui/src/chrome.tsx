@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "./guide/icons";
 import type { RailEntry } from "./shell-nav";
@@ -23,7 +23,8 @@ export interface Crumb {
  * The window's top bar (UI refresh spec §4.1): the drag region of the hiddenInset title bar, 80px left for the traffic
  * lights, then the breadcrumb, the centre slot (search) and the trailing controls. No logo: the traffic lights sit
  * there. `title` is the bar before the breadcrumb: a heading shown only when there are no crumbs, kept until every
- * screen passes crumbs.
+ * screen passes crumbs. `slot`: an element the open task's bar is drawn into (task view one column); while it is
+ * `slotted` the bar takes the crumbs' place and the spacer, and the test tag moves after the trailing pieces.
  */
 export function TopBar({
   crumbs = [],
@@ -32,6 +33,8 @@ export function TopBar({
   mock,
   center,
   trailing,
+  slot,
+  slotted = false,
   children,
 }: {
   crumbs?: Crumb[];
@@ -41,12 +44,14 @@ export function TopBar({
   mock?: boolean;
   center?: ReactNode;
   trailing?: ReactNode;
+  slot?: Ref<HTMLDivElement>;
+  slotted?: boolean;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <header className="hh-topbar">
-      {crumbs.length > 0 ? (
+      {slotted ? null : crumbs.length > 0 ? (
         <nav className="hh-crumbs" aria-label={t("app.breadcrumb")}>
           {/* Labels come from the manifest and the task (untrusted): dir="auto" isolates each, so RTL text or bidi
               controls in one can't reorder the others. */}
@@ -75,9 +80,11 @@ export function TopBar({
         title !== undefined && <h1 className="hh-title">{title}</h1>
       )}
       {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
-      {mock && <MockBadge />}
-      <span className="hh-spacer">{center}</span>
+      {mock && !slotted && <MockBadge />}
+      {slot && <div ref={slot} className="hh-topbar-slot" hidden={!slotted} />}
+      {!slotted && <span className="hh-spacer">{center}</span>}
       {trailing}
+      {mock && slotted && <MockBadge />}
       {children}
     </header>
   );
@@ -160,7 +167,13 @@ const RAIL_ICONS: Record<RailEntry, IconName> = {
   notes: "files",
   plugins: "plugins",
   settings: "settings",
+  "task-notes": "files",
+  "task-history": "history",
+  "task-settings": "settings",
 };
+
+/** The task entries' names: no core strings yet, so English defaults. */
+const TASK_LABELS: Partial<Record<RailEntry, string>> = { "task-notes": "Notes", "task-history": "History", "task-settings": "Task settings" };
 
 /** The icon rail (UI refresh spec §4.2): the screens of a harness. Settings is the top bar's gear, not a rail entry. */
 export function Rail({
@@ -180,9 +193,9 @@ export function Rail({
     const n = counts[e];
     const shown = n && n.count > 0 ? n : null;
     return (
-      <IconButton key={e} icon={RAIL_ICONS[e]} label={shown ? shown.label : t(`rail.${e}`)} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
+      <IconButton key={e} icon={RAIL_ICONS[e]} label={shown ? shown.label : t(`rail.${e}`, { defaultValue: TASK_LABELS[e] ?? e })} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
         {shown && (
-          <Rx.Badge className="hh-rail-count" color="orange" variant="solid" size="1" radius="full" aria-hidden="true">
+          <Rx.Badge className="hh-rail-count" color={e === "inbox" ? "orange" : "gray"} variant="solid" size="1" radius="full" aria-hidden="true">
             {shown.count > 99 ? "99+" : shown.count}
           </Rx.Badge>
         )}
@@ -191,7 +204,14 @@ export function Rail({
   };
   return (
     <nav className="hh-rail" aria-label={t("rail.label")}>
-      {entries.filter((e) => e !== "settings").map(button)}
+      {entries.filter((e) => e !== "settings" && !e.startsWith("task-")).map(button)}
+      {entries.some((e) => e.startsWith("task-")) && (
+        <>
+          <Rx.Separator className="hh-rail-divider" size="2" />
+          <span className="hh-rail-group">{t("rail.task", { defaultValue: "Task" })}</span>
+          {entries.filter((e) => e.startsWith("task-")).map(button)}
+        </>
+      )}
     </nav>
   );
 }

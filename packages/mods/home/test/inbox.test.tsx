@@ -46,7 +46,6 @@ async function open(c: FakeClient) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  await screen.findByRole("button", { name: "History" });
 }
 /** `client.tasks`'s methods: the getter answers a new view each time, the methods sit on its prototype. */
 const api = (c: FakeClient) => Object.getPrototypeOf(c.tasks) as FakeClient["tasks"];

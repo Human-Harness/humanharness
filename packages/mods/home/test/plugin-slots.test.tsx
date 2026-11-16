@@ -62,7 +62,6 @@ async function open(c: FakeClient, props: Partial<HarnessAppProps> = {}) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  await screen.findByRole("button", { name: "History" });
 }
 const frames = () => [...document.querySelectorAll("iframe")];
 const section = () => screen.queryByRole("region", { name: "Plugins" });

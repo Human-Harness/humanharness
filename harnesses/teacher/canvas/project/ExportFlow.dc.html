@@ -139,9 +139,9 @@ class Component extends DCLogic {
     const doneFiles = [['Diapositivas.pdf','Para proyectar en el aula · 12 páginas · 2,4 MB'],['Guion para vos.pdf','Para leer vos, no se reparte · 4 páginas · 180 KB'],['Material para alumnos.pdf','Para imprimir, una por alumno · 2 páginas · 96 KB']].map(([name, meta], i) => ({ name, meta, border: i === 0 ? '0' : '1px solid ' + t.line }));
     const forStudents = [t.s2, t.muted], forYou = [t.active, t.activeInk];
     const examParts = [
-      ['Versión A', '14 preguntas, para imprimir', 'Alumnos', true, forStudents],
-      ['Versión B', 'Otras preguntas, con los mismos contenidos y la misma dificultad', 'Alumnos', true, forStudents],
-      ['Clave de respuestas', 'Respuesta esperada de cada pregunta, versiones A y B', 'Solo vos', true, forYou],
+      ['Tema A', '14 preguntas, para imprimir', 'Alumnos', true, forStudents],
+      ['Tema B', 'Otras preguntas, con los mismos contenidos y la misma dificultad', 'Alumnos', true, forStudents],
+      ['Clave de respuestas', 'Respuesta esperada de cada pregunta, temas A y B', 'Solo vos', true, forYou],
       ['Grilla de corrección', 'Puntaje por pregunta y criterios para el desarrollo', 'Solo vos', true, forYou],
       ['Hoja de respuestas', 'Casilleros para marcar la opción múltiple', 'Alumnos', false, forStudents]
     ].map(([name, desc, who, on, c], i) => ({ name, desc, who, on, whoBg: c[0], whoInk: c[1], border: i === 0 ? '0' : '1px solid ' + t.line, boxBg: on ? t.cta : 'transparent', boxBorder: on ? '0' : '1px solid ' + t.lineS }));

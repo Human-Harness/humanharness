@@ -28,14 +28,14 @@ body{margin:0}
     <sc-if value="{{showChip}}" hint-placeholder-val="{{ false }}">
       <button style="height: 28px; padding: 0 10px; border: 1px solid {{t.line}}; border-radius: 8px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 4px; background: {{t.activeInk}}; animation: hhpulse 1.6s ease-in-out infinite;"></span>Armando 1 · 40%</button>
     </sc-if>
-    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{chatBtnBg}}; color: {{chatBtnInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a title="Abrir el Asistente · ⌘J" href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{chatBtnBg}}; color: {{chatBtnInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente</a>
     <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
   </div>
 
   <div style="flex-grow: 1; display: flex; min-height: 0;">
     <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px; opacity: {{chromeOp}};">
       <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
-        <a href="{{n.href}}" style="width: 56px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
+        <a href="{{n.href}}" style="width: 56px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 12px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
       </sc-for>
     </nav>
 
@@ -197,20 +197,20 @@ class Component extends DCLogic {
            dTitle: 'Armando tu clase', dSub: 'Clase 29 · Humedales del Delta. Tarda unos 2 minutos más.', pct: '40%',
            steps: [['Leer las 3 fuentes','done'],['Armar el guion de 80 minutos','done'],['Escribir las diapositivas · 5 de 12','now'],['Material para alumnos','todo'],['Verificar cada cita contra su fuente','todo']] },
       exam: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
-           ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos versiones, A y B.',
+           ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos temas, A y B.',
            chipsLabel: 'Desde clases · 3', chips: ['23 · Cruzamientos','25 · Qué es un ecosistema','26 · Cadenas y redes tróficas'],
            dTitle: 'Armando tu examen', dSub: 'Evaluación · U4 Ecosistemas. Tarda alrededor de 1 minuto más.', pct: '55%',
-           steps: [['Leer las 3 clases','done'],['Elegir qué evaluar de cada clase','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
+           steps: [['Leer las 3 clases','done'],['Elegir qué evaluar de cada clase','done'],['Escribir las preguntas · 6 de 14','now'],['Armar el tema B','todo'],['Escribir las respuestas esperadas','todo']] },
       examMat: { crumb: 'Biología · 2º B  ›  Nuevo examen', title: 'Nuevo examen', askLabel: 'Qué querés evaluar',
-           ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos versiones, A y B.',
+           ask: 'Examen de la unidad 4, 60 minutos. 8 de opción múltiple, 4 de verdadero o falso y 2 de desarrollo. Dos temas, A y B.',
            chipsLabel: 'Material elegido · 3', chips: ['Carbono en suelos urbanos','Guía de actividades: redes tróficas','Informe ambiental de la ciudad'],
            dTitle: 'Armando tu examen', dSub: 'Evaluación · U4 Ecosistemas. Tarda alrededor de 1 minuto más.', pct: '55%',
-           steps: [['Leer las 3 fuentes','done'],['Elegir qué evaluar de cada fuente','done'],['Escribir las preguntas · 6 de 14','now'],['Armar la versión B','todo'],['Escribir las respuestas esperadas','todo']] },
+           steps: [['Leer las 3 fuentes','done'],['Elegir qué evaluar de cada fuente','done'],['Escribir las preguntas · 6 de 14','now'],['Armar el tema B','todo'],['Escribir las respuestas esperadas','todo']] },
       plan: { crumb: 'Plan del año  ›  Pedir un plan', title: 'Pedir un plan', askLabel: 'Qué querés planificar',
            ask: 'Biología de 2º B para todo 2026: 32 clases de 80 minutos, siguiendo el diseño curricular de la provincia. Con un examen al cierre de cada unidad.',
            chipsLabel: 'Fuentes · 2', chips: ['Diseño curricular · Biología 2º año','Campbell, Biología'],
            dTitle: 'Armando tu plan', dSub: 'Biología · 2º B · 2026. Tarda unos 3 minutos más.', pct: '30%',
-           steps: [['Leer el diseño curricular','done'],['Repartir los temas en 4 unidades','now'],['Ordenar las 32 clases','todo'],['Ubicar los exámenes','todo'],['Proponer fuentes para cada clase','todo']] }
+           steps: [['Leer el diseño curricular','done'],['Repartir los contenidos en 4 unidades','now'],['Ordenar las 32 clases','todo'],['Ubicar los exámenes','todo'],['Proponer fuentes para cada clase','todo']] }
     };
     const k = K[v] || K.a;
     const stepRows = k.steps;
@@ -220,7 +220,7 @@ class Component extends DCLogic {
       const done = i < 4, now = i === 4;
       return { n: i + 1, t: done ? x : now ? 'Escribiendo…' : '', bg: done ? t.surface : now ? t.active : 'transparent', line: done ? t.line : now ? t.activeInk : t.lineS, style: done || now ? 'solid' : 'dashed', ink: now ? t.activeInk : t.ink };
     });
-    const tag = (k) => ({ ok: ['Aprobada', t.ok, t.okInk], draft: ['Borrador', t.s2, t.muted], work: ['Armándose · 40%', t.active, t.activeInk], pend: ['Pendiente', t.s2, t.muted] })[k];
+    const tag = (k) => ({ ok: ['Aprobada', t.ok, t.okInk], draft: ['Borrador', t.s2, t.muted], work: ['Armándose · 40%', t.active, t.activeInk], pend: ['Sin armar', t.s2, t.muted] })[k];
     let rows, crumb, listTitle, listHead;
     if (v === 'bg') {
       crumb = 'Inicio'; listTitle = 'Tus materias'; listHead = 'Biología · 2º B · próximas clases';

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { BackendInit } from "@humanharness/harness-sdk";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(here, "..");
+const ROOT = path.resolve(here, "../fixtures/backend-harness");
 const ENTRY = path.join(ROOT, "backend", "index.ts");
 
 interface Line {
@@ -19,7 +19,7 @@ interface Line {
 }
 
 /**
- * The demo's backend over stdio, as the app runs it (hatches Decision 2): plain Node, which strips the erasable
+ * The fixture's backend over stdio, as the app runs it (hatches Decision 2): plain Node, which strips the erasable
  * TypeScript itself, with the harness folder as cwd.
  */
 function startEcho() {
@@ -70,7 +70,7 @@ afterEach(() => {
   running = null;
 });
 
-describe("the demo's echo backend (hatches spec §4)", () => {
+describe("the backend fixture's echo backend (hatches spec §4)", () => {
   it("answers echo with the params and the mock flag from init, every line JSON-RPC 2.0", async () => {
     const b = startEcho();
     running = b.child;
@@ -114,5 +114,15 @@ describe("the demo's echo backend (hatches spec §4)", () => {
     b.child.stdin.write("not json\n");
     b.write({ id: 5, method: "nope" });
     expect(await b.answer(5)).toEqual({ jsonrpc: "2.0", id: 5, error: { code: -32601, message: "Unknown method nope" } });
+  });
+});
+
+describe("the backend fixture's manifest", () => {
+  it("declares the backend inside the harness folder (hatches spec §4)", async () => {
+    const { loadHarness, resolveInHarness } = await import("@humanharness/harness-sdk");
+    const h = await loadHarness(path.join(ROOT, "harness.config.ts"));
+    expect(h.backend).toBe("./backend/index.ts");
+    const entry = resolveInHarness(h, h.backend!);
+    expect(entry).toBe(ENTRY);
   });
 });

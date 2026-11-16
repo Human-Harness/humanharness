@@ -1,9 +1,22 @@
 import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type ElectronApplication, type Page, expect, test } from "@playwright/test";
-import { closeAndClean, launchMock, makeSandbox } from "./helpers";
+import { closeAndClean, launchMock, makeSandbox, shellDir } from "./helpers";
 
-const START = "Which part do you want to understand?";
-const ENTRY = /harnesses\/demo\/backend\/index\.ts/;
+// The harness backend end to end (hatches spec §4). It runs on the backend-harness fixture: the demo has no backend.
+const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/backend-harness");
+const outDir = path.join(shellDir, "out", "backend");
+const ENTRY = /fixtures\/backend-harness\/backend\/index\.ts/;
+
+// One full app build of the fixture for the whole file.
+test.beforeAll(() => {
+  test.setTimeout(300_000);
+  // electron-vite directly: `humanharness dev --build` would first run `check`, which a test fixture has no HARNESS.md for.
+  const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: outDir };
+  delete env.ELECTRON_RUN_AS_NODE;
+  execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit", timeout: 240_000 });
+});
 
 /** The demo's backend process: a child of the app's main process whose command line names its entry (POSIX). */
 function backendPid(app: ElectronApplication): number | null {
@@ -23,23 +36,23 @@ async function nextBackend(app: ElectronApplication, not: number | null): Promis
   return pid!;
 }
 
-async function openDemo(page: Page) {
+async function openPanel(page: Page) {
   await expect(page.getByText("Test mode (no AI)")).toBeVisible();
-  await page.getByRole("button", { name: "Start Demo" }).click();
-  await expect(page.getByRole("region", { name: START })).toBeVisible();
-  return page.getByRole("region", { name: "Backend" });
+  const panel = page.getByRole("region", { name: "Backend" });
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
-test("the demo's echo backend answers and streams events in mock mode", async () => {
+test("the fixture's echo backend answers and streams events in mock mode", async () => {
   const s = makeSandbox("backend");
-  const { app, page } = await launchMock(s);
+  const { app, page } = await launchMock(s, undefined, path.join(outDir, "main", "index.js"));
   try {
-    const panel = await openDemo(page);
+    const panel = await openPanel(page);
     await panel.getByRole("button", { name: "Echo" }).click();
-    await expect(panel.getByTestId("demo-backend-echo")).toHaveText("hello (mock: true)");
+    await expect(panel.getByTestId("fx-backend-echo")).toHaveText("hello (mock: true)");
 
     await panel.getByRole("button", { name: "Stream" }).click();
-    await expect(panel.getByTestId("demo-backend-sent")).toHaveText("sent 3");
+    await expect(panel.getByTestId("fx-backend-sent")).toHaveText("sent 3");
     await expect(panel.getByRole("list", { name: "Ticks" }).getByRole("listitem")).toHaveText(["tick 0", "tick 1", "tick 2"]);
     await expect(page.getByRole("alert").filter({ hasText: "The harness's helper stopped working." })).toHaveCount(0);
   } finally {
@@ -50,9 +63,9 @@ test("the demo's echo backend answers and streams events in mock mode", async ()
 test("a backend killed from outside restarts; after three restarts the card offers Restart", async () => {
   test.skip(process.platform === "win32", "finds the backend with ps");
   const s = makeSandbox("backend-crash");
-  const { app, page } = await launchMock(s);
+  const { app, page } = await launchMock(s, undefined, path.join(outDir, "main", "index.js"));
   try {
-    const panel = await openDemo(page);
+    const panel = await openPanel(page);
     const card = page.getByRole("alert").filter({ hasText: "The harness's helper stopped working." });
     let pid = await nextBackend(app, null);
 
@@ -60,7 +73,7 @@ test("a backend killed from outside restarts; after three restarts the card offe
     process.kill(pid, "SIGKILL");
     pid = await nextBackend(app, pid);
     await panel.getByRole("button", { name: "Echo" }).click();
-    await expect(panel.getByTestId("demo-backend-echo")).toHaveText("hello (mock: true)");
+    await expect(panel.getByTestId("fx-backend-echo")).toHaveText("hello (mock: true)");
     await expect(card).toHaveCount(0);
 
     // Three more within five minutes: the fourth crash is past the limit (B6), so it stays down.
@@ -80,7 +93,7 @@ test("a backend killed from outside restarts; after three restarts the card offe
     await nextBackend(app, pid);
     await panel.getByRole("button", { name: "Echo" }).click();
     await expect(panel.getByRole("alert")).toHaveCount(0);
-    await expect(panel.getByTestId("demo-backend-echo")).toHaveText("hello (mock: true)");
+    await expect(panel.getByTestId("fx-backend-echo")).toHaveText("hello (mock: true)");
   } finally {
     await closeAndClean(app, s);
   }

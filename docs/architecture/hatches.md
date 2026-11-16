@@ -203,7 +203,7 @@ The backend is the harness's own code, at the trust level of its MCP servers, wh
 
 ### The protocol
 
-JSON-RPC 2.0, one JSON message per line (`\n`) on stdin and stdout (`backend-protocol.ts`, pure). The app sends `init` once, right after the spawn, then calls (with an `id`) and the `scopesChanged` notification; the backend answers calls (`result` or `error`, same `id`) and sends notifications, which are events for the window. A sample exchange with the demo's backend:
+JSON-RPC 2.0, one JSON message per line (`\n`) on stdin and stdout (`backend-protocol.ts`, pure). The app sends `init` once, right after the spawn, then calls (with an `id`) and the `scopesChanged` notification; the backend answers calls (`result` or `error`, same `id`) and sends notifications, which are events for the window. A sample exchange with the backend-harness fixture's backend:
 
 ```
 app     {"jsonrpc":"2.0","method":"init","params":{"folder":"/Users/ana/Documents/Human Harness Demo","scopes":[],"language":"en","coreVersion":"0.1.0","dataDir":"/Users/ana/Library/Application Support/Demo/backend-data","mock":false}}
@@ -266,7 +266,7 @@ The file is created with mode `0600`. A symlink at `backend.log` is refused: the
 
 ### Mock mode
 
-The backend runs as usual, with `init.mock: true` (`hooks.mock`). A backend that would reach the network or the person's tools checks it and fakes the work if it wants; the demo's echo answers with `mock` in its result (`mock-mode.md`).
+The backend runs as usual, with `init.mock: true` (`hooks.mock`). A backend that would reach the network or the person's tools checks it and fakes the work if it wants; the fixture's echo answers with `mock` in its result (`mock-mode.md`).
 
 ### D0
 
@@ -297,7 +297,7 @@ The boundaries protect the app and the person from a buggy or noisy backend and 
 | B8 | Quit never hangs | SIGTERM, SIGKILL after 3 s; quit waits for the stop | `backend-process.test.ts` ("stop sends SIGTERM; a backend that ignores SIGTERM is killed after 3 s (B8)") |
 | B9 | The app never reads `~/.claude` or `~/.codex` for it | No engine path is passed; `init.dataDir` is the app's `backend-data/` | `backend-wiring.test.ts` ("never names an engine home (B9)", a source scan) |
 
-End to end: `packages/e2e/tests/backend.spec.ts` (mock mode) runs the demo's echo backend ("the demo's echo backend answers and streams events in mock mode") and kills it from outside until the card offers Restart ("a backend killed from outside restarts; after three restarts the card offers Restart").
+End to end: `packages/e2e/tests/backend.spec.ts` (mock mode) runs the backend-harness fixture's echo backend ("the fixture's echo backend answers and streams events in mock mode") and kills it from outside until the card offers Restart ("a backend killed from outside restarts; after three restarts the card offers Restart").
 
 ### Decisions
 
@@ -327,7 +327,7 @@ End to end: `packages/e2e/tests/backend.spec.ts` (mock mode) runs the demo's ech
 - `packages/shell/src/main/backend/`: `backend-protocol.ts`, `backend-log.ts`, `backend-process.ts`, `backend-supervisor.ts`, `backend-ipc.ts` (`backendFor`, `registerBackendIpc`, `usableLinks`, `backendInit`, `BackendGeneration`); wiring in `index.ts` (`backendReady`, `backendRebase`, `backendScopes`, `backendLeaveBase`, the move's `closeRuntime`, `before-quit`).
 - `packages/shell/src/preload/backend.ts`; `packages/ui/src/hatches/useBackend.ts`, `BackendCard.tsx`; `en.json` `hatches.backend*`.
 - Tests: `packages/shell/test/backend/` with fixtures in `packages/shell/test/fixtures/backends/`; `packages/ui/test/backend-ui.test.tsx`; `packages/e2e/tests/backend.spec.ts`.
-- The demo: `harnesses/demo/backend/index.ts` and its side panel, `harnesses/demo/ui/BackendPanel.tsx`.
+- The fixture: `packages/fake-agent/fixtures/backend-harness/` (`backend/index.ts` and its panel, `ui/BackendPanel.tsx`); the demo has no backend.
 
 ## H3: engine config per scope
 

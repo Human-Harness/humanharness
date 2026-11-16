@@ -1,0 +1,11 @@
+{
+  "backend": {
+    "title": "Backend",
+    "echo": "Echo",
+    "stream": "Stream",
+    "echoed": "{{text}} (mock: {{mock}})",
+    "ticks": "Ticks",
+    "tick": "tick {{i}}",
+    "sent": "sent {{n}}"
+  }
+}

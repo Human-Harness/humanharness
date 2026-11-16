@@ -1,8 +1,6 @@
 [
   "harnesses/demo/plugins/on-this-day/panels/events.css|harness-size|.otd-page|11px",
   "harnesses/demo/plugins/on-this-day/panels/events.css|harness-size|.otd-page|2px",
-  "harnesses/demo/ui/demo.css|harness-size|.demo-backend button|9px",
-  "harnesses/demo/ui/demo.css|harness-size|.demo-backend|10px",
   "harnesses/demo/ui/demo.css|harness-size|.demo-diagram|10px",
   "harnesses/demo/ui/demo.css|harness-size|.demo-diagram|14px",
   "harnesses/demo/ui/demo.css|harness-size|.demo-files .demo-kicker|10px",

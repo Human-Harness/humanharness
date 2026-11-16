@@ -44,7 +44,7 @@ for (const theme of ["light", "dark"] as const) {
     await expect(first.page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
     // Following the path to its end saves the topic's note, which leaves a task in History.
     await first.page.getByPlaceholder("Ask about this topic…").fill("¿Y los permisos?");
-    await first.page.getByRole("button", { name: "Send" }).click();
+    await first.page.keyboard.press("Enter");
     await expect(first.page.getByRole("main").getByText(/no está grabada en esta prueba/)).toBeVisible();
     await expect(first.page.getByRole("radio", { name: "Profundizar en las acciones" })).toHaveCount(2);
     await first.page.getByRole("radio", { name: "Profundizar en las acciones" }).last().click();

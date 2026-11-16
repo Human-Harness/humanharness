@@ -214,7 +214,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; box-sizing: b
 /* The shell (UI refresh spec §4): the top bar across the window (its 90px leave room after the traffic lights), the rail beside the main column. */
 .hh-shell { display: grid; grid-template-rows: auto 1fr; grid-template-columns: auto minmax(0, 1fr); height: 100%; }
 .hh-shell > .hh-topbar { grid-column: 1 / -1; }
-.hh-shell-main { min-width: 0; min-height: 0; display: flex; }
+.hh-shell-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .hh-shell-chat { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .hh-shell-chat[hidden] { display: none; }
 .hh-shell-chat > .hh-app { flex: 1; min-width: 0; height: 100%; grid-template-rows: minmax(0, 1fr); }
@@ -357,7 +357,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 /* Positioned: a sent question's offsetTop is measured from here to pin it at the top while its answer grows. */
 /* A size container: what it holds (the start view's topics) fits the card's width, not the window's. One column no
    wider than the card, so nothing in it pushes the card sideways. */
-.hh-chat { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-content: start; container: hh-chat / inline-size; }
+.hh-chat { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 24px 32px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-content: start; container: hh-chat / inline-size; }
 /* An answer arriving: each word fades in, each block fades in and rises a little. */
 .hh-word { animation: hh-fade-in 0.28s ease-out both; }
 .hh-appear { animation: hh-rise-in 0.28s ease-out both; }
@@ -371,7 +371,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-message :not(pre) > code { padding: 2px 5px; border-radius: 4px; background: var(--hh-surface-2); }
 /* The agent's answer reads as prose: bigger and airier than the chrome; its activity toggle and blocks keep their sizes. */
 .hh-message.assistant > :is(p, ul, ol, pre) { font-size: 15px; line-height: 1.6; }
-.hh-message.assistant > p { margin-bottom: 14px; }
+.hh-message.assistant > p { margin-bottom: 16px; }
 .hh-md-list { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 6px; }
 .hh-message.assistant > .hh-md-heading { margin: 24px 0 8px; }
 .hh-md-code { margin: 0 0 14px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
@@ -430,18 +430,16 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-md-caption { margin: -0.3em 0 1em; font-size: 0.9em; color: var(--hh-muted); text-align: center; }
 .hh-md-footnotes { margin-top: 2em; padding-top: 0.6em; border-top: 1px solid var(--hh-line); font-size: 0.9em; color: var(--hh-muted); }
 .hh-md-footnotes a.hh-md-back { text-decoration: none; }
-.hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; padding: 10px 14px; font-size: 15px; }
-.hh-who { color: var(--hh-muted); font-size: 12px; }
+.hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; padding: 8px 16px; font-size: 15px; }
 /* A turn at work (mockups "Trabajando", collapsed and expanded): one status row, the steps behind a toggle. */
 .hh-work { display: flex; flex-direction: column; min-width: min(340px, 100%); width: fit-content; max-width: 100%; margin: 0 0 8px; background: var(--hh-rail); border: 1px solid var(--hh-line); border-radius: 12px; }
-.hh-work-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; }
-.hh-work-status { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--hh-muted); }
-.hh-work-toggle { height: 24px; gap: 5px; padding: 0 9px; background: transparent; font-size: 12px; color: var(--hh-muted); }
+.hh-work-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.hh-work-toggle { height: 24px; gap: 4px; padding: 0 8px; background: transparent; font-size: 12px; color: var(--hh-muted); }
 .hh-work.done { min-width: 0; background: none; border: 0; }
-.hh-work.done > .hh-work-toggle { align-self: flex-start; border-color: transparent; padding: 0 6px; margin-left: -6px; color: var(--hh-muted); }
+.hh-work.done > .hh-work-toggle { align-self: flex-start; border-color: transparent; padding: 0 8px; margin-left: -8px; color: var(--hh-muted); }
 .hh-activity { list-style: none; margin: 0; padding: 10px 14px 12px 38px; display: flex; flex-direction: column; gap: 7px; border-top: 1px solid var(--hh-line); color: var(--hh-muted); font-size: 12px; }
 .hh-activity[hidden] { display: none; }
-.hh-work.done .hh-activity { padding: 6px 0 4px; border-top: 0; }
+.hh-work.done .hh-activity { padding: 8px 0 4px; border-top: 0; }
 .hh-activity li { display: flex; align-items: center; gap: 8px; }
 .hh-activity li.running { color: var(--hh-ink); }
 .hh-activity-mark { width: 13px; height: 13px; flex: none; display: flex; align-items: center; justify-content: center; }
@@ -450,10 +448,8 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-muted); }
 .hh-error { background: var(--hh-t-red); border-radius: 12px; padding: 8px 12px; display: grid; gap: 8px; justify-items: start; }
 .hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; padding: 10px 12px; }
 .hh-confirm p { flex-basis: 100%; }
-.hh-composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hh-line); }
 .hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); padding: 8px; }
 .hh-composer button:not(.hh-btn) { height: auto; }
-.hh-composer button[type="submit"]:not(.hh-btn) { background: var(--hh-ink); color: var(--hh-bg); border-color: transparent; font-weight: 600; }
 /* History as a secondary page (DESIGN.md template 3, stage 4b1): each day's tasks in one bordered list, a task a full-row
    button like the Inbox's, its body under it. */
 ol.hh-gd-list { list-style: none; margin: 0; padding: 0; }
@@ -614,15 +610,22 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-nav-item[aria-current="step"] .hh-flow-mark { background: var(--hh-cta); color: var(--hh-cta-ink); }
 /* Task view one column: one 680 reading column (the card), centred; in a narrow window it gives way, never scrolls sideways. */
 .hh-app:not(.hh-app-slim) .hh-main { flex: 0 1 728px; box-sizing: border-box; margin: 0 auto; padding: 0 24px; }
-.hh-chat.hh-conversation { padding: 24px clamp(16px, 2.5vw, 40px); }
+.hh-chat.hh-conversation { padding: 24px clamp(16px, 2.5vw, 32px); }
 /* Inside a setup step (slim) the chat already sits in the step's framed box: no margins, no shadow. */
 .hh-app:not(.hh-app-slim) .hh-chat.hh-conversation { margin: 16px 0 12px; box-shadow: var(--hh-shadow); }
 .hh-app:not(.hh-app-slim) .hh-composer { margin: 0 0 16px; box-shadow: var(--hh-shadow); }
-.hh-composer { flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 12px 12px 18px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
-.hh-composer > textarea, .hh-composer > .hh-sk-flagged { flex: 1 1 100%; }
+.hh-composer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 12px 12px 16px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
+.hh-composer > .hh-composer-field { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.hh-composer-field > .hh-composer-send-hint { align-self: flex-end; }
 .hh-composer textarea { border-color: transparent; padding: 4px 0; }
 .hh-composer-send-hint { color: var(--hh-muted); font-size: 12px; }
-@media (max-width: 640px) { .hh-chat, .hh-chat.hh-conversation { padding: 20px 16px; } }
+@media (max-width: 640px) { .hh-chat, .hh-chat.hh-conversation { padding: 16px; } }
+/* The working line: 44 high (4 + 40). */
+.hh-working-line { position: sticky; bottom: 0; z-index: 1; box-sizing: content-box; height: 40px; padding-top: 4px; display: flex; align-items: center; gap: 8px; background: var(--hh-surface); color: var(--hh-muted); font-size: 12px; }
+.hh-working-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-shell-main > .hh-working-line { flex: none; position: static; padding-inline: 24px; border-top: 1px solid var(--hh-line); }
+/* The jump pill: centred, 16 above the card's bottom while scrolled up. */
+.hh-chat > .hh-jump-pill { position: sticky; bottom: 16px; z-index: 2; justify-self: center; }
 /* The folded overlays (task view one column): a 280 panel over the content, the path on the left, Sidekick on the right. */
 .hh-overlay { position: absolute; top: 0; bottom: 0; z-index: 5; width: var(--hh-column-w); max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; background: var(--hh-rail); box-shadow: var(--hh-shadow); }
 .hh-overlay-left { left: 0; border-right: 1px solid var(--hh-line); }
@@ -798,7 +801,6 @@ ul.hh-gd-list { padding: 0; }
 .hh-rail > .hh-icon-btn { position: relative; }
 .hh-rail-count { position: absolute; top: 0; right: 0; pointer-events: none; }
 /* The strip over the chat: the task tabs and the phase tag. */
-.hh-tk-strip { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 16px; border-bottom: 1px solid var(--hh-line); font-size: 13px; }
 
 /* The document reader (document-reader spec §5.2). */
 .hh-reader { display: flex; flex-direction: column; min-width: 0; flex: 0 0 var(--hh-split-w); border-left: 1px solid var(--hh-line); background: var(--hh-surface); }

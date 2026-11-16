@@ -17,7 +17,7 @@ test("OpenCode answers a question, gets its effort by config option, and Setting
   try {
     await page.getByRole("button", { name: "Start Demo" }).click();
     await page.getByPlaceholder("Or ask something…").fill("¿Dónde se guarda la conversación?");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("main").getByText("Se guarda en .harness/chats.")).toBeVisible();
 
     const log = readJsonl<{ method: string; params: Record<string, unknown> }>(s.opencodeLog);

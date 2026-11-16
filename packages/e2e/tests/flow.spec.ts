@@ -133,7 +133,7 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: null, actions: { manifest: "done", engines: "unfinished" } });
 
     await page.getByPlaceholder("Or ask something…").fill("¿Dónde se guarda la conversación?");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("main").getByText("Se guarda en .harness/chats.")).toBeVisible();
     const prompt = readJsonl<{ method: string; params: { prompt: { text: string }[] } }>(s.acpLog).find((l) => l.method === "session/prompt");
     expect(prompt?.params.prompt[0].text).toContain("## Question\n¿Dónde se guarda la conversación?");

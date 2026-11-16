@@ -152,7 +152,7 @@ export function Message({
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
   /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
-  live?: { activities: LiveActivity[]; label?: string };
+  live?: { activities: LiveActivity[] };
   /** The answer is arriving: how much of it shows (see usePacedAnswer). */
   reveal?: Reveal;
   /** The chat's handling of document cards (document-reader spec §5.1); absent: cards are not drawn. */
@@ -182,9 +182,8 @@ export function Message({
   }
   return (
     <article className={`hh-message ${entry.role}${live ? " live" : ""}`}>
-      {entry.role === "user" && <span className="hh-who">{t("chat.you")}</span>}
       {entry.role === "assistant" &&
-        (live ? <WorkingStatus items={live.activities} label={live.label} /> : <FinishedActivity items={entry.activities.map((a) => ({ ...a, done: true }))} />)}
+        (live ? <WorkingStatus items={live.activities} /> : <FinishedActivity items={entry.activities.map((a) => ({ ...a, done: true }))} />)}
       {entry.role === "assistant" ? (
         <>
           <Answer parts={partsOf(entry)} blocks={entry.blocks} reveal={reveal} components={components} actions={actions} />

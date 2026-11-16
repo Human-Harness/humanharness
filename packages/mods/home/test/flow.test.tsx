@@ -152,7 +152,7 @@ describe("flow mode", () => {
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Done →", next: true }]));
     expect(screen.queryAllByText("Done →", { selector: ".hh-message.user p" })).toHaveLength(0);
     tasks(client, { current: { id: "t1", action: "manifest", status: "closing" } });
-    expect(screen.getByText("Saving what's clear…")).toBeTruthy();
+    expect(document.querySelector(".hh-working-text")?.textContent).toBe("Working · Saving what's clear…");
     const composer = screen.getByPlaceholderText("Ask about this topic…");
     fireEvent.change(composer, { target: { value: "too soon" } });
     fireEvent.keyDown(composer, { key: "Enter" });
@@ -199,7 +199,7 @@ describe("flow mode", () => {
     answer(client, "Copy the demo.");
     tasks(client, { current: { id: "t1", status: "waiting" } });
     fireEvent.change(screen.getByPlaceholderText("Ask about this topic…"), { target: { value: "And the locales?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     await waitFor(() => expect(client.sent).toHaveLength(2));
     expect(screen.getByText("Copy the demo.")).toBeTruthy();
   });
@@ -308,7 +308,7 @@ describe("flow mode", () => {
     expect(screen.queryByRole("region", { name: TITLE })).toBeNull();
   });
 
-  it("labels the working row while a checkpoint saves what matters, and says when the task fell back a level", async () => {
+  it("labels the working line while a checkpoint saves what matters, and says when the task fell back a level", async () => {
     const client = flowClient();
     await startWork(client);
     fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
@@ -318,11 +318,11 @@ describe("flow mode", () => {
     answer(client, "It declares everything.");
     tasks(client, { current: { ...t1("waiting"), fallback } });
     fireEvent.change(screen.getByPlaceholderText("Ask about this topic…"), { target: { value: "And the blocks?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     tasks(client, { current: { ...t1("checkpoint"), fallback } });
-    expect(await screen.findByText("Saving what matters…")).toBeTruthy();
+    expect(await screen.findByText("Working · Saving what matters…")).toBeTruthy();
     tasks(client, { current: { ...t1("running"), fallback } });
-    expect(await screen.findByText("Working…")).toBeTruthy();
+    await waitFor(() => expect(document.querySelector(".hh-working-text")?.textContent).toBe("Working"));
   });
 });
 

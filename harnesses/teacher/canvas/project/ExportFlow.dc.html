@@ -136,11 +136,11 @@ class Component extends DCLogic {
       ink: st === 'todo' ? t.muted : t.ink,
       anim: st === 'now' ? 'hhpulse 1.6s ease-in-out infinite' : 'none'
     }));
-    const doneFiles = [['Diapositivas.pdf','12 páginas · 2,4 MB'],['Guion para vos.pdf','4 páginas · 180 KB'],['Material para alumnos.pdf','2 páginas · 96 KB']].map(([name, meta], i) => ({ name, meta, border: i === 0 ? '0' : '1px solid ' + t.line }));
+    const doneFiles = [['Diapositivas.pdf','Para proyectar en el aula · 12 páginas · 2,4 MB'],['Guion para vos.pdf','Para leer vos, no se reparte · 4 páginas · 180 KB'],['Material para alumnos.pdf','Para imprimir, una por alumno · 2 páginas · 96 KB']].map(([name, meta], i) => ({ name, meta, border: i === 0 ? '0' : '1px solid ' + t.line }));
     const forStudents = [t.s2, t.muted], forYou = [t.active, t.activeInk];
     const examParts = [
       ['Versión A', '14 preguntas, para imprimir', 'Alumnos', true, forStudents],
-      ['Versión B', 'Las mismas preguntas en otro orden y con otros datos', 'Alumnos', true, forStudents],
+      ['Versión B', 'Otras preguntas, con los mismos contenidos y la misma dificultad', 'Alumnos', true, forStudents],
       ['Clave de respuestas', 'Respuesta esperada de cada pregunta, versiones A y B', 'Solo vos', true, forYou],
       ['Grilla de corrección', 'Puntaje por pregunta y criterios para el desarrollo', 'Solo vos', true, forYou],
       ['Hoja de respuestas', 'Casilleros para marcar la opción múltiple', 'Alumnos', false, forStudents]

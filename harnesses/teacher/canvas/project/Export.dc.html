@@ -16,19 +16,42 @@ body{margin:0}
 </helmet>
 <div style="width: 1280px; height: 900px; position: relative; background: {{t.bg}}; font-family: 'DM Sans', system-ui, sans-serif; color: {{t.ink}};">
   <dc-import name="ClassEdit" dark="{{dark}}" dim="{{yes}}" hint-size="1280px,900px"></dc-import>
-  <div role="dialog" aria-label="Exportar la clase" style="position: absolute; left: 260px; top: 150px; width: 760px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 16px 48px rgba(0,0,0,0.18);">
+  <div role="dialog" aria-label="Exportar la clase" style="position: absolute; left: 260px; top: 50%; transform: translateY(-50%); width: 760px; max-height: 836px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 16px 48px rgba(0,0,0,0.18);">
     <div style="display: flex; flex-direction: column; gap: 4px;">
       <span style="font-size: 20px; font-weight: 600;">Exportar la clase</span>
-      <span style="font-size: 14px; color: {{t.muted}};">Clase 27 · Ecosistemas urbanos · Biología 2º B</span>
+      <span style="font-size: 14px; color: {{t.muted}};">Clase 27 · Ecosistemas urbanos · Biología 2º B · borrador</span>
     </div>
+    <div role="status" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; font-size: 14px; line-height: 1.45;"><span style="flex-grow: 1;">Esta clase todavía no está aprobada. Podés exportarla igual.</span><a href="{{go.classEdit}}" style="font-weight: 600; color: inherit; text-decoration: underline; cursor: pointer; white-space: nowrap;">Revisar primero</a></div>
 
-    <div style="display: flex; gap: 24px;">
+    <div style="display: flex; gap: 24px; min-height: 0; overflow-y: auto;">
       <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 20px;">
+        <sc-if value="{{summary}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Vas a tener</span>
+          <div style="border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+            <sc-for list="{{parts}}" as="pt" hint-placeholder-count="3">
+              <div style="padding: 10px 12px; display: flex; align-items: center; gap: 12px; border-top: {{pt.border}};">
+                <span style="width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; background: {{t.s2}}; color: {{t.muted}}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">PDF</span>
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-size: 14px; font-weight: 500;">{{pt.name}}</span>
+                  <span style="font-size: 14px; color: {{t.muted}};">{{pt.use}}</span>
+                </div>
+                <span style="font-size: 14px; color: {{t.muted}};">{{pt.size}}</span>
+              </div>
+            </sc-for>
+          </div>
+          <a href="{{go.exportOpts}}" style="align-self: flex-start; font-size: 14px; color: {{t.blueInk}}; text-decoration: underline; cursor: pointer;">Cambiar formato, partes o bibliografía</a>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{opts}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+        <a href="{{go.export}}" style="align-self: flex-start; font-size: 14px; color: {{t.blueInk}}; text-decoration: underline; cursor: pointer;">Volver al resumen</a>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <span style="font-size: 14px; font-weight: 600; color: {{t.muted}};">Formato</span>
           <div role="radiogroup" style="display: flex; height: 32px; padding: 2px; box-sizing: border-box; border-radius: 12px; background: {{t.s2}}; font-size: 14px; align-self: flex-start;">
             <span role="radio" style="padding: 0 12px; display: flex; align-items: center; border-radius: 10px; background: {{t.active}}; font-weight: 600; color: {{t.activeInk}};">PDF</span>
-            <span role="radio" style="padding: 0 12px; display: flex; align-items: center; color: {{t.muted}};">HTML para proyectar</span>
+            <span role="radio" style="padding: 0 12px; display: flex; align-items: center; color: {{t.muted}};">Para proyectar en pantalla</span>
             <span role="radio" style="padding: 0 12px; display: flex; align-items: center; color: {{t.muted}};">PowerPoint</span>
           </div>
           <span style="font-size: 14px; color: {{t.muted}};">PowerPoint se puede bajar, pero lo que cambies afuera no vuelve a la app.</span>
@@ -63,13 +86,16 @@ body{margin:0}
           </div>
         </div>
 
+        </div>
+        </sc-if>
+
         <div style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: {{t.s2}};">
           <span style="width: 32px; height: 32px; border-radius: 8px; background: {{t.surface}}; border: 1px solid {{t.lineS}}; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center;">SM</span>
           <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
             <span style="font-size: 14px; font-weight: 500;">Estilo del Colegio San Martín</span>
             <span style="font-size: 14px; color: {{t.muted}};">Logo, colores y tipografía del colegio · citas en APA 7</span>
           </div>
-          <a href="{{go.settings}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: underline; text-decoration: none; cursor: pointer;">Cambiar en Ajustes</a>
+          <a href="{{go.settings}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: underline; white-space: nowrap; flex-shrink: 0; cursor: pointer;">Cambiar en Ajustes</a>
         </div>
       </div>
 
@@ -101,26 +127,27 @@ body{margin:0}
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"opts":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":900}}'>
 class Component extends DCLogic {
   __rv() {
     const L = {bg:'#f3f3f1',rail:'#fbfbfa',surface:'#ffffff',s2:'#f2f2ef',line:'#e7e7e3',lineS:'#d9d9d4',ink:'#1b1c1e',muted:'#505359',faint:'#8a8d93',cta:'#fbd38d',ctaInk:'#3b2a06',active:'#fde6b3',activeInk:'#7a4f00',green:'#dff2e5',greenInk:'#1d6e3f',orange:'#fdebd7',orangeInk:'#a94f08',blue:'#e4ecfd',blueInk:'#2d55c4'};
     const D = {bg:'#121315',rail:'#16171a',surface:'#1e2024',s2:'#26292e',line:'#2a2d32',lineS:'#383c42',ink:'#eceef0',muted:'#b8bcc1',faint:'#80858c',cta:'#f3c56a',ctaInk:'#2a1d02',active:'#3a2e14',activeInk:'#f3c56a',green:'#17311f',greenInk:'#8bd8a8',orange:'#3a2715',orangeInk:'#f4b47e',blue:'#1c2944',blueInk:'#a3beff'};
     const dark = !!this.props.dark;
     const t = dark ? D : L;
-    const P = (name, desc, size, on, i) => ({ name, desc, size, on, border: i === 0 ? '0' : '1px solid ' + t.line, boxBg: on ? t.cta : 'transparent', boxBorder: on ? '0' : '1px solid ' + t.lineS });
+    const P = (name, desc, use, size, on, i) => ({ name, desc, use, size, on, border: i === 0 ? '0' : '1px solid ' + t.line, boxBg: on ? t.cta : 'transparent', boxBorder: on ? '0' : '1px solid ' + t.lineS });
     const parts = [
-      P('Diapositivas', 'Para proyectar, con las citas al pie', '12 págs', true, 0),
-      P('Guion para vos', 'Tiempos, qué decir y la salida al patio', '4 págs', true, 1),
-      P('Material para alumnos', 'Guía de observación para imprimir', '2 págs', true, 2)
+      P('Diapositivas', 'Para proyectar, con las citas al pie', 'Para proyectar en el aula · con las citas al pie', '12 págs', true, 0),
+      P('Guion para vos', 'Tiempos, qué decir y la salida al patio', 'Para leer vos, no se reparte · tiempos y qué decir', '4 págs', true, 1),
+      P('Material para alumnos', 'Guía de observación para imprimir', 'Para imprimir, una por alumno · guía de observación', '2 págs', true, 2)
     ];
-    return { t, p: L, parts, dark, yes: true };
+    const opts = !!this.props.opts;
+    return { t, p: L, parts, dark, yes: true, opts, summary: !opts };
   }
   renderVals() {
     const o = this.__rv();
     const sx = this.props.dark ? 'Dark' : '';
     const b = (n) => n + sx + '.dc.html';
-    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
+    const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportOpts: b('ExportOptions'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
     
     o.go = g;
     return o;

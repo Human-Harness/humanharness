@@ -10,10 +10,10 @@ const variants = {
   ExamReview: [{}, { confirm: 'approving' }, { from: 'material' }],
   Plan: [{}, { confirm: 'sources' }],
   SourceSheet: [{ variant: 'new' }, { variant: 'edit' }, { variant: 'scan' }],
-  ExamNew: [{ origin: 'classes' }, { origin: 'material' }],
+  ExamNew: [{ origin: 'classes' }, { origin: 'material' }, { pick: 'some' }, { origin: 'material', pick: 'some' }],
   Chat: ['a', 'b', 'c', 'closed', 'narrow'].map((variant) => ({ variant })),
   Working: ['a', 'b', 'c', 'bg', 'exam', 'plan'].map((variant) => ({ variant })),
-  SubjectFlow: ['new', 'empty', 'unit'].map((variant) => ({ variant })),
+  SubjectFlow: ['new', 'empty', 'bring', 'unit'].map((variant) => ({ variant })),
 };
 class DCLogic { constructor(props) { this.props = props; } }
 let bad = 0;

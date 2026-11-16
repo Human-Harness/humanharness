@@ -73,6 +73,7 @@ body{margin:0}
           <div style="display: flex; align-items: center; gap: 8px;"><h2 style="margin: 0; font-size: 16px; font-weight: 600;">Estilo de cita</h2><sc-if value="{{cf.cite}}" hint-placeholder-val="{{ false }}"><span role="status" style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{t.green}}; color: {{t.greenInk}}; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Guardado: MLA 9 · San Martín e Historia 4º A siguen con el suyo</span><a href="{{go.settings}}" style="font-size: 12px; font-weight: 500; color: {{t.ink}}; text-decoration: underline; cursor: pointer; white-space: nowrap;">Deshacer</a></sc-if></div>
           <span style="font-size: 14px; color: {{t.muted}};">Cómo aparecen las fuentes. Es el que se usa si el colegio o la materia no piden otro.</span>
           <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <span style="font-size: 14px; font-weight: 500;">Para todo <span style="font-weight: 400; color: {{t.muted}};">· salvo lo de abajo</span></span>
             <div role="radiogroup" aria-label="Estilo de cita" style="display: flex; height: 32px; padding: 2px; box-sizing: border-box; border-radius: 12px; background: {{t.s2}}; font-size: 14px; align-self: flex-start;">
               <a href="{{go.mla}}" role="radio" aria-checked="{{cf.apaOn}}" style="padding: 0 12px; display: flex; align-items: center; border-radius: 10px; background: {{cf.apaBg}}; font-weight: {{cf.apaW}}; color: {{cf.apaInk}}; text-decoration: none; cursor: pointer;">APA 7</a>
               <a href="{{go.mla}}" role="radio" aria-checked="{{cf.mlaOn}}" style="padding: 0 12px; display: flex; align-items: center; border-radius: 10px; background: {{cf.mlaBg}}; font-weight: {{cf.mlaW}}; color: {{cf.mlaInk}}; text-decoration: none; cursor: pointer;">MLA 9</a>
@@ -81,9 +82,21 @@ body{margin:0}
             </div>
             <div style="padding: 10px 12px; border-radius: 8px; background: {{t.s2}}; font-size: 14px; line-height: 1.5;"><sc-if value="{{cf.apaEx}}" hint-placeholder-val="{{ true }}">Curtis, H., Barnes, N. S., Schnek, A. y Massarini, A. (2008). <i>Biología</i> (7.ª ed.). Editorial Médica Panamericana.</sc-if><sc-if value="{{cf.mlaEx}}" hint-placeholder-val="{{ false }}">Curtis, Helena, et al. <i>Biología</i>. 7.ª ed., Editorial Médica Panamericana, 2008.</sc-if></div>
           </div>
-          <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: {{t.faint}}; margin-top: 8px;">Con estilo propio</span>
+          <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: {{t.faint}}; margin-top: 8px;">Colegios que piden uno</span>
           <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
-            <sc-for list="{{ownStyles}}" as="x" hint-placeholder-count="2">
+            <sc-for list="{{schoolStyles}}" as="x" hint-placeholder-count="1">
+              <div style="padding: 10px 16px; display: flex; align-items: center; gap: 12px; border-top: {{x.border}};">
+                <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-size: 14px; font-weight: 500;">{{x.name}}</span>
+                  <span style="font-size: 14px; color: {{t.muted}};">{{x.meta}}</span>
+                </div>
+                <a href="{{x.href}}" style="height: 24px; padding: 0 8px; border: 1px solid {{t.line}}; border-radius: 8px; background: transparent; color: {{t.ink}}; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; box-sizing: border-box; text-decoration: none; cursor: pointer; flex-shrink: 0;">Cambiar</a>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: {{t.faint}}; margin-top: 8px;">Materias con uno propio</span>
+          <div style="background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 14px; display: flex; flex-direction: column;">
+            <sc-for list="{{subjectStyles}}" as="x" hint-placeholder-count="1">
               <div style="padding: 10px 16px; display: flex; align-items: center; gap: 12px; border-top: {{x.border}};">
                 <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
                   <span style="font-size: 14px; font-weight: 500;">{{x.name}}</span>
@@ -167,7 +180,7 @@ class Component extends DCLogic {
     ]);
     const exportRows = row([
       { label: 'Formato de las diapositivas', value: 'PDF' },
-      { label: 'Guion del profesor', value: 'PDF' },
+      { label: 'Secuencia de la clase', value: 'PDF' },
       { label: 'Material para alumnos', value: 'PDF para imprimir' },
       { label: 'Incluir las fuentes al final', value: 'Sí, en cada archivo' }
     ]);
@@ -179,11 +192,14 @@ class Component extends DCLogic {
       { label: 'Qué IA usa', hint: 'La que arma tus clases, exámenes y planes', value: 'Claude' },
       { label: 'Qué tan a fondo piensa', hint: 'Rápido, Normal o A fondo. Más a fondo tarda más y gasta más', value: 'Normal' }
     ]);
-    const ownStyles = row([
-      { name: 'Colegio San Martín', meta: 'APA 7 · lo pide el colegio · 1 materia', to: 'school' },
+    const schoolStyles = row([
+      { name: 'Colegio San Martín', meta: 'APA 7 · lo pide el colegio, aunque cambies el de arriba · 1 materia', to: 'school' }
+    ]);
+    const subjectStyles = row([
       { name: 'Historia 4º A', meta: 'Chicago · solo esta materia · Instituto Belgrano', to: 'subjectStyle' }
     ]);
-    return { t, sections, schools, exportRows, mods, aiRows, ownStyles };
+    const ownStyles = schoolStyles.concat(subjectStyles);
+    return { t, sections, schools, exportRows, mods, aiRows, ownStyles, schoolStyles, subjectStyles };
   }
   renderVals() {
     const o = this.__rv();

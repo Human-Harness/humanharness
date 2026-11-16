@@ -80,3 +80,21 @@ Decided in round 3, group 5 (P02–P17), options page https://claude.ai/artifact
 | Clases sin materia | Classes that belong to no subject. | Clases sueltas |
 | N palabras no se leen bien | Words a scan could not read, with a "Ver cuáles" link. | palabras dudosas |
 | Escanear un papel | Add a photocopy or photo as a source. | OCR, Procesando OCR |
+
+## Round 4 words
+
+Decided 2026-11-16 (group 8, https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228).
+
+| Use | Meaning | Not |
+|---|---|---|
+| Descargar PDF | Save an exam or class as files. "Para proyectar en pantalla" stays an option inside. | Exportar |
+| Descargar el original | Save the uploaded file of a source. | Guardar una copia |
+| Lo leyó la IA del archivo · Lo dedujo la IA | Where a field of a source came from. | Completó la IA |
+| Datos de la fuente · Seguir con los datos | The source details form. | ficha |
+| Seguir trabajando | Leave a long job running and keep using the app. | Seguir en segundo plano |
+| Secuencia de la clase · 80 min (2 horas cátedra) | The class plan tab and its length. | Guion, módulos |
+| Cambiar con la IA | Ask the AI to change a question or part, next to "Editar" (by hand). | Pedir a la IA… |
+| Estilo de cita | Only APA, MLA, Chicago. The look of the PDFs is "Formato de los documentos". | estilo (for colors and logo) |
+| Asistente | Kept. | ayuda |
+| Tomado | Kept: the exam was given in class. The app does not grade. | rendido, corregido |
+| Dada en el aula | Kept. | ya la di |

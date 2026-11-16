@@ -6,10 +6,11 @@ const names = fs.readFileSync(process.argv[3], 'utf8').split(/\s+/).filter(Boole
 const variants = {
   OptB: [{ scenario: 'normal' }, { scenario: 'full' }, { scenario: 'empty' }],
   Subject: [{ year: 'current' }, { year: 'past' }, { flat: true }, { year: 'past', confirm: 'copiedClass' }, { year: 'past', confirm: 'copyAll' }, { year: 'past', confirm: 'copiedAll' }, { confirm: 'unit' }],
-  ClassEdit: [{}, { confirm: 'approving' }, { confirm: 'approved' }],
+  ClassEdit: [{}, { chat: true }, { confirm: 'approving' }, { confirm: 'approved' }],
   ExamReview: [{}, { confirm: 'approving' }, { from: 'material' }],
   Plan: [{}, { confirm: 'sources' }],
-  SourceSheet: [{ variant: 'new' }, { variant: 'edit' }, { variant: 'scan' }],
+  SourceSheet: [{ variant: 'new' }, { variant: 'edit' }, { variant: 'scan' }, { variant: 'chapter' }],
+  GapsSource: [{}, { variant: 'chat', inclass: true }],
   ExamNew: [{ origin: 'classes' }, { origin: 'material' }, { pick: 'some' }, { origin: 'material', pick: 'some' }],
   Chat: ['a', 'b', 'c', 'closed', 'narrow'].map((variant) => ({ variant })),
   Working: ['a', 'b', 'c', 'bg', 'exam', 'plan'].map((variant) => ({ variant })),

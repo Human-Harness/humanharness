@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Ficha de la fuente</title>
+<title>Datos de la fuente</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -56,7 +56,33 @@ body{margin:0}
         </div>
       </sc-if>
 
-      <sc-for list="{{fields}}" as="f" hint-placeholder-count="5">
+      <sc-for list="{{fieldsA}}" as="f" hint-placeholder-count="1">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 500; flex-grow: 1;">{{f.label}}</span>
+            <sc-if value="{{f.hasTag}}" hint-placeholder-val="{{ true }}">
+              <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: {{f.tagBg}}; color: {{f.tagInk}}; white-space: nowrap; flex-shrink: 0;">{{f.tag}}</span>
+            </sc-if>
+          </div>
+          <div style="min-height: 36px; box-sizing: border-box; padding: 7px 12px; border-radius: 12px; border: 1.5px solid {{f.line}}; font-size: 14px; color: {{f.ink}}; display: flex; align-items: center;">{{f.value}}</div>
+        </div>
+      </sc-for>
+      <sc-if value="{{hasAuthors}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 500; flex-grow: 1;">Autores</span>
+            <sc-if value="{{isNew}}" hint-placeholder-val="{{ true }}">
+              <span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; background: {{t.active}}; color: {{t.activeInk}};">Lo leyó la IA del archivo</span>
+            </sc-if>
+          </div>
+          <div style="display: flex; gap: 12px;"><span style="flex: 1; font-size: 12px; color: {{t.muted}};">Apellido</span><span style="flex: 1; font-size: 12px; color: {{t.muted}};">Nombre</span></div>
+          <sc-for list="{{authors}}" as="a" hint-placeholder-count="2">
+            <div style="display: flex; gap: 12px;"><div style="flex: 1; min-width: 0; min-height: 36px; box-sizing: border-box; padding: 7px 12px; border-radius: 12px; border: 1.5px solid {{t.line}}; font-size: 14px; color: {{t.ink}}; display: flex; align-items: center;">{{a.last}}</div><div style="flex: 1; min-width: 0; min-height: 36px; box-sizing: border-box; padding: 7px 12px; border-radius: 12px; border: 1.5px solid {{t.line}}; font-size: 14px; color: {{t.ink}}; display: flex; align-items: center;">{{a.first}}</div></div>
+          </sc-for>
+          <span style="align-self: flex-start; font-size: 14px; color: {{t.muted}}; text-decoration: underline; cursor: pointer;">+ Agregar autor</span>
+        </div>
+      </sc-if>
+      <sc-for list="{{fieldsB}}" as="f" hint-placeholder-count="4">
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 14px; font-weight: 500; flex-grow: 1;">{{f.label}}</span>
@@ -72,10 +98,10 @@ body{margin:0}
         <div role="radiogroup" aria-label="¿Es el libro entero o un capítulo?" style="display: flex; flex-direction: column; gap: 6px;">
           <span style="font-size: 14px; font-weight: 500;">¿Es el libro entero o un capítulo?</span>
           <div style="display: flex; border: 1px solid {{t.lineS}}; border-radius: 12px; overflow: hidden; height: 36px;">
-            <span role="radio" aria-checked="true" style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; background: {{t.active}}; color: {{t.activeInk}};">Libro entero</span>
-            <span role="radio" aria-checked="false" style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; color: {{t.ink}}; border-left: 1px solid {{t.lineS}};">Un capítulo</span>
+            <a href="{{go.book}}" role="radio" aria-checked="{{bookAttr}}" style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: {{bookW}}; background: {{bookBg}}; color: {{bookInk}}; text-decoration: none; cursor: pointer;">Libro entero</a>
+            <a href="{{go.chapter}}" role="radio" aria-checked="{{chapAttr}}" style="flex: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: {{chapW}}; background: {{chapBg}}; color: {{chapInk}}; border-left: 1px solid {{t.lineS}}; text-decoration: none; cursor: pointer;">Un capítulo</a>
           </div>
-          <span style="font-size: 12px; color: {{t.muted}};">Un capítulo pide también Capítulo, Páginas y Editores del libro.</span>
+          <span style="font-size: 12px; color: {{t.muted}};">{{bookHint}}</span>
         </div>
       </sc-if>
       <sc-if value="{{hasExtra}}" hint-placeholder-val="{{ true }}">
@@ -127,6 +153,7 @@ class Component extends DCLogic {
     const t = this.props.dark ? D : L;
     const isNew = (this.props.variant || 'new') !== 'edit';
     const scan = this.props.variant === 'scan';
+    const chap = this.props.variant === 'chapter';
     const rows = scan ? [
       ['Título', 'Guía de trabajos prácticos de genética', 'file'],
       ['Autores', 'Se completa al terminar la lectura', 'wait'],
@@ -135,20 +162,18 @@ class Component extends DCLogic {
       ['Editorial o revista', 'Se completa al terminar la lectura', 'wait']
     ] : !isNew ? [
       ['Título', 'Fotosíntesis: la luz que alimenta al mundo', 'ok'],
-      ['Autores', 'Rodríguez, A.', 'ok'],
       ['Año', '2021', 'ok'],
       ['Tipo', 'Artículo · web', 'ok'],
       ['Editorial o revista', 'Ciencia Hoy', 'ok']
     ] : [
       ['Título', 'Patrones de paisaje y biodiversidad del Bajo Delta del Paraná', 'ai'],
-      ['Autores', 'Kandus, P., Quintana, R. D. y Bó, R. F.', 'ai'],
       ['Año', isNew ? 'No figura en el archivo' : '2010', 'missing'],
       ['Tipo', 'Libro', 'ai'],
       ['Editorial o revista', 'Pablo Casamajor', 'ai']
     ];
     const extraRows = scan ? [] : !isNew ? [
       ['Volumen', '30', 'ok'], ['Número', '176', 'ok'], ['Páginas', '22–29', 'ok']
-    ] : [['Edición', '1.ª', 'ai']];
+    ] : chap ? [['Capítulo', '3 · Los humedales del Bajo Delta', 'ai'], ['Páginas', '45–78', 'ai'], ['Editores', 'Malvárez, A. I.', 'ai']] : [['Edición', '1.ª', 'ai']];
     const mk = ([label, value, k]) => {
       const miss = isNew && k === 'missing';
       const wait = k === 'wait'; const file = k === 'file';
@@ -156,15 +181,19 @@ class Component extends DCLogic {
         label, value, hasTag: isNew && !wait,
         ink: miss || wait ? t.faint : t.ink,
         line: miss ? t.orangeInk : t.line,
-        tag: miss ? 'Falta' : file ? 'Del archivo' : 'Completó la IA',
+        tag: miss ? 'Falta' : file ? 'Del archivo' : 'Lo leyó la IA del archivo',
         tagBg: miss ? t.orange : file ? t.s2 : t.active,
         tagInk: miss ? t.orangeInk : file ? t.muted : t.activeInk
       };
     };
     const fields = rows.map(mk);
+    const fieldsA = fields.slice(0, 1), fieldsB = fields.slice(1);
+    const authors = scan ? [] : (isNew ? [['Kandus', 'P.'], ['Quintana', 'R. D.'], ['Bó', 'R. F.']] : [['Rodríguez', 'A.']]).map(([last, first]) => ({ last, first }));
+    const sel = (on) => ({ attr: on ? 'true' : 'false', w: on ? '600' : '400', bg: on ? t.active : 'transparent', ink: on ? t.activeInk : t.ink });
+    const bk = sel(!chap), cp = sel(chap);
     const extra = extraRows.map(mk);
-    const catRows = scan ? [['Genética', 'tuya', 'sug'], ['Actividades', 'tuya', 'sug']] : isNew
-      ? [['Ecología', 'tuya', 'sug'], ['Humedales', 'nueva', 'sug'], ['Artículos científicos', '', 'sug']]
+    const catRows = scan ? [['Genética', '', 'sug'], ['Actividades', '', 'sug']] : isNew
+      ? [['Ecología', '', 'sug'], ['Humedales', 'nueva', 'sug'], ['Artículos científicos', '', 'sug']]
       : [['Artículos científicos', '', 'ok'], ['Célula', '', 'ok'], ['Fotosíntesis', '', 'ok']];
     const cats = catRows.map(([label, note, k]) => ({
       label, note: note ? '· ' + note : '',
@@ -175,8 +204,10 @@ class Component extends DCLogic {
       noteInk: t.muted
     }));
     return {
-      t, isNew, scan, aiRead: isNew && !scan, fields, cats, extra, hasExtra: extra.length > 0, isBook: isNew && !scan, isDark: !!this.props.dark,
-      title: isNew ? 'Nueva fuente' : 'Editar ficha',
+      t, isNew, scan, aiRead: isNew && !scan, fields, fieldsA, fieldsB, authors, hasAuthors: authors.length > 0, cats,
+      bookAttr: bk.attr, bookW: bk.w, bookBg: bk.bg, bookInk: bk.ink, chapAttr: cp.attr, chapW: cp.w, chapBg: cp.bg, chapInk: cp.ink,
+      bookHint: chap ? 'La cita lleva el capítulo, las páginas y los editores del libro.' : 'Un capítulo pide también Capítulo, Páginas y Editores del libro.', extra, hasExtra: extra.length > 0, isBook: isNew && !scan, isDark: !!this.props.dark,
+      title: isNew ? 'Nueva fuente' : 'Datos de la fuente',
       sub: isNew ? 'Biblioteca · se agrega a tus 146 fuentes' : 'Usada en 1 clase y 1 examen · los cambios se ven en sus citas',
       fileKind: scan ? 'IMG' : isNew ? 'PDF' : 'WEB',
       fileName: scan ? 'Guia_TP_genetica_fotocopias.pdf' : isNew ? 'Kandus_2010_humedales_delta.pdf' : 'cienciahoy.org.ar/fotosintesis',
@@ -192,6 +223,7 @@ class Component extends DCLogic {
     const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
     const nw = this.props.variant !== 'edit'; g.sheetBack = nw ? g.lib : g.source; g.sheetSave = nw ? g.uploaded : b('SourceSaved');
     if (this.props.variant === 'scan') g.sheetSave = g.lib;
+    g.book = b('SourceNew'); g.chapter = b('SourceChapter');
     o.go = g;
     return o;
   }

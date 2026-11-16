@@ -66,6 +66,9 @@ body{margin:0}
               <a href="{{y.href}}" role="tab" style="padding: 0 12px; display: flex; align-items: center; border-radius: 10px; background: {{y.bg}}; color: {{y.ink}}; font-weight: {{y.w}}; text-decoration: none; cursor: pointer;">{{y.label}}</a>
             </sc-for>
           </div>
+          <sc-if value="{{canStart}}" hint-placeholder-val="{{ true }}">
+            <a href="{{go.yearStart}}" style="height: 32px; padding: 0 12px; border: 1px solid {{t.line}}; border-radius: 12px; background: {{t.surface}}; color: {{t.ink}}; font-family: inherit; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;">Empezar 2027…</a>
+          </sc-if>
           <span style="font-size: 14px; color: {{t.muted}};">{{yearHint}}</span>
         </div>
 
@@ -262,7 +265,7 @@ class Component extends DCLogic {
       ]);
       examHint = '2 en 2025';
     }
-    const yrs = this.props.flat ? ['2026'] : ['2026', '2025', '2024'];
+    const yrs = this.props.flat ? ['2026'] : ['2024', '2025', '2026'];
     const sel = past ? '2025' : '2026';
     const years = yrs.map((y) => ({ label: y === '2026' ? '2026 · este año' : y, bg: y === sel ? t.surface : 'transparent', ink: y === sel ? t.ink : t.muted, w: y === sel ? '500' : '400' }));
     return { t, units, subline, yearHint, years, past, current: !past, exams, examHint, title, crumb };
@@ -273,7 +276,7 @@ class Component extends DCLogic {
     const b = (n) => n + sx + '.dc.html';
     const g = { home: b('OptB'), lib: b('Library'), exams: b('GapAllExams'), plan: b('Plan'), settings: b('Settings'), chat: b('ChatA'), chatClosed: b('ChatClosed'), past: b('GapPastSubjects'), subjectNew: b('SubjectNew'), subjectEmpty: b('SubjectEmpty'), unitNew: b('UnitNew'), subject: b('Subject'), subjectPast: b('SubjectPast'), classNew: b('ClassNew'), classEdit: b('ClassEdit'), examNew: b('ExamNew'), examNewMaterial: b('ExamNewMaterial'), examReview: b('ExamReview'), addMenu: b('GapAddMenu'), source: b('Source'), sourceNew: b('SourceNew'), sourceEdit: b('SourceEdit'), uploaded: b('GapUploaded'), school: b('GapSchool'), planAsk: b('GapPlanAsk'), sourcesChat: b('GapSourcesChat'), workA: b('WorkA'), workExam: b('WorkExam'), workPlan: b('WorkPlan'), date: b('GapDate'), export: b('Export'), exportDone: b('ExportDone'), exportExam: b('ExportExam'), slide: b('GapSlide'), proposed: b('GapProposed'), guion: b('GapGuion'), material: b('GapMaterial'), qedit: b('GapQuestionEdit'), noOcr: b('GapNoOcr'), ocr: b('GapOcrText'), drafts: b('GapYearDrafts'), yearStart: b('GapYearStart') };
     o.years = (o.years || []).map((y) => ({ ...y, href: String(y.label).startsWith('2026') ? g.subject : g.subjectPast }));
-    if (!this.props.flat && o.current) o.years = o.years.concat([{ label: '+ 2027', href: g.yearStart, bg: 'transparent', ink: o.t.ink, w: '500' }]);
+    o.canStart = !this.props.flat && !!o.current;
     const c = this.props.confirm || '';
     const t = o.t;
     g.copyUnit = b('SubjectCopied');
@@ -291,7 +294,7 @@ class Component extends DCLogic {
     });
     const cc = c === 'copiedClass';
     o.units = o.units.map((u) => ({ ...u, empty: !!u.empty, classes: (u.classes || []).map((k) => { const hit = o.past && u.code === 'U4' && k.n === '24'; return { ...k, copyLink: hit && k.canCopy && !cc, copyBtn: false, canCopy: k.canCopy && !(hit && cc), copied: k.copied || (hit && cc), copiedText: hit && cc ? 'Copiada a 2026' : 'Ya está en 2026' }; }) }));
-    if (c === 'unit') o.units = o.units.concat([{ code: 'U5', name: 'Evolución', count: 'Sin clases', pct: '0%', open: true, rot: '90deg', classes: [], hasHeader: true, listBorder: '1px solid ' + t.line, indent: '44px', empty: true }]);
+    if (c === 'unit') o.units = o.units.concat([{ code: 'U5', name: 'Evolución', count: 'Sin clases', pct: '0%', open: false, rot: '90deg', classes: [], hasHeader: true, listBorder: '1px solid ' + t.line, indent: '44px', empty: true }]);
     g.copyClass = b('SubjectCopiedClass'); g.copyExam = b('SubjectCopiedExam');
     const ce = c === 'copiedExam';
     o.exams = (o.exams || []).map((x) => { const hit = o.past && x.title === 'Evaluación · U4 Ecosistemas'; return { ...x, copyLink: x.canCopy && hit && !ce, canCopy: x.canCopy && !hit, copied: hit && ce, copiedText: 'Copiado a 2026' }; });
@@ -302,11 +305,12 @@ class Component extends DCLogic {
       o.exams = (o.exams || []).map((x) => ({ ...x, canCopy: false, copied: true, copiedText: 'Ya está en 2026' }));
     }
     if (c === 'approved') o.subline = 'Colegio San Martín · 2026 · 27 de 32 clases aprobadas';
-    const chips = { approved: 'Clase 27 aprobada', style: 'Materia guardada: estilo propio', unit: 'U5 · Evolución creada' };
+    const chips = { approved: 'Clase 27 aprobada', style: 'Materia guardada: estilo propio' };
     const dark = !!this.props.dark;
     o.cf = { chip: !!chips[c], chipText: chips[c] || '', undoHref: c === 'approved' ? g.classEdit : g.subject, toast: c === 'copied', toastText: 'U4 Ecosistemas copiada a 2026: 5 clases nuevas, como borrador', toastAction: 'Ver en 2026', toastHref: g.subject, toastLink: dark ? '#7a4f00' : t.cta };
     if (cc) Object.assign(o.cf, { toast: true, toastUndo: true, toastText: 'Clase 24 copiada a 2026 como borrador' });
     if (ce) Object.assign(o.cf, { toast: true, toastUndo: true, toastText: 'Evaluación · U4 Ecosistemas copiada a 2026 como borrador' });
+    if (c === 'unit') Object.assign(o.cf, { toast: true, toastText: 'Unidad 5 · Evolución agregada', toastAction: 'Ver la unidad', toastHref: g.subject });
     o.cf.canCopyAll = !!o.past && !all; o.cf.copyAllAsk = c === 'copyAll';
     if (all) Object.assign(o.cf, { toast: true, toastText: '2025 copiado a 2026: 4 unidades, 29 clases y 2 exámenes, como borrador' });
     g.search = b('Search');

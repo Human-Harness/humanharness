@@ -3,8 +3,8 @@
 Every design decision Marco made on the teacher canvas, in one place. The findings behind them
 (who hit what, in which test round) are in `hallazgos.md`; the testing setup is in `user-testing/`.
 
-- **Canvas:** https://claude.ai/artifact/L6ecCUaJuku6Cq5xnME2kL (v64 at the time of writing).
-  Source snapshot of v64 in `canvas/project/` (210 components and boards). Check every link:
+- **Canvas:** https://claude.ai/artifact/L6ecCUaJuku6Cq5xnME2kL (v65 at the time of writing).
+  Source snapshot of v65 in `canvas/project/` (210 components and boards). Check every link:
   `node canvas/check.cjs canvas/project canvas/components.txt`.
 - **Flows map:** https://claude.ai/artifact/ULXM45E1PZtWgUDxCj798u
 - **Rule for every decision:** options with mockups first, Marco picks, then the canvas changes.
@@ -54,6 +54,27 @@ Every design decision Marco made on the teacher canvas, in one place. The findin
 | H25 (rest) | The exam built from material approved directly | It goes through "antes de aprobar" too, with "Cada pregunta cita una de las 3 fuentes". New boards ExamReviewMaterialApproving(Dark) | v64 | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
 | P02–P17 | Words testers did not use | See `glosario.md`, "Group 5 words": Tema A / B, Sin armar, Cambió una fuente, Qué IA usa, Qué tan a fondo piensa, Formato de los documentos, Clases sin materia, "no se leen bien"; ⌘J only on hover; kept Aprobar, Biblioteca, Armándose, diseño curricular | v64 | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
 | R1–R3 | Open questions in `core-requests.md` | R1 **B**: darker grey and amber selection core-wide, secondary size a harness token (teacher 14 px). R2 **1B + 2B**: rail labels a harness option, teacher on, 12 px. R3 **C**: origin, what the core checks, then "Según quien lo hizo: …" | v64 (R2 size) | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
+| H57 | The sheet promises not to invent the year, the citation shows "(2010)" | **A**: the citation keeps «s. f.» until the teacher types the year; an orange "Sin año" tag with "Agregar el año" | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H59 + H48 | "Estilo de cita" names three things | **A**: "Estilo de cita" only means APA / MLA / Chicago. Settings: "Para todo", then two lists "Colegios que piden uno" (San Martín keeps APA 7, so other screens' citations stay right) and "Materias con uno propio". In Editar materia the look is "Formato de los documentos" | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H47 | Two authors in one field | **A**: one row per author (Apellido, Nombre) with "+ Agregar autor"; "Un capítulo" wired to the v58 chapter state | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H67 | Question citations have no page | **A**: each question's "Sale de" line carries the page ("p. 34"); left out when the source has no pages | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H60 | Categories: when the AI suggests, "tuya / nueva" | **A**: Editar categorías says "Cuando agregás una fuente, la IA le propone categorías de esta lista. Si ninguna sirve, propone una nueva y te la marca."; only new ones are marked ("· nueva"), "tuya" is gone | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H63 | Nueva clase: "1 por decidir" | **A**: the undecided source row says "Si no la elegís, queda afuera"; the class can be built anyway | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H61 | "Buscar más" leaves the class | **A**: it opens the Asistente beside the class; "Agregar a la clase" adds a source (new boards GapClassSearch, GapClassSearchAdded) | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H66 | What "Formato de los documentos" includes | **A**: one line "Encabezado, pie, márgenes, colores y logo de los PDF que exportás" | v65 | https://claude.ai/artifact/244Sn7oV2LEBmkqJ57vR9u |
+| H64 | Two counts look like two lists | **A**: one count everywhere: the cards add up to "Para revisar" ("N para revisar · N sin armar"); every class that needs a look is in Para revisar; the year plan marks it on the row | v65 | https://claude.ai/artifact/VV8jbH5tLT5LT5NXvaFJ9u |
+| H03 + H51 | Starting the new year | **A**: a named button "Empezar 2027…" next to the year tabs; in 2027 the same tabs in the same order and "Editar materia" stays | v65 | https://claude.ai/artifact/VV8jbH5tLT5LT5NXvaFJ9u |
+| H71 + P23 | Exams of other years; "Tomado" | **A**: the exam list gets the year tabs; "Tomado" kept (the app does not grade) | v65 | https://claude.ai/artifact/VV8jbH5tLT5LT5NXvaFJ9u |
+| H72 | Exam from material named after a unit | **A**: named after the sources' topic ("Evaluación · Ecología urbana", the topic of the sample sources) with "Desde 3 fuentes" | v65 | https://claude.ai/artifact/VV8jbH5tLT5LT5NXvaFJ9u |
+| H65 | Two search results with the same name | **A**: the year on each result, the current year first, older ones "solo lectura" | v65 | https://claude.ai/artifact/VV8jbH5tLT5LT5NXvaFJ9u |
+| H73 | "Hoja de respuestas" unchecked with multiple choice | **A**: checked when there are multiple-choice questions, with the count; hidden when there are none | v65 | https://claude.ai/artifact/VV8jbH5tLT5LT5NXvaFJ9u |
+| H20 (rest) | Selected option: amber border, empty circle | **A**: the radio dot fills too, on top of the amber fill | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
+| H70 | Class editor opens with the Asistente half-screen | **A**: closed by default; it opens when the teacher asks for a change | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
+| H68 | Options highlighted before choosing | **A**: all options look the same; amber means chosen, never recommended | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
+| H40 (rest) | Offline strip cut and repeated by the Asistente | **A**: one short line "Sin internet · tus cambios se guardan" with "Más" for the detail ("…se manda solo cuando vuelve internet. Te aviso cuando termine."); the Asistente only marks requests "en espera" | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
+| H45 + P24 | "Baja lo que necesita (140 MB)" | **A**: "La primera vez baja 140 MB, unos 2 minutos. Podés seguir trabajando: te aviso cuando esté." with "Seguir trabajando" / "Esperar acá"; "Seguir en segundo plano" becomes "Seguir trabajando" everywhere | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
+| H21 (rest) | "Pedir a la IA…" cut, close to "Editar" | **A**: "Cambiar con la IA", no ellipsis | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
+| P18–P26 | Round 4 words | See `glosario.md`, "Round 4 words": Descargar PDF, Descargar el original, "Lo leyó la IA del archivo", datos (not ficha), Seguir trabajando, Secuencia de la clase; kept Asistente, Tomado, Dada en el aula | v65 | https://claude.ai/artifact/JA2qEgCbBEH8Nj6knAL228 |
 
 ## Fixed without options
 
@@ -70,9 +91,14 @@ These had one obvious fix, so no options were shown.
 - **Round 3 follow-ups (v53):** H01 a saved new source shows "Guardada en tu Biblioteca"; H19 the shortened class tabs read "Diapositivas · 9" and "Guion · 40 min"; H20 "Generar examen" no longer wraps, the Mods install notice sits under the description, Settings small buttons go to 14 px; H28 the Library subject filter starts at "Materia: todas"; H37 exporting a draft class warns like the exam; H40 the offline bar has a fixed 520 px width.
 - **H50:** only one category row is in edit mode at a time; the Library category bar ends in "+6 más" (v53).
 - **H51:** the empty checkbox in Empezar 2027 was invisible (a display-less span) and now shows with a stronger border; the 2027 subject uses the same year tabs as the other years (v53).
+- **H58 (v65):** the v64 word pass finished: "Cambió una fuente" and "sin armar" in Tus materias cards, Buscar, Nueva clase ("Guardar sin armar"), Planificar ("Se crean sin armar") and the rest.
+- **H01 rest (v65):** a new unit off-screen gives a toast with "Ver la unidad"; exporting an exam (also from material) gives "5 PDF guardados en Descargas" with "Mostrar en la carpeta"; bringing to 2027 gives a toast with Deshacer.
+- **H22 rest (v65):** the author field carries the same "Lo leyó la IA del archivo" line as the other fields.
 - Prototype bugs H30, H33, H34, H39 (v48); see `hallazgos.md`.
 
 ## Still open
+
+- v65 leftovers: H61, the Nueva clase list behind the Asistente does not go from 3 to 4 sources after "Agregar a la clase"; H64, the year plan does not mark the "Cambió una fuente" class (Plan has no class rows); OptB with 4 review rows not measured against the board height.
 
 - Core PR for H20: update `hh-muted` and secondary text size in core DESIGN.md, so every harness gets it.
 - Visual check of v51: secondary text grew in 418 places; nothing was checked by eye yet.

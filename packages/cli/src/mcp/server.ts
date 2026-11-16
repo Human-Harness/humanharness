@@ -8,12 +8,11 @@ import { CliError, type Io, UsageError, parseCommand } from "../cli";
 import { appShot, appStatus, catalog, checkMod, cloneLayout, cloneMod, newMod } from "../kit";
 import { CLIENTS, type Client, configSnippet } from "./config-snippet";
 import { type Mode, findMode } from "./mode";
+import { TOOL_NAMES, type ToolName } from "./tool-names";
 
 const VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 
-/** The tools the server registers, in the order an agent lists them; the home folder's manual names each one. */
-export const TOOL_NAMES = ["status", "catalog", "mod_new", "mod_check", "mod_clone", "layout_clone", "shot"] as const;
-export type ToolName = (typeof TOOL_NAMES)[number];
+export { TOOL_NAMES, type ToolName } from "./tool-names";
 
 const NOT_RUNNING = "The app isn't running";
 const TURNING_ON = "A new mod or clone starts off: turning it on is the person's step in Settings › Mods, never yours; say what it does and let them decide.";

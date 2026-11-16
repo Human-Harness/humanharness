@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HH_DTS_COMMAND, HH_DTS_FILE, generateHhDts, publicNames } from "../scripts/hh-dts";
 import { writeLayers } from "../src/main/mods/home-folder";
+import { TOOL_NAMES } from "../../cli/src/mcp/tool-names";
 import { agentsMd, manualFiles } from "../src/main/mods/manual";
 
 describe("hh.d.ts", () => {
@@ -29,6 +30,29 @@ describe("AGENTS.md", () => {
     const text = agentsMd();
     const missing = publicNames(manualFiles()["hh.d.ts"]).filter((n) => !new RegExp(`\\b${n}\\b`).test(text));
     expect(missing).toEqual([]);
+  });
+
+  it("names every tool the MCP server registers, as code", () => {
+    const text = agentsMd();
+    expect(TOOL_NAMES.filter((n) => !text.includes(`\`${n}\``))).toEqual([]);
+  });
+
+  it("teaches working with an agent: the connection and the loop", () => {
+    const text = agentsMd();
+    for (const s of ["## Working with an agent", "humanharness mcp --config claude", "humanharness mcp --config codex", "Settings › Mods"]) {
+      expect(text, s).toContain(s);
+    }
+    // The loop, in order: catalog, then a new mod or a clone, check, the person turns it on, then status and shot.
+    const section = text.slice(text.indexOf("## Working with an agent"), text.indexOf("## Layouts"));
+    expect(section).toContain("The loop:");
+    const loop = section.slice(section.indexOf("The loop:"));
+    const at = (s: string) => loop.indexOf(s);
+    for (const s of ["`catalog`", "`mod_new`", "`mod_clone`", "`mod_check`", "`status`", "`shot`"]) expect(at(s), s).toBeGreaterThan(-1);
+    expect(at("`catalog`")).toBeLessThan(at("`mod_check`"));
+    expect(at("`mod_check`")).toBeLessThan(at("turn it on"));
+    expect(at("turn it on")).toBeLessThan(at("`shot`"));
+    // The Commands section points to it.
+    expect(text.slice(text.indexOf("## Commands"))).toContain("Working with an agent");
   });
 
   it("covers the layers, the layout, the imports, consent, reload, the commands and the ways back", () => {

@@ -444,7 +444,8 @@ describe("the Inbox page's focus and its way back to the chat (stage 4a)", () =>
     const caps = { tasks: 2, jobs: 1 };
     const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("b", "waiting")], caps });
     await open(c);
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    // A task is open: Settings is the rail's Task settings (task view one column).
+    fireEvent.click(await screen.findByRole("button", { name: "Task settings" }));
     expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
     act(() => c.tasks.set({ tasks: [summary("a", "running"), summary("b", "waiting", { focused: true })], caps }));
     await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());

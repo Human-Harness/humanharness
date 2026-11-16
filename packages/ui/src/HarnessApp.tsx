@@ -396,6 +396,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   // D0: without `parallel` the key is today's, and nothing else is kept.
   const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
+  /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
+  const focusedTask = tasksState?.tasks.find((s) => s.focused);
+  /** A task is open (task view one column): the one bar and the rail's TASK group. */
+  const taskOpen = chatTask !== null || focusedTask !== undefined;
   /**
    * The rail (spec §4.2): an entry only for a feature the harness has (D0). Notes come from declared actions' topics.
    * Inbox and Jobs open their own pages (stage 4a): a harness whose manifest turns the core inbox off (`inbox: false`)
@@ -406,13 +410,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     jobs: Boolean(state.jobs?.jobs.length),
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
-    task: chatTask && { notes: chatTask.notes },
+    task: taskOpen ? { notes: chatTask?.notes ?? 0 } : null,
   };
   const entries = railEntries(features);
-  /** On the chat the top bar is its one bar, drawn by the chat in the slot (task view one column): no crumbs, no gear. */
-  const slotted = view.kind === "chat";
-  /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
-  const focusedTask = tasksState?.tasks.find((s) => s.focused);
+  /** With a task open on the chat the top bar is its one bar, drawn by the chat in the slot (task view one column): no crumbs, no gear. */
+  const slotted = view.kind === "chat" && taskOpen;
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
   const railCurrent: RailEntry = view.kind === "chat" ? (chatPage?.rail ?? "tasks") : view.kind;
   /** What Volver says: the task, unless the page goes back to a list of its own (a note's detail says "Notes"). */
@@ -530,7 +532,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                         />
                       )}
                       {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
-                      {!(slotted && chatTask) && <SettingsGear onClick={() => setSettings("general")} />}
+                      {!slotted && <SettingsGear onClick={() => setSettings("general")} />}
                     </>
                   }
                 />
@@ -604,10 +606,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                       searchRef={searchRef}
                       searchContextRef={searchContextRef}
                       {...(state.parallel ? { draftKeep } : {})}
-                      {...(slotted && barEl
+                      {...(view.kind === "chat" && barEl
                         ? {
                             bar: {
                               el: barEl,
+                              open: slotted,
                               harness: state.harness.name,
                               onHome: () => setScreen("home"),
                               switcher: (

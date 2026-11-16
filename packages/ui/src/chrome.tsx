@@ -23,8 +23,9 @@ export interface Crumb {
  * The window's top bar (UI refresh spec §4.1): the drag region of the hiddenInset title bar, 80px left for the traffic
  * lights, then the breadcrumb, the centre slot (search) and the trailing controls. No logo: the traffic lights sit
  * there. `title` is the bar before the breadcrumb: a heading shown only when there are no crumbs, kept until every
- * screen passes crumbs. `slot`: an element the open task's bar is drawn into (task view one column); while it is
- * `slotted` the bar takes the crumbs' place and the spacer, and the test tag moves after the trailing pieces.
+ * screen passes crumbs. `slot`: an element the chat draws its bar into (task view one column). While a task is open
+ * (`slotted`) the bar takes the crumbs' place and the spacer, and the test tag moves after the trailing pieces;
+ * otherwise the slot sits after the spacer and holds only the chat's chips and Sidekick toggle.
  */
 export function TopBar({
   crumbs = [],
@@ -81,8 +82,9 @@ export function TopBar({
       )}
       {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
       {mock && !slotted && <MockBadge />}
-      {slot && <div ref={slot} className="hh-topbar-slot" hidden={!slotted} />}
+      {slot && slotted && <div ref={slot} className="hh-topbar-slot" />}
       {!slotted && <span className="hh-spacer">{center}</span>}
+      {slot && !slotted && <div ref={slot} className="hh-topbar-slot" />}
       {trailing}
       {mock && slotted && <MockBadge />}
       {children}

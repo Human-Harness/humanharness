@@ -42,12 +42,12 @@ for (const theme of ["light", "dark"] as const) {
       await shot(page, `notes-page-radix-${theme}-narrow`);
       await page.setViewportSize({ width: 1280, height: 900 });
 
-      // A note's detail in the same column; the one bar has no Back: Escape and the rail go back (task view one column).
+      // A note's detail in the same column; no task is open, so the top bar keeps Volver, which says "Notes".
       await list.getByRole("button", { name: /Engines/ }).click();
       const detail = page.getByRole("region", { name: "Engines", exact: true });
       await expect(detail.getByRole("heading", { level: 1, name: "Engines" })).toBeFocused();
       await expect(detail).toContainText("Switching engines keeps the notes.");
-      await expect(page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: /^Back to/ })).toHaveCount(0);
+      await expect(page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: "Back to Notes" })).toBeVisible();
       await shot(page, `notes-detail-radix-${theme}`);
 
       // Escape goes to the list with the focus on the note's row, then back to the task.

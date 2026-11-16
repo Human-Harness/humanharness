@@ -195,10 +195,10 @@ describe("plugin slots", () => {
     const quiet = screen.getByText("Quiet");
     expect(quiet.tagName).toBe("SPAN");
     expect(quiet.className).toBe("hh-pl-chip info");
-    // In the one bar, after the spacer and the context chip (task view one column).
+    // No task open: in the top bar's slot, right after its spacer (task view one column).
     const chips = button.closest(".hh-pl-chips") as HTMLElement;
-    expect(chips.closest(".hh-topbar-slot")).toBeTruthy();
-    expect(chips.previousElementSibling?.className).toMatch(/hh-spacer/);
+    const slot = chips.closest(".hh-topbar-slot") as HTMLElement;
+    expect(slot.previousElementSibling?.className).toMatch(/hh-spacer/);
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
     fireEvent.click(button);
     await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));

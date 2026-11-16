@@ -7,6 +7,8 @@ export interface TaskBarSlot {
   /** The top bar's slot (TopBar `slot`): the bar is drawn there. */
   el: HTMLElement;
   harness: string;
+  /** A task is open: the whole bar. Otherwise only the scope picker, the chips and the Sidekick toggle. */
+  open: boolean;
   onHome: () => void;
   /** The task's name as a menu of tasks (TaskSwitcher). */
   switcher: ReactNode;
@@ -15,9 +17,11 @@ export interface TaskBarSlot {
 /**
  * The one bar of an open task (task view one column), inside the top bar, from the left: the harness crumb, the task
  * switcher, the status, the scope picker when declared, a spacer, the context chip, plugin chips, the Sidekick toggle
- * when declared. The bell, the avatar and the test tag follow it, as the top bar's own trailing pieces.
+ * when declared. The bell, the avatar and the test tag follow it, as the top bar's own trailing pieces. With no task
+ * open the top bar keeps its crumbs and Volver, and the slot holds only the scope picker, the chips and the toggle.
  */
 export function TaskBar({
+  open,
   harness,
   onHome,
   switcher,
@@ -34,6 +38,20 @@ export function TaskBar({
   sidekick?: { on: boolean; onToggle: () => void } | null | undefined;
 }) {
   const { t } = useTranslation();
+  const tail = (
+    <>
+      {!open && scope}
+      {chips}
+      {sidekick && (
+        <SidekickToggle
+          on={sidekick.on}
+          label={t(sidekick.on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
+          onToggle={sidekick.onToggle}
+        />
+      )}
+    </>
+  );
+  if (!open) return tail;
   return (
     <>
       <nav className="hh-crumbs" aria-label={t("app.breadcrumb")}>
@@ -53,14 +71,7 @@ export function TaskBar({
       {scope}
       <span className="hh-spacer" />
       {context}
-      {chips}
-      {sidekick && (
-        <SidekickToggle
-          on={sidekick.on}
-          label={t(sidekick.on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
-          onToggle={sidekick.onToggle}
-        />
-      )}
+      {tail}
     </>
   );
 }

@@ -61,7 +61,7 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     await page.getByRole("tab", { name: "How I learn" }).click();
     const tab = page.getByRole("tabpanel", { name: "How I learn" });
     await expect(tab.getByRole("heading", { name: "Socratic" })).toBeVisible();
-    await tab.getByRole("group", { name: "Questions" }).getByRole("button", { name: "Many" }).click();
+    await tab.getByRole("radiogroup", { name: "Questions" }).getByRole("radio", { name: "Many" }).click();
     await expect.poll(storedSettings).toEqual({ modes: { socratic: { questions: "many" } } });
     await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
@@ -94,8 +94,8 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     // During the task a mode setting saves at once and is never Pending: it applies the next time the mode starts.
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "How I learn" }).click();
-    await tab.getByRole("group", { name: "Questions" }).getByRole("button", { name: "Few" }).click();
-    await expect(tab.getByRole("group", { name: "Questions" }).getByRole("button", { name: "Few" })).toHaveAttribute("aria-pressed", "true");
+    await tab.getByRole("radiogroup", { name: "Questions" }).getByRole("radio", { name: "Few" }).click();
+    await expect(tab.getByRole("radiogroup", { name: "Questions" }).getByRole("radio", { name: "Few" })).toHaveAttribute("aria-checked", "true");
     // Back to the default: nothing of it stays stored.
     await expect.poll(() => storedSettings()?.modes).toBeUndefined();
     await expect(tab.getByText("Pending")).toHaveCount(0);

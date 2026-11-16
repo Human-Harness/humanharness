@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -83,9 +84,9 @@ function writePluginSettings(s: Sandbox, id: string, values: Record<string, unkn
 
 /** The last commit message in the folder's local history (the app keeps its git dir under userData). */
 function lastCommit(s: Sandbox): string {
-  const root = path.join(s.userData, "history");
-  const [dir] = fs.readdirSync(root);
-  return execFileSync("git", ["--git-dir", path.join(root, dir), "log", "-1", "--format=%B"], { encoding: "utf8" });
+  // As historyDir (shell config.ts) derives it: the app's home folder (mods) has a history of its own beside it.
+  const gitdir = path.join(s.userData, "history", createHash("sha256").update(s.folder).digest("hex").slice(0, 16));
+  return execFileSync("git", ["--git-dir", gitdir, "log", "-1", "--format=%B"], { encoding: "utf8" });
 }
 
 /** Settings › Plugins: turns the demo's bundled plugin on through its review. */

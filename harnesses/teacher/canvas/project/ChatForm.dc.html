@@ -23,14 +23,14 @@ body{margin:0}
     </div>
     <span style="font-size: 14px; font-weight: 500;">Teacher</span>
     <span style="flex-grow: 1;"></span>
-    <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{t.active}}; color: {{t.activeInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+    <a title="Abrir el Asistente · ⌘J" href="{{go.chat}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: {{t.active}}; color: {{t.activeInk}}; font-family: inherit; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>Asistente</a>
     <a href="{{go.search}}" aria-label="Buscar" title="Buscar" style="width: 32px; height: 32px; border: 0; background: transparent; color: {{t.muted}}; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
   </div>
 
   <div style="flex-grow: 1; display: flex; min-height: 0;">
     <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px;">
       <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
-        <a href="{{n.href}}" style="width: 56px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
+        <a href="{{n.href}}" style="width: 56px; border: 0; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 12px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
       </sc-for>
     </nav>
 
@@ -68,10 +68,10 @@ body{margin:0}
         <span style="align-self: flex-start; font-size: 12px; padding: 4px 10px; border-radius: 8px; background: {{t.s2}}; color: {{t.muted}};">Estás en Biología · 2º B</span>
         <div style="align-self: flex-end; max-width: 85%; background: {{t.s2}}; border-radius: 14px; padding: 10px 12px;">Armame un examen de la U4 con el material del ciclo del carbono, 14 preguntas.</div>
         <div style="max-width: 92%; display: flex; flex-direction: column; gap: 8px;">
-          <span>Te abrí el formulario con lo que entendí. Me faltan los tipos de pregunta y cuántas versiones: elegilos ahí o decímelos acá.</span>
+          <span>Te abrí el formulario con lo que entendí. Me faltan los tipos de pregunta y cuántos temas: elegilos ahí o decímelos acá.</span>
           <div style="display: flex; gap: 6px; flex-wrap: wrap;">
             <span style="font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}};">Opción múltiple y desarrollo</span>
-            <span style="font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}};">Versiones A y B</span>
+            <span style="font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid {{t.line}}; color: {{t.ink}};">Temas A y B</span>
           </div>
         </div>
       </div>
@@ -103,7 +103,7 @@ class Component extends DCLogic {
       ['Material', 'Campbell, cap. 54 · Carbono en suelos urbanos · Guía de redes tróficas y 2 más', 'ai'],
       ['Cantidad de preguntas', '14', 'ai'],
       ['Tipos de pregunta', 'Elegí uno o más', 'missing'],
-      ['Versiones', 'Elegí cuántas', 'missing'],
+      ['Temas', 'Elegí cuántos', 'missing'],
       ['Indicaciones', 'Solo sobre el ciclo del carbono', 'ai']
     ];
     const fields = rows.map((r, i) => {

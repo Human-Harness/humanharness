@@ -96,8 +96,8 @@ class Component extends DCLogic {
     const col = (k) => k === 'Borrador' ? [t.blue, t.blueInk] : k === 'Aprobada' ? [t.green, t.greenInk] : [t.s2, t.ink];
     const next = [
       { date: 'lun 17 nov', title: 'Clase 5 · La fotosíntesis', where: 'Biología · 2º B · Unidad 2', tag: 'Borrador', action: 'Seguir' },
-      { date: 'mar 18 nov', title: 'Clase 4 · Revolución de Mayo', where: 'Historia · 4º A · Unidad 1', tag: 'Pendiente', action: 'Preparar' },
-      { date: 'jue 20 nov', title: 'Clase 6 · Respiración celular', where: 'Biología · 2º B · Unidad 2', tag: 'Pendiente', action: 'Preparar' }
+      { date: 'mar 18 nov', title: 'Clase 4 · Revolución de Mayo', where: 'Historia · 4º A · Unidad 1', tag: 'Sin armar', action: 'Armar' },
+      { date: 'jue 20 nov', title: 'Clase 6 · Respiración celular', where: 'Biología · 2º B · Unidad 2', tag: 'Sin armar', action: 'Armar' }
     ].map((n, i) => { const c = col(n.tag); return { ...n, bg: c[0], ink: c[1], border: i === 0 ? '0' : '1px solid ' + t.line }; });
     return { t, starts, next };
   }

@@ -20,7 +20,7 @@ Round 3 · 2026-11-14 · same personas, tasks and start boards · canvas v51 · 
 
 | id | Problema | Quiénes | Gravedad | Tipo | Estado |
 |---|---|---|---|---|---|
-| H01 | Ninguna acción confirma lo que hizo: Copiar a 2026, Aprobar, Crear las 32 clases, guardar unidad / autor / colegio / pregunta, elegir MLA, Instalar, Descargar el original, Exportar. *Opción C (canvas v33–v34): si el resultado queda en la misma pantalla, cambia ahí (etiqueta verde, botón "Aprobada", Deshacer); si queda en otro lado, aviso abajo con botón para ir ("Ver las clases", "Mostrar en la carpeta", "Ver en 2026"). 15 estados nuevos en la sección "Confirmaciones (H01)". Falta: "Copiar a 2026" de una clase o examen suelto (el botón está dentro de la fila)* | Laura, Sofía, Diego, Matías, Graciela · *R2: Laura, Graciela, Sofía (quedan: Copiar a 2026, Juntar categorías, Agregar a la Biblioteca, Editar ficha, volver a APA 7)* · *R3: Laura: "Guardar fuente" no avisa que se guardó (el resto confirma)* | Bloqueante | diseño | abierto · R3: sigue · parcial · v53: la ficha nueva guardada muestra la etiqueta verde "Guardada en tu Biblioteca" y "subido recién" |
+| H01 | Ninguna acción confirma lo que hizo: Copiar a 2026, Aprobar, Crear las 32 clases, guardar unidad / autor / colegio / pregunta, elegir MLA, Instalar, Descargar el original, Exportar. *Opción C (canvas v33–v34): si el resultado queda en la misma pantalla, cambia ahí (etiqueta verde, botón "Aprobada", Deshacer); si queda en otro lado, aviso abajo con botón para ir ("Ver las clases", "Mostrar en la carpeta", "Ver en 2026"). 15 estados nuevos en la sección "Confirmaciones (H01)". Falta: "Copiar a 2026" de una clase o examen suelto (el botón está dentro de la fila)* | Laura, Sofía, Diego, Matías, Graciela · *R2: Laura, Graciela, Sofía (quedan: Copiar a 2026, Juntar categorías, Agregar a la Biblioteca, Editar ficha, volver a APA 7)* · *R3: Laura: "Guardar fuente" no avisa que se guardó (el resto confirma)* | Bloqueante | diseño | abierto · R3: sigue · parcial · v53: la ficha nueva guardada muestra la etiqueta verde "Guardada en tu Biblioteca" y "subido recién" · v64: "Copiar a 2026" de una clase o un examen suelto confirma en la fila ("Copiada a 2026" / "Copiado a 2026") y con un aviso con Deshacer y "Ver en 2026" (nuevo estado SubjectCopiedExam) |
 | H02 | No hay pantalla de corte de internet: qué quedó guardado y cómo seguir. *El canvas sí la tiene ("Sin conexión", "Error de la IA"), pero es un estado y ningún clic lleva ahí: re-probar empezando en esa pantalla* | Diego, Matías · *R2: Matías: pasó (Diego no encontró el tablero de inicio)* · *R3: Matías: pasó; Diego no encontró el tablero de inicio otra vez (falla de la prueba)* | Bloqueante | maqueta | re-probado |
 | H03 | No hay forma de empezar un año nuevo eligiendo qué conservar. *La pantalla existe ("Empezar 2027 · qué traer"), pero Materia no tiene ningún botón que lleve a ella. Canvas v35: pestaña "+ 2027" en el selector de años de la materia (opción A)* | Graciela · *R2: Graciela: T06 completada con dudas* · *R3: Graciela: T06 con dudas (la fila Exámenes no tiene casilla, ver H51)* | Bloqueante | diseño: falta la entrada | re-probado |
 | H04 | Materias que ya no doy: no se llega desde el tablero normal. *El link existe solo en "Después de mucho uso"; Canvas v35: fila punteada al final de la lista de materias, en todo tablero con materias (opción B)* | Laura · *R2: Laura: T07 completada* · *R3: Laura: T07 completada; la fila punteada es discreta* | Bloqueante | diseño: falta la entrada | re-probado |
@@ -44,7 +44,7 @@ Round 3 · 2026-11-14 · same personas, tasks and start boards · canvas v51 · 
 | H22 | La IA inquieta: "la IA ve esta materia"; no dice de dónde sacó un dato | Sofía, Graciela · *R2: Graciela, Sofía: sigue (de dónde salen fuentes y unidades)* · *R3: Sofía: Bien (cada unidad cita su bloque)* | Ruido | diseño | re-probado |
 | H23 | Tres caminos al empezar (materia, primera clase, Biblioteca) | Sofía · *R3: Sofía, Laura: Bien ("¿Por dónde empezás?")* | Ruido | diseño | re-probado |
 | H24 | "Seguir en segundo plano" no dice dónde voy a ver la clase después | Sofía · *R2: Matías: sigue* · *R3: Diego: Bien ("queda en Para revisar")* | Ruido | diseño | re-probado |
-| H25 | "Aprobar" no dice si avisa a alguien | Sofía · *R2: Sofía: sigue (aprueba sin mostrar qué se revisó)* · *R3: Sofía: "Aprobar" sigue sin explicar qué significa* | Ruido | diseño | abierto · R3: sigue · en el canvas · v51: opción A (Marco): Aprobar abre un panel con lo que tiene la clase o el examen y "Queda marcada como lista. No se manda a nadie.", con Seguir revisando / Aprobar (2 estados nuevos "antes de aprobar") · v63: en R3 Sofía aprobó desde "Material para alumnos", cuyo Aprobar saltaba directo a "recién aprobada"; ahora pasa por "antes de aprobar". Re-probar T12. Su propuesta "Marcar como lista" va a la ronda 4 si sigue la duda |
+| H25 | "Aprobar" no dice si avisa a alguien | Sofía · *R2: Sofía: sigue (aprueba sin mostrar qué se revisó)* · *R3: Sofía: "Aprobar" sigue sin explicar qué significa* | Ruido | diseño | abierto · R3: sigue · en el canvas · v51: opción A (Marco): Aprobar abre un panel con lo que tiene la clase o el examen y "Queda marcada como lista. No se manda a nadie.", con Seguir revisando / Aprobar (2 estados nuevos "antes de aprobar") · v63: en R3 Sofía aprobó desde "Material para alumnos", cuyo Aprobar saltaba directo a "recién aprobada"; ahora pasa por "antes de aprobar". Re-probar T12. Su propuesta "Marcar como lista" va a la ronda 4 si sigue la duda · v64: el examen desde material también pasa por "antes de aprobar" (nuevo estado ExamReviewMaterialApproving) |
 | H26 | Exportar: no dice que la bibliografía va dentro de cada PDF; ventana alta para pantalla angosta. *Canvas v38 (opción A): la bibliografía deja de ser una cuarta parte tildada y pasa a una pregunta (al final de cada archivo / como archivo aparte / no incluir); el pie dice "3 PDF, cada uno con su bibliografía al final"* | Diego · *R2: Laura, Diego: Bien* · *R3: Laura, Diego: Bien (bibliografía incluida); Laura: demasiadas decisiones juntas para imprimir (H54)* | Ruido | diseño | re-probado |
 | H27 | "Nueva clase" ya trae una materia y unidad que no creé. *Es a propósito ("Nueva clase precargada por la IA"); revisar si se entiende de dónde sale* | Sofía · *R2: Sofía: sigue ("Dónde va: U4, clase 27")* · *R3: Sofía: sigue (el formulario trae tema y materia ajenos)* | Ruido | diseño | abierto · R3: sigue · en el canvas · v51: opción A (Marco): en Nueva clase, cada dato que puso la IA lleva una línea "Sale de: …" (p. ej. "la clase 26 es la última de U4 que armaste") |
 | H28 | Cabecera de Biblioteca con demasiados conteos | Sofía · *R3: Graciela: "146 fuentes" junto al filtro "Materia: Biología" no se entiende* | Ruido | diseño | abierto · R3: sigue · en el canvas · v51: opción A (Marco): la cabecera dice "146 fuentes"; el desglose está en el filtro de tipo (Todas 146 · Archivos 98 · Web 41 · Escaneadas 7) · v53: el filtro arranca en "Materia: todas", así coincide con "146 fuentes" |
@@ -84,9 +84,9 @@ canvas. Rule: the canvas is a UI design mock; sample-data and wiring problems ar
 against the real app, and anything about real AI behaviour belongs to implementation.
 
 - **Atacar (diseño):** H01, H10 (+H15), H19, H20 (+DESIGN.md PR aparte), H21, H28, H37 (clase en borrador), H40, H42 (glosario), H43, H44, H45 (solo el momento en que se ofrece; origen y permisos → pedido al core), H47, H48, H49 (solo las fuentes), H50, H51 (casilla + mismo selector de años), H53 (solo el texto), H54, H56.
-- **Pedidos al core (escritos en `core-requests.md`, 2026-11-15):** R1 texto secundario (H20), R2 nombres en la barra (H10, H15), R3 origen y permisos de un complemento (H45). Cada uno con una pregunta abierta para Marco.
+- **Pedidos al core (escritos en `core-requests.md`, 2026-11-15):** R1 texto secundario (H20), R2 nombres en la barra (H10, H15), R3 origen y permisos de un complemento (H45). Cada uno con una pregunta abierta para Marco. *Respondidas el 2026-11-15 (https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp): R1 B, R2 1B + 2B (12 px), R3 C.*
 
-- **Solo maqueta:** H25 (cablear Aprobar → "antes de aprobar" y re-probar). *Hecho v63: el Aprobar de "Material para alumnos" ahora pasa por "antes de aprobar". El examen desde material todavía aprueba directo: no tiene estado "antes de aprobar".*
+- **Solo maqueta:** H25 (cablear Aprobar → "antes de aprobar" y re-probar). *Hecho v63: el Aprobar de "Material para alumnos" ahora pasa por "antes de aprobar". El examen desde material todavía aprueba directo: no tiene estado "antes de aprobar".* *Hecho v64: también pasa por "antes de aprobar".*
 - **Protocolo de prueba (hecho, `protocol.md` §3 y `README.md`):** H27, H41, H55, H49 (página 2 de 2): avisar a los testers que es una maqueta de diseño con datos de ejemplo; que juzguen si lo que ven es razonable y entendible, no si los datos cuadran o todo responde. Los números se verifican contra la app real.
 - **Implementación real:** H46 (detectar preguntas con dos respuestas válidas).
 - **Descartado:** H14 (formulario primero, chat como alternativa; lo de Sofía va con el aviso de maqueta), H52 (la revisión del escaneo se queda).
@@ -96,22 +96,22 @@ against the real app, and anything about real AI behaviour belongs to implementa
 | id | Dice la app | Dirían ellos | Quiénes |
 |---|---|---|---|
 | P01 | Mods | complementos, extras | Laura, Sofía, Matías, Graciela · *R3: los cinco* · **decidido v57: complemento** |
-| P02 | OCR, Procesando OCR | leer fotocopias escaneadas, leyendo el texto de la foto | Laura, Diego, Graciela |
-| P03 | Aprobar, Aprobada | lista, lista para dar | Laura, Sofía, Diego |
-| P04 | Motor, Esfuerzo | qué tan a fondo piensa (no las tocarían) | Laura, Sofía, Graciela |
-| P05 | ⌘J | sobra, no se entiende; en Windows es Ctrl | Laura, Diego, Graciela · *R3: Laura, Diego, Graciela* |
-| P06 | Desactualizada | para revisar de nuevo, quedó vieja | Laura, Diego, Matías |
-| P07 | Pendiente vs Borrador | sin armar todavía; no ven la diferencia | Sofía, Diego |
-| P08 | Biblioteca, fuentes, categorías | mis textos, apuntes, temas, carpetas | Sofía, Diego, Graciela |
+| P02 | OCR, Procesando OCR | leer fotocopias escaneadas, leyendo el texto de la foto | Laura, Diego, Graciela · **ya resuelto: la UI no dice OCR, dice "Escanear un papel" (v57)** |
+| P03 | Aprobar, Aprobada | lista, lista para dar | Laura, Sofía, Diego · **decidido v64: se queda Aprobar; el panel "antes de aprobar" explica qué significa** |
+| P04 | Motor, Esfuerzo | qué tan a fondo piensa (no las tocarían) | Laura, Sofía, Graciela · **decidido v64: Qué IA usa · Qué tan a fondo piensa (Rápido, Normal, A fondo)** |
+| P05 | ⌘J | sobra, no se entiende; en Windows es Ctrl | Laura, Diego, Graciela · *R3: Laura, Diego, Graciela* · **decidido v64: el botón dice solo "Asistente"; ⌘J queda en el texto al pasar el mouse** |
+| P06 | Desactualizada | para revisar de nuevo, quedó vieja | Laura, Diego, Matías · **decidido v64: Cambió una fuente / Cambiaron 2 fuentes** |
+| P07 | Pendiente vs Borrador | sin armar todavía; no ven la diferencia | Sofía, Diego · **decidido v64: Sin armar (acción Armar); Borrador queda para lo armado sin aprobar** |
+| P08 | Biblioteca, fuentes, categorías | mis textos, apuntes, temas, carpetas | Sofía, Diego, Graciela · **decidido v64: se quedan Biblioteca, fuentes, categorías** |
 | P09 | HTML para proyectar | para proyectar en el aula | Laura · **decidido v62: Para proyectar en pantalla** |
-| P10 | Armándose | generando | Matías |
-| P11 | Versión A / B | tema A / B | Matías |
-| P12 | Colegio nuevo, Plantilla para exportar | formato de documentos del colegio | Graciela |
-| P13 | temas (repartir las preguntas entre 4 temas) | contenidos, unidades; "temas" son las versiones | Matías |
-| P14 | diseño curricular | el programa | Laura |
-| P15 | dadas / aprobadas / revisadas | una sola palabra | Graciela |
-| P16 | Clases sueltas | clases sin materia | Graciela |
-| P17 | palabras dudosas | palabras que no pude leer bien | Diego |
+| P10 | Armándose | generando | Matías · **decidido v64: se queda Armándose** |
+| P11 | Versión A / B | tema A / B | Matías · **decidido v64: Tema A / B** |
+| P12 | Colegio nuevo, Plantilla para exportar | formato de documentos del colegio | Graciela · **decidido v64: Formato de los documentos** |
+| P13 | temas (repartir las preguntas entre 4 temas) | contenidos, unidades; "temas" son las versiones | Matías · **decidido v64: contenidos; "temas" solo para A / B** |
+| P14 | diseño curricular | el programa | Laura · **decidido v64: se queda diseño curricular** |
+| P15 | dadas / aprobadas / revisadas | una sola palabra | Graciela · **ya resuelto en v52 (glosario): aprobada vs dada en el aula** |
+| P16 | Clases sueltas | clases sin materia | Graciela · **decidido v64: Clases sin materia** |
+| P17 | palabras dudosas | palabras que no pude leer bien | Diego · **decidido v64: "3 palabras no se leen bien" con "Ver cuáles"** |
 
 ## Lo que funciona (mantener)
 

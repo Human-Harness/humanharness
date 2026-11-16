@@ -63,12 +63,12 @@ body{margin:0}
       </div>
       <span style="font-size: 14px; font-weight: 500;">Teacher</span>
       <span style="flex-grow: 1;"></span>
-      <a href="{{go.chat}}" style="height: 28px; padding: 0 10px; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: inherit; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path></svg>Asistente <span style="font-size: 14px; color: {{t.muted}}; font-weight: 400;">⌘J</span></a>
+      <a title="Abrir el Asistente · ⌘J" href="{{go.chat}}" style="height: 28px; padding: 0 10px; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: inherit; text-decoration: none; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path></svg>Asistente</a>
     </div>
     <div style="display: flex; height: 860px;">
       <nav aria-label="Secciones" style="width: 64px; flex-shrink: 0; background: {{t.rail}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px;">
         <sc-for list="{{rail}}" as="n" hint-placeholder-count="4">
-          <a href="{{n.href}}" style="width: 56px; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 11px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
+          <a href="{{n.href}}" style="width: 56px; border-radius: 12px; background: {{n.bg}}; color: {{n.ink}}; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; align-items: center; justify-content: center; text-decoration: none; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"></path></svg><span style="font-size: 12px; line-height: 1.15; text-align: center;">{{n.label}}</span></a>
         </sc-for>
       </nav>
       <main style="flex-grow: 1; padding: 16px 32px; display: flex; justify-content: center;">

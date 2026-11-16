@@ -3,8 +3,8 @@
 Every design decision Marco made on the teacher canvas, in one place. The findings behind them
 (who hit what, in which test round) are in `hallazgos.md`; the testing setup is in `user-testing/`.
 
-- **Canvas:** https://claude.ai/artifact/L6ecCUaJuku6Cq5xnME2kL (v63 at the time of writing).
-  Source snapshot of v63 in `canvas/project/` (206 components and boards). Check every link:
+- **Canvas:** https://claude.ai/artifact/L6ecCUaJuku6Cq5xnME2kL (v64 at the time of writing).
+  Source snapshot of v64 in `canvas/project/` (210 components and boards). Check every link:
   `node canvas/check.cjs canvas/project canvas/components.txt`.
 - **Flows map:** https://claude.ai/artifact/ULXM45E1PZtWgUDxCj798u
 - **Rule for every decision:** options with mockups first, Marco picks, then the canvas changes.
@@ -50,6 +50,10 @@ Every design decision Marco made on the teacher canvas, in one place. The findin
 | H53 | The Asistente does not say it asks before changing | **A**, text only: each text that offers a change says the teacher sees it first. Chat: "Te llevo ahí, o decime qué querés y te muestro el cambio antes de hacerlo." Empezar 2027: "la IA te propone preguntas nuevas y vos elegís cuáles cambiar." Rule for new copy: an offer to change something says it is shown first | v61 | https://claude.ai/artifact/6CpsNKKcwa72EwQo32x4Zo |
 | H54 | Export asks four things at once; Listo does not say which file is for what | **A**: the dialog shows "Vas a tener", the three parts with their use (para proyectar en el aula / para leer vos, no se reparte / para imprimir, una por alumno), the school style and "Exportar 3 PDF". Format, parts, one file or several, and bibliography sit behind "Cambiar formato, partes o bibliografía" (new board ExportOptions, with "Volver al resumen"). Listo repeats the use on each file. P09: the format "HTML para proyectar" is now "Para proyectar en pantalla" | v62 | https://claude.ai/artifact/1Pb2YvbXpui1wpqKqKWotZ |
 | H56 | Look-alike actions in Planificar and the source sheet | **A**: one field "¿Querés cambiar algo?" with "Pedir" and a link "Empezar de nuevo con otros datos"; the file shows "Ver acá" and "Guardar una copia" | v52 | https://claude.ai/artifact/5PKKAhrn2FCUJKnDupwFND |
+| H01 (rest) | Copiar a 2026 on one class or exam gave no clear confirmation | The row changes in place ("Copiada a 2026" / "Copiado a 2026") and a toast says "… copiada a 2026 como borrador" with Deshacer and "Ver en 2026". Exam rows got their own button. New boards SubjectCopiedExam(Dark) | v64 | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
+| H25 (rest) | The exam built from material approved directly | It goes through "antes de aprobar" too, with "Cada pregunta cita una de las 3 fuentes". New boards ExamReviewMaterialApproving(Dark) | v64 | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
+| P02–P17 | Words testers did not use | See `glosario.md`, "Group 5 words": Tema A / B, Sin armar, Cambió una fuente, Qué IA usa, Qué tan a fondo piensa, Formato de los documentos, Clases sin materia, "no se leen bien"; ⌘J only on hover; kept Aprobar, Biblioteca, Armándose, diseño curricular | v64 | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
+| R1–R3 | Open questions in `core-requests.md` | R1 **B**: darker grey and amber selection core-wide, secondary size a harness token (teacher 14 px). R2 **1B + 2B**: rail labels a harness option, teacher on, 12 px. R3 **C**: origin, what the core checks, then "Según quien lo hizo: …" | v64 (R2 size) | https://claude.ai/artifact/HUxLNiYSWL5tiFPEdPvhcp |
 
 ## Fixed without options
 

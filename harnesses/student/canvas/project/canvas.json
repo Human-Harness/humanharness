@@ -204,7 +204,7 @@
    "y": 0,
    "w": 1280,
    "h": 900,
-   "title": "2.2 · Nuevo tema (claro)",
+   "title": "2.2a · Nuevo tema · paso 1: qué aprender (claro)",
    "is_interactive": true,
    "page": "core-v1"
   },
@@ -213,13 +213,13 @@
    "y": 1000,
    "w": 1280,
    "h": 900,
-   "title": "2.2 · Nuevo tema (oscuro)",
+   "title": "2.2a · Nuevo tema · paso 1: qué aprender (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
   },
   "K-MapaInicial.dc.html": {
-   "x": 4080,
-   "y": 0,
+   "x": 2720,
+   "y": 2000,
    "w": 1280,
    "h": 900,
    "title": "2.3 · Mapa propuesto (claro)",
@@ -227,8 +227,8 @@
    "page": "core-v1"
   },
   "K-MapaInicialDark.dc.html": {
-   "x": 4080,
-   "y": 1000,
+   "x": 2720,
+   "y": 3000,
    "w": 1280,
    "h": 900,
    "title": "2.3 · Mapa propuesto (oscuro)",
@@ -236,7 +236,7 @@
    "page": "core-v1"
   },
   "K-Tema.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 2000,
    "w": 1280,
    "h": 900,
@@ -245,7 +245,7 @@
    "page": "core-v1"
   },
   "K-TemaDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 3000,
    "w": 1280,
    "h": 900,
@@ -254,8 +254,8 @@
    "page": "core-v1"
   },
   "K-EmpezarSesion.dc.html": {
-   "x": 2720,
-   "y": 2000,
+   "x": 1360,
+   "y": 4000,
    "w": 1280,
    "h": 900,
    "title": "3.2 · Empezar sesión (claro)",
@@ -263,8 +263,8 @@
    "page": "core-v1"
   },
   "K-EmpezarSesionDark.dc.html": {
-   "x": 2720,
-   "y": 3000,
+   "x": 1360,
+   "y": 5000,
    "w": 1280,
    "h": 900,
    "title": "3.2 · Empezar sesión (oscuro)",
@@ -272,7 +272,7 @@
    "page": "core-v1"
   },
   "K-Sesion.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 4000,
    "w": 1280,
    "h": 900,
@@ -281,7 +281,7 @@
    "page": "core-v1"
   },
   "K-SesionDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 5000,
    "w": 1280,
    "h": 900,
@@ -290,8 +290,8 @@
    "page": "core-v1"
   },
   "K-SesionCamino.dc.html": {
-   "x": 2720,
-   "y": 4000,
+   "x": 1360,
+   "y": 6000,
    "w": 1280,
    "h": 900,
    "title": "4.1b · Sesión con el Camino abierto (overlay izquierdo) (claro)",
@@ -299,8 +299,8 @@
    "page": "core-v1"
   },
   "K-SesionCaminoDark.dc.html": {
-   "x": 2720,
-   "y": 5000,
+   "x": 1360,
+   "y": 7000,
    "w": 1280,
    "h": 900,
    "title": "4.1b · Sesión con el Camino abierto (overlay izquierdo) (oscuro)",
@@ -308,8 +308,8 @@
    "page": "core-v1"
   },
   "K-Cierre.dc.html": {
-   "x": 4080,
-   "y": 4000,
+   "x": 2720,
+   "y": 6000,
    "w": 1280,
    "h": 900,
    "title": "4.2 · Cierre: resumen y flashcards (claro)",
@@ -317,8 +317,8 @@
    "page": "core-v1"
   },
   "K-CierreDark.dc.html": {
-   "x": 4080,
-   "y": 5000,
+   "x": 2720,
+   "y": 7000,
    "w": 1280,
    "h": 900,
    "title": "4.2 · Cierre: resumen y flashcards (oscuro)",
@@ -326,7 +326,7 @@
    "page": "core-v1"
   },
   "K-FinSesion.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 6000,
    "w": 1280,
    "h": 900,
@@ -335,7 +335,7 @@
    "page": "core-v1"
   },
   "K-FinSesionDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 7000,
    "w": 1280,
    "h": 900,
@@ -344,8 +344,8 @@
    "page": "core-v1"
   },
   "K-Flashcards.dc.html": {
-   "x": 1360,
-   "y": 6000,
+   "x": 0,
+   "y": 8000,
    "w": 1280,
    "h": 900,
    "title": "5.1 · Repaso de flashcards (claro)",
@@ -353,8 +353,8 @@
    "page": "core-v1"
   },
   "K-FlashcardsDark.dc.html": {
-   "x": 1360,
-   "y": 7000,
+   "x": 0,
+   "y": 9000,
    "w": 1280,
    "h": 900,
    "title": "5.1 · Repaso de flashcards (oscuro)",
@@ -362,8 +362,8 @@
    "page": "core-v1"
   },
   "K-Perfil.dc.html": {
-   "x": 2720,
-   "y": 6000,
+   "x": 1360,
+   "y": 8000,
    "w": 1280,
    "h": 900,
    "title": "5.2 · Ajustes del tutor (claro)",
@@ -371,8 +371,8 @@
    "page": "core-v1"
   },
   "K-PerfilDark.dc.html": {
-   "x": 2720,
-   "y": 7000,
+   "x": 1360,
+   "y": 9000,
    "w": 1280,
    "h": 900,
    "title": "5.2 · Ajustes del tutor (oscuro)",
@@ -380,8 +380,8 @@
    "page": "core-v1"
   },
   "K-InicioVacio.dc.html": {
-   "x": 4080,
-   "y": 6000,
+   "x": 2720,
+   "y": 8000,
    "w": 1280,
    "h": 900,
    "title": "2.0 · Inicio la primera vez (¿Por dónde empezás?) (claro)",
@@ -389,8 +389,8 @@
    "page": "core-v1"
   },
   "K-InicioVacioDark.dc.html": {
-   "x": 4080,
-   "y": 7000,
+   "x": 2720,
+   "y": 9000,
    "w": 1280,
    "h": 900,
    "title": "2.0 · Inicio la primera vez (¿Por dónde empezás?) (oscuro)",
@@ -398,7 +398,7 @@
    "page": "core-v1"
   },
   "K-SinConexion.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 8000,
    "w": 1280,
    "h": 900,
@@ -407,7 +407,7 @@
    "page": "core-v1"
   },
   "K-SinConexionDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 9000,
    "w": 1280,
    "h": 900,
@@ -416,8 +416,8 @@
    "page": "core-v1"
   },
   "K-Busqueda.dc.html": {
-   "x": 1360,
-   "y": 8000,
+   "x": 0,
+   "y": 10000,
    "w": 1280,
    "h": 900,
    "title": "6.2 · Búsqueda ⌘K (claro)",
@@ -425,8 +425,8 @@
    "page": "core-v1"
   },
   "K-BusquedaDark.dc.html": {
-   "x": 1360,
-   "y": 9000,
+   "x": 0,
+   "y": 11000,
    "w": 1280,
    "h": 900,
    "title": "6.2 · Búsqueda ⌘K (oscuro)",
@@ -434,8 +434,8 @@
    "page": "core-v1"
   },
   "K-Bienvenida.dc.html": {
-   "x": 2720,
-   "y": 8000,
+   "x": 1360,
+   "y": 10000,
    "w": 1280,
    "h": 900,
    "title": "1.1 · Bienvenida (claro)",
@@ -443,8 +443,8 @@
    "page": "core-v1"
   },
   "K-BienvenidaDark.dc.html": {
-   "x": 2720,
-   "y": 9000,
+   "x": 1360,
+   "y": 11000,
    "w": 1280,
    "h": 900,
    "title": "1.1 · Bienvenida (oscuro)",
@@ -452,8 +452,8 @@
    "page": "core-v1"
   },
   "K-QuienEstudia.dc.html": {
-   "x": 4080,
-   "y": 8000,
+   "x": 2720,
+   "y": 10000,
    "w": 1280,
    "h": 900,
    "title": "1.2 · Quién estudia (nombre, edad, idioma) (claro)",
@@ -461,8 +461,8 @@
    "page": "core-v1"
   },
   "K-QuienEstudiaDark.dc.html": {
-   "x": 4080,
-   "y": 9000,
+   "x": 2720,
+   "y": 11000,
    "w": 1280,
    "h": 900,
    "title": "1.2 · Quién estudia (nombre, edad, idioma) (oscuro)",
@@ -470,7 +470,7 @@
    "page": "core-v1"
   },
   "K-AvisoMenores.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 10000,
    "w": 1280,
    "h": 900,
@@ -479,7 +479,7 @@
    "page": "core-v1"
   },
   "K-AvisoMenoresDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 11000,
    "w": 1280,
    "h": 900,
@@ -488,8 +488,8 @@
    "page": "core-v1"
   },
   "K-ConocerteResultado.dc.html": {
-   "x": 1360,
-   "y": 10000,
+   "x": 0,
+   "y": 12000,
    "w": 1280,
    "h": 900,
    "title": "1.4 · Lo que entendí de vos (claro)",
@@ -497,8 +497,8 @@
    "page": "core-v1"
   },
   "K-ConocerteResultadoDark.dc.html": {
-   "x": 1360,
-   "y": 11000,
+   "x": 0,
+   "y": 13000,
    "w": 1280,
    "h": 900,
    "title": "1.4 · Lo que entendí de vos (oscuro)",
@@ -506,8 +506,8 @@
    "page": "core-v1"
   },
   "K-Diagnostico.dc.html": {
-   "x": 2720,
-   "y": 10000,
+   "x": 1360,
+   "y": 12000,
    "w": 1280,
    "h": 900,
    "title": "2.4 · Diagnóstico de 5 preguntas (claro)",
@@ -515,8 +515,8 @@
    "page": "core-v1"
   },
   "K-DiagnosticoDark.dc.html": {
-   "x": 2720,
-   "y": 11000,
+   "x": 1360,
+   "y": 13000,
    "w": 1280,
    "h": 900,
    "title": "2.4 · Diagnóstico de 5 preguntas (oscuro)",
@@ -524,8 +524,8 @@
    "page": "core-v1"
   },
   "K-SumarConcepto.dc.html": {
-   "x": 4080,
-   "y": 10000,
+   "x": 2720,
+   "y": 12000,
    "w": 1280,
    "h": 900,
    "title": "2.5 · Editar mapa: sumar un concepto (claro)",
@@ -533,8 +533,8 @@
    "page": "core-v1"
   },
   "K-SumarConceptoDark.dc.html": {
-   "x": 4080,
-   "y": 11000,
+   "x": 2720,
+   "y": 13000,
    "w": 1280,
    "h": 900,
    "title": "2.5 · Editar mapa: sumar un concepto (oscuro)",
@@ -542,7 +542,7 @@
    "page": "core-v1"
   },
   "K-Concepto.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 12000,
    "w": 1280,
    "h": 900,
@@ -551,7 +551,7 @@
    "page": "core-v1"
   },
   "K-ConceptoDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 13000,
    "w": 1280,
    "h": 900,
@@ -560,8 +560,8 @@
    "page": "core-v1"
   },
   "K-TemaResumenes.dc.html": {
-   "x": 1360,
-   "y": 12000,
+   "x": 0,
+   "y": 14000,
    "w": 1280,
    "h": 900,
    "title": "3.4 · Tema › Resúmenes (claro)",
@@ -569,8 +569,8 @@
    "page": "core-v1"
   },
   "K-TemaResumenesDark.dc.html": {
-   "x": 1360,
-   "y": 13000,
+   "x": 0,
+   "y": 15000,
    "w": 1280,
    "h": 900,
    "title": "3.4 · Tema › Resúmenes (oscuro)",
@@ -578,8 +578,8 @@
    "page": "core-v1"
   },
   "K-TemaFlashcards.dc.html": {
-   "x": 2720,
-   "y": 12000,
+   "x": 1360,
+   "y": 14000,
    "w": 1280,
    "h": 900,
    "title": "3.5 · Tema › Flashcards (claro)",
@@ -587,8 +587,8 @@
    "page": "core-v1"
   },
   "K-TemaFlashcardsDark.dc.html": {
-   "x": 2720,
-   "y": 13000,
+   "x": 1360,
+   "y": 15000,
    "w": 1280,
    "h": 900,
    "title": "3.5 · Tema › Flashcards (oscuro)",
@@ -596,8 +596,8 @@
    "page": "core-v1"
   },
   "K-TemaMaterial.dc.html": {
-   "x": 4080,
-   "y": 12000,
+   "x": 2720,
+   "y": 14000,
    "w": 1280,
    "h": 900,
    "title": "3.6 · Tema › Material (claro)",
@@ -605,8 +605,8 @@
    "page": "core-v1"
   },
   "K-TemaMaterialDark.dc.html": {
-   "x": 4080,
-   "y": 13000,
+   "x": 2720,
+   "y": 15000,
    "w": 1280,
    "h": 900,
    "title": "3.6 · Tema › Material (oscuro)",
@@ -614,7 +614,7 @@
    "page": "core-v1"
   },
   "K-CambiosMapa.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 14000,
    "w": 1280,
    "h": 900,
@@ -623,7 +623,7 @@
    "page": "core-v1"
   },
   "K-CambiosMapaDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 15000,
    "w": 1280,
    "h": 900,
@@ -632,8 +632,8 @@
    "page": "core-v1"
   },
   "K-TemaSesiones.dc.html": {
-   "x": 1360,
-   "y": 14000,
+   "x": 0,
+   "y": 16000,
    "w": 1280,
    "h": 900,
    "title": "3.8 · Tema › Sesiones anteriores (claro)",
@@ -641,8 +641,8 @@
    "page": "core-v1"
   },
   "K-TemaSesionesDark.dc.html": {
-   "x": 1360,
-   "y": 15000,
+   "x": 0,
+   "y": 17000,
    "w": 1280,
    "h": 900,
    "title": "3.8 · Tema › Sesiones anteriores (oscuro)",
@@ -650,8 +650,8 @@
    "page": "core-v1"
   },
   "K-TemaGlosario.dc.html": {
-   "x": 2720,
-   "y": 14000,
+   "x": 1360,
+   "y": 16000,
    "w": 1280,
    "h": 900,
    "title": "3.9 · Tema › Preguntas abiertas y glosario (claro)",
@@ -659,8 +659,8 @@
    "page": "core-v1"
   },
   "K-TemaGlosarioDark.dc.html": {
-   "x": 2720,
-   "y": 15000,
+   "x": 1360,
+   "y": 17000,
    "w": 1280,
    "h": 900,
    "title": "3.9 · Tema › Preguntas abiertas y glosario (oscuro)",
@@ -668,8 +668,8 @@
    "page": "core-v1"
   },
   "K-Calentamiento.dc.html": {
-   "x": 4080,
-   "y": 14000,
+   "x": 2720,
+   "y": 16000,
    "w": 1280,
    "h": 900,
    "title": "4.0 · Calentamiento (claro)",
@@ -677,8 +677,8 @@
    "page": "core-v1"
   },
   "K-CalentamientoDark.dc.html": {
-   "x": 4080,
-   "y": 15000,
+   "x": 2720,
+   "y": 17000,
    "w": 1280,
    "h": 900,
    "title": "4.0 · Calentamiento (oscuro)",
@@ -686,7 +686,7 @@
    "page": "core-v1"
   },
   "K-SesionFeynman.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 16000,
    "w": 1280,
    "h": 900,
@@ -695,7 +695,7 @@
    "page": "core-v1"
   },
   "K-SesionFeynmanDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 17000,
    "w": 1280,
    "h": 900,
@@ -704,8 +704,8 @@
    "page": "core-v1"
   },
   "K-SesionEjemplos.dc.html": {
-   "x": 1360,
-   "y": 16000,
+   "x": 0,
+   "y": 18000,
    "w": 1280,
    "h": 900,
    "title": "4.5 · Sesión ejemplos resueltos (claro)",
@@ -713,8 +713,8 @@
    "page": "core-v1"
   },
   "K-SesionEjemplosDark.dc.html": {
-   "x": 1360,
-   "y": 17000,
+   "x": 0,
+   "y": 19000,
    "w": 1280,
    "h": 900,
    "title": "4.5 · Sesión ejemplos resueltos (oscuro)",
@@ -722,8 +722,8 @@
    "page": "core-v1"
   },
   "K-SesionRecuperacion.dc.html": {
-   "x": 2720,
-   "y": 16000,
+   "x": 1360,
+   "y": 18000,
    "w": 1280,
    "h": 900,
    "title": "4.6 · Sesión práctica de recuperación (claro)",
@@ -731,8 +731,8 @@
    "page": "core-v1"
   },
   "K-SesionRecuperacionDark.dc.html": {
-   "x": 2720,
-   "y": 17000,
+   "x": 1360,
+   "y": 19000,
    "w": 1280,
    "h": 900,
    "title": "4.6 · Sesión práctica de recuperación (oscuro)",
@@ -740,8 +740,8 @@
    "page": "core-v1"
   },
   "K-SesionElaboracion.dc.html": {
-   "x": 4080,
-   "y": 16000,
+   "x": 2720,
+   "y": 18000,
    "w": 1280,
    "h": 900,
    "title": "4.7 · Sesión elaboración (claro)",
@@ -749,8 +749,8 @@
    "page": "core-v1"
   },
   "K-SesionElaboracionDark.dc.html": {
-   "x": 4080,
-   "y": 17000,
+   "x": 2720,
+   "y": 19000,
    "w": 1280,
    "h": 900,
    "title": "4.7 · Sesión elaboración (oscuro)",
@@ -758,7 +758,7 @@
    "page": "core-v1"
   },
   "K-SesionIntercalada.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 18000,
    "w": 1280,
    "h": 900,
@@ -767,7 +767,7 @@
    "page": "core-v1"
   },
   "K-SesionIntercaladaDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 19000,
    "w": 1280,
    "h": 900,
@@ -776,8 +776,8 @@
    "page": "core-v1"
   },
   "K-SesionProblemas.dc.html": {
-   "x": 1360,
-   "y": 18000,
+   "x": 0,
+   "y": 20000,
    "w": 1280,
    "h": 900,
    "title": "4.9 · Sesión basada en problemas (claro)",
@@ -785,8 +785,8 @@
    "page": "core-v1"
   },
   "K-SesionProblemasDark.dc.html": {
-   "x": 1360,
-   "y": 19000,
+   "x": 0,
+   "y": 21000,
    "w": 1280,
    "h": 900,
    "title": "4.9 · Sesión basada en problemas (oscuro)",
@@ -794,8 +794,8 @@
    "page": "core-v1"
   },
   "K-EscaleraAyuda.dc.html": {
-   "x": 2720,
-   "y": 18000,
+   "x": 1360,
+   "y": 20000,
    "w": 1280,
    "h": 900,
    "title": "4.10 · Escalera de ayuda (claro)",
@@ -803,8 +803,8 @@
    "page": "core-v1"
   },
   "K-EscaleraAyudaDark.dc.html": {
-   "x": 2720,
-   "y": 19000,
+   "x": 1360,
+   "y": 21000,
    "w": 1280,
    "h": 900,
    "title": "4.10 · Escalera de ayuda (oscuro)",
@@ -812,8 +812,8 @@
    "page": "core-v1"
   },
   "K-CambiarMetodo.dc.html": {
-   "x": 4080,
-   "y": 18000,
+   "x": 2720,
+   "y": 20000,
    "w": 1280,
    "h": 900,
    "title": "4.11 · Cambiar de método a mitad (claro)",
@@ -821,8 +821,8 @@
    "page": "core-v1"
   },
   "K-CambiarMetodoDark.dc.html": {
-   "x": 4080,
-   "y": 19000,
+   "x": 2720,
+   "y": 21000,
    "w": 1280,
    "h": 900,
    "title": "4.11 · Cambiar de método a mitad (oscuro)",
@@ -830,7 +830,7 @@
    "page": "core-v1"
   },
   "K-FinTiempo.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 20000,
    "w": 1280,
    "h": 900,
@@ -839,7 +839,7 @@
    "page": "core-v1"
   },
   "K-FinTiempoDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 21000,
    "w": 1280,
    "h": 900,
@@ -848,8 +848,8 @@
    "page": "core-v1"
   },
   "K-LimiteUso.dc.html": {
-   "x": 1360,
-   "y": 20000,
+   "x": 0,
+   "y": 22000,
    "w": 1280,
    "h": 900,
    "title": "6.3 · Límite de uso (claro)",
@@ -857,8 +857,8 @@
    "page": "core-v1"
   },
   "K-LimiteUsoDark.dc.html": {
-   "x": 1360,
-   "y": 21000,
+   "x": 0,
+   "y": 23000,
    "w": 1280,
    "h": 900,
    "title": "6.3 · Límite de uso (oscuro)",
@@ -866,8 +866,8 @@
    "page": "core-v1"
   },
   "K-RepasoTerminado.dc.html": {
-   "x": 2720,
-   "y": 20000,
+   "x": 1360,
+   "y": 22000,
    "w": 1280,
    "h": 900,
    "title": "5.3 · Repaso terminado (claro)",
@@ -875,8 +875,8 @@
    "page": "core-v1"
   },
   "K-RepasoTerminadoDark.dc.html": {
-   "x": 2720,
-   "y": 21000,
+   "x": 1360,
+   "y": 23000,
    "w": 1280,
    "h": 900,
    "title": "5.3 · Repaso terminado (oscuro)",
@@ -884,8 +884,8 @@
    "page": "core-v1"
   },
   "K-AjustesPerfil.dc.html": {
-   "x": 4080,
-   "y": 20000,
+   "x": 2720,
+   "y": 22000,
    "w": 1280,
    "h": 900,
    "title": "5.4 · Ajustes › Perfil (claro)",
@@ -893,8 +893,8 @@
    "page": "core-v1"
   },
   "K-AjustesPerfilDark.dc.html": {
-   "x": 4080,
-   "y": 21000,
+   "x": 2720,
+   "y": 23000,
    "w": 1280,
    "h": 900,
    "title": "5.4 · Ajustes › Perfil (oscuro)",
@@ -902,7 +902,7 @@
    "page": "core-v1"
   },
   "K-AjustesMetodos.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 22000,
    "w": 1280,
    "h": 900,
@@ -911,7 +911,7 @@
    "page": "core-v1"
   },
   "K-AjustesMetodosDark.dc.html": {
-   "x": 0,
+   "x": 4080,
    "y": 23000,
    "w": 1280,
    "h": 900,
@@ -920,8 +920,8 @@
    "page": "core-v1"
   },
   "K-PrepararPrueba.dc.html": {
-   "x": 4080,
-   "y": 2000,
+   "x": 2720,
+   "y": 4000,
    "w": 1280,
    "h": 900,
    "title": "3.2b · Preparar una prueba (claro)",
@@ -929,8 +929,8 @@
    "page": "core-v1"
   },
   "K-PrepararPruebaDark.dc.html": {
-   "x": 4080,
-   "y": 3000,
+   "x": 2720,
+   "y": 5000,
    "w": 1280,
    "h": 900,
    "title": "3.2b · Preparar una prueba (oscuro)",
@@ -938,8 +938,8 @@
    "page": "core-v1"
   },
   "K-AjustesUso.dc.html": {
-   "x": 1360,
-   "y": 22000,
+   "x": 0,
+   "y": 24000,
    "w": 1280,
    "h": 900,
    "title": "5.6 · Ajustes › Uso (pestaña del core) (claro)",
@@ -947,8 +947,8 @@
    "page": "core-v1"
   },
   "K-AjustesUsoDark.dc.html": {
-   "x": 1360,
-   "y": 23000,
+   "x": 0,
+   "y": 25000,
    "w": 1280,
    "h": 900,
    "title": "5.6 · Ajustes › Uso (pestaña del core) (oscuro)",
@@ -956,8 +956,8 @@
    "page": "core-v1"
   },
   "K-EditarMapa.dc.html": {
-   "x": 1360,
-   "y": 2000,
+   "x": 0,
+   "y": 4000,
    "w": 1280,
    "h": 900,
    "title": "3.1b · Editar el mapa de un tema (claro)",
@@ -965,8 +965,8 @@
    "page": "core-v1"
   },
   "K-EditarMapaDark.dc.html": {
-   "x": 1360,
-   "y": 3000,
+   "x": 0,
+   "y": 5000,
    "w": 1280,
    "h": 900,
    "title": "3.1b · Editar el mapa de un tema (oscuro)",
@@ -974,8 +974,8 @@
    "page": "core-v1"
   },
   "K-TerminarPorHoy.dc.html": {
-   "x": 1360,
-   "y": 4000,
+   "x": 0,
+   "y": 6000,
    "w": 1280,
    "h": 900,
    "title": "4.1b · Terminar por hoy (confirmación) (claro)",
@@ -983,11 +983,65 @@
    "page": "core-v1"
   },
   "K-TerminarPorHoyDark.dc.html": {
-   "x": 1360,
-   "y": 5000,
+   "x": 0,
+   "y": 7000,
    "w": 1280,
    "h": 900,
    "title": "4.1b · Terminar por hoy (confirmación) (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema2.dc.html": {
+   "x": 4080,
+   "y": 0,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2b · Nuevo tema · paso 2: para qué y nivel (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema2Dark.dc.html": {
+   "x": 4080,
+   "y": 1000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2b · Nuevo tema · paso 2: para qué y nivel (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema3.dc.html": {
+   "x": 0,
+   "y": 2000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2c · Nuevo tema · paso 3: fotos del cuaderno (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema3Dark.dc.html": {
+   "x": 0,
+   "y": 3000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2c · Nuevo tema · paso 3: fotos del cuaderno (oscuro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema4.dc.html": {
+   "x": 1360,
+   "y": 2000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2d · Nuevo tema · paso 4: último detalle (claro)",
+   "is_interactive": true,
+   "page": "core-v1"
+  },
+  "K-NuevoTema4Dark.dc.html": {
+   "x": 1360,
+   "y": 3000,
+   "w": 1280,
+   "h": 900,
+   "title": "2.2d · Nuevo tema · paso 4: último detalle (oscuro)",
    "is_interactive": true,
    "page": "core-v1"
   }
@@ -1122,6 +1176,12 @@
   "K-InicioDark.dc.html",
   "K-NuevoTema.dc.html",
   "K-NuevoTemaDark.dc.html",
+  "K-NuevoTema2.dc.html",
+  "K-NuevoTema2Dark.dc.html",
+  "K-NuevoTema3.dc.html",
+  "K-NuevoTema3Dark.dc.html",
+  "K-NuevoTema4.dc.html",
+  "K-NuevoTema4Dark.dc.html",
   "K-MapaInicial.dc.html",
   "K-MapaInicialDark.dc.html",
   "K-Tema.dc.html",

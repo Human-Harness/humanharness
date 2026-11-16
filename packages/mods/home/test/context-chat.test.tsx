@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { TaskContext } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 afterEach(cleanup);
 
@@ -83,7 +84,8 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     const pill = await screen.findByRole("button", { name: CHIP });
     expect(pill.closest(".hh-topbar-slot")).toBeTruthy();
     expect(pill.textContent).toContain("Context 20%");
-    // One meter on screen, the flow side's ring: the pill reads it out as text.
+    // One meter, the flow side's ring in the folded path overlay: the pill reads it out as text.
+    await openSide();
     const meters = screen.getAllByRole("meter", { name: "Context in use" });
     expect(meters).toHaveLength(1);
     expect(meters[0].closest(".hh-flow-side")).toBeTruthy();

@@ -20,3 +20,26 @@ export async function seeUsage(client: FakeClient, text: string | RegExp) {
   fireEvent.click(screen.getByRole("button", { name: /^Context \d+%$/ }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
+
+/** The bar's button for an overlay (task view one column), by the overlay it controls. */
+async function overlayButton(id: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const b = document.querySelector<HTMLElement>(`button[aria-controls="${id}"]`);
+    if (!b) throw new Error(`no button for ${id}`);
+    return b;
+  });
+}
+
+/** Unfolds the left overlay: the path, or the material / Plugins / harness panel without one. */
+export async function openSide(): Promise<HTMLElement> {
+  const button = await overlayButton("hh-overlay-path");
+  if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+  return waitFor(() => document.getElementById("hh-overlay-path") ?? Promise.reject(new Error("no left overlay")));
+}
+
+/** Unfolds Sidekick's overlay from its button in the bar. */
+export async function openSidekick(): Promise<HTMLElement> {
+  const button = await overlayButton("hh-overlay-sidekick");
+  if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+  return waitFor(() => document.getElementById("hh-overlay-sidekick") ?? Promise.reject(new Error("no Sidekick overlay")));
+}

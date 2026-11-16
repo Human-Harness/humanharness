@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { AttentionItemView, AttentionView, PluginPanelView, PluginSurfaceView } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 /**
  * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
@@ -262,6 +263,7 @@ describe("Attention inbox", () => {
       c.surfaceView = surface({ panels: [DIGEST, QUEUE] });
       c.attentionTarget = { kind: "panel", plugin: "oncall", panel: "queue", focus: "INC-42" };
       await open(c);
+      await openSide();
       await screen.findByRole("region", { name: "Plugins" });
       expect(frame().getAttribute("src")).toBe(DIGEST.url);
       await openItem();
@@ -282,12 +284,15 @@ describe("Attention inbox", () => {
       c.attentionTarget = { kind: "panel", plugin: "oncall", panel: "queue", focus: "INC-42" };
       const spies = watchFrames();
       await open(c);
+      await openSide();
       await screen.findByRole("region", { name: "Plugins" });
+      // The frame the overlay's button drew loaded before the watch could see it: a dev reload draws one it sees.
+      act(() => c.emitSurface(surface({ panels: [QUEUE], reloads: { oncall: 1 } })));
       const posts = await loadedFrame(spies);
       await openItem();
       await waitFor(() => expect(posts).toHaveBeenCalledWith({ hh: 1, event: "focus", focus: "INC-42" }, "*"));
       // The plugin's dist changed (dev): a fresh frame, which loads with no focus.
-      act(() => c.emitSurface(surface({ panels: [QUEUE], reloads: { oncall: 1 } })));
+      act(() => c.emitSurface(surface({ panels: [QUEUE], reloads: { oncall: 2 } })));
       const fresh = await loadedFrame(spies);
       expect(sent(fresh).filter((m) => m.event === "focus")).toEqual([{ hh: 1, event: "focus", focus: null }]);
     });

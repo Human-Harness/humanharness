@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { openSide, openSidekick } from "./one-bar";
 import { render, renderIn } from "./home-block";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +45,15 @@ async function open(c: FakeClient) {
   const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
   // The Sidekick state has loaded (when there is one) before anything is typed.
   if (c.state.sidekick) await screen.findByRole("button", { name: /Sidekick is/ });
+  // The tasks have loaded too: a task that arrives later folds an overlay opened before it.
+  await waitFor(() => expect(c.tasks.current === null || document.querySelector(".hh-tb-switch") !== null).toBe(true));
+  await act(async () => undefined);
   return box;
+}
+/** The harness's own panel: in Sidekick's overlay, behind its Sidekick / Harness switch (task view one column). */
+async function harnessView() {
+  const overlay = await openSidekick();
+  fireEvent.click(within(within(overlay).getByRole("group", { name: "Show" })).getByRole("button", { name: "Harness" }));
 }
 const type = (box: HTMLTextAreaElement, text: string) => fireEvent.change(box, { target: { value: text } });
 const enter = (box: HTMLTextAreaElement, mods: Partial<KeyboardEventInit> = {}) => fireEvent.keyDown(box, { key: "Enter", ...mods });
@@ -102,12 +111,11 @@ describe("Sidekick in the chat", () => {
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
     const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
-    // Collapsed, the rail sits beside the harness's own panel.
-    fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
     await act(() => new Promise((r) => setTimeout(r, 20))); // the plan windows load (the meter is in the context chip now)
     type(box, "make it better");
     enter(box);
     await screen.findByRole("button", { name: "Reviewing…" });
+    await harnessView();
     fireEvent.click(screen.getByRole("button", { name: "tidy" }));
     await screen.findByRole("alertdialog");
     await act(async () => resolve({ kind: "send" }));
@@ -291,24 +299,24 @@ describe("Sidekick in the chat", () => {
     expect(document.querySelector(".hh-sk-backdrop")).toBeNull();
   });
 
-  it("the panel collapses to the rail and opens again", async () => {
+  it("the panel opens folded from the bar's Sidekick button and folds again (task view one column)", async () => {
     const c = client();
     await open(c);
-    const collapse = await screen.findByRole("button", { name: "Collapse Sidekick" });
-    collapse.focus();
-    fireEvent.click(collapse);
     expect(screen.queryByRole("complementary", { name: "Sidekick" })).toBeNull();
-    // Focus follows to the counterpart button instead of dropping to the body.
-    const rail = screen.getByRole("button", { name: "Open Sidekick" });
-    await waitFor(() => expect(document.activeElement).toBe(rail));
-    fireEvent.click(rail);
+    const button = screen.getByRole("button", { name: "Open Sidekick" });
+    fireEvent.click(button);
     expect(await screen.findByRole("complementary", { name: "Sidekick" })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Collapse Sidekick" })));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Sidekick" }));
+    expect(screen.queryByRole("complementary", { name: "Sidekick" })).toBeNull();
+    // Focus follows to the counterpart button instead of dropping to the body.
+    await waitFor(() => expect(document.activeElement).toBe(button));
   });
 
   it("the tier in the panel foot opens Settings › Sidekick", async () => {
     const c = client();
     await open(c);
+    await openSidekick();
     fireEvent.click(await screen.findByRole("button", { name: "Tier: Light" }));
     expect(await screen.findByRole("tab", { name: "Sidekick", selected: true })).toBeTruthy();
   });
@@ -338,10 +346,12 @@ describe("Sidekick in the chat", () => {
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
     await screen.findByRole("textbox");
-    const side = (await screen.findByText("Harness side")).parentElement;
-    expect(side?.tagName).toBe("ASIDE");
-    expect(side?.className).toBe("hh-side");
-    expect(document.querySelector(".hh-sk-rail, .hh-sk-panel")).toBeNull();
+    // No right overlay: the harness's side follows in the left one (task view one column).
+    const left = await openSide();
+    const side = within(left).getByText("Harness side").parentElement;
+    expect(side?.className).toBe("hh-overlay-section");
+    expect(document.querySelector("aside.hh-side, .hh-sk-rail, .hh-sk-panel, .hh-overlay-right")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open Sidekick/ })).toBeNull();
   });
 
   it("slim (interview) mode with state.sidekick: no toggle, no rail, no review", async () => {
@@ -388,10 +398,13 @@ async function openWithPreflight(c: FakeClient) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
-  fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
   await act(() => new Promise((r) => setTimeout(r, 20))); // the plan windows load (the meter is in the context chip now)
+  await harnessView();
   fireEvent.click(screen.getByRole("button", { name: "tidy" }));
   await screen.findByRole("alertdialog");
+  // Back to the cards, folded: the Sidekick button says what waits.
+  fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "Sidekick" }));
+  fireEvent.click(screen.getByRole("button", { name: "Collapse Sidekick" }));
   return box;
 }
 
@@ -439,10 +452,11 @@ describe("Sidekick when a send can't go out, or the panel can't show", () => {
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
     await screen.findByRole("button", { name: /Sidekick is/ });
-    const side = (await screen.findByText("Harness side")).parentElement;
-    expect(side?.tagName).toBe("ASIDE");
-    expect(side?.className).toBe("hh-side");
-    expect(document.querySelector(".hh-sk-rail, .hh-sk-panel")).toBeNull();
+    const left = await openSide();
+    const side = within(left).getByText("Harness side").parentElement;
+    expect(side?.className).toBe("hh-overlay-section");
+    expect(document.querySelector("aside.hh-side, .hh-sk-rail, .hh-sk-panel, .hh-overlay-right")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open Sidekick/ })).toBeNull();
   });
 });
 
@@ -489,6 +503,7 @@ describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
   it("an after-reply card: Put in composer fills the field and resolves used; Dismiss resolves dismissed", async () => {
     const c = client();
     const box = await open(c);
+    await openSidekick();
     act(() => c.emitSidekick({ ...SK_ON, cards: [AFTER] }));
     fireEvent.click(await screen.findByRole("button", { name: "Put in composer" }));
     expect(box.value).toBe("Add a source for claim 2");
@@ -503,6 +518,7 @@ describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
     const c = client();
     c.tasks = { current: { id: "t1", action: "session", status: "waiting" }, actions: {}, notes: [] };
     const box = await open(c);
+    await openSidekick();
     box.focus();
     act(() => c.emitSidekick({ ...SK_ON, cards: [hu("h1", { kind: "context", share: 0.8 }), hu("h2", { kind: "repeated", topic: "APA", decision: "Use APA 7." })] }));
     fireEvent.click(await screen.findByRole("button", { name: "Save as decision" }));
@@ -519,6 +535,7 @@ describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
     const c = client();
     c.tasks = { current: { id: "t1", action: "session", status: "waiting" }, actions: {}, notes: [] };
     await open(c);
+    await openSidekick();
     act(() => c.emitSidekick({ ...SK_ON, cards: [hu("h1", { kind: "context", share: 0.8 })] }));
     const finish = await screen.findByRole("button", { name: "Finish task" });
     fireEvent.click(finish);
@@ -542,7 +559,6 @@ describe("several sidekicks in the chat (spec §7, §2a.7)", () => {
     act(() => c.emitSidekick({ ...SK_ON, cards: [HEADS_UP], spent: 1300 }));
     await act(async () => undefined);
     expect(live()).toBe("Rulo has a new card.");
-    fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
     expect(screen.getByRole("button", { name: "Sidekick · 1 waiting" }).querySelector("svg.hh-icon-mentor")).toBeTruthy();
   });
 
@@ -550,6 +566,7 @@ describe("several sidekicks in the chat (spec §7, §2a.7)", () => {
     const c = client();
     c.sidekickPresets = [GUARD];
     await open(c);
+    await openSidekick();
     expect(await screen.findByRole("region", { name: "Suggested by the harness" })).toBeTruthy();
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { presetsOffered: true }]));
     // Still there while the panel stays open; gone once collapsed and opened again.

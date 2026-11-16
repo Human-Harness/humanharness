@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SidekickCard, SidekickState } from "../src/client";
-import { SidekickPanel, SidekickRail } from "../src/sidekick/SidekickPanel";
+import { SidekickButton, SidekickPanel } from "../src/sidekick/SidekickPanel";
 import { SidekickMark } from "../src/sidekick/mark";
 import { wordDiff } from "../src/sidekick/word-diff";
 import { renderIn } from "./render";
@@ -246,7 +246,7 @@ describe("heads-ups (spec §4.3, §7)", () => {
 describe("several sidekicks in the panel (spec §7)", () => {
   const RULO = { id: "rulo", name: "Rulo", mark: "mentor" };
   const base = { prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z" };
-  const rail = (state: SidekickState, onOpen = vi.fn()) => renderIn("en", <SidekickRail state={state} onOpen={onOpen} />).then(() => onOpen);
+  const rail = (state: SidekickState, onOpen = vi.fn()) => renderIn("en", <SidekickButton state={state} expanded={false} onOpen={onOpen} />).then(() => onOpen);
 
   it("every card names who speaks", async () => {
     await panel({ ...SK_ON, cards: [{ ...base, id: "a", moment: "after", kind: "next", speaker: RULO, after: { next: "Ask for sources", lesson: "Sources first." } }] });

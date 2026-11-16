@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** The width under which the Sidekick panel and rail hide (styles.css `.hh-sk-panel, .hh-sk-rail`). */
+/** The width under which Sidekick has no overlay (ChatView): no button, no panel, no review. */
 const NARROW = "(max-width: 720px)";
 
 function matches(): boolean {

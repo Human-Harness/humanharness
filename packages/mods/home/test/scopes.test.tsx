@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 afterEach(cleanup);
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -52,6 +53,7 @@ describe("scopes in the window", () => {
   it("asks for a scope before a required action and sends nothing", async () => {
     const client = scopedClient();
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Study", { action: "study" })}>go</button>} />);
+    await openSide();
     fireEvent.click(await screen.findByRole("button", { name: "go" }));
     expect((await screen.findAllByText("First choose which topic to work on.")).length).toBeGreaterThan(0);
     expect(client.sent).toEqual([]);
@@ -88,6 +90,7 @@ describe("scopes in the window", () => {
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Study", { action: "study" })}>go</button>} />);
     const select = (await screen.findByRole("combobox", { name: "Choose topic" })) as HTMLSelectElement;
     expect(select.disabled).toBe(false);
+    await openSide();
     fireEvent.click(await screen.findByRole("button", { name: "go" }));
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose topic" }) as HTMLSelectElement).disabled).toBe(true));
     expect((screen.getByRole("button", { name: "New topic" }) as HTMLButtonElement).disabled).toBe(true);

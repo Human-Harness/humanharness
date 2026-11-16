@@ -8,6 +8,7 @@ import { type HarnessAppProps, HarnessApp, PluginSlot } from "../../../ui/src";
 import type { PluginChipView, PluginPanelView, PluginSurfaceView } from "../../../ui/src/client";
 import { reloadOf } from "../../../ui/src/plugins/surface";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 /**
  * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
@@ -56,15 +57,22 @@ function makeClient(opts: { plugins?: boolean; flow?: boolean; view?: PluginSurf
   if (opts.view) c.surfaceView = opts.view;
   return c;
 }
-async function open(c: FakeClient, props: Partial<HarnessAppProps> = {}) {
+async function open(c: FakeClient, props: Partial<HarnessAppProps> = {}, side = false) {
   render(<HarnessApp client={c} {...props} />);
   const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
+  // The panels sit in the left overlay (task view one column), folded until its button opens it.
+  if (side) await openSide();
 }
 const frames = () => [...document.querySelectorAll("iframe")];
 const section = () => screen.queryByRole("region", { name: "Plugins" });
+/** The Plugins section, in the left overlay once its button unfolds it (task view one column). */
+async function plugins() {
+  await openSide();
+  return screen.findByRole("region", { name: "Plugins" });
+}
 
 describe("plugin slots", () => {
   it("D0: without state.plugins nothing is asked and nothing new is drawn", async () => {
@@ -98,7 +106,7 @@ describe("plugin slots", () => {
   it("shows the Plugins section's panels as tabs and switches frames; a panel in another slot stays out", async () => {
     const c = makeClient({ view: surface({ panels: [QUEUE, DIGEST, BOTTOM] }) });
     await open(c);
-    const sec = await screen.findByRole("region", { name: "Plugins" });
+    const sec = await plugins();
     expect(sec.closest("nav.hh-flow-side")).not.toBeNull();
     const tabs = within(within(sec).getByRole("tablist", { name: "Plugin panels" })).getAllByRole("tab");
     expect(tabs.map((t) => t.querySelector(".rt-TabsTriggerInner")?.textContent)).toEqual(["Queue", "Digest"]);
@@ -119,6 +127,7 @@ describe("plugin slots", () => {
     const third = panel({ id: "log", title: "Log", url: "hh-plugin://oncall/panel-log.html" });
     const c = makeClient({ view: surface({ panels: [QUEUE, DIGEST, third] }) });
     await open(c);
+    await openSide();
     const tabs = await screen.findAllByRole("tab");
     act(() => tabs[0].focus());
     fireEvent.keyDown(tabs[0], { key: "End" });
@@ -138,7 +147,7 @@ describe("plugin slots", () => {
     await open(c);
     await waitFor(() => expect(sub).toHaveBeenCalled());
     act(() => c.emitSurface(surface({ panels: [QUEUE] })));
-    expect(await screen.findByRole("region", { name: "Plugins" })).toBeTruthy();
+    expect(await plugins()).toBeTruthy();
     act(() => c.emitSurface(surface()));
     expect(section()).toBeNull();
     expect(frames()).toHaveLength(0);
@@ -147,7 +156,7 @@ describe("plugin slots", () => {
   it("without flow, the section gets a side nav of its own", async () => {
     const c = makeClient({ flow: false, view: surface({ panels: [QUEUE] }) });
     await open(c);
-    const sec = await screen.findByRole("region", { name: "Plugins" });
+    const sec = await plugins();
     const nav = sec.closest("nav.hh-flow-side");
     expect(nav?.getAttribute("aria-label")).toBe("Plugins");
   });
@@ -155,8 +164,10 @@ describe("plugin slots", () => {
   it("a harness side panel's <PluginSlot> shows the panels of its slot, headed with the plugin", async () => {
     const c = makeClient({ view: surface({ panels: [QUEUE, BOTTOM] }) });
     await open(c, { renderSide: () => <PluginSlot id="bottom" /> });
-    const slot = await screen.findByRole("region", { name: "Graph · On-call" });
-    expect(slot.closest("aside.hh-side")).not.toBeNull();
+    // No Sidekick: the harness side follows the path in the left overlay (task view one column).
+    const left = await openSide();
+    const slot = await within(left).findByRole("region", { name: "Graph · On-call" });
+    expect(slot.closest(".hh-overlay-section")).not.toBeNull();
     expect(within(slot).getByText("Graph · On-call")).toBeTruthy();
     expect(slot.querySelector("iframe")?.getAttribute("src")).toBe(BOTTOM.url);
     expect(within(slot).getByTitle("Graph · On-call").tagName).toBe("IFRAME");
@@ -168,14 +179,14 @@ describe("plugin slots", () => {
     cleanup();
     const c = makeClient({ view: surface({ panels: [QUEUE] }) });
     await open(c, { renderSide: () => <div data-testid="side"><PluginSlot id="bottom" /></div> });
-    await screen.findByRole("region", { name: "Plugins" });
+    await plugins();
     expect(screen.getByTestId("side").innerHTML).toBe("");
   });
 
   it("<PluginSlot> of a chip slot shows its chips", async () => {
     const c = makeClient({ view: surface({ chips: [chip({ slot: "status", text: "Paged" }), chip({ id: "other" })] }) });
     await open(c, { renderSide: () => <PluginSlot id="status" /> });
-    const side = document.querySelector("aside.hh-side") as HTMLElement;
+    const side = await openSide();
     await waitFor(() => expect(within(side).getByText("Paged")).toBeTruthy());
     expect(within(side).queryByText("3 open")).toBeNull();
   });
@@ -195,11 +206,13 @@ describe("plugin slots", () => {
     const quiet = screen.getByText("Quiet");
     expect(quiet.tagName).toBe("SPAN");
     expect(quiet.className).toBe("hh-pl-chip info");
-    // No task open: in the top bar's slot, right after its spacer (task view one column).
+    // In their own row at the top of the main column, above the conversation (task view one column).
     const chips = button.closest(".hh-pl-chips") as HTMLElement;
-    const slot = chips.closest(".hh-topbar-slot") as HTMLElement;
-    expect(slot.previousElementSibling?.className).toMatch(/hh-spacer/);
-    expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
+    const row = chips.closest(".hh-chips-row") as HTMLElement;
+    expect(row.closest(".hh-main")).not.toBeNull();
+    expect(row.compareDocumentPosition(document.querySelector(".hh-conversation, .hh-start")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The panels are folded in the left overlay until the chip unfolds it on its panel's tab.
+    expect(frames()).toEqual([]);
     fireEvent.click(button);
     await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));
     const tabs = screen.getAllByRole("tab");
@@ -212,7 +225,8 @@ describe("plugin slots", () => {
     await open(c);
     await waitFor(() => expect(sub).toHaveBeenCalled());
     fireEvent.click(await screen.findByRole("button", { name: /^3 open/ }));
-    expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
+    // The panel isn't there yet: the overlay stays folded until it appears.
+    expect(frames()).toEqual([]);
     act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE], chips: [chip({ panel: "queue" })] })));
     await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));
     expect(screen.getAllByRole("tab")[1].getAttribute("aria-selected")).toBe("true");
@@ -228,7 +242,7 @@ describe("plugin slots", () => {
         </div>
       ),
     });
-    await screen.findByRole("region", { name: "Plugins" });
+    await plugins();
     expect(screen.getByTestId("side").innerHTML).toBe("");
     expect(frames()).toHaveLength(1);
     expect(document.querySelectorAll(".hh-pl-chip")).toHaveLength(1);
@@ -240,7 +254,7 @@ describe("plugin slots", () => {
       view: surface({ panels: [panel({ title: evil, pluginName: evil })], chips: [chip({ text: evil, panel: "queue" })] }),
     });
     await open(c);
-    await screen.findByRole("region", { name: "Plugins" });
+    await plugins();
     expect(document.querySelector("img")).toBeNull();
     const sec = screen.getByRole("region", { name: "Plugins" });
     expect(document.querySelector(".hh-pl-chips b")).toBeNull();
@@ -257,7 +271,7 @@ describe("plugin slots", () => {
     const c = makeClient({ view: surface({ panels: [QUEUE, BOTTOM] }) });
     const sub = vi.spyOn(c.plugins, "onSurface");
     await open(c, { renderSide: () => <PluginSlot id="bottom" /> });
-    await screen.findByRole("region", { name: "Plugins" });
+    await plugins();
     await waitFor(() => expect(sub).toHaveBeenCalled());
     const [a, b] = frames();
     act(() => c.emitSurface(surface({ panels: [QUEUE, BOTTOM], reloads: { news: 3 } })));
@@ -284,6 +298,7 @@ describe("plugin slots", () => {
     const rail = screen.getByRole("navigation", { name: "App" });
     expect(within(rail).queryByRole("button", { name: "Plugins" })).toBeNull();
     act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE] })));
+    await openSide();
     const tabs = await screen.findAllByRole("tab");
     pick(tabs[1]);
     expect(tabs[1].getAttribute("aria-selected")).toBe("true");

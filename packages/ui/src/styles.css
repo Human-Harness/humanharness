@@ -352,7 +352,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-slim-start { display: grid; place-items: center; padding: 24px; }
 /* Gives way long before the harness's name does when the top bar runs out of room (a narrow window, a big text size). */
 .hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 100; }
-.hh-body { display: flex; min-height: 0; overflow: hidden; }
+.hh-body { position: relative; display: flex; min-height: 0; overflow: hidden; }
 .hh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* Positioned: a sent question's offsetTop is measured from here to pin it at the top while its answer grows. */
 /* A size container: what it holds (the start view's topics) fits the card's width, not the window's. One column no
@@ -364,7 +364,6 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 @keyframes hh-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes hh-rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .hh-word, .hh-appear { animation: none; } }
-.hh-side { width: 240px; flex: none; padding: 16px; border-left: 1px solid var(--hh-line); }
 .hh-composer-hint { margin: -4px 16px 12px; text-align: center; color: var(--hh-muted); font-size: 12px; }
 .hh-back-topics { justify-self: start; }
 .hh-message { max-width: var(--hh-read-w); }
@@ -607,24 +606,31 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-time-box { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--hh-muted); font-size: 13px; }
 /* Notes' drawer body (UI refresh spec §5.7): the frame is the drawer's. */
 /* Flow mode in the soft-cards look (UI refresh spec §5.1): flow side, choices, conversation, composer, side column. */
-.hh-flow-side { flex: 0 4 var(--hh-column-w); min-width: 220px; max-width: 320px; padding: 28px 18px 28px 20px; gap: 26px; background: var(--hh-rail); }
+.hh-flow-side { width: auto; border-right: 0; padding: 12px 18px 28px 20px; gap: 26px; overflow-y: visible; }
 .hh-flow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
 .hh-flow-head .hh-flow-heading { margin: 0; }
 .hh-step-mark.hh-flow-mark { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--hh-surface-2); color: var(--hh-muted); font-size: 12px; }
 .hh-step-mark.hh-flow-mark.done { background: var(--hh-t-green); color: var(--hh-t-green-ink); }
 .hh-nav-item[aria-current="step"] .hh-flow-mark { background: var(--hh-cta); color: var(--hh-cta-ink); }
-/* The chat card takes the room the side columns leave; in a narrow window they give way first (shrink 4), down to their minimum. */
-.hh-main { flex: 1 1 400px; min-width: 0; }
+/* Task view one column: one 680 reading column (the card), centred; in a narrow window it gives way, never scrolls sideways. */
+.hh-app:not(.hh-app-slim) .hh-main { flex: 0 1 728px; box-sizing: border-box; margin: 0 auto; padding: 0 24px; }
 .hh-chat.hh-conversation { padding: 24px clamp(16px, 2.5vw, 40px); }
 /* Inside a setup step (slim) the chat already sits in the step's framed box: no margins, no shadow. */
-.hh-app:not(.hh-app-slim) .hh-chat.hh-conversation { margin: 16px 20px 12px; box-shadow: var(--hh-shadow); }
-.hh-app:not(.hh-app-slim) .hh-composer { margin: 0 20px 16px; box-shadow: var(--hh-shadow); }
+.hh-app:not(.hh-app-slim) .hh-chat.hh-conversation { margin: 16px 0 12px; box-shadow: var(--hh-shadow); }
+.hh-app:not(.hh-app-slim) .hh-composer { margin: 0 0 16px; box-shadow: var(--hh-shadow); }
 .hh-composer { flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 12px 12px 18px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 14px; }
 .hh-composer > textarea, .hh-composer > .hh-sk-flagged { flex: 1 1 100%; }
 .hh-composer textarea { border-color: transparent; padding: 4px 0; }
 .hh-composer-send-hint { color: var(--hh-muted); font-size: 12px; }
-.hh-side { box-sizing: border-box; width: auto; flex: 0 4 var(--hh-column-w); min-width: 220px; max-width: 320px; padding: 24px 22px; background: var(--hh-rail); }
-@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } .hh-chat, .hh-chat.hh-conversation { padding: 20px 16px; } }
+@media (max-width: 640px) { .hh-chat, .hh-chat.hh-conversation { padding: 20px 16px; } }
+/* The folded overlays (task view one column): a 280 panel over the content, the path on the left, Sidekick on the right. */
+.hh-overlay { position: absolute; top: 0; bottom: 0; z-index: 5; width: var(--hh-column-w); max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; background: var(--hh-rail); box-shadow: var(--hh-shadow); }
+.hh-overlay-left { left: 0; border-right: 1px solid var(--hh-line); }
+.hh-overlay-right { right: 0; border-left: 1px solid var(--hh-line); }
+.hh-overlay-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 0 24px; }
+.hh-overlay-title { margin: 0; font-size: 14px; }
+.hh-overlay-section { padding: 12px 24px 24px; }
+.hh-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 
 .hh-scope-picker {
   display: flex;
@@ -707,7 +713,7 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 
 
 /* Sidekick (sidekick spec §7) */
-.hh-sk-panel { width: var(--hh-column-w); min-width: 220px; max-width: 320px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--hh-line); background: var(--hh-bg); min-height: 0; }
+.hh-sk-panel { flex: 1; display: flex; flex-direction: column; background: var(--hh-bg); min-height: 0; }
 .hh-sk-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--hh-line); }
 .hh-sk-name { font-size: 14px; margin: 0; }
 .hh-sk-status { color: var(--hh-muted); font-size: 12px; }
@@ -729,9 +735,8 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-sk-body { display: grid; gap: 12px; align-content: start; }
 .hh-sk-card { border-radius: 14px; padding: 16px; }
 .hh-sk-card h3 .hh-tag, .hh-sk-card h4 .hh-tag { text-transform: none; letter-spacing: 0; }
-.hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-rail); }
-.hh-sk-rail button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.hh-sk-rail .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
+.hh-sk-open { position: relative; display: flex; align-items: center; gap: 4px; }
+.hh-sk-open .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
 .hh-sk-composer-hint { color: var(--hh-muted); font-size: 12px; margin: 4px 0 0; }
 /* The composer field over its underline backdrop: same box metrics as `.hh-composer textarea` (1px border + 8px padding). */
 .hh-sk-flagged { position: relative; flex: 1; display: flex; border-radius: 8px; background: var(--hh-surface); }
@@ -739,8 +744,6 @@ button.hh-timeline-pick:focus-visible { outline: 2px solid var(--hh-ink); outlin
 .hh-sk-flagged textarea { background: transparent; position: relative; scrollbar-gutter: stable; }
 .hh-sk-backdrop { position: absolute; inset: 0; pointer-events: none; color: transparent; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; scrollbar-gutter: stable; box-sizing: border-box; padding: 8px; border: 1px solid transparent; border-radius: 8px; font: inherit; line-height: normal; }
 .hh-sk-backdrop mark { color: transparent; background: none; text-decoration: underline wavy var(--hh-t-orange-ink); text-underline-offset: 3px; }
-/* `useNarrow` (sidekick/useNarrow.ts) mirrors this width: no review, and the harness side panel shows as before. */
-@media (max-width: 720px) { .hh-sk-panel, .hh-sk-rail { display: none; } }
 /* Plugins */
 .hh-pl-inbox { position: relative; display: flex; }
 .hh-pl-inbox > .hh-icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; }
@@ -839,9 +842,6 @@ ul.hh-gd-list { padding: 0; }
 .hh-reader-problem, .hh-reader-truncated { color: var(--hh-muted); }
 /* Contents beside the text from the default 1100 px window up, and always in full screen; below 1000 px the side reader is too narrow. */
 @media (max-width: 999px) { .hh-reader:not(.hh-reader-is-full) .hh-reader-toc { display: none; } }
-/* The reader beside the chat: the harness's own side panel hides (three columns don't fit 1100 px); full screen hides the chat too.
-   Sidekick's panel and rail are such a column too: they hide with the reader, and come back when it closes. */
-.hh-with-reader .hh-side, .hh-with-reader .hh-sk-panel, .hh-with-reader .hh-sk-rail { display: none; }
 /* Review marks (review spec §6.1): drawn with the CSS Custom Highlight API, so the document's DOM never changes. */
 ::highlight(hh-review-question) { background-color: var(--hh-t-orange); text-decoration: underline 2px var(--hh-t-orange-ink); }
 ::highlight(hh-review-comment) { background-color: var(--hh-t-blue); text-decoration: underline 2px var(--hh-t-blue-ink); }
@@ -898,7 +898,7 @@ ul.hh-gd-list { padding: 0; }
   /* A reader without review keeps its flex row: a narrower drawer. */
   .hh-timeline-drawer { flex-basis: 220px; }
 }
-.hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side, .hh-reader-full .hh-sk-panel, .hh-reader-full .hh-sk-rail { display: none; }
+.hh-reader-full .hh-main, .hh-reader-full .hh-overlay { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }
 /* Focus mode (review spec §6.2): focus-only classes, so a reader without review never gets them (D0). After the
    container query: a card a margin marker opened floats over the text at any width. */

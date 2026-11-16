@@ -11,7 +11,7 @@ by more than one persona go first. "Verified" = I checked the claim against the 
 | A2 | **Ajustes › Uso** has no board; "Ver uso" on the limit notice leads nowhere. | Lucía (known) | Done: board 5.6 mirrors the core Usage tab (teacher has no own screen). |
 | A3 | **Map of an existing topic** has no remove/add/rename; rename is promised in copy but no control exists. | Tomás, Lucía | Decided (Marco, 2026-11-16): option A, "Editar mapa" button on the topic opens board 3.1b (remove/add/rename, then review changes). |
 | A4 | **No visible "end session" control**; only the Calentamiento/Principal/Cierre bar. | Ernesto | Decided (Marco, 2026-11-16): option A, "Terminar por hoy" button in the session bar of every session board + confirmation board 4.1b. |
-| A5 | Cambios propuestos: "Aplicar 2 cambios" cannot accept the rename separately. | Lucía | Per-item accept. |
+| A5 | Cambios propuestos: "Aplicar 2 cambios" cannot accept the rename separately. | Lucía | Decided (Marco, 2026-11-16): option A, a checkbox per change, button counts the applied ones (board 3.7). |
 
 ## B. Friction in flows
 

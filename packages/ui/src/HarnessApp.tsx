@@ -18,7 +18,8 @@ import { InboxAnnouncer, InboxPage, waitingCount } from "./parallel/Inbox";
 import { JobsPage } from "./parallel/JobsPage";
 import { useJobs } from "./parallel/useJobs";
 import { Icon, Rx } from "./guide";
-import { TaskStrip } from "./parallel/TaskStrip";
+import { TaskSwitcher } from "./task-view/TaskSwitcher";
+import { WorkingLine } from "./task-view/WorkingLine";
 import { useFocusEpoch, useTasks } from "./parallel/useTasks";
 import { shownLanguage, systemLanguage } from "./language";
 import { type LanguageControl, useLanguage } from "./language-control";
@@ -26,7 +27,7 @@ import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsPage } from "./SettingsPage";
 import { SetupFlow } from "./SetupFlow";
-import { type RailEntry, railEntries } from "./shell-nav";
+import { type RailEntry, railCounts, railEntries } from "./shell-nav";
 import type { SearchIntent } from "./search/intent";
 import { SearchHost } from "./search/SearchHost";
 import type { StartViewCopy } from "./StartView";
@@ -68,8 +69,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [pluginPanels, setPluginPanels] = useState(false);
   /** A page of the chat's own on screen (History, stage 4b1; Files, 4b2): its title and the way back, for the top bar's Volver. */
   const [chatPage, setChatPage] = useState<ChatPage | null>(null);
-  /** The open task's label as the chat reports it: the breadcrumb's fallback without `parallel` (no task list). */
-  const [chatTaskLabel, setChatTaskLabel] = useState<string | null>(null);
+  /** The chat's turn, while one runs: its working line goes on the pages that hide the conversation (no app redraw). */
+  const chatWorking = useRef<Working>({ now: null, listener: null });
+  /** The chat's open task as it reports it: its label (the switcher's fallback without `parallel`) and its notes. Null: none open. */
+  const [chatTask, setChatTask] = useState<{ label: string; notes: number } | null>(null);
+  const chatTaskLabel = chatTask?.label ?? null;
+  /** The top bar's slot the open task's bar is drawn into (task view one column). */
+  const [barEl, setBarEl] = useState<HTMLDivElement | null>(null);
+  /** A rail pick of the task's Notes or History: each pick is a new number the chat watches. */
+  const [taskPage, setTaskPage] = useState<{ page: "notes" | "history"; n: number } | null>(null);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
   const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
@@ -391,19 +399,25 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   // D0: without `parallel` the key is today's, and nothing else is kept.
   const chatKey = `${engineId}:${profile ?? ""}:${openScope ?? ""}`;
+  /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
+  const focusedTask = tasksState?.tasks.find((s) => s.focused);
+  /** A task is open (task view one column): the one bar and the rail's TASK group. */
+  const taskOpen = chatTask !== null || focusedTask !== undefined;
   /**
    * The rail (spec §4.2): an entry only for a feature the harness has (D0). Notes come from declared actions' topics.
    * Inbox and Jobs open their own pages (stage 4a): a harness whose manifest turns the core inbox off (`inbox: false`)
    * has no Inbox.
    */
-  const entries = railEntries({
+  const features = {
     parallel: Boolean(state.parallel?.inbox),
     jobs: Boolean(state.jobs?.jobs.length),
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
-  });
-  /** The breadcrumb's screen (spec §4.1): the focused task (the chat's open one without parallel), else the start view's title, else Tasks. */
-  const focusedTask = tasksState?.tasks.find((s) => s.focused);
+    task: taskOpen ? { notes: chatTask?.notes ?? 0 } : null,
+  };
+  const entries = railEntries(features);
+  /** With a task open on the chat the top bar is its one bar, drawn by the chat in the slot (task view one column): no crumbs, no gear. */
+  const slotted = view.kind === "chat" && taskOpen;
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
   const railCurrent: RailEntry = view.kind === "chat" ? (chatPage?.rail ?? "tasks") : view.kind;
   /** What Volver says: the task, unless the page goes back to a list of its own (a note's detail says "Notes"). */
@@ -422,10 +436,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   const pick = (e: RailEntry) => {
     if (e === "home") return setScreen("home");
-    if (e === "settings") return setSettings("general");
-    // A rail pick leaves the chat's own page (History, Files) too: coming back from another page shows the chat. Files
+    if (e === "settings" || e === "task-settings") return setSettings("general");
+    if (e === "task-notes" || e === "task-history") {
+      setView({ kind: "chat" });
+      return setTaskPage((p) => ({ page: e === "task-notes" ? "notes" : "history", n: (p?.n ?? 0) + 1 }));
+    }
+    // A rail pick leaves the chat's own page (History, Files, a note) for the chat, not Volver's step back. Files
     // picked on Files only goes back to its list (below).
-    if (!(e === "notes" && chatPage?.rail === "notes")) chatPage?.back();
+    if (e === "notes" && chatPage?.rail === "notes") chatPage.back();
+    else chatPage?.close();
     if (e === "inbox" || e === "jobs") return setView({ kind: e, request: ++inboxPicks.current });
     // Notes, Plugins and Tasks are the chat's: a page gives way to it.
     setView({ kind: "chat" });
@@ -500,6 +519,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                       }
                     : { crumbs: [{ label: state.harness.name, onClick: () => setScreen("home") }, { label: screenTitle }] })}
                   mock={state.mock}
+                  slot={setBarEl}
+                  slotted={slotted}
                   trailing={
                     <>
                       {attention?.show && (
@@ -515,11 +536,21 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                         />
                       )}
                       {state.profiles && <TopBarAvatar client={client} state={state} onSwitched={switched} onAdd={addProfile} blocked={chatBlocked.current} />}
-                      <SettingsGear onClick={() => setSettings("general")} />
+                      {!slotted && <SettingsGear onClick={() => setSettings("general")} />}
                     </>
                   }
                 />
-                <Rail entries={entries} current={railCurrent} onPick={pick} counts={{ inbox: { count: waiting, label: i18n.t("inbox.railCount", { count: waiting }) } }} />
+                <Rail
+                  entries={entries}
+                  current={railCurrent}
+                  onPick={pick}
+                  counts={Object.fromEntries(
+                    Object.entries(railCounts(features, waiting)).map(([e, count]) => [
+                      e,
+                      { count, label: e === "inbox" ? i18n.t("inbox.railCount", { count }) : i18n.t("rail.taskNotesCount", { count, defaultValue: "Notes, {{count}}" }) },
+                    ]),
+                  )}
+                />
                 {state.parallel?.inbox && <InboxAnnouncer count={waiting} />}
                 <div className="hh-shell-main">
                   {view.kind === "inbox" && (
@@ -578,20 +609,47 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                       {...(state.jobs ? { startRef: chatStart } : {})}
                       searchRef={searchRef}
                       searchContextRef={searchContextRef}
-                      {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onFocus={focusTask} />, onNewTask: newTask, draftKeep } : {})}
-                      title={screenTitle}
+                      {...(state.parallel ? { draftKeep } : {})}
+                      {...(view.kind === "chat" && barEl
+                        ? {
+                            bar: {
+                              el: barEl,
+                              open: slotted,
+                              harness: state.harness.name,
+                              onHome: () => setScreen("home"),
+                              switcher: (
+                                <TaskSwitcher
+                                  client={client}
+                                  title={screenTitle}
+                                  actions={state.actions}
+                                  tasks={tasksState}
+                                  onFocus={focusTask}
+                                  onRecent={(task) => searchRef.current?.({ kind: "history", task })}
+                                  {...(state.parallel ? { onNewTask: newTask } : {})}
+                                />
+                              ),
+                            },
+                          }
+                        : {})}
+                      taskPage={taskPage}
                       scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
                       engineProblem={status ? engineProblem(status) : null}
                       notesRequest={notesRequest}
                       pluginsRequest={pluginsRequest}
                       onPluginPanels={setPluginPanels}
                       onPage={setChatPage}
-                      onTaskLabel={setChatTaskLabel}
+                      onTask={setChatTask}
                       onFixEngine={() => setSettings("engine")}
                       onSidekickSettings={() => setSettings("sidekick")}
                       onTurnOk={checkEngine}
+                      onWorking={(w) => {
+                        chatWorking.current.now = w;
+                        chatWorking.current.listener?.(w);
+                      }}
                     />
                   </div>
+                  {/* The conversation's working line, at the bottom of the page that hides it (task view one column). */}
+                  {(view.kind !== "chat" || chatPage !== null) && <PageWorkingLine working={chatWorking.current} onStop={() => void client.cancel()} />}
                 </div>
               </div>
               )}
@@ -653,6 +711,25 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 interface Blocked {
   now: boolean;
   listener: ((blocked: boolean) => void) | null;
+}
+
+/** The chat's turn as it reports it, and who follows it. */
+interface Working {
+  now: { step: string | null } | null;
+  listener: ((w: { step: string | null } | null) => void) | null;
+}
+
+/** The working line under a page that hides the conversation: only it redraws with the turn's steps. */
+function PageWorkingLine({ working, onStop }: { working: Working; onStop: () => void }) {
+  const [now, setNow] = useState(working.now);
+  useEffect(() => {
+    working.listener = setNow;
+    setNow(working.now);
+    return () => {
+      working.listener = null;
+    };
+  }, [working]);
+  return now && <WorkingLine step={now.step} onStop={onStop} />;
 }
 
 /** The top bar's avatar, disabled while the chat is busy (it alone redraws when that changes). */

@@ -4,10 +4,11 @@ import { render, renderIn } from "./home-block";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { HarnessClient, ParallelInfo, TaskSummary, TasksState } from "../../../ui/src/client";
-import { TaskStrip } from "../../../ui/src/parallel/TaskStrip";
 import { FakeClient } from "../../../ui/test/fake-client";
 
 afterEach(cleanup);
+/** Radix opens a menu on pointer down. */
+const openMenu = (button: HTMLElement) => fireEvent.pointerDown(button, { button: 0, ctrlKey: false, pointerType: "mouse" });
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 const AT = "2026-10-28T10:00:00Z";
 
@@ -36,7 +37,8 @@ function client(board: boolean, tasks?: TasksState) {
 /** `client.tasks`'s methods sit on the getter's prototype. */
 const api = (c: FakeClient) => Object.getPrototypeOf(c.tasks) as FakeClient["tasks"];
 async function open(c: FakeClient) {
-  render(<HarnessApp client={c} />);
+  // The switcher's menu is a Radix piece that reads the theme (task view one column).
+  await renderIn("en", <HarnessApp client={c} />, { theme: true });
   const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
@@ -62,7 +64,7 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     const c = client(true, tasksOf("a", "a", "b"));
     const load = vi.spyOn(c, "loadChat");
     await open(c);
-    await screen.findByRole("group", { name: "Task on screen" });
+    await screen.findByRole("button", { name: "Task a" });
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     // Main moved the focus to b, which was already open: the chat becomes b's.
     act(() => c.tasks.set(tasksOf("b", "a", "b")));
@@ -92,19 +94,18 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
     expect(screen.getAllByText("Plan my week")).toHaveLength(1);
   });
 
-  it("the task strip names the focused task and its phase; New task asks for the start view, and the chat follows once main took it", async () => {
+  it("the bar's switcher names the focused task; its New task asks for the start view, and the chat follows once main took it", async () => {
     const c = client(true, tasksOf("a", "a"));
     c.state.actions = { intro: { label: "Intro", phases: [{ id: "draft", label: "Drafting" }] } } as never;
     c.tasksState = { tasks: [summary("a", { focused: true, phase: "draft" })], caps: { tasks: 2, jobs: 1 } };
     const load = vi.spyOn(c, "loadChat");
     await open(c);
-    const strip = await screen.findByRole("group", { name: "Task on screen" });
-    expect(within(strip).getByText("Task a")).toBeTruthy();
-    expect(within(strip).getByText("Drafting")).toBeTruthy();
+    // The one bar (task view one column): the title once, as the switcher; New task is in its menu.
+    const switcher = await screen.findByRole("button", { name: "Task a" });
+    expect(screen.queryByRole("heading", { level: 1, name: "Task a" })).toBeNull();
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    // New task lives in the task header only (UI refresh spec §5.1).
-    expect(within(strip).queryByRole("button", { name: "New task" })).toBeNull();
-    fireEvent.click(within(screen.getByRole("heading", { level: 1 }).closest("header")!).getByRole("button", { name: "New task" }));
+    openMenu(switcher);
+    fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "New task" }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith(null));
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
   });
@@ -149,31 +150,14 @@ describe("one chat per open task (parallel spec §6, Decision 6)", () => {
   });
 });
 
-describe("task tabs (UI refresh spec §5.1)", () => {
-  it("TaskStrip is a tab per open task; a waiting one carries a dot named for screen readers", async () => {
-    const onFocus = vi.fn();
-    const c = client(true);
-    const tasks: TasksState = {
-      tasks: [summary("a", { label: "The turn", focused: true, state: "running" }), summary("b", { label: "Engines", state: "waiting" })],
-      caps: { tasks: 2, jobs: 1 },
-    };
-    await renderIn("en", <TaskStrip state={c.state} tasks={tasks} onFocus={onFocus} />);
-    const tabs = screen.getByRole("tablist", { name: "Open tasks" });
-    expect(within(tabs).getByRole("tab", { name: "The turn" }).getAttribute("aria-selected")).toBe("true");
-    expect(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }).getAttribute("aria-selected")).toBe("false");
-    fireEvent.click(within(tabs).getByRole("tab", { name: "Engines, waiting for you" }));
-    expect(onFocus).toHaveBeenCalledWith("b");
-    // The tab on screen asks nothing.
-    fireEvent.click(within(tabs).getByRole("tab", { name: "The turn" }));
-    expect(onFocus).toHaveBeenCalledTimes(1);
-  });
-
-  it("a tab click in the app asks main to focus that task, and the chat follows main", async () => {
+describe("the task switcher (task view one column)", () => {
+  it("an open task picked in the switcher asks main to focus that task, and the chat follows main", async () => {
     const c = client(true, tasksOf("a", "a", "b"));
     const load = vi.spyOn(c, "loadChat");
     await open(c);
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-    fireEvent.click(within(await screen.findByRole("tablist", { name: "Open tasks" })).getByRole("tab", { name: "Task b, waiting for you" }));
+    openMenu(await screen.findByRole("button", { name: "Task a" }));
+    fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Task b, waiting for you" }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith("b"));
   });
 });

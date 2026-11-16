@@ -16,7 +16,8 @@ test("a long task saves what matters before the engine compacts, then answers th
     await page.getByRole("button", { name: "Start Demo" }).click();
     await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText(MANIFEST_ANSWER)).toBeVisible();
-    await expect(page.getByRole("meter", { name: "Context in use" })).toHaveAttribute("aria-valuenow", "85");
+    // The context shows as the bar's chip (task view one column).
+    await expect(page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: "Context 85%" })).toBeVisible();
 
     await page.getByRole("radio", { name: "Profundizar en las acciones" }).click();
     await expect(page.getByRole("main").getByText("Las acciones traen su brief.")).toBeVisible();

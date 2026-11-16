@@ -1,13 +1,19 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { closeAndClean, electronBinary, launch, makeSandbox, profileFlags, readJsonl, sessionOf, shellDir, usageFile } from "./helpers";
 import { claudeScript, codexScript } from "./scripts";
 
 type Run = { argv: string[]; prompt: string };
 const START = "Which part do you want to understand?";
 const readTasks = (folder: string) => JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"));
+
+/** The path and its notes fold into the left overlay (task view one column): its button in the bar unfolds it. */
+async function openPath(page: Page) {
+  if ((await page.getByRole("complementary", { name: "Path" }).count()) === 0) await page.getByRole("button", { name: /^Path\b/ }).click();
+  await expect(page.getByRole("complementary", { name: "Path" })).toBeVisible();
+}
 
 test("a topic answered with blocks, then next: the note is saved and the next topic starts from it", async () => {
   const s = makeSandbox("flow");
@@ -86,6 +92,7 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     const shownBlocks = chatLines.flatMap((e) => e.blocks ?? []);
     expect(shownBlocks.length).toBeGreaterThan(0);
     expect(shownBlocks.every((b) => !("id" in b) && !("input" in b))).toBe(true);
+    await openPath(page);
     await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).
@@ -120,12 +127,13 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await page.getByRole("button", { name: /^Back to (?!recommended|the )/ }).click();
 
     await expect(page.getByRole("main").getByText(/You're now using Codex/)).toBeVisible();
+    await openPath(page);
     await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
     expect(fs.existsSync(path.join(s.folder, ".harness", "notes", "manifest.md"))).toBe(true);
     await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: null, actions: { manifest: "done", engines: "unfinished" } });
 
     await page.getByPlaceholder("Or ask something…").fill("¿Dónde se guarda la conversación?");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("main").getByText("Se guarda en .harness/chats.")).toBeVisible();
     const prompt = readJsonl<{ method: string; params: { prompt: { text: string }[] } }>(s.acpLog).find((l) => l.method === "session/prompt");
     expect(prompt?.params.prompt[0].text).toContain("## Question\n¿Dónde se guarda la conversación?");

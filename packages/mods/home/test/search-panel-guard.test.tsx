@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../../../ui/src";
 import type { PluginPanelView, PluginSurfaceView, SearchAnswer, SearchHitView } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 /**
  * A Radix tab by its visible label: Radix Themes draws the label twice (a hidden copy keeps the width steady), and
@@ -53,12 +54,14 @@ describe("a plugin record's panel from search (search spec §3 Data)", () => {
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
+    await openSide();
     await screen.findByRole("region", { name: "Plugins" });
     act(() => c.search.open("inc"));
     const dialog = await screen.findByRole("dialog", { name: "Search" });
     fireEvent.click(await within(dialog).findByRole("option"));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull());
     act(() => c.emitSurface(surface([DIGEST, QUEUE])));
+    await openSide();
     await screen.findByRole("tab", tab("Queue"));
     await act(async () => {});
     expect(screen.getByRole("tab", tab("Digest")).getAttribute("aria-selected")).toBe("true");
@@ -74,6 +77,7 @@ describe("a plugin record's panel from search (search spec §3 Data)", () => {
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
+    await openSide();
     await screen.findByRole("tab", tab("Queue"));
     act(() => c.search.open("inc"));
     const dialog = await screen.findByRole("dialog", { name: "Search" });

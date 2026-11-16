@@ -1,0 +1,6 @@
+.fx-backend-dock { position: fixed; left: 12px; bottom: 12px; z-index: 10; width: 240px; }
+.fx-backend { display: grid; gap: 8px; padding: 8px 12px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
+.fx-backend-kicker { font-size: 12px; color: var(--hh-muted); }
+.fx-backend-buttons { display: flex; gap: 8px; }
+.fx-backend button { height: 24px; padding: 0 8px; font-size: 12px; }
+.fx-backend p, .fx-backend ol { margin: 0; font-size: 12px; }

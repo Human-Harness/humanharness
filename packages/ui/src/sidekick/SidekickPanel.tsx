@@ -65,24 +65,42 @@ function Speaker({ who }: { who: SidekickInfo | undefined }) {
 }
 
 /**
- * The collapsed panel: a 52 px rail with the mark (spec §7). With cards waiting it lights up and shows up to three
- * distinct marks of who speaks; its label carries the count.
+ * Opens the Sidekick overlay (task view one column), in the task bar. With cards waiting it lights up and shows up to
+ * three distinct marks of who speaks; its label carries the count.
  */
-export function SidekickRail({ state: s, onOpen, buttonRef }: { state: SidekickState; onOpen(): void; buttonRef?: Ref<HTMLButtonElement> }) {
+export function SidekickButton({
+  state: s,
+  expanded,
+  controls,
+  onOpen,
+  buttonRef,
+}: {
+  state: SidekickState;
+  expanded: boolean;
+  controls?: string;
+  onOpen(): void;
+  buttonRef?: Ref<HTMLButtonElement>;
+}) {
   const { t } = useTranslation();
   const waiting = waitingCards(s);
   const marks = [...new Map(waiting.map((c) => [c.speaker.id, c.speaker.mark])).values()].slice(0, 3);
   return (
-    <div className="hh-sk-rail">
-      <button ref={buttonRef} type="button" aria-label={waiting.length > 0 ? t("sidekick.rail.waiting", { count: waiting.length }) : t("sidekick.open")} onClick={onOpen}>
-        {marks.length > 0 ? marks.map((mark, i) => <SidekickMark key={i} icon={markIcon(mark)} />) : <SidekickMark off={!s.settings.on} />}
-        {waiting.length > 0 && <span className="hh-sk-dot" aria-hidden="true" />}
-      </button>
-    </div>
+    <button
+      ref={buttonRef}
+      type="button"
+      className="hh-sk-open"
+      aria-expanded={expanded}
+      {...(controls ? { "aria-controls": controls } : {})}
+      aria-label={waiting.length > 0 ? t("sidekick.rail.waiting", { count: waiting.length }) : t("sidekick.open")}
+      onClick={onOpen}
+    >
+      {marks.length > 0 ? marks.map((mark, i) => <SidekickMark key={i} icon={markIcon(mark)} />) : <SidekickMark off={!s.settings.on} />}
+      {waiting.length > 0 && <span className="hh-sk-dot" aria-hidden="true" />}
+    </button>
   );
 }
 
-/** The expanded Sidekick panel, 330 px (spec §7, mockup boards 1–3). Never takes focus. */
+/** The Sidekick panel, inside the right overlay (task view one column). Takes focus only when its button opened it. */
 export function SidekickPanel(p: SidekickPanelProps) {
   const { t, i18n } = useTranslation();
   const n = (v: number) => v.toLocaleString(shownLanguage(i18n));

@@ -11,6 +11,7 @@ import { shownLanguage } from "./language";
  */
 export function NotesPage({
   notes,
+  title,
   open,
   focusKey,
   disabled,
@@ -20,6 +21,8 @@ export function NotesPage({
   onBack,
 }: {
   notes: NoteView[];
+  /** The list's title: Files from the rail's Files, Notes from the TASK group. Default Files. */
+  title?: string;
   /** The note shown in detail; none shows the list. */
   open?: string;
   /** A new value (a rail pick) puts the focus on the page's title. */
@@ -115,7 +118,7 @@ export function NotesPage({
   }
 
   return (
-    <SecondaryPage title={t("files.title")} line={t("notes.savings")} focusKey={titleKey} onBack={onBack}>
+    <SecondaryPage title={title ?? t("files.title")} line={t("notes.savings")} focusKey={titleKey} onBack={onBack}>
       <section aria-labelledby="hh-notes-head">
         <Rx.Flex align="center" gap="2" mb="2">
           <Rx.Heading as="h2" size="1" color="gray" weight="medium" id="hh-notes-head">

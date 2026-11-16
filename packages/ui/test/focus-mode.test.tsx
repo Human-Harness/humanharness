@@ -1,10 +1,19 @@
 // @vitest-environment happy-dom
+import { useState } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { ChatEntry, Review } from "../src/client";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
+
+let openHistory = () => {};
+/** The chat as the shell hosts it: the rail's History is a `taskPage` pick. */
+function Host({ client }: { client: FakeClient }) {
+  const [taskPage, setTaskPage] = useState<{ page: "history"; n: number } | null>(null);
+  openHistory = () => setTaskPage((p) => ({ page: "history", n: (p?.n ?? 0) + 1 }));
+  return <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} taskPage={taskPage} />;
+}
 
 afterEach(cleanup);
 const card = { path: "specs/a.md", title: "Filter", kind: "spec", change: "new" as const, words: 120 };
@@ -15,7 +24,7 @@ async function chat(review: boolean) {
   client.chat = [answer];
   client.docTexts[card.path] = "## Scope\n\nFilter by size.\n";
   if (review) client.state.review = true;
-  await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
+  await renderIn("en", <Host client={client} />);
   return client;
 }
 async function openReader() {
@@ -28,7 +37,7 @@ describe("focus mode (review spec §6.2)", () => {
     const client = await chat(true);
     const composer = screen.getByRole("textbox");
     fireEvent.change(composer, { target: { value: "Go on" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     const reader = await openReader();
     fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
     expect(document.querySelector(".hh-body.hh-focus")).not.toBeNull();
@@ -58,7 +67,7 @@ describe("focus mode (review spec §6.2)", () => {
     const client = await chat(true);
     const reader = await openReader();
     fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    act(() => openHistory()); // the rail's History (task view one column)
     expect(await screen.findByRole("heading", { level: 1, name: "History" })).toBeTruthy();
     fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" });
     expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull();
@@ -107,7 +116,7 @@ describe("focus mode (review spec §6.2)", () => {
   it("counts the task waiting after the turn's end (afterRun sets it after `done`), and says it out loud on leaving", async () => {
     const client = await chat(true);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Go on" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     const reader = await openReader();
     fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
     act(() => client.emit({ type: "done", ok: true }));

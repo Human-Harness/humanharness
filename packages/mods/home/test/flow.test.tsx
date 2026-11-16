@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type BlockProps, type HarnessAppProps, HarnessApp } from "../../../ui/src";
 import type { TaskStatus } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openSide } from "./one-bar";
 
 afterEach(cleanup);
 
@@ -64,6 +65,7 @@ describe("flow mode", () => {
     const start = await startRegion();
     expect(within(start).getByRole("button", { name: /The manifest/ }).textContent).toContain("Done");
     expect(within(start).getByRole("button", { name: /Engines/ }).textContent).toContain("Next on the path");
+    await openSide();
     expect(within(screen.getByRole("list", { name: "Guided path" })).getByRole("button", { name: /Engines/ }).getAttribute("aria-current")).toBe("step");
     expect(screen.getByText("~/code/humanharness")).toBeTruthy();
     expect(screen.getByText("Answers can be wrong.")).toBeTruthy();
@@ -150,7 +152,7 @@ describe("flow mode", () => {
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Done →", next: true }]));
     expect(screen.queryAllByText("Done →", { selector: ".hh-message.user p" })).toHaveLength(0);
     tasks(client, { current: { id: "t1", action: "manifest", status: "closing" } });
-    expect(screen.getByText("Saving what's clear…")).toBeTruthy();
+    expect(document.querySelector(".hh-working-text")?.textContent).toBe("Working · Saving what's clear…");
     const composer = screen.getByPlaceholderText("Ask about this topic…");
     fireEvent.change(composer, { target: { value: "too soon" } });
     fireEvent.keyDown(composer, { key: "Enter" });
@@ -173,6 +175,7 @@ describe("flow mode", () => {
     };
     await startWork(client);
     await startRegion();
+    await openSide();
     fireEvent.click(within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" }));
     // The note's detail on the Files page (stage 4b2).
     const panel = await screen.findByRole("region", { name: "Where chats live" });
@@ -196,7 +199,7 @@ describe("flow mode", () => {
     answer(client, "Copy the demo.");
     tasks(client, { current: { id: "t1", status: "waiting" } });
     fireEvent.change(screen.getByPlaceholderText("Ask about this topic…"), { target: { value: "And the locales?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     await waitFor(() => expect(client.sent).toHaveLength(2));
     expect(screen.getByText("Copy the demo.")).toBeTruthy();
   });
@@ -262,6 +265,7 @@ describe("flow mode", () => {
     client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
     await startWork(client);
     await startRegion();
+    await openSide();
     const chats = within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" });
     chats.focus();
     fireEvent.click(chats);
@@ -304,7 +308,7 @@ describe("flow mode", () => {
     expect(screen.queryByRole("region", { name: TITLE })).toBeNull();
   });
 
-  it("labels the working row while a checkpoint saves what matters, and says when the task fell back a level", async () => {
+  it("labels the working line while a checkpoint saves what matters, and says when the task fell back a level", async () => {
     const client = flowClient();
     await startWork(client);
     fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
@@ -314,11 +318,11 @@ describe("flow mode", () => {
     answer(client, "It declares everything.");
     tasks(client, { current: { ...t1("waiting"), fallback } });
     fireEvent.change(screen.getByPlaceholderText("Ask about this topic…"), { target: { value: "And the blocks?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(document.querySelector(".hh-composer textarea")!, { key: "Enter" });
     tasks(client, { current: { ...t1("checkpoint"), fallback } });
-    expect(await screen.findByText("Saving what matters…")).toBeTruthy();
+    expect(await screen.findByText("Working · Saving what matters…")).toBeTruthy();
     tasks(client, { current: { ...t1("running"), fallback } });
-    expect(await screen.findByText("Working…")).toBeTruthy();
+    await waitFor(() => expect(document.querySelector(".hh-working-text")?.textContent).toBe("Working"));
   });
 });
 

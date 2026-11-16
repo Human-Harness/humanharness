@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ElectronApplication, type Page, expect, test } from "@playwright/test";
 import { type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
-import { closeAndClean, launch, makeSandbox, readJsonl, shellDir } from "./helpers";
+import { closeAndClean, launch, makeSandbox, openLeft, readJsonl, shellDir } from "./helpers";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.resolve(here, "../../fake-agent/fixtures");
@@ -86,6 +86,7 @@ test("material: add a chapter, the stages run, a task cites it, another student 
     await app.evaluate(({ dialog }, file) => {
       dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [file] })) as unknown as typeof dialog.showOpenDialog;
     }, chapter);
+    await openLeft(page);
     await page.getByRole("button", { name: "Add a file" }).click();
     await expect(page.getByText("Checking and labelling send parts of this material to Anthropic.")).toBeVisible();
     await expect(page.getByText("fractions.md: ready, 6 fragments")).toBeVisible({ timeout: 60_000 });
@@ -115,6 +116,7 @@ test("material: add a chapter, the stages run, a task cites it, another student 
     await addStudent(page, "Ben");
     await page.getByRole("button", { name: "Start Reader" }).click();
     await openFractions(page);
+    await openLeft(page);
     await expect(page.getByRole("button", { name: "Add a file" })).toBeVisible();
     await expect(page.getByText(/fractions\.md: ready/)).toHaveCount(0);
     expect(fs.existsSync(path.join(s.folder, "ben", "material"))).toBe(false);

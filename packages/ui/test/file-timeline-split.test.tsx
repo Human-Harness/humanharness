@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { useState } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "../src/ChatView";
@@ -6,6 +7,14 @@ import type { HistoryTaskView, TimelineEntry } from "../src/client";
 import { FileTimelineSplit } from "../src/FileTimelineSplit";
 import { FakeClient } from "./fake-client";
 import { renderIn as renderBase } from "./render";
+
+let openHistory = () => {};
+/** The chat as the shell hosts it: the rail's History is a `taskPage` pick. */
+function Host({ client }: { client: FakeClient }) {
+  const [taskPage, setTaskPage] = useState<{ page: "history"; n: number } | null>(null);
+  openHistory = () => setTaskPage((p) => ({ page: "history", n: (p?.n ?? 0) + 1 }));
+  return <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} taskPage={taskPage} />;
+}
 
 /** The chat's History is built with Radix pieces that read the theme. */
 const renderIn = (language: string, ui: Parameters<typeof renderBase>[1]) => renderBase(language, ui, { theme: true });
@@ -91,11 +100,11 @@ describe("the History panel's links in the window (file-timeline spec §6.2, Q10
     client.historyGroups = groups;
     client.docTexts["plan.md"] = "## Plan\n\nShip it.\n";
     for (const p of ["plan.md", "gone.md", FILE]) client.timelines[p] = [entry];
-    await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
+    await renderIn("en", <Host client={client} />);
     return client;
   }
   const openLink = async (file: string) => {
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    act(() => openHistory()); // the rail's History (task view one column)
     fireEvent.click(await screen.findByRole("button", { name: `History of ${file}` }));
   };
 

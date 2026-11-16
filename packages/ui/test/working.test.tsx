@@ -19,22 +19,14 @@ afterEach(() => {
 });
 
 describe("WorkingStatus (a live turn)", () => {
-  it("is collapsed by default: one status row, no activity lines", async () => {
+  it("is collapsed by default, and says no Working of its own (the working line does)", async () => {
     const { container } = await renderIn("en", <WorkingStatus items={steps} />);
-    const status = screen.getByRole("status");
-    expect(status.textContent).toContain("Working…");
-    const loader = container.querySelector("svg.hh-icon-loading") as SVGElement;
-    expect(loader.getAttribute("aria-hidden")).toBe("true");
-    expect(loader.getAttribute("width")).toBe("14");
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText(/Working/)).toBeNull();
+    expect(container.querySelector("svg.hh-icon-loading")).toBeNull();
     const toggle = screen.getByRole("button", { name: "Show details" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Reading manifest.md")).toBeNull();
-  });
-
-  it("shows another label when given one (the checkpoint)", async () => {
-    await renderIn("en", <WorkingStatus items={steps} label="Saving what matters…" />);
-    expect(await screen.findByText("Saving what matters…")).toBeTruthy();
-    expect(screen.queryByText("Working…")).toBeNull();
   });
 
   it("the toggle expands and collapses the activity list, with aria-expanded and aria-controls", async () => {
@@ -65,10 +57,10 @@ describe("WorkingStatus (a live turn)", () => {
     expect(small.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("keeps the activity lines out of the live region", async () => {
+  it("keeps the activity lines out of any live region", async () => {
     await renderIn("en", <WorkingStatus items={steps} />);
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
-    expect(screen.getByRole("status").textContent).not.toContain("Reading");
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("remembers the choice for the rest of the session", async () => {

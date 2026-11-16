@@ -18,7 +18,7 @@ test("mock mode walks a demo topic from its recording, off script included, with
 
     // Off script: a typed follow-up isn't recorded, so the fallback answers and the choices come back.
     await page.getByPlaceholder("Ask about this topic…").fill("¿Y los permisos?");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("main").getByText(/no está grabada en esta prueba/)).toBeVisible();
 
     // The choices come back under the fallback answer.
@@ -31,8 +31,11 @@ test("mock mode walks a demo topic from its recording, off script included, with
     await expect(page.getByRole("main").getByText(/Los motores se detectan en cada inicio/)).toBeVisible();
     const note = fs.readFileSync(path.join(s.folder, ".harness", "notes", "manifest.md"), "utf8");
     expect(note).toContain('title: "El manifiesto"');
-    // The usage line says the test engine spends nothing (not that it doesn't report limits).
+    // The usage line says the test engine spends nothing (not that it doesn't report limits); it lives in the
+    // context chip's popover in the task bar (task view one column).
+    await page.getByRole("button", { name: /^Context \d+%$/ }).click();
     await expect(page.getByText(/^Test mode: uses none of your plan\./)).toBeVisible();
+    await page.keyboard.press("Escape");
 
     // Only the fake engine is offered.
     await page.getByRole("button", { name: "Settings" }).click();

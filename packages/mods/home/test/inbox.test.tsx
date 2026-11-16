@@ -46,7 +46,6 @@ async function open(c: FakeClient) {
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
   await screen.findByRole("textbox");
-  await screen.findByRole("button", { name: "History" });
 }
 /** `client.tasks`'s methods: the getter answers a new view each time, the methods sit on its prototype. */
 const api = (c: FakeClient) => Object.getPrototypeOf(c.tasks) as FakeClient["tasks"];
@@ -445,7 +444,8 @@ describe("the Inbox page's focus and its way back to the chat (stage 4a)", () =>
     const caps = { tasks: 2, jobs: 1 };
     const c = client(parallel(), { tasks: [summary("a", "running", { focused: true }), summary("b", "waiting")], caps });
     await open(c);
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    // A task is open: Settings is the rail's Task settings (task view one column).
+    fireEvent.click(await screen.findByRole("button", { name: "Task settings" }));
     expect(screen.getByRole("main", { name: "Settings" })).toBeTruthy();
     act(() => c.tasks.set({ tasks: [summary("a", "running"), summary("b", "waiting", { focused: true })], caps }));
     await waitFor(() => expect(screen.queryByRole("main", { name: "Settings" })).toBeNull());

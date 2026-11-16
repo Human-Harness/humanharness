@@ -65,7 +65,7 @@ test("a turn's document: card, reader, contents, full screen, a .md link, live r
     await card.click();
     await expect(reader.getByRole("heading", { name: "Context" })).toBeVisible();
     await page.getByPlaceholder(COMPOSER).fill("Add a section on blocks.");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.keyboard.press("Enter");
     await expect(reader.getByRole("heading", { name: "Blocks" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Manifest overview.*Updated/ })).toBeVisible();
     expect(csp).toEqual([]);

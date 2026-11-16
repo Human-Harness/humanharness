@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "./guide/icons";
 import type { LiveActivity } from "./state";
@@ -40,16 +40,13 @@ function Toggle({ controls, open, onToggle, children }: { controls: string; open
 }
 
 /**
- * A turn in progress: one row ("Working…", or `label`, and a ring) and, behind a toggle, what it is doing step by step.
- * Only the row is a live region, so screen readers hear "Working…" once, not every step.
+ * A turn in progress: behind a toggle, what it is doing step by step. What it does now is said once, by the working
+ * line at the bottom of the conversation (task view one column), not here.
  */
-export function WorkingStatus({ items, label }: { items: Step[]; label?: string }) {
+export function WorkingStatus({ items }: { items: Step[] }) {
   const { t } = useTranslation();
   const id = useId();
   const [open, setOpen] = useState(liveDetailOpen);
-  // Filled after mounting, so the status region already exists when its text arrives and gets announced.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
   const toggle = () => {
     liveDetailOpen = !open;
     setOpen(!open);
@@ -57,10 +54,6 @@ export function WorkingStatus({ items, label }: { items: Step[]; label?: string 
   return (
     <div className="hh-work">
       <div className="hh-work-row">
-        <span className="hh-work-status" role="status">
-          <Icon name="loading" size={14} />
-          <span>{mounted ? (label ?? t("chat.working")) : ""}</span>
-        </span>
         <Toggle controls={id} open={open} onToggle={toggle}>
           {open ? t("chat.hideDetail") : t("chat.showDetail")}
         </Toggle>

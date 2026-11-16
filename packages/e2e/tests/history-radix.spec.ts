@@ -35,12 +35,12 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.getByRole("main").getByText("Cambié tu plan.")).toBeVisible();
       await expect.poll(() => readTasks(s.folder).current?.status).toBe("waiting");
 
-      // History: its own page, the h1 focused, Back in the top bar.
-      await page.getByRole("button", { name: "History", exact: true }).click();
+      // History: the rail's TASK group's page, the h1 focused, under the task's one bar (task view one column).
+      await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "History", exact: true }).click();
       const history = page.getByRole("region", { name: "History", exact: true });
       await expect(history.getByRole("heading", { level: 1, name: "History" })).toBeFocused();
       await expect(history.getByRole("button", { name: /The manifest.*2 files changed/ })).toHaveAttribute("aria-expanded", "true");
-      await expect(page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: /^Back to/ })).toBeVisible();
+      await expect(page.locator(".hh-shell header.hh-topbar").getByRole("button", { name: "The manifest" })).toBeVisible();
       await shot(page, `history-page-radix-${theme}`);
       await page.setViewportSize({ width: 700, height: 900 });
       await page.waitForTimeout(300);

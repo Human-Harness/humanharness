@@ -104,7 +104,7 @@ describe("Sidekick in the chat", () => {
     const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
     // Collapsed, the rail sits beside the harness's own panel.
     fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
-    await screen.findByText(/5 h: 75% used/);
+    await act(() => new Promise((r) => setTimeout(r, 20))); // the plan windows load (the meter is in the context chip now)
     type(box, "make it better");
     enter(box);
     await screen.findByRole("button", { name: "Reviewing…" });
@@ -389,7 +389,7 @@ async function openWithPreflight(c: FakeClient) {
   fireEvent.click(start);
   const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
   fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
-  await screen.findByText(/5 h: 75% used/);
+  await act(() => new Promise((r) => setTimeout(r, 20))); // the plan windows load (the meter is in the context chip now)
   fireEvent.click(screen.getByRole("button", { name: "tidy" }));
   await screen.findByRole("alertdialog");
   return box;

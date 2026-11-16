@@ -46,18 +46,19 @@ async function openApp(actions = true) {
 }
 
 const panel = () => screen.findByRole("region", { name: PANEL });
+/** The bar's context chip (task view one column): its popover's Open context opens the panel. */
+const CHIP = /^Context \d+%$/;
 const openPanel = async () => {
-  fireEvent.click(await screen.findByRole("button", { name: PANEL }));
+  fireEvent.click(await screen.findByRole("button", { name: CHIP }));
+  fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Open context" }));
   return panel();
 };
 
 describe("the context panel in the app (context-panel spec §5.1)", () => {
   it("the meter is a button that opens the panel; Close closes it", async () => {
     await openApp();
-    // One meter: the flow side's, not a second one in the top bar.
-    expect(await screen.findAllByRole("button", { name: PANEL })).toHaveLength(1);
-    // A button's content is presentational: the meter's readout stays reachable as the button's description.
-    expect(screen.getByRole("button", { name: PANEL, description: "Context in use: 20%, 40,000 of 200,000 tokens" })).toBeTruthy();
+    // One way in: the bar's context chip.
+    expect(await screen.findAllByRole("button", { name: CHIP })).toHaveLength(1);
     const p = await openPanel();
     fireEvent.click(within(p).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: PANEL })).toBeNull());
@@ -77,10 +78,10 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
     expect(screen.queryByRole("region", { name: PANEL })).toBeNull();
   });
 
-  it("in flow mode the task header's Context pill is the panel's one button; the flow side keeps the ring (UI refresh spec §5.1)", async () => {
+  it("in flow mode the bar's context chip is the panel's one way in; the flow side keeps the ring (UI refresh spec §5.1)", async () => {
     await openApp();
-    const pill = await screen.findByRole("button", { name: PANEL });
-    expect(pill.closest(".hh-task-head")).toBeTruthy();
+    const pill = await screen.findByRole("button", { name: CHIP });
+    expect(pill.closest(".hh-topbar-slot")).toBeTruthy();
     expect(pill.textContent).toContain("Context 20%");
     // One meter on screen, the flow side's ring: the pill reads it out as text.
     const meters = screen.getAllByRole("meter", { name: "Context in use" });
@@ -96,7 +97,7 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
 
   it("Close and Escape give focus back to the meter that opened the panel", async () => {
     await openApp();
-    const meter = await screen.findByRole("button", { name: PANEL });
+    const meter = await screen.findByRole("button", { name: CHIP });
     meter.focus();
     let p = await openPanel();
     within(p).getByRole("button", { name: "Close" }).focus();
@@ -122,13 +123,13 @@ describe("the context panel in the app (context-panel spec §5.1)", () => {
 
   it("another task's panel takes the place: focus goes back to the meter", async () => {
     const client = await openApp();
-    const meter = await screen.findByRole("button", { name: PANEL });
+    const meter = await screen.findByRole("button", { name: CHIP });
     meter.focus();
     const p = await openPanel();
     within(p).getByRole("button", { name: "Close" }).focus();
     client.contexts.t2 = { ...CTX, task: "t2" };
     await act(() => client.emitTasks({ ...client.tasks, current: { id: "t2", action: "manifest", status: "waiting", context: { used: 1000, cap: 200_000 } } }));
     expect(await panel()).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: PANEL }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: CHIP }));
   });
 });

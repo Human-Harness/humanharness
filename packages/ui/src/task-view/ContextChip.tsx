@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EngineOption, LimitWindow } from "../client";
 import { Rx } from "../guide";
@@ -27,6 +27,7 @@ export function ContextChip({
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
+  const chip = useRef<HTMLButtonElement>(null);
   const limits = useCurrentWindows(reported);
   if (!(cap > 0)) return null;
   const lang = shownLanguage(i18n);
@@ -57,7 +58,7 @@ export function ContextChip({
   return (
     <Rx.Popover.Root open={open} onOpenChange={setOpen}>
       <Rx.Popover.Trigger>
-        <Rx.Button variant="outline" color="gray" size="1">
+        <Rx.Button ref={chip} variant="outline" color="gray" size="1">
           {t("context.pill", { pct })}
         </Rx.Button>
       </Rx.Popover.Trigger>
@@ -99,6 +100,8 @@ export function ContextChip({
                 size="1"
                 onClick={() => {
                   setOpen(false);
+                  // The panel gives focus back to what opened it: the chip, not this button, which goes away.
+                  chip.current?.focus();
                   onOpen();
                 }}
               >

@@ -8,6 +8,7 @@ import { HarnessApp, type BlockProps } from "../../../ui/src";
 import { resetWorkDetail } from "../../../ui/src/ActivityList";
 import { formatReset } from "../../../ui/src/usage";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { openUsage, railHistory, seeUsage } from "./one-bar";
 
 afterEach(() => {
   cleanup();
@@ -42,25 +43,6 @@ async function breakEngine(client: FakeClient, status: Partial<FakeClient["statu
   client.status = { ...client.status, ...status };
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: /^Back to (?!recommended|the )/ }));
-}
-
-/** The rail's History (task view one column): only while a task is open, so one opens first. */
-async function railHistory(client: FakeClient) {
-  if (!client.taskView.current) act(() => client.emitTasks({ current: { id: "t1", status: "waiting" }, actions: {}, notes: [] }));
-  fireEvent.click(await within(screen.getByRole("navigation", { name: "App" })).findByRole("button", { name: "History" }));
-}
-
-/** The plan's usage sits in the bar's context chip (task view one column): a task with context opens, the chip opens. */
-async function openUsage(client: FakeClient) {
-  if (!client.taskView.current) act(() => client.emitTasks({ current: { id: "t1", status: "waiting", context: { used: 40_000, cap: 200_000 } }, actions: {}, notes: [] }));
-  fireEvent.click(await screen.findByRole("button", { name: /^Context \d+%$/ }));
-  return screen.findByRole("dialog");
-}
-/** Waits until the chip's popover shows `text`, then closes it again. */
-async function seeUsage(client: FakeClient, text: string | RegExp) {
-  await within(await openUsage(client)).findByText(text);
-  fireEvent.click(screen.getByRole("button", { name: /^Context \d+%$/ }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
 
 describe("HarnessApp", () => {
@@ -399,7 +381,6 @@ describe("HarnessApp", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(title);
     expect(document.querySelector(".hh-app-paged")).toBeTruthy();
-    // The one bar has no Volver (task view one column): the rail's Tasks goes back to the chat.
     fireEvent.click(within(screen.getByRole("navigation", { name: "App" })).getByRole("button", { name: "Tasks" }));
     await waitFor(() => expect(screen.queryByRole("heading", { level: 1, name: "History" })).toBeNull());
     expect(document.querySelector(".hh-app-paged")).toBeNull();
@@ -845,7 +826,6 @@ describe("HarnessApp", () => {
     // Spans the window above the rail: the rail is not inside it, and both are the shell's children.
     expect(bar.parentElement?.className).toBe("hh-shell");
     expect(within(bar).getByRole("button", { name: "Demo" })).toBeTruthy();
-    // History is the rail's TASK group's, only while a task is open (task view one column).
     expect(within(screen.getByRole("navigation", { name: "App" })).queryByRole("button", { name: "History" })).toBeNull();
   });
 
@@ -872,7 +852,6 @@ describe("HarnessApp", () => {
     client.state.actions = { manifest: { label: "The manifest", cost: "medium" } };
     client.state.path = ["manifest"];
     await startWork(<HarnessApp client={client} />);
-    // Without a task the crumbs end on Tasks; with one, the one bar's switcher names it (task view one column).
     const here = () =>
       document.querySelector(".hh-topbar-slot:not([hidden]) .hh-tb-title")?.textContent ??
       screen.queryByRole("navigation", { name: "Breadcrumb" })?.querySelector("[aria-current=page]")?.textContent;
@@ -937,7 +916,6 @@ describe("HarnessApp", () => {
     expect(within(rail).getByRole("button", { name: "Files" }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(within(files).getByRole("button", { name: /The manifest/ }));
     expect(await screen.findByRole("region", { name: "The manifest" })).toBeTruthy();
-    // Under the one bar there is no Volver: the rail goes back to the list, and to the chat.
     fireEvent.click(within(rail).getByRole("button", { name: "Files" }));
     expect(await screen.findByRole("region", { name: "Files" })).toBeTruthy();
     fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }));

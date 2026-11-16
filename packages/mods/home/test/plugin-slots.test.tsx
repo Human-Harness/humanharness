@@ -180,7 +180,7 @@ describe("plugin slots", () => {
     expect(within(side).queryByText("3 open")).toBeNull();
   });
 
-  it("draws chips after the usage meter: a button opens its panel's tab, one without a panel is text", async () => {
+  it("draws chips in the one bar: a button opens its panel's tab, one without a panel is text", async () => {
     const c = makeClient({
       view: surface({
         panels: [DIGEST, QUEUE],
@@ -195,9 +195,10 @@ describe("plugin slots", () => {
     const quiet = screen.getByText("Quiet");
     expect(quiet.tagName).toBe("SPAN");
     expect(quiet.className).toBe("hh-pl-chip info");
-    // Right after the usage meter in the top bar.
+    // In the one bar, after the spacer and the context chip (task view one column).
     const chips = button.closest(".hh-pl-chips") as HTMLElement;
-    expect(chips.previousElementSibling?.className).toMatch(/hh-usage/);
+    expect(chips.closest(".hh-topbar-slot")).toBeTruthy();
+    expect(chips.previousElementSibling?.className).toMatch(/hh-spacer/);
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
     fireEvent.click(button);
     await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));

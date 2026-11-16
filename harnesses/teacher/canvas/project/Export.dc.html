@@ -16,14 +16,14 @@ body{margin:0}
 </helmet>
 <div style="width: 1280px; height: 900px; position: relative; background: {{t.bg}}; font-family: 'DM Sans', system-ui, sans-serif; color: {{t.ink}};">
   <dc-import name="ClassEdit" dark="{{dark}}" dim="{{yes}}" hint-size="1280px,900px"></dc-import>
-  <div role="dialog" aria-label="Exportar la clase" style="position: absolute; left: 260px; top: 150px; width: 760px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 16px 48px rgba(0,0,0,0.18);">
+  <div role="dialog" aria-label="Exportar la clase" style="position: absolute; left: 260px; top: 50%; transform: translateY(-50%); width: 760px; max-height: 836px; box-sizing: border-box; background: {{t.surface}}; border: 1px solid {{t.line}}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 16px 48px rgba(0,0,0,0.18);">
     <div style="display: flex; flex-direction: column; gap: 4px;">
       <span style="font-size: 20px; font-weight: 600;">Exportar la clase</span>
       <span style="font-size: 14px; color: {{t.muted}};">Clase 27 · Ecosistemas urbanos · Biología 2º B · borrador</span>
     </div>
     <div role="status" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: {{t.active}}; color: {{t.activeInk}}; font-size: 14px; line-height: 1.45;"><span style="flex-grow: 1;">Esta clase todavía no está aprobada. Podés exportarla igual.</span><a href="{{go.classEdit}}" style="font-weight: 600; color: inherit; text-decoration: underline; cursor: pointer; white-space: nowrap;">Revisar primero</a></div>
 
-    <div style="display: flex; gap: 24px;">
+    <div style="display: flex; gap: 24px; min-height: 0; overflow-y: auto;">
       <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 20px;">
         <sc-if value="{{summary}}" hint-placeholder-val="{{ true }}">
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -95,7 +95,7 @@ body{margin:0}
             <span style="font-size: 14px; font-weight: 500;">Estilo del Colegio San Martín</span>
             <span style="font-size: 14px; color: {{t.muted}};">Logo, colores y tipografía del colegio · citas en APA 7</span>
           </div>
-          <a href="{{go.settings}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: underline; text-decoration: none; cursor: pointer;">Cambiar en Ajustes</a>
+          <a href="{{go.settings}}" style="font-size: 14px; color: {{t.muted}}; text-decoration: underline; white-space: nowrap; flex-shrink: 0; cursor: pointer;">Cambiar en Ajustes</a>
         </div>
       </div>
 

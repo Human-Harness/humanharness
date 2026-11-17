@@ -13,8 +13,6 @@
   "harnesses/demo/ui/demo.css|harness-size|.demo-nodes|6px",
   "harnesses/demo/ui/demo.css|harness-size|.demo-node|10px",
   "harnesses/demo/ui/demo.css|harness-size|.demo-node|2px",
-  "packages/cli/template/ui/harness.css|harness-size|.example-card|14px",
-  "packages/cli/template/ui/harness.css|harness-size|.example-card|6px",
   "packages/ui/src/ActivityList.tsx|class|hh-activity-mark|hh-activity-mark",
   "packages/ui/src/ActivityList.tsx|class|hh-activity|hh-activity",
   "packages/ui/src/ActivityList.tsx|class|hh-work-row|hh-work-row",

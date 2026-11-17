@@ -14,10 +14,11 @@ function shellQuote(arg: string): string {
 
 /**
  * What to paste to connect an agent: the `claude mcp add` command, or Codex's `[mcp_servers.humanharness]` TOML
- * block. Both run this node with the bin's absolute path; `home` (absolute) is passed on as `--home`.
+ * block. Both run this node with the bin's absolute path; `dir` (absolute) is passed on as `--home` (the app's home
+ * folder) or `--harness` (a harness project).
  */
-export function configSnippet(client: Client, home?: string): string {
-  const args = [BIN_PATH, "mcp", ...(home !== undefined ? ["--home", home] : [])];
+export function configSnippet(client: Client, dir?: string, flag: "home" | "harness" = "home"): string {
+  const args = [BIN_PATH, "mcp", ...(dir !== undefined ? [`--${flag}`, dir] : [])];
   if (client === "claude") return `claude mcp add humanharness -- ${[process.execPath, ...args].map(shellQuote).join(" ")}\n`;
   return `[mcp_servers.humanharness]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${args.map((a) => JSON.stringify(a)).join(", ")}]\n`;
 }

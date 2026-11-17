@@ -2,11 +2,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { agentsFile, guideSection, PLUGIN_GUIDE_END, PLUGIN_GUIDE_START, pluginAgentsFile, pluginGuideSection, pluginSkillFile, skillFile } from "../src/guide";
 import { HARNESS_SECTIONS } from "../src/harness-md";
+import { HARNESS_TOOLS } from "../src/mcp/tool-names";
 import { pluginGuideFileOf, pluginTemplateDirOf } from "../src/paths";
 import { CORE, read } from "./helpers";
 
 const guide = read(path.join(CORE, "packages", "cli", "guide"), "new-harness.md");
-const PHASES = ["Task", "Decisions", "Flow", "Mechanical work", "Context", "Models", "Permissions and engines", "Identity", "Verify"];
+const PHASES = ["Task", "Decisions", "Compose", "Flow", "Mechanical work", "Context", "Models", "Permissions and engines", "Identity", "Verify"];
 
 /** Each `## Phase N — Name` with its body (up to the next `## `). */
 function phases(text: string): { n: number; name: string; body: string }[] {
@@ -18,7 +19,7 @@ function phases(text: string): { n: number; name: string; body: string }[] {
 }
 
 describe("the /new-harness guide", () => {
-  it("runs the nine phases in order", () => {
+  it("runs the ten phases in order", () => {
     expect(phases(guide).map((p) => [p.n, p.name])).toEqual(PHASES.map((name, i) => [i + 1, name]));
   });
 
@@ -70,6 +71,25 @@ describe("the /new-harness guide", () => {
     expect(guideSection(agents)).toBe(guide);
     expect(guideSection("# x\nno guide here\n")).toBeNull();
     expect(guideSection(agents.replace(/\n/g, "\r\n"))).toBe(guide);
+  });
+
+  it("composes from the catalog between Decisions and Flow, naming every harness-mode tool", () => {
+    const all = phases(guide);
+    const i = all.findIndex((p) => p.name === "Compose");
+    expect(all[i - 1].name).toBe("Decisions");
+    expect(all[i + 1].name).toBe("Flow");
+    const compose = all[i].body;
+    for (const tool of HARNESS_TOOLS) expect(compose, tool).toContain(`\`${tool}\``);
+    // Read the catalog first, then pick, clone or make, declare in the manifest, check.
+    const order = ["**Read the catalog.**", "**Pick.**", "**Clone and adapt.**", "**Make what is missing.**", "**Declare.**", "**Check.**"].map((w) => compose.indexOf(w));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(compose).toContain("humanharness mcp --harness");
+    expect(compose).toContain("<core>/docs/architecture/mods.md");
+    expect(compose).toMatch(/No tool writes the manifest/);
+    expect(compose).toMatch(/Decision log/);
+    expect(compose).toContain("reused core `home` as is");
+    expect(compose).toContain("one question at a time");
   });
 
   it("asks the developer before running a real task, since it uses their plan", () => {

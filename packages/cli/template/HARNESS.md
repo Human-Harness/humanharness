@@ -8,7 +8,9 @@ The living decision log of this harness. The `/new-harness` guide fills each sec
 
 ## Decisions
 
-<!-- Each choice the person makes along the way, what they need to see to decide, and the block that shows it. -->
+<!-- Each choice the person makes along the way, what they need to see to decide, and the block that shows it. Blocks come from mods: the harness's own in mods/<id>/ (declared in the manifest's `mods`) or the core's; layouts/main.json places them. -->
+
+- The template's sample block is `card` of the mod `example` (mods/example/), in the header of home.
 
 ## Flow
 

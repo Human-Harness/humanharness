@@ -52,7 +52,22 @@ Ask which choices the person makes along the way, and what they need to see in o
 
 Replace the template's `example_card` block once the harness has its own.
 
-## Phase 3 — Flow
+## Phase 3 — Compose
+
+Fills: HARNESS.md → Decision log
+
+A harness is made of mods (the screen's pieces: a home, panels, cards) placed by a layout. Read what already exists before you write any code: reuse first, clone and adapt second, write a new mod last.
+
+1. **Read the catalog.** With the `humanharness` MCP server in harness mode (`humanharness mcp --harness <this folder>`; `--config claude` or `--config codex` prints what to paste), call `catalog`: the core's mods with their blocks, hooks, settings and README summary, the core's default layout, this repository's own `mods/` and `layouts/`, and which mods `harness.config.ts` → `mods` declares. In an empty folder it says there is no project yet: `harness_init` makes one (as `humanharness init` does). Without the server, read `<core>/packages/mods/*/mod.json` and each mod's `README.md`, and `<core>/docs/architecture/mods.md`.
+2. **Pick.** For each piece of the screen the Decisions phase asked for, pick a core mod that does it, as it is, or the closest one to change. Pick the layout too: this repository's `layouts/main.json`, or the core's with `layout_clone`. Ask the developer about each pick, one at a time.
+3. **Clone and adapt.** To change a core mod, `mod_clone` copies it into `mods/<id>` with `clonedFrom`; the clone is never updated from the original, so clone only what you must change. Run `mod_check` after each edit.
+4. **Make what is missing.** `mod_new` makes a mod from the template in `mods/<id>` (`mod.json`, `main.ts`, `ui.tsx` with one block, a README of the imports a mod may use). Use it only when no core mod comes close. Run `mod_check` after each edit.
+5. **Declare.** No tool writes the manifest: add each mod you use to `harness.config.ts` → `mods` yourself (`home: {}` for a core mod as it is, `<id>: {}` for one in `mods/`, with its config as the value), declare a clone instead of its original, and place each block in `layouts/main.json` as `{ "mod": "<id>", "block": "<name>" }`. Remove the template's `example` mod once the harness has its own.
+6. **Check.** Run `harness_check` (or `corepack pnpm check`): every `mods/<id>` is mod-checked, every layout validated, an undeclared folder is a warning and a declared mod without a folder or core mod is an error. Fix every error.
+
+Record each reuse in the Decision log with its reason: "reused core `home` as is, because …", "cloned `home` as `start`, changed X because …", "made `planner` with `mod_new`: no core mod shows a plan". The rules above still hold: write in English, ask one question at a time, never edit outside this repository, no provider brands.
+
+## Phase 4 — Flow
 
 Fills: HARNESS.md → Flow
 
@@ -75,7 +90,7 @@ Ask which tasks (actions) exist. For each one: an id, a label and a one-line des
 
 Remove the template's `example` action and its brief once the harness has its own.
 
-## Phase 4 — Mechanical work
+## Phase 5 — Mechanical work
 
 Fills: HARNESS.md → Mechanical work
 
@@ -97,7 +112,7 @@ Write one fixture per tool (`tools/<id>/fixtures/<case>.json`: the `args`, the `
 
 `humanharness run <action>` runs the tools as the app does: the pre-steps before the first message (a required one that fails stops the task) and the agent's tool calls, one line each. With `--record`, the recording keeps the agent's tool calls and each tool's fetches and commands under `mock/tools/<tool>/`, every key replaced. In `dev --mock` the tools run for real, but their fetches and commands answer only from those files ("Not recorded: <target>" otherwise), and a recipe's AI step answers from `mock/steps/<job>.json`, which `check` compares with the step's `output`. See `<core>/docs/architecture/tools.md`.
 
-## Phase 5 — Context
+## Phase 6 — Context
 
 Fills: HARNESS.md → Context
 
@@ -120,7 +135,7 @@ Every task ends with a note the app writes from the core `save_note` block (titl
 
 Say it in the briefs where it matters, for example: "the decisions are the options the person chose, each with its reason".
 
-## Phase 6 — Models
+## Phase 7 — Models
 
 Fills: HARNESS.md → Models
 
@@ -132,7 +147,7 @@ For each action, and for free questions (`questions.tier`), choose a tier and gi
 
 Write the tiers in `harness.config.ts` and in the Flow table. A `heavy` action at `light`, or a `light` one at `deep`, makes `check` warn: explain it or change it.
 
-## Phase 7 — Permissions and engines
+## Phase 8 — Permissions and engines
 
 Fills: HARNESS.md → Permissions and engines
 
@@ -146,7 +161,7 @@ Write one line each in `HARNESS.md` (`- edit: none — reason`) and one `- engin
 
 Ask too whether the harness's own screens need work the window can't do and the agent shouldn't (convert a file, watch a folder, keep a cache). If so, declare `backend: "./backend/index.ts"`: a Node process of the harness's own that the app starts after setup and the harness UI calls with `client.backend.call` and hears with `client.backend.on`. It reads JSON-RPC 2.0 lines on stdin and writes them on stdout, every line with `"jsonrpc":"2.0"`; logs go to stderr, never stdout. A `.ts` backend uses erasable syntax only and imports the SDK with `import type`; no native modules yet. It runs as the person's user, so it gets the same care as an MCP server, and it can't write the history, notes or data: those go through the harness UI. Record it as a decision with its reason. See `<core>/docs/architecture/authoring.md` ("A backend") and `<core>/harnesses/demo/backend/index.ts`.
 
-## Phase 8 — Identity
+## Phase 9 — Identity
 
 Fills: HARNESS.md → Identity
 
@@ -171,7 +186,7 @@ Mistakes already seen. Read them before writing tools; add one when a harness te
 - One tool per mechanical job, not one tool that does everything: small tools are easier to test, trace and reuse.
 - Test every tool with a fixture before wiring it into a step.
 
-## Phase 9 — Verify
+## Phase 10 — Verify
 
 Fills: HARNESS.md → Open questions, Decision log
 

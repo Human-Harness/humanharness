@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { fakeClaudeCommand } from "@humanharness/fake-agent";
 import { initHarness } from "../src/init";
 import { runTask } from "../src/run";
-import { CORE, memoryStream, tempRoot } from "./helpers";
+import { CORE, memoryStream, tempRoot, withExampleCard } from "./helpers";
+
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
 
 // Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
 vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
@@ -16,6 +19,8 @@ const harnessDir = path.join(root, "h");
 const mockDir = path.join(root, "mock");
 beforeAll(async () => {
   await initHarness({ dir: harnessDir, core: CORE, install: false });
+  // The template has no custom block: the scripted turns show the harness's own example_card.
+  withExampleCard(harnessDir);
   fs.mkdirSync(mockDir);
   fs.writeFileSync(
     path.join(mockDir, "example.json"),

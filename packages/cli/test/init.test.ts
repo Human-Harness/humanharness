@@ -123,6 +123,18 @@ describe("humanharness init", () => {
     expect(m.out()).toContain("run /new-harness");
   });
 
+  it("makes a project of mods and a layout that check finds clean", async () => {
+    const m = memoryIo(root);
+    expect(await main(["init", "composed", "--core", CORE, "--skip-install"], m.io)).toBe(0);
+    const dir = path.join(root, "composed");
+    for (const file of ["mods/example/mod.json", "mods/example/ui.tsx", "mods/example/README.md", "layouts/main.json"]) {
+      expect(fs.existsSync(path.join(dir, file)), file).toBe(true);
+    }
+    const c = memoryIo(dir);
+    expect(await main(["check"], c.io)).toBe(0);
+    expect(c.out()).toContain("No problems found.");
+  }, 60_000);
+
   it("needs a folder", async () => {
     const m = memoryIo(root);
     expect(await main(["init"], m.io)).toBe(2);

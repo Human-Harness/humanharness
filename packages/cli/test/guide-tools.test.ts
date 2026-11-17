@@ -1,9 +1,12 @@
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { checkHarness } from "../src/check";
 import { HARNESS_SECTIONS, parseHarnessMd, sectionText } from "../src/harness-md";
 import { initHarness } from "../src/init";
 import { CORE, read, replaceIn, tempRoot } from "./helpers";
+
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
 
 const guide = read(path.join(CORE, "packages", "cli", "guide"), "new-harness.md");
 const template = read(path.join(CORE, "packages", "cli", "template"), "HARNESS.md");
@@ -29,11 +32,11 @@ function guideSection(title: string): string | undefined {
 }
 
 describe("the guide's tools phase (tools spec §11)", () => {
-  it("has Mechanical work as Phase 4, between Flow and Context", () => {
+  it("has Mechanical work as Phase 5, between Flow and Context", () => {
     const all = phases(guide);
-    expect(all[3]).toMatchObject({ n: 4, name: "Mechanical work" });
-    expect(all[2].name).toBe("Flow");
-    expect(all[4]).toMatchObject({ n: 5, name: "Context" });
+    expect(all[4]).toMatchObject({ n: 5, name: "Mechanical work" });
+    expect(all[3].name).toBe("Flow");
+    expect(all[5]).toMatchObject({ n: 6, name: "Context" });
   });
 
   it("the phase fills HARNESS.md → Mechanical work", () => {
@@ -90,15 +93,15 @@ describe("the guide's tools phase (tools spec §11)", () => {
   });
 
   it("puts Lessons before the Verify phase, and it is not a phase", () => {
-    expect(guide.indexOf("\n## Lessons\n")).toBeGreaterThan(guide.indexOf("\n## Phase 8 — Identity\n"));
-    expect(guide.indexOf("\n## Lessons\n")).toBeLessThan(guide.indexOf("\n## Phase 9 — Verify\n"));
+    expect(guide.indexOf("\n## Lessons\n")).toBeGreaterThan(guide.indexOf("\n## Phase 9 — Identity\n"));
+    expect(guide.indexOf("\n## Lessons\n")).toBeLessThan(guide.indexOf("\n## Phase 10 — Verify\n"));
     expect(phases(guide).map((p) => p.name)).not.toContain("Lessons");
   });
 
   it("refers to phases by their new numbers", () => {
     // No text still points at a phase by its old number (Context was 4, Verify was 8).
-    for (const m of guide.matchAll(/\bPhase (\d+)\b(?! —)/g)) expect(Number(m[1])).toBeLessThanOrEqual(9);
-    expect(guide).not.toMatch(/## Phase 4 — Context/);
+    for (const m of guide.matchAll(/\bPhase (\d+)\b(?! —)/g)) expect(Number(m[1])).toBeLessThanOrEqual(10);
+    expect(guide).not.toMatch(/## Phase [45] — Context/);
   });
 
   it("the template's HARNESS.md has the section, and parses with no unknown section", () => {

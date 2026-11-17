@@ -5,7 +5,10 @@ import { type CheckResult, checkHarness, findBrand, formatFindings } from "../sr
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { TOOL_P12_NOTE } from "../src/tool-host-node";
-import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
+import { CORE, memoryIo, replaceIn, tempRoot, withExampleCard } from "./helpers";
+
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
 
 // Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
 vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
@@ -190,6 +193,7 @@ describe("check: errors", () => {
 
   it("i18n: scans the manifest's ui folder; a template-literal key is not a key", async () => {
     const dir = await fixture((d) => {
+      withExampleCard(d);
       fs.renameSync(path.join(d, "ui"), path.join(d, "screens"));
       replaceIn(d, "harness.config.ts", 'author: "Your name",', 'author: "Your name", ui: "./screens",');
       replaceIn(d, "screens/ExampleCard.tsx", "<h3>{data.title}</h3>", "<h3 title={t(`prefix.${data.title}`)}>{t(\"cardTitle\")}</h3>");
@@ -311,7 +315,6 @@ describe("check: warnings", () => {
 
   it("pillar-decisions and pillar-flow: no choices, no custom block, one action, no path", async () => {
     const dir = await fixture((d) => {
-      replaceIn(d, "harness.config.ts", "blocks: { example_card: exampleCard },", "blocks: {},");
       replaceIn(d, "agent/tasks/example.md", "End with `show_choices`: one option with a `followUp` to go deeper on that idea.", "Stop there.");
       replaceIn(d, "agent/AGENTS.md", "- End every answer with `show_choices`, offering how to continue.\n", "");
     });
@@ -493,7 +496,11 @@ describe("mock recordings", () => {
 
 describe("check: input blocks", () => {
   const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
-  const withInput = (input: string) => (d: string) => replaceIn(d, "harness.config.ts", EXAMPLE, `input: ${input},\n  ${EXAMPLE}`);
+  // The template has no custom block: each input test declares its own example_card first.
+  const withInput = (input: string) => (d: string) => {
+    withExampleCard(d);
+    replaceIn(d, "harness.config.ts", EXAMPLE, `input: ${input},\n  ${EXAMPLE}`);
+  };
   const inputRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("input-")).map((f) => `${f.severity}:${f.rule}`);
 
   it("an input the core form draws gives no warning", async () => {
@@ -510,11 +517,12 @@ describe("check: input blocks", () => {
 
   it("input-form: a field the core form can't draw needs the block's own component", async () => {
     const deep = withInput("z.object({ deep: z.object({ x: z.string() }) })");
-    // The template's ui/App.tsx registers `example_card`: no warning.
+    // withExampleCard registers `example_card` in ui/App.tsx: no warning.
     expect(inputRules(await checkHarness(await fixture(deep)))).toEqual([]);
     const bare = await fixture((d) => {
       deep(d);
       replaceIn(d, "ui/App.tsx", "const blocks = { example_card: ExampleCard };", "const blocks = {};");
+      replaceIn(d, "ui/App.tsx", 'import { ExampleCard } from "./ExampleCard";\n', "");
     });
     const r = await checkHarness(bare);
     expect(inputRules(r)).toEqual(["warning:input-form"]);
@@ -573,6 +581,7 @@ describe("check: recorded answers", () => {
   const rec = (turn1: Record<string, unknown>) => ({ version: 1, action: "example", match: "# Task: example", turns: [{ id: "t1", text: "hi", ...turn1 }, { id: "t2", text: "ok" }] });
   const mockRules = async (recording: object) => {
     const dir = await fixture((d) => {
+      withExampleCard(d);
       replaceIn(d, "harness.config.ts", EXAMPLE, `input: z.object({ why: z.string().min(1) }),\n  ${EXAMPLE}`);
       fs.mkdirSync(path.join(d, "mock"));
       fs.writeFileSync(path.join(d, "mock", "example.json"), JSON.stringify(recording));

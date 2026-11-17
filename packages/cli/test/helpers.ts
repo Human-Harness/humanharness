@@ -69,3 +69,52 @@ export function dropExampleTool(dir: string): void {
   fs.rmSync(path.join(dir, "tools"), { recursive: true });
   replaceIn(dir, "tsconfig.json", '"include": ["harness.config.ts", "ui", "tools"]', '"include": ["harness.config.ts", "ui"]');
 }
+
+/**
+ * Gives a harness made with `init` a custom block of its own, `example_card` (`show_example_card`), with its component
+ * in ui/ExampleCard.tsx registered in ui/App.tsx: what tests of custom blocks build on, now that the template is made of
+ * mods and has none.
+ */
+export function withExampleCard(dir: string): void {
+  replaceIn(dir, "harness.config.ts", 'import { defineHarness, z } from "@humanharness/cli/sdk";', 'import { defineBlock, defineHarness, z } from "@humanharness/cli/sdk";');
+  replaceIn(
+    dir,
+    "harness.config.ts",
+    "\nexport default defineHarness({",
+    [
+      "",
+      "const exampleCard = defineBlock({",
+      '  description: "Shows one idea as a card: a short title and a body of one or two sentences. Use it once per answer, for the main idea.",',
+      "  visible: true,",
+      "  schema: z.object({ title: z.string().min(1).max(80), body: z.string().min(1).max(400) }),",
+      '  example: { title: "One idea", body: "A short explanation of why it matters." },',
+      "});",
+      "",
+      "export default defineHarness({",
+    ].join("\n"),
+  );
+  replaceIn(dir, "harness.config.ts", "blocks: {},", "blocks: { example_card: exampleCard },");
+  fs.writeFileSync(
+    path.join(dir, "ui", "ExampleCard.tsx"),
+    [
+      'import { type BlockProps, useTranslation } from "@humanharness/cli/ui";',
+      "",
+      "export function ExampleCard({ data }: BlockProps) {",
+      '  const { t } = useTranslation("harness");',
+      '  if (typeof data?.title !== "string" || typeof data?.body !== "string") return null;',
+      "  return (",
+      '    <article aria-label={t("exampleCard")}>',
+      "      <h3>{data.title}</h3>",
+      "      <p>{data.body}</p>",
+      "    </article>",
+      "  );",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  replaceIn(dir, "ui/App.tsx", 'import "./harness.css";', 'import { ExampleCard } from "./ExampleCard";\nimport "./harness.css";');
+  replaceIn(dir, "ui/App.tsx", "const startView =", "const blocks = { example_card: ExampleCard };\nconst startView =");
+  replaceIn(dir, "ui/App.tsx", "<HarnessApp client={client} locales", "<HarnessApp client={client} blocks={blocks} locales");
+  const en = JSON.parse(read(dir, "locales/en.json")) as Record<string, string>;
+  fs.writeFileSync(path.join(dir, "locales", "en.json"), `${JSON.stringify({ ...en, exampleCard: "Idea" }, null, 2)}\n`);
+}

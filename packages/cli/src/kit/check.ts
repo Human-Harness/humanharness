@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { type ModDefinition, type ModJson, modJsonSchema } from "@humanharness/mod-sdk";
 import { MAIN_SHARED_MODULES, bundleMod } from "@humanharness/mod-sdk/bundle";
 import { writeMainShims } from "@humanharness/shell/mod-shims";
+import { type KitRoot, rootDir } from "./harness-project";
 
 const MAIN_TIMEOUT_MS = 10_000;
 const why = (err: unknown) => (err instanceof Error ? err.message : String(err)).split("\n")[0];
@@ -115,10 +116,10 @@ export interface ModCheck {
 
 /**
  * Checks a mod without the app: mod.json, its bundles, main against a fake ctx and each block rendered. `folder` is
- * relative to `home` (or absolute).
+ * relative to the home folder or the harness project (or absolute).
  */
-export async function checkMod(home: string, folder: string): Promise<{ ok: boolean; checks: ModCheck[] }> {
-  const dir = path.resolve(home, folder);
+export async function checkMod(root: KitRoot, folder: string): Promise<{ ok: boolean; checks: ModCheck[] }> {
+  const dir = path.resolve(rootDir(root), folder);
   const checks: ModCheck[] = [];
   const say = (ok: boolean, name: string, detail?: string) => {
     checks.push(detail === undefined ? { name, ok } : { name, ok, detail });

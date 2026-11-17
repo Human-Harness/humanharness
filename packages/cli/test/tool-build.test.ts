@@ -12,6 +12,9 @@ import { TOOL_P12_NOTE } from "../src/tool-host-node";
 import { buildTools } from "../src/tool-build";
 import { CORE, dropExampleTool, memoryIo, memoryStream, read, replaceIn, tempRoot } from "./helpers";
 
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
+
 const { root, cleanup } = tempRoot("hh-tool-build-");
 afterAll(cleanup);
 let n = 0;

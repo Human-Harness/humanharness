@@ -137,15 +137,15 @@ Marco, 2026-11-16: "vamos con tus recomendaciones". Every recommended option of 
 | P15 | dadas / aprobadas / revisadas | una sola palabra | Graciela · **ya resuelto en v52 (glosario): aprobada vs dada en el aula** |
 | P16 | Clases sueltas | clases sin materia | Graciela · **decidido v64: Clases sin materia** |
 | P17 | palabras dudosas | palabras que no pude leer bien | Diego · **decidido v64: "3 palabras no se leen bien" con "Ver cuáles"** |
-| P18 | Exportar | sacar en PDF, imprimir / proyectar | R4: Laura |
-| P19 | Asistente | ayuda | R4: Laura, Sofía |
-| P20 | Guardar una copia (del original) | descargar | R4: Laura |
-| P21 | Completó la IA | lo leyó del archivo | R4: Laura |
-| P22 | ficha (Seguir con la ficha) | los datos del apunte | R4: Diego |
-| P23 | Tomado (examen) | rendido | R4: Graciela |
-| P24 | Seguir en segundo plano | seguir trabajando mientras se arma | R4: Graciela |
-| P25 | Guion, Módulos | secuencia didáctica, horas cátedra | R4: Sofía |
-| P26 | Dada en el aula | ya la di | R4: Matías |
+| P18 | Exportar | sacar en PDF, imprimir / proyectar | R4: Laura · **decidido v65: Descargar PDF** |
+| P19 | Asistente | ayuda | R4: Laura, Sofía · **decidido v65: se queda Asistente** |
+| P20 | Guardar una copia (del original) | descargar | R4: Laura · **decidido v65: Descargar el original** |
+| P21 | Completó la IA | lo leyó del archivo | R4: Laura · **decidido v65: Lo leyó la IA del archivo · Lo dedujo la IA** |
+| P22 | ficha (Seguir con la ficha) | los datos del apunte | R4: Diego · **decidido v65: Datos de la fuente · Seguir con los datos** |
+| P23 | Tomado (examen) | rendido | R4: Graciela · **decidido v65: se queda Tomado (la app no corrige)** |
+| P24 | Seguir en segundo plano | seguir trabajando mientras se arma | R4: Graciela · **decidido v65: Seguir trabajando** |
+| P25 | Guion, Módulos | secuencia didáctica, horas cátedra | R4: Sofía · **decidido v65: Secuencia de la clase · 80 min (2 horas cátedra)** |
+| P26 | Dada en el aula | ya la di | R4: Matías · **decidido v65: se queda Dada en el aula** |
 
 ## Lo que funciona (mantener)
 

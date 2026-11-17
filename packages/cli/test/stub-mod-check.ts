@@ -32,7 +32,7 @@ const TEMPLATE_HASH = folderHash(TEMPLATE_MOD);
  */
 export function withStub(real: typeof KitCheck): typeof KitCheck {
   const checkMod: typeof KitCheck.checkMod = async (home, folder) => {
-    if (TEMPLATE_HASH !== null && folderHash(path.resolve(home, folder)) === TEMPLATE_HASH) {
+    if (TEMPLATE_HASH !== null && folderHash(path.resolve(typeof home === "string" ? home : home.harness, folder)) === TEMPLATE_HASH) {
       return { ok: true, checks: [{ name: "mod.json", ok: true }, { name: "ui", ok: true, detail: "stubbed: the template's mod" }] };
     }
     return real.checkMod(home, folder);

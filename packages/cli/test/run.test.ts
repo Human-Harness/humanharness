@@ -15,7 +15,7 @@ import { CliError, UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type Interrupts, noticeMessage, parseSettings, readyEngine, runTask } from "../src/run";
-import { CORE, memoryIo, memoryStream, tempRoot, watch } from "./helpers";
+import { CORE, memoryIo, memoryStream, tempRoot, watch, withExampleCard } from "./helpers";
 
 // Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
 vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
@@ -25,6 +25,8 @@ afterAll(cleanup);
 const harnessDir = path.join(root, "my-harness");
 beforeAll(async () => {
   await initHarness({ dir: harnessDir, core: CORE, install: false });
+  // The template has no custom block: the scripted turns show the harness's own example_card.
+  withExampleCard(harnessDir);
 });
 
 const result = {

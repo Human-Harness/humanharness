@@ -6,7 +6,7 @@ import { layoutSchema, modJsonSchema } from "@humanharness/mod-sdk";
 export type Layer = "core" | "harness" | "user";
 const LAYER_DIRS: Record<Layer, string> = { core: "core", harness: "harness", user: "." };
 /** The layout file names the app reads (shell's layout.ts). */
-const LAYOUT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+export const LAYOUT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 /**
  * Core mods that are on until the person turns them off: shell's `CORE_MOD_SWITCHES` (core-mods.ts), which the CLI
  * can't import. Home is the screen the app opens on.
@@ -153,10 +153,13 @@ function stateOf(id: string, layer: Layer, c: Awaited<ReturnType<typeof modsConf
   return layer === "core" && CORE_ON_BY_DEFAULT.has(id) ? "on" : "off";
 }
 
-async function modsOf(home: string, layer: Layer, config: Awaited<ReturnType<typeof modsConfig>>): Promise<CatalogMod[]> {
-  const root = path.join(home, LAYER_DIRS[layer], "mods");
+/** A mod as its folder says it, before the app's state: what both catalogs list, with its README's lead. */
+export type ModInfo = Omit<CatalogMod, "layer" | "state"> & { readme?: string };
+
+/** Every mod folder in `root` (sorted, hidden ones skipped), read from its mod.json, README and source. */
+export async function readMods(root: string): Promise<ModInfo[]> {
   const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
-  const out: CatalogMod[] = [];
+  const out: ModInfo[] = [];
   for (const e of entries.filter((x) => x.isDirectory() && !x.name.startsWith(".")).sort((a, b) => a.name.localeCompare(b.name))) {
     const dir = path.join(root, e.name);
     const files = await filesUnder(dir);
@@ -171,22 +174,32 @@ async function modsOf(home: string, layer: Layer, config: Awaited<ReturnType<typ
     const json = isObj(raw) ? raw : {};
     const id = parsed.success ? parsed.data.id : e.name;
     const scanned = await scanSource(dir, files);
-    const mod: CatalogMod = {
+    const readme = readmeLead(await readText(path.join(dir, "README.md")));
+    const mod: ModInfo = {
       id,
-      layer,
       name: typeof json.name === "string" ? json.name : id,
-      description: (typeof json.description === "string" ? json.description : readmeLead(await readText(path.join(dir, "README.md")))) ?? "",
+      description: (typeof json.description === "string" ? json.description : readme) ?? "",
       version: typeof json.version === "string" ? json.version : "",
       blocks: strings(json.blocks) ?? scanned.blocks,
       hooks: strings(json.hooks) ?? scanned.hooks,
       settings: strings(json.settings) ?? scanned.settings,
       ...(parsed.success && parsed.data.clonedFrom ? { clonedFrom: parsed.data.clonedFrom } : {}),
-      state: stateOf(id, layer, config),
+      ...(readme !== undefined ? { readme } : {}),
     };
     if (errors.length > 0) mod.error = errors.join("\n");
     out.push(mod);
   }
   return out;
+}
+
+async function modsOf(home: string, layer: Layer, config: Awaited<ReturnType<typeof modsConfig>>): Promise<CatalogMod[]> {
+  return (await readMods(path.join(home, LAYER_DIRS[layer], "mods"))).map(({ readme: _readme, error, clonedFrom, ...m }) => ({
+    ...m,
+    layer,
+    ...(clonedFrom ? { clonedFrom } : {}),
+    state: stateOf(m.id, layer, config),
+    ...(error !== undefined ? { error } : {}),
+  }));
 }
 
 /** Whether a layout file is there and the app would use it (it parses and passes `layoutSchema`). */

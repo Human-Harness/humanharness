@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CliError } from "../cli";
 import { assertModId } from "./clone";
+import { type KitRoot, coreModsDir, rootDir } from "./harness-project";
 
 /** The smallest mod that passes `checkMod`, with `__ID__`, `__NAME__`, `__DESCRIPTION__` and `__BLOCK__` to fill. */
 const TEMPLATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "mod-template");
@@ -16,16 +17,18 @@ export interface NewMod {
 }
 
 /**
- * Makes `mods/<id>/` in the home folder from the mod template: a `main`, one block (`block`, default `main`) and a
- * README. Refuses an id a core or harness mod has: that one is cloned (`mod clone`), not made again.
+ * Makes `mods/<id>/` in the home folder (or the harness project) from the mod template: a `main`, one block (`block`, default `main`) and a
+ * README; never touches harness.config.ts. Refuses an id a core or harness mod has: that one is cloned (`mod clone`), not made again.
  */
-export async function newMod(home: string, o: { id: string; name: string; description: string; block?: string }): Promise<NewMod> {
+export async function newMod(root: KitRoot, o: { id: string; name: string; description: string; block?: string }): Promise<NewMod> {
   const block = o.block ?? "main";
   assertModId(o.id);
   if (!BLOCK_NAME.test(block)) throw new CliError(`${block} isn't a valid block name: lowercase letters, digits and -, at most 40`);
   const name = o.name.trim();
   if (name.length === 0 || name.length > 60) throw new CliError("A mod's name has 1 to 60 characters");
-  const layer = ["core", "harness"].find((l) => existsSync(path.join(home, l, "mods", o.id)));
+  const home = rootDir(root);
+  const layer =
+    typeof root === "string" ? ["core", "harness"].find((l) => existsSync(path.join(home, l, "mods", o.id))) : existsSync(path.join(coreModsDir(root.core), o.id)) ? "core" : undefined;
   if (layer) throw new CliError(`${o.id} is a ${layer} mod: clone it with mod_clone (humanharness mod clone ${o.id}) to change it, or pick another id`);
   const target = path.join(home, "mods", o.id);
   if (existsSync(target)) throw new CliError(`${target} already exists`);

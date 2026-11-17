@@ -1,0 +1,12 @@
+{
+  "type": "stack",
+  "children": [
+    {
+      "type": "stack",
+      "id": "home",
+      "header": { "mod": "example", "block": "card" },
+      "children": [{ "type": "block", "id": "home-screen", "content": { "mod": "home", "block": "home" } }]
+    },
+    { "type": "block", "id": "work", "content": { "core": "task" } }
+  ]
+}

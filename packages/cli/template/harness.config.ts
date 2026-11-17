@@ -1,15 +1,7 @@
 // The manifest: everything the core needs to know about this harness.
 // `corepack pnpm check` validates it together with HARNESS.md; the /new-harness guide edits it phase by phase.
-import { defineBlock, defineHarness, z } from "@humanharness/cli/sdk";
-
-// A custom block: a piece of UI the AI shows by calling a tool (`show_example_card`).
-// The schema bounds what the AI may send, and the example must match it. Its component is ui/ExampleCard.tsx.
-const exampleCard = defineBlock({
-  description: "Shows one idea as a card: a short title and a body of one or two sentences. Use it once per answer, for the main idea.",
-  visible: true,
-  schema: z.object({ title: z.string().min(1).max(80), body: z.string().min(1).max(400) }),
-  example: { title: "One idea", body: "A short explanation of why it matters." },
-});
+// `z` is zod: the schemas of blocks, data and settings the guide adds are written with it.
+import { defineHarness, z } from "@humanharness/cli/sdk";
 
 export default defineHarness({
   // Stable id: lowercase letters, digits and dashes. It names the app's data folder.
@@ -28,8 +20,11 @@ export default defineHarness({
   instructions: "./agent/AGENTS.md",
   // What the AI may do: change files in the folder ("folder") or nothing ("none"), run commands, use the web.
   permissions: { edit: "none", exec: false, web: false },
-  // Custom blocks, by name. The core adds `choices` and `save_note` to every harness.
-  blocks: { example_card: exampleCard },
+  // Mods this harness turns on, by id: its own in mods/<id>/, or a core mod. Each value is that mod's config.
+  // layouts/main.json places their blocks.
+  mods: { example: {} },
+  // Blocks the AI shows by calling a tool (show_<name>), by name. The core adds `choices` and `save_note` to every harness.
+  blocks: {},
   // Code the AI (or a task's pre-steps) can call instead of doing mechanical work by hand. Each one is a file in tools/ with fixtures in tools/<id>/fixtures/.
   tools: { "word-count": "./tools/word-count.ts" },
   // Tasks the person can start. Each one runs in its own engine session and ends with a note.

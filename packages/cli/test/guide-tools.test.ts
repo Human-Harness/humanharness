@@ -1,9 +1,12 @@
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { checkHarness } from "../src/check";
 import { HARNESS_SECTIONS, parseHarnessMd, sectionText } from "../src/harness-md";
 import { initHarness } from "../src/init";
 import { CORE, read, replaceIn, tempRoot } from "./helpers";
+
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
 
 const guide = read(path.join(CORE, "packages", "cli", "guide"), "new-harness.md");
 const template = read(path.join(CORE, "packages", "cli", "template"), "HARNESS.md");

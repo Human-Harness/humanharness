@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { UsageError } from "../src/cli";
 import { pluginAgentsFile, pluginGuideSection, pluginSkillFile, readGuide } from "../src/guide";
 import { main } from "../src/main";
@@ -9,6 +9,9 @@ import { buildPlugin } from "../src/plugin-build";
 import { checkPlugin } from "../src/plugin-check";
 import { initPlugin } from "../src/plugin-init";
 import { CORE, memoryIo, read, tempRoot } from "./helpers";
+
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
 
 const { root, cleanup } = tempRoot("hh-plugin-init-");
 afterAll(cleanup);

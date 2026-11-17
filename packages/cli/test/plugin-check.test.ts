@@ -7,6 +7,9 @@ import { type PluginFinding, checkPlugin, execWrites, formatPluginFindings, wild
 import { P12_NOTE } from "../src/plugin-test";
 import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
 
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
+
 // Not about the build: a plugin whose sources did not change is not built twice (cached-plugin-build.ts).
 vi.mock("../src/plugin-build", async (real) => (await import("./cached-plugin-build")).withCache(await real<typeof import("../src/plugin-build")>()));
 

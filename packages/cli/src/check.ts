@@ -25,11 +25,13 @@ import {
   toolProblems,
   type z,
 } from "@humanharness/harness-sdk";
+import { layoutSchema } from "@humanharness/mod-sdk";
 import { estimateTokens, settingsLines, writingLines } from "@humanharness/workspace";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { clashMessage, matchClashes } from "./mock-match";
-import { HARNESS_MD, MANIFEST } from "./paths";
+import { checkMod } from "./kit/check";
+import { CORE_DIR, HARNESS_MD, MANIFEST } from "./paths";
 import { ToolBuildError, buildTools } from "./tool-build";
 import { TOOL_P12_NOTE } from "./tool-host-node";
 import { toolFixtureFindings } from "./tool-test";
@@ -72,7 +74,9 @@ export type RuleId =
   | "tool-steps"
   | "tool-fixture"
   | "mock-step"
-  | "search-data";
+  | "search-data"
+  | "mod"
+  | "layout";
 
 export interface Finding {
   rule: RuleId;
@@ -138,6 +142,8 @@ export async function checkHarness(
   findings.push(...documentKindsFindings(harness));
   findings.push(...(await setupFindings(harness)));
   findings.push(...brandFindings(harness));
+  findings.push(...(await modFindings(harness)));
+  findings.push(...(await layoutFindings(harness)));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc) findings.push(...malformedPermissionFindings(doc));
   if (doc?.flow) findings.push(...mismatchFindings(harness, doc));
@@ -165,6 +171,52 @@ async function loadManifest(root: string, findings: Finding[]): Promise<LoadedHa
     } else findings.push(error("schema", err instanceof Error ? err.message : String(err), MANIFEST));
     return null;
   }
+}
+
+const dirsIn = (dir: string) =>
+  fs.readdir(dir, { withFileTypes: true }).then((a) => a.filter((e) => e.isDirectory() && e.name[0] !== ".").map((e) => e.name).sort(), () => [] as string[]);
+const BAD = Symbol("not JSON");
+const json = (text: string | null): unknown => {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return BAD;
+  }
+};
+
+/** Each mods/<id>/ gets `mod check` and its folder's id; undeclared ones are off; a declared one must exist (0c2). */
+async function modFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  const declared = Object.keys(h.mods ?? {});
+  const folders = await dirsIn(path.join(h.root, "mods"));
+  for (const id of folders) {
+    const rel = `mods/${id}`;
+    const file = `${rel}/mod.json`;
+    if (!declared.includes(id)) out.push(warning("mod", `${rel} is not in harness.config.ts → mods, so it is off: add \`${id}: {}\` to mods, or delete the folder.`, rel));
+    const named = (json(await read(path.join(h.root, file))) as { id?: unknown } | undefined)?.id;
+    if (typeof named === "string" && named !== id) out.push(error("mod", `${rel}: mod.json has id "${named}": a mod's id is its folder's name, "${id}".`, file));
+    for (const c of (await checkMod(h.root, rel)).checks) if (!c.ok) out.push(error("mod", `${rel}: ${c.name}: ${c.detail ?? "failed"}`, file));
+  }
+  const core = await dirsIn(path.join(CORE_DIR, "packages", "mods"));
+  for (const id of declared.filter((d) => !folders.includes(d) && !core.includes(d))) {
+    out.push(error("mod", `mods.${id}: there is no mods/${id}/ folder and no core mod with that id. Create the mod in mods/${id}/, or remove it from mods.`, MANIFEST));
+  }
+  return out;
+}
+
+/** Each layouts/*.json must pass `layoutSchema`: one error per problem, with the rule's message. */
+async function layoutFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  const dir = path.join(h.root, "layouts");
+  for (const f of (await fs.readdir(dir).catch(() => [])).filter((n) => n.endsWith(".json")).sort()) {
+    const rel = `layouts/${f}`;
+    const value = json(await read(path.join(dir, f)));
+    if (value === BAD) out.push(error("layout", `${rel} is not valid JSON.`, rel));
+    const r = layoutSchema.safeParse(value);
+    if (r.success || value === BAD) continue;
+    for (const i of r.error.issues) out.push(error("layout", `${rel}: ${i.message}${i.path.length ? ` (at ${i.path.join(".")})` : ""}`, rel));
+  }
+  return out;
 }
 
 /** A manifest path inside the harness folder; null (and a schema error) when it escapes it. */

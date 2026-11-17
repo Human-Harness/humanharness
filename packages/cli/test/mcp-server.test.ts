@@ -4,12 +4,13 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CliError } from "../src/cli";
+import { CliError, UsageError } from "../src/cli";
 import { main } from "../src/main";
 import { configSnippet } from "../src/mcp/config-snippet";
 import { findMode } from "../src/mcp/mode";
 import { TOOL_NAMES, createServer } from "../src/mcp/server";
-import { memoryIo, tempRoot } from "./helpers";
+import { CORE_DIR } from "../src/paths";
+import { CORE, memoryIo, tempRoot } from "./helpers";
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../bin/humanharness.js");
 
@@ -30,9 +31,32 @@ describe("findMode", () => {
     expect(findMode(root, { home: "app" })).toEqual({ mode: "app", home });
   });
 
-  it("refuses outside a home folder, and --harness for now", () => {
-    expect(() => findMode(root, {})).toThrow(new CliError("Run this inside the app's home folder, or pass --home <dir> (harness projects come later)"));
-    expect(() => findMode(home, { harness: "h" })).toThrow(new CliError("harness mode isn't available yet"));
+  it("finds a harness project by walking up, when its harness.config.ts comes before any .layers.json", () => {
+    const project = path.join(home, "work", "my-harness");
+    fs.mkdirSync(path.join(project, "mods", "a"), { recursive: true });
+    fs.writeFileSync(path.join(project, "harness.config.ts"), "export default {};\n");
+    expect(findMode(path.join(project, "mods", "a"), {})).toEqual({ mode: "harness", dir: project, core: CORE_DIR });
+    // --home forces app mode even inside a project.
+    expect(findMode(project, { home: "../.." })).toEqual({ mode: "app", home });
+  });
+
+  it("takes --harness <dir>, a new empty folder too, with the core its CLI link points to", () => {
+    expect(findMode(root, { harness: "new-one" })).toEqual({ mode: "harness", dir: path.join(root, "new-one"), core: CORE_DIR });
+    const linked = path.join(root, "linked");
+    fs.mkdirSync(path.join(linked, "node_modules", "@humanharness"), { recursive: true });
+    fs.symlinkSync(path.join(CORE, "packages", "cli"), path.join(linked, "node_modules", "@humanharness", "cli"), "dir");
+    expect(findMode(root, { harness: "linked" })).toEqual({ mode: "harness", dir: linked, core: fs.realpathSync(CORE) });
+    const other = path.join(root, "other");
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, "package.json"), JSON.stringify({ dependencies: { "@humanharness/cli": "link:../core/packages/cli" } }));
+    expect(findMode(root, { harness: "other" })).toMatchObject({ core: path.join(root, "core") });
+  });
+
+  it("refuses both flags, and names both outside any home folder or project", () => {
+    expect(() => findMode(root, { home: "app", harness: "h" })).toThrow(UsageError);
+    expect(() => findMode(root, {})).toThrow(
+      new CliError("Run this inside the app's home folder or a harness project, or pass --home <dir> (the app) or --harness <dir> (a harness project)"),
+    );
   });
 });
 
@@ -74,6 +98,11 @@ describe("mcp --config", () => {
     const m = memoryIo(root);
     expect(await main(["mcp", "--config", "claude", "--home", "app"], m.io)).toBe(0);
     expect(m.out()).toBe(configSnippet("claude", home));
+    const h = memoryIo(root);
+    expect(await main(["mcp", "--config", "codex", "--harness", "proj"], h.io)).toBe(0);
+    expect(h.out()).toBe(configSnippet("codex", path.join(root, "proj"), "harness"));
+    expect(h.out()).toContain(`"--harness", ${JSON.stringify(path.join(root, "proj"))}]`);
+    expect(await main(["mcp", "--config", "claude", "--home", "app", "--harness", "proj"], memoryIo(root).io)).toBe(2);
     const bad = memoryIo(root);
     expect(await main(["mcp", "--config", "vim"], bad.io)).toBe(2);
   });

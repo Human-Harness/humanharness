@@ -110,7 +110,7 @@ function tools(home: string): Record<ToolName, Tool> {
 /** The `humanharness` MCP server over the app's home folder, with the kit's tools. */
 export function createServer(mode: Mode): McpServer {
   const server = new McpServer({ name: "humanharness", version: VERSION });
-  const all = tools(mode.home);
+  const all = tools(mode.mode === "app" ? mode.home : mode.dir);
   for (const name of TOOL_NAMES) {
     const t = all[name];
     server.registerTool(
@@ -122,7 +122,7 @@ export function createServer(mode: Mode): McpServer {
   return server;
 }
 
-const MCP_USAGE = "Usage: humanharness mcp [--home <dir>] [--config claude|codex]";
+const MCP_USAGE = "Usage: humanharness mcp [--home <dir> | --harness <dir>] [--config claude|codex]";
 
 /**
  * `humanharness mcp`: serves the kit to an agent over stdio until stdin ends. `--config <client>` prints what to
@@ -133,8 +133,12 @@ export async function mcpCommand(args: string[], io: Io): Promise<number> {
   if (positionals.length > 0) throw new UsageError(MCP_USAGE);
   if (values.config !== undefined) {
     if (!(CLIENTS as readonly string[]).includes(values.config)) throw new UsageError(`--config takes ${CLIENTS.join(" or ")}\n${MCP_USAGE}`);
-    const home = values.home !== undefined ? findMode(io.cwd, { home: values.home }).home : undefined;
-    io.stdout.write(configSnippet(values.config as Client, home));
+    const client = values.config as Client;
+    if (values.home === undefined && values.harness === undefined) io.stdout.write(configSnippet(client));
+    else {
+      const mode = findMode(io.cwd, values);
+      io.stdout.write(mode.mode === "app" ? configSnippet(client, mode.home) : configSnippet(client, mode.dir, "harness"));
+    }
     return 0;
   }
   const server = createServer(findMode(io.cwd, values));

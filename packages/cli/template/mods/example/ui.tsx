@@ -1,9 +1,9 @@
 import { defineMod } from "@humanharness/mod-sdk";
-import { type BlockProps, Rx } from "@humanharness/ui";
+import { type ModBlockProps, Rx } from "@humanharness/ui";
 
 // The block `card`: layouts/main.json places it as { "mod": "example", "block": "card" }, in the header of home.
 // Built only from the app's pieces (Rx), so the theme decides the look: no colours or sizes of its own.
-function Card({ props }: BlockProps) {
+function Card({ props }: ModBlockProps) {
   return (
     <Rx.Card>
       <Rx.Flex direction="column" gap="1">

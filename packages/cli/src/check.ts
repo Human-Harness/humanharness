@@ -173,68 +173,48 @@ async function loadManifest(root: string, findings: Finding[]): Promise<LoadedHa
   }
 }
 
-const subfolders = (dir: string) =>
-  fs.readdir(dir, { withFileTypes: true }).then(
-    (all) => all.filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => e.name).sort(),
-    () => [] as string[],
-  );
+const dirsIn = (dir: string) =>
+  fs.readdir(dir, { withFileTypes: true }).then((a) => a.filter((e) => e.isDirectory() && e.name[0] !== ".").map((e) => e.name).sort(), () => [] as string[]);
+const BAD = Symbol("not JSON");
+const json = (text: string | null): unknown => {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return BAD;
+  }
+};
 
-/**
- * The harness's mods (minimal core 0c2): each `mods/<id>/` gets `mod check`'s checks and must be named for its id; one
- * the manifest doesn't declare is off (a warning); a declared one with no folder must be a core mod.
- */
+/** Each mods/<id>/ gets `mod check` and its folder's id; undeclared ones are off; a declared one must exist (0c2). */
 async function modFindings(h: LoadedHarness): Promise<Finding[]> {
   const out: Finding[] = [];
   const declared = Object.keys(h.mods ?? {});
-  const folders = await subfolders(path.join(h.root, "mods"));
+  const folders = await dirsIn(path.join(h.root, "mods"));
   for (const id of folders) {
     const rel = `mods/${id}`;
-    if (!declared.includes(id)) {
-      out.push(warning("mod", `${rel} is not in harness.config.ts → mods, so it is off: add \`${id}: {}\` to mods, or delete the folder.`, rel));
-    }
-    const json = `${rel}/mod.json`;
-    const raw = await read(path.join(h.root, json));
-    if (raw !== null) {
-      try {
-        const named = (JSON.parse(raw) as { id?: unknown }).id;
-        if (typeof named === "string" && named !== id) {
-          out.push(error("mod", `${rel}: mod.json has id ${JSON.stringify(named)}: a mod's id is its folder's name, ${JSON.stringify(id)}.`, json));
-        }
-      } catch {
-        // checkMod reports the broken JSON.
-      }
-    }
-    const result = await checkMod(h.root, rel);
-    for (const c of result.checks) if (!c.ok) out.push(error("mod", `${rel}: ${c.name}: ${c.detail ?? "failed"}`, json));
+    const file = `${rel}/mod.json`;
+    if (!declared.includes(id)) out.push(warning("mod", `${rel} is not in harness.config.ts → mods, so it is off: add \`${id}: {}\` to mods, or delete the folder.`, rel));
+    const named = (json(await read(path.join(h.root, file))) as { id?: unknown } | undefined)?.id;
+    if (typeof named === "string" && named !== id) out.push(error("mod", `${rel}: mod.json has id "${named}": a mod's id is its folder's name, "${id}".`, file));
+    for (const c of (await checkMod(h.root, rel)).checks) if (!c.ok) out.push(error("mod", `${rel}: ${c.name}: ${c.detail ?? "failed"}`, file));
   }
-  const core = await subfolders(path.join(CORE_DIR, "packages", "mods"));
-  for (const id of declared) {
-    if (folders.includes(id) || core.includes(id)) continue;
+  const core = await dirsIn(path.join(CORE_DIR, "packages", "mods"));
+  for (const id of declared.filter((d) => !folders.includes(d) && !core.includes(d))) {
     out.push(error("mod", `mods.${id}: there is no mods/${id}/ folder and no core mod with that id. Create the mod in mods/${id}/, or remove it from mods.`, MANIFEST));
   }
   return out;
 }
 
-/** Each `layouts/*.json` must parse and pass `layoutSchema`: one error per problem, with the rule's message. */
+/** Each layouts/*.json must pass `layoutSchema`: one error per problem, with the rule's message. */
 async function layoutFindings(h: LoadedHarness): Promise<Finding[]> {
   const out: Finding[] = [];
   const dir = path.join(h.root, "layouts");
-  const files = (await fs.readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json")).sort();
-  for (const file of files) {
-    const rel = `layouts/${file}`;
-    let json: unknown;
-    try {
-      json = JSON.parse((await read(path.join(dir, file))) ?? "");
-    } catch {
-      out.push(error("layout", `${rel} is not valid JSON.`, rel));
-      continue;
-    }
-    const r = layoutSchema.safeParse(json);
-    if (r.success) continue;
-    for (const issue of r.error.issues) {
-      const where = issue.path.length > 0 ? ` (at ${issue.path.map(String).join(".")})` : "";
-      out.push(error("layout", `${rel}: ${issue.message}${where}`, rel));
-    }
+  for (const f of (await fs.readdir(dir).catch(() => [])).filter((n) => n.endsWith(".json")).sort()) {
+    const rel = `layouts/${f}`;
+    const value = json(await read(path.join(dir, f)));
+    if (value === BAD) out.push(error("layout", `${rel} is not valid JSON.`, rel));
+    const r = layoutSchema.safeParse(value);
+    if (r.success || value === BAD) continue;
+    for (const i of r.error.issues) out.push(error("layout", `${rel}: ${i.message}${i.path.length ? ` (at ${i.path.join(".")})` : ""}`, rel));
   }
   return out;
 }

@@ -7,6 +7,9 @@ import { main } from "../src/main";
 import { TOOL_P12_NOTE } from "../src/tool-host-node";
 import { CORE, memoryIo, replaceIn, tempRoot, withExampleCard } from "./helpers";
 
+// Not about mods: the template's untouched sample mod passes without a real build (stub-mod-check.ts).
+vi.mock("../src/kit/check", async (real) => (await import("./stub-mod-check")).withStub(await real<typeof import("../src/kit/check")>()));
+
 // Not about the build: the tools build once per distinct set of tool sources, not once per test (cached-tool-build.ts).
 vi.mock("../src/tool-build", async (real) => (await import("./cached-tool-build")).withCache(await real<typeof import("../src/tool-build")>()));
 

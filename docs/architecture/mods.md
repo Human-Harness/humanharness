@@ -230,16 +230,27 @@ The kit for outside agents (step 0c1; the spec's in-app "Change this app" action
 an MCP server (`@modelcontextprotocol/sdk`'s `McpServer`) over stdio, so an agent the person already uses (Claude Code,
 Codex, any MCP client) can learn what the app is made of, make or clone a mod, check it and see it running.
 
-- **Modes** (`mode.ts`, `findMode`): only `app` for now: the home folder from `--home <dir>`, else the nearest folder
-  from the current one up that holds `.layers.json` (`findHome`). `--harness` is reserved and refused ("harness mode
-  isn't available yet").
+- **Modes** (`mode.ts`, `findMode`): `{ mode: "app", home }` or `{ mode: "harness", dir, core }`. `--home <dir>` is
+  app mode, `--harness <dir>` harness mode (the folder may be new or empty, for `harness_init`); both together are a
+  usage error. Without either, the nearest folder from the current one up that has `harness.config.ts` (harness mode)
+  or `.layers.json` (app mode), whichever comes first; outside both the error names both flags. In harness mode `core`
+  is the checkout the project's `@humanharness/cli` link points to (`node_modules/@humanharness/cli`, else the `link:`
+  in `package.json`), else the one the running CLI belongs to (`paths.ts` `CORE_DIR`): `coreOf` in
+  `kit/harness-project.ts`.
 - **Connecting** (`config-snippet.ts`): `humanharness mcp --config claude` prints the `claude mcp add humanharness --
-  <node> <bin> mcp [--home <dir>]` command, `--config codex` the `[mcp_servers.humanharness]` TOML block. Both run
-  this node with the bin's absolute path (`BIN_PATH`), shell-quoted where a path has a space.
-- **Serving** (`server.ts`, `mcpCommand`): `createServer(mode)` registers the tools and connects a
+  <node> <bin> mcp [--home <dir> | --harness <dir>]` command, `--config codex` the `[mcp_servers.humanharness]` TOML
+  block. Both run this node with the bin's absolute path (`BIN_PATH`), shell-quoted where a path has a space.
+- **Serving** (`server.ts`, `mcpCommand`): `createServer(mode)` registers the mode's tools and connects a
   `StdioServerTransport` on the command's stdin and stdout; the server ends when stdin ends.
 
-The tools, in the order `TOOL_NAMES` (`tool-names.ts`) lists them. Each answers its data as JSON text, or the kit's
+**Tools per mode** (`tool-names.ts`): app mode registers `APP_TOOLS` (the seven below, also exported as `TOOL_NAMES`,
+which the shell's `manual.test.ts` reads), harness mode `HARNESS_TOOLS`: `catalog`, `mod_new`, `mod_check`,
+`mod_clone`, `layout_clone`, `harness_init`, `harness_check`. `status` and `shot` need the running app, so harness
+mode has none.
+
+### App mode
+
+The tools, in the order `APP_TOOLS` lists them. Each answers its data as JSON text, or the kit's
 `CliError` message with `isError` (an app that isn't running reads "The app isn't running: open it and try again"):
 
 | Tool | Kit function | Needs the app |
@@ -256,18 +267,42 @@ The read-only tools carry `readOnlyHint`. The descriptions of `mod_new` and `mod
 clone starts off and that turning it on is the person's step in Settings › Mods; `layout_clone`'s, to ask before
 changing the person's pick in `settings.json`.
 
+### Harness mode
+
+The same kit over a harness project (step 0c2), for a developer or an agent composing a harness from mods (the
+/new-harness guide's Compose phase). The kit functions take a `KitRoot`: the home folder (a string), or
+`{ harness, core }`. New mods and clones land in the project's `mods/<id>`, layout clones in its `layouts/<as>.json`;
+the source of a clone is `<core>/packages/mods/<id>`, of a layout clone the core's default layout
+(`<core>/packages/shell/src/main/mods/default-layout.json`, the only core layout: `main`).
+
+| Tool | Kit function |
+|---|---|
+| `catalog` (read-only) | `harnessCatalog(dir, core)`: the core's mods (blocks, hooks, settings, README summary, `declared`), the core's layout, the project's own `mods/` and `layouts/` (with why a layout won't load), and the ids `harness.config.ts` → `mods` declares. Without a project: `{ project: false, next }`, pointing at `harness_init` |
+| `mod_new` | `newMod`: refuses a core mod's id and an existing folder |
+| `mod_check` (read-only) | `checkMod`, with the folder relative to the project |
+| `mod_clone` | `cloneMod`: a core mod, with `clonedFrom` |
+| `layout_clone` | `cloneLayout`: the core's `main` |
+| `harness_init` | `initHarness` into the mode's folder, which must be empty or new (`mcp/harness-tools.ts`). It skips `pnpm install` and `git init` unless `skipInstall: false` (then their output stays off stdout, the transport); it answers the files made and the next step |
+| `harness_check` (read-only) | `checkHarness`, as `humanharness check` runs it, fixtures included: `{ ok, errors, warnings, notes }` |
+
+No tool writes `harness.config.ts`: the descriptions of `mod_new` and `mod_clone` tell the agent that a mod is off
+until it adds `<id>: {}` to the manifest's `mods` itself, and to declare a clone instead of its original.
+`mcp-harness-tools.test.ts` drives harness mode through an in-process client: `harness_init` into an empty folder, then
+`harness_check` clean.
+
 **The kit** (`packages/cli/src/kit/`) holds the data functions the CLI and the server share: each takes the home
-folder, returns data, and throws a `CliError` with the message to show. The CLI commands (`app-commands.ts`,
-`mod-command.ts`) print what they return; the server answers it as JSON. `catalog` and `newMod` have no CLI command
-yet.
+folder (or a `KitRoot`), returns data, and throws a `CliError` with the message to show. The CLI commands
+(`app-commands.ts`, `mod-command.ts`) print what they return; the server answers it as JSON. `catalog` and `newMod`
+have no CLI command yet.
 
 **Adding a tool:** write the data function in `kit/` (exported from `kit/index.ts`) with its tests; add the name to
-`TOOL_NAMES`; add its entry to `tools()` in `server.ts` (a description for the agent, a zod `inputSchema`, `readOnly`
-when it changes nothing, `run` through `answer`); add it to the "Working with an agent" table and loop of `AGENTS.md`
-(`packages/shell/src/main/mods/manual.ts`): `manual.test.ts` fails while a registered name is missing there.
-`mcp-tools.test.ts` checks the list and each tool through an in-process client; the e2e `mod-kit.spec.ts` drives
-the real server over stdio against the running app.
+`APP_TOOLS` or `HARNESS_TOOLS`; add its entry to `appTools()` or `harnessTools()` in `server.ts` (a description for
+the agent, a zod `inputSchema`, `readOnly` when it changes nothing, `run` through `answer`). An app tool goes in the
+"Working with an agent" table and loop of `AGENTS.md` (`packages/shell/src/main/mods/manual.ts`): `manual.test.ts`
+fails while one is missing there. A harness tool goes in the guide's Compose phase: `guide.test.ts` fails while one is
+missing there. `mcp-tools.test.ts` checks the app list and each tool through an in-process client; the e2e
+`mod-kit.spec.ts` drives the real server over stdio against the running app.
 
 ## What is still to come
 
-See the spec's §7 order: 0c2 (the harness kit: `humanharness mcp` over a harness project), step 1 (`sidekick` as a core mod), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`).
+See the spec's §7 order: step 1 (`sidekick` as a core mod), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`). Step 0c (0c1 the mod kit, 0c2 the harness kit) is done.

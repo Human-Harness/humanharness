@@ -12,8 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    runs-on: macos-latest
+  # Unit tests and typecheck do not need a screen or macOS: Linux starts sooner and runs faster.
+  test:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,6 +24,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm e2e
-      # An unsigned app of one harness: catches a broken packaging step before a release does.
+
+  # Electron needs a display on Linux: xvfb gives it a virtual one.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: xvfb-run --auto-servernum pnpm e2e
+
+  # Stays on macOS: releases are built there, so this catches a broken packaging step before one does.
+  package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      # An unsigned app of one harness.
       - run: pnpm humanharness package --harness harnesses/demo --out dist-ci

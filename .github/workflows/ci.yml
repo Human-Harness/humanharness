@@ -17,6 +17,7 @@ jobs:
   # assume macOS file-system behaviour (case, NFC/NFD, /private/tmp) and 64 of 148 e2e specs.
   test:
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,6 +30,7 @@ jobs:
 
   e2e:
     runs-on: macos-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +47,7 @@ jobs:
   # An unsigned app of one harness: catches a broken packaging step before a release does.
   package:
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -106,3 +106,63 @@ describe("bundleMod", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe("bundleMod for a core mod", () => {
+  /** A stand-in workspace package in the mod's node_modules, as pnpm links one. */
+  const pkg = async (name: string, body: string) => {
+    const root = path.join(dir, "node_modules", ...name.split("/"));
+    await fs.mkdir(root, { recursive: true });
+    await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ name, type: "module", exports: { ".": "./index.js" } }));
+    await fs.writeFile(path.join(root, "index.js"), body);
+  };
+  const deps = (d: Record<string, string>) => write("package.json", JSON.stringify({ name: "@humanharness/mod-x", dependencies: d }));
+  const outFile = () => path.join(tmp, "build", "main.js");
+
+  it("bundles the core packages it declares, keeps node builtins and npm packages outside, and reads the app's zod", async () => {
+    await deps({ "@humanharness/protocol": "workspace:*", "left-pad": "^1", zod: "^4" });
+    await pkg("@humanharness/protocol", "export const CHANNEL = 'hh:core';\n");
+    await write(
+      "src/main.ts",
+      "import path from 'node:path';\nimport { z } from 'zod';\nimport { CHANNEL } from '@humanharness/protocol';\nimport pad from 'left-pad';\nvoid pad;\nexport default { id: 'x', channel: CHANNEL, sep: path.sep, tag: z.tag };\n",
+    );
+    const r = await bundleMod({ dir, entry: "src/main.ts", part: "main", core: true, outFile: outFile(), resolveShared: () => "/unused" });
+    expect(r).toEqual({ ok: true });
+    const out = await fs.readFile(outFile(), "utf8");
+    expect(out).toContain("hh:core");
+    expect(out).toMatch(/from "left-pad"/);
+    expect(out).toContain("__hhMainModules");
+    const g = globalThis as { __hhMainModules?: Record<string, unknown> };
+    g.__hhMainModules = { zod: { z: { tag: "app zod" } } };
+    await fs.writeFile(path.join(tmp, "build", "package.json"), "{}");
+    await fs.mkdir(path.join(tmp, "build", "node_modules", "left-pad"), { recursive: true });
+    await fs.writeFile(path.join(tmp, "build", "node_modules", "left-pad", "package.json"), JSON.stringify({ name: "left-pad", main: "i.js" }));
+    await fs.writeFile(path.join(tmp, "build", "node_modules", "left-pad", "i.js"), "module.exports = () => '';\n");
+    try {
+      const mod = (await import(pathToFileURL(outFile()).href)) as { default: Record<string, string> };
+      expect(mod.default).toEqual({ id: "x", channel: "hh:core", sep: path.sep, tag: "app zod" });
+    } finally {
+      delete g.__hhMainModules;
+    }
+  });
+
+  it("refuses a package the mod does not declare, and another core mod", async () => {
+    await deps({ "@humanharness/mod-home": "workspace:*" });
+    await write("src/main.ts", "import 'undeclared';\nimport '@humanharness/mod-home';\nexport default {};\n");
+    const r = await bundleMod({ dir, entry: "src/main.ts", part: "main", core: true, outFile: outFile(), resolveShared: () => "/unused" });
+    expect(r.ok).toBe(false);
+    const problems = (r as { problems: string[] }).problems.join("\n");
+    expect(problems).toMatch(/undeclared can't be imported by a core mod/);
+    expect(problems).toMatch(/@humanharness\/mod-home can't be imported by a core mod/);
+  });
+
+  it("the allowlist is for core mods only: another mod may not import a core package or node", async () => {
+    await deps({ "@humanharness/protocol": "workspace:*" });
+    await pkg("@humanharness/protocol", "export const CHANNEL = 'hh:core';\n");
+    await write("src/main.ts", "import { CHANNEL } from '@humanharness/protocol';\nimport 'node:fs';\nexport default { CHANNEL };\n");
+    const r = await bundleMod({ dir, entry: "src/main.ts", part: "main", outFile: outFile(), resolveShared: () => "/unused" });
+    expect(r.ok).toBe(false);
+    const problems = (r as { problems: string[] }).problems.join("\n");
+    expect(problems).toMatch(/@humanharness\/protocol can't be imported by a mod/);
+    expect(problems).toMatch(/node:fs can't be imported by a mod/);
+  });
+});

@@ -1,9 +1,9 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import { type Plugin, searchForWorkspaceRoot } from "vite";
 import { noBareDirname } from "./src/build/bundle-guard";
+import { buildCoreMods } from "./src/main/mods/bundle";
 import { CORE_MOD_SWITCHES } from "./src/main/mods/core-mods";
 
 const harnessDir = path.resolve(process.env.HH_HARNESS_DIR ?? path.join(__dirname, "../../harnesses/demo"));
@@ -29,22 +29,15 @@ const workspacePackages = [
 
 /**
  * Copies each core mod's `mod.json`, `README.md` and `src/` from `packages/mods/<id>/` to `core-mods/<id>/` beside the
- * main build, where `CORE_MODS[id].dir` points at runtime and the home folder's `core/` layer is written from.
+ * main build, where `CORE_MODS[id].dir` points at runtime and the home folder's `core/` layer is written from, and
+ * bundles its main part there (mods-1a).
  */
 function copyCoreMods(): Plugin {
   return {
     name: "hh-copy-core-mods",
     async writeBundle(options) {
       if (!options.dir) return;
-      const dest = path.join(options.dir, "..", "core-mods");
-      await fs.rm(dest, { recursive: true, force: true });
-      for (const id of Object.keys(CORE_MOD_SWITCHES)) {
-        const src = path.join(__dirname, "../mods", id);
-        for (const part of ["mod.json", "README.md", "src"]) {
-          const from = path.join(src, part);
-          if (await fs.stat(from).catch(() => null)) await fs.cp(from, path.join(dest, id, part), { recursive: true });
-        }
-      }
+      await buildCoreMods(path.join(__dirname, "../mods"), path.join(options.dir, "..", "core-mods"), Object.keys(CORE_MOD_SWITCHES));
     },
   };
 }

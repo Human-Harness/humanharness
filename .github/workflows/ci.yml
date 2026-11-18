@@ -15,7 +15,7 @@ jobs:
   # Independent jobs run in parallel: the total is the slowest one, not the sum.
   # Everything stays on macOS for now: a Linux trial (PR #213) failed 8 of 9319 unit tests that
   # assume macOS file-system behaviour (case, NFC/NFD, /private/tmp) and 64 of 148 e2e specs.
-  test:
+  typecheck:
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
@@ -26,6 +26,17 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   e2e:

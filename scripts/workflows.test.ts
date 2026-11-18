@@ -15,15 +15,16 @@ describe("ci.yml", () => {
   const runs = (job: string) => ci.jobs[job].steps.map((s: any) => s.run).filter(Boolean);
   it("runs on pull requests to master, on macOS, one run per PR", () => {
     expect(ci.on.pull_request.branches).toEqual(["master"]);
-    for (const j of ["test", "e2e", "package"]) expect(ci.jobs[j]["runs-on"]).toBe("macos-latest");
+    for (const j of ["typecheck", "test", "e2e", "package"]) expect(ci.jobs[j]["runs-on"]).toBe("macos-latest");
     expect(ci.concurrency.group).toContain("github.event.pull_request.number");
   });
   it("caps every job at 25 minutes, so a hung step fails fast instead of holding the run for hours", () => {
-    for (const j of ["test", "e2e", "package"]) expect(ci.jobs[j]["timeout-minutes"]).toBe(25);
+    for (const j of ["typecheck", "test", "e2e", "package"]) expect(ci.jobs[j]["timeout-minutes"]).toBe(25);
   });
-  it("runs typecheck and unit tests, e2e in two shards, and packages unsigned, in parallel jobs", () => {
-    expect(Object.keys(ci.jobs).sort()).toEqual(["e2e", "package", "test"]);
-    expect(runs("test")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm typecheck", "pnpm test"]);
+  it("runs typecheck, unit tests, e2e in two shards, and packages unsigned, in parallel jobs", () => {
+    expect(Object.keys(ci.jobs).sort()).toEqual(["e2e", "package", "test", "typecheck"]);
+    expect(runs("typecheck")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm typecheck"]);
+    expect(runs("test")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm test"]);
     expect(ci.jobs.e2e.strategy.matrix.shard).toEqual([1, 2]);
     expect(runs("e2e")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm e2e --shard=${{ matrix.shard }}/2"]);
     expect(runs("package")).toEqual([

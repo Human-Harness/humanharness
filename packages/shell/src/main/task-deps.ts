@@ -291,12 +291,15 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
       const sidekick = d.sidekickCtl();
       const plugins = d.pluginsCtl();
       const linked = d.linked();
-      if (!settings && !sidekick && !plugins && !linked) return undefined;
+      // The mods' betweenTasks (minimal-core 1a): only while some mod that is on registered one (D0).
+      const mods = d.modHost()?.registered("betweenTasks") ? d.modHost() : null;
+      if (!settings && !sidekick && !plugins && !linked && !mods) return undefined;
       return async () => {
         await settings?.betweenTasks();
         // A link change a running turn kept from AGENTS.md, or another scope opened since it was written.
         await linked?.instructions.betweenTasks();
         await sidekick?.betweenTasks();
+        await mods?.betweenTasks();
         // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
         await plugins?.betweenTasks();
         // Board mode closes the workspace only once no task is open (Decision 13).
@@ -326,10 +329,16 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
         if (mods) void mods.turnEnd(toTurnEnd(end));
       };
     },
-    // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard). A getter for the same reason (D0).
+    // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard) and the mods' phaseMoved, only while some mod
+    // that is on registered one. A getter for the same reason (D0).
     get phaseMoved() {
       const sidekick = d.sidekickCtl();
-      return sidekick ? (e: PhaseMoved) => void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err)) : undefined;
+      const mods = d.modHost()?.registered("phaseMoved") ? d.modHost() : null;
+      if (!sidekick && !mods) return undefined;
+      return (e: PhaseMoved) => {
+        if (sidekick) void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err));
+        if (mods) void mods.phaseMoved(e);
+      };
     },
     // An action's pre-steps and a part's expects (tools spec §6, §6.1). Getters: undefined without tools (no toolsHost)
     // or when no action declares them (D0).

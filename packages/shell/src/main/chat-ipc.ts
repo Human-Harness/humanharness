@@ -63,11 +63,18 @@ export function chatIpc(d: ChatIpcDeps) {
       const offered = action ? harness.actions[action].timeBox?.options : undefined;
       const timeBox = options?.timeBox;
       if (timeBox !== undefined && !timeBoxOffered(timeBox, offered)) throw new Error("Unknown time box");
-      // The mods' beforeSend (minimal-core spec §4.2): each may rewrite the text; the host refuses a blank or oversized one.
+      // The mods' beforeSend (minimal-core spec §4.2): each may rewrite the text (the host refuses a blank or oversized
+      // one) or hold it; a held send that was cancelled (its task closed, the mod turned off, quitting) doesn't go.
       const modHost = d.modHost();
       if (modHost) {
         const running = await d.tasks().runningTask().catch(() => null);
-        message = await modHost.beforeSend({ text: message, ...(action ? { action } : {}), ...(scope ? { scope } : {}), task: running });
+        const text = await modHost.beforeSend({ text: message, ...(action ? { action } : {}), ...(scope ? { scope } : {}), task: running });
+        if (text === null) return;
+        // A hold may have lasted: the app may be closing, or another turn may have started, by now.
+        if (d.quitting()) throw new Error("The app is closing");
+        const late = turnBlocked();
+        if (late) throw new Error(late);
+        message = text;
       }
       // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
       const tasks = d.tasks();

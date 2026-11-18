@@ -89,6 +89,26 @@ The section is in every session's stable prefix. `check` warns (`settings-tokens
 
 `humanharness run <action> --set tone=demanding --set hintAfter=4` (repeatable) stores values in the run folder before the task, as the window would, and prints `Settings: tone=demanding, hintAfter=4`. Each value is checked as the typed text first, then as JSON (`4`, `true`). An unknown name, a value its schema refuses, or `--set` on a harness without settings stops the run (exit 2) before the engine or the folder.
 
+## `config.json`
+
+The app's own settings, in Electron's userData folder (`ConfigStore` in `packages/shell/src/main/config.ts`). Every key is optional and cleaned when read: a hand-edited value of the wrong kind is dropped, never a reason to reject the whole file. `hh:saveConfig` merges a patch over the current file, but it never changes `folder` once chosen or `profile`. `AppConfig` in `packages/protocol/src/views.ts` is the type; the list below has every top-level key.
+
+- `config.json` → `language`: the language of the app, a canonical tag; the setup flow writes it with the folder, and Settings › General changes it.
+- `config.json` → `folder`: the folder the person chose for their files; fixed once chosen, and only "Move folder" (`replaceFolder`) changes it.
+- `config.json` → `engineId`: the engine that runs the tasks; Settings › Engine and the setup flow write it.
+- `config.json` → `appearance`: `light` or `dark`; absent follows the system. Settings › General › Appearance writes it.
+- `config.json` → `textSize`: `normal` or `large`; absent is normal. Settings › General › Text size writes it.
+- `config.json` → `reader`: the reader's font (`sans` or `serif`) and size (`normal` or `large`); absent until one changes. The reader's own controls write it; the bad fields are dropped one by one.
+- `config.json` → `models`: each task's tier or custom model, the tier tables per engine and `pinnedTokens`; Settings › Models writes it (see "Pinned files budget").
+- `config.json` → `backupDismissed`: `true` when the person said they keep their own copy of the folder, so the backup notice stays hidden; the notice sets it and Settings › General undoes it.
+- `config.json` → `languageOffered`: `true` once the person answered the language offer on Home, so it never shows again; main writes it on the answer.
+- `config.json` → `profile`: the active profile's id in a harness with profiles; only a profile switch (`setProfile`) writes it (`docs/architecture/profiles.md`).
+- `config.json` → `parallel`: the person's caps on tasks and jobs at once, integers only; absent uses the manifest's. Settings › General writes it, in board mode (`docs/architecture/parallel.md`).
+- `config.json` → `notifyWaiting`: `true` for an OS notification when a task waits for the person; absent is off. Settings › General writes it.
+- `config.json` → `jobs`: per job id, `off` and the person's daily token cap over the manifest's; empty entries are dropped. Settings › Jobs writes it (`docs/architecture/jobs.md`).
+- `config.json` → `policies`: which model and context policies run (`model`, `context`); unknown ids run the default and are logged once. No UI (`docs/architecture/replaceable-parts.md`).
+- `config.json` → `mods`: the person's mod switches (`on`), local mod folders (`local`) and mods turned off after three strikes (`failed`); Settings › Mods writes it (`docs/architecture/mods.md`).
+
 ## Known gaps
 
 - `run --set` covers the harness's own fields only: mode settings use the run folder's stored values or their defaults.

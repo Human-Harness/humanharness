@@ -16,8 +16,8 @@ test("a harness made with init builds with dev, opens, and runs its example task
   const harnessDir = path.join(s.root, "my-harness");
   // Inside out/ (git-ignored), so the build resolves the shell's dependencies like the default one.
   const outDir = path.join(shellDir, "out", "template");
-  execFileSync(process.execPath, [cli, "init", harnessDir, "--core", repo, "--skip-install"], { stdio: "inherit" });
-  execFileSync(process.execPath, [cli, "dev", "--build", outDir], { cwd: harnessDir, stdio: "inherit" });
+  execFileSync(process.execPath, [cli, "init", harnessDir, "--core", repo, "--skip-install"], { stdio: "inherit", timeout: 120_000 });
+  execFileSync(process.execPath, [cli, "dev", "--build", outDir], { cwd: harnessDir, stdio: "inherit", timeout: 240_000 });
 
   const { app, page } = await launch(s, { claude: templateScript }, path.join(outDir, "main", "index.js"));
   try {

@@ -18,6 +18,9 @@ describe("ci.yml", () => {
     for (const j of ["test", "e2e", "package"]) expect(ci.jobs[j]["runs-on"]).toBe("macos-latest");
     expect(ci.concurrency.group).toContain("github.event.pull_request.number");
   });
+  it("caps every job at 25 minutes, so a hung step fails fast instead of holding the run for hours", () => {
+    for (const j of ["test", "e2e", "package"]) expect(ci.jobs[j]["timeout-minutes"]).toBe(25);
+  });
   it("runs typecheck and unit tests, e2e in two shards, and packages unsigned, in parallel jobs", () => {
     expect(Object.keys(ci.jobs).sort()).toEqual(["e2e", "package", "test"]);
     expect(runs("test")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm typecheck", "pnpm test"]);

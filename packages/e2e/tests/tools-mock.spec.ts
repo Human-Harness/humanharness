@@ -27,7 +27,7 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   // `check`, the tools' build and a full app build before the app starts.
   test.setTimeout(300_000);
-  execFileSync(process.execPath, [cli, "dev", "--build", out], { cwd: fixture, stdio: "inherit" });
+  execFileSync(process.execPath, [cli, "dev", "--build", out], { cwd: fixture, stdio: "inherit", timeout: 240_000 });
   s = makeSandbox("tools-mock");
   // The fake engine replays the fixture's mock/ (HH_FAKE_MOCK_DIR), which also turns on the tools' recorded transport.
   const launched = await launchMock(s, path.join(fixture, "mock"), path.join(out, "main", "index.js"));

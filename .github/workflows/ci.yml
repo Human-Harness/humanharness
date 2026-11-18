@@ -12,9 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Unit tests and typecheck do not need a screen or macOS: Linux starts sooner and runs faster.
+  # Independent jobs run in parallel: the total is the slowest one, not the sum.
+  # Everything stays on macOS for now: a Linux trial (PR #213) failed 8 of 9319 unit tests that
+  # assume macOS file-system behaviour (case, NFC/NFD, /private/tmp) and 64 of 148 e2e specs.
   test:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,9 +27,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-  # Electron needs a display on Linux: xvfb gives it a virtual one.
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,9 +40,9 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: xvfb-run --auto-servernum pnpm e2e
+      - run: pnpm e2e --shard=${{ matrix.shard }}/2
 
-  # Stays on macOS: releases are built there, so this catches a broken packaging step before one does.
+  # An unsigned app of one harness: catches a broken packaging step before a release does.
   package:
     runs-on: macos-latest
     steps:
@@ -47,5 +52,4 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      # An unsigned app of one harness.
       - run: pnpm humanharness package --harness harnesses/demo --out dist-ci

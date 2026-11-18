@@ -12,19 +12,20 @@ const load = (name: string) => yaml.load(fs.readFileSync(path.join(root, ".githu
 
 describe("ci.yml", () => {
   const ci = load("ci.yml");
+  const runs = (job: string) => ci.jobs[job].steps.map((s: any) => s.run).filter(Boolean);
   it("runs on pull requests to master, on macOS, one run per PR", () => {
     expect(ci.on.pull_request.branches).toEqual(["master"]);
-    expect(ci.jobs.checks["runs-on"]).toBe("macos-latest");
+    for (const j of ["test", "e2e", "package"]) expect(ci.jobs[j]["runs-on"]).toBe("macos-latest");
     expect(ci.concurrency.group).toContain("github.event.pull_request.number");
   });
-  it("installs frozen, checks, tests, runs e2e and packages unsigned", () => {
-    const runs = ci.jobs.checks.steps.map((s: any) => s.run).filter(Boolean);
-    expect(runs).toEqual([
+  it("runs typecheck and unit tests, e2e in two shards, and packages unsigned, in parallel jobs", () => {
+    expect(Object.keys(ci.jobs).sort()).toEqual(["e2e", "package", "test"]);
+    expect(runs("test")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm typecheck", "pnpm test"]);
+    expect(ci.jobs.e2e.strategy.matrix.shard).toEqual([1, 2]);
+    expect(runs("e2e")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm e2e --shard=${{ matrix.shard }}/2"]);
+    expect(runs("package")).toEqual([
       "corepack enable",
       "pnpm install --frozen-lockfile",
-      "pnpm typecheck",
-      "pnpm test",
-      "pnpm e2e",
       "pnpm humanharness package --harness harnesses/demo --out dist-ci",
     ]);
   });

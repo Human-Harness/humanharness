@@ -14,7 +14,9 @@ concurrency:
 jobs:
   # Independent jobs run in parallel: the total is the slowest one, not the sum.
   # Everything stays on macOS for now: a Linux trial (PR #213) failed 8 of 9319 unit tests that
-  # assume macOS file-system behaviour (case, NFC/NFD, /private/tmp) and 64 of 148 e2e specs.
+  # assume macOS file-system behaviour (case, NFC/NFD, /private/tmp).
+  # The e2e specs (pnpm e2e) are not run here: they need the macOS Electron app and hung or ran
+  # past 20 minutes on the runner. Run them locally before merging a UI change.
   typecheck:
     runs-on: macos-latest
     timeout-minutes: 25
@@ -38,22 +40,6 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
-
-  e2e:
-    runs-on: macos-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm e2e --shard=${{ matrix.shard }}/2
 
   # An unsigned app of one harness: catches a broken packaging step before a release does.
   package:

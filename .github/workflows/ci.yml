@@ -12,8 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
+  # Independent jobs run in parallel: the total is the slowest one, not the sum.
+  # Everything stays on macOS for now: a Linux trial (PR #213) failed 8 of 9319 unit tests that
+  # assume macOS file-system behaviour (case, NFC/NFD, /private/tmp).
+  # The e2e specs (pnpm e2e) are not run here: they need the macOS Electron app and hung or ran
+  # past 20 minutes on the runner. Run them locally before merging a UI change.
+  typecheck:
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,7 +28,28 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
       - run: pnpm test
-      - run: pnpm e2e
-      # An unsigned app of one harness: catches a broken packaging step before a release does.
+
+  # An unsigned app of one harness: catches a broken packaging step before a release does.
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
       - run: pnpm humanharness package --harness harnesses/demo --out dist-ci

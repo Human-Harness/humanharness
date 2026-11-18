@@ -12,19 +12,22 @@ const load = (name: string) => yaml.load(fs.readFileSync(path.join(root, ".githu
 
 describe("ci.yml", () => {
   const ci = load("ci.yml");
+  const runs = (job: string) => ci.jobs[job].steps.map((s: any) => s.run).filter(Boolean);
   it("runs on pull requests to master, on macOS, one run per PR", () => {
     expect(ci.on.pull_request.branches).toEqual(["master"]);
-    expect(ci.jobs.checks["runs-on"]).toBe("macos-latest");
+    for (const j of ["typecheck", "test", "package"]) expect(ci.jobs[j]["runs-on"]).toBe("macos-latest");
     expect(ci.concurrency.group).toContain("github.event.pull_request.number");
   });
-  it("installs frozen, checks, tests, runs e2e and packages unsigned", () => {
-    const runs = ci.jobs.checks.steps.map((s: any) => s.run).filter(Boolean);
-    expect(runs).toEqual([
+  it("caps every job at 25 minutes, so a hung step fails fast instead of holding the run for hours", () => {
+    for (const j of ["typecheck", "test", "package"]) expect(ci.jobs[j]["timeout-minutes"]).toBe(25);
+  });
+  it("runs typecheck, unit tests and an unsigned package (no e2e: those run locally), in parallel jobs", () => {
+    expect(Object.keys(ci.jobs).sort()).toEqual(["package", "test", "typecheck"]);
+    expect(runs("typecheck")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm typecheck"]);
+    expect(runs("test")).toEqual(["corepack enable", "pnpm install --frozen-lockfile", "pnpm test"]);
+    expect(runs("package")).toEqual([
       "corepack enable",
       "pnpm install --frozen-lockfile",
-      "pnpm typecheck",
-      "pnpm test",
-      "pnpm e2e",
       "pnpm humanharness package --harness harnesses/demo --out dist-ci",
     ]);
   });

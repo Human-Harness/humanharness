@@ -5,6 +5,7 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
+    "./core": "./src/core.ts",
     "./bundle": { "types": "./src/bundle.ts", "node": "./src/bundle.ts" },
     "./build": { "types": "./src/build.ts", "node": "./src/build.ts" }
   },

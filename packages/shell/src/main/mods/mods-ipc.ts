@@ -90,3 +90,17 @@ export function registerModsIpc(handle: Handle, d: ModsIpcDeps): void {
     return d.view();
   });
 }
+
+/**
+ * App channels a core mod handles (mods-1a): each declared name is registered once, at startup like every other
+ * channel, and each call goes to the mod that is on and handles it (`ModHost.channel`), arguments as an array.
+ */
+export function registerModChannels(handle: Handle, names: readonly InvokeChannel[], host: () => { channel(name: string, args: unknown[]): Promise<unknown> } | null): void {
+  for (const name of names) {
+    handle(name, (async (...args: unknown[]) => {
+      const h = host();
+      if (!h) throw new Error(`No mod handles ${name}`);
+      return h.channel(name, args);
+    }) as never);
+  }
+}

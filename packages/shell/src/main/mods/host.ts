@@ -1,21 +1,28 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Disposer, MainCtx, ModDefinition, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
+import type { DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
 import type { ModRow } from "@humanharness/protocol";
 import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
 import type { ResolvedMod } from "./resolve";
 
-/** Spec §4.2: a held send waits at most this long in total, then it sends. */
+/** Spec §4.2: the beforeSend handlers run at most this long in total, then it sends; a hold's wait doesn't count. */
 export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose";
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close";
+const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
+/** An app channel a core mod may handle (`ctx` ipc with an `hh:…` name). */
+export const APP_CHANNEL = /^hh:[A-Za-z][A-Za-z0-9]{0,63}$/;
+/** A local calendar day, YYYY-MM-DD. */
+export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** Milliseconds from `now` to the next local midnight. */
+export const msToNextDay = (now: Date): number => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
 type Fn = (arg: never) => unknown;
 /** The services a mod's ctx gets (services.ts builds them); the host adds on/ipc/provide/mods/config/id. */
-export type Services = Partial<Omit<MainCtx<unknown>, "id" | "config" | "on" | "ipc" | "provide" | "mods">>;
+export type Services = Partial<Omit<MainCtx<unknown>, "id" | "config" | "on" | "ipc" | "provide" | "mods" | "holds" | "focus">>;
 
 export interface HostDeps {
   config: { load(): Promise<ModsSettings | undefined>; saveFailed(id: string, reason: string): Promise<void> };
@@ -32,6 +39,8 @@ export interface HostDeps {
   builds?: UserBuilds;
   /** A user-layer mod was reloaded after an edit; `version` counts its reloads. */
   reloaded?: (id: string, version: number) => void;
+  /** Some mod's focus on a task changed (`focused`). */
+  focusChanged?: (taskId: string) => void;
 }
 
 /** What the host needs to load a user-layer mod (`ModBuilds` in user-layer.ts). */
@@ -56,6 +65,10 @@ interface Running {
   channels: Map<string, (p: unknown) => unknown>;
   disposers: Disposer[];
   service?: unknown;
+  /** Sends this mod holds, by token: each ends once (resolved, or cancelled). */
+  holds: Map<string, { task: string | null; end(v: HoldVerdict): void }>;
+  /** The tasks this mod holds in focus. */
+  focus: Set<string>;
 }
 
 /** Loads the mods that are on, runs their hooks guarded (try/catch, a timeout), and turns one off after three strikes. */
@@ -67,7 +80,7 @@ export class ModHost {
 
   private entry(mod: ResolvedMod, c: ModsSettings | undefined): Running {
     const failed = c?.failed?.[mod.json.id];
-    const r: Running = { mod, on: false, version: 0, strikes: 0, hooks: new Map(), channels: new Map(), disposers: [], ...(failed ? { failed } : {}) };
+    const r: Running = { mod, on: false, version: 0, strikes: 0, hooks: new Map(), channels: new Map(), disposers: [], holds: new Map(), focus: new Set(), ...(failed ? { failed } : {}) };
     this.mods.set(mod.json.id, r);
     return r;
   }
@@ -178,12 +191,34 @@ export class ModHost {
       ...(this.d.services(r.mod.json.id) as MainCtx<unknown>),
       id: r.mod.json.id,
       config,
-      on: { beforeSend: add("beforeSend"), turnStart: add("turnStart"), turnEnd: add("turnEnd"), taskOpen: add("taskOpen"), taskClose: add("taskClose") } as MainCtx<unknown>["on"],
+      on: Object.fromEntries(HOOKS.map((n) => [n, add(n)])) as unknown as MainCtx<unknown>["on"],
       ipc: (name, handler) => {
+        // An app channel (Sidekick's `hh:sidekick…`) is a core mod's only, and one mod's at a time.
+        if (name.startsWith("hh:")) {
+          if (r.mod.shipped !== "core") throw new Error(`Only a core mod may handle the app channel ${name}`);
+          if (!APP_CHANNEL.test(name)) throw new Error(`Not an app channel: ${name}`);
+          if (this.appChannel(name)) throw new Error(`Another mod already handles ${name}`);
+        }
         r.channels.set(name, handler);
         const off = () => void r.channels.delete(name);
         r.disposers.push(off);
         return off;
+      },
+      holds: {
+        resolve: (token, verdict) => {
+          const h = r.holds.get(token);
+          if (!h) return false;
+          h.end(verdict);
+          return true;
+        },
+      },
+      focus: {
+        set: (taskId, on) => {
+          if (typeof taskId !== "string" || !taskId || on === r.focus.has(taskId)) return;
+          if (on) r.focus.add(taskId);
+          else r.focus.delete(taskId);
+          this.d.focusChanged?.(taskId);
+        },
       },
       provide: (service) => void (r.service = service),
       mods: { get: <T>(other: string) => (this.mods.get(other)?.on ? (this.mods.get(other)!.service as T) : undefined) },
@@ -202,6 +237,11 @@ export class ModHost {
     r.channels.clear();
     delete r.service;
     r.on = false;
+    // Its held sends are cancelled, its focus dropped.
+    for (const h of [...r.holds.values()]) h.end({ kind: "cancel" });
+    const focused = [...r.focus];
+    r.focus.clear();
+    for (const t of focused) this.d.focusChanged?.(t);
   }
 
   private get hookMs() {
@@ -238,18 +278,77 @@ export class ModHost {
     );
   }
 
-  /** The text to send: each mod in turn may rewrite it; past the total budget the rest are skipped (spec §4.2). */
-  async beforeSend(send: SendInfo): Promise<string> {
-    const deadline = Date.now() + (this.d.beforeSendMs ?? BEFORE_SEND_MS);
+  /**
+   * The text to send, or null when a held send was cancelled: each mod in turn may rewrite or hold it. The handlers
+   * run within the total budget (past it the rest are skipped, spec §4.2); a hold's wait counts toward none.
+   */
+  async beforeSend(send: SendInfo): Promise<string | null> {
+    let left = this.d.beforeSendMs ?? BEFORE_SEND_MS;
     let text = send.text;
     for (const [r, fn] of this.listeners("beforeSend")) {
-      const left = deadline - Date.now();
       if (left <= 0) break;
+      // Turned off while an earlier mod held the send.
+      if (!r.on) continue;
+      const started = Date.now();
       const res = await guarded(() => (fn as (s: SendInfo) => SendVerdict | Promise<SendVerdict>)({ ...send, text }), left);
+      left -= Date.now() - started;
       await this.count(r, res.ok, res.ok ? undefined : res.reason);
-      if (res.ok && res.value?.kind === "rewrite" && typeof res.value.text === "string" && res.value.text.trim() && res.value.text.length <= 20_000) text = res.value.text;
+      if (!res.ok) continue;
+      let v: SendVerdict | HoldVerdict | undefined = res.value;
+      if (v?.kind === "hold") {
+        if (!r.on || typeof v.token !== "string" || !v.token || r.holds.has(v.token)) continue;
+        v = await this.hold(r, v.token, send.task?.id ?? null);
+        if (v.kind === "cancel") return null;
+      }
+      if (v?.kind === "rewrite" && typeof v.text === "string" && v.text.trim() && v.text.length <= 20_000) text = v.text;
     }
     return text;
+  }
+
+  /** Waits, with no limit, for the mod to resolve `token`; closing the task, quitting or turning the mod off cancels it. */
+  private hold(r: Running, token: string, task: string | null): Promise<HoldVerdict> {
+    return new Promise((resolve) => {
+      r.holds.set(token, {
+        task,
+        end: (v) => {
+          if (!r.holds.delete(token)) return;
+          const ok = v?.kind === "pass" || v?.kind === "cancel" || (v?.kind === "rewrite" && typeof v.text === "string");
+          resolve(ok ? v : { kind: "pass" });
+        },
+      });
+    });
+  }
+
+  /** Whether some mod that is on registered this hook: the app calls it only then (D0). */
+  registered(name: HookName): boolean {
+    return this.listeners(name).length > 0;
+  }
+
+  /** Whether some mod that is on holds `taskId` in focus (`ctx.focus`). */
+  focused(taskId: string): boolean {
+    for (const r of this.mods.values()) if (r.on && r.focus.has(taskId)) return true;
+    return false;
+  }
+
+  /** The mod whose handler takes app channel `name`, if one is on. */
+  private appChannel(name: string): Running | undefined {
+    for (const r of this.mods.values()) if (r.on && r.channels.has(name)) return r;
+    return undefined;
+  }
+
+  /**
+   * A window call on app channel `name`, with its arguments, to the core mod that handles it. Unlike a mod's own
+   * channel, it may take as long as it needs and a throw reaches the window as is: neither counts as a strike.
+   */
+  async channel(name: string, args: unknown[]): Promise<unknown> {
+    const r = this.appChannel(name);
+    if (!r) throw new Error(`No mod handles ${name}`);
+    return r.channels.get(name)!(args);
+  }
+
+  /** The app channels the mods that are on handle. */
+  appChannels(): string[] {
+    return [...this.mods.values()].filter((r) => r.on).flatMap((r) => [...r.channels.keys()].filter((n) => n.startsWith("hh:")));
   }
   turnStart(task: TaskRef): Promise<void> {
     return this.each("turnStart", task);
@@ -261,7 +360,33 @@ export class ModHost {
     return this.each("taskOpen", task);
   }
   taskClose(task: TaskRef): Promise<void> {
+    // A send held for this task won't go.
+    for (const r of this.mods.values()) for (const h of [...r.holds.values()]) if (h.task === task.id) h.end({ kind: "cancel" });
     return this.each("taskClose", task);
+  }
+  betweenTasks(): Promise<void> {
+    return this.each("betweenTasks", undefined);
+  }
+  phaseMoved(e: PhaseMovedInfo): Promise<void> {
+    return this.each("phaseMoved", e);
+  }
+  daily(now: Date = new Date()): Promise<void> {
+    return this.each("daily", { day: localDay(now) } satisfies DailyInfo);
+  }
+
+  private dailyTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Runs `daily` now and at each local midnight from now on, until `stop`. */
+  startDaily(now: () => Date = () => new Date()): void {
+    clearTimeout(this.dailyTimer);
+    void this.daily(now());
+    const next = () => {
+      this.dailyTimer = setTimeout(() => {
+        void this.daily(now());
+        next();
+      }, msToNextDay(now()) + 1_000);
+      this.dailyTimer.unref?.();
+    };
+    next();
   }
 
   async ipc(id: string, name: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
@@ -353,20 +478,26 @@ export class ModHost {
     }));
   }
 
+  /** Quitting: the mods' `close` hooks, then every disposer (held sends are cancelled). */
   async stop(): Promise<void> {
+    clearTimeout(this.dailyTimer);
+    await this.each("close", undefined);
     for (const r of this.mods.values()) this.dispose(r);
   }
 
   /** Tests only: a mod defined in memory, on. Never called by the app. */
-  registerForTest(id: string, name: string, main: (ctx: MainCtx<unknown>) => void): void {
+  registerForTest(id: string, name: string, main: (ctx: MainCtx<unknown>) => void, o: { core?: boolean } = {}): void {
+    const origin = o.core ? "core" : "local";
     const r: Running = {
-      mod: { json: { id, name, version: "0.0.0", apiVersion: 1, requires: [], history: false, main: "main.js" }, dir: "", origin: "local", shipped: "local", config: undefined },
+      mod: { json: { id, name, version: "0.0.0", apiVersion: 1, requires: [], history: false, main: "main.js" }, dir: "", origin, shipped: origin, config: undefined },
       on: true,
       version: 0,
       strikes: 0,
       hooks: new Map(),
       channels: new Map(),
       disposers: [],
+      holds: new Map(),
+      focus: new Set(),
     };
     this.mods.set(id, r);
     main(this.ctx(r, undefined));

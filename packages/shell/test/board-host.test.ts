@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
 import type { AppConfig, ChatEntry, ChatNotice, TaskSummary, TasksState } from "@humanharness/protocol";
-import { type BoardHostDeps, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
+import { type BoardHostDeps, conflictOf, createBoardHost, focusGate, hostMode } from "../src/main/board-host";
 import { type InputBlock, defineBlock, z } from "@humanharness/harness-sdk";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
@@ -838,6 +838,55 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     t.turns[1].end();
     await follow;
     expect(t.turns[1].message).toContain("More");
+  });
+});
+
+describe("the focus flag: any listener hears only the focused lane (mods 1a)", () => {
+  const end = (kind: string) => ({ kind });
+
+  it("a turn is heard when focused at its send, at its start (a run) and at its end", () => {
+    let focused = true;
+    const g = focusGate(() => focused);
+    const starts: number[] = [];
+    const ends: string[] = [];
+    g.send();
+    g.starting(() => void starts.push(1));
+    g.ended(end("run"), (e) => void ends.push(e.kind));
+    expect([starts, ends]).toEqual([[1], ["run"]]);
+    // Unfocused by its end: no end.
+    g.send();
+    g.starting(() => void starts.push(2));
+    focused = false;
+    g.ended(end("run"), (e) => void ends.push(e.kind));
+    expect([starts, ends]).toEqual([[1, 2], ["run"]]);
+  });
+
+  it("never an end whose start wasn't heard; a turn that isn't a run needs only its send", () => {
+    let focused = false;
+    const g = focusGate(() => focused);
+    const ends: string[] = [];
+    g.send();
+    g.starting(() => {});
+    focused = true;
+    g.ended(end("run"), (e) => void ends.push(e.kind));
+    expect(ends).toEqual([]);
+    g.send();
+    g.ended(end("close"), (e) => void ends.push(e.kind));
+    expect(ends).toEqual(["close"]);
+  });
+
+  it("a phase move made unfocused is kept, the latest only, and taken once", () => {
+    let focused = false;
+    const g = focusGate<string>(() => focused);
+    const moved: string[] = [];
+    g.moved("a", (e) => void moved.push(e));
+    g.moved("b", (e) => void moved.push(e));
+    expect(moved).toEqual([]);
+    expect(g.takeMissed()).toBe("b");
+    expect(g.takeMissed()).toBeUndefined();
+    focused = true;
+    g.moved("c", (e) => void moved.push(e));
+    expect([moved, g.takeMissed()]).toEqual([["c"], undefined]);
   });
 });
 

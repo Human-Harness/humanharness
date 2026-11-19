@@ -44,6 +44,10 @@ export interface AppModsDeps {
   pickProfile(policyId: string | undefined, input: Omit<PickInput, "offer">): Promise<ModelProfile>;
   showNotice(text: string): void;
   sendToWindow(channel: PushChannel, value: unknown): void;
+  /** A mod store's writes: when they are refused, and their history commit (`ctx.stores`). Absent: refused. */
+  modData?: ServiceDeps["data"];
+  /** Some mod's focus on a task changed (`ctx.focus`). */
+  focusChanged?(taskId: string): void;
 }
 
 /** The mods' state the main entry reads (and its quit closes). */
@@ -156,16 +160,20 @@ export function createAppMods(d: AppModsDeps) {
           return c ? (await readNotes(baseOf(c), notesPrefix(d.scoped(), scope ?? MAIN_SCOPE)).catch(() => [])).map((n) => n.title) : [];
         },
         notify: showNotice,
+        ...(d.modData ? { data: d.modData } : {}),
       }),
       notice: showNotice,
       changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)),
       // A user-layer mod rebuilt after an edit: the window imports its ui again (hh:modReloaded, 0b2).
       reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
       builds: new ModBuilds(buildRoot, resolveShared),
+      ...(d.focusChanged ? { focusChanged: (t: string) => d.focusChanged?.(t) } : {}),
     });
     state.modHost = mods;
     state.userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
     await mods.start(resolved.mods);
+    // The mods' `daily`: now, and at each local midnight while the app runs (nothing without a mod that registered it).
+    mods.startDaily();
   }
 
   /** Watches the home folder's `mods/` once: a change syncs the folder with whatever host runs now. */

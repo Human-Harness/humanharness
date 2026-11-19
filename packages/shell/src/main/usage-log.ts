@@ -73,7 +73,8 @@ export interface UsageRecord extends ProfileFields {
   mode?: string;
   /** The task's phase while the turn ran (task-phases spec §6). Absent without phases. */
   taskPhase?: string;
-  phase?: TurnKind;
+  /** The turn's kind (TurnKind), or a tagged line's own kind (`taggedRecord`). */
+  phase?: TurnKind | (string & {});
   /** The task's model and context policy ids (replaceable-parts §8). Absent: the default ran. */
   modelPolicy?: string;
   contextPolicy?: string;
@@ -82,9 +83,12 @@ export interface UsageRecord extends ProfileFields {
   source?: string;
   /** Material lines only: the fragments the stage handled (its prompt listed). */
   fragments?: number;
-  /** Sidekick lines (sidekick spec §8): the process, the moment and which sidekick spoke. Mod lines: `mod:<id>`. */
-  process?: "sidekick" | `mod:${string}`;
-  moment?: SidekickUsageMoment;
+  /**
+   * Tagged lines (`taggedRecord`; Sidekick's, sidekick spec §8): the process, the moment and which sidekick spoke. Mod
+   * lines: `mod:<id>`.
+   */
+  process?: string;
+  moment?: SidekickUsageMoment | (string & {});
   sidekick?: string;
   /** Job lines only (parallel spec §10, part 3 Decision 2): the job's id; `task` is the run's id. */
   job?: string;
@@ -292,9 +296,12 @@ export function materialRecord(
   };
 }
 
-/** One Sidekick turn (sidekick spec §8): `phase: "sidekick"` (a turn kind), `process`, `moment` and `sidekick`. */
-export function sidekickRecord(
-  o: { engine: string; task?: string; scope?: string; action?: string; sidekick: string; moment: SidekickUsageMoment; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
+/**
+ * A turn that is no task's, tagged with its `kind` (mods 1a): `phase` and `process` are the kind, `moment` and `by`
+ * (written as `sidekick`, the field Sidekick's lines always had) say when and who. Never a task's turn (`notTask`).
+ */
+export function taggedRecord(
+  o: { kind: string; engine: string; task?: string; scope?: string; action?: string; moment?: string; by?: string; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
   at: string = new Date().toISOString(),
 ): UsageRecord {
   return {
@@ -303,15 +310,24 @@ export function sidekickRecord(
     ...(o.action ? { action: o.action } : {}),
     ...(o.task ? { task: o.task } : {}),
     ...(o.scope ? { scope: o.scope } : {}),
-    phase: "sidekick",
-    process: "sidekick",
-    moment: o.moment,
-    sidekick: o.sidekick,
+    phase: o.kind,
+    process: o.kind,
+    ...(o.moment !== undefined ? { moment: o.moment } : {}),
+    ...(o.by !== undefined ? { sidekick: o.by } : {}),
     ...profileMeta(o.profile),
     ok: o.ok,
     ...(o.usage ? { usage: o.usage } : {}),
     ...(o.limits ? { limits: o.limits } : {}),
   };
+}
+
+/** One Sidekick turn (sidekick spec §8): a tagged line of kind `sidekick`. */
+export function sidekickRecord(
+  o: { engine: string; task?: string; scope?: string; action?: string; sidekick: string; moment: SidekickUsageMoment; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  const { sidekick, ...rest } = o;
+  return taggedRecord({ ...rest, kind: "sidekick", by: sidekick }, at);
 }
 
 /** A mod's own engine turn (minimal-core spec §5): `phase: "mod"`, `process: "mod:<id>"`; never a task's. */
@@ -378,7 +394,10 @@ export function translateRecord(
  * Lines that are no task's turn: material stages, translation batches, Sidekick turns and job runs. Job lines are told
  * apart by `phase: "job"`, never by their id (a job may be called "questions").
  */
-const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate" || r?.phase === "sidekick" || r?.phase === "job" || r?.phase === "mod";
+const notTask = (r?: UsageRecord): boolean => r?.phase === "material" || r?.phase === "translate" || r?.phase === "job" || isTagged(r);
+
+/** A tagged line (`taggedRecord`, `modRecord`): Sidekick's and the mods' own turns, of any kind. */
+const isTagged = (r?: UsageRecord): boolean => r?.process !== undefined || r?.phase === "sidekick" || r?.phase === "mod";
 
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */
 const QUESTIONS = "questions";
@@ -390,15 +409,27 @@ const turnTokens = (u: TurnUsage): number => u.inputTokens + u.outputTokens + u.
 /** What counts toward Sidekick's cap (plan Decision 3): input, output and cache writes; cache reads are left out. */
 export const capTokens = (u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheWriteTokens;
 
+/**
+ * What the tagged lines of `kind` spent: `week`, their tokens (all four counts) in the last 7 days, and with `task`,
+ * their tokens toward the cap in that task (input, output and cache writes).
+ */
+export function taggedSummary(records: UsageRecord[], kind: string, o: { task?: string; now?: Date } = {}): { task?: number; week: number } {
+  const own = records.filter((r) => r.phase === kind && r.usage);
+  const since = (o.now ?? new Date()).getTime() - 7 * 86_400_000;
+  return {
+    ...(o.task !== undefined ? { task: own.filter((r) => r.task === o.task).reduce((n, r) => n + capTokens(r.usage!), 0) } : {}),
+    week: own.filter((r) => Date.parse(r.at) >= since).reduce((n, r) => n + turnTokens(r.usage!), 0),
+  };
+}
+
 /** Sidekick's tokens toward the cap in `task`. */
 export function sidekickSpent(records: UsageRecord[], task: string): number {
-  return records.filter((r) => r.phase === "sidekick" && r.task === task && r.usage).reduce((n, r) => n + capTokens(r.usage!), 0);
+  return taggedSummary(records, "sidekick", { task }).task!;
 }
 
 /** Sidekick's tokens (all four counts) in the last 7 days, for Settings › Sidekick. */
 export function sidekickWeek(records: UsageRecord[], now: Date = new Date()): number {
-  const since = now.getTime() - 7 * 86_400_000;
-  return records.filter((r) => r.phase === "sidekick" && r.usage && Date.parse(r.at) >= since).reduce((n, r) => n + turnTokens(r.usage!), 0);
+  return taggedSummary(records, "sidekick", { now }).week;
 }
 
 /**
@@ -410,7 +441,7 @@ export function dayTokens(records: UsageRecord[], day: string, localDay: (d: Dat
   const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
   const jobLines = ofDay.filter((u) => u.phase === "job");
   return {
-    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job" && u.phase !== "subagent" && u.phase !== "mod")),
+    tasks: sum(ofDay.filter((u) => u.phase !== "job" && u.phase !== "subagent" && !isTagged(u))),
     sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")),
     ...(jobLines.length ? { jobs: sum(jobLines) } : {}),
   };

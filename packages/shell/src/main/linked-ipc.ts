@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { promises as fs, realpath } from "node:fs";
+import { link, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { LINKED_MANY_MAX, type LinkedFolderDecl, hasBackend, hasEnginePresets, hasLinkedFolders } from "@humanharness/harness-sdk";
@@ -10,7 +11,6 @@ import { checkLink, isGitRepo } from "./linked-folders";
 import { linkedHistoryDir, markRelinked, markUnlinked, pruneUnlinked } from "./linked-history";
 import { linkedHistoryView } from "./linked-restore";
 import type { ScopeAccess } from "./scope-access";
-import { sourceTagKey } from "./sidekick-import";
 
 /** The longest linked-folder key the window may send (the manifest's pattern allows 64). */
 const KEY_MAX = 64;
@@ -26,6 +26,41 @@ export const linkedSecret =
   (userData: string) =>
   (create: boolean): Promise<Buffer | null> =>
     sourceTagKey(path.join(userData, "linked-key"), create);
+
+/** The source-tag key's size, in bytes. */
+const TAG_KEY_BYTES = 32;
+/**
+ * A key that tags what the app wrote (these links, Attention's records, Sidekick's import sources: sidekick spec §2a.6):
+ * `file` in main's userData, never the data folder the agent works in. Made (random, owner-only, in an owner-only folder) only when `create`: written whole to a temp
+ * file first, so a crash never leaves a short key. A file of another size is no key (null); with `create` it is
+ * replaced, since nothing it held can have tagged a source. A valid key is never replaced.
+ */
+export async function sourceTagKey(file: string, create: boolean): Promise<Buffer | null> {
+  const read = async () => {
+    const b = await readFile(file).catch(() => null);
+    return b?.length === TAG_KEY_BYTES ? b : null;
+  };
+  const have = await read();
+  if (have || !create) return have;
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temp = `${file}.${randomBytes(8).toString("hex")}.tmp`;
+  await writeFile(temp, randomBytes(TAG_KEY_BYTES), { mode: 0o600, flag: "wx" });
+  try {
+    const exists = await lstat(file).then(
+      () => true,
+      () => false,
+    );
+    // No file: link fails on a racing creator (EEXIST), whose key then wins. A broken one: replaced whole.
+    if (exists) await rename(temp, file);
+    else
+      await link(temp, file).catch((err: NodeJS.ErrnoException) => {
+        if (err.code !== "EEXIST") throw err;
+      });
+  } finally {
+    await rm(temp, { force: true });
+  }
+  return read();
+}
 
 /** A link's id in a scope's left-out links (`ScopeAccess.dropped`): its key and path. */
 export const dropKey = (l: { key: string; path: string }): string => JSON.stringify([l.key, l.path]);

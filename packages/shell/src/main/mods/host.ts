@@ -14,7 +14,7 @@ export const STRIKES = 3;
 
 type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
-/** An app channel a core mod may handle (`ctx.ipc("hh:…")`). */
+/** An app channel a core mod may handle (`ctx` ipc with an `hh:…` name). */
 export const APP_CHANNEL = /^hh:[A-Za-z][A-Za-z0-9]{0,63}$/;
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

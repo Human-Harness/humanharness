@@ -6,7 +6,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
 import type { LinkedHistoryView } from "@humanharness/protocol";
 import { ScopeStore, scopesFile } from "@humanharness/workspace";
-import { type LinkSigning, linkTag, linkTagValid, linkedSigning, registerLinkedIpc, signedLinks } from "../src/main/linked-ipc";
+import { type LinkSigning, linkTag, linkTagValid, linkedSigning, registerLinkedIpc, signedLinks, sourceTagKey } from "../src/main/linked-ipc";
+import { sourceTagKey as sidekickTagKey } from "../src/main/sidekick-import";
 import { linkedHistoryDir } from "../src/main/linked-history";
 import { folderProblem } from "../src/main/validate";
 
@@ -80,6 +81,17 @@ function setup(
   const raw = () => fs.readFileSync(scopesFile(work), "utf8");
   return { t, home, work, userData, code, store, handlers, pick, changed, secret, signing, profile, call, raw };
 }
+
+describe("sourceTagKey is core (mods 1a)", () => {
+  it("lives beside the links that use it; Sidekick's import reaches the same one", async () => {
+    expect(sidekickTagKey).toBe(sourceTagKey);
+    const file = path.join(root, "core-key", "k");
+    expect(await sourceTagKey(file, false)).toBeNull();
+    const made = await sourceTagKey(file, true);
+    expect(made).toHaveLength(32);
+    expect(await sourceTagKey(file, false)).toEqual(made);
+  });
+});
 
 describe("linked folders IPC (hatches spec §3.2)", () => {
   let s: ReturnType<typeof setup>;

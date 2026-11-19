@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/protocol";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, modRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, modRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, taggedRecord, taggedSummary, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -551,6 +551,38 @@ describe("sidekick lines (sidekick spec §8)", () => {
     const u = profilesUsage({ sofi: [sk("t1", "2026-10-27T10:00:00Z")], tomas: [sk("t2", "2026-10-27T10:00:00Z"), sk("t3", "2026-10-27T10:00:00Z")] }, "sofi", undefined);
     expect(u.sidekick).toBe(2440);
     expect(profilesUsage({ sofi: [], tomas: [sk("t2", "2026-10-27T10:00:00Z")] }, "sofi", undefined)).not.toHaveProperty("sidekick");
+  });
+});
+
+describe("tagged lines: a generic kind (mods 1a)", () => {
+  const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 100000 };
+  const usage = { inputTokens: 300, outputTokens: 40, cacheReadTokens: 2000, cacheWriteTokens: 100 };
+  const turn = (task: string, at: string): UsageRecord => ({ at, engine: "claude", task, action: "draft", ok: true, usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+  const coach = (task: string, at: string) => taggedRecord({ kind: "coach", engine: "claude", task, action: "draft", moment: "nudge", by: "ana", profile, ok: true, usage }, at);
+
+  it("any kind is a tag: phase and process carry it, moment and who spoke ride along", () => {
+    expect(coach("t1", "2026-10-27T10:00:00Z")).toMatchObject({ phase: "coach", process: "coach", moment: "nudge", task: "t1", tier: "light" });
+  });
+
+  it("Sidekick's line is a tagged line of kind sidekick, byte for byte", () => {
+    const at = "2026-10-27T10:00:00Z";
+    const o = { engine: "claude", task: "t1", scope: "s1", action: "draft", profile, ok: true, usage };
+    const tagged = taggedRecord({ ...o, kind: "sidekick", moment: "pre", by: "sidekick" }, at);
+    expect(JSON.stringify(tagged)).toBe(JSON.stringify(sidekickRecord({ ...o, sidekick: "sidekick", moment: "pre" }, at)));
+  });
+
+  it("a tagged line stays out of task tokens, scopes and the day's task total", () => {
+    const s = summarizeUsage([turn("t1", "2026-10-27T10:00:00Z"), coach("t1", "2026-10-27T10:00:30Z"), turn("t1", "2026-10-27T10:01:00Z")], undefined);
+    expect(s.tokens).toEqual({ draft: 2200 });
+    expect(s).not.toHaveProperty("scopes");
+    expect(dayTokens([coach("t1", "2026-10-27T10:00:00Z")], "2026-10-27", (d) => d.toISOString().slice(0, 10))).toEqual({ tasks: 0, sidekick: 0 });
+  });
+
+  it("the summary: its tokens toward the cap in a task, and its week; another kind's lines never count", () => {
+    const lines = [coach("t1", "2026-10-27T10:00:00Z"), coach("t2", "2026-10-27T10:00:00Z"), coach("t0", "2026-10-01T10:00:00Z"), turn("t1", "2026-10-27T10:00:00Z")];
+    const other = taggedRecord({ kind: "other", engine: "claude", task: "t1", profile, ok: true, usage }, "2026-10-27T10:00:00Z");
+    expect(taggedSummary([...lines, other], "coach", { task: "t1", now: new Date("2026-10-27T12:00:00Z") })).toEqual({ task: 440, week: 4880 });
+    expect(taggedSummary(lines, "coach", { now: new Date("2026-10-27T12:00:00Z") })).toEqual({ week: 4880 });
   });
 });
 

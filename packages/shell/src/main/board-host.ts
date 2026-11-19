@@ -118,17 +118,51 @@ interface Lane {
   marking: Promise<void>;
   /** The lane's task as tasks.json last had it (its name and scope never change): conflicts name it synchronously. */
   task?: CurrentTask;
-  /**
-   * Sidekick heard this turn start: the lane was focused at its send (`send`) and, for a run turn, at `turnStarting`
-   * (`run`). Its end is heard only then, and only if the lane is still focused: never an end without its start.
-   */
-  heard: { send: boolean; run: boolean };
+  /** The focus flag: what Sidekick and the mods hear of this lane's turns and phase moves (`focusGate`). */
+  focus: FocusGate<PhaseMoved>;
   /** The rewrites and appends of the lane's chat file outside its turns (answers, notices): one at a time. */
   chatOps: Promise<unknown>;
   /** The note this lane's task last wrote (folder-relative), for its history commit. */
   notePath?: string;
-  /** The latest phase move Sidekick didn't hear (the lane wasn't focused): it hears it when the lane is focused. */
-  unheardMove?: PhaseMoved;
+}
+
+/** One lane's focus flag (`focusGate`). */
+export type FocusGate<M> = ReturnType<typeof focusGate<M>>;
+
+/**
+ * The focus flag (mods 1a): a lane's turn hooks (Sidekick's, the mods' turnStart, turnEnd and phaseMoved) hear only the
+ * focused lane, since what they say is about the chat on screen. A turn is heard when the lane was focused at its send
+ * and, for a run turn, at its start; its end only then, and only if the lane is still focused: never an end without its
+ * start. A phase move made while unfocused is kept (the latest only) for when the lane is focused again (`takeMissed`).
+ */
+export function focusGate<M>(isFocused: () => boolean) {
+  let heard = { send: false, run: false };
+  let missed: M | undefined;
+  return {
+    /** A send starts a turn: was the lane focused? */
+    send(): void {
+      heard.send = isFocused();
+    },
+    starting(fn: () => void): void {
+      heard.run = isFocused();
+      if (heard.run) fn();
+    },
+    ended<E extends { kind: string }>(end: E, fn: (end: E) => void): void {
+      const ok = heard.send && (end.kind !== "run" || heard.run);
+      heard = { send: false, run: false };
+      if (ok && isFocused()) fn(end);
+    },
+    moved(e: M, fn: (e: M) => void): void {
+      missed = isFocused() ? undefined : e;
+      if (missed === undefined) fn(e);
+    },
+    /** The phase move missed while unfocused, once. */
+    takeMissed(): M | undefined {
+      const e = missed;
+      missed = undefined;
+      return e;
+    },
+  };
 }
 
 /** A notice for a task's chat (`scope`: the chat it is in). */
@@ -212,10 +246,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
   function hearMissedMove(): void {
     const id = board.focusedId();
     const l = id === null ? undefined : lanes.get(id);
-    const e = l?.unheardMove;
-    if (!l || !e) return;
-    l.unheardMove = undefined;
-    d.taskDeps.phaseMoved?.(e);
+    const e = l?.focus.takeMissed();
+    if (e) d.taskDeps.phaseMoved?.(e);
   }
 
   function tasksChanged(): void {
@@ -294,7 +326,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
 
   function newLane(id: string): Lane {
     const emit = laneEmit(id, buffer, { isFocused: (x) => board.isFocused(x), toWindow: (e) => d.emit(e) });
-    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve(), chatOps: Promise.resolve(), heard: { send: false, run: false } } as unknown as Lane;
+    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve(), chatOps: Promise.resolve(), focus: focusGate<PhaseMoved>(() => board.isFocused(id)) } as unknown as Lane;
     lane.slot = memoise<SessionSlot>(async () => {
       const ws = await workspace.get();
       if (!ws) return null;
@@ -348,7 +380,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         // The person's line starts the buffer of what focusing this lane replays (Decision 6).
         if (!lane.turns.isBusy() && !options.quiet && !options.skipUserEntry) buffer.user(id, { text: options.display ?? message, at: new Date().toISOString() });
         // A send refused because a turn runs leaves that turn's mark alone.
-        if (!lane.turns.isBusy()) lane.heard.send = board.isFocused(id);
+        if (!lane.turns.isBusy()) lane.focus.send();
         // This send's own usage events only: a retry is another send with its own (spec §9.1).
         let used = 0;
         return lane.turns
@@ -414,17 +446,14 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
               })
           : undefined,
     });
-    // Sidekick follows only the focused task (its cards are about the chat on screen). Getters, as in the plain app:
-    // undefined until its controller exists (D0).
+    // Sidekick and the mods follow only the focused task (the focus flag). Getters, as in the plain app: undefined until
+    // a listener exists (D0).
     Object.defineProperties(deps, {
       turnStarting: {
         get: () => {
           const fn = d.taskDeps.turnStarting;
           return fn
-            ? () => {
-                lane.heard.run = board.isFocused(id);
-                if (lane.heard.run) fn();
-              }
+            ? () => lane.focus.starting(fn)
             : undefined;
         },
       },
@@ -432,11 +461,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         get: () => {
           const fn = d.taskDeps.turnEnded;
           return fn
-            ? (end: TurnEnd) => {
-                const heard = lane.heard.send && (end.kind !== "run" || lane.heard.run);
-                lane.heard = { send: false, run: false };
-                if (heard && board.isFocused(id)) fn(end);
-              }
+            ? (end: TurnEnd) => lane.focus.ended(end, fn)
             : undefined;
         },
       },
@@ -444,10 +469,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         get: () => {
           const fn = d.taskDeps.phaseMoved;
           return fn
-            ? (e: PhaseMoved) => {
-                lane.unheardMove = board.isFocused(id) ? undefined : e;
-                if (!lane.unheardMove) fn(e);
-              }
+            ? (e: PhaseMoved) => lane.focus.moved(e, fn)
             : undefined;
         },
       },

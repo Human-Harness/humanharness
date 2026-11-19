@@ -131,9 +131,12 @@ export default defineMod({
 \`\`\`
 
 - \`main(ctx)\` runs in the app (node). \`ctx\` is a \`MainCtx\`: hooks (\`ctx.on.beforeSend\` answers a \`SendInfo\` with a
-  \`SendVerdict\`; \`turnStart\`, \`turnEnd\` with a \`TurnEndInfo\`, \`taskOpen\`, \`taskClose\` with a \`TaskRef\`), \`ipc\`,
-  \`engine.run(tier, prompt)\` (a \`Tier\`: light, standard or deep; an \`EngineRunResult\` back), \`tasks\`, \`notes\`,
-  \`storage\`, \`dataDir\`, \`notify\`, \`provide\`, \`mods\`, \`log\`. Every registration returns a \`Disposer\`; the app runs
+  \`SendVerdict\`, which may hold the send until \`ctx.holds.resolve(token, verdict)\` with a \`HoldVerdict\`; \`turnStart\`,
+  \`turnEnd\` with a \`TurnEndInfo\`, \`taskOpen\`, \`taskClose\` with a \`TaskRef\`, \`betweenTasks\`, \`phaseMoved\` with a
+  \`PhaseMovedInfo\`, \`daily\` with a \`DailyInfo\`, \`close\` when the app quits), \`ipc\`, \`engine.run(tier, prompt)\` (a
+  \`Tier\`: light, standard or deep; an \`EngineRunResult\` back), \`tasks\`, \`notes\`, \`storage\`, \`stores.open(name,
+  collection)\` (a \`ModStore\`), \`usage.record(kind, entry)\` (a \`UsageEntry\` with \`ModTokens\`) and \`usage.summary()\`
+  (a \`UsageSummary\`), \`focus.set(taskId, on)\`, \`dataDir\`, \`notify\`, \`provide\`, \`mods\`, \`log\`. Every registration returns a \`Disposer\`; the app runs
   them before a reload. A \`schema\` (zod) checks the mod's config.
 - \`ui(ctx)\` runs in the window. \`ctx\` is a \`UiCtx\`: \`ctx.block(name, Component)\` registers a block a layout places.
   A block is a \`BlockComponent\`: it gets \`BlockProps\` (\`props\` from the layout, and \`app\`, an \`AppValue\`); \`useApp()\`

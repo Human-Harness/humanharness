@@ -1,6 +1,6 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, open, readlink, realpath, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 
 /** Import limits (sidekick plan Decision 14): at most this many files, each at most this many bytes; paste the same. */
@@ -250,37 +250,5 @@ export async function readImportFiles(paths: readonly string[], where: ImportPla
   return { ok: true, text, hash: importHash(text), paths: [...paths] };
 }
 
-/** The source-tag key's size, in bytes. */
-const TAG_KEY_BYTES = 32;
-/**
- * The key that tags an import's files source (sidekick spec §2a.6): `file` in main's userData, never the data folder
- * the agent works in. Made (random, owner-only, in an owner-only folder) only when `create`: written whole to a temp
- * file first, so a crash never leaves a short key. A file of another size is no key (null); with `create` it is
- * replaced, since nothing it held can have tagged a source. A valid key is never replaced.
- */
-export async function sourceTagKey(file: string, create: boolean): Promise<Buffer | null> {
-  const read = async () => {
-    const b = await readFile(file).catch(() => null);
-    return b?.length === TAG_KEY_BYTES ? b : null;
-  };
-  const have = await read();
-  if (have || !create) return have;
-  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-  const temp = `${file}.${randomBytes(8).toString("hex")}.tmp`;
-  await writeFile(temp, randomBytes(TAG_KEY_BYTES), { mode: 0o600, flag: "wx" });
-  try {
-    const exists = await lstat(file).then(
-      () => true,
-      () => false,
-    );
-    // No file: link fails on a racing creator (EEXIST), whose key then wins. A broken one: replaced whole.
-    if (exists) await rename(temp, file);
-    else
-      await link(temp, file).catch((err: NodeJS.ErrnoException) => {
-        if (err.code !== "EEXIST") throw err;
-      });
-  } finally {
-    await rm(temp, { force: true });
-  }
-  return read();
-}
+/** The source-tag key is core (mods 1a): Sidekick's import keeps reaching it here until it moves to its mod. */
+export { sourceTagKey } from "./linked-ipc";

@@ -1,10 +1,13 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
+import type { CoreApp, CoreMainCtx } from "@humanharness/mod-sdk/core";
 import type { ModRow } from "@humanharness/protocol";
+import type { PushChannel } from "@humanharness/protocol/channels";
 import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
+import { isPushChannel } from "./push-channels";
 import type { ResolvedMod } from "./resolve";
 
 /** Spec §4.2: the beforeSend handlers run at most this long in total, then it sends; a hold's wait doesn't count. */
@@ -41,6 +44,10 @@ export interface HostDeps {
   reloaded?: (id: string, version: number) => void;
   /** Some mod's focus on a task changed (`focused`). */
   focusChanged?: (taskId: string) => void;
+  /** A core mod's send to the window (`ctx.push`), on an app push channel only. Absent: core mods get no `push`. */
+  push?: (channel: PushChannel, value: unknown) => void;
+  /** Core mod `id`'s `ctx.app` (core-app.ts). Absent: core mods get no `app`. Harness and local mods never get either. */
+  coreApp?: (id: string) => CoreApp | undefined;
 }
 
 /** What the host needs to load a user-layer mod (`ModBuilds` in user-layer.ts). */
@@ -179,6 +186,24 @@ export class ModHost {
     r.problem = failure.reason;
   }
 
+  /** What only a core mod's ctx has: `push` (an app push channel, while the mod is on) and `app`. */
+  private core(r: Running): Partial<Pick<CoreMainCtx<unknown>, "push" | "app">> {
+    if (r.mod.shipped !== "core") return {};
+    const send = this.d.push;
+    const app = this.d.coreApp?.(r.mod.json.id);
+    return {
+      ...(send
+        ? {
+            push: (channel: string, value: unknown) => {
+              if (!isPushChannel(channel)) throw new Error(`Not an app push channel: ${String(channel)}`);
+              if (r.on) send(channel, value);
+            },
+          }
+        : {}),
+      ...(app ? { app } : {}),
+    };
+  }
+
   private ctx(r: Running, config: unknown): MainCtx<unknown> {
     const add = (name: HookName) => (fn: Fn) => {
       const set = r.hooks.get(name) ?? new Set<Fn>();
@@ -189,6 +214,7 @@ export class ModHost {
     };
     return {
       ...(this.d.services(r.mod.json.id) as MainCtx<unknown>),
+      ...this.core(r),
       id: r.mod.json.id,
       config,
       on: Object.fromEntries(HOOKS.map((n) => [n, add(n)])) as unknown as MainCtx<unknown>["on"],
@@ -486,8 +512,8 @@ export class ModHost {
   }
 
   /** Tests only: a mod defined in memory, on. Never called by the app. */
-  registerForTest(id: string, name: string, main: (ctx: MainCtx<unknown>) => void, o: { core?: boolean } = {}): void {
-    const origin = o.core ? "core" : "local";
+  registerForTest(id: string, name: string, main: (ctx: MainCtx<unknown>) => void, o: { core?: boolean; origin?: ResolvedMod["shipped"] } = {}): void {
+    const origin = o.origin ?? (o.core ? "core" : "local");
     const r: Running = {
       mod: { json: { id, name, version: "0.0.0", apiVersion: 1, requires: [], history: false, main: "main.js" }, dir: "", origin, shipped: origin, config: undefined },
       on: true,

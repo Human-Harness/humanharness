@@ -5,10 +5,7 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
-<<<<<<< HEAD
-=======
     "./core": "./src/core.ts",
->>>>>>> origin/ark/mods-1a-sidekick-main
     "./bundle": { "types": "./src/bundle.ts", "node": "./src/bundle.ts" },
     "./build": { "types": "./src/build.ts", "node": "./src/build.ts" }
   },

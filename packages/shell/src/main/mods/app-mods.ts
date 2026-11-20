@@ -172,12 +172,9 @@ export function createAppMods(d: AppModsDeps) {
       reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
       builds: new ModBuilds(buildRoot, resolveShared),
       ...(d.focusChanged ? { focusChanged: (t: string) => d.focusChanged?.(t) } : {}),
-<<<<<<< HEAD
-=======
       // Core mods only (the host checks): a send on an app push channel, and the app's parts (`ctx.app`).
       push: sendToWindow,
       coreApp: (id) => (coreParts ? coreAppFor(coreParts, id) : undefined),
->>>>>>> origin/ark/mods-1a-sidekick-main
     });
     state.modHost = mods;
     state.userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });

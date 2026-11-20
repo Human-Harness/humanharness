@@ -18,6 +18,7 @@ import type { TaskManager } from "../task-manager";
 import type { TestHooks } from "../test-hooks";
 import { UsageLog, modRecord } from "../usage-log";
 import { type ModsSettings, cleanModsConfig } from "./config";
+import { type CoreAppParts, coreAppFor } from "./core-app";
 import { CORE_MODS } from "./core-mods";
 import { HomeHistory } from "./home-history";
 import { ModHost } from "./host";
@@ -84,6 +85,9 @@ export function createAppMods(d: AppModsDeps) {
     resolvedMods: [],
   };
   const home = () => appHome(app.getPath("userData"), d.harness().id);
+  /** The app's parts behind a core mod's `ctx.app`, once the start-up built them (app-lifecycle.ts, before the host). */
+  let coreParts: CoreAppParts | null = null;
+  const setCoreApp = (parts: CoreAppParts) => void (coreParts = parts);
 
   /** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
   const modsView = async (): Promise<ModsView> => ({
@@ -168,6 +172,12 @@ export function createAppMods(d: AppModsDeps) {
       reloaded: (id, version) => sendToWindow("hh:modReloaded", { id, version }),
       builds: new ModBuilds(buildRoot, resolveShared),
       ...(d.focusChanged ? { focusChanged: (t: string) => d.focusChanged?.(t) } : {}),
+<<<<<<< HEAD
+=======
+      // Core mods only (the host checks): a send on an app push channel, and the app's parts (`ctx.app`).
+      push: sendToWindow,
+      coreApp: (id) => (coreParts ? coreAppFor(coreParts, id) : undefined),
+>>>>>>> origin/ark/mods-1a-sidekick-main
     });
     state.modHost = mods;
     state.userLayer = new UserLayer({ home, host: mods, mods: resolved.mods, problems: resolved.problems, changed: () => void modsView().then((v) => sendToWindow("hh:modsChanged", v)) });
@@ -320,5 +330,6 @@ export function createAppMods(d: AppModsDeps) {
     modIdTaken,
     modIdIn,
     modsIpcDeps,
+    setCoreApp,
   };
 }

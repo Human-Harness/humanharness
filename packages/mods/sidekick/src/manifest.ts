@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { type Collection, collectionSchema } from "./data";
 
 /** The process key of Sidekick's turns in Settings › Models (`models.tasks`) and its reserved action id (spec §5). */
 export const SIDEKICK_PROCESS = "sidekick";
@@ -259,11 +258,6 @@ export const sidekickRecordSchema = z
     if (r.type === "scope") need(["scope", "sidekick", "on"]);
   });
 export type SidekickRecord = z.output<typeof sidekickRecordSchema>;
-
-/** The reserved collection (spec §6.4): app-wide, keyed by `id`, never seen by the task agent. Not in `dataCollections` (D0). */
-export function sidekickCollection(): Collection {
-  return collectionSchema.parse({ scoped: false, key: "id", schema: sidekickRecordSchema, agent: "none" });
-}
 
 /** Every setting's value: the stored one, else its default (the manifest's `default` for `on`). */
 export interface SidekickSettings {

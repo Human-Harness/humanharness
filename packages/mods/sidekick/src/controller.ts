@@ -28,12 +28,12 @@ import {
   usedShare,
   whyShown,
 } from "@humanharness/workspace";
-import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportRead } from "./sidekick-import";
-import { candidates, pickSpeaker, preferredSpeaker } from "./sidekick-route";
-import type { SidekickInput, SidekickScope, SidekickStore } from "./sidekick-store";
-import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, placeRouteContext, preSendPrompt, routePrompt } from "./sidekick-turns";
-import type { PhaseMoved, TurnEnd } from "./task-manager";
-import { type SidekickUsageMoment, type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
+import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportRead } from "./import";
+import { candidates, pickSpeaker, preferredSpeaker } from "./route";
+import type { SidekickInput, SidekickScope, SidekickStore } from "./store";
+import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, placeRouteContext, preSendPrompt, routePrompt } from "./turns";
+import type { PhaseMoved, TurnEnd } from "./types";
+import { type SidekickUsageMoment, type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage";
 
 /** Part 1's one sidekick (plan Decision 9). */
 export const SIDEKICK_ID = DEFAULT_SIDEKICK.id;

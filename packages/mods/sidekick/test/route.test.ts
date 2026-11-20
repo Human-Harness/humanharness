@@ -1,6 +1,6 @@
 import { DEFAULT_SIDEKICK, type SidekickDef } from "@humanharness/harness-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { candidates, pickSpeaker } from "../src/main/sidekick-route";
+import { candidates, pickSpeaker } from "../src/route";
 
 const RULO: SidekickDef = { id: "rulo", name: "Rulo", mark: "mentor", personality: "Direct.", purposes: [{ id: "mentor" }, { id: "process-guard" }], order: 1 };
 const on = async () => ({ on: true });

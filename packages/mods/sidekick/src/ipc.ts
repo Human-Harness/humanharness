@@ -2,10 +2,10 @@ import { sidekickRecordSchema } from "@humanharness/harness-sdk";
 import { isScopeId } from "@humanharness/workspace";
 import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/protocol";
 import type { InvokeChannel } from "@humanharness/protocol/channels";
-import type { SidekickController } from "./sidekick";
-import { SIDEKICK_MAX, type SidekickInput, type SidekickScope } from "./sidekick-store";
-import { IMPORT_MAX_BYTES } from "./sidekick-import";
-import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
+import type { SidekickController } from "./controller";
+import { SIDEKICK_MAX, type SidekickInput, type SidekickScope } from "./store";
+import { IMPORT_MAX_BYTES } from "./import";
+import { SIDEKICK_PLACE_INPUT_MAX } from "./turns";
 
 const OUTCOMES: readonly SidekickOutcome[] = ["used", "edited", "sent-anyway", "dismissed"];
 const MAX_PROMPT = 20_000;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sidekickView } from "../src/main/sidekick-view";
+import { sidekickView } from "../src/view";
 
 const VIEW = { id: "sidekick", name: "Sidekick", mark: "coach" };
 

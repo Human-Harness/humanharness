@@ -4,8 +4,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SIDEKICK, SIDEKICK_COLLECTION, type SidekickRecord, sidekickCollection } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
-import { dataFile } from "../../workspace/src/layout";
-import { SIDEKICK_MAX, SidekickStore } from "../src/main/sidekick-store";
+import { dataFile } from "../../../workspace/src/layout";
+import { SIDEKICK_MAX, SidekickStore } from "../src/store";
 
 async function store(manifest?: { default: "on" | "off" }) {
   const base = await fs.mkdtemp(path.join(os.tmpdir(), "hh-sks-"));

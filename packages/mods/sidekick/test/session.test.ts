@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type AcpScript, type ClaudeScript, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { SidekickSession } from "../src";
+import { SidekickSession } from "../src/session";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-sk-rt-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

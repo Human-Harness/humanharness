@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { registerSidekickIpc } from "../src/main/sidekick-ipc";
-import { SIDEKICK_MAX } from "../src/main/sidekick-store";
+import { registerSidekickIpc } from "../src/ipc";
+import { SIDEKICK_MAX } from "../src/store";
 
 function wire(available = true) {
   const handlers = new Map<string, (...args: never[]) => unknown>();

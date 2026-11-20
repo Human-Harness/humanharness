@@ -3,7 +3,8 @@ import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, realpathSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportIo, ImportTooBig, importFileIo, importHash, joinImportFiles, readImportFiles, refusedPath, sourceTagKey } from "../src/main/sidekick-import";
+import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportIo, ImportTooBig, importFileIo, importHash, joinImportFiles, readImportFiles, refusedPath } from "../src/import";
+import { sourceTagKey } from "../../../shell/src/main/linked-ipc";
 
 // Every test runs in a fake home folder under the temp dir: the real home's engine folders are never touched.
 const fakeHome = () => {

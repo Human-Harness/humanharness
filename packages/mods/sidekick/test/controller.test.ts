@@ -5,11 +5,11 @@ import type { SidekickRecord } from "@humanharness/harness-sdk";
 import type { SidekickState } from "@humanharness/protocol";
 import type { SidekickEvent } from "@humanharness/workspace";
 import { createHash, createHmac } from "node:crypto";
-import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
-import { joinImportFiles, readImportFiles } from "../src/main/sidekick-import";
-import { SIDEKICK_MAX, type SidekickInput, SidekickStore } from "../src/main/sidekick-store";
-import type { DailyInput } from "../src/main/sidekick-turns";
-import { type UsageRecord, sidekickRecord } from "../src/main/usage-log";
+import { SidekickController, type SidekickDeps } from "../src/controller";
+import { joinImportFiles, readImportFiles } from "../src/import";
+import { SIDEKICK_MAX, type SidekickInput, SidekickStore } from "../src/store";
+import type { DailyInput } from "../src/turns";
+import { type UsageRecord, sidekickRecord } from "../src/usage";
 
 const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 80 };
 const json = (o: unknown) => JSON.stringify(o);

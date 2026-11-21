@@ -15,19 +15,10 @@ import {
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
 import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState, SidekickView } from "@humanharness/protocol";
-import {
-  APP_SCOPE,
-  MAIN_SCOPE,
-  SIDEKICK_FLAG_KINDS,
-  type SidekickEvent,
-  type SidekickEventMoment,
-  type SidekickFlagKind,
-  localCheck,
-  sidekickBrief,
-  thresholdFor,
-  usedShare,
-  whyShown,
-} from "@humanharness/workspace";
+import { APP_SCOPE, MAIN_SCOPE } from "@humanharness/workspace";
+import { SIDEKICK_FLAG_KINDS, type SidekickFlagKind, localCheck } from "./checks";
+import { sidekickBrief } from "./brief";
+import { type SidekickEvent, type SidekickEventMoment, thresholdFor, usedShare, whyShown } from "./events";
 import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportRead } from "./import";
 import { candidates, pickSpeaker, preferredSpeaker } from "./route";
 import type { SidekickInput, SidekickScope, SidekickStore } from "./store";

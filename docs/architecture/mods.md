@@ -129,7 +129,7 @@ A core mod is a package under `packages/mods/<id>` with `mod.json`, `README.md` 
 
 **A core mod's ctx** (`CoreMainCtx`, `@humanharness/mod-sdk/core`) adds `ctx.app`, the app's parts (`mods/core-app.ts`, built once in `app-lifecycle.ts`: phases and briefs, setup, the open task, engines and profiles, session folders and briefs from `mods/core-sessions.ts`, `EngineSession`, the daily input and more), and `ctx.push(channel, value)` on an app push channel. Only a core mod may handle an app channel (`hh:…`) with `ctx.ipc`; the core registers those names once with Electron (`MOD_APP_CHANNELS`, `mods/app-channels.ts`) and hands each call to the mod host, which refuses it when no mod handles it.
 
-**The core-mod import rule** (`bundleMod` with `core: true`, `packages/mod-sdk/src/build.ts`): a core mod's main may import its own files, the shared imports, `node:` builtins and the packages its `package.json` declares. Core `@humanharness/*` packages are bundled in; npm packages stay outside, found beside the app; another mod (`@humanharness/mod-*`) never. The core never imports a core mod: what it needs goes through hooks, `ctx` and channels.
+**The core-mod import rule** (`bundleMod` with `core: true`, `packages/mod-sdk/src/build.ts`): a core mod's main may import its own files, the shared imports, `node:` builtins and the packages its `package.json` declares. Core `@humanharness/*` packages are bundled in, together with the npm packages they import (nothing beside the built mod could resolve those); the mod's own npm packages stay outside, found beside the app; another mod (`@humanharness/mod-*`) never. The core never imports a core mod: what it needs goes through hooks, `ctx` and channels.
 
 ## The user layer (0b2)
 

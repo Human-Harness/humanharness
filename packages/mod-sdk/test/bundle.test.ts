@@ -145,6 +145,22 @@ describe("bundleMod for a core mod", () => {
     }
   });
 
+  it("bundles the npm packages a core package imports: only the app's own copy of that package could resolve them", async () => {
+    await deps({ "@humanharness/workspace": "workspace:*" });
+    await pkg("@humanharness/workspace", "import git from 'iso-git';\nexport const GIT = git();\n");
+    // The core package's own dependency, beside it as pnpm links one; nothing beside the built file.
+    const dep = path.join(dir, "node_modules", "@humanharness", "workspace", "node_modules", "iso-git");
+    await fs.mkdir(dep, { recursive: true });
+    await fs.writeFile(path.join(dep, "package.json"), JSON.stringify({ name: "iso-git", main: "i.js" }));
+    await fs.writeFile(path.join(dep, "i.js"), "module.exports = () => 'git';\n");
+    await write("src/main.ts", "import { GIT } from '@humanharness/workspace';\nexport default { GIT };\n");
+    const r = await bundleMod({ dir, entry: "src/main.ts", part: "main", core: true, outFile: outFile(), resolveShared: () => "/unused" });
+    expect(r).toEqual({ ok: true });
+    expect(await fs.readFile(outFile(), "utf8")).not.toMatch(/from "iso-git"/);
+    const mod = (await import(pathToFileURL(outFile()).href)) as { default: Record<string, string> };
+    expect(mod.default).toEqual({ GIT: "git" });
+  });
+
   it("refuses a package the mod does not declare, and another core mod", async () => {
     await deps({ "@humanharness/mod-home": "workspace:*" });
     await write("src/main.ts", "import 'undeclared';\nimport '@humanharness/mod-home';\nexport default {};\n");

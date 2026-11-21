@@ -22,8 +22,8 @@ export interface BundleOptions {
   resolveShared(spec: string): string;
   /**
    * A core mod, built with the app (mods-1a): besides the shared imports it may import `node:` builtins and the
-   * packages its `package.json` declares. Core `@humanharness/*` packages are bundled in; npm packages stay outside,
-   * found beside the app; another mod (`@humanharness/mod-*`) never. A core main reads the shared imports from
+   * packages its `package.json` declares. Core `@humanharness/*` packages are bundled in, with the npm packages they
+   * import; the mod's own npm packages stay outside, found beside the app; another mod (`@humanharness/mod-*`) never. A core main reads the shared imports from
    * `globalThis.__hhMainModules`, which the app fills before it loads any mod.
    */
   core?: boolean;
@@ -77,7 +77,9 @@ function guard(o: BundleOptions, dir: string): Plugin {
         const name = packageOf(spec);
         if (isBuiltin(spec)) return o.part === "main" && (!own || spec.startsWith("node:") || deps.has(name)) ? { path: spec, external: true } : { errors: [{ text: refusedCore(spec) }] };
         if (isMod(name) || (own && !deps.has(name))) return { errors: [{ text: refusedCore(spec) }] };
-        return name.startsWith("@humanharness/") ? undefined : { path: spec, external: true };
+        // A core package's own npm imports are bundled with it: nothing beside the built mod could resolve them (the
+        // app bundles them into its main the same way). The mod's own npm packages stay outside.
+        return name.startsWith("@humanharness/") || !own ? undefined : { path: spec, external: true };
       }
       // A CommonJS shim, so `import { useState } from "react"` works against the object the app fills in.
       b.onLoad({ filter: /.*/, namespace: SHIM }, (args) => ({ contents: `module.exports = globalThis.${global}[${JSON.stringify(args.path)}];`, loader: "js" }));
@@ -104,6 +106,8 @@ export async function bundleMod(o: BundleOptions): Promise<BundleResult> {
       write: true,
       logLevel: "silent",
       plugins: [guard(o, dir)],
+      // A bundled CommonJS package's `require` of a node builtin needs a real one in an ESM file.
+      ...(o.core && o.part === "main" ? { banner: { js: 'import { createRequire as __hhCreateRequire } from "node:module";\nconst require = __hhCreateRequire(import.meta.url);' } } : {}),
     });
     return { ok: true };
   } catch (err) {

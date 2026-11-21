@@ -3,7 +3,7 @@ import { getEngine } from "@humanharness/engines";
 import type { SidekickAnswer } from "@humanharness/runtime";
 import type { SidekickRecord } from "@humanharness/harness-sdk";
 import type { SidekickState } from "@humanharness/protocol";
-import type { SidekickEvent } from "@humanharness/workspace";
+import type { SidekickEvent } from "../src/events";
 import { createHash, createHmac } from "node:crypto";
 import { SidekickController, type SidekickDeps } from "../src/controller";
 import { joinImportFiles, readImportFiles } from "../src/import";

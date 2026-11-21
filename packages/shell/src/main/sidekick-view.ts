@@ -1,4 +1,2 @@
-/** Sidekick shows only in a harness whose manifest has a `sidekick` key (`{}` is enough); the same rule gates what main starts on its own. */
-export function sidekickView(harness: { sidekick?: object | undefined }): { id: "sidekick"; name: "Sidekick"; mark: "coach" } | undefined {
-  return harness.sidekick ? { id: "sidekick", name: "Sidekick", mark: "coach" } : undefined;
-}
+// Moved to the Sidekick core mod (packages/mods/sidekick); this re-export keeps the core's call sites until they go.
+export * from "../../../mods/sidekick/src/view";

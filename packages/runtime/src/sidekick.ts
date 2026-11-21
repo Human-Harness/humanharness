@@ -1,5 +1,3 @@
-/**
- * Sidekick's names for the generic engine session (mods 1a): its session is an EngineSession like a mod's engine run.
- * These names go with Sidekick to its mod.
- */
+// Sidekick's names for the generic engine session moved to the Sidekick core mod (packages/mods/sidekick/src/session.ts);
+// these keep the core's call sites until they go.
 export { EngineSession as SidekickSession, type EngineAnswer as SidekickAnswer, type EngineSessionOptions as SidekickSessionOptions } from "./engine-session";

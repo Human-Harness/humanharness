@@ -18,16 +18,25 @@ function sources(dir: string): string[] {
 const code = (file: string) => fs.readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 /** Every "hh:…" string literal in a folder's code. */
-function literals(dir: string): Set<string> {
+function literals(dir: string, keep: (file: string) => boolean = () => true): Set<string> {
   const found = new Set<string>();
-  for (const file of sources(dir)) for (const m of code(file).matchAll(/"(hh:[A-Za-z]+)"/g)) found.add(m[1]);
+  for (const file of sources(dir).filter(keep)) for (const m of code(file).matchAll(/"(hh:[A-Za-z]+)"/g)) found.add(m[1]);
   return found;
 }
 
 const invoke = tableKeys("Invoke", path.resolve(packages, ".."));
 const push = tableKeys("Push", path.resolve(packages, ".."));
 const table = new Set([...invoke, ...push]);
-const main = literals(path.join(packages, "shell/src/main"));
+/** A core mod's main side: its `src` code, without renderer and UI files (`.tsx`, `ui*`, `renderer*`). */
+const modMain = (file: string) => !/\.tsx$/.test(file) && !/^(ui|renderer)/.test(path.basename(file));
+const modsDir = path.join(packages, "mods");
+const main = new Set([
+  ...literals(path.join(packages, "shell/src/main")),
+  ...fs
+    .readdirSync(modsDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && fs.existsSync(path.join(modsDir, d.name, "src")))
+    .flatMap((d) => [...literals(path.join(modsDir, d.name, "src"), modMain)]),
+]);
 const preload = literals(path.join(packages, "shell/src/preload"));
 
 describe("IPC channel table (replaceable parts §5.3)", () => {

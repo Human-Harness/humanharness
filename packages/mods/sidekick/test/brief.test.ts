@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { sidekickBrief, sidekickWorkDir, writeSidekickBrief } from "../src/sidekick-brief";
+import { sidekickBrief, sidekickWorkDir, writeSidekickBrief } from "../src/brief";
 
 describe("sidekick brief", () => {
   it("holds the core rules, the harness and the tips, in English", () => {

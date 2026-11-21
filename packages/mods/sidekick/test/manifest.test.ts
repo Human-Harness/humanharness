@@ -1,23 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { RESERVED_COLLECTIONS, dataCollections, defineHarness } from "@humanharness/harness-sdk";
 import {
   DEFAULT_SIDEKICK,
   SIDEKICK_MARKS,
   sidekickMark,
-  RESERVED_COLLECTIONS,
   SIDEKICK_COLLECTION,
   SIDEKICK_MIN_WORDS,
   SIDEKICK_MUTED_MAX,
   SIDEKICK_SETTINGS_ID,
-  dataCollections,
-  defineHarness,
   purposeMoments,
-  sidekickCollection,
   sidekickMinWords,
   sidekickMode,
   sidekickSettings,
   sidekickTips,
   speaksAt,
-} from "../src";
+} from "../src/manifest";
+import { sidekickCollection } from "../src/collection";
 
 const minimal = {
   id: "notes",

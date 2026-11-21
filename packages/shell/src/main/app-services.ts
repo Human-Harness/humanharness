@@ -1,7 +1,7 @@
 import path from "node:path";
 import { app, type BrowserWindow, dialog, shell } from "electron";
 import { getEngine } from "@humanharness/engines";
-import { type LoadedHarness, SIDEKICK_COLLECTION, dataCollections } from "@humanharness/harness-sdk";
+import { type LoadedHarness, dataCollections } from "@humanharness/harness-sdk";
 import type { ConfiguredApp, ScopesView } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
@@ -30,7 +30,6 @@ import { workerBuild } from "./search/runner";
 import { SearchService } from "./search/service";
 import { revealIfStillSafe } from "./open-path";
 import type { SettingsController } from "./settings";
-import type { SidekickController } from "./sidekick";
 import type { TaskManager } from "./task-manager";
 
 /** What the IPC helper services read from the main entry. Getters for what changes after they are built. */
@@ -60,7 +59,6 @@ export interface AppServicesDeps {
   jobsHost(): JobsHost | null;
   profilesCtl(): Profiles | null;
   settingsCtl(): SettingsController | null;
-  sidekickCtl(): SidekickController | null;
   pluginsCtl(): PluginsController | null;
   engineIpc(): EngineIpc | null;
   validConfig(): Promise<ConfiguredApp | null>;
@@ -68,7 +66,8 @@ export interface AppServicesDeps {
   scoped(): boolean;
   activeScope(id: string): Promise<boolean>;
   dataStoreFor(base: string): DataStore;
-  sidekickStoreFor(base: string): DataStore;
+  /** The mods' own stores (`ctx.stores`): whether a mod has one named `name`, and that store in `base`. Absent: none. */
+  modStores?: { has(name: string): boolean; storeFor(base: string, name: string): DataStore | undefined };
   scopeStoreFor(base: string): ScopeStore;
   scopesView(): Promise<ScopesView>;
   currentHistory(): Promise<History | null>;
@@ -88,7 +87,6 @@ export function createAppServices(d: AppServicesDeps) {
     scoped,
     activeScope,
     dataStoreFor,
-    sidekickStoreFor,
     scopeStoreFor,
     scopesView,
     currentHistory,
@@ -120,10 +118,9 @@ export function createAppServices(d: AppServicesDeps) {
    */
   const restores = new RestoreGuard({ quitting: () => d.quitting(), busy: () => d.tasks().isBusy() || (d.jobsHost()?.running() ?? false), turnBlocked: hold.restoreHeld });
   const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
-  /** A restore changes tracked files with no data event: the settings and Sidekick's settings may have changed. */
+  /** A restore changes tracked files with no data event: the settings may have changed. */
   function afterRestore(): void {
     void d.settingsCtl()?.changed();
-    void d.sidekickCtl()?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
     // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
     searchSvc.committed(null);
   }
@@ -147,6 +144,8 @@ export function createAppServices(d: AppServicesDeps) {
 
   /** The person's data writes and the tools' (tools spec §8.3) in one order: no commit holds the other's write. */
   const dataWrites = dataWriteQueue();
+  /** Whether `collection` is a core mod's own store (in any base: the name is what counts). */
+  const ownStore = (collection: string) => d.modStores?.has(collection) ?? false;
   /** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
   const personData = personDataRequests({
     serial: dataWrites,
@@ -162,12 +161,11 @@ export function createAppServices(d: AppServicesDeps) {
     blocked: () => (d.quitting() ? "The app is closing" : turnBlocked()),
     // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
     scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
-    // The reserved `sidekick` collection lives in its own store (sidekick spec §6.4); every other collection as before.
-    storeFor: (collection) =>
-      collection === SIDEKICK_COLLECTION ? validConfig().then((c) => (c ? sidekickStoreFor(baseOf(c)) : null)) : undefined,
+    // A core mod's own collection (Sidekick's `sidekick`, sidekick spec §6.4) lives in the mod's store; every other as before.
+    storeFor: (collection) => (ownStore(collection) ? validConfig().then((c) => (c ? (d.modStores?.storeFor(baseOf(c), collection) ?? null) : null)) : undefined),
   });
-  /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
-  const harnessUiData = harnessUiDataRequests(personData, () => d.harness().settings !== undefined);
+  /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`) and never a mod's own collection. */
+  const harnessUiData = harnessUiDataRequests(personData, () => d.harness().settings !== undefined, ownStore);
 
   /** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
   const reviews = new ReviewService({

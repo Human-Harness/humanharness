@@ -116,13 +116,13 @@ describe("single mode's undo (part 3 Decision 12)", () => {
 describe("index.ts: the app's own changes go through saveAppChange, board mode decided by the host", () => {
   // index.ts, app-lifecycle.ts, which holds its start-up blocks, and app-services.ts, which holds the data requests.
   const index = ["index.ts", "app-lifecycle.ts", "app-services.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
-  it("material, Sidekick's decision note and learning, and a lane's note", () => {
+  it("material, a core mod's decision note and a lane's note", () => {
     expect(index).not.toMatch(/\?\.save\(`Material:/);
     expect(index).not.toMatch(/\?\.save\(`Note: \$\{title\}`/);
     expect(index).not.toMatch(/\?\.save\(`\$\{DATA_CHANGE_PREFIX\}\$\{SIDEKICK_COLLECTION\}`/);
     // Own files only in board mode, or while a job runs beside the single task (part 3); plain mode never (D0).
     expect(index).toMatch(/\nconst ownCommits = \(\): boolean => host !== null \|\| \(jobsHost\?\.running\(\) \?\? false\);\n/);
-    expect([...index.matchAll(/saveAppChange\(await currentHistory\(\), ownCommits\(\), /g)]).toHaveLength(2);
+    expect([...index.matchAll(/saveAppChange\(await currentHistory\(\), ownCommits\(\), /g)]).toHaveLength(1);
     // material-wiring.ts builds the material service; index.ts passes it ownCommits.
     const material = fs.readFileSync(path.resolve(__dirname, "../src/main/material-wiring.ts"), "utf8");
     expect(material).toMatch(/saveAppChange\(history, d\.ownCommits\(\), materialOwn\(scope\), `Material: \$\{what\}`/);

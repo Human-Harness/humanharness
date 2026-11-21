@@ -9,7 +9,7 @@ import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
 import type { PickInput } from "@humanharness/policies";
 import type { ConfiguredApp, ModsConfig, ModsView } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
-import { SidekickSession } from "@humanharness/runtime";
+import { EngineSession } from "@humanharness/runtime";
 import { MAIN_SCOPE, notesPrefix, readNotes } from "@humanharness/workspace";
 import { type ConfigStore, historyDir } from "../config";
 import { engineCommand, type CommandDeps } from "../engine-command";
@@ -26,7 +26,7 @@ import { shownLayout } from "./layout";
 import type { ModsIpcDeps } from "./mods-ipc";
 import { type ResolveProblem, type ResolvedMod, resolveMods } from "./resolve";
 import { enterSafeMode } from "./safe";
-import { type ServiceDeps, appHome, buildServices } from "./services";
+import { ModStoreRegistry, type ServiceDeps, appHome, buildServices } from "./services";
 import { ModBuilds, UserLayer, modBuildRoot, userConsent, userModFolders, userModsDir, watchLayouts, watchUserLayer, writeMainShims } from "./user-layer";
 import { needsHost } from "./wiring";
 
@@ -88,6 +88,8 @@ export function createAppMods(d: AppModsDeps) {
   /** The app's parts behind a core mod's `ctx.app`, once the start-up built them (app-lifecycle.ts, before the host). */
   let coreParts: CoreAppParts | null = null;
   const setCoreApp = (parts: CoreAppParts) => void (coreParts = parts);
+  /** The mods' own stores, kept across host restarts: the person's requests on a mod's collection reach the same one. */
+  const modStores = new ModStoreRegistry();
 
   /** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
   const modsView = async (): Promise<ModsView> => ({
@@ -95,7 +97,7 @@ export function createAppMods(d: AppModsDeps) {
     problems: [...state.modProblems, ...(state.userLayer?.problems() ?? [])],
   });
 
-  /** A mod's own tool-less engine turn (minimal-core spec §5), on SidekickSession like Sidekick's; usage tagged `mod:<id>`. */
+  /** A mod's own tool-less engine turn (minimal-core spec §5), on an EngineSession like a core mod; usage tagged `mod:<id>`. */
   const modEngineRun: ServiceDeps["engineRun"] = async ({ process: proc, tier, prompt, workDir, signal }) => {
     const c = await validConfig();
     if (!c) return { ok: false, text: "", error: "not set up" };
@@ -106,7 +108,7 @@ export function createAppMods(d: AppModsDeps) {
     const saved = await d.config().load();
     const profile = await d.pickProfile(saved.policies?.model, { engine: engine.id, tier, models: cleanModels(saved.models) });
     await fs.mkdir(workDir, { recursive: true });
-    const session = new SidekickSession({ engine, command: cmd.command, env: cmd.env, folder: workDir, profile });
+    const session = new EngineSession({ engine, command: cmd.command, env: cmd.env, folder: workDir, profile });
     try {
       const a = await session.ask(prompt, signal ?? new AbortController().signal);
       if (a.usage) {
@@ -151,6 +153,7 @@ export function createAppMods(d: AppModsDeps) {
         saveFailed: (id, reason) => saveMods((m) => ({ ...m, failed: { ...m?.failed, [id]: reason } })),
       },
       services: buildServices({
+        stores: modStores,
         harnessId: harness.id,
         userData: app.getPath("userData"),
         base: async () => {
@@ -328,5 +331,6 @@ export function createAppMods(d: AppModsDeps) {
     modIdIn,
     modsIpcDeps,
     setCoreApp,
+    modStores,
   };
 }

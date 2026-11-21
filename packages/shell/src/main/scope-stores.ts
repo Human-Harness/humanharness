@@ -1,5 +1,5 @@
 import path from "node:path";
-import { type LoadedHarness, PROFILE_COLLECTION, SETTINGS_COLLECTION, SIDEKICK_COLLECTION, dataCollections, sidekickCollection } from "@humanharness/harness-sdk";
+import { type LoadedHarness, PROFILE_COLLECTION, SETTINGS_COLLECTION, dataCollections } from "@humanharness/harness-sdk";
 import type { ConfiguredApp, ScopesView } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { DataStore, MAIN_SCOPE, ScopeStore, migrateToScopes } from "@humanharness/workspace";
@@ -12,10 +12,9 @@ import { searchableCollection } from "./search/data-sources";
 import type { SearchService } from "./search/service";
 import type { SettingsController } from "./settings";
 import type { SetupSteps } from "./setup-steps";
-import type { SidekickController } from "./sidekick";
 import type { TaskManager } from "./task-manager";
 
-/** What the scope, data and Sidekick stores read from the main entry. Getters for what changes after they are built. */
+/** What the scope and data stores read from the main entry. Getters for what changes after they are built. */
 export interface ScopeStoresDeps {
   harness(): LoadedHarness;
   validConfig(): Promise<ConfiguredApp | null>;
@@ -26,7 +25,6 @@ export interface ScopeStoresDeps {
   settingsCtl(): SettingsController | null;
   profilesCtl(): Profiles | null;
   setupCtl(): SetupSteps | null;
-  sidekickCtl(): SidekickController | null;
   materialSvc(): MaterialService | null;
   tasks(): Pick<TaskManager, "currentScope" | "switchScope" | "view">;
   linked_(): { instructions: LinkedInstructions } | null;
@@ -41,7 +39,7 @@ export interface ScopeStoresDeps {
   backendRebase(): Promise<void>;
 }
 
-/** The per-base scope, data and Sidekick stores, and the scopes' migration and view. */
+/** The per-base scope and data stores, and the scopes' migration and view. */
 export function createScopeStores(d: ScopeStoresDeps) {
   const { validConfig, baseOf, scoped, sendToWindow } = d;
 
@@ -91,25 +89,10 @@ export function createScopeStores(d: ScopeStoresDeps) {
     return entry.store;
   }
 
-  /**
-   * Sidekick's own store per base (plan Decision 8): never in dataCollections, so harness rules, the data diff and the
-   * harness UI never see it. Its file sits with the others (`.harness/data/_app/`), so undo restores it like any data.
-   */
-  const sidekickStores = new Map<string, DataStore>();
-  function sidekickStoreFor(base: string): DataStore {
-    let s = sidekickStores.get(base);
-    if (!s) {
-      s = new DataStore(base, { [SIDEKICK_COLLECTION]: sidekickCollection() });
-      sidekickStores.set(base, s);
-    }
-    return s;
-  }
-
   /** The folder changed or moved: the old base's store goes, with its listener. */
   function dropDataStore(base: string): void {
     dataStores.get(base)?.off();
     dataStores.delete(base);
-    sidekickStores.delete(base);
   }
 
   /** Every store under `root` (the folder itself, or each profile's): a moved or changed folder drops them all. */
@@ -170,8 +153,6 @@ export function createScopeStores(d: ScopeStoresDeps) {
     // Without material, nothing (D0).
     void d.materialSvc()?.settle().catch((err: unknown) => console.error("Could not resume the material", err));
     d.kickMaterial();
-    // The new profile's Sidekick settings; the old base's sessions close.
-    void d.sidekickCtl()?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
     // A profile chosen for the first time in this process: the jobs' start runs (Decision 7). Without jobs, nothing.
     void d.jobsReady().catch((err: unknown) => console.error("Could not start the jobs", err));
     // The backend follows the base: started, or stopped and started in the new profile. Without one, nothing (D0).
@@ -206,7 +187,6 @@ export function createScopeStores(d: ScopeStoresDeps) {
     activeScope,
     scopeStoreFor,
     dataStoreFor,
-    sidekickStoreFor,
     dropDataStoresUnder,
     scopesSettled,
     scopesView,

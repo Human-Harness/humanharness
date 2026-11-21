@@ -29,4 +29,9 @@ enough).
   - `src/checks.ts`, `src/brief.ts`, `src/events.ts`: the local checks, the session brief and the learning events
   - `src/usage.ts`: Sidekick's lines in the usage log
   - `src/session.ts`: the session
-- The old paths in `shell`, `workspace`, `harness-sdk` and `runtime` re-export from here until the core's call sites go.
+- The core's main imports nothing from here: it lists Sidekick in `CORE_MOD_LIST`
+  (`packages/shell/src/main/mods/core-mod-list.ts`) and hands each window call on the 26 channels to the mod host
+  (`packages/shell/src/main/mods/app-channels.ts`). The session folders and briefs are the core's
+  (`packages/shell/src/main/mods/core-sessions.ts`), reached through `ctx.app`.
+- `harness-sdk` and `runtime` still re-export the manifest, collection and session names from here for the UI and
+  other packages; `docs/architecture/sidekick.md` has the full picture.

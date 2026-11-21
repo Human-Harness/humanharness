@@ -40,6 +40,12 @@ Hooks (`ctx.on`):
 - `turnEnd(end)`: a turn finished (`ok`, prompt, reply, context use).
 - `taskOpen(task)`: a task opened.
 - `taskClose(task)`: a task closed.
+- `betweenTasks()` (mods 1a): no task runs, between one task and the next; awaited before the next one starts (within the hook limit).
+- `phaseMoved({ task, from, to })` (mods 1a): a task's phase moved, by the person, the agent or the app.
+- `daily({ day })` (mods 1a): at start and at each local midnight while the app runs (`ModHost.startDaily`); the mod tells a day it already did by `day`.
+- `close()` (mods 1a): the app is quitting, before the disposers run.
+
+`beforeSend` may also answer `{kind:"hold", token}` (mods 1a): the send waits until the mod calls `ctx.holds.resolve(token, verdict)` with `pass`, `rewrite` or `cancel`. That wait is the person's, so it counts toward no limit; closing the task, quitting or turning the mod off cancels a held send. `turnEnd` hears only a person's `run` turns (no checkpoint, close or wrap-up turn). In board mode the turn hooks and `phaseMoved` follow only the focused lane (`focusGate`, `board-host.ts`).
 
 Services and fields:
 
@@ -50,6 +56,10 @@ Services and fields:
 - `tasks.running()`: the running task or `null`.
 - `notes.titles(scope?)`: note titles.
 - `storage.get/set`: app-private JSON (see Data).
+- `holds.resolve(token, verdict)` (mods 1a): ends a send this mod held; false when there is no such held send.
+- `stores.open(name, collection)` (mods 1a): a collection of the mod's own in the work folder, one `DataStore` per base (`ModStoreRegistry`, `services.ts`). `name` is the mod's id or starts with `<id>-`; `collection` is declared as a harness declares one. `readAll()` reads every record app-wide; `write(requests)` checks every request, runs them as the app and makes one `Data: <name>` commit. The person's own writes to that collection (the app's data path) reach the same store; the harness UI's `client.data` never does.
+- `usage.record(kind, entry)` and `usage.summary({ task?, day? })` (mods 1a): the mod's own turns in the base's `usage.jsonl` (`phase: "mod"`, `process: "mod:<id>"`; Sidekick keeps its old `sidekick` tags), and its tokens for the week, a task or a day.
+- `focus.set(taskId, on)` (mods 1a): the mod holds a task in focus while it waits on the person there; cleared when the mod goes off.
 - `dataDir()`: the mod's folder in the work folder, or `null` before setup.
 - `notify(text)`: a notice in the window.
 - `provide(service)` and `mods.get(id)`: expose a value to other mods; `get` returns it only while that mod is on.
@@ -115,7 +125,11 @@ The shown layout comes from `shownLayout` (`layout.ts`), which the renderer asks
 
 ## Core mods as packages
 
-A core mod is a package under `packages/mods/<id>` with `mod.json`, `README.md` and `src/`. The shell build (`electron.vite.config.ts`) copies those files to `out/core-mods/<id>/`, which is what the home folder's `core/` layer holds. Its ids and default switches are `CORE_MOD_SWITCHES` (`core-mods.ts`: `core-mod-list.ts` plus `home`, on). The renderer entry (`packages/shell/src/renderer/main.tsx`) imports each core mod's package and runs its `ui` before the first render, registering its blocks in the registry the layout draws from. Home (`packages/mods/home`) is the first: the screen the app opens on.
+A core mod is a package under `packages/mods/<id>` with `mod.json`, `README.md` and `src/`. The shell build (`electron.vite.config.ts`) copies those files to `out/core-mods/<id>/`, which is what the home folder's `core/` layer holds. Its ids and default switches are `CORE_MOD_SWITCHES` (`core-mods.ts`: `core-mod-list.ts` plus `home`, on). The renderer entry (`packages/shell/src/renderer/main.tsx`) imports each core mod's package and runs its `ui` before the first render, registering its blocks in the registry the layout draws from. Home (`packages/mods/home`) is the first: the screen the app opens on. Sidekick (`packages/mods/sidekick`, `docs/architecture/sidekick.md`) is the second, main side only: the shell's main imports none of it.
+
+**A core mod's ctx** (`CoreMainCtx`, `@humanharness/mod-sdk/core`) adds `ctx.app`, the app's parts (`mods/core-app.ts`, built once in `app-lifecycle.ts`: phases and briefs, setup, the open task, engines and profiles, session folders and briefs from `mods/core-sessions.ts`, `EngineSession`, the daily input and more), and `ctx.push(channel, value)` on an app push channel. Only a core mod may handle an app channel (`hh:…`) with `ctx.ipc`; the core registers those names once with Electron (`MOD_APP_CHANNELS`, `mods/app-channels.ts`) and hands each call to the mod host, which refuses it when no mod handles it.
+
+**The core-mod import rule** (`bundleMod` with `core: true`, `packages/mod-sdk/src/build.ts`): a core mod's main may import its own files, the shared imports, `node:` builtins and the packages its `package.json` declares. Core `@humanharness/*` packages are bundled in; npm packages stay outside, found beside the app; another mod (`@humanharness/mod-*`) never. The core never imports a core mod: what it needs goes through hooks, `ctx` and channels.
 
 ## The user layer (0b2)
 
@@ -305,4 +319,4 @@ missing there. `mcp-tools.test.ts` checks the app list and each tool through an 
 
 ## What is still to come
 
-See the spec's §7 order: step 1 (`sidekick` as a core mod), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`). Step 0c (0c1 the mod kit, 0c2 the harness kit) is done.
+See the spec's §7 order: the rest of step 1 (1a moved Sidekick's main side; its UI and channels follow), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`). Step 0c (0c1 the mod kit, 0c2 the harness kit) is done.

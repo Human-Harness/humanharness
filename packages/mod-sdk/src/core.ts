@@ -100,5 +100,5 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
    * Runs `fn` when the base or its data changed under the mod without a task opening or closing: a profile switch or
    * an undo. The mod reads its settings and the base again and sends its state.
    */
-  onRefresh(fn: () => void | Promise<void>): Disposer;
+  onRefresh?(fn: () => void | Promise<void>): Disposer;
 };

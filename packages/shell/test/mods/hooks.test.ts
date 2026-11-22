@@ -197,7 +197,7 @@ describe("refresh (core mods only)", () => {
     const h = await host();
     let refreshed = 0;
     let localHas: boolean | undefined;
-    h.registerForTest("core", "Core", (ctx) => void (ctx as unknown as CoreMainCtx).onRefresh(() => void refreshed++), { core: true });
+    h.registerForTest("core", "Core", (ctx) => void (ctx as unknown as CoreMainCtx).onRefresh!(() => void refreshed++), { core: true });
     h.registerForTest("local", "Local", (ctx) => void (localHas = "onRefresh" in ctx));
     await h.refresh();
     expect(refreshed).toBe(1);

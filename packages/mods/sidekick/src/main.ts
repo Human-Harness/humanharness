@@ -28,7 +28,7 @@ export default defineMod({
     ctx.on.taskOpen(() => detached(ctx, () => ctl.refresh()));
     ctx.on.taskClose(() => detached(ctx, () => ctl.refresh()));
     // A profile switch or an undo: the settings and the base may have changed under the controller.
-    ctx.onRefresh(() => detached(ctx, () => ctl.refresh()));
+    ctx.onRefresh?.(() => detached(ctx, () => ctl.refresh()));
     ctx.on.betweenTasks(() => ctl.betweenTasks());
     ctx.on.phaseMoved((e) => detached(ctx, () => ctl.phaseMoved(e)));
     ctx.on.daily(() => detached(ctx, () => ctl.daily()));

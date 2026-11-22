@@ -30,7 +30,7 @@ import { dataIpc } from "./data-ipc";
 import { settingsIpc } from "./settings-ipc";
 import { scopesIpc } from "./scopes-ipc";
 import { profilesIpc } from "./profiles-ipc";
-import { registerSidekickIpc } from "./sidekick-ipc";
+import { registerModAppChannels } from "./mods/app-channels";
 import { shownLayout } from "./mods/layout";
 import { registerModsIpc } from "./mods/mods-ipc";
 import { appHome } from "./mods/services";
@@ -162,8 +162,8 @@ export function registerAppIpc(d: LifecycleDeps): void {
     if (d.backend) registerBackendIpc(d.handle, { supervisor: d.backend });
   }
   d.handleAll(dataIpc({ harness: () => d.harness, scopesSettled: d.scopesSettled, harnessUiData: d.harnessUiData, currentHistory: d.currentHistory }));
-  // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
-  registerSidekickIpc(d.handle, () => d.sidekickCtl);
+  // The app channels a core mod answers (Sidekick's, sidekick spec §7): each call goes to the mod host.
+  registerModAppChannels(d.handle, () => d.appMods.state.modHost);
   // The layout the screen shows (minimal-core spec §5.2).
   d.handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), d.harness.id)));
   // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.

@@ -7,7 +7,6 @@ import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
 import type { LinkedHistoryView } from "@humanharness/protocol";
 import { ScopeStore, scopesFile } from "@humanharness/workspace";
 import { type LinkSigning, linkTag, linkTagValid, linkedSigning, registerLinkedIpc, signedLinks, sourceTagKey } from "../src/main/linked-ipc";
-import { sourceTagKey as sidekickTagKey } from "../src/main/sidekick-import";
 import { linkedHistoryDir } from "../src/main/linked-history";
 import { folderProblem } from "../src/main/validate";
 
@@ -83,8 +82,7 @@ function setup(
 }
 
 describe("sourceTagKey is core (mods 1a)", () => {
-  it("lives beside the links that use it; Sidekick's import reaches the same one", async () => {
-    expect(sidekickTagKey).toBe(sourceTagKey);
+  it("lives beside the links that use it (core mods reach it through ctx.app.tagKey)", async () => {
     const file = path.join(root, "core-key", "k");
     expect(await sourceTagKey(file, false)).toBeNull();
     const made = await sourceTagKey(file, true);

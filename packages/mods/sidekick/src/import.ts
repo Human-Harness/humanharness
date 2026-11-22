@@ -249,6 +249,3 @@ export async function readImportFiles(paths: readonly string[], where: ImportPla
   const text = joinImportFiles(files);
   return { ok: true, text, hash: importHash(text), paths: [...paths] };
 }
-
-/** The source-tag key is core (mods 1a): Sidekick's import keeps reaching it here until it moves to its mod. */
-export { sourceTagKey } from "./linked-ipc";

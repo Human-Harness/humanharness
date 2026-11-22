@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { SIDEKICK_EVENTS_MAX, type SidekickEvent, appendSidekickEvent, readSidekickEvents, sidekickEventsFile, thresholdFor, usedShare, whyShown } from "../src/sidekick-events";
+import { SIDEKICK_EVENTS_MAX, type SidekickEvent, appendSidekickEvent, readSidekickEvents, sidekickEventsFile, thresholdFor, usedShare, whyShown } from "../src/events";
 
 const ev = (o: Partial<SidekickEvent>): SidekickEvent => ({ at: "2026-10-27T10:00:00Z", sidekick: "sidekick", moment: "pre", kind: "vague", outcome: "used", ...o });
 

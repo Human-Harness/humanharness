@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type CheckContext, localCheck } from "../src/sidekick-checks";
-import { expectFast } from "../../../test/support/timing";
+import { type CheckContext, localCheck } from "../src/checks";
+import { expectFast } from "../../../../test/support/timing";
 
 const ctx: CheckContext = { minWords: 6, known: ["Chapter 2 outline", "Sources list"] };
 const kinds = (prompt: string, c: CheckContext = ctx) => localCheck(prompt, c).map((f) => f.kind);

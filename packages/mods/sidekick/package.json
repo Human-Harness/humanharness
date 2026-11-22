@@ -1,0 +1,21 @@
+{
+  "name": "@humanharness/mod-sidekick",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/main.ts" },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@humanharness/engines": "workspace:*",
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/mod-sdk": "workspace:*",
+    "@humanharness/protocol": "workspace:*",
+    "@humanharness/runtime": "workspace:*",
+    "@humanharness/workspace": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@humanharness/fake-agent": "workspace:*"
+  }
+}

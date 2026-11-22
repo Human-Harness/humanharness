@@ -1,5 +1,6 @@
 import { SIDEKICK_MARKS, SIDEKICK_PERSONALITY_MAX, SIDEKICK_PURPOSE_TEXT_MAX, type SidekickPurposeDef, purposeSchema, sidekickMark, z } from "@humanharness/harness-sdk";
-import { type SidekickFlag, estimateTokens } from "@humanharness/workspace";
+import { estimateTokens } from "@humanharness/workspace";
+import type { SidekickFlag } from "./checks";
 
 /** The first line of every pre-send turn (mock mode and the e2e scripts match on it). */
 export const SIDEKICK_PRE_MARK = "Sidekick: pre-send review";

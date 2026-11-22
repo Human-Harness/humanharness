@@ -29,7 +29,7 @@ import {
   placeRouteContext,
   preSendPrompt,
   routePrompt,
-} from "../src/main/sidekick-turns";
+} from "../src/turns";
 
 const input = {
   harness: { name: "Essay Coach", tagline: "Write better essays" },

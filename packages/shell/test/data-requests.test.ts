@@ -315,8 +315,8 @@ describe("storeFor (sidekick spec §6.4)", () => {
     await expect(t.run({ op: "get", collection: SIDEKICK_COLLECTION, key: "settings" }, { scope: "_app" })).rejects.toThrow(/no collection/);
   });
 
-  it("the harness UI never reaches the sidekick collection", async () => {
-    const ui = harnessUiDataRequests(async () => "reached", () => false);
+  it("the harness UI never reaches a mod's own collection (sidekick)", async () => {
+    const ui = harnessUiDataRequests(async () => "reached", () => false, (c) => c === SIDEKICK_COLLECTION);
     await expect(ui({ op: "get", collection: SIDEKICK_COLLECTION, key: "settings" }, {})).rejects.toThrow(/no collection "sidekick"/);
     await expect(ui({ op: "query", collection: "notes" }, {})).resolves.toBe("reached");
   });

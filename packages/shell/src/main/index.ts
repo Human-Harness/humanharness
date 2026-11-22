@@ -101,7 +101,6 @@ import {
 import { isGitRepo } from "./linked-folders";
 import { PluginsController } from "./plugins";
 import { SettingsController } from "./settings";
-import { SidekickController } from "./sidekick";
 import { SetupSteps } from "./setup-steps";
 import { type TaskDeps, TaskManager } from "./task-manager";
 import { createTaskDeps, createTurnDeps } from "./task-deps";
@@ -175,8 +174,6 @@ let historyHeld = false;
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 /** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
 let settingsCtl: SettingsController | null = null;
-/** Sidekick, the core's prompt coach: built only for a harness that declares `sidekick`. */
-let sidekickCtl: SidekickController | null = null;
 /** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
 let control: { stop(): Promise<void> } | null = null;
 /**
@@ -448,12 +445,11 @@ const taskStoreOptions = (): { modes?: string[]; phases?: Record<string, string[
     : {}),
 });
 
-/** The per-base scope, data and Sidekick stores, and the scopes' migration and view (scope-stores.ts). */
+/** The per-base scope and data stores, and the scopes' migration and view (scope-stores.ts). */
 const {
   activeScope,
   scopeStoreFor,
   dataStoreFor,
-  sidekickStoreFor,
   dropDataStoresUnder,
   scopesSettled,
   scopesView,
@@ -471,7 +467,6 @@ const {
   settingsCtl: () => settingsCtl,
   profilesCtl: () => profilesCtl,
   setupCtl: () => setupCtl,
-  sidekickCtl: () => sidekickCtl,
   materialSvc: () => materialSvc,
   tasks: () => tasks,
   linked_,
@@ -484,6 +479,7 @@ const {
   backendScopes: () => backendScopes(),
   backendLeaveBase: () => backendLeaveBase(),
   backendRebase: () => backendRebase(),
+  modHost: () => appMods.state.modHost,
 });
 
 function applyAppearance(appearance: AppConfig["appearance"]) {
@@ -611,7 +607,7 @@ const turns = new TurnController(turnDeps);
 /** Every turn ended and its chat writes settled: today's one, or in board mode each lane's. */
 const flushTurns = (): Promise<void> => (host ? host.flush() : turns.flush());
 
-/** A phase's brief text: its `brief` is a file inside the harness folder (the task's phase turn and Sidekick read it). */
+/** A phase's brief text: its `brief` is a file inside the harness folder (the task's phase turn and core mods read it). */
 const readPhaseBrief = (action: string, phase: string): Promise<string> => {
   const p = Object.hasOwn(harness.actions, action) ? harness.actions[action].phases?.find((x) => x.id === phase) : undefined;
   if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
@@ -633,7 +629,6 @@ const taskDeps: TaskDeps = createTaskDeps({
   modHost: () => appMods.state.modHost,
   pluginsCtl: () => pluginsCtl,
   settingsCtl: () => settingsCtl,
-  sidekickCtl: () => sidekickCtl,
   toolsHost: () => toolsHost,
   host: () => host,
   tasks: () => tasks,
@@ -965,7 +960,6 @@ const {
   jobsHost: () => jobsHost,
   profilesCtl: () => profilesCtl,
   settingsCtl: () => settingsCtl,
-  sidekickCtl: () => sidekickCtl,
   pluginsCtl: () => pluginsCtl,
   engineIpc: () => engineIpc,
   validConfig,
@@ -973,7 +967,8 @@ const {
   scoped,
   activeScope,
   dataStoreFor,
-  sidekickStoreFor,
+  modStores: appMods.modStores,
+  modHost: () => appMods.state.modHost,
   scopeStoreFor,
   scopesView,
   currentHistory,
@@ -1211,12 +1206,6 @@ const lifecycle = {
   set sharedAttention(v) {
     sharedAttention = v;
   },
-  get sidekickCtl() {
-    return sidekickCtl;
-  },
-  set sidekickCtl(v) {
-    sidekickCtl = v;
-  },
   get single() {
     return single;
   },
@@ -1314,7 +1303,6 @@ const lifecycle = {
   settleScopes,
   shellResources,
   showNotice,
-  sidekickStoreFor,
   singleMainSlot,
   singleParts,
   startHomeHistory,

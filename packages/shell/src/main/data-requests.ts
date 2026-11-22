@@ -1,4 +1,4 @@
-import { SETTINGS_COLLECTION, SIDEKICK_COLLECTION } from "@humanharness/harness-sdk";
+import { SETTINGS_COLLECTION } from "@humanharness/harness-sdk";
 import { APP_SCOPE, type CommitTrailer, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, dataPath, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
 import { saveAppChange } from "./app-change";
 
@@ -47,8 +47,8 @@ export interface PersonDataDeps {
   /** Whether `id` is a scope the person can reach: registered and not archived (`main` without scopes). `_app` is never asked. */
   scopeExists(id: string): Promise<boolean>;
   /**
-   * A core collection kept in its own store (the reserved `sidekick` one): its store, or undefined for any other
-   * collection. Absent: every request goes to `store()` (D0).
+   * A collection kept in its own store (a core mod's, such as Sidekick's `sidekick`): its store, or undefined for any
+   * other collection. Absent: every request goes to `store()` (D0).
    */
   storeFor?(collection: string): Promise<DataStore | null> | undefined;
   /** The write queue shared with the tools' writes (tools spec §8.3). Absent: a queue of its own (D0). */
@@ -191,15 +191,18 @@ export function toolDataRequests(d: ToolDataDeps): (request: unknown, call: Tool
  * The harness UI's requests (`hh:data`): `run` (the person's handler), except that the UI only reads the reserved
  * `settings` collection. It changes settings through `client.settings`, whose controller keeps their rules (only the
  * changed values stored, an empty record deleted) and writes through `run` itself. Without harness settings nothing
- * changes (D0): `settings` is then an unknown collection, refused by the store as before. The core's `sidekick`
- * collection is always unknown to the UI.
+ * changes (D0): `settings` is then an unknown collection, refused by the store as before. A mod's own collection
+ * (`ownStore`, such as Sidekick's `sidekick`) is always unknown to the UI.
  */
-export function harnessUiDataRequests(run: (request: unknown, options: unknown) => Promise<unknown>, hasSettings: () => boolean): (request: unknown, options: unknown) => Promise<unknown> {
+export function harnessUiDataRequests(
+  run: (request: unknown, options: unknown) => Promise<unknown>,
+  hasSettings: () => boolean,
+  ownStore: (collection: string) => boolean = () => false,
+): (request: unknown, options: unknown) => Promise<unknown> {
   return async (request, options) => {
-    // The core's Sidekick collection is never the harness UI's (sidekick spec §6.4): it reads as unknown, as before.
-    if (typeof request === "object" && request !== null && (request as { collection?: unknown }).collection === SIDEKICK_COLLECTION) {
-      throw new DataError("unknown-collection", `There is no collection "${SIDEKICK_COLLECTION}"`);
-    }
+    // A mod's own collection is never the harness UI's (sidekick spec §6.4): it reads as unknown, as before.
+    const collection = typeof request === "object" && request !== null ? (request as { collection?: unknown }).collection : undefined;
+    if (typeof collection === "string" && ownStore(collection)) throw new DataError("unknown-collection", `There is no collection "${collection}"`);
     if (hasSettings() && isDataWrite(request) && (request as { collection: unknown }).collection === SETTINGS_COLLECTION) {
       throw new DataError("refused", "Settings change through client.settings");
     }

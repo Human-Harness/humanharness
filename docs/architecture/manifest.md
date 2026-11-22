@@ -120,7 +120,7 @@ sync: {
 
 ### Sidekick places and presets
 
-Two optional lists in the `sidekick` block (`sidekickSchema` in `packages/harness-sdk/src/sidekick.ts`). From a manifest:
+Two optional lists in the `sidekick` block (`sidekickSchema` in `packages/mods/sidekick/src/manifest.ts`). From a manifest:
 
 ```ts
 sidekick: {
@@ -222,7 +222,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/jobs.ts`: the `jobs` schema (`jobSchema`, `jobProblems`, `jobResultSchema`, `hasJobs`); `recipes.ts`: `steps`, the AI step, `when`, `maxAi`, `onLimit` (`aiStepSchema`, `whenSchema`, `recipeProblems`, `recipeSourceProblems`, `hasRecipes`, `jobUsesAi`).
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
-- `packages/harness-sdk/src/sidekick.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.
+- `packages/mods/sidekick/src/manifest.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.
 - `packages/harness-sdk/src/plugin.ts`: the `plugins` schema (`harnessPluginsSchema`, `pluginsAccepted`), the `slots` schema (`harnessSlotsSchema`, `DEFAULT_SLOTS`, `slotFor`) and `plugin.json`'s.
 - `packages/harness-sdk/src/documents.ts`: `DocumentKind`, `DOCUMENT_KIND_ID`, `checkTemplate` and the document helpers.
 - `packages/harness-sdk/src/review.ts`: `REVIEW_TOOLS`, `validApproveGlob`, `matchGlob` and the review logic.

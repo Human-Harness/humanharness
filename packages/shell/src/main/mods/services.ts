@@ -19,7 +19,7 @@ export interface ServiceDeps {
   userData: string;
   /** The work folder, or null before setup. */
   base(): Promise<string | null>;
-  /** One tool-less turn on a tier; `process` tags the usage line. index.ts builds it on SidekickSession. */
+  /** One tool-less turn on a tier; `process` tags the usage line. app-mods.ts builds it on an EngineSession. */
   engineRun(r: { process: string; tier: Tier; prompt: string; workDir: string; signal?: AbortSignal }): Promise<EngineRunResult>;
   runningTask(): Promise<TaskRef | null>;
   noteTitles(scope?: string): Promise<string[]>;
@@ -29,6 +29,42 @@ export interface ServiceDeps {
    * paths it changed. Absent: writes are refused / not committed.
    */
   data?: { blocked(): string | null; commit(base: string, paths: string[], message: string): Promise<void> };
+  /** Where the mods' stores live: the app reads the same ones for the person's requests. Absent: a registry of its own. */
+  stores?: ModStoreRegistry;
+  /**
+   * Whether mod `id`'s stores go into `stores` (core mods only: the app routes the person's requests on their
+   * collections there). Any other mod gets a registry of its own with each ctx, so it never takes a harness
+   * collection's requests and a reload takes its new collection. Absent: every mod's go into `stores`.
+   */
+  sharedStores?(id: string): boolean;
+}
+
+type Collection = ConstructorParameters<typeof DataStore>[1][string];
+
+/**
+ * The mods' own stores (`ctx.stores`): one DataStore per base and name, shared by the mod and the person's data
+ * requests, so a write as the person (`ctx.app.person.data`) and the mod's reads see one file through one queue.
+ */
+export class ModStoreRegistry {
+  private readonly defs = new Map<string, Collection>();
+  private readonly stores = new Map<string, DataStore>();
+  /** A mod opened its store `name` (with its collection); the first definition stays. */
+  define(name: string, def: Collection): void {
+    if (!this.defs.has(name)) this.defs.set(name, def);
+  }
+  /** Whether a mod opened a store named `name`. */
+  has(name: string): boolean {
+    return this.defs.has(name);
+  }
+  /** Store `name` in `base`; undefined when no mod opened it (the core has no such collection). */
+  storeFor(base: string, name: string): DataStore | undefined {
+    const def = this.defs.get(name);
+    if (!def) return undefined;
+    const key = `${base}\0${name}`;
+    let st = this.stores.get(key);
+    if (!st) this.stores.set(key, (st = new DataStore(base, { [name]: def })));
+    return st;
+  }
 }
 
 /**
@@ -76,19 +112,13 @@ export function modUsageSummary(id: string, records: UsageRecord[], o: { task?: 
 /** A store's name: the mod's id, or `<id>-<more>`; never a harness collection's. */
 const storeName = (id: string, name: string) => name === id || (name.startsWith(`${id}-`) && /^[a-z][a-z0-9-]{0,63}$/.test(name));
 
-function modStores(id: string, d: ServiceDeps): Services["stores"] {
-  // One DataStore per base and name: a profile switch or a move reads the new base's file.
-  const cache = new Map<string, DataStore>();
+function modStores(id: string, d: ServiceDeps, registry: ModStoreRegistry): Services["stores"] {
   return {
     open: (name, collection) => {
       if (!storeName(id, name)) throw new Error(`A mod's store is named "${id}" or "${id}-…", not "${name}"`);
-      const def = collectionSchema.parse(collection);
-      const storeOf = (base: string) => {
-        const key = `${base}\0${name}`;
-        let st = cache.get(key);
-        if (!st) cache.set(key, (st = new DataStore(base, { [name]: def })));
-        return st;
-      };
+      registry.define(name, collectionSchema.parse(collection) as Collection);
+      // One DataStore per base and name: a profile switch or a move reads the new base's file.
+      const storeOf = (base: string) => registry.storeFor(base, name)!;
       const store: ModStore = {
         name,
         readAll: async () => {
@@ -118,6 +148,7 @@ function modStores(id: string, d: ServiceDeps): Services["stores"] {
 
 /** The services each mod's ctx gets, by mod id. */
 export function buildServices(d: ServiceDeps): (id: string) => Services {
+  const registry = d.stores ?? new ModStoreRegistry();
   return (id) => {
     const file = path.join(appHome(d.userData, d.harnessId), "storage", `${id}.json`);
     const read = async (): Promise<Record<string, unknown>> => {
@@ -158,7 +189,7 @@ export function buildServices(d: ServiceDeps): (id: string) => Services {
       tasks: { running: () => d.runningTask() },
       notes: { titles: (scope) => d.noteTitles(scope) },
       notify: (text) => d.notify(text),
-      stores: modStores(id, d),
+      stores: modStores(id, d, (d.sharedStores?.(id) ?? true) ? registry : new ModStoreRegistry()),
       usage: {
         record: async (kind, entry) => {
           const base = await d.base();

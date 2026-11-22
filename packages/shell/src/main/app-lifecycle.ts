@@ -1,9 +1,9 @@
-import { APP_SCOPE, DATA_CHANGE_PREFIX, MAIN_SCOPE, appendSidekickEvent, dataPath, dataRequestSchema, flushFileIndexes, noteSlug, notesPrefix, readNotes, readSidekickEvents, runDataRequest, sidekickWorkDir, tasksFile, writeNote, writeSidekickBrief } from "@humanharness/workspace";
+import { APP_SCOPE, MAIN_SCOPE, flushFileIndexes, noteSlug, notesPrefix, readNotes, tasksFile, writeNote } from "@humanharness/workspace";
 import { BrowserWindow, Notification, app, dialog, ipcMain, nativeImage, nativeTheme, powerMonitor, protocol, session, shell } from "electron";
 import { CORE_MODS } from "./mods/core-mods";
 import type { CoreAppParts } from "./mods/core-app";
 import { ConfigStore, historyDir } from "./config";
-import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, SIDEKICK_COLLECTION, SIDEKICK_PROCESS, type SidekickRecord, hasEnginePresets, hasJobs, hasSecrets, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, hasEnginePresets, hasJobs, hasSecrets, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
 import { MOD_SCHEME } from "./mods/mod-scheme";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
@@ -13,15 +13,16 @@ import { Profiles } from "./profiles";
 import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup } from "./setup-steps";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
-import { SidekickController, localDay } from "./sidekick";
-import { SidekickSession } from "@humanharness/runtime";
-import { SidekickStore } from "./sidekick-store";
+import { EngineSession } from "@humanharness/runtime";
 import { TOOLS_CHANGE_CHANNEL, registerToolsIpc } from "./tools/tools-ipc";
 import { TOOL_SCHEME } from "./tools/tool-protocol";
 import { ToolHost } from "./tools/tool-host";
 import { startPackagedUpdater } from "./updater";
-import { UsageLog, dayTokens, recentUsage } from "./usage-log";
+import { UsageLog, dayTokens } from "./usage-log";
 import { appHome } from "./mods/services";
+import { localDay } from "./mods/host";
+import { sessionWorkDir, writeSessionBrief } from "./mods/core-sessions";
+import { sourceTagKey } from "./linked-ipc";
 import { attentionStores } from "./attention-stores";
 import { buildBoardHost } from "./board-host-wiring";
 import { buildJobsHost, buildSingleJobs } from "./jobs/jobs-wiring";
@@ -44,7 +45,6 @@ import { manualFiles } from "./mods/manual";
 import { moveJournal, recoverMove } from "./move-folder";
 import os from "node:os";
 import path from "node:path";
-import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerConnectionsIpc } from "./secrets/connections-ipc";
 import { resolveReferences } from "./references";
 import { runFile } from "./plugin-exec";
@@ -52,7 +52,6 @@ import { runningPlugins } from "./search/data-sources";
 import { safeAtStart } from "./mods/safe";
 import { saveAppChange } from "./app-change";
 import { shownLayout } from "./mods/layout";
-import { sidekickView } from "./sidekick-view";
 import { startControl } from "./mods/control";
 import { stopSetupProcess } from "./setup-runner";
 import { toolDataRequests } from "./data-requests";
@@ -63,7 +62,7 @@ import type { LifecycleDeps } from "./index";
  * harness declares, the privileged schemes (Electron takes them only before "ready"). index.ts sets `harness` first.
  */
 export async function onLoaded(d: LifecycleDeps): Promise<void> {
-  const { activeScope, baseOf, boardHost, commandDeps, connections, currentBase, currentHistory, dataStoreFor, dataWrites, emit, handle, hasNotice, here, hold, hooks, kickMaterial, materialStageDeps, ownCommits, personData, pickProfile, pluginLog, pluginPanels, readPhaseBrief, refreshDockBadge, runtime, scopeStoreFor, scoped, searchSvc, secretStore, sendToWindow, shellResources, sidekickStoreFor, switches, toolsLog, translateEngine, turnBlocked, turns, validConfig, workReferences } = d;
+  const { activeScope, baseOf, boardHost, commandDeps, connections, currentBase, currentHistory, dataStoreFor, dataWrites, emit, handle, hasNotice, here, hold, hooks, kickMaterial, materialStageDeps, ownCommits, personData, pickProfile, pluginLog, pluginPanels, readPhaseBrief, refreshDockBadge, runtime, scopeStoreFor, scoped, searchSvc, secretStore, sendToWindow, shellResources, switches, toolsLog, translateEngine, turnBlocked, turns, validConfig, workReferences } = d;
   const harness = d.harness;
   app.setName(harness.name);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
@@ -89,7 +88,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       changed: (state) => sendToWindow("hh:settings", state),
     });
   }
-  // The app's parts Sidekick's controller uses, built once: core mods get the same through `ctx.app` (mods/core-app.ts).
+  // The app's parts, built once: core mods get them through `ctx.app` (mods/core-app.ts).
   const core: CoreAppParts = {
     harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}), ...(harness.sidekick ? { sidekick: harness.sidekick } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
@@ -118,10 +117,10 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       const models = cleanModels(c.models);
       return pickProfile(c.policies?.model, tier ? { engine: engine.id, tier, models } : { engine: engine.id, action: process, manifestTier: "light", models });
     },
-    // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in the Sidekick session.
-    workDir: (base, id = "sidekick") => sidekickWorkDir(app.getPath("userData"), base, id),
-    writeBrief: writeSidekickBrief,
-    open: (o) => new SidekickSession(o),
+    // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in a mod's session.
+    workDir: (mod, base, id) => sessionWorkDir(app.getPath("userData"), mod, base, id),
+    writeBrief: writeSessionBrief,
+    open: (o) => new EngineSession(o),
     uiLanguage: async () => languageName((await d.config.load()).language ?? DEFAULT_LANGUAGE),
     // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
     // The task manager can't list open tasks (Open question 7): nothing is open.
@@ -159,67 +158,6 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     },
   };
   d.appMods.setCoreApp(core);
-  // Sidekick runs only for a harness that declares it: without the key there is no controller, so no tips, daily card or turns.
-  d.sidekickCtl = !sidekickView(harness) ? null : new SidekickController({
-    ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
-    harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}) },
-    phases: core.phases,
-    phaseBrief: core.phaseBrief,
-    store: new SidekickStore({
-      // Every record of the collection (settings, learned items, sidekicks, scope records), with no query limit.
-      readAll: async () => {
-        const c = await validConfig();
-        if (!c) return [];
-        return (await sidekickStoreFor(baseOf(c)).readAll(SIDEKICK_COLLECTION, APP_SCOPE)).records as SidekickRecord[];
-      },
-      // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: sidekick` commit (open task's trailer).
-      write: (request) => personData(request, { scope: APP_SCOPE }),
-      ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
-    }),
-    setup: core.setup,
-    hasNotice: core.hasNotice,
-    engine: core.engine,
-    command: core.command,
-    // The `sidekick` process in Settings › Models.
-    profile: (engine, tier) => core.profile(engine, tier, SIDEKICK_PROCESS),
-    workDir: core.workDir,
-    writeBrief: core.writeBrief,
-    open: core.open,
-    task: core.task,
-    context: async (base, scope) => {
-      // readNotes returns newest first.
-      const notes = await readNotes(base, notesPrefix(scoped(), scope ?? MAIN_SCOPE)).catch(() => []);
-      return { notes: notes.slice(0, 20).map((n) => n.title), data: core.dataTables() };
-    },
-    uiLanguage: core.uiLanguage,
-    usage: async (base) => recentUsage(await new UsageLog(base).load(Infinity), 2000),
-    log: (base, record) => new UsageLog(base).append(record),
-    dailyInput: core.dailyInput,
-    changed: (state) => sendToWindow("hh:sidekick", state),
-    events: { read: readSidekickEvents, append: appendSidekickEvent },
-    // Import (sidekick spec §2a.6): a file in an engine's settings folder (under home or moved by env) is refused, links resolved, before any read.
-    importFiles: (paths, signal) => readImportFiles(paths, { home: os.homedir(), env: process.env }, undefined, signal),
-    tagKey: (create) => core.tagKey("sidekick", create),
-    pickImportFiles: core.pickImportFiles,
-    saveDecision: core.saveDecision,
-    // Learning (sidekick spec §6.4): Sidekick's own items, written as the app after a task closes, in one `Data: sidekick` commit.
-    writeApp: async (base, requests) => {
-      const blocked = d.quitting ? "The app is closing" : turnBlocked();
-      if (blocked) throw new Error(blocked);
-      const c = await validConfig();
-      if (!c) throw new Error("The app is not set up yet");
-      // Learned in another profile (or before a move): never written into this one.
-      if (baseOf(c) !== base) throw new Error("The app's folder changed while Sidekick was learning");
-      // Every request checked before any runs, so a malformed one writes nothing.
-      for (const r of requests) if (!dataRequestSchema.safeParse(r).success) throw new Error("Not a data request");
-      const store = sidekickStoreFor(base);
-      for (const r of requests) await runDataRequest(store, r, { who: "app", scope: APP_SCOPE });
-      const own = [dataPath(store.scopeFor(SIDEKICK_COLLECTION, APP_SCOPE), SIDEKICK_COLLECTION)];
-      await saveAppChange(await currentHistory(), ownCommits(), own, `${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) =>
-        console.error("Could not record Sidekick's learning", err),
-      );
-    },
-  });
   // Board and single mode (parallel spec §9.2): one Attention store per base for the plugins, the waiting tasks and
   // the jobs, with the plugins' tag key (outside every base, P5). A task's items show while it is an open lane; a job's
   // while the harness declares it; the harness tools' item while it has tools (tools Decision 7). Plain mode: none (D0).
@@ -260,7 +198,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
         env: async () => ({ PATH: await loginShellPath(commandDeps), HOME: os.homedir(), LANG: process.env.LANG ?? "en_US.UTF-8" }),
       },
       userData: app.getPath("userData"),
-      // The inbox's HMAC key (Attention review): its own file, not Sidekick's, where the agent can't reach it.
+      // The inbox's HMAC key (Attention review): its own file, not a mod's, where the agent can't reach it.
       tagKey: (create) => sourceTagKey(path.join(appDir, "attention-key"), create),
       ...(attentionShared
         ? {
@@ -682,8 +620,6 @@ export function onPrimary(d: LifecycleDeps): void {
     void backendReady().catch((err: unknown) => console.error("Could not start the backend", err));
     // A packaged app checks GitHub Releases at start and every 6 hours; a dev run never does.
     if (app.isPackaged) void startPackagedUpdater((m, err) => console.error(m, err)).then((stop) => { stopUpdater = stop; }, (err: unknown) => console.error("Could not start the updater", err));
-    // Sidekick's daily card (spec §2a.2 daily-summary): once per local day, detached; off or without a daily-summary sidekick, nothing.
-    void d.sidekickCtl?.daily().catch((err: unknown) => console.error("Sidekick's daily card failed", err));
   });
 
   let stopUpdater: () => void = () => undefined;
@@ -704,7 +640,6 @@ export function onPrimary(d: LifecycleDeps): void {
       plainTasks.close();
       turns.close();
     }
-    void d.sidekickCtl?.close();
     // The mods stop (their disposers run) before the app goes; the home folder is no longer watched.
     d.userLayerWatch?.close();
     d.userLayerWatch = null;

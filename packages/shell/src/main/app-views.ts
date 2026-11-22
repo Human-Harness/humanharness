@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { type EngineDef, type ModelProfile, type ModelSpec, defaultTier } from "@humanharness/engines";
-import { type LoadedHarness, SIDEKICK_PROCESS, TIERS, type Tier, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, TIERS, type Tier, resolveInHarness } from "@humanharness/harness-sdk";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
 import type { AppConfig, ModelsView } from "@humanharness/protocol";
 import { DEFAULT_PINNED_TOKENS } from "@humanharness/workspace";
@@ -96,7 +96,7 @@ export function createAppViews(d: AppViewsDeps) {
         // Material spec §8: each AI stage is a process, only with material (D0); links only with items.
         ...(harness.material ? materialRecommended(harness.material) : {}),
         // Sidekick is a process of its own (sidekick spec §5), light by default.
-        [SIDEKICK_PROCESS]: "light",
+        sidekick: "light",
       },
       defaults: Object.fromEntries(
         engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),

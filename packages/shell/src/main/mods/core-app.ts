@@ -1,20 +1,21 @@
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import type { TaskRef, Tier } from "@humanharness/mod-sdk";
 import type { CoreApp, CoreDailyInput, CorePhase } from "@humanharness/mod-sdk/core";
-import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
+import type { EngineAnswer, EngineSessionOptions } from "@humanharness/runtime";
 
-/** A session as the app opens it (SidekickSession, or a fake in tests). */
+/** A session as the app opens it (EngineSession, or a fake in tests). */
 export interface CoreSessionLike {
   readonly profile: ModelProfile;
-  ask(prompt: string, signal: AbortSignal): Promise<SidekickAnswer>;
+  ask(prompt: string, signal: AbortSignal): Promise<EngineAnswer>;
   close(): Promise<void>;
 }
 
 /**
- * The app's parts behind `ctx.app` (app-lifecycle.ts builds them once, and Sidekick's controller uses the same ones).
- * Engine-typed like the controller's deps; `coreAppFor` gives a mod the same by engine id.
+ * The app's parts behind a core mod's `ctx.app` (app-lifecycle.ts builds them once).
+ * Engine-typed; `coreAppFor` gives a mod the same by engine id.
  */
 export interface CoreAppParts {
+  /** `sidekick`: the harness's raw `sidekick` key (Sidekick's config). */
   harness: { name: string; tagline?: string; sidekick?: unknown };
   phases(action: string | undefined): readonly CorePhase[];
   phaseBrief(action: string, phase: string): Promise<string | null>;
@@ -26,9 +27,10 @@ export interface CoreAppParts {
   command(engine: EngineDef): Promise<{ command: string[]; env: Record<string, string> } | null>;
   /** The `process`'s model in Settings › Models (light by default); with `tier`, that tier's. */
   profile(engine: EngineDef, tier: Tier | undefined, process: string): Promise<ModelProfile>;
-  workDir(base: string, id?: string): string;
+  /** Session `id`'s working folder for core mod `mod` (`id` defaults to the mod's). */
+  workDir(mod: string, base: string, id?: string): string;
   writeBrief(folder: string, text: string, engine: EngineDef): Promise<unknown>;
-  open(o: SidekickSessionOptions): CoreSessionLike;
+  open(o: EngineSessionOptions): CoreSessionLike;
   uiLanguage(): Promise<string>;
   dailyInput(base: string, day: string): Promise<CoreDailyInput>;
   pickImportFiles(): Promise<string[]>;
@@ -57,7 +59,7 @@ export function coreAppFor(p: CoreAppParts, id: string): CoreApp {
       hasNotice: (engineId) => p.hasNotice(engineId),
       command: (engineId) => p.command(p.engine(engineId)),
       profile: (engineId, tier) => p.profile(p.engine(engineId), tier, id),
-      workDir: (base, sid) => p.workDir(base, sid),
+      workDir: (base, sid) => p.workDir(id, base, sid),
       writeBrief: (folder, text, engineId) => p.writeBrief(folder, text, p.engine(engineId)),
       open: (o) =>
         p.open({ engine: p.engine(o.engineId), command: o.command, ...(o.env ? { env: o.env } : {}), folder: o.folder, profile: o.profile as unknown as ModelProfile }),

@@ -33,7 +33,6 @@ import type { PluginsController } from "./plugins";
 import type { LinkedInstructions, ScopeAccess } from "./scope-access";
 import type { SettingsController } from "./settings";
 import type { SharedConfigStore } from "./shared-config";
-import type { SidekickController } from "./sidekick";
 import type { PhaseMoved, TaskDeps, TaskManager, TurnEnd } from "./task-manager";
 import { TaskStore, emptyTasks } from "./task-store";
 import type { ToolsHost } from "./tools/tools-host";
@@ -114,7 +113,6 @@ export interface TaskDepsDeps {
   modHost(): ModHost | null;
   pluginsCtl(): PluginsController | null;
   settingsCtl(): SettingsController | null;
-  sidekickCtl(): SidekickController | null;
   toolsHost(): ToolsHost | null;
   /** Board mode's host, or null. */
   host(): BoardHost | null;
@@ -288,17 +286,15 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
     // A getter, because the harness is loaded after this object is built. Undefined without settings (D0).
     get betweenTasks() {
       const settings = d.settingsCtl();
-      const sidekick = d.sidekickCtl();
       const plugins = d.pluginsCtl();
       const linked = d.linked();
       // The mods' betweenTasks (minimal-core 1a): only while some mod that is on registered one (D0).
       const mods = d.modHost()?.registered("betweenTasks") ? d.modHost() : null;
-      if (!settings && !sidekick && !plugins && !linked && !mods) return undefined;
+      if (!settings && !plugins && !linked && !mods) return undefined;
       return async () => {
         await settings?.betweenTasks();
         // A link change a running turn kept from AGENTS.md, or another scope opened since it was written.
         await linked?.instructions.betweenTasks();
-        await sidekick?.betweenTasks();
         await mods?.betweenTasks();
         // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
         await plugins?.betweenTasks();
@@ -309,36 +305,27 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
         }
       };
     },
-    // Sidekick's after-reply moment (sidekick spec §4.2) and the mods' turn hooks (minimal-core spec §4). Getters:
-    // undefined until the controller or the host exists (D0).
+    // The mods' turn hooks (minimal-core spec §4; Sidekick's after-reply moment is its turnEnd). Getters: undefined
+    // until the host exists (D0).
     get turnStarting() {
-      const sidekick = d.sidekickCtl();
       const mods = d.modHost();
-      if (!sidekick && !mods) return undefined;
+      if (!mods) return undefined;
       return () => {
-        sidekick?.turnStarting();
-        if (mods) void d.tasks().runningTask().then((t) => t && mods.turnStart(t)).catch((err: unknown) => console.error("The mods' turnStart failed", err));
+        void d.tasks().runningTask().then((t) => t && mods.turnStart(t)).catch((err: unknown) => console.error("The mods' turnStart failed", err));
       };
     },
     get turnEnded() {
-      const sidekick = d.sidekickCtl();
       const mods = d.modHost();
-      if (!sidekick && !mods) return undefined;
-      return (end: TurnEnd) => {
-        if (sidekick) void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err));
-        if (mods) void mods.turnEnd(toTurnEnd(end));
-      };
+      if (!mods) return undefined;
+      // Every turn with its kind: the host hands a core mod all of them, any other mod only the person's (`run`).
+      return (end: TurnEnd) => void mods.turnEnd({ ...toTurnEnd(end), kind: end.kind });
     },
-    // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard) and the mods' phaseMoved, only while some mod
-    // that is on registered one. A getter for the same reason (D0).
+    // The mods' phaseMoved (Sidekick's process-guard, sidekick spec §2a.2), only while some mod that is on registered
+    // one. A getter for the same reason (D0).
     get phaseMoved() {
-      const sidekick = d.sidekickCtl();
       const mods = d.modHost()?.registered("phaseMoved") ? d.modHost() : null;
-      if (!sidekick && !mods) return undefined;
-      return (e: PhaseMoved) => {
-        if (sidekick) void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err));
-        if (mods) void mods.phaseMoved(e);
-      };
+      if (!mods) return undefined;
+      return (e: PhaseMoved) => void mods.phaseMoved(e);
     },
     // An action's pre-steps and a part's expects (tools spec §6, §6.1). Getters: undefined without tools (no toolsHost)
     // or when no action declares them (D0).

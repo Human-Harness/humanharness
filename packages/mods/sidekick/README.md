@@ -17,6 +17,7 @@ enough).
   The controller's state goes to the window on its existing push channel. Hooks:
   - `turnStart`, `turnEnd`, `taskOpen`, `taskClose`, `betweenTasks`, `phaseMoved`, `daily` and `close`. Model turns
     run detached from the hook.
+  - the core-only `ctx.onRefresh` (a profile switch or an undo) runs the controller's `refresh`, like `taskOpen`.
   - `beforeSend` passes, because the window still asks for each review over its own channel.
 - `src/deps.ts` adapts the core mod's `ctx` (`ctx.app`, `ctx.stores`, `ctx.usage`, `ctx.notes`, `ctx.push`) to
   `SidekickDeps`. `src/controller.ts` is the controller as it was in the core.
@@ -29,4 +30,9 @@ enough).
   - `src/checks.ts`, `src/brief.ts`, `src/events.ts`: the local checks, the session brief and the learning events
   - `src/usage.ts`: Sidekick's lines in the usage log
   - `src/session.ts`: the session
-- The old paths in `shell`, `workspace`, `harness-sdk` and `runtime` re-export from here until the core's call sites go.
+- The core's main imports nothing from here: it lists Sidekick in `CORE_MOD_LIST`
+  (`packages/shell/src/main/mods/core-mod-list.ts`) and hands each window call on the 26 channels to the mod host
+  (`packages/shell/src/main/mods/app-channels.ts`). The session folders and briefs are the core's
+  (`packages/shell/src/main/mods/core-sessions.ts`), reached through `ctx.app`.
+- `harness-sdk` and `runtime` still re-export the manifest, collection and session names from here for the UI and
+  other packages; `docs/architecture/sidekick.md` has the full picture.

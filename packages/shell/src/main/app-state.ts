@@ -23,7 +23,6 @@ import { cleanModels } from "./models";
 import { engineHold, parallelInfo } from "./parallel-config";
 import { type ResolvedReference, displayPath } from "./references";
 import { setupStepViews } from "./setup-steps";
-import { sidekickView } from "./sidekick-view";
 import { type TestHooks, isMockEngine, mockEngineText } from "./test-hooks";
 
 /** What appState reads from the main entry. Getters for what changes after it is built. */
@@ -160,7 +159,7 @@ export function createAppState(d: AppStateDeps): () => Promise<AppState> {
       // Only a harness with settings gets its tab (harness-settings D0).
       ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
       // Sidekick shows only for a harness that declares it (a `sidekick` key, `{}` allowed); the window draws it only with this.
-      ...(sidekickView(harness) ? { sidekick: sidekickView(harness) } : {}),
+      ...(harness.sidekick ? { sidekick: { id: "sidekick", name: "Sidekick", mark: "coach" } } : {}),
       // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
       ...(hasModes(harness)
         ? {

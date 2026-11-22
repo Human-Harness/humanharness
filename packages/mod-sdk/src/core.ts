@@ -1,7 +1,7 @@
 // The core-only part of the mod API (minimal-core 1a): what a mod the app ships (`packages/mods/*`) gets beyond `MainCtx`.
 // Not exported from the package's index, so hh.d.ts and the released contract never show it: a harness's or a local
 // mod's ctx has neither `push` nor `app`.
-import type { MainCtx, ModTokens, TaskRef, Tier } from "./types";
+import type { Disposer, MainCtx, ModTokens, TaskRef, Tier } from "./types";
 
 /** A model as Settings › Models resolves it: passed back to `sessions.open` as it is. */
 export interface CoreModelProfile {
@@ -96,4 +96,9 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
   /** Sends `value` to the window on an app push channel; throws for any channel the app doesn't push. */
   push(channel: `hh:${string}`, value: unknown): void;
   readonly app: CoreApp;
+  /**
+   * Runs `fn` when the base or its data changed under the mod without a task opening or closing: a profile switch or
+   * an undo. The mod reads its settings and the base again and sends its state.
+   */
+  onRefresh?(fn: () => void | Promise<void>): Disposer;
 };

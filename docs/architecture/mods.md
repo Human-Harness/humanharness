@@ -45,7 +45,7 @@ Hooks (`ctx.on`):
 - `daily({ day })` (mods 1a): at start and at each local midnight while the app runs (`ModHost.startDaily`); the mod tells a day it already did by `day`.
 - `close()` (mods 1a): the app is quitting, before the disposers run.
 
-`beforeSend` may also answer `{kind:"hold", token}` (mods 1a): the send waits until the mod calls `ctx.holds.resolve(token, verdict)` with `pass`, `rewrite` or `cancel`. That wait is the person's, so it counts toward no limit; closing the task, quitting or turning the mod off cancels a held send. `turnEnd` hears only a person's `run` turns (no checkpoint, close or wrap-up turn). In board mode the turn hooks and `phaseMoved` follow only the focused lane (`focusGate`, `board-host.ts`).
+`beforeSend` may also answer `{kind:"hold", token}` (mods 1a): the send waits until the mod calls `ctx.holds.resolve(token, verdict)` with `pass`, `rewrite` or `cancel`. That wait is the person's, so it counts toward no limit; closing the task, quitting or turning the mod off cancels a held send. `turnEnd` hears only a person's `run` turns (no checkpoint, close or wrap-up turn); a core mod hears every turn, with the app's `kind` added (`ModHost.turnEnd`): Sidekick's context heads-up reads them all. In board mode the turn hooks and `phaseMoved` follow only the focused lane (`focusGate`, `board-host.ts`).
 
 Services and fields:
 

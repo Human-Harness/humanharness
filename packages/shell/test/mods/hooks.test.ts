@@ -226,4 +226,20 @@ describe("task deps with mods", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(seen).toEqual(["between", "moved b"]);
   });
+
+  it("turnEnded: a core mod gets every turn end with its kind (Sidekick's context heads-up reads them); another mod only the person's `run` turns, without the kind", async () => {
+    const h = await host();
+    const core: unknown[] = [];
+    const local: unknown[] = [];
+    h.registerForTest("core", "Core", (ctx) => ctx.on.turnEnd((e) => void core.push(e)), { core: true });
+    h.registerForTest("local", "Local", (ctx) => ctx.on.turnEnd((e) => void local.push(e)));
+    const end = (kind: "run" | "checkpoint") => ({ task, kind, ok: true, prompt: "p", reply: "r", fromBlock: false, modeSwitch: false, context: { used: 9 } });
+    const d = deps(h);
+    d.turnEnded!(end("run"));
+    d.turnEnded!(end("checkpoint"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(core).toEqual([end("run"), end("checkpoint")]);
+    const { kind: _kind, ...run } = end("run");
+    expect(local).toEqual([run]);
+  });
 });

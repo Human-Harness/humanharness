@@ -295,10 +295,17 @@ export class ModHost {
     return out;
   }
 
-  private async each(name: Exclude<HookName, "beforeSend">, arg: unknown): Promise<void> {
+  private each(name: Exclude<HookName, "beforeSend">, arg: unknown): Promise<void> {
+    return this.eachFor(name, () => ({ arg }));
+  }
+
+  /** Like `each`, with each mod's own argument; a mod `argFor` answers null for is skipped. */
+  private async eachFor(name: Exclude<HookName, "beforeSend">, argFor: (r: Running) => { arg: unknown } | null): Promise<void> {
     await Promise.all(
       this.listeners(name).map(async ([r, fn]) => {
-        const res = await guarded(() => (fn as (a: unknown) => unknown)(arg), this.hookMs);
+        const a = argFor(r);
+        if (!a) return;
+        const res = await guarded(() => (fn as (a: unknown) => unknown)(a.arg), this.hookMs);
         await this.count(r, res.ok, res.ok ? undefined : res.reason);
       }),
     );
@@ -379,8 +386,13 @@ export class ModHost {
   turnStart(task: TaskRef): Promise<void> {
     return this.each("turnStart", task);
   }
-  turnEnd(end: TurnEndInfo): Promise<void> {
-    return this.each("turnEnd", end);
+  /**
+   * A turn's end with the app's kind of turn (absent: the person's `run`). A core mod gets every turn with its kind
+   * (Sidekick's context heads-up reads checkpoints and wrap-ups too); any other mod only the person's turns, without it.
+   */
+  turnEnd(end: TurnEndInfo & { kind?: string }): Promise<void> {
+    const { kind = "run", ...info } = end;
+    return this.eachFor("turnEnd", (r) => (r.mod.shipped === "core" ? { arg: { ...info, kind } } : kind === "run" ? { arg: info } : null));
   }
   taskOpen(task: TaskRef): Promise<void> {
     return this.each("taskOpen", task);

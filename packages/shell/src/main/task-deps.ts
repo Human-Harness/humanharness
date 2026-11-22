@@ -317,10 +317,8 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
     get turnEnded() {
       const mods = d.modHost();
       if (!mods) return undefined;
-      // Only the person's turns (`run`): a close, checkpoint or phase-change turn is the app's, not one a mod answers.
-      return (end: TurnEnd) => {
-        if (end.kind === "run") void mods.turnEnd(toTurnEnd(end));
-      };
+      // Every turn with its kind: the host hands a core mod all of them, any other mod only the person's (`run`).
+      return (end: TurnEnd) => void mods.turnEnd({ ...toTurnEnd(end), kind: end.kind });
     },
     // The mods' phaseMoved (Sidekick's process-guard, sidekick spec §2a.2), only while some mod that is on registered
     // one. A getter for the same reason (D0).

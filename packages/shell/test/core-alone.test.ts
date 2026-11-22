@@ -63,6 +63,12 @@ describe("the core alone (minimal-core 1a)", () => {
     expect(() => s.afterRestore()).not.toThrow();
   });
 
+  it("a restore tells the core mods to refresh (Sidekick reads its settings and base again)", () => {
+    const refresh = vi.fn(async () => {});
+    createAppServices(deps({ modHost: () => ({ refresh }) })).afterRestore();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("without a mod store, the `sidekick` collection is no collection of the core's", async () => {
     const s = createAppServices(deps());
     await expect(s.personData({ op: "get", collection: "sidekick", key: "settings" }, { scope: "_app" })).rejects.toThrow(/no collection "sidekick"/);

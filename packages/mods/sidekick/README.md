@@ -17,6 +17,7 @@ enough).
   The controller's state goes to the window on its existing push channel. Hooks:
   - `turnStart`, `turnEnd`, `taskOpen`, `taskClose`, `betweenTasks`, `phaseMoved`, `daily` and `close`. Model turns
     run detached from the hook.
+  - the core-only `ctx.onRefresh` (a profile switch or an undo) runs the controller's `refresh`, like `taskOpen`.
   - `beforeSend` passes, because the window still asks for each review over its own channel.
 - `src/deps.ts` adapts the core mod's `ctx` (`ctx.app`, `ctx.stores`, `ctx.usage`, `ctx.notes`, `ctx.push`) to
   `SidekickDeps`. `src/controller.ts` is the controller as it was in the core.

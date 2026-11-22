@@ -37,6 +37,8 @@ export interface ScopeStoresDeps {
   backendScopes(): Promise<void>;
   backendLeaveBase(): Promise<void>;
   backendRebase(): Promise<void>;
+  /** The mod host, told when the profile's base arrives (core mods' `onRefresh`). Absent or null: no mods (D0). */
+  modHost?(): { refresh(): Promise<void> } | null;
 }
 
 /** The per-base scope and data stores, and the scopes' migration and view. */
@@ -149,6 +151,8 @@ export function createScopeStores(d: ScopeStoresDeps) {
     const setupCtl = d.setupCtl();
     if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
     sendToWindow("hh:tasks", await d.tasks().view());
+    // The core mods read the new base and their settings again (Sidekick drops the old base's sessions). D0: no host.
+    void d.modHost?.()?.refresh().catch((err: unknown) => console.error("The mods' refresh failed", err));
     // The new profile's material: what an earlier run (or the switch) left converting resumes, and its AI stages run.
     // Without material, nothing (D0).
     void d.materialSvc()?.settle().catch((err: unknown) => console.error("Could not resume the material", err));

@@ -15,7 +15,7 @@ export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close";
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
 /** An app channel a core mod may handle (`ctx` ipc with an `hh:…` name). */
 export const APP_CHANNEL = /^hh:[A-Za-z][A-Za-z0-9]{0,63}$/;
@@ -186,8 +186,8 @@ export class ModHost {
     r.problem = failure.reason;
   }
 
-  /** What only a core mod's ctx has: `push` (an app push channel, while the mod is on) and `app`. */
-  private core(r: Running): Partial<Pick<CoreMainCtx<unknown>, "push" | "app">> {
+  /** What only a core mod's ctx has: `push` (an app push channel, while the mod is on), `app` and `onRefresh`. */
+  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "push" | "app" | "onRefresh">> {
     if (r.mod.shipped !== "core") return {};
     const send = this.d.push;
     const app = this.d.coreApp?.(r.mod.json.id);
@@ -201,6 +201,7 @@ export class ModHost {
           }
         : {}),
       ...(app ? { app } : {}),
+      onRefresh: add("refresh") as CoreMainCtx<unknown>["onRefresh"],
     };
   }
 
@@ -214,7 +215,7 @@ export class ModHost {
     };
     return {
       ...(this.d.services(r.mod.json.id) as MainCtx<unknown>),
-      ...this.core(r),
+      ...this.core(r, add),
       id: r.mod.json.id,
       config,
       on: Object.fromEntries(HOOKS.map((n) => [n, add(n)])) as unknown as MainCtx<unknown>["on"],
@@ -393,6 +394,10 @@ export class ModHost {
   turnEnd(end: TurnEndInfo & { kind?: string }): Promise<void> {
     const { kind = "run", ...info } = end;
     return this.eachFor("turnEnd", (r) => (r.mod.shipped === "core" ? { arg: { ...info, kind } } : kind === "run" ? { arg: info } : null));
+  }
+  /** The base or its data changed under the core mods with no task opening or closing (a profile switch, an undo). */
+  refresh(): Promise<void> {
+    return this.each("refresh", undefined);
   }
   taskOpen(task: TaskRef): Promise<void> {
     return this.each("taskOpen", task);

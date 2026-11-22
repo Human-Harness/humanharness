@@ -68,6 +68,8 @@ export interface AppServicesDeps {
   dataStoreFor(base: string): DataStore;
   /** The mods' own stores (`ctx.stores`): whether a mod has one named `name`, and that store in `base`. Absent: none. */
   modStores?: { has(name: string): boolean; storeFor(base: string, name: string): DataStore | undefined };
+  /** The mod host, told after a restore (core mods' `onRefresh`). Absent or null: no mods (D0). */
+  modHost?(): { refresh(): Promise<void> } | null;
   scopeStoreFor(base: string): ScopeStore;
   scopesView(): Promise<ScopesView>;
   currentHistory(): Promise<History | null>;
@@ -123,6 +125,8 @@ export function createAppServices(d: AppServicesDeps) {
     void d.settingsCtl()?.changed();
     // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
     searchSvc.committed(null);
+    // The core mods read their settings again (Sidekick on or off, its state sent). D0: no host.
+    void d.modHost?.()?.refresh().catch((err: unknown) => console.error("The mods' refresh failed", err));
   }
 
   /**

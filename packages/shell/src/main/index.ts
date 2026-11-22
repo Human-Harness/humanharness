@@ -479,6 +479,7 @@ const {
   backendScopes: () => backendScopes(),
   backendLeaveBase: () => backendLeaveBase(),
   backendRebase: () => backendRebase(),
+  modHost: () => appMods.state.modHost,
 });
 
 function applyAppearance(appearance: AppConfig["appearance"]) {
@@ -967,6 +968,7 @@ const {
   activeScope,
   dataStoreFor,
   modStores: appMods.modStores,
+  modHost: () => appMods.state.modHost,
   scopeStoreFor,
   scopesView,
   currentHistory,

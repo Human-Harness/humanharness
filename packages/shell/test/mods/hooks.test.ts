@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { MainCtx, ModStore } from "@humanharness/mod-sdk";
+import type { CoreMainCtx } from "@humanharness/mod-sdk/core";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { type HostDeps, ModHost, localDay, msToNextDay } from "../../src/main/mods/host";
@@ -188,6 +189,22 @@ describe("ctx.usage", () => {
     const r = modUsageRecord("coach", "x", { engine: "claude", ok: true, usage: { inputTokens: "a" }, evil: 1 } as never);
     expect(r).not.toHaveProperty("usage");
     expect(r).not.toHaveProperty("evil");
+  });
+});
+
+describe("refresh (core mods only)", () => {
+  it("runs a core mod's onRefresh; another mod has no onRefresh", async () => {
+    const h = await host();
+    let refreshed = 0;
+    let localHas: boolean | undefined;
+    h.registerForTest("core", "Core", (ctx) => void (ctx as unknown as CoreMainCtx).onRefresh(() => void refreshed++), { core: true });
+    h.registerForTest("local", "Local", (ctx) => void (localHas = "onRefresh" in ctx));
+    await h.refresh();
+    expect(refreshed).toBe(1);
+    expect(localHas).toBe(false);
+    await h.set("core", false);
+    await h.refresh();
+    expect(refreshed).toBe(1);
   });
 });
 

@@ -31,6 +31,12 @@ export interface ServiceDeps {
   data?: { blocked(): string | null; commit(base: string, paths: string[], message: string): Promise<void> };
   /** Where the mods' stores live: the app reads the same ones for the person's requests. Absent: a registry of its own. */
   stores?: ModStoreRegistry;
+  /**
+   * Whether mod `id`'s stores go into `stores` (core mods only: the app routes the person's requests on their
+   * collections there). Any other mod gets a registry of its own with each ctx, so it never takes a harness
+   * collection's requests and a reload takes its new collection. Absent: every mod's go into `stores`.
+   */
+  sharedStores?(id: string): boolean;
 }
 
 type Collection = ConstructorParameters<typeof DataStore>[1][string];
@@ -183,7 +189,7 @@ export function buildServices(d: ServiceDeps): (id: string) => Services {
       tasks: { running: () => d.runningTask() },
       notes: { titles: (scope) => d.noteTitles(scope) },
       notify: (text) => d.notify(text),
-      stores: modStores(id, d, registry),
+      stores: modStores(id, d, (d.sharedStores?.(id) ?? true) ? registry : new ModStoreRegistry()),
       usage: {
         record: async (kind, entry) => {
           const base = await d.base();

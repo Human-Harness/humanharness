@@ -88,7 +88,7 @@ export function createAppMods(d: AppModsDeps) {
   /** The app's parts behind a core mod's `ctx.app`, once the start-up built them (app-lifecycle.ts, before the host). */
   let coreParts: CoreAppParts | null = null;
   const setCoreApp = (parts: CoreAppParts) => void (coreParts = parts);
-  /** The mods' own stores, kept across host restarts: the person's requests on a mod's collection reach the same one. */
+  /** The core mods' own stores, kept across host restarts: the person's requests on their collections reach the same one. */
   const modStores = new ModStoreRegistry();
 
   /** What Settings › Mods shows: every resolved mod (none without a host, D0) and the folders that couldn't be read. */
@@ -154,6 +154,7 @@ export function createAppMods(d: AppModsDeps) {
       },
       services: buildServices({
         stores: modStores,
+        sharedStores: (id) => Object.hasOwn(CORE_MODS, id),
         harnessId: harness.id,
         userData: app.getPath("userData"),
         base: async () => {

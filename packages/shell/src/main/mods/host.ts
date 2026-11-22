@@ -25,7 +25,7 @@ export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getM
 export const msToNextDay = (now: Date): number => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
 type Fn = (arg: never) => unknown;
 /** The services a mod's ctx gets (services.ts builds them); the host adds on/ipc/provide/mods/config/id. */
-export type Services = Partial<Omit<MainCtx<unknown>, "id" | "config" | "on" | "ipc" | "provide" | "mods" | "holds" | "focus">>;
+export type Services = Partial<Omit<MainCtx<unknown>, "id" | "config" | "on" | "ipc" | "push" | "provide" | "mods" | "holds" | "focus">>;
 
 export interface HostDeps {
   config: { load(): Promise<ModsSettings | undefined>; saveFailed(id: string, reason: string): Promise<void> };
@@ -46,6 +46,8 @@ export interface HostDeps {
   focusChanged?: (taskId: string) => void;
   /** A core mod's send to the window (`ctx.push`), on an app push channel only. Absent: core mods get no `push`. */
   push?: (channel: PushChannel, value: unknown) => void;
+  /** Any mod's `ctx.push(name, value)` to its own ui (`hh:modPush`). Absent: a mod's own push goes nowhere. */
+  modPush?: (id: string, name: string, value: unknown) => void;
   /** Core mod `id`'s `ctx.app` (core-app.ts). Absent: core mods get no `app`. Harness and local mods never get either. */
   coreApp?: (id: string) => CoreApp | undefined;
 }
@@ -186,20 +188,31 @@ export class ModHost {
     r.problem = failure.reason;
   }
 
-  /** What only a core mod's ctx has: `push` (an app push channel, while the mod is on), `app` and `onRefresh`. */
-  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "push" | "app" | "onRefresh">> {
+  /**
+   * `ctx.push`: a name of the mod's own goes to its ui (`hh:modPush`, with its id), while the mod is on. A core mod may
+   * also name an app push channel (`hh:…`, never `hh:modPush`, which would forge another mod's id); any other mod can't.
+   */
+  private pusher(r: Running): (name: string, value: unknown) => void {
+    const id = r.mod.json.id;
+    return (name, value) => {
+      if (typeof name !== "string" || !name) throw new Error("A push needs a name");
+      if (name.startsWith("hh:")) {
+        const send = this.d.push;
+        if (r.mod.shipped !== "core" || !send) throw new Error(`Only a core mod may push on the app channel ${name}`);
+        // PUSH_CHANNELS leaves hh:modPush out.
+        if (!isPushChannel(name)) throw new Error(`Not an app push channel: ${name}`);
+        if (r.on) send(name, value);
+        return;
+      }
+      if (r.on) this.d.modPush?.(id, name, value);
+    };
+  }
+
+  /** What only a core mod's ctx has: `app` and `onRefresh` (its `push` also takes an app push channel, `pusher`). */
+  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh">> {
     if (r.mod.shipped !== "core") return {};
-    const send = this.d.push;
     const app = this.d.coreApp?.(r.mod.json.id);
     return {
-      ...(send
-        ? {
-            push: (channel: string, value: unknown) => {
-              if (!isPushChannel(channel)) throw new Error(`Not an app push channel: ${String(channel)}`);
-              if (r.on) send(channel, value);
-            },
-          }
-        : {}),
       ...(app ? { app } : {}),
       onRefresh: add("refresh") as CoreMainCtx<unknown>["onRefresh"],
     };
@@ -216,6 +229,7 @@ export class ModHost {
     return {
       ...(this.d.services(r.mod.json.id) as MainCtx<unknown>),
       ...this.core(r, add),
+      push: this.pusher(r),
       id: r.mod.json.id,
       config,
       on: Object.fromEntries(HOOKS.map((n) => [n, add(n)])) as unknown as MainCtx<unknown>["on"],
@@ -439,6 +453,20 @@ export class ModHost {
     const res = await guarded(() => handler(payload), this.hookMs);
     await this.count(r, res.ok, res.ok ? undefined : res.reason);
     return res;
+  }
+
+  /**
+   * A mod's ui calling its own main by name (`hh:modCall`): `ipc`, guarded and counted the same way, rejecting with a
+   * clear reason. An app channel's name (`hh:…`) is never one of a mod's own.
+   */
+  async call(id: string, name: string, payload: unknown): Promise<unknown> {
+    const r = this.mods.get(id);
+    if (!r) throw new Error(`No mod "${id}"`);
+    if (!r.on) throw new Error(`Mod "${id}" is off`);
+    if (name.startsWith("hh:") || !r.channels.has(name)) throw new Error(`Mod "${id}" has no channel "${name}"`);
+    const res = await this.ipc(id, name, payload);
+    if (!res.ok) throw new Error(res.reason);
+    return res.value;
   }
 
   /** The person's switch. Turning on clears a failure and retries a problem. */

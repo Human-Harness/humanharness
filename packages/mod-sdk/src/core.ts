@@ -1,6 +1,6 @@
 // The core-only part of the mod API (minimal-core 1a): what a mod the app ships (`packages/mods/*`) gets beyond `MainCtx`.
 // Not exported from the package's index, so hh.d.ts and the released contract never show it: a harness's or a local
-// mod's ctx has neither `push` nor `app`.
+// mod's ctx has no `app`, and its `push` reaches only its own ui (never an app channel).
 import type { Disposer, MainCtx, ModTokens, TaskRef, Tier } from "./types";
 
 /** A model as Settings › Models resolves it: passed back to `sessions.open` as it is. */
@@ -93,7 +93,10 @@ export interface CoreApp {
 
 /** A core mod's ctx: `MainCtx`, with a push to the window on an existing app channel (`hh:…`) and the app's services. */
 export type CoreMainCtx<C = undefined> = MainCtx<C> & {
-  /** Sends `value` to the window on an app push channel; throws for any channel the app doesn't push. */
+  /**
+   * With an app channel's name (`hh:…`): sends `value` to the window on that app push channel, and throws for any the
+   * app doesn't push (or `hh:modPush`). Any other name is the mod's own, as `MainCtx.push`.
+   */
   push(channel: `hh:${string}`, value: unknown): void;
   readonly app: CoreApp;
   /**

@@ -72,7 +72,10 @@ describe("ctx.push (core mods only)", () => {
     let ctx!: CoreMainCtx<unknown>;
     h.registerForTest("sidekick", "Sidekick", (c) => void (ctx = c as CoreMainCtx<unknown>), { core: true });
     expect(() => ctx.push("hh:nope", 1)).toThrow(/hh:nope/);
-    expect(() => ctx.push("sidekick" as never, 1)).toThrow();
+    // A name without `hh:` is the mod's own (mods-1b): it never reaches an app channel.
+    ctx.push("sidekick" as never, 1);
+    // hh:modPush carries a mod's id: no core mod names it.
+    expect(() => ctx.push("hh:modPush", 1)).toThrow();
     // An invoke channel is not a push channel.
     expect(() => ctx.push("hh:sidekickReview", 1)).toThrow();
     expect(push).not.toHaveBeenCalled();
@@ -148,26 +151,28 @@ describe("ctx.app (core mods only)", () => {
     expect(calls).toContainEqual(["saveDecision", { scope: "main", title: "T", decision: "D" }]);
   });
 
-  it("a harness mod and a local mod see no ctx.push and no ctx.app", async () => {
+  it("a harness mod and a local mod push only on their own names, and see no ctx.app", async () => {
     const { p } = parts();
-    const h = await host({ push: vi.fn(), coreApp: (id) => coreAppFor(p, id) });
+    const push = vi.fn();
+    const h = await host({ push, coreApp: (id) => coreAppFor(p, id) });
     const seen: Record<string, MainCtx<unknown>> = {};
     h.registerForTest("own", "Own", (c) => void (seen.own = c), { origin: "harness" });
     h.registerForTest("mine", "Mine", (c) => void (seen.mine = c));
     h.registerForTest("core", "Core", (c) => void (seen.core = c), { core: true });
     for (const id of ["own", "mine"]) {
-      expect("push" in seen[id]).toBe(false);
+      expect(() => seen[id].push("hh:settings", 1)).toThrow(/core mod/);
       expect("app" in seen[id]).toBe(false);
     }
+    expect(push).not.toHaveBeenCalled();
     expect("push" in seen.core && "app" in seen.core).toBe(true);
   });
 
-  it("an app with no mod builds no host, and a host without the bridge gives a core mod neither", async () => {
+  it("an app with no mod builds no host, and a host without the bridge gives a core mod no app push and no ctx.app", async () => {
     expect(needsHost({ declared: undefined, local: [], coreIds: [] })).toBe(false);
     const h = await host();
     let ctx!: MainCtx<unknown>;
     h.registerForTest("core", "Core", (c) => void (ctx = c), { core: true });
-    expect("push" in ctx).toBe(false);
+    expect(() => ctx.push("hh:settings", 1)).toThrow();
     expect("app" in ctx).toBe(false);
   });
 });

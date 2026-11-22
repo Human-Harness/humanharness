@@ -168,6 +168,8 @@ export interface Invoke {
   "hh:modReviewLocal": Mods["reviewLocal"];
   "hh:modAddLocal": Mods["addLocal"];
   "hh:modRemoveLocal": Mods["removeLocal"];
+  /** A mod's ui calling its own main by name (`mods.call`): `payload` always goes (undefined when none). */
+  "hh:modCall": (id: string, name: string, payload: unknown) => unknown;
   "hh:pluginsGet": Plugins["get"];
   "hh:pluginsRescan": Plugins["rescan"];
   "hh:pluginsSetOn": Plugins["setOn"];
@@ -269,6 +271,8 @@ export interface Push {
   "hh:modsChanged": ModsView;
   "hh:layoutChanged": LayoutView;
   "hh:modReloaded": ModReloaded;
+  /** A mod's `ctx.push(name, value)` to its own ui (`mods.on`); main sets `id`, never the mod. */
+  "hh:modPush": ModPush;
   "hh:homeHistoryChanged": HomeChange | null;
   "hh:safeModeEntered": true;
   "hh:plugins": PluginsView;
@@ -293,6 +297,13 @@ export interface Push {
   /** A `BackendState`; the preload checks it. */
   "hh:backendStateChange": unknown;
   "hh:engineConfigChanged": string | null;
+}
+
+/** What `hh:modPush` carries: the mod that sent it, its own name, and the value. */
+export interface ModPush {
+  id: string;
+  name: string;
+  value: unknown;
 }
 
 export type InvokeChannel = keyof Invoke;

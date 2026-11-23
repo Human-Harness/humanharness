@@ -238,6 +238,11 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
        * window's calls on that channel reach the handler, with their arguments as an array.
        */
       ipc(name: string, handler: (payload: unknown) => unknown): Disposer;
+      /**
+       * Sends `value` to the mod's own ui, on `name` (its `ctx.on(name, fn)` hears it), while the mod is on. A name of the
+       * mod's own: an app channel's name (`hh:…`) throws.
+       */
+      push(name: string, value: unknown): void;
       /** Ends a send this mod held (`{ kind: "hold", token }`); false when there is no such held send (cancelled, or resolved). */
       readonly holds: {
           resolve(token: string, verdict: HoldVerdict): boolean;
@@ -284,10 +289,18 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       };
       log(...args: unknown[]): void;
   }
-  /** 0b renders what a mod registers here; 0a only types it. */
+  /** What a mod's `ui` part gets: its blocks, and its own main's names. */
   export interface UiCtx {
       readonly id: string;
       block(name: string, component: unknown): Disposer;
+      /**
+       * Calls `name` on the mod's own main (its `ctx.ipc(name, …)`) with `payload`, and resolves with the answer. Rejects
+       * when the mod is off, its main has no such name, or the handler throws. Only the mod's own names: never another
+       * mod's. The window's loader always gives it; a ctx made only to collect blocks (a check, a test) may not.
+       */
+      call?(name: string, payload?: unknown): Promise<unknown>;
+      /** Hears the mod's own main's `ctx.push(name, value)`; returns the way to stop. Stops by itself when the mod goes off. */
+      on?(name: string, fn: (value: unknown) => void): Disposer;
   }
   export interface ModDefinition<C = undefined> {
       id: string;

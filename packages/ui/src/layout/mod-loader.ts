@@ -1,28 +1,39 @@
 import type { HarnessClient, ModRow, ModsView } from "../client";
 import type { BlockComponent, BlockRegistry } from "./registry";
 
-/** What a mod's `ui` part gets (mod-sdk's `UiCtx`): its id and the way to register a block. */
+/** What a mod's `ui` part gets (mod-sdk's `UiCtx`): its id, the way to register a block, and its own main's names. */
 export interface UiCtx {
   readonly id: string;
   block(name: string, component: unknown): () => void;
+  /** Calls `name` on the mod's own main; rejects when the mod is off or has no such name. */
+  call(name: string, payload?: unknown): Promise<unknown>;
+  /** Hears the mod's own main's `ctx.push(name, value)`. */
+  on(name: string, fn: (value: unknown) => void): () => void;
 }
 /** A built `ui.js`: its default export is the mod's definition. */
 export interface ModModule {
   default?: { ui?(ctx: UiCtx): void };
 }
+/** A core mod whose ui ships with the window (its definition, imported by the window itself). */
+export interface WindowMod {
+  readonly id: string;
+  ui?(ctx: UiCtx): void;
+}
 
 export interface ModLoaderOptions {
-  client: { mods: Pick<HarnessClient["mods"], "view" | "onChanged" | "onReloaded"> };
+  client: { mods: Pick<HarnessClient["mods"], "view" | "onChanged" | "onReloaded" | "call" | "on"> };
   registry: BlockRegistry;
   /** Imports a mod's built ui; the window's own `import()` unless a test gives a fake. */
   importer?: (url: string) => Promise<ModModule>;
+  /** The window's core mods: their ui runs once, at start, with the same ctx (main says whether each is on). */
+  core?: readonly WindowMod[];
   log?: (...args: unknown[]) => void;
 }
 
 export interface ModLoader {
   /** Resolves once every change seen so far has been applied. */
   settled(): Promise<void>;
-  /** Takes every block away and stops listening. */
+  /** Takes every block and listener away and stops listening. */
   stop(): void;
 }
 
@@ -31,14 +42,59 @@ const windowImport = (url: string): Promise<ModModule> => import(/* @vite-ignore
 /** A row whose ui the window runs: on, not a core mod (the core's ui ships with the window) and with a `ui` part. */
 const runs = (r: ModRow) => r.on && r.origin !== "core" && r.ui === true;
 
+type Mods = ModLoaderOptions["client"]["mods"];
+
+/**
+ * One run of a mod's `ui(ctx)`: what it registered is collected until `attach` (a `ui()` that throws halfway
+ * registers nothing), live from then on, and all gone at `dispose`. `call` and `on` are bound to the mod's id: a ui
+ * never reaches another mod's names.
+ */
+function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
+  type Entry = { attach(): () => void; off?: () => void; gone?: boolean };
+  const entries: Entry[] = [];
+  let live = false;
+  let dead = false;
+  const add = (attach: () => () => void): (() => void) => {
+    const e: Entry = { attach };
+    if (dead) return () => {};
+    entries.push(e);
+    if (live) e.off = attach();
+    return () => {
+      e.gone = true;
+      e.off?.();
+      delete e.off;
+    };
+  };
+  const ctx: UiCtx = {
+    id,
+    block: (name, component) => add(() => registry.register(id, name, component as BlockComponent)),
+    call: (name, payload) => mods.call(id, name, payload),
+    on: (name, fn) => add(() => mods.on(id, name, fn)),
+  };
+  return {
+    ctx,
+    attach() {
+      live = true;
+      for (const e of entries) if (!e.gone && !e.off) e.off = e.attach();
+    },
+    dispose() {
+      dead = true;
+      for (const e of entries.splice(0)) {
+        e.gone = true;
+        e.off?.();
+      }
+    },
+  };
+}
+
 /**
  * Runs the `ui` part of every on, non-core mod (minimal-core 0b2): imports `hh-mod://<id>/ui.js` and calls its
  * default `ui(ctx)`, whose blocks go into `registry`. A reload (`hh:modReloaded`) or a new version imports it again and
  * swaps the blocks; a failed import or a throwing `ui()` leaves the blocks it had and logs. A mod turned off or gone
- * loses its blocks (the layout then says it is off).
+ * loses its blocks (the layout then says it is off) and its listeners. The window's core mods (`core`) run once.
  */
-export function startModLoader({ client, registry, importer = windowImport, log = console.error }: ModLoaderOptions): ModLoader {
-  /** The blocks each mod registered, and which import (`<version>-<reloads>`) they came from. */
+export function startModLoader({ client, registry, importer = windowImport, core = [], log = console.error }: ModLoaderOptions): ModLoader {
+  /** What each mod's ui registered, and which import (`<version>-<reloads>`) it came from. */
   const loaded = new Map<string, { key: string; dispose: () => void }>();
   /** How many times main reloaded each mod, as its last `hh:modReloaded` said. */
   const reloads = new Map<string, number>();
@@ -57,6 +113,26 @@ export function startModLoader({ client, registry, importer = windowImport, log 
     loaded.delete(id);
   };
 
+  /** Runs `ui`; true when it ran (and replaced what the mod had before). */
+  const run = (id: string, key: string, ui: ((ctx: UiCtx) => void) | undefined): boolean => {
+    const r = uiRun(id, client.mods, registry);
+    try {
+      ui?.(r.ctx);
+    } catch (err) {
+      r.dispose();
+      log(`Mod ${id}: its ui threw`, err);
+      return false;
+    }
+    drop(id);
+    r.attach();
+    loaded.set(id, { key, dispose: r.dispose });
+    return true;
+  };
+
+  /** The core mods' ui, under a key no row has: `sync` never touches them. */
+  const coreIds = new Set(core.map((m) => m.id));
+  for (const m of core) run(m.id, "core", m.ui?.bind(m));
+
   const load = async (r: ModRow, key: string) => {
     let mod: ModModule;
     try {
@@ -66,41 +142,13 @@ export function startModLoader({ client, registry, importer = windowImport, log 
       return;
     }
     if (stopped) return;
-    // Collected first: a ui() that throws halfway registers nothing, and the old blocks stay.
-    const entries: { name: string; component: BlockComponent; gone?: boolean; off?: () => void }[] = [];
-    const ctx: UiCtx = {
-      id: r.id,
-      block(name, component) {
-        const e = { name, component: component as BlockComponent } as (typeof entries)[number];
-        entries.push(e);
-        return () => {
-          e.gone = true;
-          e.off?.();
-        };
-      },
-    };
-    try {
-      mod.default?.ui?.(ctx);
-    } catch (err) {
-      log(`Mod ${r.id}: its ui threw`, err);
-      return;
-    }
-    drop(r.id);
-    for (const e of entries) if (!e.gone) e.off = registry.register(r.id, e.name, e.component);
-    loaded.set(r.id, {
-      key,
-      dispose: () => {
-        for (const e of entries) {
-          e.gone = true;
-          e.off?.();
-        }
-      },
-    });
+    const def = mod.default;
+    run(r.id, key, def?.ui ? (ctx) => def.ui?.(ctx) : undefined);
   };
 
   const sync = async () => {
-    const wanted = new Map(rows.filter(runs).map((r) => [r.id, r]));
-    for (const id of [...loaded.keys()]) if (!wanted.has(id)) drop(id);
+    const wanted = new Map(rows.filter((r) => runs(r) && !coreIds.has(r.id)).map((r) => [r.id, r]));
+    for (const id of [...loaded.keys()]) if (!wanted.has(id) && !coreIds.has(id)) drop(id);
     for (const r of wanted.values()) {
       const key = keyOf(r);
       if (loaded.get(r.id)?.key !== key) await load(r, key);

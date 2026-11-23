@@ -420,6 +420,13 @@ export interface HarnessClient {
     onChanged(fn: (v: ModsView) => void): () => void;
     /** A home-folder mod was rebuilt after an edit: the window imports its ui again (minimal-core 0b2). */
     onReloaded(fn: (e: ModReloaded) => void): () => void;
+    /**
+     * Calls `name` on mod `id`'s main (its `ctx.ipc`), with `payload`; rejects when the mod is off or has no such
+     * name. A mod's ui reaches this through its own `ctx.call`, bound to its id.
+     */
+    call(id: string, name: string, payload?: unknown): Promise<unknown>;
+    /** Hears mod `id`'s `ctx.push(name, value)`; returns the way to stop. */
+    on(id: string, name: string, fn: (value: unknown) => void): () => void;
   };
   /**
    * Plugins (plugins spec §7). Only with `state.plugins`: a main without them registers none of these channels (D0).

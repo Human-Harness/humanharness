@@ -19,6 +19,7 @@ function setup(pick: string | null, taken: Set<string> = new Set()) {
     needsReview: vi.fn(async (id: string) => id === "mine"),
     reviewUser: vi.fn(async (id: string) => (id === "mine" ? { id, name: "Mine", version: "0.1.0", folder: "/home/app/mods/mine" } : null)),
     trustUser: vi.fn(async () => {}),
+    call: vi.fn(async () => undefined),
   };
   registerModsIpc(handle as never, deps);
   const call = (c: string, ...a: unknown[]) => (handlers.get(c) as (...x: unknown[]) => Promise<unknown>)(...a);

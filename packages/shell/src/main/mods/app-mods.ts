@@ -178,6 +178,8 @@ export function createAppMods(d: AppModsDeps) {
       ...(d.focusChanged ? { focusChanged: (t: string) => d.focusChanged?.(t) } : {}),
       // Core mods only (the host checks): a send on an app push channel, and the app's parts (`ctx.app`).
       push: sendToWindow,
+      // Any mod's push to its own ui, with its id (mods-1b).
+      modPush: (id, name, value) => sendToWindow("hh:modPush", { id, name, value }),
       coreApp: (id) => (coreParts ? coreAppFor(coreParts, id) : undefined),
     });
     state.modHost = mods;
@@ -315,6 +317,11 @@ export function createAppMods(d: AppModsDeps) {
     // A user-layer mod goes by deleting its folder, not from config.json's `local`.
     isLocal: (id) => state.resolvedMods.some((m) => m.json.id === id && m.shipped === "local" && !m.user),
     taken: modIdTaken,
+    // No host runs (no mod could): every mod is off.
+    call: async (id, name, payload) => {
+      if (!state.modHost) throw new Error(`Mod "${id}" is off`);
+      return state.modHost.call(id, name, payload);
+    },
   });
 
   return {

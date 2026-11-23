@@ -210,6 +210,9 @@ const client: HarnessClient = {
     removeLocal: (id) => invoke("hh:modRemoveLocal", id),
     onChanged: (fn) => subscribe("hh:modsChanged", fn),
     onReloaded: (fn) => subscribe("hh:modReloaded", fn),
+    call: (id, name, payload) => invoke("hh:modCall", id, name, payload),
+    // One mod's own name: another mod's push on the same name never reaches it.
+    on: (id, name, fn) => subscribe("hh:modPush", (p) => void (p.id === id && p.name === name && fn(p.value))),
   },
   plugins: {
     get: () => invoke("hh:pluginsGet"),

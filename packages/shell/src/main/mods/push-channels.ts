@@ -7,7 +7,7 @@ type Bare = { [K in PushChannel]: K extends `hh:${infer N}` ? N : never }[PushCh
  * Every channel main pushes to the window (the protocol's `Push`), without the `hh:` prefix: the type keeps this list
  * whole, both ways. Bare names, so the surface tests that look for a hatch's channel literals in main still hold.
  */
-const ALL: Record<Bare, true> = {
+const ALL: Record<Bare, boolean> = {
   event: true,
   setupOutput: true,
   tasks: true,
@@ -23,6 +23,8 @@ const ALL: Record<Bare, true> = {
   modsChanged: true,
   layoutChanged: true,
   modReloaded: true,
+  // A mod's own push (`ModHost.pusher`), with its id set by main: never one a core mod names itself.
+  modPush: false,
   homeHistoryChanged: true,
   safeModeEntered: true,
   plugins: true,
@@ -46,6 +48,10 @@ const ALL: Record<Bare, true> = {
 };
 
 /** The app's push channels: the only ones a core mod's `ctx.push` may use. */
-export const PUSH_CHANNELS: ReadonlySet<string> = new Set(Object.keys(ALL).map((n) => `hh:${n}`));
+export const PUSH_CHANNELS: ReadonlySet<string> = new Set(
+  Object.entries(ALL)
+    .filter(([, ok]) => ok)
+    .map(([n]) => `hh:${n}`),
+);
 
 export const isPushChannel = (name: unknown): name is PushChannel => typeof name === "string" && PUSH_CHANNELS.has(name);

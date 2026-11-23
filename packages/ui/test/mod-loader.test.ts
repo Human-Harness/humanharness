@@ -21,9 +21,23 @@ function fakeClient(initial: ModsView) {
   let current = initial;
   const changed = new Set<(v: ModsView) => void>();
   const reloaded = new Set<(e: { id: string; version: number }) => void>();
+  const listeners = new Set<{ id: string; name: string; fn: (v: unknown) => void }>();
+  const calls: [string, string, unknown][] = [];
   return {
+    calls,
+    listeners,
     client: {
       mods: {
+        call: async (id: string, name: string, payload?: unknown) => {
+          calls.push([id, name, payload]);
+          if (name === "fail") throw new Error(`Mod "${id}" has no channel "fail"`);
+          return `${id}:${name}`;
+        },
+        on: (id: string, name: string, fn: (v: unknown) => void) => {
+          const l = { id, name, fn };
+          listeners.add(l);
+          return () => void listeners.delete(l);
+        },
         view: async () => current,
         onChanged: (fn: (v: ModsView) => void) => (changed.add(fn), () => void changed.delete(fn)),
         onReloaded: (fn: (e: { id: string; version: number }) => void) => (reloaded.add(fn), () => void reloaded.delete(fn)),
@@ -35,6 +49,10 @@ function fakeClient(initial: ModsView) {
     },
     reload(id: string, version: number) {
       for (const fn of reloaded) fn({ id, version });
+    },
+    /** Main's `hh:modPush`. */
+    modPush(id: string, name: string, value: unknown) {
+      for (const l of [...listeners]) if (l.id === id && l.name === name) l.fn(value);
     },
   };
 }
@@ -168,5 +186,102 @@ describe("startModLoader", () => {
     f.reload("hello", 1);
     await loader.settled();
     expect(importer).toHaveBeenCalledTimes(1);
+  });
+
+  it("ctx.call and ctx.on are bound to the mod's own id", async () => {
+    const f = fakeClient(view(row("hello")));
+    const heard: unknown[] = [];
+    let answer: Promise<unknown> | undefined;
+    const importer = async (): Promise<ModModule> => ({
+      default: {
+        ui: (ctx) => {
+          ctx.on("tick", (v) => heard.push(v));
+          answer = ctx.call("ping", 1);
+        },
+      },
+    });
+    const loader = startModLoader({ client: f.client, registry: createBlockRegistry(), importer });
+    await loader.settled();
+    expect(await answer).toBe("hello:ping");
+    expect(f.calls).toEqual([["hello", "ping", 1]]);
+    f.modPush("hello", "tick", 5);
+    f.modPush("other", "tick", 6);
+    f.modPush("hello", "tock", 7);
+    expect(heard).toEqual([5]);
+    loader.stop();
+  });
+
+  it("a rejected call reaches the ui as a rejection", async () => {
+    const f = fakeClient(view(row("hello")));
+    let answer: Promise<unknown> | undefined;
+    const importer = async (): Promise<ModModule> => ({ default: { ui: (ctx) => void (answer = ctx.call("fail")) } });
+    const loader = startModLoader({ client: f.client, registry: createBlockRegistry(), importer });
+    await loader.settled();
+    await expect(answer).rejects.toThrow('has no channel "fail"');
+    loader.stop();
+  });
+
+  it("a reload, a mod turned off, or a throwing ui() drops the listeners its ui added", async () => {
+    const f = fakeClient(view(row("hello"), row("bad")));
+    const importer = async (url: string): Promise<ModModule> => ({
+      default: {
+        ui: (ctx) => {
+          ctx.on("tick", () => {});
+          if (url.startsWith("hh-mod://bad/")) throw new Error("boom");
+        },
+      },
+    });
+    const loader = startModLoader({ client: f.client, registry: createBlockRegistry(), importer, log: () => {} });
+    await loader.settled();
+    expect([...f.listeners].map((l) => l.id)).toEqual(["hello"]);
+    f.reload("hello", 1);
+    await loader.settled();
+    expect(f.listeners.size).toBe(1);
+    f.push(view(row("hello", { on: false })));
+    await loader.settled();
+    expect(f.listeners.size).toBe(0);
+    loader.stop();
+  });
+
+  it("a listener added later (from a block) works, and goes with the mod", async () => {
+    const f = fakeClient(view(row("hello")));
+    let later!: () => void;
+    const heard: unknown[] = [];
+    const importer = async (): Promise<ModModule> => ({ default: { ui: (ctx) => void (later = () => void ctx.on("tick", (v) => heard.push(v))) } });
+    const loader = startModLoader({ client: f.client, registry: createBlockRegistry(), importer });
+    await loader.settled();
+    later();
+    f.modPush("hello", "tick", 1);
+    expect(heard).toEqual([1]);
+    loader.stop();
+    expect(f.listeners.size).toBe(0);
+    later();
+    expect(f.listeners.size).toBe(0);
+  });
+
+  it("runs the window's core mods' ui with the same ctx, without importing them", async () => {
+    const f = fakeClient(view(row("home", { origin: "core" })));
+    const registry = createBlockRegistry();
+    const importer = vi.fn(async () => mod("x"));
+    const heard: unknown[] = [];
+    let answer: Promise<unknown> | undefined;
+    const home = {
+      id: "home",
+      ui: (ctx: UiCtx) => {
+        ctx.block("main", block("home"));
+        ctx.on("tick", (v) => heard.push(v));
+        answer = ctx.call("ping");
+      },
+    };
+    const loader = startModLoader({ client: f.client, registry, importer, core: [home] });
+    await loader.settled();
+    expect(importer).not.toHaveBeenCalled();
+    expect(label(registry.get("home", "main"))).toBe("home");
+    expect(await answer).toBe("home:ping");
+    f.modPush("home", "tick", 9);
+    expect(heard).toEqual([9]);
+    loader.stop();
+    expect(registry.get("home", "main")).toBeUndefined();
+    expect(f.listeners.size).toBe(0);
   });
 });

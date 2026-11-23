@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Nueva novela</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;{{vars}};background:var(--bg);color:var(--ink);font:14px/1.5 'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column">
+  <div style="height:40px;flex:none;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--rail);font-size:13px;color:var(--muted)">
+    <a href="Inicio{{sfx}}.dc.html" style="color:var(--ink);text-decoration:none;font-weight:500">← Volver</a>
+    <span style="flex:1"></span>
+  </div>
+  <div style="flex:1;display:flex;justify-content:center;padding-top:80px">
+    <div style="width:680px;display:flex;flex-direction:column;gap:24px">
+      <div>
+        <div style="font-size:24px;font-weight:600">Nueva novela</div>
+        <div style="color:var(--muted)">Traé lo que ya escribiste o empezá con la hoja en blanco.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:16px">
+        <a href="Importando{{sfx}}.dc.html" style="display:flex;flex-direction:column;gap:12px;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="M9 14l3 3 3-3"/></svg>
+          <span style="font-size:17px;font-weight:600">Importar manuscrito</span>
+          <span style="color:var(--muted)">Leo tu texto, armo los personajes, el mundo y la cronología, y aprendo tu voz.</span>
+          <span style="color:var(--muted);font-size:12px">.docx, .md, .txt, .odt</span>
+        </a>
+        <div style="display:flex;flex-direction:column;gap:12px;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:12px">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span style="font-size:17px;font-weight:600">Empezar en blanco</span>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)">Título (lo podés cambiar después)
+            <input value="Sin título" style="font:15px 'DM Sans',sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--lineS);border-radius:8px;padding:10px 12px">
+          </label>
+          <a href="Blanco{{sfx}}.dc.html" style="align-self:flex-start;background:var(--cta);color:var(--ctaInk);text-decoration:none;font-weight:600;border-radius:8px;padding:10px 20px">Crear y escribir</a>
+        </div>
+      </div>
+      <p style="margin:0;color:var(--muted);font-size:13px">Sin entrevista: la voz y las fichas salen de lo que escribas.</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const d = this.props.dark ?? false;
+const L = "--bg:#f3f3f1;--rail:#fbfbfa;--surface:#ffffff;--s2:#f2f2ef;--line:#e7e7e3;--lineS:#d9d9d4;--ink:#1b1c1e;--muted:#62656b;--faint:#a6a9ae;--cta:#fbd38d;--ctaInk:#3b2a06;--active:#fde6b3;--activeInk:#7a4f00;--green:#dff2e5;--greenInk:#1d6e3f;--orange:#fdebd7;--orangeInk:#a94f08;--blue:#e4ecfd;--blueInk:#2d55c4;--violet:#ece6fb;--violetInk:#5f3dba;--red:#fde2e1;--redInk:#b42318;--grey:#ececea;--greyInk:#4d5056;--page:#ebebe7;--paper:#ffffff";
+const D = "--bg:#121315;--rail:#16171a;--surface:#1e2024;--s2:#26292e;--line:#2a2d32;--lineS:#383c42;--ink:#eceef0;--muted:#a3a8ae;--faint:#5a5e64;--cta:#f3c56a;--ctaInk:#2a1d02;--active:#3a2e14;--activeInk:#f3c56a;--green:#17311f;--greenInk:#8bd8a8;--orange:#3a2715;--orangeInk:#f4b47e;--blue:#1c2944;--blueInk:#a3beff;--violet:#29223f;--violetInk:#c6b4ff;--red:#3a1a1a;--redInk:#ff9b94;--grey:#26292e;--greyInk:#c2c6cc;--page:#0d0e10;--paper:#1a1b1e;color-scheme:dark";
+return { vars: d ? D : L, sfx: d ? "Oscuro" : "" };
+}
+}
+</script>
+</body>
+</html>

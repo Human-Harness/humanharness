@@ -1,0 +1,398 @@
+<title>Writer · ronda 2</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Literata:ital,opsz,wght@0,7..72,400;1,7..72,400&display=swap">
+<style>
+/* Options page: one card per question, each option drawn as a small app window in core tokens. */
+:root{
+  --bg:#f3f3f1;--rail:#fbfbfa;--column:#f8f8f6;--surface:#ffffff;--s2:#f2f2ef;--line:#e7e7e3;--lineS:#d9d9d4;
+  --ink:#1b1c1e;--muted:#62656b;--faint:#8a8d93;--cta:#fbd38d;--ctaInk:#3b2a06;--active:#fde6b3;--activeInk:#7a4f00;
+  --green:#dff2e5;--greenInk:#1d6e3f;--orange:#fdebd7;--orangeInk:#a94f08;--blue:#e4ecfd;--blueInk:#2d55c4;--violet:#ece6fb;--violetInk:#5f3dba;
+  --page:#ebebe7;--paper:#ffffff;
+  --font:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --serif:"Newsreader","Iowan Old Style",Georgia,serif;
+  --mono:"DM Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121315;--rail:#16171a;--column:#17181b;--surface:#1e2024;--s2:#26292e;--line:#2a2d32;--lineS:#383c42;
+  --ink:#eceef0;--muted:#a3a8ae;--faint:#80858c;--cta:#f3c56a;--ctaInk:#2a1d02;--active:#3a2e14;--activeInk:#f3c56a;
+  --green:#17311f;--greenInk:#8bd8a8;--orange:#3a2715;--orangeInk:#f4b47e;--blue:#1c2944;--blueInk:#a3beff;--violet:#29223f;--violetInk:#c6b4ff;
+  --page:#0d0e10;--paper:#1a1b1e;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121315;--rail:#16171a;--column:#17181b;--surface:#1e2024;--s2:#26292e;--line:#2a2d32;--lineS:#383c42;
+  --ink:#eceef0;--muted:#a3a8ae;--faint:#80858c;--cta:#f3c56a;--ctaInk:#2a1d02;--active:#3a2e14;--activeInk:#f3c56a;
+  --green:#17311f;--greenInk:#8bd8a8;--orange:#3a2715;--orangeInk:#f4b47e;--blue:#1c2944;--blueInk:#a3beff;--violet:#29223f;--violetInk:#c6b4ff;
+  --page:#0d0e10;--paper:#1a1b1e;color-scheme:dark}
+body{background:var(--page);color:var(--ink);font:14px/1.5 var(--font);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-block:32px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+header h1{font-size:20px;font-weight:600;margin:0 0 4px;text-wrap:balance}
+header p{margin:0 0 6px;color:var(--muted);max-width:80ch}
+.decided{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.decided span{font-size:12px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--muted)}
+.decided b{color:var(--ink);font-weight:600}
+.f{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:16px}
+.f h3.q{font-size:16px;font-weight:600;margin:0;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;text-wrap:balance}
+.id{font-size:12px;font-weight:600;color:var(--activeInk);background:var(--active);border-radius:6px;padding:1px 8px}
+.f>p{margin:0;color:var(--muted);max-width:84ch}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.opts.wide{grid-template-columns:1fr}
+.o{display:flex;flex-direction:column;gap:8px;min-width:0}
+.o h4{font-size:14px;font-weight:600;margin:0}
+.rec{font-size:12px;font-weight:600;color:var(--greenInk);background:var(--green);border-radius:6px;padding:1px 8px;margin-left:6px;white-space:nowrap}
+.o ul{margin:0;padding-left:18px;color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:2px}
+.later{font-size:13px;color:var(--muted);border-top:1px dashed var(--lineS);padding-top:10px}
+footer{font-size:12px;color:var(--muted)}
+code{font-family:var(--mono);font-size:12px;background:var(--s2);border-radius:4px;padding:0 4px}
+
+/* ---- mock window ---- */
+.win{background:var(--bg);border:1px solid var(--lineS);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.win.tall{height:420px}.win.mid{height:330px}
+.tb{height:28px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--line);background:var(--rail);flex:none;font-size:11.5px;color:var(--muted)}
+.tb.ghost{background:transparent;border-color:transparent}
+.dots{display:flex;gap:5px;margin-right:30px}.dots i{width:8px;height:8px;border-radius:50%;background:var(--lineS);display:block}
+.tb.ghost .dots i{opacity:.45}
+.tb .sp{flex:1}
+.tb .crumb b{color:var(--ink);font-weight:500}
+.body{flex:1;display:flex;min-height:0;position:relative}
+.rail{width:40px;flex:none;background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:10px}
+.rail i{width:16px;height:16px;border-radius:5px;background:var(--s2);display:block}
+.rail i.on{background:var(--active)}
+.rail.quiet{background:transparent;border-color:transparent}.rail.quiet i{background:transparent;border:1.5px solid var(--lineS);width:13px;height:13px}
+.paperwrap{flex:1;display:flex;justify-content:center;overflow:hidden;min-width:0;background:var(--paper)}
+.ms{width:100%;max-width:440px;padding:26px 20px 10px;font-family:var(--serif);font-size:14.5px;line-height:1.62;color:var(--ink);position:relative}
+.ms h5{font-family:var(--serif);font-weight:500;font-size:18px;margin:0 0 12px}
+.ms p{margin:0 0 10px;text-indent:1.4em}
+.ms p.first{text-indent:0}
+.status{position:absolute;bottom:8px;left:0;right:0;text-align:center;font:11px var(--font);color:var(--faint)}
+.sel{background:var(--active);color:var(--activeInk);border-radius:2px}
+.inline{position:absolute;font-family:var(--font);font-size:11.5px;background:var(--surface);border:1px solid var(--lineS);border-radius:9px;box-shadow:0 6px 18px rgba(0,0,0,.08);display:flex;align-items:center;gap:2px;padding:3px;white-space:nowrap}
+.inline span{padding:2px 7px;border-radius:6px;color:var(--ink)}
+.inline span.ask{color:var(--faint);border-left:1px solid var(--line);border-radius:0;padding-left:9px;min-width:110px}
+.mdot{position:absolute;right:-12px;width:7px;height:7px;border-radius:50%;background:var(--orangeInk)}
+.mdot.b{background:var(--blueInk)}
+.margin{width:150px;flex:none;padding:26px 10px 0 0;display:flex;flex-direction:column;gap:10px;background:var(--paper)}
+.note{font-size:11px;line-height:1.4;border-left:2px solid var(--orangeInk);padding:2px 0 2px 8px;color:var(--muted)}
+.note.b{border-color:var(--blueInk)}
+.note b{display:block;color:var(--ink);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+.composer{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;width:min(380px,80%);font:12px var(--font);color:var(--faint);background:var(--surface);border:1px solid var(--lineS);border-radius:12px;padding:7px 12px;display:flex;justify-content:space-between}
+.chat{width:45%;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:10px;padding:14px;font-size:12px;background:var(--bg);position:relative;min-width:0}
+.bub{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 10px;max-width:90%}
+.bub.me{align-self:flex-end;background:var(--s2);border-color:transparent}
+.chat .composer{position:absolute;left:14px;right:14px;transform:none;width:auto}
+.split .ms{max-width:none;padding:20px 18px}
+
+/* ---- authorship ---- */
+.ms.small{font-size:13.5px;padding:18px 18px 10px}
+.ai-line{box-shadow:-10px 0 0 -8px var(--faint);}
+.ai-tint{background:var(--s2);border-radius:4px;padding:4px 6px;margin-left:-6px;margin-right:-6px}
+.chip{display:inline-flex;align-items:center;gap:4px;font:500 11px var(--font);border:1px solid var(--lineS);background:var(--surface);color:var(--ink);border-radius:7px;padding:1px 7px;white-space:nowrap}
+.toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.toggle i{width:20px;height:11px;border-radius:6px;background:var(--lineS);position:relative;display:inline-block}
+.toggle i::after{content:"";position:absolute;left:1.5px;top:1.5px;width:8px;height:8px;border-radius:50%;background:var(--surface)}
+.who{font:11px var(--font);color:var(--faint);display:block;text-indent:0;margin:-4px 0 8px}
+.bar{display:flex;gap:6px;align-items:center;margin:-2px 0 10px;text-indent:0;font-family:var(--font);flex-wrap:wrap}
+.bar small{font-size:11px;color:var(--muted)}
+
+/* ---- story bible ---- */
+.sec{padding:16px 18px;display:flex;flex-direction:column;gap:10px;flex:1;min-width:0;overflow:hidden}
+.sec h6{font-size:15px;font-weight:600;margin:0}
+.tabs{display:flex;gap:4px;font-size:11.5px}
+.tabs span{padding:2px 8px;border-radius:7px;color:var(--muted)}
+.tabs span.on{background:var(--active);color:var(--activeInk);font-weight:500}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:11.5px;color:var(--muted);line-height:1.4}
+.card b{display:block;color:var(--ink);font-weight:600;font-size:12.5px}
+.name{border-bottom:1px dotted var(--muted);}
+.pop{position:absolute;width:220px;background:var(--surface);border:1px solid var(--lineS);border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.1);padding:10px 12px;font:11.5px/1.45 var(--font);color:var(--muted);text-indent:0}
+.pop b{display:block;color:var(--ink);font-size:13px;font-weight:600}
+.pop .k{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;margin-top:6px;display:block}
+.pop .lnk{color:var(--activeInk);text-decoration:underline;display:inline-block;margin-top:6px}
+.side{width:52%;flex:none;border-left:1px solid var(--line);background:var(--column);padding:14px;display:flex;flex-direction:column;gap:8px;font-size:11.5px;color:var(--muted);min-width:0}
+.side b.t{color:var(--ink);font-size:13px;font-weight:600}
+
+/* ---- typefaces ---- */
+.spec{background:var(--paper);border:1px solid var(--lineS);border-radius:10px;padding:18px 20px;font-size:16px;line-height:1.6;color:var(--ink)}
+.spec .lbl{font:600 11px var(--font);color:var(--faint);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:8px}
+.spec p{margin:0}
+.t-news{font-family:"Newsreader",Georgia,serif}
+.t-lit{font-family:"Literata",Georgia,serif}
+.t-sans{font-family:"DM Sans",system-ui,sans-serif;font-size:15px}
+.t-mono{font-family:"DM Mono",ui-monospace,monospace;font-size:14px;line-height:1.7}
+
+@media (max-width:620px){
+  .f{padding:16px}.opts{grid-template-columns:1fr}
+  .margin{display:none}.chat{width:42%}.side{width:48%}
+  .win.tall{height:460px}
+  .cards{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* round 2 additions */
+.home{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;background:var(--bg)}
+.home .app{font-size:18px;font-weight:600}
+.plist{width:min(300px,100%);display:flex;flex-direction:column;gap:6px}
+.prow{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12px}
+.prow b{font-weight:600;font-size:12.5px}.prow small{color:var(--faint);font-size:11px;display:block}
+.bigbtn{background:var(--cta);color:var(--ctaInk);border-radius:10px;padding:7px 16px;font-weight:500;font-size:12.5px}
+.btn{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:7px;border:1px solid var(--lineS);background:var(--surface);font:500 11.5px var(--font);color:var(--ink);white-space:nowrap}
+.btn.pri{background:var(--cta);color:var(--ctaInk);border-color:transparent}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;background:var(--ink);color:var(--bg);border-radius:9px;padding:7px 12px;font:12px var(--font);display:flex;gap:10px;align-items:center;white-space:nowrap}
+.toast b{color:var(--cta);font-weight:600}
+.menu{position:absolute;background:var(--surface);border:1px solid var(--lineS);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);padding:4px;font:12px var(--font);display:flex;flex-direction:column;min-width:190px;text-indent:0}
+.menu span{padding:4px 9px;border-radius:6px;color:var(--ink)}
+.menu span.h{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:6px}
+.menu span.on{background:var(--active);color:var(--activeInk)}
+.seg{display:inline-flex;background:var(--s2);border-radius:7px;padding:2px;gap:2px;font-size:11px}
+.seg span{padding:1px 8px;border-radius:5px;color:var(--muted)}.seg span.on{background:var(--surface);color:var(--ink);font-weight:500}
+.rep{width:55%;flex:none;border-left:1px solid var(--line);background:var(--column);padding:14px 16px;display:flex;flex-direction:column;gap:8px;font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden}
+.rep .t{color:var(--ink);font-size:13px;font-weight:600;display:flex;justify-content:space-between}
+.rep .t span{font-weight:400;font-size:11px;color:var(--muted)}
+.rep .item{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 9px;line-height:1.4}
+.rep .item b{color:var(--ink);font-weight:600}
+.reader{display:flex;gap:8px;align-items:flex-start}
+.av{width:22px;height:22px;border-radius:50%;flex:none;font:600 10px/22px var(--font);text-align:center}
+.av.g{background:var(--green);color:var(--greenInk)}.av.o{background:var(--orange);color:var(--orangeInk)}.av.b{background:var(--blue);color:var(--blueInk)}
+.form{display:flex;flex-direction:column;gap:7px;padding:16px 18px;flex:1;min-width:0}
+.fld{display:flex;flex-direction:column;gap:2px;font-size:11px}
+.fld .l{font-weight:600;color:var(--muted)}
+.inp{border:1px solid var(--lineS);border-radius:7px;background:var(--surface);padding:4px 8px;font-size:12px;color:var(--ink);min-height:16px}
+.inp.big{min-height:44px}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:11.5px;color:var(--muted);line-height:1.45}
+.rule b{color:var(--ink);font-weight:600;display:block;font-size:12px}
+.rule i{font-family:var(--serif);font-size:12.5px;color:var(--ink)}
+.tl{display:flex;flex-direction:column;gap:0;font-size:11.5px}
+.tl div{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)}
+.tl small{color:var(--faint);width:52px;flex:none;font-size:10.5px}
+.tag{font-size:10.5px;font-weight:600;border-radius:5px;padding:0 6px;white-space:nowrap}
+.tag.grey{background:var(--s2);color:var(--ink)}.tag.blue{background:var(--blue);color:var(--blueInk)}.tag.green{background:var(--green);color:var(--greenInk)}
+ins{background:var(--green);color:var(--greenInk);text-decoration:none;border-radius:2px}
+del{background:var(--orange);color:var(--orangeInk);border-radius:2px;text-decoration:line-through}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Writer · ronda 2: el resto de la app</h1>
+  <p>Ronda 1 cerrada: hoja sola, línea fina para lo que escribe la IA, nombres que se abren en el texto y Newsreader. Estas siete preguntas cubren el inicio, el proyecto nuevo, el feedback, la voz y el historial. La recomendada está marcada. Respondé en el chat o comentá cada sección.</p>
+  <div class="decided">
+    <span><b>Decidido en esta ronda</b></span>
+    <span>Proyecto nuevo: importar manuscrito o en blanco</span><span>Feedback solo a pedido</span><span>Los lectores los arma el autor</span><span>Exporta .docx, EPUB/PDF y Markdown</span>
+  </div>
+</header>
+
+<!-- Q5 -->
+<section class="f" aria-labelledby="q5">
+  <h3 class="q" id="q5"><span class="id">Q5</span> Al abrir la app</h3>
+  <p>Un escritor suele tener una novela activa durante meses. La pregunta es si la app abre en el Inicio del core o directamente donde se dejó de escribir.</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Inicio con la lista de novelas</h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="home"><span class="app">Writer</span>
+          <div class="plist">
+            <div class="prow"><span><b>La sal del faro</b><small>Cap. 7 · 41.200 palabras · ayer</small></span><span class="btn">Abrir</span></div>
+            <div class="prow"><span><b>Los años de la grúa</b><small>Cap. 2 · 6.900 palabras · en agosto</small></span><span class="btn">Abrir</span></div>
+          </div><span class="bigbtn">Nueva novela</span></div></div></div>
+      <ul><li>La plantilla Inicio del core, tal cual.</li><li>Un clic más cada vez que abrís la app.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Abre en la hoja donde quedaste <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="paperwrap"><div class="ms small">
+          <h5>7 · La niebla</h5>
+          <p class="first">—Que venga —contestó él, y siguió limpiando el vidrio que ya estaba limpio.</p>
+          <p>Elena lo miró sin levantarse.|</p>
+          <div class="status">Seguís donde quedaste ayer · Cap. 7</div>
+        </div></div></div></div>
+      <ul><li>La app abre con el cursor donde lo dejaste. El Inicio de A se ve solo la primera vez o desde el riel, para cambiar de novela.</li><li>Lo mínimo: abrir y escribir.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<!-- Q6 -->
+<section class="f" aria-labelledby="q6">
+  <h3 class="q" id="q6"><span class="id">Q6</span> Después de importar un manuscrito</h3>
+  <p>La IA lee el manuscrito, arma las fichas (personajes, mundo, cronología, estructura) y la guía de voz. ¿El autor revisa eso antes de escribir?</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Pantalla de revisión primero</h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>Importar · paso 2 de 2</span></div>
+        <div class="body"><div class="sec"><h6>Esto encontré en tu manuscrito</h6>
+          <div class="cards">
+            <div class="card"><b>12 personajes</b>Elena, Tomás, Bruno, Doña Amalia y 8 más.</div>
+            <div class="card"><b>7 lugares</b>Cabo Vigía, el almacén, la caleta…</div>
+            <div class="card"><b>Cronología</b>19 hechos, de 1951 a marzo de 1957.</div>
+            <div class="card"><b>Tu voz</b>9 rasgos, con ejemplos de tu texto.</div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:6px"><span class="btn">Revisar uno por uno</span><span class="btn pri">Empezar a escribir</span></div>
+        </div></div></div>
+      <ul><li>El autor ve qué entendió la IA antes de que lo use.</li><li>Una pantalla más entre importar y escribir.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Directo a escribir, con un aviso <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="paperwrap"><div class="ms small">
+          <h5>7 · La niebla</h5>
+          <p class="first">La niebla llegó antes que el barco. Elena la vio subir desde las rocas como una marea sin ruido.</p>
+          <p>Tomás encendió la lámpara a las seis.</p>
+        </div></div>
+        <div class="toast">Armé 12 personajes, 7 lugares, la cronología y tu voz <b>Revisar</b></div></div></div>
+      <ul><li>Abre en el último capítulo importado. El aviso queda en el riel hasta que lo revisás o lo cerrás.</li><li>Las fichas ya subrayan los nombres en el texto.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<!-- Q7 -->
+<section class="f" aria-labelledby="q7">
+  <h3 class="q" id="q7"><span class="id">Q7</span> Cómo se pide feedback</h3>
+  <p>Hay cuatro tipos (estructural, de línea, de consistencia y de lectores) y tres alcances (lo marcado, el capítulo o el libro).</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Desde "Opinar" en la barrita <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="paperwrap"><div class="ms small" style="position:relative">
+          <p class="first"><span class="sel">Tomás encendió la lámpara a las seis, una hora antes de lo que mandaba el reglamento.</span></p>
+          <div class="menu" style="left:30px;top:56px">
+            <span class="h">Sobre</span><span class="on">Lo marcado</span><span>Todo el capítulo 7</span><span>Todo el libro</span>
+            <span class="h">Qué querés</span><span>Estructura</span><span>Prosa y estilo</span><span>Consistencia</span><span>Lectores (3)</span>
+          </div>
+        </div></div></div></div>
+      <ul><li>Se pide sobre el texto mismo, igual que la coescritura. Sin texto marcado, empieza en "Todo el capítulo".</li><li>Mismo menú con <code>/opinar</code>.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Una página "Pedir lectura"</h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>← Volver</span></div>
+        <div class="body"><div class="rail quiet"><i></i><i></i><i class="on" style="background:var(--active);border-color:transparent"></i></div>
+        <div class="form"><h6 style="font-size:15px;margin:0">Pedir lectura</h6>
+          <div class="fld"><span class="l">Qué leer</span><span class="seg"><span>Escena</span><span class="on">Capítulo 7</span><span>Libro</span></span></div>
+          <div class="fld"><span class="l">Qué querés</span><span class="seg"><span class="on">Estructura</span><span>Prosa</span><span>Consistencia</span><span>Lectores</span></span></div>
+          <div class="fld"><span class="l">Algo en especial (opcional)</span><div class="inp ph" style="color:var(--faint)">¿Se entiende por qué Tomás tiene miedo?</div></div>
+          <div style="display:flex;justify-content:flex-end"><span class="btn pri">Pedir</span></div>
+        </div></div></div>
+      <ul><li>Todo a la vista y se puede agregar una pregunta.</li><li>Hay que salir de la hoja.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<!-- Q8 -->
+<section class="f" aria-labelledby="q8">
+  <h3 class="q" id="q8"><span class="id">Q8</span> Dónde se lee el feedback que no es de un párrafo</h3>
+  <p>El de línea y el de consistencia van como puntos en el margen (W9). El estructural y el de lectores hablan del capítulo o del libro entero: necesitan otro lugar.</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Al costado, en la vista dividida <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div><span class="sp"></span><span>Cerrar</span></div>
+        <div class="body"><div class="paperwrap"><div class="ms small"><h5>7 · La niebla</h5><p class="first">La niebla llegó antes que el barco.</p></div></div>
+        <div class="rep"><div class="t">Lectura del cap. 7 <span>Estructura</span></div>
+          <div class="item"><b>El ritmo.</b> La llegada de Bruno se demora tres páginas; la tensión baja en la mitad.</div>
+          <div class="item"><b>Elena.</b> Mira todo pero no quiere nada en este capítulo. ¿Qué busca ella acá?</div>
+        </div></div></div>
+      <ul><li>Se lee al lado del texto y se cierra con "Cerrar". Cada nota que nombra un pasaje lo marca en la hoja al tocarla.</li><li>Queda guardada en el historial de lecturas.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Una página de lecturas</h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>← Volver</span></div>
+        <div class="body"><div class="sec"><h6>Lecturas</h6>
+          <div class="prow"><span><b>Cap. 7 · Estructura</b><small>hoy · 4 notas</small></span><span class="btn">Ver</span></div>
+          <div class="prow"><span><b>Cap. 1–7 · 3 lectores</b><small>el martes · 11 notas</small></span><span class="btn">Ver</span></div>
+          <div class="prow"><span><b>Libro · Consistencia</b><small>la semana pasada · 6 notas</small></span><span class="btn">Ver</span></div>
+        </div></div></div>
+      <ul><li>Todas las lecturas juntas, para volver a ellas.</li><li>No se lee mirando el texto.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<!-- Q9 -->
+<section class="f" aria-labelledby="q9">
+  <h3 class="q" id="q9"><span class="id">Q9</span> Cómo arma el autor un lector</h3>
+  <p>Los lectores los describe el autor y se guardan en el proyecto (W15). Cada lector opina como lector, no como editor.</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Un formulario corto</h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>Nuevo lector</span></div>
+        <div class="body"><div class="form">
+          <div class="fld"><span class="l">Nombre</span><div class="inp">Marta</div></div>
+          <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div class="fld"><span class="l">Edad</span><div class="inp">58</div></div><div class="fld"><span class="l">Lee</span><div class="inp">Novela histórica</div></div></div>
+          <div class="fld"><span class="l">Abandona un libro cuando…</span><div class="inp">…no pasa nada en 30 páginas</div></div>
+          <div style="display:flex;justify-content:flex-end"><span class="btn pri">Guardar lector</span></div>
+        </div></div></div>
+      <ul><li>Pide siempre lo mismo y no se le escapa nada.</li><li>Cuesta describir a una persona con campos.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Lo describís y la IA arma la ficha <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>Nuevo lector</span></div>
+        <div class="body"><div class="form">
+          <div class="fld"><span class="l">¿Cómo es este lector?</span><div class="inp big">Mi tía Marta: lee novela histórica, odia los saltos de tiempo y deja el libro si no pasa nada.</div></div>
+          <div class="reader"><span class="av o">M</span><div class="rule" style="flex:1"><b>Marta, 58</b>Lee novela histórica. Le molestan los saltos de tiempo. Abandona si no hay avance en un capítulo. <span style="color:var(--activeInk);text-decoration:underline">Editar</span></div></div>
+          <div style="display:flex;justify-content:flex-end"><span class="btn pri">Guardar lector</span></div>
+        </div></div></div>
+      <ul><li>Se describe como se habla de una persona; la ficha queda editable.</li><li>Cada lector tiene su color de avatar (los seis del core).</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<!-- Q10 -->
+<section class="f" aria-labelledby="q10">
+  <h3 class="q" id="q10"><span class="id">Q10</span> Dónde se ve y se corrige la guía de voz</h3>
+  <p>La IA arma la guía con tu texto (W7). Cada rasgo lleva un ejemplo tuyo y se puede corregir o borrar.</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Quinta pestaña de la novela <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>← Volver</span></div>
+        <div class="body"><div class="sec"><h6>La novela</h6>
+          <div class="tabs"><span>Personajes</span><span>Mundo</span><span>Estructura</span><span>Cronología</span><span class="on">Voz</span></div>
+          <div class="rule"><b>Corta los diálogos con una acción, no con "dijo".</b><i>—Que venga —contestó él, y siguió limpiando el vidrio.</i></div>
+          <div class="rule"><b>Frases cortas cuando hay miedo.</b><i>No dijo nada. Nunca decía nada.</i></div>
+        </div></div></div>
+      <ul><li>Junto a las fichas, porque es de esta novela: otra novela puede tener otra voz.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · En Ajustes, una sola para el autor</h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span>← Volver</span></div>
+        <div class="body"><div class="rail" style="width:96px;align-items:stretch;padding:10px 8px;gap:4px;font-size:11px"><span style="color:var(--muted)">General</span><span style="background:var(--active);color:var(--activeInk);border-radius:6px;padding:1px 6px">Tu voz</span><span style="color:var(--muted)">Uso</span></div>
+        <div class="sec"><h6>Tu voz</h6>
+          <div class="rule"><b>Corta los diálogos con una acción, no con "dijo".</b><i>—Que venga —contestó él…</i></div>
+          <div class="rule"><b>Frases cortas cuando hay miedo.</b><i>No dijo nada.</i></div>
+        </div></div></div>
+      <ul><li>Una sola voz del autor, que sirve para todas sus novelas.</li><li>Si una novela tiene otro narrador, no se separa.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<!-- Q11 -->
+<section class="f" aria-labelledby="q11">
+  <h3 class="q" id="q11"><span class="id">Q11</span> El historial</h3>
+  <p>El core ya tiene la línea de tiempo de un archivo, con autor y vuelta atrás (spec C). La pregunta es cómo se llega a ella desde la hoja.</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Línea de tiempo del capítulo, al costado <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div><span class="sp"></span><span>Cerrar</span></div>
+        <div class="body"><div class="paperwrap"><div class="ms small"><p class="first">Bruno Acosta apareció en la puerta <del>con el sombrero</del> <ins>sin sombrero</ins>, como si la niebla lo hubiera traído.</p></div></div>
+        <div class="rep"><div class="t">Cap. 7 · historial</div>
+          <div class="tl">
+            <div><small>hace 2 min</small><span>Vos · editaste "Bruno Acosta apareció…"</span></div>
+            <div><small>hace 9 min</small><span><span class="tag grey">IA</span> 2 párrafos: llegada de Bruno</span></div>
+            <div><small>ayer</small><span>Vos · 640 palabras</span></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end"><span class="btn">Volver a esta versión</span></div>
+        </div></div></div>
+      <ul><li>La vista dividida del core con la línea de tiempo del capítulo; los cambios se marcan en la hoja.</li><li>Se abre desde la barra de arriba o desde "Deshacer" de un párrafo.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Solo por párrafo</h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="paperwrap"><div class="ms small" style="position:relative">
+          <p class="first ai-line">Bruno Acosta apareció en la puerta sin sombrero, como si la niebla lo hubiera traído.</p>
+          <div class="menu" style="left:30px;top:60px"><span class="h">Este párrafo</span><span>Hace 2 min · vos</span><span class="on">Hace 9 min · IA</span><span>Volver a esta versión</span></div>
+        </div></div></div></div>
+      <ul><li>Nada fuera de la hoja: cada párrafo muestra sus versiones.</li><li>No se ve qué pasó en todo el capítulo.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<footer>Writer · ronda 2 · 2026-11-22. Después de elegir, las decisiones van a <code>harnesses/writer/definition.md</code>, y después viene el canvas con todas las pantallas, claras y oscuras.</footer>
+</div>

@@ -1,0 +1,378 @@
+<title>Writer · ronda 6</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Literata:ital,opsz,wght@0,7..72,400;1,7..72,400&display=swap">
+<style>
+/* Options page: one card per question, each option drawn as a small app window in core tokens. */
+:root{
+  --bg:#f3f3f1;--rail:#fbfbfa;--column:#f8f8f6;--surface:#ffffff;--s2:#f2f2ef;--line:#e7e7e3;--lineS:#d9d9d4;
+  --ink:#1b1c1e;--muted:#62656b;--faint:#8a8d93;--cta:#fbd38d;--ctaInk:#3b2a06;--active:#fde6b3;--activeInk:#7a4f00;
+  --green:#dff2e5;--greenInk:#1d6e3f;--orange:#fdebd7;--orangeInk:#a94f08;--blue:#e4ecfd;--blueInk:#2d55c4;--violet:#ece6fb;--violetInk:#5f3dba;
+  --page:#ebebe7;--paper:#ffffff;
+  --font:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --serif:"Newsreader","Iowan Old Style",Georgia,serif;
+  --mono:"DM Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121315;--rail:#16171a;--column:#17181b;--surface:#1e2024;--s2:#26292e;--line:#2a2d32;--lineS:#383c42;
+  --ink:#eceef0;--muted:#a3a8ae;--faint:#80858c;--cta:#f3c56a;--ctaInk:#2a1d02;--active:#3a2e14;--activeInk:#f3c56a;
+  --green:#17311f;--greenInk:#8bd8a8;--orange:#3a2715;--orangeInk:#f4b47e;--blue:#1c2944;--blueInk:#a3beff;--violet:#29223f;--violetInk:#c6b4ff;
+  --page:#0d0e10;--paper:#1a1b1e;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121315;--rail:#16171a;--column:#17181b;--surface:#1e2024;--s2:#26292e;--line:#2a2d32;--lineS:#383c42;
+  --ink:#eceef0;--muted:#a3a8ae;--faint:#80858c;--cta:#f3c56a;--ctaInk:#2a1d02;--active:#3a2e14;--activeInk:#f3c56a;
+  --green:#17311f;--greenInk:#8bd8a8;--orange:#3a2715;--orangeInk:#f4b47e;--blue:#1c2944;--blueInk:#a3beff;--violet:#29223f;--violetInk:#c6b4ff;
+  --page:#0d0e10;--paper:#1a1b1e;color-scheme:dark}
+body{background:var(--page);color:var(--ink);font:14px/1.5 var(--font);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-block:32px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+header h1{font-size:20px;font-weight:600;margin:0 0 4px;text-wrap:balance}
+header p{margin:0 0 6px;color:var(--muted);max-width:80ch}
+.decided{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.decided span{font-size:12px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--muted)}
+.decided b{color:var(--ink);font-weight:600}
+.f{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:16px}
+.f h3.q{font-size:16px;font-weight:600;margin:0;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;text-wrap:balance}
+.id{font-size:12px;font-weight:600;color:var(--activeInk);background:var(--active);border-radius:6px;padding:1px 8px}
+.f>p{margin:0;color:var(--muted);max-width:84ch}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.opts.wide{grid-template-columns:1fr}
+.o{display:flex;flex-direction:column;gap:8px;min-width:0}
+.o h4{font-size:14px;font-weight:600;margin:0}
+.rec{font-size:12px;font-weight:600;color:var(--greenInk);background:var(--green);border-radius:6px;padding:1px 8px;margin-left:6px;white-space:nowrap}
+.o ul{margin:0;padding-left:18px;color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:2px}
+.later{font-size:13px;color:var(--muted);border-top:1px dashed var(--lineS);padding-top:10px}
+footer{font-size:12px;color:var(--muted)}
+code{font-family:var(--mono);font-size:12px;background:var(--s2);border-radius:4px;padding:0 4px}
+
+/* ---- mock window ---- */
+.win{background:var(--bg);border:1px solid var(--lineS);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.win.tall{height:420px}.win.mid{height:330px}
+.tb{height:28px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--line);background:var(--rail);flex:none;font-size:11.5px;color:var(--muted)}
+.tb.ghost{background:transparent;border-color:transparent}
+.dots{display:flex;gap:5px;margin-right:30px}.dots i{width:8px;height:8px;border-radius:50%;background:var(--lineS);display:block}
+.tb.ghost .dots i{opacity:.45}
+.tb .sp{flex:1}
+.tb .crumb b{color:var(--ink);font-weight:500}
+.body{flex:1;display:flex;min-height:0;position:relative}
+.rail{width:40px;flex:none;background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:10px}
+.rail i{width:16px;height:16px;border-radius:5px;background:var(--s2);display:block}
+.rail i.on{background:var(--active)}
+.rail.quiet{background:transparent;border-color:transparent}.rail.quiet i{background:transparent;border:1.5px solid var(--lineS);width:13px;height:13px}
+.paperwrap{flex:1;display:flex;justify-content:center;overflow:hidden;min-width:0;background:var(--paper)}
+.ms{width:100%;max-width:440px;padding:26px 20px 10px;font-family:var(--serif);font-size:14.5px;line-height:1.62;color:var(--ink);position:relative}
+.ms h5{font-family:var(--serif);font-weight:500;font-size:18px;margin:0 0 12px}
+.ms p{margin:0 0 10px;text-indent:1.4em}
+.ms p.first{text-indent:0}
+.status{position:absolute;bottom:8px;left:0;right:0;text-align:center;font:11px var(--font);color:var(--faint)}
+.sel{background:var(--active);color:var(--activeInk);border-radius:2px}
+.inline{position:absolute;font-family:var(--font);font-size:11.5px;background:var(--surface);border:1px solid var(--lineS);border-radius:9px;box-shadow:0 6px 18px rgba(0,0,0,.08);display:flex;align-items:center;gap:2px;padding:3px;white-space:nowrap}
+.inline span{padding:2px 7px;border-radius:6px;color:var(--ink)}
+.inline span.ask{color:var(--faint);border-left:1px solid var(--line);border-radius:0;padding-left:9px;min-width:110px}
+.mdot{position:absolute;right:-12px;width:7px;height:7px;border-radius:50%;background:var(--orangeInk)}
+.mdot.b{background:var(--blueInk)}
+.margin{width:150px;flex:none;padding:26px 10px 0 0;display:flex;flex-direction:column;gap:10px;background:var(--paper)}
+.note{font-size:11px;line-height:1.4;border-left:2px solid var(--orangeInk);padding:2px 0 2px 8px;color:var(--muted)}
+.note.b{border-color:var(--blueInk)}
+.note b{display:block;color:var(--ink);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+.composer{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;width:min(380px,80%);font:12px var(--font);color:var(--faint);background:var(--surface);border:1px solid var(--lineS);border-radius:12px;padding:7px 12px;display:flex;justify-content:space-between}
+.chat{width:45%;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:10px;padding:14px;font-size:12px;background:var(--bg);position:relative;min-width:0}
+.bub{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 10px;max-width:90%}
+.bub.me{align-self:flex-end;background:var(--s2);border-color:transparent}
+.chat .composer{position:absolute;left:14px;right:14px;transform:none;width:auto}
+.split .ms{max-width:none;padding:20px 18px}
+
+/* ---- authorship ---- */
+.ms.small{font-size:13.5px;padding:18px 18px 10px}
+.ai-line{box-shadow:-10px 0 0 -8px var(--faint);}
+.ai-tint{background:var(--s2);border-radius:4px;padding:4px 6px;margin-left:-6px;margin-right:-6px}
+.chip{display:inline-flex;align-items:center;gap:4px;font:500 11px var(--font);border:1px solid var(--lineS);background:var(--surface);color:var(--ink);border-radius:7px;padding:1px 7px;white-space:nowrap}
+.toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.toggle i{width:20px;height:11px;border-radius:6px;background:var(--lineS);position:relative;display:inline-block}
+.toggle i::after{content:"";position:absolute;left:1.5px;top:1.5px;width:8px;height:8px;border-radius:50%;background:var(--surface)}
+.who{font:11px var(--font);color:var(--faint);display:block;text-indent:0;margin:-4px 0 8px}
+.bar{display:flex;gap:6px;align-items:center;margin:-2px 0 10px;text-indent:0;font-family:var(--font);flex-wrap:wrap}
+.bar small{font-size:11px;color:var(--muted)}
+
+/* ---- story bible ---- */
+.sec{padding:16px 18px;display:flex;flex-direction:column;gap:10px;flex:1;min-width:0;overflow:hidden}
+.sec h6{font-size:15px;font-weight:600;margin:0}
+.tabs{display:flex;gap:4px;font-size:11.5px}
+.tabs span{padding:2px 8px;border-radius:7px;color:var(--muted)}
+.tabs span.on{background:var(--active);color:var(--activeInk);font-weight:500}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:11.5px;color:var(--muted);line-height:1.4}
+.card b{display:block;color:var(--ink);font-weight:600;font-size:12.5px}
+.name{border-bottom:1px dotted var(--muted);}
+.pop{position:absolute;width:220px;background:var(--surface);border:1px solid var(--lineS);border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.1);padding:10px 12px;font:11.5px/1.45 var(--font);color:var(--muted);text-indent:0}
+.pop b{display:block;color:var(--ink);font-size:13px;font-weight:600}
+.pop .k{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;margin-top:6px;display:block}
+.pop .lnk{color:var(--activeInk);text-decoration:underline;display:inline-block;margin-top:6px}
+.side{width:52%;flex:none;border-left:1px solid var(--line);background:var(--column);padding:14px;display:flex;flex-direction:column;gap:8px;font-size:11.5px;color:var(--muted);min-width:0}
+.side b.t{color:var(--ink);font-size:13px;font-weight:600}
+
+/* ---- typefaces ---- */
+.spec{background:var(--paper);border:1px solid var(--lineS);border-radius:10px;padding:18px 20px;font-size:16px;line-height:1.6;color:var(--ink)}
+.spec .lbl{font:600 11px var(--font);color:var(--faint);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:8px}
+.spec p{margin:0}
+.t-news{font-family:"Newsreader",Georgia,serif}
+.t-lit{font-family:"Literata",Georgia,serif}
+.t-sans{font-family:"DM Sans",system-ui,sans-serif;font-size:15px}
+.t-mono{font-family:"DM Mono",ui-monospace,monospace;font-size:14px;line-height:1.7}
+
+@media (max-width:620px){
+  .f{padding:16px}.opts{grid-template-columns:1fr}
+  .margin{display:none}.chat{width:42%}.side{width:48%}
+  .win.tall{height:460px}
+  .cards{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* round 2 additions */
+.home{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;background:var(--bg)}
+.home .app{font-size:18px;font-weight:600}
+.plist{width:min(300px,100%);display:flex;flex-direction:column;gap:6px}
+.prow{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12px}
+.prow b{font-weight:600;font-size:12.5px}.prow small{color:var(--faint);font-size:11px;display:block}
+.bigbtn{background:var(--cta);color:var(--ctaInk);border-radius:10px;padding:7px 16px;font-weight:500;font-size:12.5px}
+.btn{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:7px;border:1px solid var(--lineS);background:var(--surface);font:500 11.5px var(--font);color:var(--ink);white-space:nowrap}
+.btn.pri{background:var(--cta);color:var(--ctaInk);border-color:transparent}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;background:var(--ink);color:var(--bg);border-radius:9px;padding:7px 12px;font:12px var(--font);display:flex;gap:10px;align-items:center;white-space:nowrap}
+.toast b{color:var(--cta);font-weight:600}
+.menu{position:absolute;background:var(--surface);border:1px solid var(--lineS);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);padding:4px;font:12px var(--font);display:flex;flex-direction:column;min-width:190px;text-indent:0}
+.menu span{padding:4px 9px;border-radius:6px;color:var(--ink)}
+.menu span.h{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:6px}
+.menu span.on{background:var(--active);color:var(--activeInk)}
+.seg{display:inline-flex;background:var(--s2);border-radius:7px;padding:2px;gap:2px;font-size:11px}
+.seg span{padding:1px 8px;border-radius:5px;color:var(--muted)}.seg span.on{background:var(--surface);color:var(--ink);font-weight:500}
+.rep{width:55%;flex:none;border-left:1px solid var(--line);background:var(--column);padding:14px 16px;display:flex;flex-direction:column;gap:8px;font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden}
+.rep .t{color:var(--ink);font-size:13px;font-weight:600;display:flex;justify-content:space-between}
+.rep .t span{font-weight:400;font-size:11px;color:var(--muted)}
+.rep .item{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 9px;line-height:1.4}
+.rep .item b{color:var(--ink);font-weight:600}
+.reader{display:flex;gap:8px;align-items:flex-start}
+.av{width:22px;height:22px;border-radius:50%;flex:none;font:600 10px/22px var(--font);text-align:center}
+.av.g{background:var(--green);color:var(--greenInk)}.av.o{background:var(--orange);color:var(--orangeInk)}.av.b{background:var(--blue);color:var(--blueInk)}
+.form{display:flex;flex-direction:column;gap:7px;padding:16px 18px;flex:1;min-width:0}
+.fld{display:flex;flex-direction:column;gap:2px;font-size:11px}
+.fld .l{font-weight:600;color:var(--muted)}
+.inp{border:1px solid var(--lineS);border-radius:7px;background:var(--surface);padding:4px 8px;font-size:12px;color:var(--ink);min-height:16px}
+.inp.big{min-height:44px}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:11.5px;color:var(--muted);line-height:1.45}
+.rule b{color:var(--ink);font-weight:600;display:block;font-size:12px}
+.rule i{font-family:var(--serif);font-size:12.5px;color:var(--ink)}
+.tl{display:flex;flex-direction:column;gap:0;font-size:11.5px}
+.tl div{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)}
+.tl small{color:var(--faint);width:52px;flex:none;font-size:10.5px}
+.tag{font-size:10.5px;font-weight:600;border-radius:5px;padding:0 6px;white-space:nowrap}
+.tag.grey{background:var(--s2);color:var(--ink)}.tag.blue{background:var(--blue);color:var(--blueInk)}.tag.green{background:var(--green);color:var(--greenInk)}
+ins{background:var(--green);color:var(--greenInk);text-decoration:none;border-radius:2px}
+del{background:var(--orange);color:var(--orangeInk);border-radius:2px;text-decoration:line-through}
+</style>
+
+<style>
+.cardx{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:12px}
+.cardx b{font-size:12.5px}
+.tg{border-radius:5px;padding:0 6px;font-size:10.5px;font-weight:600;align-self:flex-start}
+.tg.o{background:var(--orange);color:var(--orangeInk)}
+.tg.g{background:var(--green);color:var(--greenInk)}
+.ch{border:1px solid var(--lineS);border-radius:8px;padding:6px 9px;display:flex;flex-direction:column;gap:1px;font-size:11.5px;color:var(--muted)}
+.ch b{color:var(--ink);font-weight:600;font-size:12px}
+.ch.on{border:1.5px solid var(--ink)}
+.dot{position:absolute;right:-14px;top:4px;width:8px;height:8px;border-radius:4px;background:var(--orangeInk)}
+.nt{position:absolute;left:24px;right:24px;background:var(--surface);border:1px solid var(--lineS);border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.1);padding:8px 10px;font:12px 'DM Sans',sans-serif;color:var(--ink);display:flex;flex-direction:column;gap:4px;text-indent:0}
+.u{text-decoration:underline dotted var(--faint);text-underline-offset:3px}
+.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.cards3 span{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:11.5px}
+.band{background:var(--s2);border-radius:9px;padding:8px 10px;display:flex;align-items:center;gap:8px;font-size:12px}
+.band b{font-weight:600}
+</style>
+<style>
+.act{font-size:10.5px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.pch{display:flex;flex-direction:column;gap:3px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11.5px}
+.pch.cur{border:1.5px solid var(--ink)}
+.pch .h{display:flex;gap:6px;align-items:center}
+.pch .h b{font-weight:600;font-size:12px;flex:1;min-width:0}
+.pch .h em{font-style:normal;color:var(--faint);font-size:10.5px}
+.beat{display:flex;gap:6px;align-items:baseline;color:var(--muted)}
+.beat i{width:7px;height:7px;border-radius:4px;flex:none;display:inline-block;border:1.5px solid var(--lineS)}
+.beat.ok i{background:var(--greenInk);border-color:var(--greenInk)}
+.beat.ch i{background:var(--orangeInk);border-color:var(--orangeInk)}
+.beat.ch{color:var(--ink)}
+.thread{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:4px}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:1;min-height:0}
+.col{background:var(--s2);border-radius:9px;padding:7px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.col h6{margin:0;font-size:11px;font-weight:600;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:11px;display:flex;flex-direction:column;gap:2px}
+.card.cur{border:1.5px solid var(--ink)}
+.side{width:170px;flex:none;border-left:1px solid var(--line);background:var(--column);padding:12px 10px;display:flex;flex-direction:column;gap:7px;font-size:11.5px}
+.side h6{margin:0;font-size:11px;font-weight:600;color:var(--muted)}
+.pop{position:absolute;right:14px;top:4px;width:200px;background:var(--surface);border:1px solid var(--lineS);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:9px 10px;display:flex;flex-direction:column;gap:5px;font:11.5px var(--font);z-index:2}
+.path{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.pathc{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 9px;display:flex;flex-direction:column;gap:4px;font-size:11px}
+.pathc b{font-size:12px;font-weight:600}
+.pathc .k{color:var(--faint);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.pathc.on{border:1.5px solid var(--ink)}
+.chat{display:flex;flex-direction:column;gap:7px;font-size:11.5px}
+.chat .me{align-self:flex-end;background:var(--s2);border-radius:9px;padding:6px 9px;max-width:80%}
+.chat .ai{display:flex;flex-direction:column;gap:3px}
+.flag{background:var(--orange);color:var(--orangeInk);border-radius:8px;padding:6px 9px;font-size:11px;display:flex;flex-direction:column;gap:4px}
+.toast{position:absolute;right:12px;bottom:12px;width:220px;background:var(--surface);border:1px solid var(--lineS);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:9px 10px;display:flex;flex-direction:column;gap:5px;font:11.5px var(--font)}
+</style>
+<div class="wrap">
+<header>
+  <h1>Writer · ronda 6: el plan de la novela</h1>
+  <p>Lo que está por venir se guarda en un <code>plan.md</code> por libro: actos, capítulos y los momentos que tienen que pasar, cada uno <i>pendiente</i>, <i>escrito</i> o <i>cambió</i>. Además, los hilos (lo que se siembra y dónde se cierra) y los arcos de los personajes. Faltan cuatro decisiones de pantalla. En los ejemplos, el autor va por el cap. 7 de La sal del faro. La recomendada está marcada. Respondé en el chat.</p>
+  <div class="decided">
+    <span><b>Ya acordado</b></span>
+    <span>El plan es Markdown, del autor</span><span>La IA conoce el futuro y no lo cuenta</span><span>Los lectores no ven el plan</span><span>El plan se piensa conversando con la IA</span><span>El plan nunca se cambia solo</span>
+  </div>
+</header>
+
+<section class="f" aria-labelledby="q21">
+  <h3 class="q" id="q21"><span class="id">Q21</span> Dónde vive el plan</h3>
+  <p>Hoy La novela tiene la pestaña Estructura (actos, capítulos, escenas). ¿El plan es esa pestaña ampliada, o un lugar propio?</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Estructura pasa a ser "Plan" <span class="rec">Recomendada</span></h4>
+      <div class="win tall"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div><span class="sp"></span><span class="crumb">La sal del faro › <b>La novela</b></span></div>
+        <div class="body"><div class="rail"><i></i><i></i><i class="on"></i><i></i></div><div class="sec">
+          <span style="display:flex;gap:4px;font-size:11px;color:var(--muted)"><span>Personajes</span>·<span>Mundo</span>·<b style="color:var(--ink)">Plan</b>·<span>Cronología</span>·<span>Voz</span><span style="flex:1"></span><span class="btn">Pensar con la IA</span></span>
+          <span class="act">Acto 2 · La niebla</span>
+          <div class="pch"><div class="h"><b>6 · El faro apagado</b><em>escrito · 5.100</em></div><span class="beat ok"><i></i>Tomás esconde la carta</span></div>
+          <div class="pch cur"><div class="h"><b>7 · La niebla</b><em>escribiendo · 2.300</em></div><span class="beat ok"><i></i>Bruno llega con la niebla</span><span class="beat ch"><i></i>Elena lo ve entrar al faro · cambió</span><span class="beat"><i></i>Bruno encuentra la carta</span></div>
+          <div class="pch"><div class="h"><b>8 · Sin título</b><em>pendiente</em></div><span class="beat"><i></i>Elena sigue a Bruno al muelle</span><div class="thread">🧵 La carta sin abrir · se cierra en el 18</div></div>
+        </div></div></div>
+      <ul><li>Un solo lugar para lo escrito y lo que falta: los capítulos escritos muestran palabras, los que faltan sus momentos.</li><li>Arcos e ideas sueltas van abajo, en la misma pestaña.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Un lugar propio en el riel, en tablero</h4>
+      <div class="win tall"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div><span class="sp"></span><span class="crumb">La sal del faro › <b>Plan</b></span></div>
+        <div class="body"><div class="rail"><i></i><i></i><i></i><i class="on"></i><i></i></div><div class="sec">
+          <span style="display:flex;gap:6px;align-items:center"><h6 style="flex:1">Plan</h6><span class="btn">Ideas sueltas · 6</span><span class="btn">Pensar con la IA</span></span>
+          <div class="cols">
+            <div class="col"><h6>Acto 1 · El faro</h6><div class="card"><b>1 · El farero</b><span style="color:var(--faint)">escrito</span></div><div class="card"><b>2 · Elena</b><span style="color:var(--faint)">escrito</span></div><div class="card"><b>3 · El inspector</b><span style="color:var(--faint)">escrito</span></div></div>
+            <div class="col"><h6>Acto 2 · La niebla</h6><div class="card"><b>6 · El faro apagado</b><span style="color:var(--faint)">escrito</span></div><div class="card cur"><b>7 · La niebla</b><span style="color:var(--orangeInk)">1 momento cambió</span></div><div class="card"><b>8 · Sin título</b><span style="color:var(--faint)">2 momentos</span></div></div>
+            <div class="col"><h6>Acto 3 · La luz</h6><div class="card"><b>15 · Sin título</b><span style="color:var(--faint)">idea</span></div><div class="card"><b>18 · La carta</b><span style="color:var(--faint)">🧵 cierra 1 hilo</span></div></div>
+          </div>
+        </div></div></div>
+      <ul><li>Se ve el libro entero de un vistazo, como fichas en un corcho; se arrastran capítulos entre actos.</li><li>Un ícono más en el riel; Estructura deja de existir en La novela.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<section class="f" aria-labelledby="q22">
+  <h3 class="q" id="q22"><span class="id">Q22</span> El plan mientras escribís</h3>
+  <p>En la hoja del cap. 7, ¿cómo se ve lo que tiene que pasar en este capítulo?</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Escondido: "Plan del cap." en la barra de arriba <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb"><div class="dots"><i></i><i></i><i></i></div><span class="crumb">La sal del faro › <b>7 · La niebla</b></span><span class="sp"></span><span style="color:var(--ink);font-weight:500">Plan del cap. ▾</span></div>
+        <div class="body"><div class="paperwrap"><div class="ms small">
+          <h5>7 · La niebla</h5>
+          <p class="first">La niebla entró por el muelle antes que el auto. Elena la vio subir por la escalera del faro como si alguien la empujara desde abajo.</p>
+          <p>Bruno bajó sin apuro y no se sacó el sombrero.</p>
+        </div></div>
+        <div class="pop"><b style="font-weight:600">En este capítulo</b><span class="beat ok"><i></i>Bruno llega con la niebla</span><span class="beat ch"><i></i>Elena lo ve entrar al faro · cambió</span><span class="beat"><i></i>Bruno encuentra la carta</span><div class="thread">🧵 Sembrar: la carta (cierra en el 18)</div><span style="display:flex;justify-content:flex-end"><span class="btn">Abrir el plan</span></span></div>
+        </div></div>
+      <ul><li>La hoja sigue sola (W9); el plan aparece solo cuando lo pedís.</li><li>Se cierra al volver a escribir.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Una columna fina al costado, siempre</h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="paperwrap"><div class="ms small">
+          <h5>7 · La niebla</h5>
+          <p class="first">La niebla entró por el muelle antes que el auto. Elena la vio subir por la escalera del faro como si alguien la empujara desde abajo.</p>
+          <p>Bruno bajó sin apuro y no se sacó el sombrero.</p>
+        </div></div>
+        <div class="side"><h6>En este capítulo</h6><span class="beat ok"><i></i>Bruno llega con la niebla</span><span class="beat ch"><i></i>Elena lo ve entrar al faro</span><span class="beat"><i></i>Bruno encuentra la carta</span><div class="thread">🧵 Sembrar: la carta</div></div>
+        </div></div>
+      <ul><li>Siempre a la vista: no te olvidás de lo que falta.</li><li>Rompe la hoja sola; se puede ocultar.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<section class="f" aria-labelledby="q23">
+  <h3 class="q" id="q23"><span class="id">Q23</span> Pensar el plan conversando con la IA</h3>
+  <p>Ya acordado: el plan se piensa conversando, sin opciones fijas. Vos tirás ideas, dudas o "¿y si…?", la IA pregunta, propone y te ayuda a bajarlo al plan. Cuando conviene, te ofrece caminos dentro de la charla, pero nunca te obliga a elegir entre ellos. Lo que falta decidir es <b>cómo llega lo conversado al plan</b>.</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Charla al lado del plan; el plan se va llenando con propuestas <span class="rec">Recomendada</span></h4>
+      <div class="win tall"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div><span class="sp"></span><span class="crumb">La novela › <b>Plan</b></span></div>
+        <div class="body"><div class="rail"><i></i><i></i><i class="on"></i><i></i></div>
+          <div class="sec" style="flex:1.1">
+            <span class="act">Acto 2 · La niebla</span>
+            <div class="pch"><div class="h"><b>7 · La niebla</b><em>escribiendo</em></div><span class="beat ok"><i></i>Bruno llega con la niebla</span><span class="beat"><i></i>Bruno encuentra la carta</span></div>
+            <div class="pch cur"><div class="h"><b>8 · El muelle</b><em>pendiente</em></div>
+              <span class="beat"><i></i>Elena sigue a Bruno al muelle</span>
+              <div style="border:1.5px dashed var(--violetInk);border-radius:7px;padding:5px 7px;display:flex;flex-direction:column;gap:3px;background:var(--violet)">
+                <span style="font-size:10px;font-weight:600;color:var(--violetInk)">PROPUESTA</span>
+                <span class="beat"><i></i>Lo ve buscar algo bajo el bote</span>
+                <span class="beat"><i></i>Doña Amalia la descubre espiando</span>
+                <span style="display:flex;gap:5px;justify-content:flex-end"><span class="btn">Descartar</span><span class="btn">Editar</span><span class="btn pri">Dejar</span></span>
+              </div>
+              <div class="thread">🧵 La carta sigue cerrada</div></div>
+          </div>
+          <div class="side" style="width:200px">
+            <h6>Pensando el plan</h6>
+            <div class="chat">
+              <span class="me">Quiero que Elena empiece a sospechar en el 8, pero sin abrir la carta.</span>
+              <div class="ai"><span>¿Sospecha de Bruno o de Tomás? Si es de Bruno, puede verlo buscar algo en el muelle. Lo dejé como propuesta en el cap. 8.</span></div>
+              <span class="me">De Bruno. Y que alguien la vea.</span>
+              <div class="ai"><span>Sumé a Doña Amalia: ya sabe quién es Bruno (cap. 3).</span></div>
+            </div>
+            <span style="margin-top:auto;border:1px solid var(--lineS);border-radius:9px;padding:6px 9px;color:var(--faint)">Escribí…</span>
+          </div>
+        </div></div>
+      <ul><li>Ves el plan cambiar mientras hablás; cada propuesta queda marcada hasta que la dejás, la editás o la descartás.</li><li>Nada entra al plan sin tu "Dejar"; también podés editar el plan a mano y la IA lo toma en cuenta.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Charla primero; la IA resume los cambios y los pasás al plan</h4>
+      <div class="win tall"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div><span class="sp"></span><span class="crumb">La novela › <b>Pensar el plan</b></span></div>
+        <div class="body"><div class="rail"><i></i><i></i><i class="on"></i><i></i></div><div class="sec">
+          <div class="chat">
+            <span class="me">Quiero que Elena empiece a sospechar en el 8, pero sin abrir la carta.</span>
+            <div class="ai"><span>¿Sospecha de Bruno o de Tomás? Si es de Bruno, puede verlo buscar algo en el muelle.</span></div>
+            <span class="me">De Bruno. Y que alguien la vea.</span>
+            <div class="ai"><span>Doña Amalia ya sabe quién es Bruno (cap. 3); puede ser ella. Así quedaría:</span>
+              <div class="pathc" style="margin-top:3px"><b>Cambios al plan</b><span class="beat"><i></i>Cap. 8 · Lo ve buscar algo bajo el bote</span><span class="beat"><i></i>Cap. 8 · Doña Amalia la descubre espiando</span><span class="beat"><i></i>Hilo: la carta sigue cerrada</span><span style="display:flex;gap:5px;justify-content:flex-end"><span class="btn">Seguir hablando</span><span class="btn pri">Pasar al plan</span></span></div>
+            </div>
+          </div>
+          <span style="margin-top:auto;border:1px solid var(--lineS);border-radius:9px;padding:6px 9px;color:var(--faint);font-size:11.5px">Escribí…</span>
+        </div></div></div>
+      <ul><li>Toda la pantalla para pensar; el plan no se toca hasta que hay algo maduro.</li><li>No ves el plan mientras hablás: hay que imaginar dónde cae cada cosa.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+<section class="f" aria-labelledby="q24">
+  <h3 class="q" id="q24"><span class="id">Q24</span> Cuando lo escrito se aparta del plan</h3>
+  <p>En el cap. 7 Elena no vio entrar a Bruno al faro, como estaba planeado. ¿Cómo te enterás?</p>
+  <div class="opts">
+    <div class="o">
+      <h4>A · Solo en el plan, cuando lo abrís <span class="rec">Recomendada</span></h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="rail"><i></i><i></i><i class="on"></i><i></i></div><div class="sec">
+          <h6>Plan</h6>
+          <div class="pch cur"><div class="h"><b>7 · La niebla</b><em>escribiendo</em></div><span class="beat ok"><i></i>Bruno llega con la niebla</span>
+            <div class="flag"><b>Elena lo ve entrar al faro · cambió</b><span>En el texto, Elena lo ve desde la ventana y no lo sigue.</span><span style="display:flex;gap:6px;justify-content:flex-end"><span class="btn">Lo escribo después</span><span class="btn pri">Cambiar el plan</span></span></div>
+            <span class="beat"><i></i>Bruno encuentra la carta</span></div>
+        </div></div></div>
+      <ul><li>Nada te interrumpe mientras escribís (W14): el plan se marca en silencio.</li><li>"Cambiar el plan" reescribe el momento como quedó en el texto.</li></ul>
+    </div>
+    <div class="o">
+      <h4>B · Un aviso al terminar el capítulo</h4>
+      <div class="win mid"><div class="tb ghost"><div class="dots"><i></i><i></i><i></i></div></div>
+        <div class="body"><div class="paperwrap"><div class="ms small">
+          <h5>7 · La niebla</h5>
+          <p class="first">Elena lo miró desde la ventana. No bajó. Esa noche no iba a bajar.</p>
+        </div></div>
+        <div class="toast"><b style="font-weight:600">El cap. 7 se apartó del plan</b><span style="color:var(--muted)">1 momento cambió · 1 pendiente</span><span style="display:flex;gap:6px;justify-content:flex-end"><span class="btn">Después</span><span class="btn pri">Ver</span></span></div>
+        </div></div>
+      <ul><li>Te enterás sin abrir el plan, cuando dejás el capítulo.</li><li>Es un aviso que no pediste.</li></ul>
+    </div>
+  </div>
+  <div class="later">También se puede: <b>Dejar para después</b>.</div>
+</section>
+
+<footer>Writer · ronda 6 · 2026-11-23. Las decisiones van a <code>harnesses/writer/definition.md</code> y las pantallas se suman al canvas, en claro y oscuro.</footer>
+</div>

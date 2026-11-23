@@ -1,0 +1,1010 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-11-22T15:00:00Z"
+ },
+ "title": "Writer · canvas",
+ "launch": {
+  "view": "canvas",
+  "page": "claro"
+ },
+ "pages": [
+  {
+   "id": "claro",
+   "name": "Claro"
+  },
+  {
+   "id": "oscuro",
+   "name": "Oscuro"
+  }
+ ],
+ "boards": {
+  "Main.dc.html": {
+   "x": 0,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "1.1 · Bienvenida (primera vez)"
+  },
+  "Inicio.dc.html": {
+   "x": 1360,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "1.2 · Inicio: seguí donde quedaste"
+  },
+  "NuevaNovela.dc.html": {
+   "x": 2720,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "1.3 · Nueva novela: importar o en blanco"
+  },
+  "Importando.dc.html": {
+   "x": 4080,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "1.4 · Importar: leyendo el manuscrito"
+  },
+  "Encontrado.dc.html": {
+   "x": 5440,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "1.5 · Importar: esto encontré"
+  },
+  "RevisarUno.dc.html": {
+   "x": 6800,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "1.6 · Importar: revisar uno por uno"
+  },
+  "Hoja.dc.html": {
+   "x": 0,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.1 · Hoja sola"
+  },
+  "HojaBordes.dc.html": {
+   "x": 1360,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.2 · Barra y riel al acercar el mouse"
+  },
+  "Barrita.dc.html": {
+   "x": 2720,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.3 · Barrita sobre lo marcado"
+  },
+  "Barra.dc.html": {
+   "x": 4080,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.4 · \"/\" en una línea vacía"
+  },
+  "IAEscribio.dc.html": {
+   "x": 5440,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.5 · Lo que escribió la IA: línea fina"
+  },
+  "FichaCorta.dc.html": {
+   "x": 6800,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.6 · Ficha corta de un nombre"
+  },
+  "NotaMargen.dc.html": {
+   "x": 8160,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "2.7 · Nota del margen abierta"
+  },
+  "Opinar.dc.html": {
+   "x": 0,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "3.1 · Opinar: sobre qué y qué tipo"
+  },
+  "PedirLectura.dc.html": {
+   "x": 1360,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "3.2 · Pedir lectura"
+  },
+  "Lecturas.dc.html": {
+   "x": 2720,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "3.3 · Lecturas"
+  },
+  "LecturaEstructura.dc.html": {
+   "x": 4080,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "3.4 · Lectura estructural del cap. 7"
+  },
+  "LecturaLectores.dc.html": {
+   "x": 5440,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "3.5 · Lectura de tres lectores"
+  },
+  "Lectores.dc.html": {
+   "x": 6800,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "3.6 · Lectores y nuevo lector"
+  },
+  "Personajes.dc.html": {
+   "x": 0,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "4.1 · La novela: Personajes"
+  },
+  "FichaPersonaje.dc.html": {
+   "x": 1360,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "4.2 · Ficha de Bruno Acosta"
+  },
+  "Mundo.dc.html": {
+   "x": 2720,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "4.3 · La novela: Mundo"
+  },
+  "Estructura.dc.html": {
+   "x": 4080,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "4.4 · La novela: Estructura"
+  },
+  "Cronologia.dc.html": {
+   "x": 5440,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "4.5 · La novela: Cronología"
+  },
+  "Voz.dc.html": {
+   "x": 6800,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "4.6 · La novela: Voz"
+  },
+  "Historial.dc.html": {
+   "x": 0,
+   "y": 5500,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "5.1 · Historial del capítulo"
+  },
+  "Exportar.dc.html": {
+   "x": 1360,
+   "y": 5500,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "5.2 · Exportar"
+  },
+  "MainOscuro.dc.html": {
+   "x": 0,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "1.1 · Bienvenida · oscuro"
+  },
+  "InicioOscuro.dc.html": {
+   "x": 1360,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "1.2 · Inicio: seguí donde quedaste · oscuro"
+  },
+  "NuevaNovelaOscuro.dc.html": {
+   "x": 2720,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "1.3 · Nueva novela · oscuro"
+  },
+  "ImportandoOscuro.dc.html": {
+   "x": 4080,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "1.4 · Importar: leyendo · oscuro"
+  },
+  "EncontradoOscuro.dc.html": {
+   "x": 5440,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "1.5 · Importar: esto encontré · oscuro"
+  },
+  "RevisarUnoOscuro.dc.html": {
+   "x": 6800,
+   "y": 300,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "1.6 · Revisar uno por uno · oscuro"
+  },
+  "HojaOscuro.dc.html": {
+   "x": 0,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.1 · Hoja sola · oscuro"
+  },
+  "HojaBordesOscuro.dc.html": {
+   "x": 1360,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.2 · Barra y riel · oscuro"
+  },
+  "BarritaOscuro.dc.html": {
+   "x": 2720,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.3 · Barrita · oscuro"
+  },
+  "BarraOscuro.dc.html": {
+   "x": 4080,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.4 · \"/\" · oscuro"
+  },
+  "IAEscribioOscuro.dc.html": {
+   "x": 5440,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.5 · Línea fina · oscuro"
+  },
+  "FichaCortaOscuro.dc.html": {
+   "x": 6800,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.6 · Ficha corta · oscuro"
+  },
+  "NotaMargenOscuro.dc.html": {
+   "x": 8160,
+   "y": 1600,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "2.7 · Nota del margen · oscuro"
+  },
+  "OpinarOscuro.dc.html": {
+   "x": 0,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "3.1 · Opinar · oscuro"
+  },
+  "PedirLecturaOscuro.dc.html": {
+   "x": 1360,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "3.2 · Pedir lectura · oscuro"
+  },
+  "LecturasOscuro.dc.html": {
+   "x": 2720,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "3.3 · Lecturas · oscuro"
+  },
+  "LecturaEstructuraOscuro.dc.html": {
+   "x": 4080,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "3.4 · Lectura estructural · oscuro"
+  },
+  "LecturaLectoresOscuro.dc.html": {
+   "x": 5440,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "3.5 · Lectura de lectores · oscuro"
+  },
+  "LectoresOscuro.dc.html": {
+   "x": 6800,
+   "y": 2900,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "3.6 · Lectores · oscuro"
+  },
+  "PersonajesOscuro.dc.html": {
+   "x": 0,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "4.1 · Personajes · oscuro"
+  },
+  "FichaPersonajeOscuro.dc.html": {
+   "x": 1360,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "4.2 · Ficha de Bruno · oscuro"
+  },
+  "MundoOscuro.dc.html": {
+   "x": 2720,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "4.3 · Mundo · oscuro"
+  },
+  "EstructuraOscuro.dc.html": {
+   "x": 4080,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "4.4 · Estructura · oscuro"
+  },
+  "CronologiaOscuro.dc.html": {
+   "x": 5440,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "4.5 · Cronología · oscuro"
+  },
+  "VozOscuro.dc.html": {
+   "x": 6800,
+   "y": 4200,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "4.6 · Voz · oscuro"
+  },
+  "HistorialOscuro.dc.html": {
+   "x": 0,
+   "y": 5500,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "5.1 · Historial · oscuro"
+  },
+  "ExportarOscuro.dc.html": {
+   "x": 1360,
+   "y": 5500,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "5.2 · Exportar · oscuro"
+  },
+  "SagaInicio.dc.html": {
+   "x": 0,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.1 · Novelas: lista con sagas"
+  },
+  "SagaInicioOscuro.dc.html": {
+   "x": 0,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.1 · Novelas: lista con sagas · oscuro"
+  },
+  "SagaNueva.dc.html": {
+   "x": 1360,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.2 · Nueva novela en una saga"
+  },
+  "SagaNuevaOscuro.dc.html": {
+   "x": 1360,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.2 · Nueva novela en una saga · oscuro"
+  },
+  "SagaJuntar.dc.html": {
+   "x": 2720,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.3 · Juntar libros en una saga"
+  },
+  "SagaJuntarOscuro.dc.html": {
+   "x": 2720,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.3 · Juntar libros en una saga · oscuro"
+  },
+  "SagaHoja.dc.html": {
+   "x": 4080,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.4 · Pasar de un libro a otro"
+  },
+  "SagaHojaOscuro.dc.html": {
+   "x": 4080,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.4 · Pasar de un libro a otro · oscuro"
+  },
+  "SagaPersonajes.dc.html": {
+   "x": 5440,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.5 · Personajes de la saga"
+  },
+  "SagaPersonajesOscuro.dc.html": {
+   "x": 5440,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.5 · Personajes de la saga · oscuro"
+  },
+  "SagaFicha.dc.html": {
+   "x": 6800,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.6 · Ficha con etapas"
+  },
+  "SagaFichaOscuro.dc.html": {
+   "x": 6800,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.6 · Ficha con etapas · oscuro"
+  },
+  "SagaPedir.dc.html": {
+   "x": 8160,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.7 · Pedir lectura de la saga"
+  },
+  "SagaPedirOscuro.dc.html": {
+   "x": 8160,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.7 · Pedir lectura de la saga · oscuro"
+  },
+  "SagaConsistencia.dc.html": {
+   "x": 9520,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "6.8 · Consistencia de la saga"
+  },
+  "SagaConsistenciaOscuro.dc.html": {
+   "x": 9520,
+   "y": 6800,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "6.8 · Consistencia de la saga · oscuro"
+  },
+  "Capitulos.dc.html": {
+   "x": 0,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.1 · Manuscrito: los capítulos"
+  },
+  "CapitulosOscuro.dc.html": {
+   "x": 0,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.1 · Manuscrito: los capítulos · oscuro"
+  },
+  "Blanco.dc.html": {
+   "x": 1360,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.2 · Hoja en blanco"
+  },
+  "BlancoOscuro.dc.html": {
+   "x": 1360,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.2 · Hoja en blanco · oscuro"
+  },
+  "Pedile.dc.html": {
+   "x": 2720,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.3 · Pedile algo"
+  },
+  "PedileOscuro.dc.html": {
+   "x": 2720,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.3 · Pedile algo · oscuro"
+  },
+  "Escribiendo.dc.html": {
+   "x": 4080,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.4 · La IA escribiendo"
+  },
+  "EscribiendoOscuro.dc.html": {
+   "x": 4080,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.4 · La IA escribiendo · oscuro"
+  },
+  "AvisoLectura.dc.html": {
+   "x": 5440,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.5 · Aviso: lectura lista"
+  },
+  "AvisoLecturaOscuro.dc.html": {
+   "x": 5440,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.5 · Aviso: lectura lista · oscuro"
+  },
+  "LecturasVacia.dc.html": {
+   "x": 6800,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.6 · Lecturas: todavía ninguna"
+  },
+  "LecturasVaciaOscuro.dc.html": {
+   "x": 6800,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.6 · Lecturas: todavía ninguna · oscuro"
+  },
+  "ResolverChoque.dc.html": {
+   "x": 8160,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.7 · Resolver un choque"
+  },
+  "ResolverChoqueOscuro.dc.html": {
+   "x": 8160,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.7 · Resolver un choque · oscuro"
+  },
+  "PersonajeNuevo.dc.html": {
+   "x": 9520,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "claro",
+   "is_interactive": true,
+   "title": "7.8 · Personaje nuevo en el texto"
+  },
+  "PersonajeNuevoOscuro.dc.html": {
+   "x": 9520,
+   "y": 8100,
+   "w": 1280,
+   "h": 900,
+   "page": "oscuro",
+   "is_interactive": true,
+   "title": "7.8 · Personaje nuevo en el texto · oscuro"
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "Inicio.dc.html",
+  "NuevaNovela.dc.html",
+  "Importando.dc.html",
+  "Encontrado.dc.html",
+  "RevisarUno.dc.html",
+  "Hoja.dc.html",
+  "HojaBordes.dc.html",
+  "Barrita.dc.html",
+  "Barra.dc.html",
+  "IAEscribio.dc.html",
+  "FichaCorta.dc.html",
+  "NotaMargen.dc.html",
+  "Opinar.dc.html",
+  "PedirLectura.dc.html",
+  "Lecturas.dc.html",
+  "LecturaEstructura.dc.html",
+  "LecturaLectores.dc.html",
+  "Lectores.dc.html",
+  "Personajes.dc.html",
+  "FichaPersonaje.dc.html",
+  "Mundo.dc.html",
+  "Estructura.dc.html",
+  "Cronologia.dc.html",
+  "Voz.dc.html",
+  "Historial.dc.html",
+  "Exportar.dc.html",
+  "SagaInicio.dc.html",
+  "SagaNueva.dc.html",
+  "SagaJuntar.dc.html",
+  "SagaHoja.dc.html",
+  "SagaPersonajes.dc.html",
+  "SagaFicha.dc.html",
+  "SagaPedir.dc.html",
+  "SagaConsistencia.dc.html",
+  "Capitulos.dc.html",
+  "Blanco.dc.html",
+  "Pedile.dc.html",
+  "Escribiendo.dc.html",
+  "AvisoLectura.dc.html",
+  "LecturasVacia.dc.html",
+  "ResolverChoque.dc.html",
+  "PersonajeNuevo.dc.html",
+  "MainOscuro.dc.html",
+  "InicioOscuro.dc.html",
+  "NuevaNovelaOscuro.dc.html",
+  "ImportandoOscuro.dc.html",
+  "EncontradoOscuro.dc.html",
+  "RevisarUnoOscuro.dc.html",
+  "HojaOscuro.dc.html",
+  "HojaBordesOscuro.dc.html",
+  "BarritaOscuro.dc.html",
+  "BarraOscuro.dc.html",
+  "IAEscribioOscuro.dc.html",
+  "FichaCortaOscuro.dc.html",
+  "NotaMargenOscuro.dc.html",
+  "OpinarOscuro.dc.html",
+  "PedirLecturaOscuro.dc.html",
+  "LecturasOscuro.dc.html",
+  "LecturaEstructuraOscuro.dc.html",
+  "LecturaLectoresOscuro.dc.html",
+  "LectoresOscuro.dc.html",
+  "PersonajesOscuro.dc.html",
+  "FichaPersonajeOscuro.dc.html",
+  "MundoOscuro.dc.html",
+  "EstructuraOscuro.dc.html",
+  "CronologiaOscuro.dc.html",
+  "VozOscuro.dc.html",
+  "HistorialOscuro.dc.html",
+  "ExportarOscuro.dc.html",
+  "SagaInicioOscuro.dc.html",
+  "SagaNuevaOscuro.dc.html",
+  "SagaJuntarOscuro.dc.html",
+  "SagaHojaOscuro.dc.html",
+  "SagaPersonajesOscuro.dc.html",
+  "SagaFichaOscuro.dc.html",
+  "SagaPedirOscuro.dc.html",
+  "SagaConsistenciaOscuro.dc.html",
+  "CapitulosOscuro.dc.html",
+  "BlancoOscuro.dc.html",
+  "PedileOscuro.dc.html",
+  "EscribiendoOscuro.dc.html",
+  "AvisoLecturaOscuro.dc.html",
+  "LecturasVaciaOscuro.dc.html",
+  "ResolverChoqueOscuro.dc.html",
+  "PersonajeNuevoOscuro.dc.html"
+ ],
+ "notes": {
+  "t1": {
+   "x": 0,
+   "y": 20,
+   "text": "1 · Primer uso e inicio",
+   "kind": "title1",
+   "maxW": 8080,
+   "page": "claro"
+  },
+  "t2": {
+   "x": 0,
+   "y": 1320,
+   "text": "2 · Escribir",
+   "kind": "title1",
+   "maxW": 9440,
+   "page": "claro"
+  },
+  "t3": {
+   "x": 0,
+   "y": 2620,
+   "text": "3 · Feedback",
+   "kind": "title1",
+   "maxW": 8080,
+   "page": "claro"
+  },
+  "t4": {
+   "x": 0,
+   "y": 3920,
+   "text": "4 · La novela",
+   "kind": "title1",
+   "maxW": 8080,
+   "page": "claro"
+  },
+  "t5": {
+   "x": 0,
+   "y": 5220,
+   "text": "5 · Historial y exportar",
+   "kind": "title1",
+   "maxW": 2640,
+   "page": "claro"
+  },
+  "o1": {
+   "x": 0,
+   "y": 20,
+   "text": "1 · Primer uso e inicio",
+   "kind": "title1",
+   "maxW": 8080,
+   "page": "oscuro"
+  },
+  "o2": {
+   "x": 0,
+   "y": 1320,
+   "text": "2 · Escribir",
+   "kind": "title1",
+   "maxW": 9440,
+   "page": "oscuro"
+  },
+  "o3": {
+   "x": 0,
+   "y": 2620,
+   "text": "3 · Feedback",
+   "kind": "title1",
+   "maxW": 8080,
+   "page": "oscuro"
+  },
+  "o4": {
+   "x": 0,
+   "y": 3920,
+   "text": "4 · La novela",
+   "kind": "title1",
+   "maxW": 8080,
+   "page": "oscuro"
+  },
+  "o5": {
+   "x": 0,
+   "y": 5220,
+   "text": "5 · Historial y exportar",
+   "kind": "title1",
+   "maxW": 2640,
+   "page": "oscuro"
+  },
+  "s1": {
+   "x": 2800,
+   "y": 5500,
+   "w": 520,
+   "text": "Ajustes y Notas son del core: no se dibujan acá. La novela de ejemplo es La sal del faro (Elena, hija del farero de Cabo Vigía, 1957). Decisiones W1–W23 en harnesses/writer/definition.md.",
+   "size": "m",
+   "fill": "gray",
+   "page": "claro"
+  },
+  "t6": {
+   "x": 0,
+   "y": 6520,
+   "text": "6 · Saga",
+   "kind": "title1",
+   "maxW": 10800,
+   "page": "claro"
+  },
+  "o6": {
+   "x": 0,
+   "y": 6520,
+   "text": "6 · Saga",
+   "kind": "title1",
+   "maxW": 10800,
+   "page": "oscuro"
+  },
+  "t7": {
+   "x": 0,
+   "y": 7820,
+   "text": "7 · Capítulos, hoja en blanco, avisos y arreglos",
+   "kind": "title1",
+   "maxW": 10800,
+   "page": "claro"
+  },
+  "o7": {
+   "x": 0,
+   "y": 7820,
+   "text": "7 · Capítulos, hoja en blanco, avisos y arreglos",
+   "kind": "title1",
+   "maxW": 10800,
+   "page": "oscuro"
+  }
+ },
+ "designSystems": []
+}

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Saga</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;position:relative;overflow:hidden;{{vars}};background:{{pageBg}};color:var(--ink);font:14px/1.5 'DM Sans',system-ui,sans-serif">
+
+  <sc-if value="{{ isWork }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;left:0;top:0;right:0;height:40px;display:flex;align-items:center;gap:20px;padding:0 16px 0 80px;border-bottom:1px solid var(--line);background:var(--rail);font-size:13px;color:var(--muted);z-index:3">
+      <span><a href="SagaInicio{{sfx}}.dc.html" style="color:var(--muted);text-decoration:none">Cabo Vigía</a> › <a href="SagaHoja{{sfx}}.dc.html" style="color:var(--ink);font-weight:500;text-decoration:none">Marea baja ▾</a> › {{crumb}}</span>
+      <span style="flex:1"></span>
+      <a href="SagaPedir{{sfx}}.dc.html" style="color:var(--muted);text-decoration:none">Pedir lectura</a>
+      <span>Historial</span>
+      <span>Exportar</span>
+    </div>
+    <div style="position:absolute;left:0;top:0;bottom:0;width:64px;display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:8px;border-right:1px solid var(--line);background:var(--rail);color:var(--muted);z-index:4">
+      <a href="SagaInicio{{sfx}}.dc.html" aria-label="Inicio" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;color:var(--muted)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></a>
+      <a href="SagaHoja{{sfx}}.dc.html" aria-label="Manuscrito" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:{{aMan}};color:{{aManInk}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7"/></svg></a>
+      <a href="SagaPersonajes{{sfx}}.dc.html" aria-label="La novela" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:{{aNov}};color:{{aNovInk}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5a3 3 0 0 1 0 6M18 14c1.8.8 3 2.6 3 4.6"/></svg></a>
+      <a href="SagaPedir{{sfx}}.dc.html" aria-label="Lecturas" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:{{aLec}};color:{{aLecInk}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z"/><path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z"/></svg></a>
+      <span style="flex:1"></span>
+      <span aria-label="Notas (core)" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14v12l-4 4H5z"/><path d="M15 20v-4h4"/></svg></span>
+      <span aria-label="Ajustes (core)" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;margin-bottom:8px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isInicio }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:0;top:0;right:0;height:40px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--rail);font-size:13px;color:var(--muted)"><a href="Inicio{{sfx}}.dc.html" style="color:var(--ink);text-decoration:none;font-weight:500">← Inicio</a><span style="flex:1"></span><span>Notas</span><span>Ajustes</span></div>
+    <div style="position:absolute;left:0;right:0;top:40px;bottom:0;padding:40px 64px;display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="font-size:24px;font-weight:600;flex:1">Novelas <span style="color:var(--faint);font-weight:400;font-size:16px">12</span></div>
+        <span style="width:260px;border:1px solid var(--lineS);border-radius:8px;padding:8px 12px;color:var(--faint);background:var(--surface)">Buscar por título o saga</span>
+        <a href="SagaJuntar{{sfx}}.dc.html" style="color:var(--muted);text-decoration:none">Juntar en una saga</a>
+        <a href="SagaNueva{{sfx}}.dc.html" style="background:var(--cta);color:var(--ctaInk);text-decoration:none;font-weight:600;border-radius:10px;padding:10px 22px">Nueva novela</a>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;overflow:hidden">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line);min-height:36px;color:var(--faint);font-size:12px"><span>Título</span><span>Estado</span><span>Última vez</span><span></span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line);background:var(--s2)"><span style=""><a href="SagaPersonajes{{sfx}}.dc.html" style="color:var(--ink);text-decoration:none;font-weight:600">▾ Cabo Vigía</a><span style="background:var(--surface);color:var(--muted);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:500;margin-left:8px">saga · 3</span></span><span style="color:var(--muted)">Libro 2 de 3</span><span style="color:var(--muted)">ayer</span><span></span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="padding-left:24px;">1 · La sal del faro</span><span style="color:var(--muted)">Terminado · 68.400 pal.</span><span style="color:var(--muted)">marzo</span><a href="Hoja{{sfx}}.dc.html" style="border:1px solid var(--lineS);border-radius:8px;padding:4px 14px;color:var(--ink);text-decoration:none;justify-self:end">Abrir</a></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="padding-left:24px;"><b style="font-weight:600">2 · Marea baja</b></span><span style="color:var(--muted)">Cap. 7 · 23.900 pal.</span><span style="color:var(--muted)">ayer</span><a href="SagaHoja{{sfx}}.dc.html" style="background:var(--cta);color:var(--ctaInk);font-weight:600;border-radius:8px;padding:5px 14px;text-decoration:none;justify-self:end">Seguir</a></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="padding-left:24px;">3 · La última luz</span><span style="color:var(--muted)">Idea</span><span style="color:var(--muted)">—</span><span style="border:1px solid var(--lineS);border-radius:8px;padding:4px 14px;color:var(--ink);text-decoration:none;justify-self:end">Abrir</span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="">Los años de la grúa</span><span style="color:var(--muted)">Cap. 2 · 6.900 pal.</span><span style="color:var(--muted)">agosto</span><span style="border:1px solid var(--lineS);border-radius:8px;padding:4px 14px;color:var(--ink);text-decoration:none;justify-self:end">Abrir</span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="">Diario de Ushuaia</span><span style="color:var(--muted)">Cap. 11 · 38.000 pal.</span><span style="color:var(--muted)">julio</span><span style="border:1px solid var(--lineS);border-radius:8px;padding:4px 14px;color:var(--ink);text-decoration:none;justify-self:end">Abrir</span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line);background:var(--s2)"><span style=""><span style="font-weight:600">▸ Los Ferrán</span><span style="background:var(--surface);color:var(--muted);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:500;margin-left:8px">saga · 2</span></span><span style="color:var(--muted)">2 terminados</span><span style="color:var(--muted)">junio</span><span></span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="">El inquilino</span><span style="color:var(--muted)">Terminado · 52.100 pal.</span><span style="color:var(--muted)">2025</span><span style="border:1px solid var(--lineS);border-radius:8px;padding:4px 14px;color:var(--ink);text-decoration:none;justify-self:end">Abrir</span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line)"><span style="">Tres veranos</span><span style="color:var(--muted)">Cap. 4 · 12.300 pal.</span><span style="color:var(--muted)">2025</span><span style="border:1px solid var(--lineS);border-radius:8px;padding:4px 14px;color:var(--ink);text-decoration:none;justify-self:end">Abrir</span></div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 180px 140px 90px;gap:16px;align-items:center;padding:0 20px;min-height:48px;border-bottom:1px solid var(--line);border-bottom:0"><span style=""><span style="color:var(--faint)">… 3 más</span></span><span style="color:var(--muted)"></span><span style="color:var(--muted)"></span><span></span></div>
+      </div>
+      <span style="color:var(--muted);font-size:13px">Ordenadas por la última vez que las tocaste. El nombre de una saga abre lo que comparten sus libros.</span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isNueva }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:0;top:0;right:0;height:40px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);background:var(--rail);font-size:13px"><a href="SagaInicio{{sfx}}.dc.html" style="color:var(--ink);text-decoration:none;font-weight:500">← Volver</a></div>
+    <div style="position:absolute;left:0;right:0;top:40px;display:flex;justify-content:center;padding-top:64px">
+      <div style="width:620px;display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:24px;font-weight:600">Nueva novela</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span style="font-weight:600">¿Es un libro suelto o parte de una saga?</span>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="padding:12px 16px;border:1px solid var(--lineS);border-radius:10px;background:var(--surface);display:flex;flex-direction:column"><b style="font-weight:600">Libro suelto</b><span style="color:var(--muted);font-size:13px">Siempre lo podés sumar a una saga después.</span></span>
+            <span style="padding:12px 16px;border:1.5px solid var(--ink);border-radius:10px;background:var(--surface);display:flex;flex-direction:column"><b style="font-weight:600">Otro libro de Cabo Vigía</b><span style="color:var(--muted);font-size:13px">Arranca con los personajes, el mundo, la cronología y tu voz de la saga.</span></span>
+            <span style="padding:12px 16px;border:1px solid var(--lineS);border-radius:10px;background:var(--surface);display:flex;flex-direction:column"><b style="font-weight:600">Una saga nueva</b><span style="color:var(--muted);font-size:13px">Le ponés nombre a la saga y empezás por el primer libro.</span></span>
+          </div>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">Título</span>
+          <input value="La última luz" style="font:15px 'DM Sans',sans-serif;color:var(--ink);background:var(--surface);border:1px solid var(--lineS);border-radius:8px;padding:10px 12px"></label>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span style="flex:1;color:var(--muted);font-size:13px">Va tercero en la saga. Lo podés mover después.</span>
+          <span style="border:1px solid var(--lineS);border-radius:10px;padding:10px 18px">Importar manuscrito</span>
+          <a href="SagaHoja{{sfx}}.dc.html" style="background:var(--cta);color:var(--ctaInk);text-decoration:none;font-weight:600;border-radius:10px;padding:10px 20px">Crear y escribir</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isJuntar }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:0;top:0;right:0;height:40px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);background:var(--rail);font-size:13px"><a href="SagaInicio{{sfx}}.dc.html" style="color:var(--ink);text-decoration:none;font-weight:500">← Volver</a></div>
+    <div style="position:absolute;left:0;right:0;top:40px;display:flex;justify-content:center;padding-top:64px">
+      <div style="width:620px;display:flex;flex-direction:column;gap:20px">
+        <div><div style="font-size:24px;font-weight:600">Juntar libros en una saga</div><div style="color:var(--muted)">Elegí los libros y el orden. La IA une las fichas que se repiten.</div></div>
+        <label style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">Nombre de la saga</span>
+          <input value="Cabo Vigía" style="font:15px 'DM Sans',sans-serif;color:var(--ink);background:var(--surface);border:1px solid var(--lineS);border-radius:8px;padding:10px 12px"></label>
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)"><span style="color:var(--faint)">⋮⋮</span><span style="width:16px;height:16px;border-radius:4px;background:var(--ink)"></span><span style="flex:1">1 · La sal del faro</span><span style="color:var(--muted);font-size:13px">1957</span></div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)"><span style="color:var(--faint)">⋮⋮</span><span style="width:16px;height:16px;border-radius:4px;background:var(--ink)"></span><span style="flex:1">2 · Marea baja</span><span style="color:var(--muted);font-size:13px">1960</span></div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 16px"><span style="color:var(--faint)">⋮⋮</span><span style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--lineS);box-sizing:border-box"></span><span style="flex:1;color:var(--muted)">Los años de la grúa</span></div>
+        </div>
+        <div style="background:var(--orange);color:var(--orangeInk);border-radius:12px;padding:12px 16px;font-size:13px;display:flex;flex-direction:column;gap:2px">
+          <b style="font-weight:600">Para revisar después de juntar</b>
+          <span>Bruno Acosta tiene 41 en un libro y "casi cincuenta" en el otro. Tu voz se aprende de nuevo con los dos.</span>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:12px">
+          <a href="SagaInicio{{sfx}}.dc.html" style="color:var(--muted);text-decoration:none;padding:10px 12px">Cancelar</a>
+          <a href="SagaInicio{{sfx}}.dc.html" style="background:var(--cta);color:var(--ctaInk);text-decoration:none;font-weight:600;border-radius:10px;padding:10px 20px">Juntar</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isHoja }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:150px;top:36px;width:240px;background:var(--surface);border:1px solid var(--lineS);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.12);padding:6px;display:flex;flex-direction:column;z-index:5">
+      <span style="padding:6px 10px;color:var(--faint);font-size:12px">Cabo Vigía</span>
+      <a href="Hoja{{sfx}}.dc.html" style="padding:7px 10px;border-radius:8px;color:var(--ink);text-decoration:none;display:flex;justify-content:space-between"><span>1 · La sal del faro</span><span style="color:var(--faint);font-size:12px">terminado</span></a>
+      <span style="padding:7px 10px;border-radius:8px;background:var(--active);color:var(--activeInk);font-weight:500;display:flex;justify-content:space-between"><span>2 · Marea baja</span><span style="font-size:12px">cap. 7</span></span>
+      <span style="padding:7px 10px;border-radius:8px;display:flex;justify-content:space-between"><span>3 · La última luz</span><span style="color:var(--faint);font-size:12px">idea</span></span>
+      <span style="height:1px;background:var(--line);margin:4px 6px"></span>
+      <a href="SagaInicio{{sfx}}.dc.html" style="padding:7px 10px;border-radius:8px;color:var(--ink);text-decoration:none">Ver la saga</a>
+    </div>
+    <div style="position:absolute;left:300px;top:104px;width:680px;font-family:Newsreader,Georgia,serif;font-size:18px;line-height:1.65;display:flex;flex-direction:column;gap:18px">
+      <div style="font-size:26px;font-weight:500;margin-bottom:6px">7 · El muelle nuevo</div>
+      <p style="margin:0">El muelle nuevo olía a brea y a cemento fresco. <a href="SagaFicha{{sfx}}.dc.html" style="color:inherit;text-decoration:underline dotted;text-underline-offset:4px">Elena</a> tenía diecisiete años y ya no subía a la linterna; desde el almacén veía la torre entera, blanca, inútil de día.</p>
+      <p style="margin:0">—Dicen que lo van a electrificar —dijo Doña Amalia, contando monedas—. Que tu padre ya no va a hacer falta.</p>
+      <p style="margin:0">Elena dobló el papel de envolver en cuatro. No contestó. En el muelle, el ingeniero Vera medía algo con una cinta que el viento le doblaba.</p>
+    </div>
+    <div style="position:absolute;right:24px;bottom:16px;color:var(--faint);font-size:12px">Marea baja · 23.900 palabras</div>
+  </sc-if>
+
+  <sc-if value="{{ isNovela }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:64px;top:40px;right:0;bottom:0;display:flex;justify-content:center;padding-top:40px">
+      <div style="width:960px;display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="display:flex;gap:4px;background:var(--s2);border-radius:8px;padding:3px">
+            <span style="padding:6px 14px;border-radius:6px;font-weight:500;background:var(--surface)">Personajes</span>
+            <span style="padding:6px 14px;font-weight:500">Mundo</span>
+            <span style="padding:6px 14px;font-weight:500">Estructura</span>
+            <span style="padding:6px 14px;font-weight:500">Cronología</span>
+            <span style="padding:6px 14px;font-weight:500">Tu voz</span>
+          </div>
+          <span style="flex:1"></span>
+          <div style="display:flex;gap:4px;background:var(--s2);border-radius:8px;padding:3px;font-size:13px">
+            <span style="padding:5px 12px;border-radius:6px;background:var(--surface);font-weight:500">Toda la saga</span>
+            <span style="padding:5px 12px;color:var(--muted)">La sal del faro</span>
+            <span style="padding:5px 12px;color:var(--muted)">Marea baja</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px">
+          <a href="SagaFicha{{sfx}}.dc.html" style="background:var(--surface);border:1.5px solid var(--ink);border-radius:12px;padding:16px 18px;text-decoration:none;color:var(--ink);display:flex;flex-direction:column;gap:4px"><b style="font-weight:600">Elena Ruiz</b><span style="color:var(--muted);font-size:13px">Narra. 14 → 17 → 20.</span><span style="color:var(--faint);font-size:12px">libros 1, 2, 3</span></a>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><b style="font-weight:600">Tomás Ruiz</b><span style="color:var(--muted);font-size:13px">Farero. Teme quedarse sin el faro.</span><span style="color:var(--faint);font-size:12px">libros 1, 2</span></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><b style="font-weight:600">Doña Amalia</b><span style="color:var(--muted);font-size:13px">El almacén. Contrata a Elena.</span><span style="color:var(--faint);font-size:12px">libros 1, 2</span></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><span style="display:flex;align-items:center;gap:8px"><b style="font-weight:600">Bruno Acosta</b><span style="background:var(--orange);color:var(--orangeInk);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600">¿41 o casi 50?</span></span><span style="color:var(--muted);font-size:13px">Inspector. Vuelve en 1960.</span><span style="color:var(--faint);font-size:12px">libros 1, 2</span></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><b style="font-weight:600">Nicolás Vera</b><span style="color:var(--muted);font-size:13px">Ingeniero del muelle nuevo.</span><span style="color:var(--faint);font-size:12px">libro 2</span></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:4px"><b style="font-weight:600">Rosa</b><span style="color:var(--muted);font-size:13px">La madre, en los recuerdos.</span><span style="color:var(--faint);font-size:12px">libro 1</span></div>
+        </div>
+        <span style="color:var(--muted);font-size:13px">Personajes, mundo, cronología y voz son de la saga. Estructura muestra el libro elegido.</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isFicha }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:64px;top:40px;right:0;bottom:0;display:flex;justify-content:center;padding-top:40px">
+      <div style="width:960px;display:flex;flex-direction:column;gap:20px">
+        <a href="SagaPersonajes{{sfx}}.dc.html" style="color:var(--muted);text-decoration:none;font-size:13px">← Personajes</a>
+        <div style="display:grid;grid-template-columns:minmax(0, 1fr) 300px;gap:24px;align-items:start">
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px 28px;display:flex;flex-direction:column;gap:18px">
+            <div><div style="font-size:24px;font-weight:600">Elena Ruiz</div><div style="color:var(--muted)">Narradora de la saga</div></div>
+            <div style="display:grid;grid-template-columns:120px minmax(0, 1fr);gap:8px 16px;font-size:15px">
+              <span style="color:var(--muted)">Siempre</span><span>Hija de Tomás y Rosa. Le teme al mar abierto. Cuenta las cosas cuando ya pasaron.</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="border-left:2px solid var(--lineS);padding:2px 0 2px 14px;display:flex;flex-direction:column;gap:2px"><b style="font-weight:600">1 · La sal del faro · 14 años</b><span style="color:var(--muted)">Vive en el faro. Esconde las cartas de la madre. Sube a la linterna aunque no debe.</span></div>
+              <div style="border-left:2px solid var(--activeInk);padding:2px 0 2px 14px;display:flex;flex-direction:column;gap:2px"><span style="display:flex;align-items:center;gap:8px"><b style="font-weight:600">2 · Marea baja · 17 años</b><span style="background:var(--active);color:var(--activeInk);border-radius:6px;padding:0 7px;font-size:12px;font-weight:600">estás acá</span></span><span style="color:var(--muted)">Trabaja en el almacén de Doña Amalia. No sube más a la linterna. Con Tomás casi no se hablan.</span></div>
+              <div style="border-left:2px solid var(--lineS);padding:2px 0 2px 14px;display:flex;flex-direction:column;gap:2px"><b style="font-weight:600">3 · La última luz · 20 años</b><span style="color:var(--faint)">Sin escribir todavía.</span></div>
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+            <b style="font-weight:600">Aparece en</b>
+            <span style="display:flex;justify-content:space-between"><span>La sal del faro</span><span style="color:var(--muted)">14 cap.</span></span>
+            <a href="SagaHoja{{sfx}}.dc.html" style="color:var(--ink);text-decoration:none;display:flex;justify-content:space-between"><span>Marea baja</span><span style="color:var(--muted)">7 cap. →</span></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isPedir }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:64px;top:40px;right:0;bottom:0;display:flex;justify-content:center;padding-top:40px">
+      <div style="width:680px;display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:24px;font-weight:600">Pedir lectura</div>
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:20px">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-weight:600">Sobre</span>
+            <div style="display:flex;gap:4px;background:var(--s2);border-radius:8px;padding:3px;align-self:flex-start">
+              <span style="padding:6px 16px;color:var(--muted)">Cap. 7</span>
+              <span style="padding:6px 16px;color:var(--muted)">Marea baja</span>
+              <span style="padding:6px 16px;border-radius:6px;background:var(--surface);font-weight:500">La saga</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-weight:600">Qué querés</span>
+            <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px">
+              <span style="padding:12px 14px;border:1.5px solid var(--ink);border-radius:10px;display:flex;flex-direction:column"><b style="font-weight:600">Consistencia</b><span style="color:var(--muted);font-size:13px">Marea baja contra La sal del faro.</span></span>
+              <span style="padding:12px 14px;border:1px solid var(--lineS);border-radius:10px;display:flex;flex-direction:column"><b style="font-weight:600">Estructura</b><span style="color:var(--muted);font-size:13px">El arco de los tres libros.</span></span>
+              <span style="padding:12px 14px;border:1px solid var(--lineS);border-radius:10px;display:flex;flex-direction:column"><b style="font-weight:600">Lectores</b><span style="color:var(--muted);font-size:13px">Marta ya leyó el libro 1 y sigue con este.</span></span>
+              <span style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;opacity:.45"><b style="font-weight:600">Prosa y estilo</b><span style="color:var(--muted);font-size:13px">Se pide sobre un capítulo.</span></span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="flex:1;color:var(--muted);font-size:13px">Tarda unos minutos. La encontrás en Lecturas.</span>
+            <a href="SagaConsistencia{{sfx}}.dc.html" style="background:var(--cta);color:var(--ctaInk);text-decoration:none;font-weight:600;border-radius:10px;padding:10px 24px">Pedir lectura</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isCons }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:64px;top:40px;right:0;bottom:0;display:flex;justify-content:center;padding-top:40px">
+      <div style="width:680px;display:flex;flex-direction:column;gap:20px">
+        <span style="color:var(--muted);font-size:13px">← Lecturas</span>
+        <div><div style="font-size:24px;font-weight:600">Consistencia · La saga</div><div style="color:var(--muted)">Marea baja contra La sal del faro. Hoy, 12:40.</div></div>
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column">
+          <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px"><span style="display:flex;gap:8px;align-items:center"><span style="background:var(--orange);color:var(--orangeInk);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600">Choca</span><b style="font-weight:600">El faro ya es eléctrico</b></span><span>Marea baja, cap. 7: "Dicen que lo van a electrificar". En La sal del faro, cap. 14, la lámpara nueva llega en 1958.</span><a href="SagaHoja{{sfx}}.dc.html" style="color:var(--ink);font-size:13px;font-weight:500">Ir al párrafo →</a></div>
+          <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px"><span style="display:flex;gap:8px;align-items:center"><span style="background:var(--orange);color:var(--orangeInk);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600">Choca</span><b style="font-weight:600">La edad de Bruno</b></span><span>41 en 1957 y "casi cincuenta" en 1960.</span><a href="ResolverChoque{{sfx}}.dc.html" style="color:var(--ink);font-size:13px;font-weight:500">Resolver →</a></div>
+          <div style="padding:16px 20px;display:flex;flex-direction:column;gap:4px"><span style="display:flex;gap:8px;align-items:center"><span style="background:var(--green);color:var(--greenInk);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600">Cierra</span><b style="font-weight:600">Elena y la linterna</b></span><span>Dejó de subir después del cap. 14 del libro 1: coincide.</span></div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"screen":{"editor":"enum","options":["inicio","nueva","juntar","hoja","novela","ficha","pedir","consistencia"],"default":"inicio"},"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const d = this.props.dark ?? false;
+const s = this.props.screen ?? "inicio";
+const L = "--bg:#f3f3f1;--rail:#fbfbfa;--surface:#ffffff;--s2:#f2f2ef;--line:#e7e7e3;--lineS:#d9d9d4;--ink:#1b1c1e;--muted:#62656b;--faint:#a6a9ae;--cta:#fbd38d;--ctaInk:#3b2a06;--active:#fde6b3;--activeInk:#7a4f00;--green:#dff2e5;--greenInk:#1d6e3f;--orange:#fdebd7;--orangeInk:#a94f08;--blue:#e4ecfd;--blueInk:#2d55c4;--violet:#ece6fb;--violetInk:#5f3dba;--red:#fde2e1;--redInk:#b42318;--grey:#ececea;--greyInk:#4d5056;--page:#ebebe7;--paper:#ffffff";
+const D = "--bg:#121315;--rail:#16171a;--surface:#1e2024;--s2:#26292e;--line:#2a2d32;--lineS:#383c42;--ink:#eceef0;--muted:#a3a8ae;--faint:#5a5e64;--cta:#f3c56a;--ctaInk:#2a1d02;--active:#3a2e14;--activeInk:#f3c56a;--green:#17311f;--greenInk:#8bd8a8;--orange:#3a2715;--orangeInk:#f4b47e;--blue:#1c2944;--blueInk:#a3beff;--violet:#29223f;--violetInk:#c6b4ff;--red:#3a1a1a;--redInk:#ff9b94;--grey:#26292e;--greyInk:#c2c6cc;--page:#0d0e10;--paper:#1a1b1e;color-scheme:dark";
+const work = ["hoja", "novela", "ficha", "pedir", "consistencia"].includes(s);
+const sec = s === "hoja" ? "man" : (s === "novela" || s === "ficha") ? "nov" : (s === "pedir" || s === "consistencia") ? "lec" : "";
+const bg = (k) => (sec === k ? "var(--active)" : "transparent");
+const ink = (k) => (sec === k ? "var(--activeInk)" : "var(--muted)");
+const crumbs = { hoja: "Cap. 7", novela: "Personajes", ficha: "Personajes › Elena Ruiz", pedir: "Pedir lectura", consistencia: "Lecturas › Consistencia" };
+return {
+vars: d ? D : L, sfx: d ? "Oscuro" : "", crumb: crumbs[s] ?? "",
+pageBg: s === "hoja" ? "var(--paper)" : "var(--bg)",
+isWork: work, aMan: bg("man"), aManInk: ink("man"), aNov: bg("nov"), aNovInk: ink("nov"), aLec: bg("lec"), aLecInk: ink("lec"),
+isInicio: s === "inicio", isNueva: s === "nueva", isJuntar: s === "juntar", isHoja: s === "hoja", isNovela: s === "novela", isFicha: s === "ficha", isPedir: s === "pedir", isCons: s === "consistencia"
+};
+}
+}
+</script>
+</body>
+</html>

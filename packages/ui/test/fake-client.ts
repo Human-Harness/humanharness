@@ -1285,10 +1285,8 @@ export class FakeClient implements HarnessClient {
     removeLocal: async (_id: string): Promise<ModsView> => ({ mods: [], problems: [] }),
     onChanged: (_fn: (v: ModsView) => void) => () => {},
     onReloaded: (_fn: (e: { id: string; version: number }) => void) => () => {},
-    call: async (id: string, _name: string, _payload?: unknown): Promise<unknown> => {
-      throw new Error(`No mod "${id}"`);
-    },
-    on: (_id: string, _name: string, _fn: (value: unknown) => void) => () => {},
+    call: (id: string): Promise<unknown> => Promise.reject(new Error(`No mod "${id}"`)),
+    on: () => () => {},
   };
   /** What setupSteps.get answers; submit, complete and skip change it. */
   setupState: SetupStepsState = { steps: {}, blocking: [] };

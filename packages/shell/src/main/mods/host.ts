@@ -456,15 +456,17 @@ export class ModHost {
   }
 
   /**
-   * A mod's ui calling its own main by name (`hh:modCall`): `ipc`, guarded and counted the same way, rejecting with a
+   * A mod's ui calling its own main by name (`hh:modCall`): guarded and counted as a hook, rejecting with a
    * clear reason. An app channel's name (`hh:…`) is never one of a mod's own.
    */
   async call(id: string, name: string, payload: unknown): Promise<unknown> {
     const r = this.mods.get(id);
     if (!r) throw new Error(`No mod "${id}"`);
     if (!r.on) throw new Error(`Mod "${id}" is off`);
-    if (name.startsWith("hh:") || !r.channels.has(name)) throw new Error(`Mod "${id}" has no channel "${name}"`);
-    const res = await this.ipc(id, name, payload);
+    const handler = name.startsWith("hh:") ? undefined : r.channels.get(name);
+    if (!handler) throw new Error(`Mod "${id}" has no channel "${name}"`);
+    const res = await guarded(() => handler(payload), this.hookMs);
+    await this.count(r, res.ok, res.ok ? undefined : res.reason);
     if (!res.ok) throw new Error(res.reason);
     return res.value;
   }

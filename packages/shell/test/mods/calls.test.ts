@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CoreMainCtx } from "@humanharness/mod-sdk/core";
-import { type ModLoaderOptions, createBlockRegistry, startModLoader } from "@humanharness/ui";
 import { ModHost, type HostDeps } from "../../src/main/mods/host";
 import { registerModsIpc } from "../../src/main/mods/mods-ipc";
 
@@ -126,39 +125,23 @@ describe("a mod's ui and its main, end to end", () => {
       call: (id, name, payload) => host.call(id, name, payload),
     });
     // The preload's shape, over the handlers above.
-    const client = {
-      mods: {
-        view: async () => ({ mods: host.view().map((r) => ({ ...r, ui: true })), problems: [] }),
-        onChanged: () => () => {},
-        onReloaded: () => () => {},
-        call: async (id: string, name: string, payload?: unknown) => handlers.get("hh:modCall")!(id, name, payload),
-        on: (id: string, name: string, fn: (v: unknown) => void) => {
-          const l = (p: { id: string; name: string; value: unknown }) => void (p.id === id && p.name === name && fn(p.value));
-          pushes.add(l);
-          return () => void pushes.delete(l);
-        },
+    const mods = {
+      call: async (id: string, name: string, payload?: unknown) => handlers.get("hh:modCall")!(id, name, payload),
+      on: (id: string, name: string, fn: (v: unknown) => void) => {
+        const l = (p: { id: string; name: string; value: unknown }) => void (p.id === id && p.name === name && fn(p.value));
+        pushes.add(l);
+        return () => void pushes.delete(l);
       },
     };
+    // The ui ctx as the window's mod loader binds it to the mod's id (its own tests: packages/ui/test/mod-loader.test.ts).
+    const ctx = { call: (name: string, payload?: unknown) => mods.call("pinger", name, payload), on: (name: string, fn: (v: unknown) => void) => mods.on("pinger", name, fn) };
     const heard: unknown[] = [];
-    let answer: Promise<unknown> | undefined;
-    let stolen: Promise<unknown> | undefined;
-    const importer: NonNullable<ModLoaderOptions["importer"]> = async (url) => ({
-      default: {
-        ui: (ctx) => {
-          if (!url.startsWith("hh-mod://pinger/")) return;
-          ctx.on("tick", (v) => heard.push(v));
-          answer = ctx.call("ping", 7);
-          stolen = ctx.call("secret");
-        },
-      },
-    });
-    const loader = startModLoader({ client, registry: createBlockRegistry(), importer, log: () => {} });
-    await loader.settled();
-    expect(await answer).toBe("pong 7");
-    await expect(stolen).rejects.toThrow('Mod "pinger" has no channel "secret"');
+    const off = ctx.on("tick", (v) => heard.push(v));
+    expect(await ctx.call("ping", 7)).toBe("pong 7");
+    await expect(ctx.call("secret")).rejects.toThrow('Mod "pinger" has no channel "secret"');
     tick(42);
     expect(heard).toEqual([42]);
-    loader.stop();
+    off();
     tick(43);
     expect(heard).toEqual([42]);
   });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { MOD_ID, modJsonSchema } from "@humanharness/mod-sdk";
 import type { ModReview, ModsView } from "@humanharness/protocol";
 import type { InvokeChannel } from "@humanharness/protocol/channels";
+import { registerModCall } from "./mod-call-ipc";
 
 const TOKEN = /^[0-9a-f]{32}$/;
 type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
@@ -28,9 +29,6 @@ export interface ModsIpcDeps {
   /** A mod's ui calling its own main by name (`ModHost.call`); rejects when the mod is off or has no such name. */
   call?(id: string, name: string, payload: unknown): Promise<unknown>;
 }
-
-/** A mod's own channel name: never an app channel (`hh:…`), which has its own handler. */
-const validName = (name: unknown): name is string => typeof name === "string" && name.length > 0 && name.length <= 128 && !name.startsWith("hh:");
 
 const takenProblem = (id: string) => `A mod with the id "${id}" is already in this app`;
 const validId = (id: unknown): id is string => typeof id === "string" && MOD_ID.test(id);
@@ -89,11 +87,7 @@ export function registerModsIpc(handle: Handle, d: ModsIpcDeps): void {
     await d.addLocal(review.folder);
     return d.view();
   });
-  handle("hh:modCall", async (id: unknown, name: unknown, payload: unknown) => {
-    if (!validId(id) || !validName(name)) throw new Error("Invalid mod call");
-    if (!d.call) throw new Error(`Mod "${id}" is off`);
-    return d.call(id, name, payload);
-  });
+  registerModCall(handle, d.call?.bind(d));
   handle("hh:modRemoveLocal", async (id: unknown) => {
     if (!validId(id) || !d.isLocal(id)) throw new Error("Not a local mod");
     await d.removeLocal(id);

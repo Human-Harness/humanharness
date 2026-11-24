@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** The two folded overlays of an open task (task view one column): the path on the left, Sidekick on the right. */
-export type OverlayName = "path" | "sidekick";
+/**
+ * The folded overlays of an open task (task view one column): the path on the left, Sidekick or a mod's overlay
+ * (`mod:<id>/<name>`, `ctx.taskOverlay`) on the right.
+ */
+export type OverlayName = "path" | "sidekick" | `mod:${string}`;
 
 /**
  * Which overlay is open: one at a time, none on mount, and none again when `key` (the task) changes. A close puts

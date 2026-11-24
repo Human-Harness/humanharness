@@ -24,7 +24,9 @@ import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
 import { SetupStepsList } from "./SetupStepsList";
 import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
-import { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
+import { SlotBoundary } from "./layout/BlockBoundary";
+import { useBlocks } from "./layout/registry";
+import { type SettingsTab, modTabs, tabLabel, visibleTabs } from "./settings-tabs";
 import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
@@ -85,7 +87,10 @@ export function SettingsPage({
   // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0);
   // Plugins only when the harness takes them (plugins D0); Connections only when it declares secrets (tools D0); Jobs
   // only when it declares jobs (parallel D0).
-  const tabs = visibleTabs(state);
+  const registry = useBlocks();
+  const tabs = visibleTabs(state, registry);
+  /** The open tab, when a mod put it there (`ctx.settingsTab`). */
+  const modTab = tabs.includes(tab) ? modTabs(registry).find((m) => m.name === tab) : undefined;
   const configured = isConfigured(state.config);
   // The tab reads as the section's title (spec §8); its id stays "sidekick".
   const sidekick = useSidekick(client, state.sidekick !== undefined);
@@ -205,7 +210,7 @@ export function SettingsPage({
           title={t("settings.title")}
           titleId={titleId}
           label={t("settings.sections")}
-          items={tabs.map((id) => ({ id, label: tabLabel(t, state, id, sidekickTab), count: attention[id] ?? 0 }))}
+          items={tabs.map((id) => ({ id, label: tabLabel(t, state, id, sidekickTab, registry), count: attention[id] ?? 0 }))}
           current={tab}
           onPick={onTab}
           tabId={tabId}
@@ -236,6 +241,11 @@ export function SettingsPage({
             {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
             {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
             {tab === "usage" && configured && <UsageTab client={client} state={state} />}
+            {modTab && configured && (
+              <SlotBoundary key={modTab.name} mod={modTab.mod} client={client}>
+                <modTab.Component openTab={(id) => onTab(id)} />
+              </SlotBoundary>
+            )}
             {tab === "harness" && configured && (
               <>
                 <GuideSectionHead line={t("settings.line.harness", { name: state.harness.name })} />

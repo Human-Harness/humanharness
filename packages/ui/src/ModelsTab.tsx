@@ -4,6 +4,8 @@ import type { Tier } from "@humanharness/harness-sdk";
 import type { AppState, Effort, HarnessClient, ModelSpec, ModelsConfig, ModelsView, TaskModelChoice } from "./client";
 import { shownLanguage } from "./language";
 import { Group, Row, Rx, SectionHead } from "./guide";
+import { SlotBoundary } from "./layout/BlockBoundary";
+import { useBlocks } from "./layout/registry";
 
 // Local copies: the UI imports nothing from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
@@ -125,6 +127,8 @@ export function ModelsTab({
 }) {
   const { t } = useTranslation();
   const [models, update, saveFailed] = useModels(client, state, onChange);
+  /** Mods' rows (`ctx.row("models", …)`). */
+  const modRows = useBlocks().slot("row").filter((r) => r.place === "models");
   const [part, setPart] = useState<"tasks" | "levels">(focus?.part ?? "tasks");
   const focusN = focus?.n;
   useEffect(() => {
@@ -165,6 +169,29 @@ export function ModelsTab({
     state.sidekick ? { key: "sidekick", label: t("sidekick.models.label"), description: t("sidekick.models.hint") } : undefined,
   );
 
+  /** One task's row: its level, or its own custom settings. */
+  const taskRow = ({ key, label, description }: TaskRowInfo) => {
+    const choice = models.tasks?.[key];
+    const recommended = view.recommended[key] ?? "standard";
+    const custom = typeof choice === "object" ? choice.custom : undefined;
+    const spec = custom ?? tierSpec(typeof choice === "string" ? choice : recommended);
+    return (
+      <TaskRow
+        key={key}
+        label={label}
+        description={description}
+        recommended={recommended}
+        choice={choice}
+        spec={spec}
+        offer={offer}
+        onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { ...spec, engine } } : v === recommended ? null : v))}
+        // The editor offers the current engine's models: an edited custom task runs on that engine.
+        onCustom={(next) => update((m) => withTask(m, key, { custom: { ...next, engine } }))}
+        onRestore={() => update((m) => withTask(m, key, null))}
+      />
+    );
+  };
+
   return (
     <div>
       {head}
@@ -188,27 +215,13 @@ export function ModelsTab({
             }
             data-setting="models.tasks"
           >
-            {rows.map(({ key, label, description }) => {
-              const choice = models.tasks?.[key];
-              const recommended = view.recommended[key] ?? "standard";
-              const custom = typeof choice === "object" ? choice.custom : undefined;
-              const spec = custom ?? tierSpec(typeof choice === "string" ? choice : recommended);
-              return (
-                <TaskRow
-                  key={key}
-                  label={label}
-                  description={description}
-                  recommended={recommended}
-                  choice={choice}
-                  spec={spec}
-                  offer={offer}
-                  onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { ...spec, engine } } : v === recommended ? null : v))}
-                  // The editor offers the current engine's models: an edited custom task runs on that engine.
-                  onCustom={(next) => update((m) => withTask(m, key, { custom: { ...next, engine } }))}
-                  onRestore={() => update((m) => withTask(m, key, null))}
-                />
-              );
-            })}
+            {rows.map(taskRow)}
+            {/* A mod's rows, after the core's (its Sidekick-like task rows draw the core's way). */}
+            {modRows.map(({ mod, Component }, i) => (
+              <SlotBoundary key={`${mod}-${i}`} mod={mod} client={client}>
+                <Component taskRow={taskRow} />
+              </SlotBoundary>
+            ))}
           </Group>
           <Group>
             <PinnedBudget

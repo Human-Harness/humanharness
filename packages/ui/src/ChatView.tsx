@@ -72,6 +72,7 @@ import { TaskBar, type TaskBarSlot } from "./task-view/TaskBar";
 import { Overlay } from "./task-view/Overlay";
 import { PathButton } from "./task-view/PathButton";
 import { useFolded } from "./task-view/useFolded";
+import { ModBarParts, ModOverlays, modReviewSend, useModParts } from "./task-view/ModParts";
 import { JumpPill } from "./task-view/JumpPill";
 import { useNewSinceScroll } from "./task-view/useNewSinceScroll";
 import { WorkingLine, stepOf } from "./task-view/WorkingLine";
@@ -358,6 +359,7 @@ export function ChatView({
   /** Under 720 px Sidekick has no overlay: no paid review the person can't see. */
   const narrow = useNarrow();
   const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
+  const mods = useModParts({ slim: !!slim, narrow, sidekickReviews: reviewOn });
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
@@ -1258,7 +1260,9 @@ export function ChatView({
         ready: tasks.current?.status === "waiting" && !blocked() && !pending,
         respond: respondTo,
         // D0: without Sidekick (or with the review off) the form sends as before.
-        ...(reviewOn && sidekick ? { review: reviewAnswer, cancelReview: cancelAnswerReview, reviewWait: sidekick.settings.wait } : {}),
+        ...(reviewOn && sidekick
+          ? { review: reviewAnswer, cancelReview: cancelAnswerReview, reviewWait: sidekick.settings.wait }
+          : mods.form(() => reviewing !== null)),
       }
     : undefined;
   const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
@@ -1317,11 +1321,19 @@ export function ChatView({
   const submit = async (text: string, force = false) => {
     // A send that would be refused runs no paid review first.
     if (reviewing || !canSend()) return;
-    if (!reviewOn || !text.trim()) {
+    if ((!reviewOn && !mods.reviewer) || !text.trim()) {
       sendTyped(text);
       return;
     }
     const seq = ++reviewSeq.current;
+    if (!reviewOn && mods.reviewer) {
+      const go = await modReviewSend({ ...mods, reviewer: mods.reviewer }, text, force, (until) => setReviewing({ until }), () => seq !== reviewSeq.current);
+      if (go === null) return;
+      setReviewing(null);
+      if (go && sendRef.current(text)) setDraft("");
+      return;
+    }
+    if (!sidekick) return;
     const wait = sidekick.settings.wait;
     setReviewing({ until: wait === "always" ? null : Date.now() + wait * 1000 });
     // Material in the open scope goes with the prompt: the missing-context flag stays quiet.
@@ -1349,7 +1361,7 @@ export function ChatView({
     if (reviewing) {
       reviewSeq.current++;
       setReviewing(null);
-      void client.sidekick.cancelReview().catch(() => undefined);
+      if (!mods.abort()) void client.sidekick.cancelReview().catch(() => undefined);
     }
     sendTyped(text);
   };
@@ -1765,6 +1777,7 @@ export function ChatView({
               context={tasks.current?.context && <ContextChip {...tasks.current.context} engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} onOpen={openContext} />}
               path={pathButton}
               sidekickButton={skButton}
+              parts={<ModBarParts parts={mods} overlay={overlay} client={client} task={tasks.current?.id ?? null} />}
               sidekick={
                 sidekick && {
                   on: sidekick.settings.on,
@@ -2078,12 +2091,14 @@ export function ChatView({
                 onSendNow={sendNow}
                 onReview={(text) => void submit(text, true)}
                 sidekick={skEnabled ? { spans: sidekick?.card && sidekick.settings.on && sidekick.card.prompt === draft ? cardSpans(sidekick.card) : [] } : undefined}
-                review={reviewing ? "reviewing" : reviewOn && !(chat.live || closing || checkpoint) ? "idle" : undefined}
+                marks={mods.marks(draft)}
+                review={reviewing ? "reviewing" : (reviewOn || mods.reviewer) && !(chat.live || closing || checkpoint) ? "idle" : undefined}
               />
             )}
             {reviewing && <ReviewHint until={reviewing.until} sendKey={SEND_KEY} />}
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
           </Main>
+          <ModOverlays parts={mods} overlay={overlay} client={client} closeLabel={t("reader.close")} />
           {skShown && overlay.open === "sidekick" && (
             <Overlay side="right" id={SK_ID} name={sidekick.info.name} closeLabel={t("sidekick.collapse")} onClose={overlay.close} autoFocus={overlay.focusIn} bare>
               <SidekickPanel

@@ -153,6 +153,40 @@ export interface UiCtx {
   call?(name: string, payload?: unknown): Promise<unknown>;
   /** Hears the mod's own main's `ctx.push(name, value)`; returns the way to stop. Stops by itself when the mod goes off. */
   on?(name: string, fn: (value: unknown) => void): Disposer;
+  /**
+   * A tab in Settings, right after Models; its id is `name` (search opens it), its button says `label`. The component
+   * gets `{ openTab(id) }`. Like every slot below, it renders behind the block boundary: a part that throws shows
+   * "This part of the app failed" with Turn off.
+   */
+  settingsTab?(name: string, component: unknown, o: { label: string }): Disposer;
+  /**
+   * A row after the core's: in Settings › Models' task rows (the component gets `{ taskRow({ key, label, description }) }`,
+   * which draws a level picker the core's way for `models.tasks[key]`), or Settings › Usage's lines apart from the tasks.
+   */
+  row?(place: RowPlace, component: unknown): Disposer;
+  /** A piece in the task bar, after the core's; the component gets `{ task }`, the open task's id or null. */
+  taskBar?(component: unknown): Disposer;
+  /**
+   * A right overlay of the open task: `button` goes in the task bar (it gets `{ expanded, controls, onOpen, buttonRef }`),
+   * `panel` in the overlay (it gets `{ close }`). One overlay open at a time, folded on a task switch; none in a narrow
+   * window or in slim mode.
+   */
+  taskOverlay?(o: { name: string; button: unknown; panel: unknown }): Disposer;
+  /** Reviews the composer's sends (Enter reviews first, ⌥⏎ forces a review, ⌘⏎ sends at once) and the answer form's. */
+  composer?(reviewer: ComposerReviewer): Disposer;
+}
+
+/** Where a mod's `row` goes. */
+type RowPlace = "models" | "usage";
+/** What a review of a send says: send it as it is, or hold it (the mod shows why; the draft stays). */
+type ReviewVerdict = "send" | "hold";
+interface ComposerReviewer {
+  /** Spans of the draft to underline, `[start, end)`. */
+  marks?(draft: string): readonly (readonly [number, number])[];
+  /** `signal` aborts when the person sends at once or the form goes; `answer`: the text is an answer form's free text. */
+  review(text: string, signal: AbortSignal, o: { force: boolean; answer: boolean }): Promise<ReviewVerdict>;
+  /** The longest wait the countdown shows, in seconds, or "always" (default 6). */
+  wait?: number | "always";
 }
 
 export interface ModDefinition<C = undefined> {

@@ -29,3 +29,15 @@ function FailedBlock({ name, onTurnOff }: { name: string; onTurnOff: () => void 
     </Rx.Box>
   );
 }
+
+/**
+ * A mod's part in one of the core's slots (a Settings tab, a row, a task bar piece, an overlay): behind the same
+ * boundary as a block, whose Turn off turns the mod off.
+ */
+export function SlotBoundary({ mod, client, children }: { mod: string; client: { mods: { set(id: string, on: boolean): Promise<unknown> } }; children: ReactNode }) {
+  return (
+    <BlockBoundary name={mod} onTurnOff={() => void client.mods.set(mod, false).catch(() => undefined)}>
+      {children}
+    </BlockBoundary>
+  );
+}

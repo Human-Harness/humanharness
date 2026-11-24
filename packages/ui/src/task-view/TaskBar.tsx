@@ -33,6 +33,7 @@ export function TaskBar({
   path,
   sidekickButton,
   sidekick,
+  parts,
 }: Omit<TaskBarSlot, "el"> & {
   working: boolean | null;
   scope?: ReactNode;
@@ -42,6 +43,8 @@ export function TaskBar({
   /** The button that opens Sidekick's overlay (SidekickButton), when the harness has Sidekick. */
   sidekickButton?: ReactNode;
   sidekick?: { on: boolean; onToggle: () => void } | null | undefined;
+  /** Mods' pieces (`ctx.taskBar`) and their overlays' buttons (`ctx.taskOverlay`), after the core's. */
+  parts?: ReactNode;
 }) {
   const { t } = useTranslation();
   const tail = (
@@ -56,6 +59,7 @@ export function TaskBar({
         />
       )}
       {sidekickButton}
+      {parts}
     </>
   );
   if (!open) return tail;

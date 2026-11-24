@@ -460,6 +460,11 @@ export function scanRepo(): string[] {
   css(join(src, "styles.css"), { tokenFile: true, topBarSelectors: TOP_BAR_SELECTORS });
   for (const f of filesUnder(join(src, "plugin-ui"), ".css")) css(f, { tokenFile: rel(f) === "packages/ui/src/plugin-ui/tokens.css" });
   for (const f of filesUnder(src, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
+  // Mods' UI sources follow the same closed world as the core's.
+  for (const mod of subdirs(join(REPO_ROOT, "packages/mods"))) {
+    const modSrc = join(mod, "src");
+    if (existsSync(modSrc)) for (const f of filesUnder(modSrc, ".tsx")) out.push(...scanTsx(rel(f), readFileSync(f, "utf8"), GUIDE_CLASSES));
+  }
   for (const root of harnessRoots(REPO_ROOT)) out.push(...scanHarnessCss(REPO_ROOT, root));
   return out.sort();
 }

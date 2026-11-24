@@ -3,13 +3,13 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, SidekickState, TaskView } from "../src/client";
-import { SidekickButton } from "../src/sidekick/SidekickPanel";
+import { SidekickButton } from "../../mods/sidekick/src/ui/SidekickPanel";
 import { Overlay } from "../src/task-view/Overlay";
 import { PathButton } from "../src/task-view/PathButton";
 import { useOverlay } from "../src/task-view/useOverlay";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
-import { SK_ON } from "./sidekick-fixtures";
+import { SK_ON } from "../../mods/sidekick/test/sidekick-fixtures";
 
 afterEach(cleanup);
 
@@ -31,17 +31,18 @@ const running: TaskView = { current: { id: "t1", status: "waiting", action: "a" 
 /** The chat's use of the pieces: the path on the left, Sidekick (when the harness has one) on the right. */
 function Task({ taskKey, sidekick }: { taskKey: string; sidekick?: SidekickState }) {
   const ov = useOverlay(taskKey);
+  const sk = "mod:sidekick/sidekick" as const;
   return (
     <>
       <PathButton state={state()} tasks={running} name="Path" expanded={ov.open === "path"} onClick={() => ov.toggle("path")} buttonRef={ov.trigger("path")} />
-      {sidekick && <SidekickButton state={sidekick} expanded={ov.open === "sidekick"} onOpen={() => ov.toggle("sidekick")} buttonRef={ov.trigger("sidekick")} />}
+      {sidekick && <SidekickButton state={sidekick} expanded={ov.open === sk} onOpen={() => ov.toggle(sk)} buttonRef={ov.trigger(sk)} />}
       <input aria-label="Composer" />
       {ov.open === "path" && (
         <Overlay side="left" name="Path" closeLabel="Close" onClose={ov.close} autoFocus={ov.focusIn}>
           <button type="button">Step one</button>
         </Overlay>
       )}
-      {sidekick && ov.open === "sidekick" && (
+      {sidekick && ov.open === sk && (
         <Overlay side="right" name="Sidekick" closeLabel="Close" onClose={ov.close} autoFocus={ov.focusIn}>
           <p>Cards</p>
         </Overlay>

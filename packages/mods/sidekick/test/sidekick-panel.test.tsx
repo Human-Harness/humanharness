@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SidekickCard, SidekickState } from "../src/client";
-import { SidekickButton, SidekickPanel } from "../src/sidekick/SidekickPanel";
-import { SidekickMark } from "../src/sidekick/mark";
-import { wordDiff } from "../src/sidekick/word-diff";
-import { renderIn } from "./render";
+import type { SidekickCard, SidekickState } from "@humanharness/ui";
+import { SidekickButton, SidekickPanel } from "../src/ui/SidekickPanel";
+import { SidekickMark } from "../src/ui/mark";
+import { wordDiff } from "../src/ui/word-diff";
+import { renderIn } from "../../../ui/test/render";
 import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
@@ -361,7 +361,7 @@ describe("SidekickMark (style guide §4, row 44)", () => {
     expect(emoji && token).toBeTruthy();
   });
   it("the circle is 24 wide and round, from tokens", async () => {
-    const { rule } = await import("./guide-css");
+    const { rule } = await import("../../../ui/test/guide-css");
     const r = rule(".hh-sk-mark");
     expect(r.width).toBe("24px");
     expect(r.height).toBe("24px");

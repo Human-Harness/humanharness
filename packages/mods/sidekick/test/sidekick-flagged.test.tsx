@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { FlaggedText, flaggedParts } from "../src/sidekick/FlaggedText";
+import { FlaggedText, flaggedParts } from "../../../ui/src/task-view/FlaggedText";
 
 afterEach(cleanup);
 

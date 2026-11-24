@@ -45,7 +45,7 @@ describe("Composer", () => {
 
   it("⌘⏎ sends at once with Sidekick, ⌥⏎ asks for a review", async () => {
     const p = base();
-    await renderIn("en", <Held {...p} sidekick={{ spans: [] }} />);
+    await renderIn("en", <Held {...p} marks={[]} />);
     const box = screen.getByRole("textbox");
     fireEvent.change(box, { target: { value: "Hi" } });
     fireEvent.keyDown(box, { key: "Enter", metaKey: true });

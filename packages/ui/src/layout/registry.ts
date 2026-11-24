@@ -51,7 +51,7 @@ export interface ComposerReviewer {
   /** Spans of the draft to underline, `[start, end)`. */
   marks?(draft: string): readonly (readonly [number, number])[];
   review(text: string, signal: AbortSignal, o: { force: boolean; answer: boolean }): Promise<ReviewVerdict>;
-  /** The longest wait for a review, in seconds, or "always" (default 5). */
+  /** The longest wait for a review, in seconds, or "always" (default 6). */
   wait?: number | "always";
 }
 

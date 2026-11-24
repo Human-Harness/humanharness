@@ -177,15 +177,15 @@ export interface UiCtx {
 }
 
 /** Where a mod's `row` goes. */
-export type RowPlace = "models" | "usage";
+type RowPlace = "models" | "usage";
 /** What a review of a send says: send it as it is, or hold it (the mod shows why; the draft stays). */
-export type ReviewVerdict = "send" | "hold";
-export interface ComposerReviewer {
+type ReviewVerdict = "send" | "hold";
+interface ComposerReviewer {
   /** Spans of the draft to underline, `[start, end)`. */
   marks?(draft: string): readonly (readonly [number, number])[];
   /** `signal` aborts when the person sends at once or the form goes; `answer`: the text is an answer form's free text. */
   review(text: string, signal: AbortSignal, o: { force: boolean; answer: boolean }): Promise<ReviewVerdict>;
-  /** The longest wait the countdown shows, in seconds, or "always" (default 5). */
+  /** The longest wait the countdown shows, in seconds, or "always" (default 6). */
   wait?: number | "always";
 }
 

@@ -201,8 +201,6 @@ export function ChatView({
   /** The open task's label and note count, null with none (and on unmount): the switcher and the rail's TASK group. */
   onTask?: (task: { label: string; notes: number } | null) => void;
   onFixEngine?: () => void;
-  /** Unused bridge: HarnessApp still passes it; job move-settings-ui deletes it together with that line. */
-  onSidekickSettings?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
   /** A turn runs (its step, null before the first) or none (null): the shell draws the working line on its pages. */

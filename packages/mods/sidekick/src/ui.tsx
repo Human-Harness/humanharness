@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { FirstOpenOffer } from "./ui/PresetOffer";
+import { settingsParts } from "./ui/settings";
 import { SidekickButton, SidekickPanel, waitingCards } from "./ui/SidekickPanel";
 import { useSidekick } from "./ui/useSidekick";
 
@@ -360,8 +361,8 @@ function OverlayPanel({ close, store, act }: OverlayPanelProps & { store: Store;
 }
 
 /**
- * Sidekick's task-view UI (minimal-core step 1b): the toggle in the task bar, the overlay with its cards, and the
- * composer's review. It calls main through the core's `client.sidekick` channels.
+ * Sidekick's UI (minimal-core step 1b): its Settings tab, Models row and Usage line, the toggle in the task bar, the
+ * overlay with its cards, and the composer's review. It calls main through the core's `client.sidekick` channels.
  */
 export default defineMod({
   id: "sidekick",
@@ -370,6 +371,7 @@ export default defineMod({
     const ctx = base as unknown as CoreUiCtx;
     const store = createStore();
     const act = actions(store);
+    settingsParts(ctx);
     ctx.taskBar(() => <TaskBarPiece ctx={ctx} store={store} act={act} />);
     ctx.taskOverlay({
       name: NAME,

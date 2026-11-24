@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickLearned } from "../client";
-import { Group, Row, Rx } from "../guide";
+import type { HarnessClient, SidekickLearned } from "@humanharness/ui";
+import { Group, Row, Rx } from "@humanharness/ui";
 
 type Level = SidekickLearned["level"];
 

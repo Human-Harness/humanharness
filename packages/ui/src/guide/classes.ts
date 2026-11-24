@@ -26,7 +26,7 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   // Group's loose list and a file path in a Row's hint (guide/settings.tsx)
   "hh-gd-list",
   "hh-gd-path",
-  // SidekickMark (§4)
+  // The coach mod's mark (§4)
   "hh-sk-mark",
   "hh-sk-mark-off",
   // Button and IconButton (§3)
@@ -50,7 +50,7 @@ export const GUIDE_CLASSES: ReadonlySet<string> = new Set<string>([
   "hh-tb-popover",
   "hh-rail-divider",
   "hh-rail-group",
-  // The folded overlays, the Sidekick button and the plugin chips row (task view one column)
+  // The folded overlays, the coach mod's button and the plugin chips row (task view one column)
   "hh-overlay",
   "hh-overlay-left",
   "hh-overlay-right",

@@ -155,15 +155,19 @@ export interface UiCtx {
   on?(name: string, fn: (value: unknown) => void): Disposer;
   /**
    * A tab in Settings, right after Models; its id is `name` (search opens it), its button says `label`. The component
-   * gets `{ openTab(id) }`. Like every slot below, it renders behind the block boundary: a part that throws shows
+   * gets `{ openTab(id), client, state }`, the app's client and state. `o.shown(state)` says when the tab shows
+   * (default: always); `o.useLabel({ client, state })`, a hook called while Settings is open, gives a name that changes
+   * (default `label`). Like every slot below, it renders behind the block boundary: a part that throws shows
    * "This part of the app failed" with Turn off.
    */
-  settingsTab?(name: string, component: unknown, o: { label: string }): Disposer;
+  settingsTab?(name: string, component: unknown, o: { label: string; shown?(state: unknown): boolean; useLabel?(app: { client: unknown; state: unknown }): string }): Disposer;
   /**
    * A row after the core's: in Settings › Models' task rows (the component gets `{ taskRow({ key, label, description }) }`,
-   * which draws a level picker the core's way for `models.tasks[key]`), or Settings › Usage's lines apart from the tasks.
+   * which draws a level picker the core's way for `models.tasks[key]`), or Settings › Usage's lines apart from the tasks
+   * (it gets `{ usage }`, the usage summary or null). Both get `{ client, state }`; `o.shown(props)`, given the same
+   * props, says when the row shows (default: always).
    */
-  row?(place: RowPlace, component: unknown): Disposer;
+  row?(place: RowPlace, component: unknown, o?: { shown?(props: { client: unknown; state: unknown; usage?: unknown }): boolean }): Disposer;
   /** A piece in the task bar, after the core's; the component gets `{ task }`, the open task's id or null. */
   taskBar?(component: unknown): Disposer;
   /**

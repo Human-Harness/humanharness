@@ -1,8 +1,8 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "../client";
-import { Group, Hidden, Row, Rx, SectionHead } from "../guide";
-import { shownLanguage } from "../language";
+import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "@humanharness/ui";
+import { Group, Hidden, Row, Rx, SectionHead } from "@humanharness/ui";
+import { shownLanguage } from "@humanharness/ui";
 import { LearnedList } from "./LearnedList";
 import { PresetOffer } from "./PresetOffer";
 import { ScopeSidekicks } from "./ScopeSidekicks";

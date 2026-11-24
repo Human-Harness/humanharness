@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "../client";
-import { Rx } from "../guide";
+import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "@humanharness/ui";
+import { Rx } from "@humanharness/ui";
 import { SidekickMark, markIcon } from "./mark";
 
 /** A stored sidekick imported from files: its id and the fields a new draft doesn't carry (Save replaces every field). */

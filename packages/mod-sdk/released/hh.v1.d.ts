@@ -303,17 +303,32 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       on?(name: string, fn: (value: unknown) => void): Disposer;
       /**
        * A tab in Settings, right after Models; its id is `name` (search opens it), its button says `label`. The component
-       * gets `{ openTab(id) }`. Like every slot below, it renders behind the block boundary: a part that throws shows
+       * gets `{ openTab(id), client, state }`, the app's client and state. `o.shown(state)` says when the tab shows
+       * (default: always); `o.useLabel({ client, state })`, a hook called while Settings is open, gives a name that changes
+       * (default `label`). Like every slot below, it renders behind the block boundary: a part that throws shows
        * "This part of the app failed" with Turn off.
        */
       settingsTab?(name: string, component: unknown, o: {
           label: string;
+          shown?(state: unknown): boolean;
+          useLabel?(app: {
+              client: unknown;
+              state: unknown;
+          }): string;
       }): Disposer;
       /**
        * A row after the core's: in Settings › Models' task rows (the component gets `{ taskRow({ key, label, description }) }`,
-       * which draws a level picker the core's way for `models.tasks[key]`), or Settings › Usage's lines apart from the tasks.
+       * which draws a level picker the core's way for `models.tasks[key]`), or Settings › Usage's lines apart from the tasks
+       * (it gets `{ usage }`, the usage summary or null). Both get `{ client, state }`; `o.shown(props)`, given the same
+       * props, says when the row shows (default: always).
        */
-      row?(place: RowPlace, component: unknown): Disposer;
+      row?(place: RowPlace, component: unknown, o?: {
+          shown?(props: {
+              client: unknown;
+              state: unknown;
+              usage?: unknown;
+          }): boolean;
+      }): Disposer;
       /** A piece in the task bar, after the core's; the component gets `{ task }`, the open task's id or null. */
       taskBar?(component: unknown): Disposer;
       /**
@@ -955,6 +970,7 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
 
 declare module "@humanharness/ui/_internal/src/layout/registry" {
   import { type ComponentType, type ReactNode } from "react";
+  import type { AppState, HarnessClient, UsageSummary } from "@humanharness/ui/_internal/src/client";
   import type { AppValue } from "@humanharness/ui/_internal/src/layout/app";
   /** What a mod's block gets: the `props` the layout gives it and the app (minimal-core spec §5.2). */
   export interface BlockProps {
@@ -962,9 +978,23 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       app: AppValue;
   }
   export type BlockComponent = ComponentType<BlockProps>;
+  /** What every Settings part of a mod gets: the app's client and state. */
+  export interface SettingsAppProps {
+      client: HarnessClient;
+      state: AppState;
+  }
   /** A mod's Settings tab: `openTab` goes to another tab (by its id). */
-  export interface SettingsTabProps {
+  export interface SettingsTabProps extends SettingsAppProps {
       openTab(id: string): void;
+  }
+  /**
+   * A mod's Settings tab, besides its component: `label` is its button's name; `shown` says whether this state shows it
+   * (default: always); `useLabel`, a hook the sheet calls while it is open, gives a name that changes (default `label`).
+   */
+  export interface SettingsTabOptions {
+      label: string;
+      shown?(state: AppState): boolean;
+      useLabel?(app: SettingsAppProps): string;
   }
   /** A task row the Models tab draws the core's way: a level picker for the task `key` (its `models.tasks` entry). */
   export interface ModelsTaskRow {
@@ -973,8 +1003,18 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       description?: string;
   }
   /** A mod's row in Settings › Models: `taskRow` draws a task row like the core's own. */
-  export interface ModelsRowProps {
+  export interface ModelsRowProps extends SettingsAppProps {
       taskRow(row: ModelsTaskRow): ReactNode;
+  }
+  /** A mod's line in Settings › Usage: the usage the tab read (null until it is read). */
+  export interface UsageRowProps extends SettingsAppProps {
+      usage: UsageSummary | null;
+  }
+  /** What a mod's row gets: the app's client and state, and its place's own (`taskRow` in Models, `usage` in Usage). */
+  export type RowProps = SettingsAppProps & Partial<Pick<ModelsRowProps, "taskRow"> & Pick<UsageRowProps, "usage">>;
+  /** A mod's row, besides its component: `shown` says whether it has something to draw (default: always). */
+  export interface RowOptions {
+      shown?(props: RowProps): boolean;
   }
   /** Where a mod's `row` goes: Settings › Models' task rows, or Settings › Usage's lines apart from the tasks. */
   export type RowPlace = "models" | "usage";
@@ -1016,14 +1056,13 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       settingsTab: {
           mod: string;
           name: string;
-          label: string;
           Component: ComponentType<SettingsTabProps>;
-      };
+      } & SettingsTabOptions;
       row: {
           mod: string;
           place: RowPlace;
-          Component: ComponentType<Partial<ModelsRowProps>>;
-      };
+          Component: ComponentType<RowProps>;
+      } & RowOptions;
       taskBar: {
           mod: string;
           Component: ComponentType<TaskBarProps>;

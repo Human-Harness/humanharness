@@ -60,10 +60,10 @@ export const MATERIAL_ROWS = ["material-review", "material-repair", "material-la
 
 /**
  * The actions in path order, then the others, then free questions, then (with material, and only when
- * `material` gives the stages' labels) the material stages; the links stage only with items (material spec §8);
- * Sidekick last, only when given (sidekick spec §5).
+ * `material` gives the stages' labels) the material stages; the links stage only with items (material spec §8).
+ * Mods' rows come after these (`ctx.row("models", …)`).
  */
-export function taskRows(state: AppState, questions: TaskRowInfo, material?: Record<string, string>, sidekick?: TaskRowInfo): TaskRowInfo[] {
+export function taskRows(state: AppState, questions: TaskRowInfo, material?: Record<string, string>): TaskRowInfo[] {
   const path = (state.path ?? []).filter((id) => state.actions[id]);
   const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id))];
   const stages = state.material && material ? MATERIAL_ROWS.filter((k) => k !== "material-link" || state.material?.items) : [];
@@ -71,7 +71,6 @@ export function taskRows(state: AppState, questions: TaskRowInfo, material?: Rec
     ...ids.map((id) => ({ key: id, label: state.actions[id].label, description: state.actions[id].description })),
     questions,
     ...stages.map((key) => ({ key, label: material?.[key] ?? key })),
-    ...(sidekick ? [sidekick] : []),
   ];
 }
 
@@ -166,7 +165,6 @@ export function ModelsTab({
           "material-link": t("models.material.link"),
         }
       : undefined,
-    state.sidekick ? { key: "sidekick", label: t("sidekick.models.label"), description: t("sidekick.models.hint") } : undefined,
   );
 
   /** One task's row: its level, or its own custom settings. */
@@ -216,12 +214,14 @@ export function ModelsTab({
             data-setting="models.tasks"
           >
             {rows.map(taskRow)}
-            {/* A mod's rows, after the core's (its Sidekick-like task rows draw the core's way). */}
-            {modRows.map(({ mod, Component }, i) => (
-              <SlotBoundary key={`${mod}-${i}`} mod={mod} client={client}>
-                <Component taskRow={taskRow} />
-              </SlotBoundary>
-            ))}
+            {/* A mod's rows, after the core's (its task rows draw the core's way). */}
+            {modRows.map(({ mod, Component, shown }, i) =>
+              shown && !shown({ client, state, taskRow }) ? null : (
+                <SlotBoundary key={`${mod}-${i}`} mod={mod} client={client}>
+                  <Component taskRow={taskRow} client={client} state={state} />
+                </SlotBoundary>
+              ),
+            )}
           </Group>
           <Group>
             <PinnedBudget

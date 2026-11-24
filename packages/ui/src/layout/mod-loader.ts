@@ -1,5 +1,5 @@
 import type { HarnessClient, ModRow, ModsView } from "../client";
-import type { BlockComponent, BlockRegistry, ComposerReviewer, RowPlace, Slots } from "./registry";
+import type { BlockComponent, BlockRegistry, ComposerReviewer, RowOptions, RowPlace, SettingsTabOptions, Slots } from "./registry";
 
 /** What a mod's `ui` part gets (mod-sdk's `UiCtx`): its id, the way to register a block, and its own main's names. */
 export interface UiCtx {
@@ -9,10 +9,10 @@ export interface UiCtx {
   call(name: string, payload?: unknown): Promise<unknown>;
   /** Hears the mod's own main's `ctx.push(name, value)`. */
   on(name: string, fn: (value: unknown) => void): () => void;
-  /** A tab in Settings, right after Models; its id is `name`. */
-  settingsTab(name: string, component: unknown, o: { label: string }): () => void;
+  /** A tab in Settings, right after Models; its id is `name`; `o.shown` and `o.useLabel` say when it shows and its name. */
+  settingsTab(name: string, component: unknown, o: SettingsTabOptions): () => void;
   /** A row in Settings › Models (after the core's task rows) or Settings › Usage (after the core's lines). */
-  row(place: RowPlace, component: unknown): () => void;
+  row(place: RowPlace, component: unknown, o?: RowOptions): () => void;
   /** A piece in the task bar, after the core's. */
   taskBar(component: unknown): () => void;
   /** A right overlay of the open task, opened by `button` in the task bar (none in a narrow window). */
@@ -79,10 +79,18 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
   const ctx: UiCtx = {
     id,
     block: (name, component) => add(() => registry.register(id, name, component as BlockComponent)),
-    settingsTab: (name, component, o) => slot("settingsTab", { mod: id, name, label: o.label, Component: component as Slots["settingsTab"]["Component"] }),
-    row: (place, component) => {
+    settingsTab: (name, component, o) =>
+      slot("settingsTab", {
+        mod: id,
+        name,
+        label: o.label,
+        ...(o.shown ? { shown: o.shown } : {}),
+        ...(o.useLabel ? { useLabel: o.useLabel } : {}),
+        Component: component as Slots["settingsTab"]["Component"],
+      }),
+    row: (place, component, o) => {
       if (place !== "models" && place !== "usage") throw new Error(`Mod ${id}: no row place "${String(place)}" (models, usage)`);
-      return slot("row", { mod: id, place, Component: component as Slots["row"]["Component"] });
+      return slot("row", { mod: id, place, ...(o?.shown ? { shown: o.shown } : {}), Component: component as Slots["row"]["Component"] });
     },
     taskBar: (component) => slot("taskBar", { mod: id, Component: component as Slots["taskBar"]["Component"] }),
     taskOverlay: (o) =>

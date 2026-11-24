@@ -640,7 +640,6 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                       onPage={setChatPage}
                       onTask={setChatTask}
                       onFixEngine={() => setSettings("engine")}
-                      onSidekickSettings={() => setSettings("sidekick")}
                       onTurnOk={checkEngine}
                       onWorking={(w) => {
                         chatWorking.current.now = w;

@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "../client";
-import { ICON_NAMES, Icon, Row, Rx } from "../guide";
+import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "@humanharness/ui";
+import { ICON_NAMES, Icon, Row, Rx } from "@humanharness/ui";
 import { markIcon } from "./mark";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickPurposeView, SidekickView } from "../client";
-import { Group, Icon, Row, Rx } from "../guide";
+import type { HarnessClient, SidekickPurposeView, SidekickView } from "@humanharness/ui";
+import { Group, Icon, Row, Rx } from "@humanharness/ui";
 import { ImportSidekick } from "./ImportSidekick";
 import { SidekickMark, markIcon } from "./mark";
 import { SidekickEditor } from "./SidekickEditor";

@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ScopeSidekicks } from "../src/sidekick/ScopeSidekicks";
-import { SidekickTab } from "../src/sidekick/SidekickTab";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
-import { SK_ON } from "../../mods/sidekick/test/sidekick-fixtures";
+import { ScopeSidekicks } from "../src/ui/ScopeSidekicks";
+import { SidekickTab } from "../src/ui/SidekickTab";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
+import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
 

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SidekickImportFailure } from "../src/client";
-import { ImportSidekick } from "../src/sidekick/ImportSidekick";
-import { FAKE_PICK_TOKEN, FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import type { SidekickImportFailure } from "@humanharness/ui";
+import { ImportSidekick } from "../src/ui/ImportSidekick";
+import { FAKE_PICK_TOKEN, FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 const DRAFT = {

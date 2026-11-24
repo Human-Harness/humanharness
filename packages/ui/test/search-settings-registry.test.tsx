@@ -8,20 +8,21 @@ import type { AppState, ModelsView, SearchSettingsTab } from "../src/client";
 import { SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
-import { SK_ON } from "../../mods/sidekick/test/sidekick-fixtures";
 
 afterEach(cleanup);
 
-const SRC = path.resolve(__dirname, "../src");
+// The core's sources and the core mods' (a core mod's Settings tab writes its own rows).
+const MODS = path.resolve(__dirname, "../../mods");
+const SRC = [path.resolve(__dirname, "../src"), ...fs.readdirSync(MODS).map((m) => path.join(MODS, m, "src")).filter((d) => fs.existsSync(d))];
 const en: unknown = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8"));
 const sources = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sources(path.join(dir, e.name)) : /\.tsx?$/.test(e.name) ? [path.join(dir, e.name)] : []));
-const text = sources(SRC).map((f) => fs.readFileSync(f, "utf8")).join("\n");
+const text = SRC.flatMap(sources).map((f) => fs.readFileSync(f, "utf8")).join("\n");
 const keyOf = (k: string): unknown => k.split(".").reduce<unknown>((o, p) => (o && typeof o === "object" ? (o as Record<string, unknown>)[p] : undefined), en);
 const shown = () => [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting);
 
 describe("the Settings registry (search spec §6, plan deviation 13)", () => {
-  it("every entry has a row in ui/src, every row an entry, every label a string in en.json", () => {
+  it("every entry has a row in ui/src or a core mod, every row an entry, every label a string in en.json", () => {
     const written = new Set([...text.matchAll(/data-setting="([^"]+)"/g)].map((m) => m[1]));
     const ids = new Set(SEARCHABLE_SETTINGS.map((s) => s.id));
     expect([...ids].filter((id) => !written.has(id))).toEqual([]);
@@ -35,15 +36,6 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
     await renderIn("en", <SettingsPage client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
     await waitFor(() => expect(shown()).toContain("general.appearance"));
     expect(shown().sort()).toEqual(["general.appearance", "general.folder", "general.language", "general.textSize", ...(state.backup?.status ? ["general.backup"] : [])].sort());
-  });
-
-  it("Sidekick renders exactly its registry rows", async () => {
-    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
-    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
-    client.sidekickState = SK_ON;
-    await renderIn("en", <SettingsPage client={client} state={client.state} tab="sidekick" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
-    await waitFor(() => expect(shown()).toContain("sidekick.on"));
-    expect(shown().sort()).toEqual(SEARCHABLE_SETTINGS.filter((s) => s.tab === "sidekick").map((s) => s.id).sort());
   });
 
   // One render per tab, with the state its rows need (§6): a row the registry names is drawn where it says.

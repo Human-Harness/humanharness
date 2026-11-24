@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "./guide/icons";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
 import { type Draft, answerRows, draftOf, draftValue, emptyDraft, isSkipped, optionLabel, optionsOf } from "./input";
-import { ReviewHint } from "./sidekick/ReviewHint";
+import { ReviewHint } from "./task-view/ReviewHint";
 import { Button } from "./guide/Button";
 import { Toggle } from "./guide/Toggle";
 
@@ -38,14 +38,14 @@ export interface InputFormProps {
   submit(value: Record<string, unknown>): void;
   skip?: () => void;
   /**
-   * Sidekick's pre-send review of the answer's free text (sidekick spec §4.1), absent with Sidekick off (D0). A card
-   * holds the answer: the form stays as it is and `hold.anyway` (the card's "Send anyway") sends it unreviewed. Skip
-   * calls the card's `drop`: the card leaves with the answer.
+   * A reviewer's pre-send review of the answer's free text, absent with no reviewer (D0). A card holds the answer: the
+   * form stays as it is and `hold.anyway` (the card's "Send anyway") sends it unreviewed. Skip calls the card's `drop`:
+   * the card leaves with the answer.
    */
   review?: (text: string, hold: AnswerHold) => Promise<{ kind: "send" } | { kind: "card"; drop?: () => void }>;
   /** "Send now" while the review runs: stops the review this form started. */
   cancelReview?: () => void;
-  /** The person's longest wait for a review (Sidekick settings): the form shows its countdown. */
+  /** The person's longest wait for a review (the reviewer's settings): the form shows its countdown. */
   reviewWait?: number | "always";
 }
 
@@ -130,7 +130,7 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
     if (running.current || disabled || sending || unsupported) return;
     const value = draftValue(spec, draft);
     const text = review ? freeText(spec, value) : "";
-    // D0: no review (Sidekick off), choices only or no text: sent as before.
+    // D0: no review (no reviewer), choices only or no text: sent as before.
     if (!review || !text) {
       submit(value);
       return;
@@ -149,7 +149,7 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
         if (alive.current && textId) document.getElementById(textId)?.focus();
       },
     };
-    // Any failure sends the answer: Sidekick never stands in its way beyond the person's wait.
+    // Any failure sends the answer: a reviewer never stands in its way beyond the person's wait.
     const r = await review(text, hold).catch(() => ({ kind: "send" }) as const);
     if (seq !== reviewSeq.current) return;
     running.current = false;
@@ -191,11 +191,11 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
         <div className="hh-input-actions">
           {/* Reviewing keeps the button (and focus) in place: aria-disabled, never disabled. */}
           <Button type="submit" kind="primary" disabled={disabled || sending || unsupported} {...(reviewing ? { "aria-disabled": true } : {})}>
-            {reviewing ? t("sidekick.composer.reviewing") : sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
+            {reviewing ? t("chat.reviewing") : sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
           </Button>
           {reviewing && (
             <button type="button" onClick={sendNow}>
-              {t("sidekick.answer.sendNow")}
+              {t("chat.sendNow")}
             </button>
           )}
           {reviewing && reviewWait !== undefined && <ReviewHint until={reviewing.until} />}

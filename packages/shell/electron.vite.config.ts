@@ -18,6 +18,7 @@ const workspacePackages = [
   "@humanharness/i18n",
   "@humanharness/material",
   "@humanharness/mod-home",
+  "@humanharness/mod-sidekick",
   "@humanharness/mod-sdk",
   "@humanharness/policies",
   "@humanharness/protocol",

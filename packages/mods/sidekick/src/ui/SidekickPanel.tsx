@@ -1,13 +1,8 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { Tag } from "../chrome";
-import { Segmented } from "../guide/Segmented";
-import { Icon } from "../guide/icons";
-import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../client";
-import { shownLanguage } from "../language";
+import { Button, Icon, Segmented, type SidekickCard, type SidekickHeadsUp, type SidekickInfo, type SidekickState, Tag, shownLanguage } from "@humanharness/ui";
 import { SidekickMark, markIcon } from "./mark";
 import { wordDiff } from "./word-diff";
-import { Button } from "../guide/Button";
 
 export interface SidekickPanelProps {
   state: SidekickState;

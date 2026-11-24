@@ -24,8 +24,6 @@ import {
   type ReviewSummary,
   type SearchCommandId,
   type SendOptions,
-  type SidekickCard,
-  type SidekickReview,
   type TaskTurnNotice,
   type TaskView,
   TOOLS_OFF_CRASHES,
@@ -42,7 +40,7 @@ import { FileTimelineSplit } from "./FileTimelineSplit";
 import { FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPage } from "./HistoryPage";
-import { type AnswerHold, pruneDrafts } from "./InputForm";
+import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
 import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
@@ -57,12 +55,7 @@ import { PluginsSection } from "./plugins/PluginsSection";
 import { PreparedTask } from "./plugins/PreparedTask";
 import { CHIPS_SLOT, type PanelTarget, PLUGINS_SLOT, PluginSurfaceContext, type PluginSurfaceContextValue, reloadOf, usePluginSurface } from "./plugins/surface";
 import { RecommendModeBlock } from "./RecommendModeBlock";
-import { FirstOpenOffer } from "./sidekick/PresetOffer";
-import { ReviewHint } from "./sidekick/ReviewHint";
-import { SidekickButton, SidekickPanel, waitingCards } from "./sidekick/SidekickPanel";
-import { useNarrow } from "./sidekick/useNarrow";
 import { EngineNotice } from "./hatches/EngineNotice";
-import { useSidekick } from "./sidekick/useSidekick";
 import type { SearchIntent } from "./search/intent";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, isToolLine, reduceChat } from "./state";
@@ -72,7 +65,11 @@ import { TaskBar, type TaskBarSlot } from "./task-view/TaskBar";
 import { Overlay } from "./task-view/Overlay";
 import { PathButton } from "./task-view/PathButton";
 import { useFolded } from "./task-view/useFolded";
-import { ModBarParts, ModOverlays, modReviewSend, useModParts } from "./task-view/ModParts";
+import { ModBarParts, ModOverlays, modReviewSend, overlayName, useModParts } from "./task-view/ModParts";
+import { ReviewHint, ReviewerName } from "./task-view/ReviewHint";
+import { TaskViewContext, type TaskViewValue } from "./task-view/context";
+import type { OverlayName } from "./task-view/useOverlay";
+import { useNarrow } from "./task-view/useNarrow";
 import { JumpPill } from "./task-view/JumpPill";
 import { useNewSinceScroll } from "./task-view/useNewSinceScroll";
 import { WorkingLine, stepOf } from "./task-view/WorkingLine";
@@ -86,7 +83,6 @@ const STICK_THRESHOLD = 80;
 const isReply = (e: ChatEntry): boolean => isTurnEntry(e) && !isToolLine(e);
 const NO_TASKS: TaskView = { current: null, actions: {}, notes: [] };
 const PATH_ID = "hh-overlay-path";
-const SK_ID = "hh-overlay-sidekick";
 
 export type SendFn = (text: string, options?: SendOptions) => boolean;
 
@@ -151,7 +147,6 @@ export function ChatView({
   onPluginPanels,
   onPage,
   onTask,
-  onSidekickSettings,
   onFixEngine,
   onTurnOk,
   onWorking,
@@ -217,8 +212,6 @@ export function ChatView({
   slim?: { action: string };
   /** Replaces the default material panel; only with `state.material`. */
   materialPanel?: ComponentType<MaterialPanelProps>;
-  /** Opens Settings › Sidekick. */
-  onSidekickSettings?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
@@ -328,11 +321,8 @@ export function ChatView({
   const preflightOpener = useRef<HTMLElement | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // Sidekick (sidekick spec §4.1, §7): only when main sends `state.sidekick`, never in slim mode (D0).
-  /** Bumped after a restore: a fresh read, beside the state main pushes then. */
-  const [skRefresh, setSkRefresh] = useState(0);
-  const skEnabled = state.sidekick !== undefined && !slim;
-  const sidekick = useSidekick(client, skEnabled, skRefresh);
+  /** Bumped after a restore: mods' pieces read their state again, beside the state main pushes then. */
+  const [refresh, setRefresh] = useState(0);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
   const pluginsOn = state.plugins !== undefined && !slim;
   const surface = usePluginSurface(client, pluginsOn);
@@ -356,64 +346,23 @@ export function ChatView({
     () => surface && { surface, client, target, open: openPanel },
     [surface, client, target, openPanel],
   );
-  /** Under 720 px Sidekick has no overlay: no paid review the person can't see. */
+  /** Under 720 px no right overlay: no paid review the person can't see. */
   const narrow = useNarrow();
-  const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
-  const mods = useModParts({ slim: !!slim, narrow, sidekickReviews: reviewOn });
+  const mods = useModParts({ slim: !!slim, narrow });
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
-  /** A block answer's review (spec §4.1): its number, the composer review's number when it started, the form a card holds. */
-  const answerSeq = useRef(0);
-  const answerRun = useRef<{ seq: number; composerSeq: number } | null>(null);
-  const answerHold = useRef<{ cardId: string; hold: AnswerHold } | null>(null);
-  // Sidekick's overlay: not in a window too narrow for it (no review there either, useNarrow).
-  const skShown = sidekick !== null && !narrow && !slim;
-  const { overlay, skView, setSkView, showSk, holdRecord } = useFolded({
+  /** The mod overlay that holds the harness's side panel (TaskViewValue.hostSide); none: the path holds it. */
+  const [sideHost, setSideHost] = useState<OverlayName | null>(null);
+  const { overlay, sideView, setSideView, holdRecord } = useFolded({
     taskKey: tasks.current?.id,
-    skShown,
+    host: sideHost,
     panelTarget,
     surface,
     openRecord: (r) => client.search.openRecord(r.collection, r.key, r.scope),
   });
-  const skCard = sidekick?.card?.id;
-  /** Queued asks "For later" (spec §4.1): the live card's, then those of cards that were sent, which outlive them. */
-  const [later, setLater] = useState<{ key: string; text: string }[]>([]);
-  /** The live card's asks the person dropped, by key (`<card id>:<position>`): equal texts are told apart. */
-  const [droppedLive, setDroppedLive] = useState<string[]>([]);
-  const liveQueued = (sidekick?.card?.queued ?? [])
-    .map((text, at) => ({ key: `${skCard}:${at}`, text }))
-    .filter((q) => !droppedLive.includes(q.key));
-  // They belong to the task: another task (or none) starts with none. The first send opening a task keeps them.
-  const laterTask = useRef(tasks.current?.id);
-  useEffect(() => {
-    const was = laterTask.current;
-    laterTask.current = tasks.current?.id;
-    if (was !== undefined && was !== tasks.current?.id) setLater([]);
-  }, [tasks.current?.id]);
-  // The live card's dropped asks belong to it: another card starts with none dropped.
-  useEffect(() => setDroppedLive((d) => (d.length ? [] : d)), [skCard]);
-  const skAnnounced = useRef(new Set<string>());
-  const skFrame = useRef(0);
-  const skWaiting = sidekick ? waitingCards(sidekick) : [];
-  const skWaitingIds = skWaiting.map((c) => c.id).join(" ");
-  const skWaitingRef = useRef(skWaiting);
-  skWaitingRef.current = skWaiting;
-  // Each new card is announced once (spec §7 accessibility), heads-ups and other moments too; the panel never takes focus.
-  // Cleared, then set on the next frame: two cards in a row put the same words, which a screen reader would skip.
-  useEffect(() => {
-    const fresh = skWaitingRef.current.filter((c) => !skAnnounced.current.has(c.id));
-    for (const c of fresh) skAnnounced.current.add(c.id);
-    // The live pre-send card says the most; else the newest other card, by who speaks.
-    const card = fresh.find((c) => c.id === skCard) ?? fresh.at(-1);
-    if (!card) return;
-    const text = card.id === skCard ? t("sidekick.card.announce") : t("sidekick.card.announceFrom", { name: card.speaker.name });
-    setAnnouncement("");
-    // Only a newer announcement cancels a pending one: a card leaving in between must not swallow it.
-    cancelAnimationFrame(skFrame.current);
-    skFrame.current = requestAnimationFrame(() => setAnnouncement(text));
-  }, [skWaitingIds, skCard, t]);
-  useEffect(() => () => cancelAnimationFrame(skFrame.current), []);
+  const announceFrame = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(announceFrame.current), []);
   /** Away from a turn just sent (loading, a notice): new content keeps the chat at the bottom while the user is there. */
   const stick = useRef(true);
   /** Set on send: the question that goes on screen next is pinned to the top of the chat. */
@@ -1202,56 +1151,6 @@ export function ChatView({
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   // A notice the app added after a reply (a conflict) never takes the reply's place: its blocks stay answerable.
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant" && isReply(e));
-  /**
-   * A block answer's free text before it goes (spec §4.1): `card` holds the form, anything else sends it. The same
-   * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
-   * goes first, so the answer is never held behind it.
-   */
-  const reviewAnswer = async (text: string, hold: AnswerHold): Promise<{ kind: "send" } | { kind: "card"; drop: () => void }> => {
-    const held = answerHold.current;
-    const card = sidekick?.card;
-    if (held && card?.id === held.cardId && card.prompt === text) {
-      answerHold.current = null;
-      resolveCard(card, "sent-anyway");
-      return { kind: "send" };
-    }
-    if (reviewing) return { kind: "send" };
-    const seq = ++answerSeq.current;
-    const composerSeq = reviewSeq.current;
-    answerRun.current = { seq, composerSeq };
-    const r: SidekickReview = await client.sidekick.review({ text, block: true }).catch(() => ({ kind: "error" }) as const);
-    if (answerRun.current?.seq === seq) answerRun.current = null;
-    // Stopped by Send now (the form already sent), or replaced by a composer review in main: a card that came anyway
-    // is about an answer that went, and leaves as sent anyway.
-    if (seq !== answerSeq.current || composerSeq !== reviewSeq.current || r.kind !== "card") {
-      if (r.kind === "card") void client.sidekick.resolve(r.card.id, "sent-anyway").catch(() => undefined);
-      return { kind: "send" };
-    }
-    const cardId = r.card.id;
-    answerHold.current = { cardId, hold };
-    showSk();
-    // Skip on the held answer: the card leaves with it.
-    const drop = () => {
-      if (answerHold.current?.cardId !== cardId) return;
-      answerHold.current = null;
-      void client.sidekick.resolve(cardId, "dismissed").catch(() => undefined);
-    };
-    return { kind: "card", drop };
-  };
-  /** Send now on the answer form: stops its review in main, never a composer review that started since. */
-  const cancelAnswerReview = () => {
-    const run = answerRun.current;
-    answerRun.current = null;
-    answerSeq.current++;
-    if (run && run.composerSeq === reviewSeq.current) void client.sidekick.cancelReview().catch(() => undefined);
-  };
-  /** The form a block card holds, while that card is the live one. */
-  const heldBy = (card: SidekickCard): AnswerHold | null => {
-    const held = answerHold.current;
-    if (!held || held.cardId !== card.id) return null;
-    answerHold.current = null;
-    return held.hold;
-  };
   const inputs: InputContext | undefined = state.inputs
     ? {
         specs: state.inputs,
@@ -1259,10 +1158,8 @@ export function ChatView({
         waiting: tasks.current?.status === "waiting",
         ready: tasks.current?.status === "waiting" && !blocked() && !pending,
         respond: respondTo,
-        // D0: without Sidekick (or with the review off) the form sends as before.
-        ...(reviewOn && sidekick
-          ? { review: reviewAnswer, cancelReview: cancelAnswerReview, reviewWait: sidekick.settings.wait }
-          : mods.form(() => reviewing !== null)),
+        // D0: without a reviewer (or with its review off) the form sends as before.
+        ...mods.form(() => reviewing !== null),
       }
     : undefined;
   const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
@@ -1317,67 +1214,35 @@ export function ChatView({
     }
     return undefined;
   };
-  /** Enter: a review first when Sidekick is on (spec §4.1); `force` is ⌥⏎ or Review. Enter while reviewing waits. */
+  /** Enter: a review first when a reviewer reviews; `force` is ⌥⏎ or Review. Enter while reviewing waits. */
   const submit = async (text: string, force = false) => {
     // A send that would be refused runs no paid review first.
     if (reviewing || !canSend()) return;
-    if ((!reviewOn && !mods.reviewer) || !text.trim()) {
+    if (!mods.reviews || !mods.reviewer || !text.trim()) {
       sendTyped(text);
       return;
     }
     const seq = ++reviewSeq.current;
-    if (!reviewOn && mods.reviewer) {
-      const go = await modReviewSend({ ...mods, reviewer: mods.reviewer }, text, force, (until) => setReviewing({ until }), () => seq !== reviewSeq.current);
-      if (go === null) return;
-      setReviewing(null);
-      if (go && sendRef.current(text)) setDraft("");
-      return;
-    }
-    if (!sidekick) return;
-    const wait = sidekick.settings.wait;
-    setReviewing({ until: wait === "always" ? null : Date.now() + wait * 1000 });
-    // Material in the open scope goes with the prompt: the missing-context flag stays quiet.
-    const scope = state.material ? materialScope : null;
-    const attached = scope ? await client.material.list(scope).then((v) => (v?.sources.length ?? 0) > 0, () => false) : false;
-    const r: SidekickReview =
-      seq !== reviewSeq.current
-        ? { kind: "cancelled" }
-        : await client.sidekick
-            .review({ text, ...(force ? { force: true } : {}), ...(attached ? { attached: true } : {}) })
-            .catch(() => ({ kind: "error" }) as const);
-    // Superseded: the person sent at once, or a newer review replaced this one.
-    if (seq !== reviewSeq.current) return;
+    const go = await modReviewSend({ ...mods, reviewer: mods.reviewer }, text, force, (until) => setReviewing({ until }), () => seq !== reviewSeq.current);
+    if (go === null) return;
     setReviewing(null);
-    if (r.kind === "card") {
-      showSk();
-      return;
-    }
-    // Anything else, a `cancelled` from main included (Sidekick turned off mid-review), sends as typed. The latest
-    // `send`: a pre-flight or a turn that opened during the review is seen.
-    if (sendRef.current(text)) setDraft("");
+    // The latest `send`: a pre-flight or a turn that opened during the review is seen.
+    if (go && sendRef.current(text)) setDraft("");
   };
   /** ⌘⏎ / Ctrl⏎: send now, cancelling a running review. */
   const sendNow = (text: string) => {
     if (reviewing) {
       reviewSeq.current++;
       setReviewing(null);
-      if (!mods.abort()) void client.sidekick.cancelReview().catch(() => undefined);
+      mods.abort();
     }
     sendTyped(text);
   };
-  /** Sends the draft as typed; a card still waiting leaves as sent anyway (spec §4.1: never about a prompt already sent). */
+  /** Sends the draft as typed; the reviewer hears it went (a card about it leaves as sent anyway). */
   const sendTyped = (text: string) => {
     if (!send(text)) return;
     setDraft("");
-    if (sidekick?.card) resolveCard(sidekick.card, "sent-anyway");
-  };
-  const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") => {
-    // A card that was sent keeps its queued asks for later; Edit sends nothing, and the next review finds them again.
-    if (outcome !== "edited" && card.id === skCard && liveQueued.length > 0) {
-      const keep = liveQueued;
-      setLater((l) => [...keep, ...l.filter((q) => !keep.some((k) => k.key === q.key))]);
-    }
-    void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
+    mods.reviewer?.sent?.(text);
   };
   const last = chat.entries.findLast(isReply);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
@@ -1730,8 +1595,8 @@ export function ChatView({
   const ownSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
   // The harness's `<PluginSlot>`s read the surface from here; without one, exactly its side panel (D0).
   const harnessSide = ownSide !== undefined && surfaceCtx ? <PluginSurfaceContext.Provider value={surfaceCtx}>{ownSide}</PluginSurfaceContext.Provider> : ownSide;
-  // Without Sidekick's overlay, the harness's side panel goes in the left one, after the path.
-  const sideOnLeft = !skShown && harnessSide !== undefined;
+  // Without a mod overlay to hold it, the harness's side panel goes in the left one, after the path.
+  const sideOnLeft = !sideHost && harnessSide !== undefined;
   const leftBody = slim ? null : flow ? (
     <FlowSide
       state={state}
@@ -1755,16 +1620,45 @@ export function ChatView({
     </nav>
   ) : null;
   const hasLeft = leftBody !== null || sideOnLeft;
-  const leftName = flow ? t("reader.path") : material ? t("material.title") : pluginsSection ? t("plugins.panels.section") : t("sidekick.switch.harness");
+  const leftName = flow ? t("reader.path") : material ? t("material.title") : pluginsSection ? t("plugins.panels.section") : t("chat.harnessSide");
   const pathButton = hasLeft && (
     <PathButton state={state} tasks={tasks} name={leftName} expanded={overlay.open === "path"} controls={PATH_ID} onClick={() => overlay.toggle("path")} buttonRef={overlay.trigger("path")} />
   );
-  const skButton = skShown && (
-    <SidekickButton state={sidekick} expanded={overlay.open === "sidekick"} controls={SK_ID} onOpen={() => overlay.toggle("sidekick")} buttonRef={overlay.trigger("sidekick")} />
-  );
   const chips = surfaceCtx ? surfaceCtx.surface.chips.filter((c) => c.slot === CHIPS_SLOT) : [];
 
+  // What a core mod's task-view pieces see (TaskViewValue): one value per render, its functions always current.
+  const taskView: TaskViewValue = {
+    client,
+    state,
+    task: tasks.current?.id ?? null,
+    slim: !!slim,
+    narrow,
+    sendKey: SEND_KEY,
+    draft,
+    setDraft,
+    focusComposer: () => inputRef.current?.focus(),
+    send: (text) => send(text),
+    finishTask,
+    attached: () =>
+      materialScope ? client.material.list(materialScope).then((v) => (v?.sources.length ?? 0) > 0, () => false) : Promise.resolve(false),
+    harnessSide,
+    sideView: harnessSide !== undefined ? sideView : "own",
+    setSideView,
+    hostSide: setSideHost,
+    overlay,
+    overlayName,
+    announce: (text) => {
+      setAnnouncement("");
+      // Only a newer announcement cancels a pending one: the same words twice in a row are still said.
+      cancelAnimationFrame(announceFrame.current);
+      announceFrame.current = requestAnimationFrame(() => setAnnouncement(text));
+    },
+    refresh,
+  };
+
   return (
+    <TaskViewContext.Provider value={taskView}>
+    <ReviewerName.Provider value={mods.reviewer?.name}>
     <DocumentContext.Provider value={documentHost}>
       <div className={slim ? "hh-app hh-app-slim" : `hh-app${paged ? " hh-app-paged" : ""}`}>
         {bar &&
@@ -1776,19 +1670,7 @@ export function ChatView({
               scope={scopeBar?.(blocked())}
               context={tasks.current?.context && <ContextChip {...tasks.current.context} engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} onOpen={openContext} />}
               path={pathButton}
-              sidekickButton={skButton}
               parts={<ModBarParts parts={mods} overlay={overlay} client={client} task={tasks.current?.id ?? null} />}
-              sidekick={
-                sidekick && {
-                  on: sidekick.settings.on,
-                  onToggle: () => {
-                    const on = !sidekick.settings.on;
-                    void client.sidekick.set(on ? { on, introSeen: true } : { on }).catch(() => undefined);
-                    if (on && !narrow) overlay.show("sidekick");
-                    else if (overlay.open === "sidekick") overlay.hide();
-                  },
-                }
-              }
             />,
             bar.el,
           )}
@@ -2090,92 +1972,14 @@ export function ChatView({
                 onEnter={(text, force) => void submit(text, force)}
                 onSendNow={sendNow}
                 onReview={(text) => void submit(text, true)}
-                sidekick={skEnabled ? { spans: sidekick?.card && sidekick.settings.on && sidekick.card.prompt === draft ? cardSpans(sidekick.card) : [] } : undefined}
                 marks={mods.marks(draft)}
-                review={reviewing ? "reviewing" : (reviewOn || mods.reviewer) && !(chat.live || closing || checkpoint) ? "idle" : undefined}
+                review={reviewing ? "reviewing" : mods.reviews && !(chat.live || closing || checkpoint) ? "idle" : undefined}
               />
             )}
             {reviewing && <ReviewHint until={reviewing.until} sendKey={SEND_KEY} />}
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
           </Main>
           <ModOverlays parts={mods} overlay={overlay} client={client} closeLabel={t("reader.close")} />
-          {skShown && overlay.open === "sidekick" && (
-            <Overlay side="right" id={SK_ID} name={sidekick.info.name} closeLabel={t("sidekick.collapse")} onClose={overlay.close} autoFocus={overlay.focusIn} bare>
-              <SidekickPanel
-                state={sidekick}
-                view={harnessSide !== undefined ? skView : "sidekick"}
-                onView={setSkView}
-                {...(harnessSide !== undefined ? { harnessSide } : {})}
-                sendKey={SEND_KEY}
-                onCollapse={overlay.close}
-                offer={<FirstOpenOffer client={client} offered={sidekick.settings.presetsOffered} />}
-                onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
-                onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(() => undefined)}
-                onSaveDecision={(id) => client.sidekick.saveDecision(id)}
-                // The heads-up leaves as used only when the closing turn really started.
-                onFinishTask={(id) => {
-                  if (finishTask()) void client.sidekick.resolve(id, "used").catch(() => undefined);
-                }}
-                queued={[...liveQueued, ...later]}
-                onDropQueued={(key) => {
-                  setLater((l) => l.filter((q) => q.key !== key));
-                  setDroppedLive((d) => [...d, key]);
-                }}
-                {...(onSidekickSettings ? { onTier: onSidekickSettings } : {})}
-                onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
-                onNotNow={() => {
-                  void client.sidekick.set({ introSeen: true }).catch(() => undefined);
-                  overlay.close();
-                }}
-                // A suggestion goes through `send`, never `submit`: it is never reviewed again.
-                // The card leaves only once the send went: a refused one keeps the rewrite.
-                onSendSuggested={(card) => {
-                  // A block answer's rewrite goes to the composer: the person sends it, or copies it into the form.
-                  if (card.block) {
-                    heldBy(card);
-                    resolveCard(card, "used");
-                    if (card.rewrite) setDraft(card.rewrite);
-                    inputRef.current?.focus();
-                    return;
-                  }
-                  if (!card.rewrite || !send(card.rewrite)) return;
-                  setDraft("");
-                  resolveCard(card, "used");
-                }}
-                onEdit={(card) => {
-                  if (card.block) {
-                    const hold = heldBy(card);
-                    resolveCard(card, "edited");
-                    hold?.focus();
-                    return;
-                  }
-                  resolveCard(card, "edited");
-                  setDraft(card.rewrite ?? card.prompt);
-                  inputRef.current?.focus();
-                }}
-                onSendAnyway={(card) => {
-                  // A block answer's card sends its form as it is, unreviewed.
-                  if (card.block) {
-                    const held = answerHold.current;
-                    if (held?.cardId === card.id) {
-                      // The form it held is gone (another task) or can't send now: nothing went, the card stays.
-                      if (!held.hold.anyway()) return;
-                      answerHold.current = null;
-                    }
-                    resolveCard(card, "sent-anyway");
-                    return;
-                  }
-                  if (!send(card.prompt)) return;
-                  setDraft("");
-                  resolveCard(card, "sent-anyway");
-                }}
-                onPutInComposer={(text) => {
-                  setDraft(text);
-                  inputRef.current?.focus();
-                }}
-              />
-            </Overlay>
-          )}
           {reader && !slim && (
             <DocumentReader
               client={client}
@@ -2237,7 +2041,7 @@ export function ChatView({
             disabled={Boolean(chat.live) || closing || checkpoint}
             onBack={closeHistory}
             onRestored={(kind) => {
-              setSkRefresh((n) => n + 1);
+              setRefresh((n) => n + 1);
               const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
               dispatch({ type: "notice", text, at: new Date().toISOString() });
               setNotice(text);
@@ -2266,12 +2070,9 @@ export function ChatView({
         )}
       </div>
     </DocumentContext.Provider>
+    </ReviewerName.Provider>
+    </TaskViewContext.Provider>
   );
-}
-
-/** The card's spans to underline in the composer: the local flags' and the model's issues that point at the text. */
-function cardSpans(card: SidekickCard): [number, number][] {
-  return [...card.flags.map((f) => f.span), ...card.issues.flatMap((i) => (i.span ? [i.span] : []))];
 }
 
 /** "⌘" on macOS, "Ctrl" elsewhere: the key that sends at once. */

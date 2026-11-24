@@ -3,10 +3,11 @@ import * as jsxRuntime from "react/jsx-runtime";
 import { createRoot } from "react-dom/client";
 import App from "@harness/ui";
 import * as hhUi from "@humanharness/ui";
-import { type BlockComponent, HhTheme, ModBlocksProvider, createBlockRegistry, startModLoader } from "@humanharness/ui";
+import { HhTheme, ModBlocksProvider, createBlockRegistry, startModLoader } from "@humanharness/ui";
 import * as modSdk from "@humanharness/mod-sdk";
 import * as zod from "zod";
 import home from "@humanharness/mod-home";
+import sidekick from "@humanharness/mod-sidekick/ui";
 // DM Sans for all text, DM Mono for code and keys, bundled with the app (no network fonts: the renderer's CSP allows 'self' only).
 import "@fontsource/dm-sans/400.css";
 import "@fontsource/dm-sans/500.css";
@@ -24,12 +25,12 @@ import "@humanharness/ui/styles.css";
   zod,
 };
 
-// The core mods' blocks (minimal-core step 0b1), registered before the first render in the registry the layout gets
-// through ModBlocksProvider. Home's on/off is main's: the layout draws "Mod Home is off" in its place while it is off.
+// The core mods' ui (Home's block, Sidekick's task-view pieces), run before the first render into the registry the
+// layout gets through ModBlocksProvider. Their on/off is main's: the layout draws "Mod Home is off" in its place while
+// it is off. The harness's and the person's mods (0b2): their ui comes from hh-mod:, into the same registry, and again
+// on reload.
 const blocks = createBlockRegistry();
-home.ui?.({ id: home.id, block: (name, component) => blocks.register(home.id, name, component as BlockComponent) });
-// The harness's and the person's mods (0b2): their ui comes from hh-mod:, into the same registry, and again on reload.
-startModLoader({ client: window.hh, registry: blocks });
+startModLoader({ client: window.hh, registry: blocks, core: [home, sidekick] });
 
 createRoot(document.getElementById("root")!).render(
   <HhTheme>

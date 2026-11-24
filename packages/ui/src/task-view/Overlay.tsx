@@ -4,8 +4,8 @@ import { IconButton } from "../guide/IconButton";
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /**
- * A 280 panel over the task's content (task view one column): the path on the left, Sidekick on the right. Named, with
- * a close button and Escape. `bare`: the child is already the named region with its own close (SidekickPanel).
+ * A 280 panel over the task's content (task view one column): the path on the left, a mod's on the right. Named, with
+ * a close button and Escape. `bare`: the child is already the named region with its own close (a mod's own panel).
  */
 export function Overlay({
   side,

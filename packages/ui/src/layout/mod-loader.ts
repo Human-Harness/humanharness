@@ -16,7 +16,7 @@ export interface UiCtx {
   /** A piece in the task bar, after the core's. */
   taskBar(component: unknown): () => void;
   /** A right overlay of the open task, opened by `button` in the task bar (none in a narrow window). */
-  taskOverlay(o: { name: string; button: unknown; panel: unknown }): () => void;
+  taskOverlay(o: { name: string; button: unknown; panel: unknown; bare?: boolean }): () => void;
   /** Reviews the composer's and the answer form's sends before they go. */
   composer(reviewer: ComposerReviewer): () => void;
 }
@@ -85,7 +85,8 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
       return slot("row", { mod: id, place, Component: component as Slots["row"]["Component"] });
     },
     taskBar: (component) => slot("taskBar", { mod: id, Component: component as Slots["taskBar"]["Component"] }),
-    taskOverlay: (o) => slot("taskOverlay", { mod: id, name: o.name, Button: o.button as Slots["taskOverlay"]["Button"], Panel: o.panel as Slots["taskOverlay"]["Panel"] }),
+    taskOverlay: (o) =>
+      slot("taskOverlay", { mod: id, name: o.name, Button: o.button as Slots["taskOverlay"]["Button"], Panel: o.panel as Slots["taskOverlay"]["Panel"], ...(o.bare ? { bare: true } : {}) }),
     composer: (reviewer) => slot("composer", { mod: id, reviewer }),
     call: (name, payload) => mods.call(id, name, payload),
     on: (name, fn) => add(() => mods.on(id, name, fn)),

@@ -5,7 +5,7 @@ import { LearnedList } from "../src/sidekick/LearnedList";
 import { SidekickTab } from "../src/sidekick/SidekickTab";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
-import { SK_ON } from "./sidekick-fixtures";
+import { SK_ON } from "../../mods/sidekick/test/sidekick-fixtures";
 
 afterEach(cleanup);
 const ITEMS = [

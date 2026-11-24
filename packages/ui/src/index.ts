@@ -30,10 +30,17 @@ export { DocumentContext, type DocumentHost } from "./documents-context";
 // What the core mods' blocks build with (minimal-core step 0b1): the app they get, and the core's pieces Home uses.
 export { type AppValue, useApp } from "./layout/app";
 // The window runs the ui part of each on, non-core mod (minimal-core 0b2).
-export { type ModLoader, type ModLoaderOptions, startModLoader } from "./layout/mod-loader";
+export { type ModLoader, type ModLoaderOptions, type UiCtx as CoreUiCtx, startModLoader } from "./layout/mod-loader";
+// A core mod's task-view pieces (minimal-core step 1b): the open task view they act on, and what a reviewer may add.
+export { type TaskViewValue, useTaskView } from "./task-view/context";
+export type { TaskReviewer } from "./task-view/review";
+export type { OverlayButtonProps, OverlayPanelProps, TaskBarProps } from "./layout/registry";
+export type { AnswerHold } from "./InputForm";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
-export { AppFooter, HHLogo, SettingsGear, type TagTone, TopBar } from "./chrome";
+export { AppFooter, HHLogo, SettingsGear, Tag, type TagTone, TopBar } from "./chrome";
 export { Hidden, Icon, Rx } from "./guide";
+// Core-only guide pieces for the core mods (not in hh.d.ts).
+export { Button, ICON_NAMES, type IconName, Segmented } from "./task-view/pieces";
 export { ownName, shownLanguage, systemLanguage } from "./language";
 export { ProfileSwitcher } from "./ProfileSwitcher";
 export { useCurrentWindows } from "./UsageMeter";

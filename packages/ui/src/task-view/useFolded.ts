@@ -2,36 +2,32 @@ import { useEffect, useRef, useState } from "react";
 import type { SearchIntent } from "../search/intent";
 import { type PanelTarget, PLUGINS_SLOT } from "../plugins/surface";
 import type { PluginSurfaceView } from "../client";
-import { useOverlay } from "./useOverlay";
+import { type OverlayName, useOverlay } from "./useOverlay";
 
 type RecordIntent = Extract<SearchIntent, { kind: "record" }>;
 
 /**
- * The chat's folded overlays (task view one column): the path or Sidekick, one at a time, folded on a task switch.
- * Sidekick's overlay switches between its cards and the harness's side panel (`skView`). A plugin panel opened (a chip,
- * the rail's Plugins, search, the inbox) unfolds the overlay that holds it, once, as soon as the panel is there; a
- * harness record picked while its side view was folded goes after the render that mounts the view.
+ * The chat's folded overlays (task view one column): the path or a mod's, one at a time, folded on a task switch. A
+ * mod's overlay may hold the harness's side panel (`host`, `TaskViewValue.hostSide`), switching between its own view
+ * and the harness's (`sideView`). A plugin panel opened (a chip, the rail's Plugins, search, the inbox) unfolds the
+ * overlay that holds it, once, as soon as the panel is there; a harness record picked while its side view was folded
+ * goes after the render that mounts the view.
  */
 export function useFolded(o: {
   taskKey: unknown;
-  /** Sidekick's overlay can show (a Sidekick, a wide window, not slim). */
-  skShown: boolean;
+  /** The overlay that holds the harness's side panel, when a mod's does; else the path holds it. */
+  host: OverlayName | null;
   panelTarget: PanelTarget | null;
   surface: PluginSurfaceView | null;
   openRecord: (intent: RecordIntent) => void;
 }) {
   const overlay = useOverlay(o.taskKey);
-  const [skView, setSkView] = useState<"sidekick" | "harness">("sidekick");
-  /** A card opens Sidekick's cards without taking focus (the panel never takes focus on its own). */
-  const showSk = () => {
-    overlay.show("sidekick", false);
-    setSkView("sidekick");
-  };
+  const [sideView, setSideView] = useState<"own" | "harness">("own");
   /** Unfolds the overlay that holds the harness's side panel. */
   const showHarness = () => {
-    if (!o.skShown) return overlay.show("path", false);
-    setSkView("harness");
-    overlay.show("sidekick", false);
+    if (!o.host) return overlay.show("path", false);
+    setSideView("harness");
+    overlay.show(o.host, false);
   };
   const unfolded = useRef(0);
   const { panelTarget: target, surface } = o;
@@ -53,5 +49,5 @@ export function useFolded(o: {
     pending.current = intent;
     showHarness();
   };
-  return { overlay, skView, setSkView, showSk, holdRecord };
+  return { overlay, sideView, setSideView, holdRecord };
 }

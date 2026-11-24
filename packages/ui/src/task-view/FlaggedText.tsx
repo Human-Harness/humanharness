@@ -31,8 +31,8 @@ export function flaggedParts(text: string, spans: readonly Span[]): { text: stri
 }
 
 /**
- * The composer with the card's flagged spans underlined (sidekick spec §7): a backdrop with the same text and metrics
- * sits behind the transparent-backed textarea. Hidden from screen readers: the card says the same in words. The wrapper
+ * The composer with a reviewer's marks underlined: a backdrop with the same text and metrics
+ * sits behind the transparent-backed textarea. Hidden from screen readers: the reviewer says the same in words. The wrapper
  * stays when nothing is flagged so the field keeps its place in the tree (and its focus) as spans come and go; the
  * backdrop follows the field's scroll.
  */

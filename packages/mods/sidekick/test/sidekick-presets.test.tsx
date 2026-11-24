@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { PresetOffer } from "../src/sidekick/PresetOffer";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { PresetOffer } from "../src/ui/PresetOffer";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);

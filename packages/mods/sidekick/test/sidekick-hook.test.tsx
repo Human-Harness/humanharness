@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SidekickState } from "../src/client";
-import { useSidekick } from "../src/sidekick/useSidekick";
-import { FakeClient } from "./fake-client";
+import type { SidekickState } from "@humanharness/ui";
+import { useSidekick } from "../src/ui/useSidekick";
+import { FakeClient } from "../../../ui/test/fake-client";
 import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);

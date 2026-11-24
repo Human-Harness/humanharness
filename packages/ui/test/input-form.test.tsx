@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { ReviewerName } from "../src/task-view/ReviewHint";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InputIssue, InputSpec } from "../src/client";
@@ -216,7 +217,9 @@ describe("Sidekick on free-text answers (sidekick spec §4.1)", () => {
   type Review = NonNullable<Parameters<typeof InputForm>[0]["review"]>;
   function textForm(over: { spec?: InputSpec; review?: Review; cancelReview?: () => void; skip?: () => void; reviewWait?: number | "always" } = {}) {
     const submit = vi.fn();
+    // Who reviews comes from the task view (ReviewerName): Sidekick, as the chat gives it.
     const el = (
+      <ReviewerName.Provider value="Sidekick">
       <InputForm
         spec={over.spec ?? TEXT}
         data={null}
@@ -229,6 +232,7 @@ describe("Sidekick on free-text answers (sidekick spec §4.1)", () => {
         {...(over.cancelReview ? { cancelReview: over.cancelReview } : {})}
         {...(over.reviewWait !== undefined ? { reviewWait: over.reviewWait } : {})}
       />
+      </ReviewerName.Provider>
     );
     return { submit, el };
   }

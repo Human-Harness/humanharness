@@ -1,4 +1,4 @@
-import type { SidekickState } from "../src/client";
+import type { SidekickState } from "@humanharness/ui";
 
 /** Sidekick on, watching, with some tokens spent: the base state the Sidekick UI tests start from. */
 export const SK_ON: SidekickState = {

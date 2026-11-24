@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { openSide, openSidekick } from "./one-bar";
-import { render, renderIn } from "./home-block";
+import { openSide, openSidekick } from "../../home/test/one-bar";
+import { render, renderIn } from "./sidekick-app";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
@@ -9,7 +9,7 @@ import type { AppState, SetupStepView, SidekickCard, SidekickReview } from "../.
 import { SetupFlow } from "../../../ui/src/SetupFlow";
 import { FakeClient } from "../../../ui/test/fake-client";
 
-import { SK_ON } from "../../../ui/test/sidekick-fixtures";
+import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(() => {
   cleanup();

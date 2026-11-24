@@ -54,7 +54,7 @@ export function ReviewBar({ summary, busy, approvedReason, changesOpen, onSend, 
     setAsking(null);
     setSaid(r.ok ? t(r.to === "open" ? "review.sentOpen" : "review.sentNew") : r.reason === "busy" ? t("review.busy") : t("review.failed"));
   };
-  /** The one place approval happens: a later Sidekick `before-approve` hold goes here (Conflicts 3). */
+  /** The one place approval happens: a later mod's `before-approve` hold goes here (Conflicts 3). */
   const approveNow = async (why?: string, opts?: { discard?: boolean }) => {
     const r = await onApprove(why, opts);
     if (r.ok) {

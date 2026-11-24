@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 
-/** The width under which Sidekick has no overlay (ChatView): no button, no panel, no review. */
+/** The width under which the task view has no right overlay: no mod overlay, no review. */
 const NARROW = "(max-width: 720px)";
 
 function matches(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(NARROW).matches;
 }
 
-/** True while the window is too narrow for the Sidekick panel, live. */
+/** True while the window is too narrow for a right overlay, live. */
 export function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(matches);
   useEffect(() => {

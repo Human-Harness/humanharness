@@ -179,25 +179,36 @@ function TaskBarPiece({ ctx, store, act }: { ctx: CoreUiCtx; store: Store; act: 
   useEffect(() => store.set({ sk }), [sk]);
   const name = tv.overlayName(NAME, NAME);
 
-  // The reviewer, from the first render (the composer's field is never remounted under the cursor): the backdrop with
-  // the live card's spans; it reviews only while Sidekick is on and reviews before sending.
+  // The reviewer, registered once from the first render (the composer's field is never remounted under the cursor, and
+  // its place among the mods' reviewers stays): the backdrop with the live card's spans; it reviews only while Sidekick
+  // is on and reviews before sending. It reads the state from the store, and says when it changes.
   useEffect(() => {
     if (!enabled) return;
+    const sk = () => store.get().sk;
     const reviewer: TaskReviewer = {
       name: "Sidekick",
       ownWait: true,
-      reviews: sk !== null && sk.settings.on && sk.settings.preSend,
-      ...(sk ? { wait: sk.settings.wait } : {}),
-      marks: (draft) => (sk?.card && sk.settings.on && sk.card.prompt === draft ? cardSpans(sk.card) : []),
+      get reviews() {
+        const s = sk();
+        return s !== null && s.settings.on && s.settings.preSend;
+      },
+      get wait() {
+        return sk()?.settings.wait;
+      },
+      marks: (draft) => {
+        const s = sk();
+        return s?.card && s.settings.on && s.card.prompt === draft ? cardSpans(s.card) : [];
+      },
       review: (text, signal, o) => (o.answer ? act.reviewAnswer(text, signal) : act.reviewComposer(text, signal, o.force)),
       sent: () => {
-        const card = store.get().sk?.card;
+        const card = sk()?.card;
         if (card) act.resolveCard(card, "sent-anyway");
       },
       holdAnswer: act.holdAnswer,
+      subscribe: store.subscribe,
     };
     return ctx.composer(reviewer);
-  }, [enabled, sk]);
+  }, [enabled]);
 
   // Sidekick's overlay holds the harness's side panel: not in a window too narrow for it.
   const shown = sk !== null && !tv.narrow && !tv.slim;

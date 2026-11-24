@@ -7,7 +7,7 @@ import { ChatView } from "../src/ChatView";
 import { InputForm } from "../src/InputForm";
 import { type UiCtx, startModLoader } from "../src/layout/mod-loader";
 import { type BlockRegistry, type ComposerReviewer, type OverlayButtonProps, type OverlayPanelProps, type ReviewVerdict, type TaskBarProps, ModBlocksProvider, createBlockRegistry } from "../src/layout/registry";
-import { answerReview } from "../src/task-view/review";
+import { type TaskReviewer, answerReview } from "../src/task-view/review";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -185,6 +185,54 @@ describe("a mod's reviewer (ctx.composer)", () => {
     fireEvent.change(box, { target: { value: "Fix it" } });
     expect(box.closest(".hh-sk-flagged")).not.toBeNull();
     expect(document.querySelector(".hh-sk-backdrop mark")?.textContent).toBe("Fix");
+  });
+
+  /** Two mods' reviewers: the first is there but off (reviews: false, as Sidekick when it is off) and says when that changes. */
+  async function twoReviewers() {
+    const state = { on: false };
+    const listeners = new Set<() => void>();
+    const first: TaskReviewer & { review: ReturnType<typeof vi.fn> } = {
+      wait: 30,
+      get reviews() {
+        return state.on;
+      },
+      review: vi.fn(async () => "send" as const),
+      subscribe: (l) => {
+        listeners.add(l);
+        return () => void listeners.delete(l);
+      },
+    };
+    const second = reviewer(async () => "send");
+    const registry = createBlockRegistry();
+    await load(registry, (ctx) => {
+      ctx.composer(first);
+      ctx.composer(second);
+    });
+    const { client, box } = await chat(registry);
+    const turnOn = () => {
+      state.on = true;
+      act(() => listeners.forEach((l) => l()));
+    };
+    return { first, second, client, box, turnOn };
+  }
+
+  it("with two reviewers, the first that reviews now does: one that is off leaves it to the next", async () => {
+    const { first, second, client, box } = await twoReviewers();
+    fireEvent.change(box, { target: { value: "One" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(client.sent).toEqual(["One"]));
+    expect(second.review).toHaveBeenCalledTimes(1);
+    expect(first.review).not.toHaveBeenCalled();
+  });
+
+  it("a reviewer that turns its reviews on takes over again, without registering anew", async () => {
+    const { first, second, client, box, turnOn } = await twoReviewers();
+    turnOn();
+    fireEvent.change(box, { target: { value: "One" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(client.sent).toEqual(["One"]));
+    expect(first.review).toHaveBeenCalledTimes(1);
+    expect(second.review).not.toHaveBeenCalled();
   });
 
   it("the answer form uses the same reviewer: a hold keeps the form, a send submits", async () => {

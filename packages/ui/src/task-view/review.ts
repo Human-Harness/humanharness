@@ -18,6 +18,8 @@ export interface TaskReviewer extends ComposerReviewer {
   sent?(text: string): void;
   /** An answer's review held the form: `hold` sends or focuses it later; the result is called on Skip. */
   holdAnswer?(hold: AnswerHold): (() => void) | undefined;
+  /** Calls `listener` when what it reads (`reviews`, `wait`, `marks`) changes: the task view draws again. */
+  subscribe?(listener: () => void): () => void;
 }
 
 /** The reviewer's wait: its own, or the default. */

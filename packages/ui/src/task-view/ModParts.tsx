@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { SlotBoundary } from "../layout/BlockBoundary";
 import { type Slots, useBlocks } from "../layout/registry";
 import { Overlay } from "./Overlay";
@@ -16,17 +16,28 @@ const nameOf = (o: Slots["taskOverlay"]): OverlayName => overlayName(o.mod, o.na
 /** Its element id (the button's `aria-controls`): `hh-overlay-<mod>` for the overlay named after its mod. */
 const idOf = (o: Slots["taskOverlay"]) => (o.name === o.mod ? `hh-overlay-${o.mod}` : `hh-overlay-mod-${o.mod}-${o.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
 
+const NO_REVIEWERS: Slots["composer"][] = [];
+
 /**
  * Mods' parts in the task view (`ctx.taskBar`, `ctx.taskOverlay`, `ctx.composer`): never in slim mode; overlays and
  * reviews not in a narrow window either (no review the person can't see), though the reviewer's marks stay. The
- * reviewer is the first one registered; `reviews`: it reviews before sending now. `review`/`answer`: the composer's and
- * the answer form's mod review in flight, aborted by Send now.
+ * reviewer is the first one registered that reviews now (else the first, for its marks); `reviews`: it reviews before
+ * sending now. `review`/`answer`: the composer's and the answer form's mod review in flight, aborted by Send now.
  */
 export function useModParts(o: { slim: boolean; narrow: boolean }) {
   const blocks = useBlocks();
   const review = useRef<AbortController | null>(null);
   const answer = useRef<AbortController | null>(null);
-  const reviewer: TaskReviewer | undefined = o.slim ? undefined : blocks.slot("composer")[0]?.reviewer;
+  // The slot's list is a fresh one only when it changes.
+  const slot = o.slim ? NO_REVIEWERS : blocks.slot("composer");
+  const all: readonly TaskReviewer[] = slot.map((c) => c.reviewer);
+  // A reviewer whose state changes says so: the pick and its marks are read again.
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const offs = all.map((r) => r.subscribe?.(redraw));
+    return () => offs.forEach((off) => off?.());
+  }, [slot]);
+  const reviewer: TaskReviewer | undefined = all.find((r) => r.reviews !== false) ?? all[0];
   const reviews = reviewer !== undefined && !o.narrow && reviewer.reviews !== false;
   return {
     bar: o.slim ? [] : blocks.slot("taskBar"),

@@ -38,7 +38,9 @@ export type { OverlayButtonProps, OverlayPanelProps, TaskBarProps } from "./layo
 export type { AnswerHold } from "./InputForm";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
 export { AppFooter, HHLogo, SettingsGear, Tag, type TagTone, TopBar } from "./chrome";
-export { Button, Hidden, ICON_NAMES, Icon, type IconName, Rx, Segmented } from "./guide";
+export { Hidden, Icon, Rx } from "./guide";
+// Core-only guide pieces for the core mods (not in hh.d.ts).
+export { Button, ICON_NAMES, type IconName, Segmented } from "./task-view/pieces";
 export { ownName, shownLanguage, systemLanguage } from "./language";
 export { ProfileSwitcher } from "./ProfileSwitcher";
 export { useCurrentWindows } from "./UsageMeter";

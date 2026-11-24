@@ -1091,5 +1091,5 @@ declare module "@humanharness/ui" {
   export type { BlockProps, BlockComponent } from "@humanharness/ui/_internal/src/layout/registry";
   export { type AppValue, useApp } from "@humanharness/ui/_internal/src/layout/app";
   export { HhTheme } from "@humanharness/ui/_internal/src/guide/Theme";
-  export { Button, Hidden, ICON_NAMES, Icon, type IconName, Rx, Segmented } from "@humanharness/ui/_internal/src/guide/index";
+  export { Hidden, Icon, Rx } from "@humanharness/ui/_internal/src/guide/index";
 }

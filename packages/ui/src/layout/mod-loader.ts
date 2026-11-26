@@ -1,5 +1,5 @@
 import type { HarnessClient, ModRow, ModsView } from "../client";
-import type { BlockComponent, BlockRegistry, ComposerReviewer, RowOptions, RowPlace, SettingsTabOptions, Slots } from "./registry";
+import type { BlockComponent, BlockRegistry, ComposerReviewer, RowOptions, RowPlace, SettingsTabOptions, Slots, TaskPageOptions } from "./registry";
 
 /** What a mod's `ui` part gets (mod-sdk's `UiCtx`): its id, the way to register a block, and its own main's names. */
 export interface UiCtx {
@@ -19,6 +19,8 @@ export interface UiCtx {
   taskOverlay(o: { name: string; button: unknown; panel: unknown; bare?: boolean }): () => void;
   /** Reviews the composer's and the answer form's sends before they go. */
   composer(reviewer: ComposerReviewer): () => void;
+  /** A page of the task view (once per mod): a rail entry and a page that takes the work screen. */
+  taskPage(o: TaskPageOptions & { page: unknown }): () => void;
 }
 /** A built `ui.js`: its default export is the mod's definition. */
 export interface ModModule {
@@ -64,6 +66,7 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
   const entries: Entry[] = [];
   let live = false;
   let dead = false;
+  let taskPages = 0;
   const add = (attach: () => () => void): (() => void) => {
     const e: Entry = { attach };
     if (dead) return () => {};
@@ -96,6 +99,15 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
     taskOverlay: (o) =>
       slot("taskOverlay", { mod: id, name: o.name, Button: o.button as Slots["taskOverlay"]["Button"], Panel: o.panel as Slots["taskOverlay"]["Panel"], ...(o.bare ? { bare: true } : {}) }),
     composer: (reviewer) => slot("composer", { mod: id, reviewer }),
+    taskPage: (o) => {
+      if (taskPages > 0) throw new Error(`Mod ${id}: a mod registers a task page once`);
+      taskPages += 1;
+      const off = slot("taskPage", { mod: id, name: o.name, rail: o.rail, title: o.title, Page: o.page as Slots["taskPage"]["Page"] });
+      return () => {
+        off();
+        taskPages = 0;
+      };
+    },
     call: (name, payload) => mods.call(id, name, payload),
     on: (name, fn) => add(() => mods.on(id, name, fn)),
   };
@@ -175,6 +187,13 @@ export function startModLoader({ client, registry, importer = windowImport, core
   };
 
   const sync = async () => {
+    // A core mod's ui ships with the window but follows its switch: off, it registers nothing (no page, entry or block).
+    for (const m of core) {
+      const r = rows.find((x) => x.id === m.id);
+      if (!r) continue;
+      if (!r.on) drop(m.id);
+      else if (!loaded.has(m.id)) run(m.id, "core", m.ui?.bind(m));
+    }
     const wanted = new Map(rows.filter((r) => runs(r) && !coreIds.has(r.id)).map((r) => [r.id, r]));
     for (const id of [...loaded.keys()]) if (!wanted.has(id) && !coreIds.has(id)) drop(id);
     for (const r of wanted.values()) {

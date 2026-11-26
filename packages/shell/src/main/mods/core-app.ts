@@ -38,6 +38,8 @@ export interface CoreAppParts {
   tagKey(id: string, create: boolean): Promise<Buffer | null>;
   /** A data request as the person. */
   personData(request: unknown, options: unknown): Promise<unknown>;
+  /** The history go-backs: each asks with main's native dialog first and answers as `hh:restore`/`hh:restoreTask` do. */
+  history: { restorePoint(sha: string): Promise<unknown>; restoreTask(id: string, includeShared?: boolean): Promise<unknown> };
   /** A note written as the person, with its history commit. */
   saveDecision(o: { scope: string; action?: string; title: string; decision: string }): Promise<void>;
 }
@@ -68,6 +70,7 @@ export function coreAppFor(p: CoreAppParts, id: string): CoreApp {
     dailyInput: (base, day) => p.dailyInput(base, day),
     pickImportFiles: () => p.pickImportFiles(),
     tagKey: (create) => p.tagKey(id, create),
+    history: { restorePoint: (sha) => p.history.restorePoint(sha), restoreTask: (taskId, includeShared) => p.history.restoreTask(taskId, includeShared) },
     person: {
       data: (request, options) => p.personData(request, options ?? {}),
       note: (o) => p.saveDecision(o),

@@ -343,6 +343,20 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       }): Disposer;
       /** Reviews the composer's sends (Enter reviews first, ⌥⏎ forces a review, ⌘⏎ sends at once) and the answer form's. */
       composer?(reviewer: ComposerReviewer): Disposer;
+      /**
+       * A page of the task view, once per mod: `rail` is its entry in the task group of the rail, `title` the page's
+       * title (a key of the app's strings, or plain text), `name` which page it is (only "history" is hosted today), and
+       * `page` the component, which gets the props the core's History panel gets, with `client` and `onBack`.
+       */
+      taskPage?(o: {
+          name: string;
+          rail: {
+              icon: string;
+              label: string;
+          };
+          title: string;
+          page: unknown;
+      }): Disposer;
   }
   /** Where a mod's `row` goes. */
   type RowPlace = "models" | "usage";
@@ -970,7 +984,8 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
 
 declare module "@humanharness/ui/_internal/src/layout/registry" {
   import { type ComponentType, type ReactNode } from "react";
-  import type { AppState, HarnessClient, UsageSummary } from "@humanharness/ui/_internal/src/client";
+  import type { ActionOption, AppState, HarnessClient, HistoryFileChange, UsageSummary } from "@humanharness/ui/_internal/src/client";
+  import type { IconName } from "@humanharness/ui/_internal/src/guide/icons";
   import type { AppValue } from "@humanharness/ui/_internal/src/layout/app";
   /** What a mod's block gets: the `props` the layout gives it and the app (minimal-core spec §5.2). */
   export interface BlockProps {
@@ -1051,6 +1066,39 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       /** The longest wait for a review, in seconds, or "always" (default 6). */
       wait?: number | "always";
   }
+  /**
+   * What a mod's task page gets: the props the core's History panel gets, plus the client. `onBack` goes back to the
+   * chat; `onRestored` says a restore went through (the chat notes it and refreshes); `onOpenFile` opens a changed file.
+   */
+  export interface TaskPageProps {
+      client: HarnessClient;
+      actions: Record<string, ActionOption>;
+      /** A past task search asked the page to open at. */
+      openTask?: string;
+      currentTask?: string;
+      undoByFiles?: boolean;
+      jobs?: {
+          id: string;
+          label: string;
+      }[];
+      linkedFolders?: Record<string, {
+          label: string;
+      }>;
+      /** Going back is not allowed while a turn is live. */
+      disabled: boolean;
+      onBack(): void;
+      onRestored(kind: "task" | "point"): void;
+      onOpenFile(path: string, kind: HistoryFileChange["kind"]): void;
+  }
+  /** A mod's task page: its rail entry (icon and label) and the title the page takes the work screen with. */
+  export interface TaskPageOptions {
+      name: string;
+      rail: {
+          icon: IconName;
+          label: string;
+      };
+      title: string;
+  }
   /** What each slot holds, by kind; each entry names the mod that registered it. */
   export interface Slots {
       settingsTab: {
@@ -1076,6 +1124,13 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       composer: {
           mod: string;
           reviewer: ComposerReviewer;
+      };
+      taskPage: {
+          mod: string;
+          name: string;
+          rail: TaskPageOptions["rail"];
+          title: string;
+          Page: ComponentType<TaskPageProps>;
       };
   }
   export type SlotKind = keyof Slots;

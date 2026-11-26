@@ -167,17 +167,17 @@ describe("goBackHandlers (every go-back asks first)", () => {
     return { h: goBackHandlers(d), asks, done };
   }
 
-  it("hh:restore: a valid commit id that no listed point has asks nothing", async () => {
+  it("restore: a valid commit id that no listed point has asks nothing", async () => {
     const { h, asks, done } = deps(true);
-    await expect(h["hh:restore"]("win", SHA("9"))).rejects.toThrow("Invalid point");
+    await expect(h["restore"]("win", SHA("9"))).rejects.toThrow("Invalid point");
     expect(asks).toEqual([]);
     expect(done).toEqual([]);
   });
 
   it("while a turn, a task operation or a hold blocks going back, the folder and task go-backs ask nothing", async () => {
     const { h, asks, done } = deps(true, { blocked: () => true });
-    await expect(h["hh:restore"]("win", SHA("1"))).rejects.toThrow();
-    await expect(h["hh:restoreTask"]("win", "t2")).rejects.toThrow();
+    await expect(h["restore"]("win", SHA("1"))).rejects.toThrow();
+    await expect(h["restoreTask"]("win", "t2")).rejects.toThrow();
     expect(asks).toEqual([]);
     expect(done).toEqual([]);
   });
@@ -191,8 +191,8 @@ describe("goBackHandlers (every go-back asks first)", () => {
         return true;
       },
     });
-    expect(await h["hh:restoreTask"]("win", "t2")).toEqual(CANCELLED);
-    expect(await h["hh:restore"]("win", SHA("1"))).toEqual({ ok: true });
+    expect(await h["restoreTask"]("win", "t2")).toEqual(CANCELLED);
+    expect(await h["restore"]("win", SHA("1"))).toEqual({ ok: true });
     expect(done).toEqual([`point ${SHA("1")}`]);
   });
 
@@ -200,16 +200,16 @@ describe("goBackHandlers (every go-back asks first)", () => {
     let answer: (yes: boolean) => void = () => undefined;
     const opened: GoBackAsk[] = [];
     const { h, done } = deps(true, { confirm: (_s, ask) => (opened.push(ask), new Promise<boolean>((r) => (answer = r))) });
-    const first = h["hh:restoreTask"]("win", "t2");
+    const first = h["restoreTask"]("win", "t2");
     await new Promise((r) => setTimeout(r, 0));
-    expect(await h["hh:restore"]("win", SHA("1"))).toEqual(CANCELLED);
+    expect(await h["restore"]("win", SHA("1"))).toEqual(CANCELLED);
     expect(await h["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual(CANCELLED);
     expect(opened).toHaveLength(1);
     answer(true);
     expect(await first).toEqual({ ok: true });
     expect(done).toEqual(["task t2"]);
     // Closed: the next one asks again.
-    const next = h["hh:restore"]("win", SHA("1"));
+    const next = h["restore"]("win", SHA("1"));
     await new Promise((r) => setTimeout(r, 0));
     answer(false);
     expect(await next).toEqual(CANCELLED);
@@ -220,37 +220,37 @@ describe("goBackHandlers (every go-back asks first)", () => {
     expect(Object.keys(deps(true).h).sort()).toEqual([...GO_BACK_CHANNELS].sort());
   });
 
-  it("hh:restore: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
+  it("restore: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
     const yes = deps(true);
-    expect(await yes.h["hh:restore"]("win", SHA("1"))).toEqual({ ok: true });
+    expect(await yes.h["restore"]("win", SHA("1"))).toEqual({ ok: true });
     expect(yes.done).toEqual([`point ${SHA("1")}`]);
     // t1's point: every later task, whatever its scope, is named.
     expect(yes.asks).toEqual([{ sender: "win", ask: { kind: "point", later: [groups[0], groups[1]] } }]);
     const no = deps(false);
-    expect(await no.h["hh:restore"]("win", SHA("1"))).toEqual(CANCELLED);
+    expect(await no.h["restore"]("win", SHA("1"))).toEqual(CANCELLED);
     expect(no.done).toEqual([]);
   });
 
-  it("hh:restoreTask: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
+  it("restoreTask: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
     const yes = deps(true);
-    expect(await yes.h["hh:restoreTask"]("win", "t2")).toEqual({ ok: true });
+    expect(await yes.h["restoreTask"]("win", "t2")).toEqual({ ok: true });
     expect(yes.done).toEqual(["task t2"]);
     expect(yes.asks).toEqual([{ sender: "win", ask: { kind: "task", task: groups[1], later: [groups[0]] } }]);
     const no = deps(false);
-    expect(await no.h["hh:restoreTask"]("win", "t2")).toEqual(CANCELLED);
+    expect(await no.h["restoreTask"]("win", "t2")).toEqual(CANCELLED);
     expect(no.done).toEqual([]);
   });
 
-  it("hh:restoreTask with taskGroups (linked folders): the task and its later tasks come from them, not the panel's", async () => {
+  it("restoreTask with taskGroups (linked folders): the task and its later tasks come from them, not the panel's", async () => {
     // t9 changed only a linked folder, after t2: the panel's groups never name it.
     const linkedOnly = group("t9", "2026-10-28T11:59:00.000Z");
     const taskGroups = vi.fn(async (_id: string) => [linkedOnly, ...groups]);
     const yes = deps(true, { taskGroups });
-    expect(await yes.h["hh:restoreTask"]("win", "t2")).toEqual({ ok: true });
+    expect(await yes.h["restoreTask"]("win", "t2")).toEqual({ ok: true });
     expect(yes.asks[0].ask).toEqual({ kind: "task", task: groups[1], later: [linkedOnly, groups[0]] });
     expect(taskGroups).toHaveBeenCalledWith("t2");
     // A task only in a linked history can be undone.
-    expect(await yes.h["hh:restoreTask"]("win", "t9")).toEqual({ ok: true });
+    expect(await yes.h["restoreTask"]("win", "t9")).toEqual({ ok: true });
     expect(yes.done).toEqual(["task t2", "task t9"]);
   });
 
@@ -266,11 +266,11 @@ describe("goBackHandlers (every go-back asks first)", () => {
 
   it("bad input and refusals ask nothing", async () => {
     const { h, asks, done } = deps(true);
-    await expect(h["hh:restore"]("win", "nope")).rejects.toThrow("Invalid point");
-    await expect(h["hh:restoreTask"]("win", 42)).rejects.toThrow("Invalid task");
-    await expect(h["hh:restoreTask"]("win", "x".repeat(201))).rejects.toThrow("Invalid task");
+    await expect(h["restore"]("win", "nope")).rejects.toThrow("Invalid point");
+    await expect(h["restoreTask"]("win", 42)).rejects.toThrow("Invalid task");
+    await expect(h["restoreTask"]("win", "x".repeat(201))).rejects.toThrow("Invalid task");
     // The group outside any task has no "before" to go back to.
-    await expect(h["hh:restoreTask"]("win", "missing")).rejects.toThrow("Nothing to go back to");
+    await expect(h["restoreTask"]("win", "missing")).rejects.toThrow("Nothing to go back to");
     expect(await h["hh:fileRestore"]("win", "busy.md", SHA("b"))).toEqual({ ok: false, reason: "busy" });
     expect(asks).toEqual([]);
     expect(done).toEqual([]);

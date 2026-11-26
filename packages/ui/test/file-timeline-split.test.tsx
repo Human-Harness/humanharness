@@ -6,6 +6,7 @@ import { ChatView } from "../src/ChatView";
 import type { HistoryTaskView, TimelineEntry } from "../src/client";
 import { FileTimelineSplit } from "../src/FileTimelineSplit";
 import { FakeClient } from "./fake-client";
+import { withHistoryView } from "./history-view";
 import { renderIn as renderBase } from "./render";
 
 let openHistory = () => {};
@@ -100,7 +101,7 @@ describe("the History panel's links in the window (file-timeline spec §6.2, Q10
     client.historyGroups = groups;
     client.docTexts["plan.md"] = "## Plan\n\nShip it.\n";
     for (const p of ["plan.md", "gone.md", FILE]) client.timelines[p] = [entry];
-    await renderIn("en", <Host client={client} />);
+    await renderIn("en", withHistoryView(<Host client={client} />));
     return client;
   }
   const openLink = async (file: string) => {

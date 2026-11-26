@@ -56,6 +56,7 @@ import { EngineGuards } from "./engine-guards";
 import { hasAcceptedNotice } from "./engine-status";
 import { cleanModels } from "./models";
 import { registerAppIpc } from "./app-ipc";
+import type { HistoryRestores } from "./history-restore";
 import { createEngineChange } from "./engine-change";
 import { createAppServices } from "./app-services";
 import { requireNoticeForTurn } from "./notice-policy";
@@ -174,6 +175,8 @@ let historyHeld = false;
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 /** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
 let settingsCtl: SettingsController | null = null;
+/** The history go-back service (app-ipc.ts builds it; a core mod's `ctx.app.history` calls it). */
+let historyRestores: HistoryRestores | null = null;
 /** The control channel `humanharness status` and `shot` use (0b2); started after the window, stopped on quit. */
 let control: { stop(): Promise<void> } | null = null;
 /**
@@ -1181,6 +1184,12 @@ const lifecycle = {
   },
   set settingsCtl(v) {
     settingsCtl = v;
+  },
+  get historyRestores() {
+    return historyRestores;
+  },
+  set historyRestores(v) {
+    historyRestores = v;
   },
   get setupCtl() {
     return setupCtl;

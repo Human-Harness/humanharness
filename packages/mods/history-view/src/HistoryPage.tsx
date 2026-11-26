@@ -1,68 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  type ActionOption,
-  BEFORE_MESSAGE,
-  CONTEXT_CHANGE_PREFIX,
-  type HarnessClient,
-  type HistoryItem,
-  type HistoryTaskView,
-  DATA_CHANGE_PREFIX,
-  FILE_RESTORE_PREFIX,
-  type HistoryFileChange,
-  type LinkedHistoryView,
-  NOTE,
-  RESTORE_POINT,
-  RESTORE_TASK,
-  START,
-  STOPPED_PREFIX,
-  TURN_PREFIX,
-  UNDO_PREFIX,
-  type UndoRefusal,
-} from "./client";
-import { Hidden, Icon, Rx, SecondaryPage } from "./guide";
-import { shownLanguage } from "./language";
-
-/** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
-export function entryLabel(message: string): { key: string; values?: Record<string, string> } | null {
-  if (message === START) return { key: "history.entry.start" };
-  if (message === BEFORE_MESSAGE) return { key: "history.entry.before" };
-  if (message.startsWith(TURN_PREFIX)) return { key: "history.entry.turn" };
-  if (message.startsWith(STOPPED_PREFIX)) return { key: "history.entry.stopped" };
-  if (message.startsWith(UNDO_PREFIX)) return { key: "history.entry.undo" };
-  if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
-  if (message === RESTORE_POINT) return { key: "history.entry.restored" };
-  if (message.startsWith(DATA_CHANGE_PREFIX)) return { key: "history.entry.data", values: { collection: message.slice(DATA_CHANGE_PREFIX.length) } };
-  if (message.startsWith(CONTEXT_CHANGE_PREFIX)) return { key: "history.entry.context", values: { change: message.slice(CONTEXT_CHANGE_PREFIX.length) } };
-  if (message.startsWith(FILE_RESTORE_PREFIX)) {
-    // `Go back: <path> to <target>`: the target never holds " to " (v2, "the version of <ISO time>"), so the last one splits.
-    const rest = message.slice(FILE_RESTORE_PREFIX.length);
-    const cut = rest.lastIndexOf(" to ");
-    return { key: "history.entry.fileBack", values: { file: cut < 0 ? rest : rest.slice(0, cut) } };
-  }
-  const note = NOTE.exec(message);
-  if (note) return { key: "history.entry.note", values: { title: note[1] } };
-  return null;
-}
+import { type ActionOption, type HarnessClient, type HistoryItem, type HistoryTaskView, type HistoryFileChange, type LinkedHistoryView, type UndoRefusal, Hidden, Icon, Rx, SecondaryPage, entryLabel, byDay, sameDay, shownLanguage } from "@humanharness/ui";
 
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
 
 /** The scope picker's "every scope" (Radix Select keeps no empty value). */
 const ALL = "__all__";
-
-const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
-/** The groups split by local day, keeping their order (newest first). */
-export function byDay(groups: HistoryTaskView[]): { day: Date; items: HistoryTaskView[] }[] {
-  const days: { day: Date; items: HistoryTaskView[] }[] = [];
-  for (const g of groups) {
-    const d = new Date(g.date);
-    const last = days[days.length - 1];
-    if (last && sameDay(last.day, d)) last.items.push(g);
-    else days.push({ day: new Date(d.getFullYear(), d.getMonth(), d.getDate()), items: [g] });
-  }
-  return days;
-}
 
 type Restore = { kind: "task" | "point"; id: string };
 
@@ -78,6 +21,7 @@ const triggerId = (r: Restore) => `hh-history-back-${r.kind}-${r.id}`;
  */
 export function HistoryPage({
   client,
+  call,
   actions,
   onBack,
   onRestored,
@@ -89,6 +33,8 @@ export function HistoryPage({
   openTask,
 }: {
   client: HarnessClient;
+  /** The mod's own main (`ctx.call`): "restore" takes a commit id, "restoreTask" `{ id }`; main asks before going back. */
+  call: (name: "restore" | "restoreTask", payload: unknown) => Promise<unknown>;
   /** The harness's actions: a task's row shows its action's label. */
   actions: Record<string, ActionOption>;
   /** The open task's id: its row says it is open now. */
@@ -199,8 +145,9 @@ export function HistoryPage({
     setFailed(false);
     setRefused(null);
     setRestoring(true);
-    (r.kind === "task" ? client.restoreTask(r.id) : client.restore(r.id)).then(
-      (answer) => {
+    (r.kind === "task" ? call("restoreTask", { id: r.id }) : call("restore", r.id)).then(
+      (raw) => {
+        const answer = raw as { ok: boolean } | { refused: UndoRefusal };
         // Board mode: main refused, naming why (spec §5.3); nothing changed.
         if (answer && "refused" in answer) {
           refocus.current = triggerId(r);

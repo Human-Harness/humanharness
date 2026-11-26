@@ -12,6 +12,7 @@ import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { type AppValue, AppProvider } from "./layout/app";
 import { LayoutView } from "./layout/LayoutView";
+import { useBlocks } from "./layout/registry";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { useAttention } from "./plugins/usePlugins";
 import { InboxAnnouncer, InboxPage, waitingCount } from "./parallel/Inbox";
@@ -78,6 +79,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [barEl, setBarEl] = useState<HTMLDivElement | null>(null);
   /** A rail pick of the task's Notes or History: each pick is a new number the chat watches. */
   const [taskPage, setTaskPage] = useState<{ page: "notes" | "history"; n: number } | null>(null);
+  /** The History page a mod registered (`ctx.taskPage`): the rail's task History entry shows its icon and label. */
+  const historyPage = useBlocks().slot("taskPage").find((e) => e.name === "history");
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
   const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
@@ -413,6 +416,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     jobs: Boolean(state.jobs?.jobs.length),
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
+    history: historyPage !== undefined,
     task: taskOpen ? { notes: chatTask?.notes ?? 0 } : null,
   };
   const entries = railEntries(features);
@@ -544,6 +548,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                   entries={entries}
                   current={railCurrent}
                   onPick={pick}
+                  {...(historyPage ? { taskPage: historyPage.rail } : {})}
                   counts={Object.fromEntries(
                     Object.entries(railCounts(features, waiting)).map(([e, count]) => [
                       e,

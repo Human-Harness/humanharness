@@ -10,7 +10,7 @@ The shell picks a mode once, when it loads the harness: `hostMode(harness)` (`pa
 - **Board** builds one `HarnessWorkspace`, a `TaskBoard` (`task-board.ts`), a `TurnGate` (`turn-gate.ts`) and one lane per open task. `index.ts` branches on `host` (null in plain mode) where it builds the runtime, the turns and the tasks, and in the handlers whose board behaviour differs:
   - the runtime's life: `closeRuntime`, `dropRuntime`, `openHistory` (the shared workspace's history), `flushTurns`, `interruptTasks`, and the host built at startup (`buildBoardHost`, only when `hostMode(harness) === "board"`) and closed at quit (`closeAll`);
   - between tasks: `betweenTasks` and the plugins' `takeRuntimeStale` (Decision 13), and `refreshInstructions` for the settings and the plugins (held for a gap, spec §10);
-  - IPC: `hh:saveConfig` (the caps, `capsChanged`), `hh:loadChat` (the focused task's chat and live turn), `startBlocked`, `hh:restoreTask` (undo by paths) and the `hh:tasks*` channels (refused in plain mode);
+  - IPC: `hh:saveConfig` (the caps, `capsChanged`), `hh:loadChat` (the focused task's chat and live turn), `startBlocked`, the restore service's `restoreTask` (undo by paths, `ctx.app.history`) and the `hh:tasks*` channels (refused in plain mode);
   - the folder move: the checkpoint (`checkpointAllBeforeMove`), the turns' flush and `moveEnded`;
   - attention: `sharedAttention` and the plugins' `attentionStoreFor`/`registerKnown`, the task attention (`buildTaskAttention`);
   - the history of the app's own changes: a note, a person's data write, Sidekick's learning and decision note, and a material change go through `saveAppChange` (`app-change.ts`), which in board mode commits only their own files (see Undo).

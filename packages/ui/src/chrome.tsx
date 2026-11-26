@@ -172,19 +172,22 @@ export function Rail({
   current,
   onPick,
   counts = {},
+  taskPage,
 }: {
   entries: RailEntry[];
   current: RailEntry;
   onPick: (e: RailEntry) => void;
   /** A count over an entry's icon (the Inbox's waiting count, an orange badge), and the name said with it. */
   counts?: Partial<Record<RailEntry, { count: number; label: string }>>;
+  /** The History page a mod registered (`ctx.taskPage`): its icon and label take the task History entry's. */
+  taskPage?: { icon: IconName; label: string };
 }) {
   const { t } = useTranslation();
   const button = (e: RailEntry) => {
     const n = counts[e];
     const shown = n && n.count > 0 ? n : null;
     return (
-      <IconButton key={e} icon={RAIL_ICONS[e]} label={shown ? shown.label : t(`rail.${e}`, { defaultValue: TASK_LABELS[e] ?? e })} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
+      <IconButton key={e} icon={e === "task-history" && taskPage ? taskPage.icon : RAIL_ICONS[e]} label={shown ? shown.label : e === "task-history" && taskPage ? t(taskPage.label, { defaultValue: taskPage.label }) : t(`rail.${e}`, { defaultValue: TASK_LABELS[e] ?? e })} aria-current={e === current ? "page" : undefined} onClick={() => onPick(e)}>
         {shown && (
           <Rx.Badge className="hh-rail-count" color={e === "inbox" ? "orange" : "gray"} variant="solid" size="1" radius="full" aria-hidden="true">
             {shown.count > 99 ? "99+" : shown.count}

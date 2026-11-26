@@ -178,6 +178,12 @@ export interface UiCtx {
   taskOverlay?(o: { name: string; button: unknown; panel: unknown }): Disposer;
   /** Reviews the composer's sends (Enter reviews first, ⌥⏎ forces a review, ⌘⏎ sends at once) and the answer form's. */
   composer?(reviewer: ComposerReviewer): Disposer;
+  /**
+   * A page of the task view, once per mod: `rail` is its entry in the task group of the rail, `title` the page's
+   * title (a key of the app's strings, or plain text), `name` which page it is (only "history" is hosted today), and
+   * `page` the component, which gets the props the core's History panel gets, with `client` and `onBack`.
+   */
+  taskPage?(o: { name: string; rail: { icon: string; label: string }; title: string; page: unknown }): Disposer;
 }
 
 /** Where a mod's `row` goes. */

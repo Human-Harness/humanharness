@@ -39,7 +39,9 @@ export type { ModelsRowProps, OverlayButtonProps, OverlayPanelProps, RowProps, S
 export type { AnswerHold } from "./InputForm";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
 export { AppFooter, HHLogo, SettingsGear, Tag, type TagTone, TopBar } from "./chrome";
-export { Hidden, Icon, Rx } from "./guide";
+export { Hidden, Icon, Rx, SecondaryPage } from "./guide";
+// The History entry labels and day grouping the file timeline also uses; the History panel (a core mod) builds with them.
+export { byDay, entryLabel, sameDay } from "./history-labels";
 // Core-only guide pieces for the core mods (not in hh.d.ts).
 export { Button, ICON_NAMES, type IconName, Segmented } from "./task-view/pieces";
 // A core mod's Settings tab builds with Settings' own pieces: imported, then exported, so hh-dts (which publishes only

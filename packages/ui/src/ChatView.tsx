@@ -40,7 +40,6 @@ import { ToolCallLines } from "./tools/ToolCallLine";
 import { FileTimelineSplit } from "./FileTimelineSplit";
 import { FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
-import { HistoryPage } from "./HistoryPage";
 import { SlotBoundary } from "./layout/BlockBoundary";
 import { useBlocks } from "./layout/registry";
 import { pruneDrafts } from "./InputForm";
@@ -2064,9 +2063,7 @@ export function ChatView({
               <SlotBoundary key={key} mod={historyEntry.mod} client={client}>
                 <historyEntry.Page {...props} />
               </SlotBoundary>
-            ) : (
-              <HistoryPage key={key} {...props} />
-            );
+            ) : null;
           })()}
         {notesShown && (
           <NotesPage

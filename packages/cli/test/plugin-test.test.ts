@@ -84,6 +84,7 @@ beforeAll(async () => {
   built = path.join(root, "mini");
   writeFiles(built, { "plugin.config.ts": CONFIG, "backend.ts": BACKEND, "panels/main.tsx": PANEL });
   await buildPlugin(built);
+  // ~3× the worst build measured under a full parallel run (13.8 s; 2.8 s alone), rounded up; step 6b deletes this file.
 }, 60_000);
 afterAll(() => cleanup());
 

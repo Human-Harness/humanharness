@@ -89,6 +89,10 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     });
   }
   // The app's parts, built once: core mods get them through `ctx.app` (mods/core-app.ts).
+  const restores = () => {
+    if (!d.historyRestores) throw new Error("The app's IPC is not registered yet");
+    return d.historyRestores;
+  };
   const core: CoreAppParts = {
     harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}), ...(harness.mods ? { mods: harness.mods } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
@@ -121,6 +125,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     workDir: (mod, base, id) => sessionWorkDir(app.getPath("userData"), mod, base, id),
     writeBrief: writeSessionBrief,
     open: (o) => new EngineSession(o),
+    history: { restorePoint: (sha) => restores().restorePoint(sha), restoreTask: (id, includeShared) => restores().restoreTask(id, includeShared) },
     uiLanguage: async () => languageName((await d.config.load()).language ?? DEFAULT_LANGUAGE),
     // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
     // The task manager can't list open tasks (Open question 7): nothing is open.

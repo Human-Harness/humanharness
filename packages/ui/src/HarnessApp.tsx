@@ -79,6 +79,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [barEl, setBarEl] = useState<HTMLDivElement | null>(null);
   /** A rail pick of the task's Notes or History: each pick is a new number the chat watches. */
   const [taskPage, setTaskPage] = useState<{ page: "notes" | "history"; n: number } | null>(null);
+  /** The History page a mod registered (`ctx.taskPage`): the rail's task History entry shows its icon and label. */
+  const historyPage = useBlocks().slot("taskPage").find((e) => e.name === "history");
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Search opened Settings at a field (§6); `n` makes each search a new focus. */
   const [settingsFocus, setSettingsFocus] = useState<{ id: string; n: number } | null>(null);
@@ -417,8 +419,6 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     task: taskOpen ? { notes: chatTask?.notes ?? 0 } : null,
   };
   const entries = railEntries(features);
-  /** The History page a mod registered (`ctx.taskPage`): the rail's task History entry shows its icon and label. */
-  const historyPage = useBlocks().slot("taskPage").find((e) => e.name === "history");
   /** With a task open on the chat the top bar is its one bar, drawn by the chat in the slot (task view one column): no crumbs, no gear. */
   const slotted = view.kind === "chat" && taskOpen;
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));

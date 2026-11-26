@@ -70,3 +70,31 @@ export function lowered(baseline: Baseline, size: (rel: string) => number | null
 }
 
 export const sizeOrNull = (rel: string): number | null => (fs.existsSync(path.join(root, rel)) ? sizeOf(rel) : null);
+
+/** The core size ratchet (minimal-core spec §8): the lines of the core packages' sources only go down. */
+export const coreBaselineFile = path.join(root, "packages/protocol/test/core-size-baseline.json");
+/** Packages that are not the core: the mods, and the test tooling. */
+const NOT_CORE = new Set(["mods", "e2e", "fake-agent"]);
+
+/** Every `.ts`, `.tsx` and `.css` file under the core packages' `src`, repo-relative; `.d.ts` (generated) left out. */
+export function coreFiles(): string[] {
+  const dirs = fs.readdirSync(path.join(root, "packages"), { withFileTypes: true }).filter((d) => d.isDirectory() && !NOT_CORE.has(d.name));
+  const files = dirs.flatMap((d) => walk(path.join(root, "packages", d.name, "src"), code));
+  return files.map((f) => path.relative(root, f).split(path.sep).join("/")).sort();
+}
+
+/** Newlines, plus a last line that has none. */
+export const countLines = (text: string): number => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
+export const linesOf = (rel: string): number => countLines(fs.readFileSync(path.join(root, rel), "utf8"));
+export const readCoreBaseline = (): number => (JSON.parse(fs.readFileSync(coreBaselineFile, "utf8")) as { lines: number }).lines;
+
+/** Over the baseline fails; under it passes, with the number to record. */
+export function checkCoreSize(lines: number, baseline: number): { failure: string | null; hint: string | null } {
+  if (lines > baseline)
+    return {
+      failure: `The core is ${lines} lines, over its baseline of ${baseline} (+${lines - baseline}). The core only shrinks: move code into a mod (docs/architecture/mods.md) or remove as much. Raising the baseline is a decision to take on purpose.`,
+      hint: null,
+    };
+  const hint = lines < baseline ? `The core is ${lines} lines, under its baseline of ${baseline}. Lower packages/protocol/test/core-size-baseline.json to ${lines}.` : null;
+  return { failure: null, hint };
+}

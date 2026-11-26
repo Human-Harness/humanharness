@@ -1,5 +1,6 @@
 import { type ComponentType, type ReactNode, createContext, createElement, useContext, useSyncExternalStore } from "react";
-import type { AppState, HarnessClient, UsageSummary } from "../client";
+import type { ActionOption, AppState, HarnessClient, HistoryFileChange, UsageSummary } from "../client";
+import type { IconName } from "../guide/icons";
 import type { AppValue } from "./app";
 
 /** What a mod's block gets: the `props` the layout gives it and the app (minimal-core spec §5.2). */
@@ -80,6 +81,32 @@ export interface ComposerReviewer {
   wait?: number | "always";
 }
 
+/**
+ * What a mod's task page gets: the props the core's History panel gets, plus the client. `onBack` goes back to the
+ * chat; `onRestored` says a restore went through (the chat notes it and refreshes); `onOpenFile` opens a changed file.
+ */
+export interface TaskPageProps {
+  client: HarnessClient;
+  actions: Record<string, ActionOption>;
+  /** A past task search asked the page to open at. */
+  openTask?: string;
+  currentTask?: string;
+  undoByFiles?: boolean;
+  jobs?: { id: string; label: string }[];
+  linkedFolders?: Record<string, { label: string }>;
+  /** Going back is not allowed while a turn is live. */
+  disabled: boolean;
+  onBack(): void;
+  onRestored(kind: "task" | "point"): void;
+  onOpenFile(path: string, kind: HistoryFileChange["kind"]): void;
+}
+/** A mod's task page: its rail entry (icon and label) and the title the page takes the work screen with. */
+export interface TaskPageOptions {
+  name: string;
+  rail: { icon: IconName; label: string };
+  title: string;
+}
+
 /** What each slot holds, by kind; each entry names the mod that registered it. */
 export interface Slots {
   settingsTab: { mod: string; name: string; Component: ComponentType<SettingsTabProps> } & SettingsTabOptions;
@@ -87,6 +114,7 @@ export interface Slots {
   taskBar: { mod: string; Component: ComponentType<TaskBarProps> };
   taskOverlay: { mod: string; name: string; Button: ComponentType<OverlayButtonProps>; Panel: ComponentType<OverlayPanelProps> };
   composer: { mod: string; reviewer: ComposerReviewer };
+  taskPage: { mod: string; name: string; rail: TaskPageOptions["rail"]; title: string; Page: ComponentType<TaskPageProps> };
 }
 export type SlotKind = keyof Slots;
 
@@ -107,7 +135,7 @@ export interface BlockRegistry {
 
 export function createBlockRegistry(): BlockRegistry {
   const blocks = new Map<string, BlockComponent>();
-  const slots: { [K in SlotKind]: Slots[K][] } = { settingsTab: [], row: [], taskBar: [], taskOverlay: [], composer: [] };
+  const slots: { [K in SlotKind]: Slots[K][] } = { settingsTab: [], row: [], taskBar: [], taskOverlay: [], composer: [], taskPage: [] };
   const listeners = new Set<() => void>();
   let version = 0;
   const key = (modId: string, name: string) => `${modId}/${name}`;

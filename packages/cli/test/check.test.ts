@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type CheckResult, checkHarness, findBrand, formatFindings } from "../src/check";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
@@ -24,6 +24,15 @@ async function fixture(edit: (dir: string) => void = () => {}): Promise<string> 
   edit(dir);
   return dir;
 }
+// The first check in a file pays the cold start: the untouched template's tool build (2.3 s alone, 13.4 s in a full
+// parallel run), cached after that. Pay it here on a throwaway copy so the first test's time is its own check.
+// Timeout ~3x the worst measured, rounded up to a minute.
+beforeAll(async () => {
+  const dir = path.join(root, "warm-up");
+  await initHarness({ dir, core: CORE, install: false });
+  await checkHarness(dir);
+}, 60_000);
+
 const errors = (r: CheckResult) => r.findings.filter((f) => f.severity === "error");
 const rules = (r: CheckResult) => r.findings.map((f) => `${f.severity}:${f.rule}`);
 

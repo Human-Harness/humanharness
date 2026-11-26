@@ -14,7 +14,7 @@ const ENGINE_CHECK_MS = 30_000;
 
 /** What asks before a go-back, picks the translation's engine and saves a config that changes the engine. */
 export interface EngineChange {
-  confirmGoBack(sender: WebContents, ask: GoBackAsk): Promise<boolean>;
+  confirmGoBack(sender: WebContents | null, ask: GoBackAsk): Promise<boolean>;
   translateEngine(fresh?: boolean): Promise<EngineDef | null>;
   saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void>;
 }
@@ -27,7 +27,7 @@ export function createEngineChange(d: () => LifecycleDeps): EngineChange {
    * Asks before a go-back, with a native dialog on the window that asked (go-back.ts). The words are the core's, in the
    * person's language: the cached translation when there is one, else English. Any failure to ask is a no.
    */
-  async function confirmGoBack(sender: WebContents, ask: GoBackAsk): Promise<boolean> {
+  async function confirmGoBack(sender: WebContents | null, ask: GoBackAsk): Promise<boolean> {
     try {
       const language = (await d().config.load()).language ?? DEFAULT_LANGUAGE;
       const translation = d().translation;
@@ -35,7 +35,7 @@ export function createEngineChange(d: () => LifecycleDeps): EngineChange {
       const i18n = await createI18n(language, {}, generated);
       const t = (key: string, values?: Record<string, unknown>) => String(i18n.t(key, values ?? {}));
       const text = goBackText(t, ask, d().harness.actions, i18n.resolvedLanguage ?? "en");
-      return await askNatively(dialog, BrowserWindow.fromWebContents(sender), text);
+      return await askNatively(dialog, sender ? BrowserWindow.fromWebContents(sender) : null, text);
     } catch (err) {
       console.error("Could not ask before going back", err);
       return false;

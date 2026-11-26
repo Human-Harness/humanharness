@@ -65,7 +65,7 @@ describe("the core does not import a core mod", () => {
   const repo = path.resolve(import.meta.dirname, "../../..");
   const PACKAGES = ["shell", "protocol", "runtime", "workspace", "harness-sdk", "ui"];
   /** The one exception: the window draws Home from its static ui import (minimal-core 0b1). */
-  const ALLOWED = new Set(["shell/src/renderer/main.tsx → @humanharness/mod-home", "shell/src/renderer/main.tsx → @humanharness/mod-sidekick"]);
+  const ALLOWED = new Set(["shell/src/renderer/main.tsx → @humanharness/mod-home", "shell/src/renderer/main.tsx → @humanharness/mod-history-view", "shell/src/renderer/main.tsx → @humanharness/mod-sidekick"]);
   const IMPORT = /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["'](@humanharness\/mod-[a-z0-9-]+)/g;
 
   async function sources(dir: string): Promise<string[]> {

@@ -98,12 +98,12 @@ describe("single mode's undo (part 3 Decision 12)", () => {
   });
 
   it("index.ts: single mode undoes by paths too, and a restore waits for the job runs", () => {
-    // index.ts, history-ipc.ts, which holds the hh:restoreTask handler, runtime-wiring.ts, which holds undoByPaths, and
+    // index.ts, history-restore.ts, which holds the restoreTask service behind `ctx.app.history`, runtime-wiring.ts, which holds undoByPaths, and
     // app-services.ts, which holds the restore guard.
-    const index = ["index.ts", "history-ipc.ts", "runtime-wiring.ts", "app-services.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
+    const index = ["index.ts", "history-restore.ts", "runtime-wiring.ts", "app-services.ts"].map((f) => fs.readFileSync(path.resolve(__dirname, "../src/main", f), "utf8")).join("\n");
     // The by-paths branch serves the board and single mode; plain mode keeps the whole-folder restore (D0).
     // After master's go-back handlers: plain mode hands over to them; the rest of the handler is the by-paths branch.
-    expect(index).toMatch(/const byPaths = undoByPaths\(\);\n(\s*\/\/[^\n]*\n)*\s*if \(!byPaths\) return goBacks\["hh:restoreTask"\]\(sender, taskId\);/);
+    expect(index).toMatch(/const byPaths = undoByPaths\(\);\n(\s*\/\/[^\n]*\n)*\s*if \(!byPaths\) return goBacks\["restoreTask"\]\(d\.mainWindow\(\), taskId\);/);
     expect(index).toMatch(/if \(!d\.single\(\)\) return null;/);
     expect(index).toMatch(/running: async \(\) => \{\n\s*const rt = await runtime\.peek\(\)\?\.catch\(\(\) => null\);\n\s*const ws = rt \? singleParts\.get\(rt\)\?\.workspace : undefined;/);
     // The run being undone, still running, refuses its own undo (its paths are its own, so P2 doesn't catch it).

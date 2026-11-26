@@ -160,7 +160,7 @@ export class FakeClient implements HarnessClient {
       entries: [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }],
     },
   ];
-  /** Tasks restoreTask was asked to go back before. */
+  /** Tasks undone. */
   restoredTasks: string[] = [];
   cancelled = 0;
   chat: ChatEntry[] = [];
@@ -476,24 +476,20 @@ export class FakeClient implements HarnessClient {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-  async restore(sha: string) {
-    if (!(await this.askGoBack({ kind: "point", sha }))) return { ok: false as const, reason: "cancelled" as const };
+  /** The History mod's main. */
+  async historyModCall(name: "restore" | "restoreTask", payload: unknown) {
+    const task = name === "restoreTask";
+    const id = task ? (payload as { id: string }).id : (payload as string);
+    if (!(await this.askGoBack(task ? { kind: "task", taskId: id } : { kind: "point", sha: id }))) return { ok: false, reason: "cancelled" } as const;
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
-    this.restored.push(sha);
+    if (task && this.restoreTaskRefusal) return { refused: this.restoreTaskRefusal };
+    (task ? this.restoredTasks : this.restored).push(id);
     return { ok: true as const };
   }
   async historyTasks() {
     if (this.historyError) throw this.historyError;
     return this.historyGroups;
-  }
-  async restoreTask(taskId: string) {
-    if (!(await this.askGoBack({ kind: "task", taskId }))) return { ok: false as const, reason: "cancelled" as const };
-    await this.restoreGate;
-    if (this.restoreError) throw this.restoreError;
-    if (this.restoreTaskRefusal) return { refused: this.restoreTaskRefusal };
-    this.restoredTasks.push(taskId);
-    return { ok: true as const };
   }
   async engineStatus(engineId: string) {
     await this.statusGates[engineId];
@@ -1267,8 +1263,9 @@ export class FakeClient implements HarnessClient {
     removeLocal: async (_id: string): Promise<ModsView> => ({ mods: [], problems: [] }),
     onChanged: (_fn: (v: ModsView) => void) => () => {},
     onReloaded: (_fn: (e: { id: string; version: number }) => void) => () => {},
-    // mods.sidekick.<name>(args[]) reaches the fake above.
+    // Sidekick's, History's.
     call: (id: string, name: string, args?: unknown): Promise<unknown> => {
+      if (id === "history-view") return this.historyModCall(name as never, args);
       const fn = id === "sidekick" && Object.hasOwn(this.sidekick, name) ? (this.sidekick as never)[name] : null;
       return fn ? (fn as (...a: unknown[]) => Promise<unknown>)(...(args as unknown[])) : Promise.reject(new Error(`No mod "${id}" channel "${name}"`));
     },

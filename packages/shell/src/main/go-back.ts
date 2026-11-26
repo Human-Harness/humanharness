@@ -14,8 +14,8 @@ import { isSha } from "./history-view";
 /**
  * Every go-back is confirmed here, in main, with a native dialog attached to the window that asked (Marco,
  * 2026-10-28). Harness UI code runs in the same window and JS realm as the core, so a confirmation drawn in the window
- * could be skipped; this one can't. Three go-backs: one file (`hh:fileRestore`), the whole folder (`hh:restore`) and
- * one task (`hh:restoreTask`). A "Cancel" is data: `{ ok: false, reason: "cancelled" }`, and nothing changes.
+ * could be skipped; this one can't. Three go-backs: one file (`hh:fileRestore`), the whole folder (`restore`, the History mod's via `ctx.app.history`) and
+ * one task (`restoreTask`, the same). A "Cancel" is data: `{ ok: false, reason: "cancelled" }`, and nothing changes.
  */
 
 /** What a go-back dialog is about: the file's version, or the tasks a folder or task go-back undoes. */
@@ -148,7 +148,7 @@ export interface GoBackDeps<S> {
   };
 }
 
-export const GO_BACK_CHANNELS = ["hh:restore", "hh:restoreTask", "hh:fileRestore"] as const satisfies readonly InvokeChannel[];
+export const GO_BACK_CHANNELS = ["restore", "restoreTask", "hh:fileRestore"] as const satisfies readonly (InvokeChannel | "restore" | "restoreTask")[];
 export type GoBackChannel = (typeof GO_BACK_CHANNELS)[number];
 
 /**
@@ -184,7 +184,7 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
     return own && at ? laterTasks(groups, own.taskId, at) : null;
   };
   return {
-    "hh:restore": async (sender, sha): Promise<GoBackResult> => {
+    "restore": async (sender, sha): Promise<GoBackResult> => {
       if (!isSha(sha)) throw new Error("Invalid point");
       const later = pointIn(await d.groups(), sha);
       if (!later) throw new Error("Invalid point");
@@ -195,7 +195,7 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
       await d.restorePoint(sha);
       return { ok: true };
     },
-    "hh:restoreTask": async (sender, taskId): Promise<GoBackResult> => {
+    "restoreTask": async (sender, taskId): Promise<GoBackResult> => {
       if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
       const groupsOf = () => (d.taskGroups ? d.taskGroups(taskId) : d.groups());
       const groups = await groupsOf();

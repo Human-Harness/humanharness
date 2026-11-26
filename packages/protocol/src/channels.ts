@@ -61,9 +61,7 @@ export interface Invoke {
   /** `options` always goes (`{}` when the window gave none). */
   "hh:send": (message: string, options: SendOptions) => void;
   "hh:cancel": H["cancel"];
-  "hh:restore": H["restore"];
   "hh:historyTasks": H["historyTasks"];
-  "hh:restoreTask": H["restoreTask"];
   "hh:engineStatus": H["engineStatus"];
   "hh:acceptNotice": H["acceptNotice"];
   "hh:runSetup": H["runSetup"];

@@ -26,6 +26,7 @@ import { folderIpc } from "./folder-ipc";
 import { engineSetupIpc } from "./engine-setup-ipc";
 import { chatIpc } from "./chat-ipc";
 import { historyIpc } from "./history-ipc";
+import { historyRestores } from "./history-restore";
 import { dataIpc } from "./data-ipc";
 import { settingsIpc } from "./settings-ipc";
 import { scopesIpc } from "./scopes-ipc";
@@ -216,25 +217,26 @@ export function registerAppIpc(d: LifecycleDeps): void {
   if (d.translation) d.handleAll(languageHandlers(d.translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   d.handle("hh:cancel", () => d.tasks.cancel());
-  const history = historyIpc({
+  // The go-back service: the wrappers below and a core mod's `ctx.app.history` (app-lifecycle's parts) both call it.
+  const restores = historyRestores({
     quitting: () => d.quitting,
     tasksBusy: () => d.tasks.isBusy(),
     restoreHeld: d.hold.restoreHeld,
-    homeHistory: () => d.appMods.state.homeHistory,
     linked_: d.linked_,
     currentHistory: d.currentHistory,
     linkedHistoriesOf: d.linkedHistoriesOf,
     confirmGoBack: d.confirmGoBack,
+    mainWindow: () => (d.window && !d.window.isDestroyed() ? d.window.webContents : null),
     restoreWith: d.restoreWith,
     afterRestore: d.afterRestore,
     restores: d.restores,
     undoByPaths: d.undoByPaths,
     fileTimelines: d.fileTimelines,
   });
-  d.handleFrom("hh:restore", history["hh:restore"]);
+  d.historyRestores = restores;
+  const history = historyIpc({ restores, homeHistory: () => d.appMods.state.homeHistory, linked_: d.linked_, linkedHistoriesOf: d.linkedHistoriesOf });
   d.handleFrom("hh:fileRestore", history["hh:fileRestore"]);
   d.handle("hh:historyTasks", history["hh:historyTasks"]);
-  d.handleFrom("hh:restoreTask", history["hh:restoreTask"]);
   d.handle("hh:homeHistory", history["hh:homeHistory"]);
   d.handle("hh:homeUndo", history["hh:homeUndo"]);
   // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.

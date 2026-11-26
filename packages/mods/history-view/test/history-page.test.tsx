@@ -2,11 +2,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ActionOption, HistoryTaskView } from "../src/client";
-import { HistoryPage, byDay, entryLabel } from "../src/HistoryPage";
-import { HhTheme } from "../src/guide";
-import { FakeClient } from "./fake-client";
-import { renderIn as renderBase } from "./render";
+import type { ActionOption, HistoryTaskView } from "@humanharness/ui";
+import { HhTheme, byDay, entryLabel } from "@humanharness/ui";
+import { HistoryPage } from "../src/HistoryPage";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn as renderBase } from "../../../ui/test/render";
 
 /** History is built with Radix pieces that read the theme (Select). */
 const renderIn = (language: string, ui: Parameters<typeof renderBase>[1]) => renderBase(language, ui, { theme: true });
@@ -75,6 +75,7 @@ async function open(
     "en",
     <HistoryPage
       client={client}
+      call={(name, payload) => client.historyModCall(name, payload)}
       actions={opts.actions ?? actions}
       disabled={opts.disabled}
       currentTask={opts.currentTask}
@@ -128,7 +129,7 @@ describe("HistoryPage", () => {
       entries: [{ sha: `e-${taskId}`, message: `Turn: ${taskId}`, date: "2026-10-10T12:00:00.000Z" }],
     });
     client.historyGroups = [group("t1", "fracciones"), group("t2", "_app"), group("t3")];
-    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => {}} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} onBack={() => {}} />);
     const filter = await screen.findByRole("combobox", { name: "Show" });
     await waitFor(() => expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(3));
     fireEvent.keyDown(filter, { key: "Enter" });
@@ -155,7 +156,7 @@ describe("HistoryPage", () => {
 
   it("goes back from a filtered list (main counts the later tasks the filter hides)", async () => {
     const client = scoped(["t2", "_app", "2026-10-11T12:00:00.000Z"], ["t1", "fracciones", "2026-10-10T12:00:00.000Z"]);
-    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => {}} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} onBack={() => {}} />);
     await screen.findByRole("combobox", { name: "Show" });
     await pick("Show", "Fractions");
     fireEvent.click(screen.getByRole("button", { name: /A question/ }));
@@ -170,7 +171,7 @@ describe("HistoryPage", () => {
     const ui = (c: FakeClient) => (
       <I18nextProvider i18n={i18n}>
         <HhTheme>
-          <HistoryPage client={c} actions={{}} onBack={() => {}} />
+          <HistoryPage client={c} call={(n, p) => c.historyModCall(n, p)} actions={{}} onBack={() => {}} />
         </HhTheme>
       </I18nextProvider>
     );
@@ -184,7 +185,7 @@ describe("HistoryPage", () => {
   });
 
   it("shows no filter for a history without scopes", async () => {
-    await renderIn("en", <HistoryPage client={new FakeClient()} actions={{}} onBack={() => {}} />);
+    await renderIn("en", <HistoryPage client={new FakeClient()} call={async () => ({ ok: true })} actions={{}} onBack={() => {}} />);
     await screen.findByRole("heading", { name: "History" });
     expect(screen.queryByRole("combobox", { name: "Show" })).toBeNull();
   });
@@ -416,7 +417,7 @@ describe("HistoryPage", () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     const g = (taskId: string, date: string) => ({ taskId, actionId: null, start: null, end: `e-${taskId}`, date, changes: [], entries: [{ sha: `e-${taskId}`, message: "Turn: hi", date }] });
     client.historyGroups = [g("t2", "2026-10-10T12:00:00.000Z"), g("t1", "2026-10-09T12:00:00.000Z")];
-    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => {}} openTask="t1" />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} onBack={() => {}} openTask="t1" />);
     await waitFor(() => expect(screen.getAllByRole("button", { expanded: true }).map((b) => b.getAttribute("aria-controls"))).toEqual(["hh-history-t1"]));
   });
 });
@@ -426,7 +427,7 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
     const client = new FakeClient();
     client.historyGroups = groups;
     const opened: [string, string][] = [];
-    await renderIn("en", <HistoryPage client={client} actions={actions} onBack={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={actions} onBack={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
     const link = await screen.findByRole("button", { name: "History of plan.md" });
     // The change's kind is the link's description: a screen reader hears it with the name.
     const kind = document.getElementById(link.getAttribute("aria-describedby") ?? "");
@@ -443,7 +444,7 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
   it("D0: without onOpenFile the paths stay plain text", async () => {
     const client = new FakeClient();
     client.historyGroups = groups;
-    await renderIn("en", <HistoryPage client={client} actions={actions} onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={actions} onBack={() => undefined} />);
     await screen.findAllByText("plan.md");
     expect(screen.queryByRole("button", { name: "History of plan.md" })).toBeNull();
   });

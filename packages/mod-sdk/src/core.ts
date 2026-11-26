@@ -159,6 +159,18 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
      * its budget; null or a throw adds nothing (a throw counts a strike).
      */
     firstMessage(fn: (task: TaskRef) => FirstMessageSection | null | Promise<FirstMessageSection | null>): Disposer;
+    /**
+     * The base's data changed: a write to one of the harness's collections (`collection` is its name), or a plugin's
+     * data or on/off state (`collection` null). A burst of writes is a burst of calls; the mod debounces.
+     */
+    dataChanged(fn: (change: { collection: string | null }) => void | Promise<void>): Disposer;
+    /**
+     * A history restore changed tracked files. `paths` are the base-relative files it touched; null when it
+     * reconciled the whole folder.
+     */
+    restored(fn: (paths: readonly string[] | null) => void | Promise<void>): Disposer;
+    /** A base is gone for good (a folder move left the old one, a profile was forgotten): drop what is keyed by it. */
+    baseGone(fn: (base: string) => void | Promise<void>): Disposer;
   };
   /**
    * Runs `fn` when the base or its data changed under the mod without a task opening or closing: a profile switch or

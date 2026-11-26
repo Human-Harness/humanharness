@@ -11,7 +11,7 @@ function deps(o: Partial<ScopeStoresDeps> = {}): ScopeStoresDeps {
     baseOf: (c) => c.folder,
     scoped: () => false,
     sendToWindow: () => {},
-    searchSvc: () => ({ dataChanged: () => {} }),
+    events: () => ({ dataChanged: () => {} }),
     settingsCtl: () => null,
     profilesCtl: () => null,
     setupCtl: () => null,

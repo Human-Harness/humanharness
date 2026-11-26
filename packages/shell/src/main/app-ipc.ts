@@ -295,7 +295,7 @@ export function registerAppIpc(d: LifecycleDeps): void {
       plainTasks: d.plainTasks,
       restores: d.restores,
       documentSessions: d.documentSessions,
-      searchSvc: d.searchSvc,
+      events: d.events,
       validConfig: d.validConfig,
       baseOf: d.baseOf,
       standaloneHistory: d.standaloneHistory,

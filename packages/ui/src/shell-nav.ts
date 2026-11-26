@@ -11,6 +11,8 @@ export interface RailFeatures {
   jobs: boolean;
   notes: boolean;
   pluginPanels: boolean;
+  /** A mod registered the task History page (`ctx.taskPage` "history"): without one the task has no History entry. */
+  history: boolean;
   /** The open task, with its note count; null or absent: none open. */
   task?: { notes: number } | null;
 }
@@ -21,7 +23,7 @@ export function railEntries(f: RailFeatures): RailEntry[] {
   if (f.parallel && f.jobs) out.push("jobs");
   if (f.notes) out.push("notes");
   if (f.pluginPanels) out.push("plugins");
-  if (f.task) out.push(...TASK_RAIL);
+  if (f.task) out.push(...TASK_RAIL.filter((e) => e !== "task-history" || f.history));
   return out;
 }
 

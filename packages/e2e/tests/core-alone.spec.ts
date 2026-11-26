@@ -71,7 +71,8 @@ test("core alone: with no mods a task runs and its turn is snapshotted, and noth
     expect(plan()).toBe("cambiado por la IA\n");
     await expectNoModUi(page);
 
-    // The core keeps the per-turn snapshots. (The rail still shows a History entry with the mod off: see the PR.)
+    // No History entry in the rail (the page is the history-view mod's); the core keeps the per-turn snapshots.
+    await expect(page.getByRole("button", { name: "History", exact: true })).toHaveCount(0);
     const gitdir = path.join(s.userData, "history", createHash("sha256").update(s.folder).digest("hex").slice(0, 16));
     const git = (...args: string[]) => execFileSync("git", ["--git-dir", gitdir, ...args], { encoding: "utf8" });
     const turn = git("log", "--format=%H %s").split("\n").find((l) => / Turn: /.test(l))?.split(" ")[0];

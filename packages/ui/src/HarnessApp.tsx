@@ -416,6 +416,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     jobs: Boolean(state.jobs?.jobs.length),
     notes: Object.keys(state.actions).length > 0,
     pluginPanels,
+    history: historyPage !== undefined,
     task: taskOpen ? { notes: chatTask?.notes ?? 0 } : null,
   };
   const entries = railEntries(features);

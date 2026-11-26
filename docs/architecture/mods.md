@@ -126,10 +126,10 @@ The shown layout comes from `shownLayout` (`layout.ts`), which the renderer asks
 
 ## The UI API
 
-`ui(ctx)` registers what the mod shows. Every registration returns a disposer, and everything goes when the mod goes off or is reloaded; a `ui()` that throws registers nothing (`packages/ui/src/layout/mod-loader.ts`). Besides `ctx.id` and `ctx.block(name, component)`, the window's loader gives:
+`ui(ctx)` registers what the mod shows. Every registration returns a disposer; a `ui()` that throws registers nothing. For a mod that isn't core, everything it registered goes when it goes off or is reloaded. A core mod's ui ships with the window and runs once, at start, so its registrations stay while it is off: its parts hide themselves (`shown`, or by drawing nothing) (`packages/ui/src/layout/mod-loader.ts`). Besides `ctx.id` and `ctx.block(name, component)`, the window's loader gives:
 
 - `ctx.call(name, payload?)`: calls the mod's own main's `ctx.ipc(name, handler)` and resolves with its answer. It rejects when the mod is off, its main has no such name, or the handler throws. Only the mod's own names: the loader binds the id, so a ui never reaches another mod's.
-- `ctx.on(name, fn)`: hears the mod's own main's `ctx.push(name, value)`. It stops when the mod goes off. A block reaches the same two through its `client.mods.call(id, …)` and `client.mods.on(id, …)`.
+- `ctx.on(name, fn)`: hears the mod's own main's `ctx.push(name, value)`. It hears nothing while the mod is off. A block reaches the same two through its `client.mods.call(id, …)` and `client.mods.on(id, …)`.
 
 Both travel over two generic channels, so a mod adds nothing to the app's contract:
 
@@ -146,7 +146,7 @@ Both travel over two generic channels, so a mod adds nothing to the app's contra
 - `ctx.taskOverlay({ name, button, panel })`: a right overlay of the open task. `button` sits in the task bar and gets `{ expanded, controls, onOpen, buttonRef }`; `panel` fills the overlay and gets `{ close }`. One overlay is open at a time and it folds on a task switch. A narrow window and slim mode have none.
 - `ctx.composer(reviewer)`: reviews sends before they go, from the composer and from an answer form's free text. `review(text, signal, { force, answer })` resolves `"send"` or `"hold"` (the mod shows why, and the draft stays). Enter reviews first, with a countdown and Send now; ⌥⏎ forces a review; ⌘⏎ sends at once. `signal` aborts when the person sends at once or the form goes. A review that fails or runs out of time sends the text as typed. `wait` is the longest wait in seconds, or `"always"` (default 6), and the optional `marks(draft)` gives `[start, end)` spans to underline. There is no review in slim mode or a narrow window (a narrow window keeps the marks). The task view uses one reviewer: the first registered that is reviewing.
 
-Sidekick (`packages/mods/sidekick/src/ui.tsx`) uses `call`, `on` and all five slots, and places no block.
+Sidekick (`packages/mods/sidekick/src/ui.tsx`) uses all five slots and places no block; its parts reach its main through `client.mods.call` and `on` (`sidekickApi`, `src/ui/api.ts`).
 
 ## Core mods as packages
 

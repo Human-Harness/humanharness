@@ -10,7 +10,7 @@ import type { Event, ToolCallView } from "@humanharness/engines";
 import type { DataQuery, DataQueryResult } from "@humanharness/workspace";
 import type { AnswerPick, ReviewSummary } from "@humanharness/harness-sdk/review";
 import type { GeneratedStrings } from "@humanharness/i18n";
-import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, ContextGetResult, ContextPick, ContextResult, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, GoBackResult, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, HomeChange, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, TaskContext, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UndoRefusal, UsageSummary } from "./views";
+import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, ContextGetResult, ContextPick, ContextResult, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, HomeChange, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, TaskContext, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UsageSummary } from "./views";
 
 /** `client.jobs`: a harness's background jobs (spec §9.1). Only with `state.jobs`: otherwise main refuses every call (D0). */
 export interface JobsClient {
@@ -132,19 +132,8 @@ export interface HarnessClient {
   send(message: string, options?: SendOptions): Promise<void>;
   cancel(): Promise<void>;
   onEvent(listener: (event: Event) => void): () => void;
-  /**
-   * Makes the whole folder look as it did at `sha`, after main's native confirmation; recorded outside any task.
-   * `cancelled`: the person said no, nothing changed.
-   */
-  restore(sha: string): Promise<GoBackResult>;
   /** The history grouped by task, newest first; the group of commits outside any task last. */
   historyTasks(): Promise<HistoryTaskView[]>;
-  /**
-   * Makes the folder look as it did before the task started (later tasks are undone too), after main's native
-   * confirmation; recorded outside any task. `cancelled`: the person said no, nothing changed. Board mode (parallel
-   * spec §5.3) takes back only the task's own files, and says why when it can't (`refused`).
-   */
-  restoreTask(taskId: string): Promise<GoBackResult | { refused: UndoRefusal }>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */

@@ -235,10 +235,8 @@ export function registerAppIpc(d: LifecycleDeps): void {
   });
   d.historyRestores = restores;
   const history = historyIpc({ restores, homeHistory: () => d.appMods.state.homeHistory, linked_: d.linked_, linkedHistoriesOf: d.linkedHistoriesOf });
-  d.handleFrom("hh:restore", history["hh:restore"]);
   d.handleFrom("hh:fileRestore", history["hh:fileRestore"]);
   d.handle("hh:historyTasks", history["hh:historyTasks"]);
-  d.handleFrom("hh:restoreTask", history["hh:restoreTask"]);
   d.handle("hh:homeHistory", history["hh:homeHistory"]);
   d.handle("hh:homeUndo", history["hh:homeUndo"]);
   // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.

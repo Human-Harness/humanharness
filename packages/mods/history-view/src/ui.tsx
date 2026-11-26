@@ -6,9 +6,10 @@ import { HistoryPage } from "./HistoryPage";
 export default defineMod({
   id: "history-view",
   ui: (ctx) => {
-    // The go-backs are the mod's own main's (`restore`, `restoreTask`); the page calls them through the mod's `ctx.call`.
-    const call = (name: "restore" | "restoreTask", payload: unknown) => (ctx.call ? ctx.call(name, payload) : Promise.reject(new Error("The History view has no main part")));
-    const Page = (props: Omit<ComponentProps<typeof HistoryPage>, "call">) => <HistoryPage {...props} call={call} />;
+    // The go-backs are the mod's own main's (`restore`, `restoreTask`): the page calls them through the app's mod call.
+    const Page = (props: Omit<ComponentProps<typeof HistoryPage>, "call">) => (
+      <HistoryPage {...props} call={(name, payload) => props.client.mods.call("history-view", name, payload)} />
+    );
     ctx.taskPage?.({
       name: "history",
       rail: { icon: "history", label: "History" },

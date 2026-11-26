@@ -1,3 +1,4 @@
+import { Group, Row, SectionHead } from "./guide";
 export * from "./client";
 export * from "./state";
 export * from "./usage";
@@ -34,13 +35,16 @@ export { type ModLoader, type ModLoaderOptions, type UiCtx as CoreUiCtx, startMo
 // A core mod's task-view pieces (minimal-core step 1b): the open task view they act on, and what a reviewer may add.
 export { type TaskViewValue, useTaskView } from "./task-view/context";
 export type { TaskReviewer } from "./task-view/review";
-export type { OverlayButtonProps, OverlayPanelProps, TaskBarProps } from "./layout/registry";
+export type { ModelsRowProps, OverlayButtonProps, OverlayPanelProps, RowProps, SettingsAppProps, SettingsTabProps, TaskBarProps, UsageRowProps } from "./layout/registry";
 export type { AnswerHold } from "./InputForm";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
 export { AppFooter, HHLogo, SettingsGear, Tag, type TagTone, TopBar } from "./chrome";
 export { Hidden, Icon, Rx } from "./guide";
 // Core-only guide pieces for the core mods (not in hh.d.ts).
 export { Button, ICON_NAMES, type IconName, Segmented } from "./task-view/pieces";
+// A core mod's Settings tab builds with Settings' own pieces: imported, then exported, so hh-dts (which publishes only
+// `export … from "./guide…"`) keeps them core-only.
+export { Group, Row, SectionHead };
 export { ownName, shownLanguage, systemLanguage } from "./language";
 export { ProfileSwitcher } from "./ProfileSwitcher";
 export { useCurrentWindows } from "./UsageMeter";

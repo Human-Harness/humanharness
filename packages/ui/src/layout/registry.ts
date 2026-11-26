@@ -1,4 +1,5 @@
 import { type ComponentType, type ReactNode, createContext, createElement, useContext, useSyncExternalStore } from "react";
+import type { AppState, HarnessClient, UsageSummary } from "../client";
 import type { AppValue } from "./app";
 
 /** What a mod's block gets: the `props` the layout gives it and the app (minimal-core spec §5.2). */
@@ -8,9 +9,23 @@ export interface BlockProps {
 }
 export type BlockComponent = ComponentType<BlockProps>;
 
+/** What every Settings part of a mod gets: the app's client and state. */
+export interface SettingsAppProps {
+  client: HarnessClient;
+  state: AppState;
+}
 /** A mod's Settings tab: `openTab` goes to another tab (by its id). */
-export interface SettingsTabProps {
+export interface SettingsTabProps extends SettingsAppProps {
   openTab(id: string): void;
+}
+/**
+ * A mod's Settings tab, besides its component: `label` is its button's name; `shown` says whether this state shows it
+ * (default: always); `useLabel`, a hook the sheet calls while it is open, gives a name that changes (default `label`).
+ */
+export interface SettingsTabOptions {
+  label: string;
+  shown?(state: AppState): boolean;
+  useLabel?(app: SettingsAppProps): string;
 }
 /** A task row the Models tab draws the core's way: a level picker for the task `key` (its `models.tasks` entry). */
 export interface ModelsTaskRow {
@@ -19,8 +34,18 @@ export interface ModelsTaskRow {
   description?: string;
 }
 /** A mod's row in Settings › Models: `taskRow` draws a task row like the core's own. */
-export interface ModelsRowProps {
+export interface ModelsRowProps extends SettingsAppProps {
   taskRow(row: ModelsTaskRow): ReactNode;
+}
+/** A mod's line in Settings › Usage: the usage the tab read (null until it is read). */
+export interface UsageRowProps extends SettingsAppProps {
+  usage: UsageSummary | null;
+}
+/** What a mod's row gets: the app's client and state, and its place's own (`taskRow` in Models, `usage` in Usage). */
+export type RowProps = SettingsAppProps & Partial<Pick<ModelsRowProps, "taskRow"> & Pick<UsageRowProps, "usage">>;
+/** A mod's row, besides its component: `shown` says whether it has something to draw (default: always). */
+export interface RowOptions {
+  shown?(props: RowProps): boolean;
 }
 /** Where a mod's `row` goes: Settings › Models' task rows, or Settings › Usage's lines apart from the tasks. */
 export type RowPlace = "models" | "usage";
@@ -57,8 +82,8 @@ export interface ComposerReviewer {
 
 /** What each slot holds, by kind; each entry names the mod that registered it. */
 export interface Slots {
-  settingsTab: { mod: string; name: string; label: string; Component: ComponentType<SettingsTabProps> };
-  row: { mod: string; place: RowPlace; Component: ComponentType<Partial<ModelsRowProps>> };
+  settingsTab: { mod: string; name: string; Component: ComponentType<SettingsTabProps> } & SettingsTabOptions;
+  row: { mod: string; place: RowPlace; Component: ComponentType<RowProps> } & RowOptions;
   taskBar: { mod: string; Component: ComponentType<TaskBarProps> };
   taskOverlay: { mod: string; name: string; Button: ComponentType<OverlayButtonProps>; Panel: ComponentType<OverlayPanelProps> };
   composer: { mod: string; reviewer: ComposerReviewer };

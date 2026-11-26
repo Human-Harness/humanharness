@@ -23,11 +23,9 @@ import { usePluginsView } from "./plugins/usePlugins";
 import { ProfilesSection } from "./ProfilesSection";
 import { focusSetting } from "./search/focus-setting";
 import { SetupStepsList } from "./SetupStepsList";
-import { SidekickTab, sidekickTitleKey } from "./sidekick/SidekickTab";
 import { SlotBoundary } from "./layout/BlockBoundary";
-import { useBlocks } from "./layout/registry";
+import { type SettingsAppProps, type Slots, useBlocks } from "./layout/registry";
 import { type SettingsTab, modTabs, tabLabel, visibleTabs } from "./settings-tabs";
-import { useSidekick } from "./sidekick/useSidekick";
 import { UsageTab } from "./UsageTab";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
@@ -84,7 +82,7 @@ export function SettingsPage({
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
   const panelId = `${baseId}-panel`;
   // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
-  // declares settings or setup steps (harness-settings D0, setup-steps D0); Sidekick only when main sends it (sidekick D0);
+  // declares settings or setup steps (harness-settings D0, setup-steps D0); a mod's tab while its `shown` says so;
   // Plugins only when the harness takes them (plugins D0); Connections only when it declares secrets (tools D0); Jobs
   // only when it declares jobs (parallel D0).
   const registry = useBlocks();
@@ -92,9 +90,8 @@ export function SettingsPage({
   /** The open tab, when a mod put it there (`ctx.settingsTab`). */
   const modTab = tabs.includes(tab) ? modTabs(registry).find((m) => m.name === tab) : undefined;
   const configured = isConfigured(state.config);
-  // The tab reads as the section's title (spec §8); its id stays "sidekick".
-  const sidekick = useSidekick(client, state.sidekick !== undefined);
-  const sidekickTab = t(sidekickTitleKey(sidekick?.sidekicks));
+  /** The names mods' tabs give through `useLabel`, by tab id. */
+  const [ownLabels, setOwnLabels] = useState<Record<string, string>>({});
   // A section that needs the person carries an orange count (§5.5): Plugins, for those waiting for a review or turned
   // off after crashes. Read only when the harness takes plugins (D0); the tab itself still rescans when it opens.
   const plugins = usePluginsView(client, tabs.includes("plugins"));
@@ -206,11 +203,18 @@ export function SettingsPage({
         }
       />
       <div className="hh-settings-body">
+        {modTabs(registry)
+          .filter((m) => m.useLabel && tabs.includes(m.name))
+          .map((m) => (
+            <SlotBoundary key={`${m.mod}-${m.name}`} mod={m.mod} client={client}>
+              <ModTabLabel tab={m} client={client} state={state} onLabel={(l) => setOwnLabels((had) => (had[m.name] === l ? had : { ...had, [m.name]: l }))} />
+            </SlotBoundary>
+          ))}
         <SettingsNav
           title={t("settings.title")}
           titleId={titleId}
           label={t("settings.sections")}
-          items={tabs.map((id) => ({ id, label: tabLabel(t, state, id, sidekickTab, registry), count: attention[id] ?? 0 }))}
+          items={tabs.map((id) => ({ id, label: tabLabel(t, state, id, registry, ownLabels), count: attention[id] ?? 0 }))}
           current={tab}
           onPick={onTab}
           tabId={tabId}
@@ -235,7 +239,6 @@ export function SettingsPage({
             {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
             {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
             {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} {...(focus && focus.id.startsWith("models.") ? { focus: { part: focus.id === "models.levels" ? ("levels" as const) : ("tasks" as const), n: focus.n } } : {})} />}
-            {tab === "sidekick" && configured && <SidekickTab client={client} onModels={() => onTab("models")} scopes={state.scopes} />}
             {tab === "mods" && configured && <ModsTab client={client} onSub={setSub} />}
             {tab === "plugins" && configured && <PluginsTab client={client} onSub={setSub} />}
             {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
@@ -243,7 +246,7 @@ export function SettingsPage({
             {tab === "usage" && configured && <UsageTab client={client} state={state} />}
             {modTab && configured && (
               <SlotBoundary key={modTab.name} mod={modTab.mod} client={client}>
-                <modTab.Component openTab={(id) => onTab(id)} />
+                <modTab.Component openTab={(id) => onTab(id)} client={client} state={state} />
               </SlotBoundary>
             )}
             {tab === "harness" && configured && (
@@ -581,4 +584,16 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: s
       </Rx.Flex>
     </Rx.Card>
   );
+}
+
+/**
+ * Draws nothing: calls a mod tab's `useLabel` (a hook, so in a component of its own, behind the mod's boundary) and
+ * says the name it gives.
+ */
+function ModTabLabel({ tab, onLabel, ...app }: SettingsAppProps & { tab: Slots["settingsTab"]; onLabel: (label: string) => void }) {
+  const label = tab.useLabel?.(app);
+  useEffect(() => {
+    if (label !== undefined) onLabel(label);
+  }, [label]);
+  return null;
 }

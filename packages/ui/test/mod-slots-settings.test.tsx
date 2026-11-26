@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TFunction } from "i18next";
 import { createI18n } from "@humanharness/i18n";
 import { type ModsView } from "../src/client";
-import { type BlockRegistry, type ModelsRowProps, ModBlocksProvider, type SettingsTabProps, appRegistry, createBlockRegistry } from "../src/layout/registry";
+import { type BlockRegistry, ModBlocksProvider, type RowProps, type SettingsAppProps, type SettingsTabProps, appRegistry, createBlockRegistry } from "../src/layout/registry";
 import { type UiCtx, startModLoader } from "../src/layout/mod-loader";
 import { ModelsTab } from "../src/ModelsTab";
 import { commandRows } from "../src/search/local";
@@ -95,6 +95,33 @@ describe("a mod's Settings tab (ctx.settingsTab)", () => {
     expect(screen.getAllByText("Models").length).toBeGreaterThan(0);
   });
 
+  it("shows only while its shown(state) holds, and gets the client and the state", async () => {
+    const registry = createBlockRegistry();
+    const seen: SettingsAppProps[] = [];
+    const Tab = ({ client: given, state }: SettingsTabProps) => {
+      seen.splice(0, seen.length, { client: given, state });
+      return <p>Mod tab body</p>;
+    };
+    await load(registry, (ctx) => ctx.settingsTab("x", Tab, { label: "Extra", shown: (state) => state.engines.length > 0 }));
+    const { c } = client();
+    expect(visibleTabs(c.state, registry)).toContain("x");
+    expect(visibleTabs({ ...c.state, engines: [] }, registry)).not.toContain("x");
+    await renderIn("en", wrap(registry, <SettingsPage client={c} state={c.state} tab="x" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />), { theme: true });
+    await screen.findByText("Mod tab body");
+    expect(seen[0]?.client).toBe(c);
+    expect(seen[0]?.state).toBe(c.state);
+  });
+
+  it("its label may change: the nav reads what useLabel returns", async () => {
+    const registry = createBlockRegistry();
+    const useLabel = ({ state }: SettingsAppProps) => (state.engines.length > 0 ? "Extras" : "Extra");
+    await load(registry, (ctx) => ctx.settingsTab("x", () => null, { label: "Extra", useLabel }));
+    const { c } = client();
+    await renderIn("en", wrap(registry, <SettingsPage client={c} state={c.state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />), { theme: true });
+    expect(await screen.findByRole("tab", { name: "Extras" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Extra" })).toBeNull();
+  });
+
   it("taken away, the tab goes", async () => {
     const registry = createBlockRegistry();
     const loader = await load(registry, (ctx) => ctx.settingsTab("x", () => null, { label: "Extra" }));
@@ -108,7 +135,7 @@ describe("a mod's Settings tab (ctx.settingsTab)", () => {
 describe("a mod's rows (ctx.row)", () => {
   it("Models: the row goes after the core's task rows, and may draw a task row the core's way", async () => {
     const registry = createBlockRegistry();
-    const Row = ({ taskRow }: Partial<ModelsRowProps>) => <>{taskRow?.({ key: "helper", label: "Helper reviews", description: "Its own reviews" })}</>;
+    const Row = ({ taskRow }: RowProps) => <>{taskRow?.({ key: "helper", label: "Helper reviews", description: "Its own reviews" })}</>;
     await load(registry, (ctx) => ctx.row("models", Row));
     const { c } = client();
     await renderIn("en", wrap(registry, <ModelsTab client={c} state={c.state} onChange={() => {}} />), { theme: true });
@@ -128,6 +155,35 @@ describe("a mod's rows (ctx.row)", () => {
     await renderIn("en", wrap(registry, <UsageTab client={c} state={c.state} />), { theme: true });
     expect(await screen.findByText("Mod tokens: 12")).toBeTruthy();
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("a row shows only while its shown(props) holds, and gets the client, the state and Usage's summary", async () => {
+    const registry = createBlockRegistry();
+    const seen: RowProps[] = [];
+    const Line = (p: RowProps) => {
+      seen.splice(0, seen.length, p);
+      return <p>Mod line</p>;
+    };
+    await load(registry, (ctx) => {
+      ctx.row("usage", Line, { shown: ({ usage }) => usage?.jobs !== undefined });
+      ctx.row("models", () => <p>Hidden row</p>, { shown: () => false });
+    });
+    const { c } = client();
+    c.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour", jobs: 10 };
+    const first = await renderIn("en", wrap(registry, <UsageTab client={c} state={c.state} />), { theme: true });
+    await screen.findByText("Mod line");
+    expect(seen[0]?.client).toBe(c);
+    expect(seen[0]?.state).toBe(c.state);
+    expect(seen[0]?.usage?.jobs).toBe(10);
+    first.unmount();
+    c.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
+    await renderIn("en", wrap(registry, <UsageTab client={c} state={c.state} />), { theme: true });
+    await screen.findByRole("tab", { name: "Usage" }).catch(() => undefined);
+    expect(screen.queryByText("Mod line")).toBeNull();
+    cleanup();
+    await renderIn("en", wrap(registry, <ModelsTab client={c} state={c.state} onChange={() => {}} />), { theme: true });
+    await screen.findAllByRole("group");
+    expect(screen.queryByText("Hidden row")).toBeNull();
   });
 
   it("with nothing registered, Models and Usage draw no mod part", async () => {

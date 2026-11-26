@@ -49,16 +49,16 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
   const apart: { key: string; label: string; value: string }[] = [];
   // Material spec §11.
   if (usage?.material !== undefined) apart.push({ key: "material", label: t("usage.row.material"), value: about(usage.material) });
-  // Sidekick spec §8.
-  if (usage?.sidekick !== undefined) apart.push({ key: "sidekick", label: t("usage.row.sidekick"), value: about(usage.sidekick) });
   // Parallel spec §10.
   if (usage?.jobs !== undefined) apart.push({ key: "jobs", label: t("usage.row.jobs"), value: about(usage.jobs) });
   // Subagent plan D4.
   if (usage?.subagents !== undefined) apart.push({ key: "subagents", label: t("usage.row.subagents"), value: about(usage.subagents) });
   // OpenCode spec §4: real money, as the engine reported it (only once a turn reported a cost; 0 is a real US$ 0.00).
   const spent = usage?.spentUsd !== undefined && engine ? usage.spentUsd : undefined;
-  /** Mods' lines (`ctx.row("usage", …)`), after the core's. */
-  const modRows = useBlocks().slot("row").filter((r) => r.place === "usage");
+  /** Mods' lines (`ctx.row("usage", …)`), after the core's: those with something to draw. */
+  const modRows = useBlocks()
+    .slot("row")
+    .filter((r) => r.place === "usage" && (r.shown?.({ client, state, usage }) ?? true));
 
   return (
     <div>
@@ -99,7 +99,7 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
           )}
           {modRows.map(({ mod, Component }, i) => (
             <SlotBoundary key={`${mod}-${i}`} mod={mod} client={client}>
-              <Component />
+              <Component client={client} state={state} usage={usage} />
             </SlotBoundary>
           ))}
         </Group>

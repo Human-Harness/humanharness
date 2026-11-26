@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SidekickView } from "../src/client";
-import { SettingsPage } from "../src/SettingsPage";
-import { SidekickList } from "../src/sidekick/SidekickList";
-import { SidekickTab } from "../src/sidekick/SidekickTab";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
-import { SK_ON } from "../../mods/sidekick/test/sidekick-fixtures";
+import type { SidekickView } from "@humanharness/ui";
+import { SettingsPage } from "../../../ui/src/SettingsPage";
+import { SidekickList } from "../src/ui/SidekickList";
+import { SidekickTab } from "../src/ui/SidekickTab";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "./sidekick-app";
+import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
 /** A row of the list, named by its sidekick. */

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickInScope } from "../client";
-import { Group, Row, Rx } from "../guide";
+import type { HarnessClient, SidekickInScope } from "@humanharness/ui";
+import { Group, Row, Rx } from "@humanharness/ui";
 import { SidekickMark, markIcon } from "./mark";
 
 /** The longest purpose text (the SDK's SIDEKICK_PURPOSE_TEXT_MAX; the UI imports only types). */

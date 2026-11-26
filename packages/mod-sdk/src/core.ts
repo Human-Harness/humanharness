@@ -82,6 +82,15 @@ export interface CoreApp {
   pickImportFiles(): Promise<string[]>;
   /** The key that tags a files source (32 random bytes in userData, never in a base); made only when `create`. */
   tagKey(create: boolean): Promise<Uint8Array | null>;
+  /**
+   * The only way to go back in the history (core mods only; no `mod.json` grant). Each call asks with main's native
+   * dialog first, and answers as the window's go-backs do: `{ ok: true }`, `{ ok: false, reason: "cancelled" }` or, by
+   * paths, `{ refused }`; a blocked or invalid call rejects.
+   */
+  readonly history: {
+    restorePoint(sha: string): Promise<unknown>;
+    restoreTask(id: string, includeShared?: boolean): Promise<unknown>;
+  };
   /** Writes as the person: their checks, turns-blocked refusals and history commits, as the window's own. */
   readonly person: {
     /** A data request, as the window's (`options.scope`, else the chat's scope). */

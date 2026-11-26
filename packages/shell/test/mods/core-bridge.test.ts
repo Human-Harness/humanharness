@@ -54,6 +54,10 @@ function parts() {
     tagKey: (id, create) => (calls.push(["tagKey", id, create]), Promise.resolve(Buffer.alloc(32, 1))),
     personData: rec("personData", Promise.resolve({ ok: true })),
     saveDecision: rec("saveDecision", Promise.resolve()),
+    history: {
+      restorePoint: (sha) => (calls.push(["restorePoint", sha]), Promise.resolve({ ok: true })),
+      restoreTask: (id, includeShared) => (calls.push(["restoreTask", id, includeShared]), Promise.resolve({ ok: false, reason: "cancelled" })),
+    },
   };
   return { p, calls, session };
 }
@@ -151,6 +155,17 @@ describe("ctx.app (core mods only)", () => {
     expect(calls).toContainEqual(["personData", { op: "put", collection: "sidekick", record: {} }, { scope: "_app" }]);
     await app.person.note({ scope: "main", title: "T", decision: "D" });
     expect(calls).toContainEqual(["saveDecision", { scope: "main", title: "T", decision: "D" }]);
+  });
+
+  it("ctx.app.history reaches the restore service, and answers as it does", async () => {
+    const { p, calls } = parts();
+    const h = await host({ push: vi.fn(), coreApp: (id) => coreAppFor(p, id) });
+    let ctx!: CoreMainCtx<unknown>;
+    h.registerForTest("core", "Core", (c) => void (ctx = c as CoreMainCtx<unknown>), { core: true });
+    expect(await ctx.app.history.restorePoint("a".repeat(40))).toEqual({ ok: true });
+    expect(await ctx.app.history.restoreTask("t1", true)).toEqual({ ok: false, reason: "cancelled" });
+    expect(calls).toContainEqual(["restorePoint", "a".repeat(40)]);
+    expect(calls).toContainEqual(["restoreTask", "t1", true]);
   });
 
   it("a harness mod and a local mod push only on their own names, and see no ctx.app", async () => {

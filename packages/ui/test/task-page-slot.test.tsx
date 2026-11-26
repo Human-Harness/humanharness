@@ -127,12 +127,12 @@ describe("the task view hosts a registered page", () => {
     expect(set).toHaveBeenCalledWith("test", false);
   });
 
-  it("with nothing registered the core's own History panel renders", async () => {
+  it("with nothing registered no History panel renders (the panel is the history-view mod's)", async () => {
     const registry = createBlockRegistry();
     const searchRef: Intent = { current: null };
     await chat(registry, searchRef);
     await act(async () => void searchRef.current?.({ kind: "command", command: "open-history" } as never));
-    expect(await screen.findByRole("heading", { name: "History" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "History" })).toBeNull();
     expect(screen.queryByText("Mod history page")).toBeNull();
   });
 });

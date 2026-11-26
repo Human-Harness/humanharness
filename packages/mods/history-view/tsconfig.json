@@ -1,0 +1,5 @@
+{
+  // The mod on its own (`pnpm -F @humanharness/mod-history-view typecheck`); the root tsconfig checks it with everything else.
+  "extends": "../../../tsconfig.json",
+  "include": ["src", "test", "../../../test/support", "../../material/src/pdfjs-worker.d.ts"]
+}

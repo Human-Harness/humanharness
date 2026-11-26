@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, HistoryTaskView } from "../src/client";
-import { HistoryPage } from "../src/HistoryPage";
+import { HistoryPage } from "../../mods/history-view/src/HistoryPage";
 import { ScopePicker } from "../src/ScopePicker";
 import { LinkedFolders } from "../src/hatches/LinkedFolders";
 import { FakeClient } from "./fake-client";

@@ -2,11 +2,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ActionOption, HistoryTaskView } from "../src/client";
-import { HistoryPage, byDay, entryLabel } from "../src/HistoryPage";
-import { HhTheme } from "../src/guide";
-import { FakeClient } from "./fake-client";
-import { renderIn as renderBase } from "./render";
+import type { ActionOption, HistoryTaskView } from "@humanharness/ui";
+import { HhTheme, byDay, entryLabel } from "@humanharness/ui";
+import { HistoryPage } from "../src/HistoryPage";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn as renderBase } from "../../../ui/test/render";
 
 /** History is built with Radix pieces that read the theme (Select). */
 const renderIn = (language: string, ui: Parameters<typeof renderBase>[1]) => renderBase(language, ui, { theme: true });

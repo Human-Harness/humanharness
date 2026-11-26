@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { ChatEntry, Review } from "../src/client";
 import { FakeClient } from "./fake-client";
+import { withHistoryView } from "./history-view";
 import { renderIn } from "./render";
 
 let openHistory = () => {};
@@ -24,7 +25,7 @@ async function chat(review: boolean) {
   client.chat = [answer];
   client.docTexts[card.path] = "## Scope\n\nFilter by size.\n";
   if (review) client.state.review = true;
-  await renderIn("en", <Host client={client} />);
+  await renderIn("en", withHistoryView(<Host client={client} />));
   return client;
 }
 async function openReader() {

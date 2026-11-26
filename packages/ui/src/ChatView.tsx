@@ -351,7 +351,7 @@ export function ChatView({
   /** Under 720 px no right overlay: no paid review the person can't see. */
   const narrow = useNarrow();
   const mods = useModParts({ slim: !!slim, narrow });
-  /** The History page a mod registered (`ctx.taskPage`); without one the core's own panel renders. */
+  /** The History page a mod registered (`ctx.taskPage`); without one there is no History page and no rail entry. */
   const historyEntry = useBlocks().slot("taskPage").find((e) => e.name === "history");
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);

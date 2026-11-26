@@ -259,6 +259,19 @@ describe("startModLoader", () => {
     expect(f.listeners.size).toBe(0);
   });
 
+  it("a core mod's ui follows its switch: off, it registers nothing", async () => {
+    const f = fakeClient(view(row("home", { origin: "core", on: false })));
+    const registry = createBlockRegistry();
+    const home = { id: "home", ui: (ctx: UiCtx) => ctx.block("main", block("home")) };
+    const loader = startModLoader({ client: f.client, registry, importer: vi.fn(async () => mod("x")), core: [home] });
+    await loader.settled();
+    expect(registry.get("home", "main")).toBeUndefined();
+    f.push(view(row("home", { origin: "core", on: true })));
+    await loader.settled();
+    expect(label(registry.get("home", "main"))).toBe("home");
+    loader.stop();
+  });
+
   it("runs the window's core mods' ui with the same ctx, without importing them", async () => {
     const f = fakeClient(view(row("home", { origin: "core" })));
     const registry = createBlockRegistry();

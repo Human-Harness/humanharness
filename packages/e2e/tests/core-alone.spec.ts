@@ -1,12 +1,14 @@
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { answerGoBack, appHomeOf, closeAndClean, launch, makeSandbox } from "./helpers";
+import { appHomeOf, closeAndClean, launch, makeSandbox } from "./helpers";
 import { historyScript } from "./scripts";
 
-// Core alone (minimal-core spec §8): the demo harness declares no mods, the two core mods that are on by default (Home,
-// Sidekick) are switched off, and the person's layout places no mod block. The core still runs a task and undoes its
-// turn, and nothing of a mod shows: no `.harness/mods/`, no mod section in AGENTS.md, no mod block or slot part.
+// Core alone (minimal-core spec §8): the demo harness declares no mods, the three core mods that are on by default
+// (History view, Home, Sidekick) are switched off, and the person's layout places no mod block. The core still runs a task and snapshots its
+// turn (its "Turn: …" commit and the one before it; undoing is the History view's, a mod), and nothing of a mod shows: no `.harness/mods/`, no mod section in AGENTS.md, no mod block or slot part.
 // Home is the screen with the start buttons, so the task starts from ⌘K, which is the core's.
 
 const MOD = process.platform === "darwin" ? "Meta" : "Control";
@@ -21,7 +23,7 @@ const coreLayout = {
   ],
 };
 
-const modIds = ["home", "sidekick"];
+const modIds = ["history-view", "home", "sidekick"];
 
 /**
  * No mod's block or slot part is in the window. A block: any layout block but the core's `work`, the off or missing
@@ -37,7 +39,7 @@ async function expectNoModUi(page: Page) {
   await expect(page.getByText(/Sidekick/)).toHaveCount(0);
 }
 
-test("core alone: with no mods a task runs and its turn is undone, and nothing of a mod appears", async () => {
+test("core alone: with no mods a task runs and its turn is snapshotted, and nothing of a mod appears", async () => {
   const s = makeSandbox("core-alone", { mods: { on: Object.fromEntries(modIds.map((id) => [id, false])) } });
   fs.writeFileSync(path.join(s.folder, "plan.md"), "mi plan original\n");
   const home = appHomeOf(s, harnessId);
@@ -69,12 +71,16 @@ test("core alone: with no mods a task runs and its turn is undone, and nothing o
     expect(plan()).toBe("cambiado por la IA\n");
     await expectNoModUi(page);
 
-    await answerGoBack(app, "Go back");
-    await page.getByRole("button", { name: "History", exact: true }).click();
-    const history = page.getByRole("region", { name: "History", exact: true });
-    await history.getByRole("button", { name: "Undo this task" }).click();
-    await expect(history).toBeHidden();
-    await expect.poll(plan).toBe("mi plan original\n");
+    // No History entry in the rail (the page is the history-view mod's); the core keeps the per-turn snapshots.
+    await expect(page.getByRole("button", { name: "History", exact: true })).toHaveCount(0);
+    const gitdir = path.join(s.userData, "history", createHash("sha256").update(s.folder).digest("hex").slice(0, 16));
+    const git = (...args: string[]) => execFileSync("git", ["--git-dir", gitdir, ...args], { encoding: "utf8" });
+    const turn = git("log", "--format=%H %s").split("\n").find((l) => / Turn: /.test(l))?.split(" ")[0];
+    expect(turn).toBeTruthy();
+    // The "Before message" snapshot is made only when the folder changed since the last commit, so the turn's own
+    // commit holds the change and its parent the plan as it was.
+    expect(git("show", `${turn}:plan.md`)).toBe("cambiado por la IA\n");
+    expect(git("show", `${turn}~1:plan.md`)).toBe("mi plan original\n");
     await expectNoModUi(page);
 
     // Settings, where a mod may add a tab and rows to Models and Usage. (Settings › Mods lists the mods, off: core's.)

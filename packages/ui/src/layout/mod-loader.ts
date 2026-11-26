@@ -187,6 +187,13 @@ export function startModLoader({ client, registry, importer = windowImport, core
   };
 
   const sync = async () => {
+    // A core mod's ui ships with the window but follows its switch: off, it registers nothing (no page, entry or block).
+    for (const m of core) {
+      const r = rows.find((x) => x.id === m.id);
+      if (!r) continue;
+      if (!r.on) drop(m.id);
+      else if (!loaded.has(m.id)) run(m.id, "core", m.ui?.bind(m));
+    }
     const wanted = new Map(rows.filter((r) => runs(r) && !coreIds.has(r.id)).map((r) => [r.id, r]));
     for (const id of [...loaded.keys()]) if (!wanted.has(id) && !coreIds.has(id)) drop(id);
     for (const r of wanted.values()) {

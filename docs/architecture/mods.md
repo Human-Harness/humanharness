@@ -29,7 +29,7 @@ Validated by `modJsonSchema` (strict: unknown fields are refused).
 
 ## `defineMod` and `MainCtx`
 
-`defineMod({ id, schema?, main?(ctx), ui?(ctx) })` only types the definition. `schema` is a zod schema; the host parses the harness's `mods.<id>` with it and a failure becomes the mod's problem. `ui` and `UiCtx` are typed only; 0b renders them.
+`defineMod({ id, schema?, main?(ctx), ui?(ctx) })` only types the definition. `schema` is a zod schema; the host parses the harness's `mods.<id>` with it and a failure becomes the mod's problem. `main(ctx)` runs in the main process with a `MainCtx`; `ui(ctx)` runs in the window with a `UiCtx` ("The UI API" below).
 
 Every registration returns a `Disposer`; the host runs them (newest first) before turning the mod off.
 
@@ -51,7 +51,8 @@ Services and fields:
 
 - `id`: the mod's id.
 - `config`: the parsed `mods.<id>`; `undefined` without a schema and a declaration.
-- `ipc(name, handler)`: a channel the mod's own ui will call (0b wires the ui side).
+- `ipc(name, handler)`: answers `name` when the mod's own ui calls it (`ctx.call`, "The UI API"). The name is the mod's own: one starting with `hh:` throws, for a core mod too.
+- `push(name, value)`: sends `value` to the mod's own ui on `name`, while the mod is on.
 - `engine.run(tier, prompt, opts?)`: a tool-less session of the mod's own on `light`/`standard`/`deep`, outside the work folder; usage is tagged `mod:<id>`.
 - `tasks.running()`: the running task or `null`.
 - `notes.titles(scope?)`: note titles.
@@ -65,7 +66,7 @@ Services and fields:
 - `provide(service)` and `mods.get(id)`: expose a value to other mods; `get` returns it only while that mod is on.
 - `log(...)`: console output prefixed `[mod <id>]`.
 
-Timeouts (`host.ts`): `beforeSend` has **6 s in total** (`BEFORE_SEND_MS`) across all mods; when the budget is spent the remaining mods are skipped and the text goes out. Every other hook, `main()`, the import of the module and each `ipc` handler get **5 s** each (`HOOK_MS`). A throw, a rejection or a timeout is a failure; the host never lets it throw into the app.
+Timeouts (`host.ts`): `beforeSend` has **6 s in total** (`BEFORE_SEND_MS`) across all mods; when the budget is spent the remaining mods are skipped and the text goes out. Every other hook, `main()`, the import of the module and each `ipc` handler get **5 s** each (`HOOK_MS`), except a core mod's `ipc` handler, which has no limit. A throw, a rejection or a timeout is a failure; the host never lets it throw into the app.
 
 ## On and off
 
@@ -77,7 +78,7 @@ Timeouts (`host.ts`): `beforeSend` has **6 s in total** (`BEFORE_SEND_MS`) acros
 
 A mod that is wanted but can't start (import error, wrong id, config rejected by its schema, a required mod not on) stays off with a `problem` shown in Settings › Mods. Turning a mod on from Settings clears its failure and its problem and retries.
 
-Three strikes: every failed hook call adds a strike, a success resets the count to zero. The third failure in a row disposes the mod, saves the reason in `config.json` › `mods.failed[id]` (cut to 300 characters), shows a notice ("… was turned off after failing three times in a row") and redraws Settings. It stays off across restarts until the person turns it on.
+Three strikes: every failed hook call adds a strike (a core mod's `ipc` handler is not counted: Sidekick's review waits for a model turn, and its throw reaches the window as is), a success resets the count to zero. The third failure in a row disposes the mod, saves the reason in `config.json` › `mods.failed[id]` (cut to 300 characters), shows a notice ("… was turned off after failing three times in a row") and redraws Settings. It stays off across restarts until the person turns it on.
 
 ## Local mods
 
@@ -123,11 +124,35 @@ The shown layout comes from `shownLayout` (`layout.ts`), which the renderer asks
 
 `main` in `mod.json` is optional. A mod with only `ui` has no main part: it is on or off like any mod, and the host loads no code for it. Its `ui` entry is typed by `defineMod`'s `ui(ctx)`, which registers named blocks the layout places with `{ mod, block }`. While the mod is off, the layout draws "Mod <name> is off" in the block's place.
 
+## The UI API
+
+`ui(ctx)` registers what the mod shows. Every registration returns a disposer, and everything goes when the mod goes off or is reloaded; a `ui()` that throws registers nothing (`packages/ui/src/layout/mod-loader.ts`). Besides `ctx.id` and `ctx.block(name, component)`, the window's loader gives:
+
+- `ctx.call(name, payload?)`: calls the mod's own main's `ctx.ipc(name, handler)` and resolves with its answer. It rejects when the mod is off, its main has no such name, or the handler throws. Only the mod's own names: the loader binds the id, so a ui never reaches another mod's.
+- `ctx.on(name, fn)`: hears the mod's own main's `ctx.push(name, value)`. It stops when the mod goes off. A block reaches the same two through its `client.mods.call(id, …)` and `client.mods.on(id, …)`.
+
+Both travel over two generic channels, so a mod adds nothing to the app's contract:
+
+| Channel | Direction | What it carries |
+|---|---|---|
+| `hh:modCall` | window → main, with an answer | `(id, name, payload)`. `mod-call-ipc.ts` checks the id and the name (1–128 characters, never `hh:…`), then `ModHost.call` runs the mod's handler. |
+| `hh:modPush` | main → window | The mod's id, its own name and the value. No `ctx.push` can send on this channel by naming it, so no mod can forge another's id. |
+
+`types.ts` in `packages/mod-sdk/src` types `call`, `on` and the slots below as optional, for a ctx made only to collect blocks (a check, a test); the window's loader always gives them. The slots add to the core's own screens, and each part renders behind the block boundary: one that throws shows "This part of the app failed" with Turn off.
+
+- `ctx.settingsTab(name, component, { label, shown?, useLabel? })`: a tab in Settings, after Models. `name` is its id (search opens it) and `label` its button. The component gets `{ openTab(id), client, state }`. `shown(state)` says when the tab shows (default: always). `useLabel({ client, state })`, a hook called while Settings is open, gives a name that changes.
+- `ctx.row(place, component, { shown? })`: a row after the core's. `place` is `"models"` (after the task rows of Settings › Models; the component gets `taskRow({ key, label, description })`, which draws the core's level picker for `models.tasks[key]`) or `"usage"` (after the lines of Settings › Usage; it gets `{ usage }`, the usage summary or null). Both get `client` and `state`, and `shown(props)` gets the same props. Any other place throws.
+- `ctx.taskBar(component)`: a piece in the task bar, after the core's. It gets `{ task }`, the open task's id or null. Slim mode has none.
+- `ctx.taskOverlay({ name, button, panel })`: a right overlay of the open task. `button` sits in the task bar and gets `{ expanded, controls, onOpen, buttonRef }`; `panel` fills the overlay and gets `{ close }`. One overlay is open at a time and it folds on a task switch. A narrow window and slim mode have none.
+- `ctx.composer(reviewer)`: reviews sends before they go, from the composer and from an answer form's free text. `review(text, signal, { force, answer })` resolves `"send"` or `"hold"` (the mod shows why, and the draft stays). Enter reviews first, with a countdown and Send now; ⌥⏎ forces a review; ⌘⏎ sends at once. `signal` aborts when the person sends at once or the form goes. A review that fails or runs out of time sends the text as typed. `wait` is the longest wait in seconds, or `"always"` (default 6), and the optional `marks(draft)` gives `[start, end)` spans to underline. There is no review in slim mode or a narrow window (a narrow window keeps the marks). The task view uses one reviewer: the first registered that is reviewing.
+
+Sidekick (`packages/mods/sidekick/src/ui.tsx`) uses `call`, `on` and all five slots, and places no block.
+
 ## Core mods as packages
 
-A core mod is a package under `packages/mods/<id>` with `mod.json`, `README.md` and `src/`. The shell build (`electron.vite.config.ts`) copies those files to `out/core-mods/<id>/`, which is what the home folder's `core/` layer holds. Its ids and default switches are `CORE_MOD_SWITCHES` (`core-mods.ts`: `core-mod-list.ts` plus `home`, on). The renderer entry (`packages/shell/src/renderer/main.tsx`) imports each core mod's package and runs its `ui` before the first render, registering its blocks in the registry the layout draws from. Home (`packages/mods/home`) is the first: the screen the app opens on. Sidekick (`packages/mods/sidekick`, `docs/architecture/sidekick.md`) is the second, main side only: the shell's main imports none of it.
+A core mod is a package under `packages/mods/<id>` with `mod.json`, `README.md` and `src/`. The shell build (`electron.vite.config.ts`) copies those files to `out/core-mods/<id>/`, which is what the home folder's `core/` layer holds. Its ids and default switches are `CORE_MOD_SWITCHES` (`core-mods.ts`: `core-mod-list.ts` plus `home`, on). The renderer entry (`packages/shell/src/renderer/main.tsx`) imports each core mod's package and runs its `ui` before the first render, registering its blocks in the registry the layout draws from. Home (`packages/mods/home`) is the first: the screen the app opens on. Sidekick (`packages/mods/sidekick`, documented in its `README.md`) is the second: its ui places no block and fills the slots above, and the shell's main imports none of it.
 
-**A core mod's ctx** (`CoreMainCtx`, `@humanharness/mod-sdk/core`) adds `ctx.app`, the app's parts (`mods/core-app.ts`, built once in `app-lifecycle.ts`: phases and briefs, setup, the open task, engines and profiles, session folders and briefs from `mods/core-sessions.ts`, `EngineSession`, the daily input and more), `ctx.push(channel, value)` on an app push channel, and `ctx.onRefresh(fn)`: the base or its data changed with no task opening or closing (a profile switch arrived, `scope-stores.ts`; an undo, `afterRestore` in `app-services.ts`), sent by `ModHost.refresh()`. Only a core mod may handle an app channel (`hh:…`) with `ctx.ipc`; the core registers those names once with Electron (`MOD_APP_CHANNELS`, `mods/app-channels.ts`) and hands each call to the mod host, which refuses it when no mod handles it.
+**A core mod's ctx** (`CoreMainCtx`, `@humanharness/mod-sdk/core`) adds `ctx.app`, the app's parts (`mods/core-app.ts`, built once in `app-lifecycle.ts`: phases and briefs, setup, the open task, engines and profiles, session folders and briefs from `mods/core-sessions.ts`, `EngineSession`, the daily input and more), and `ctx.onRefresh(fn)`: the base or its data changed with no task opening or closing (a profile switch arrived, `scope-stores.ts`; an undo, `afterRestore` in `app-services.ts`), sent by `ModHost.refresh()`. Its `ctx.push` may also name an app push channel (`hh:…`, except `hh:modPush`). No mod answers an app channel with `ctx.ipc`: a core mod's calls go over `hh:modCall` like any mod's.
 
 **The core-mod import rule** (`bundleMod` with `core: true`, `packages/mod-sdk/src/build.ts`): a core mod's main may import its own files, the shared imports, `node:` builtins and the packages its `package.json` declares. Core `@humanharness/*` packages are bundled in, together with the npm packages they import (nothing beside the built mod could resolve those); the mod's own npm packages stay outside, found beside the app; another mod (`@humanharness/mod-*`) never. The core never imports a core mod: what it needs goes through hooks, `ctx` and channels.
 
@@ -319,4 +344,4 @@ missing there. `mcp-tools.test.ts` checks the app list and each tool through an 
 
 ## What is still to come
 
-See the spec's §7 order: the rest of step 1 (1a moved Sidekick's main side; its UI and channels follow), steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`). Step 0c (0c1 the mod kit, 0c2 the harness kit) is done.
+See the spec's §7 order: steps 2–5 (more features as mods), step 6 (harness code on mods; the plugin runtime is deleted), and steps 7–10 (`material`, `modes`/`phases`, `parallel`, `scopes`). Step 0c (0c1 the mod kit, 0c2 the harness kit) and step 1 (Sidekick as a core mod: 1a its main side; 1b its UI, calls and config) are done.

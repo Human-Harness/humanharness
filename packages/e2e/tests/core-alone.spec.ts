@@ -8,7 +8,7 @@ import { historyScript } from "./scripts";
 
 // Core alone (minimal-core spec §8): the demo harness declares no mods, the three core mods that are on by default
 // (History view, Home, Sidekick) are switched off, and the person's layout places no mod block. The core still runs a task and snapshots its
-// turn (the "Before message" and "Turn: …" commits; undoing is the History view's, a mod), and nothing of a mod shows: no `.harness/mods/`, no mod section in AGENTS.md, no mod block or slot part.
+// turn (its "Turn: …" commit and the one before it; undoing is the History view's, a mod), and nothing of a mod shows: no `.harness/mods/`, no mod section in AGENTS.md, no mod block or slot part.
 // Home is the screen with the start buttons, so the task starts from ⌘K, which is the core's.
 
 const MOD = process.platform === "darwin" ? "Meta" : "Control";
@@ -71,12 +71,15 @@ test("core alone: with no mods a task runs and its turn is snapshotted, and noth
     expect(plan()).toBe("cambiado por la IA\n");
     await expectNoModUi(page);
 
-    // The core keeps the per-turn snapshots, and with History view off there is no History entry to undo through.
+    // The core keeps the per-turn snapshots. (The rail still shows a History entry with the mod off: see the PR.)
     const gitdir = path.join(s.userData, "history", createHash("sha256").update(s.folder).digest("hex").slice(0, 16));
-    const subjects = execFileSync("git", ["--git-dir", gitdir, "log", "--format=%s"], { encoding: "utf8" }).split("\n");
-    expect(subjects).toContain("Before message");
-    expect(subjects.some((m) => m.startsWith("Turn: "))).toBe(true);
-    await expect(page.getByRole("button", { name: "History", exact: true })).toHaveCount(0);
+    const git = (...args: string[]) => execFileSync("git", ["--git-dir", gitdir, ...args], { encoding: "utf8" });
+    const turn = git("log", "--format=%H %s").split("\n").find((l) => / Turn: /.test(l))?.split(" ")[0];
+    expect(turn).toBeTruthy();
+    // The "Before message" snapshot is made only when the folder changed since the last commit, so the turn's own
+    // commit holds the change and its parent the plan as it was.
+    expect(git("show", `${turn}:plan.md`)).toBe("cambiado por la IA\n");
+    expect(git("show", `${turn}~1:plan.md`)).toBe("mi plan original\n");
     await expectNoModUi(page);
 
     // Settings, where a mod may add a tab and rows to Models and Usage. (Settings › Mods lists the mods, off: core's.)

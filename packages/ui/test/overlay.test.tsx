@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AppState, SidekickState, TaskView } from "../src/client";
+import type { AppState, TaskView } from "../src/client";
+import type { SidekickState } from "../../mods/sidekick/src/types";
 import { SidekickButton } from "../../mods/sidekick/src/ui/SidekickPanel";
 import { Overlay } from "../src/task-view/Overlay";
 import { PathButton } from "../src/task-view/PathButton";

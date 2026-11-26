@@ -16,6 +16,7 @@ import {
   type DocumentCard,
   type EngineProblem,
   type HarnessClient,
+  type HistoryFileChange,
   type ModeChoice,
   type ModeSwitch,
   type NoteView,
@@ -40,6 +41,8 @@ import { FileTimelineSplit } from "./FileTimelineSplit";
 import { FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPage } from "./HistoryPage";
+import { SlotBoundary } from "./layout/BlockBoundary";
+import { useBlocks } from "./layout/registry";
 import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
@@ -349,6 +352,8 @@ export function ChatView({
   /** Under 720 px no right overlay: no paid review the person can't see. */
   const narrow = useNarrow();
   const mods = useModParts({ slim: !!slim, narrow });
+  /** The History page a mod registered (`ctx.taskPage`); without one the core's own panel renders. */
+  const historyEntry = useBlocks().slot("taskPage").find((e) => e.name === "history");
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
@@ -1526,13 +1531,13 @@ export function ChatView({
   useEffect(() => {
     pageTo.current?.(
       historyPage
-        ? { title: t("history.title"), back: closeHistory, close: closeHistory, rail: "task-history" }
+        ? { title: historyEntry ? t(historyEntry.title, { defaultValue: historyEntry.title }) : t("history.title"), back: closeHistory, close: closeHistory, rail: "task-history" }
         : notesShown
           ? // From a note's detail, Volver goes to the list and says its name (DESIGN.md "Secondary pages").
             { title: t(notesPage.task ? "notes.list" : "files.title"), close: closeNotes, rail: notesPage.task ? "task-notes" : "notes", ...(noteOpen ? { back: toNotesList, backLabel: t("notes.list") } : { back: closeNotes }) }
           : null,
     );
-  }, [historyPage, notesShown, noteOpen, notesPage?.task, closeHistory, closeNotes, toNotesList, t]);
+  }, [historyPage, historyEntry, notesShown, noteOpen, notesPage?.task, closeHistory, closeNotes, toNotesList, t]);
   useEffect(() => () => pageTo.current?.(null), []);
   /** What had focus when a page opened (read before the page's title takes it): it gets focus back on leaving. */
   const pageOpener = useRef<HTMLElement | null>(null);
@@ -2028,33 +2033,41 @@ export function ChatView({
         <div className="hh-sr-only" aria-live="polite">
           {announcement}
         </div>
-        {historyPage && (
-          <HistoryPage
-            key={historyTask ?? "history"}
-            client={client}
-            actions={state.actions}
-            {...(historyTask ? { openTask: historyTask } : {})}
-            currentTask={tasks.current?.id}
-            {...(state.parallel || state.jobs ? { undoByFiles: true } : {})}
-            {...(state.jobs ? { jobs: state.jobs.jobs } : {})}
-            {...(state.hatches?.linkedFolders ? { linkedFolders: state.hatches.linkedFolders } : {})}
-            disabled={Boolean(chat.live) || closing || checkpoint}
-            onBack={closeHistory}
-            onRestored={(kind) => {
-              setRefresh((n) => n + 1);
-              const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
-              dispatch({ type: "notice", text, at: new Date().toISOString() });
-              setNotice(text);
-            }}
-            onOpenFile={(file, kind) => {
-              closeHistory();
-              setContextOpen(false);
-              // A `.md` that is still there opens in the reader with its timeline; anything else in the timeline split view.
-              if (kind !== "deleted" && isMarkdownPath(file)) showReader({ path: file, timeline: true });
-              else setTimelineFile(file);
-            }}
-          />
-        )}
+        {historyPage &&
+          (() => {
+            const props = {
+              client,
+              actions: state.actions,
+              ...(historyTask ? { openTask: historyTask } : {}),
+              currentTask: tasks.current?.id,
+              ...(state.parallel || state.jobs ? { undoByFiles: true } : {}),
+              ...(state.jobs ? { jobs: state.jobs.jobs } : {}),
+              ...(state.hatches?.linkedFolders ? { linkedFolders: state.hatches.linkedFolders } : {}),
+              disabled: Boolean(chat.live) || closing || checkpoint,
+              onBack: closeHistory,
+              onRestored: (kind: "task" | "point") => {
+                setRefresh((n) => n + 1);
+                const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
+                dispatch({ type: "notice", text, at: new Date().toISOString() });
+                setNotice(text);
+              },
+              onOpenFile: (file: string, kind: HistoryFileChange["kind"]) => {
+                closeHistory();
+                setContextOpen(false);
+                // A `.md` that is still there opens in the reader with its timeline; anything else in the timeline split view.
+                if (kind !== "deleted" && isMarkdownPath(file)) showReader({ path: file, timeline: true });
+                else setTimelineFile(file);
+              },
+            };
+            const key = historyTask ?? "history";
+            return historyEntry ? (
+              <SlotBoundary key={key} mod={historyEntry.mod} client={client}>
+                <historyEntry.Page {...props} />
+              </SlotBoundary>
+            ) : (
+              <HistoryPage key={key} {...props} />
+            );
+          })()}
         {notesShown && (
           <NotesPage
             notes={notesPage.task ? taskNotes : tasks.notes}

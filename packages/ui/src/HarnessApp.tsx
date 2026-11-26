@@ -12,6 +12,7 @@ import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { type AppValue, AppProvider } from "./layout/app";
 import { LayoutView } from "./layout/LayoutView";
+import { useBlocks } from "./layout/registry";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { useAttention } from "./plugins/usePlugins";
 import { InboxAnnouncer, InboxPage, waitingCount } from "./parallel/Inbox";
@@ -416,6 +417,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     task: taskOpen ? { notes: chatTask?.notes ?? 0 } : null,
   };
   const entries = railEntries(features);
+  /** The History page a mod registered (`ctx.taskPage`): the rail's task History entry shows its icon and label. */
+  const historyPage = useBlocks().slot("taskPage").find((e) => e.name === "history");
   /** With a task open on the chat the top bar is its one bar, drawn by the chat in the slot (task view one column): no crumbs, no gear. */
   const slotted = view.kind === "chat" && taskOpen;
   const screenTitle = focusedTask?.label ?? (state.parallel ? null : chatTaskLabel) ?? (startView?.title ? i18n.t(startView.title, { ns: "harness" }) : i18n.t("rail.tasks"));
@@ -544,6 +547,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                   entries={entries}
                   current={railCurrent}
                   onPick={pick}
+                  {...(historyPage ? { taskPage: historyPage.rail } : {})}
                   counts={Object.fromEntries(
                     Object.entries(railCounts(features, waiting)).map(([e, count]) => [
                       e,

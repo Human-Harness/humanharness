@@ -61,7 +61,7 @@ describe("Scope settings › Linked folders (hatches spec §3.2)", () => {
     await screen.findByRole("combobox", { name: "Choose project" });
     expect(screen.queryByRole("button", { name: /settings/i })).toBeNull();
     cleanup();
-    await renderIn("en", <HistoryPage client={client} actions={{}} onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} onBack={() => undefined} />);
     await screen.findByRole("button", { name: /A question/ });
     expect(screen.queryByText(/Undo doesn't cover/)).toBeNull();
     expect(client.scopes.linkedHistory).not.toHaveBeenCalled();
@@ -259,7 +259,7 @@ describe("History panel with linked folders", () => {
       uncovered: [{ key: "repos", label: "Repos" }],
       tasks: { t1: [{ key: "notes", label: "Notes", changes: [{ path: "todo.md", kind: "added" }] }] },
     };
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} onOpenFile={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} onOpenFile={() => undefined} />);
     expect(await screen.findByText("Repos: Undo doesn't cover this folder: it has its own git.")).toBeTruthy();
     expect(screen.getAllByText(/Undo doesn't cover/)).toHaveLength(1);
     const files = await screen.findByRole("list", { name: "Notes" });
@@ -275,7 +275,7 @@ describe("History panel with linked folders", () => {
       uncovered: [],
       tasks: { t1: [{ key: "notes", label: "Notes", changes: [{ path: "b.txt", kind: "added" }, { path: "c.txt", kind: "modified" }] }] },
     };
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} onOpenFile={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} onOpenFile={() => undefined} />);
     const files = await screen.findByRole("list", { name: "Notes" });
     expect(within(files).getByText("b.txt")).toBeTruthy();
     expect(await screen.findByText(/2 files changed/)).toBeTruthy();
@@ -289,7 +289,7 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.linkedHistoryAnswer = { uncovered: [{ key: "repos", label: "Repos", noGit: true }, { key: "notes", label: "Notes" }], tasks: {} };
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
     expect(await screen.findByText("Repos: Undo doesn't cover this folder: it has no git, and the app's history doesn't track it.")).toBeTruthy();
     expect(screen.getByText("Notes: Undo doesn't cover this folder: it has its own git.")).toBeTruthy();
   });
@@ -298,7 +298,7 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.scopes.linkedHistory.mockRejectedValueOnce(new Error("no"));
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
     await screen.findByRole("button", { name: /A question/ });
     await waitFor(() => expect(client.scopes.linkedHistory).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
@@ -309,7 +309,7 @@ describe("History panel with linked folders", () => {
     client.scopeList = [...client.scopeList, { id: "web", title: "Web", createdAt: "c", archived: false }];
     client.historyGroups = [{ ...task("t1"), scopeId: "app" }, { ...task("t2"), scopeId: "web" }];
     client.linkedHistoryAnswer = { uncovered: [{ key: "repos", label: "Repos" }], tasks: {} };
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} onBack={() => undefined} />);
     expect(await screen.findByText(/Undo doesn't cover/)).toBeTruthy();
     await pick("Show", "Web");
     await waitFor(() => expect(screen.queryByText(/Undo doesn't cover/)).toBeNull());
@@ -327,7 +327,7 @@ describe("History panel with linked folders", () => {
       notRestored: ["notes", "repos"],
       cause: { reason: "running", path: "notes/todo.md" },
     };
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} undoByFiles onBack={() => undefined} />);
     const loads = client.scopes.linkedHistory.mock.calls.length;
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
@@ -341,7 +341,7 @@ describe("History panel with linked folders", () => {
     const client = scoped();
     client.historyGroups = [task("t1")];
     client.restoreTaskRefusal = { reason: "partial", workFolder: false, restored: [], notRestored: ["gone"], cause: { reason: "uncommitted", path: "gone/a.md" } };
-    await renderIn("en", <HistoryPage client={client} actions={{}} linkedFolders={linkedFolders} undoByFiles onBack={() => undefined} />);
+    await renderIn("en", <HistoryPage client={client} call={(n, p) => client.historyModCall(n, p)} actions={{}} linkedFolders={linkedFolders} undoByFiles onBack={() => undefined} />);
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     // A key the manifest no longer declares shows as its key.
     expect((await screen.findByRole("alert")).textContent).toMatch(/^Not undone in gone: /);

@@ -37,7 +37,7 @@ export interface HistoryRestoreDeps {
 
 /**
  * The history restore service (minimal core step 2): the whole-folder and task go-backs as plain calls, for the
- * `hh:restore`/`hh:restoreTask` wrappers and, as `ctx.app.history`, for core mods. Every call asks first with main's
+ * go-backs, for core mods (`ctx.app.history`). Every call asks first with main's
  * native dialog on the app's main window (go-back.ts), so no caller can skip the confirmation. Answers: `{ ok: true }`,
  * `{ ok: false, reason: "cancelled" }` or, by paths, `{ refused }`; a blocked or invalid call throws, as before.
  */
@@ -102,7 +102,7 @@ export function historyRestores(d: HistoryRestoreDeps) {
     /** The History panel's groups, newest first. */
     historyGroups,
     /** The whole folder back to the point `sha`, after the native confirm. */
-    restorePoint: (sha: unknown): Promise<unknown> => goBacks["hh:restore"](d.mainWindow(), sha),
+    restorePoint: (sha: unknown): Promise<unknown> => goBacks["restore"](d.mainWindow(), sha),
     /** One task undone, after the native confirm: the whole folder in plain mode, only its own paths in board mode. */
     async restoreTask(taskId: unknown, includeShared?: unknown): Promise<unknown> {
       // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
@@ -110,7 +110,7 @@ export function historyRestores(d: HistoryRestoreDeps) {
       // `single` mode the same (part 3 Decision 12): a job's commits sit between the task's, and a job run is undone alone.
       const byPaths = undoByPaths();
       // Plain mode: the whole folder back to the task's start, after main's native confirmation (go-back.ts).
-      if (!byPaths) return goBacks["hh:restoreTask"](d.mainWindow(), taskId);
+      if (!byPaths) return goBacks["restoreTask"](d.mainWindow(), taskId);
       const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
       const task = (await undoGroups(id)).find((g) => g.taskId === id);
       if (!task) return { refused: { reason: "nothing" as const } };

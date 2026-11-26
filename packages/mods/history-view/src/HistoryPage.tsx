@@ -21,6 +21,7 @@ const triggerId = (r: Restore) => `hh-history-back-${r.kind}-${r.id}`;
  */
 export function HistoryPage({
   client,
+  call,
   actions,
   onBack,
   onRestored,
@@ -32,6 +33,8 @@ export function HistoryPage({
   openTask,
 }: {
   client: HarnessClient;
+  /** The mod's own main (`ctx.call`): "restore" takes a commit id, "restoreTask" `{ id }`; main asks before going back. */
+  call: (name: "restore" | "restoreTask", payload: unknown) => Promise<unknown>;
   /** The harness's actions: a task's row shows its action's label. */
   actions: Record<string, ActionOption>;
   /** The open task's id: its row says it is open now. */
@@ -142,8 +145,9 @@ export function HistoryPage({
     setFailed(false);
     setRefused(null);
     setRestoring(true);
-    (r.kind === "task" ? client.restoreTask(r.id) : client.restore(r.id)).then(
-      (answer) => {
+    (r.kind === "task" ? call("restoreTask", { id: r.id }) : call("restore", r.id)).then(
+      (raw) => {
+        const answer = raw as { ok: boolean } | { refused: UndoRefusal };
         // Board mode: main refused, naming why (spec §5.3); nothing changed.
         if (answer && "refused" in answer) {
           refocus.current = triggerId(r);

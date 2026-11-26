@@ -18,8 +18,7 @@ export interface HistoryIpcDeps {
 export function historyIpc(d: HistoryIpcDeps) {
   const { linked_, linkedHistoriesOf, restores } = d;
   return {
-    // The window's go-backs ask on the app's main window, as ctx.app.history does; the file's on the window that asked.
-    "hh:restore": (_sender: WebContents, sha: unknown) => restores.restorePoint(sha),
+    // The whole-folder and task go-backs are the History mod's main (`ctx.app.history`); the file's asks on the window that asked.
     "hh:fileRestore": (sender: WebContents, file: unknown, commit: unknown) => restores.fileRestore(sender, file, commit),
     // The panel's rows; with tracked linked folders, a task that changed only one of them too (hatches spec §3.4), so it
     // can be undone. Without linked folders, exactly the work folder's (D0); a linked folder that can't be read adds none.
@@ -35,7 +34,6 @@ export function historyIpc(d: HistoryIpcDeps) {
         return main;
       }
     },
-    "hh:restoreTask": (_sender: WebContents, taskId: unknown, includeShared?: unknown) => restores.restoreTask(taskId, includeShared),
     // The home folder's history (0b2): its last change, and undo (the watchers reload what the undo changed).
     "hh:homeHistory": async () => (await d.homeHistory()?.last()) ?? null,
     "hh:homeUndo": async () => {

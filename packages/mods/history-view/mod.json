@@ -1,1 +1,1 @@
-{ "id": "history-view", "name": "History view", "version": "0.1.0", "apiVersion": 1, "ui": "ui.js" }
+{ "id": "history-view", "name": "History view", "version": "0.1.0", "apiVersion": 1, "main": "main.js", "ui": "ui.js" }

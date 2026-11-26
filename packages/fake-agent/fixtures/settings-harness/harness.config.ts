@@ -17,7 +17,7 @@ export default defineHarness({
   },
   path: ["practice", "review"],
   // Its Settings test expects the Sidekick tab, and Sidekick shows only to a harness that declares it.
-  sidekick: {},
+  mods: { sidekick: {} },
   settings: {
     tab: "How I learn",
     sections: [

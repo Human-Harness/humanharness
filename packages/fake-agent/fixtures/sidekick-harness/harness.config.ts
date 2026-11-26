@@ -22,9 +22,11 @@ export default defineHarness({
     },
   },
   path: ["report"],
-  sidekick: {
-    default: "off",
-    presets: [{ name: "Guard", mark: "guardian", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
+  mods: {
+    sidekick: {
+      default: "off",
+      presets: [{ name: "Guard", mark: "guardian", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
+    },
   },
   author: "Human Harness tests",
 });

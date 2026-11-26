@@ -8,7 +8,8 @@ import { sidekickCollection } from "./collection";
 import type { SidekickDeps, SidekickLike } from "./controller";
 import { appendSidekickEvent, readSidekickEvents } from "./events";
 import { readImportFiles } from "./import";
-import { SIDEKICK_COLLECTION, type SidekickManifest } from "./manifest";
+import { SIDEKICK_COLLECTION } from "./manifest";
+import type { SidekickManifest } from "./schema";
 import { SidekickStore } from "./store";
 import { readSidekickUsage } from "./usage";
 

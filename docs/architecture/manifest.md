@@ -30,7 +30,7 @@ Every text in the manifest is one English string.
 | `setup` | Optional. The harness's own setup steps, after the folder and the engine: a form, an interview, a component or a connect step (`docs/architecture/setup.md`) |
 | `material` | Optional. The person's own files (PDF, Word, spreadsheets, slides, ebooks, web pages, text), cut into fragments a task fetches on demand: the families it `accepts`, the `sheet` sections, `fragmentKinds`, the `items` collection fragments link to, `grounding`, the index `budget` and per-stage `tiers` (`docs/architecture/material.md`) |
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
-| `sidekick` | Optional. The prompt coach: its `default` state, `tips`, the pre-send mode per action, `checks`, and the harness's `places` and `presets` (below; `docs/architecture/sidekick.md`) |
+| `mods` | Optional. The mods this harness turns on, by id: its own in `mods/<id>/`, or a core mod. Each value is that mod's config. `mods.sidekick` gives the prompt coach (`{}` for the defaults): its `default` state, `tips`, the pre-send mode per action, `checks`, and the harness's `places` and `presets` (below; `docs/architecture/sidekick.md`) |
 | `plugins` | Optional. Whether the harness takes plugins: `bundled` (ids under `<harness>/plugins/<id>/dist/`), `on` (bundled ones that start on, without a review) and `local` (the person may add plugins from a folder; default `false`). Absent, or with no bundled plugin and `local: false`, nothing of plugins runs (`docs/architecture/plugins.md`) |
 | `parallel` | Optional. Suggested caps on turns running at once, `{ tasks, jobs }`, each an integer 1–8, default 1 (strict: a typo is refused). Declared, the app keeps several tasks open, each with its own chat and session, and queues turns past the cap; absent, the app runs one task at a time as before. The person can change the caps in Settings › General (`docs/architecture/parallel.md`) |
 | `jobs` | Optional. Background jobs by id: `label`, `prompt` (the brief) or `steps` (a recipe: tool steps and at most one AI step, with `maxAi` and `onLimit`; below), `tier` (default `light`), `on` (`start`, `manual`, `afterTask`, `every`), `scope` (`none`, `each`, `trigger`), `dailyTokens` (required with `every` for a job that uses AI) and, for a prompt job, `permissions` that only narrow the harness's. Each run has no chat and can't ask the person; a prompt job's ends with `job_result`. Without `parallel` the app keeps one task at a time and runs the jobs beside it (`docs/architecture/jobs.md`) |
@@ -120,21 +120,23 @@ sync: {
 
 ### Sidekick places and presets
 
-Two optional lists in the `sidekick` block (`sidekickSchema` in `packages/mods/sidekick/src/manifest.ts`). From a manifest:
+Two optional lists in `mods.sidekick` (`sidekickSchema` in `packages/mods/sidekick/src/schema.ts`). From a manifest:
 
 ```ts
-sidekick: {
-  default: "off",
-  places: [{ id: "summary", label: "Summary", description: "The session summary the harness shows at the end." }],
-  presets: [
-    { name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] },
-    { name: "Reader", mark: "📖", personality: "", purposes: [{ id: "custom", text: "Point out what the summary leaves out.", moments: ["place:summary"] }] },
-  ],
+mods: {
+  sidekick: {
+    default: "off",
+    places: [{ id: "summary", label: "Summary", description: "The session summary the harness shows at the end." }],
+    presets: [
+      { name: "Guard", mark: "guardian", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] },
+      { name: "Reader", mark: "mentor", personality: "", purposes: [{ id: "custom", text: "Point out what the summary leaves out.", moments: ["place:summary"] }] },
+    ],
+  },
 },
 ```
 
 - `places[]`: at most 12. `id` (`^[a-z][a-z0-9_-]{0,63}$`, unique), `label` (≤ 40), `description` (≤ 300): a part of the harness's screen where its UI can ask a sidekick about some content with `client.sidekick.ask(id, content)` and show the short free-text answer.
-- `presets[]`: at most 8 ready-made sidekicks the person is offered in Settings and may add. `name` (≤ 40, unique: adopting one finds it by name), `mark` (≤ 16, an emoji or short text), `personality` (≤ 1,500, may be empty), `purposes` (1–6): `{ id: "prompt-coach" | "focus" | "process-guard" | "mentor" | "daily-summary" }` or `{ id: "custom", text (≤ 600), moments (1–7) }`. A moment is `pre-send`, `after-reply`, `heads-up`, `before-approve`, `phase-change`, `daily` or `place:<id>`.
+- `presets[]`: at most 8 ready-made sidekicks the person is offered in Settings and may add. `name` (≤ 40, unique: adopting one finds it by name), `mark` (an icon name from `SIDEKICK_MARKS`), `personality` (≤ 1,500, may be empty), `purposes` (1–6): `{ id: "prompt-coach" | "focus" | "process-guard" | "mentor" | "daily-summary" }` or `{ id: "custom", text (≤ 600), moments (1–7) }`. A moment is `pre-send`, `after-reply`, `heads-up`, `before-approve`, `phase-change`, `daily` or `place:<id>`.
 - A manifest without them parses to the same object as before (D0).
 
 ### Plugins and slots
@@ -199,7 +201,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Setup steps: 1 to 8, ids unique. A connect step needs `secrets` and lists 1 to 10 of its ids, each once. A form takes a `single`, unscoped collection and fields the core form can draw, or settings of the harness, not both. An interview's action isn't in `path`, isn't `deep`, runs app-wide and backs one interview; its `writes` collection is `single`, unscoped and `agent: "write"`. `humanharness check` also warns about a component it can't find in `ui/` (`setup-component`), an interview's action without a recording once `mock/` has recordings (`setup-mock`) and an interview's collection without `context` (`setup-context`) (`docs/architecture/setup.md`).
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
 - Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
-- Sidekick: `sidekick` can't be an action id or a collection name; every action in `sidekick.actions` must exist; place ids and preset names are unique; a preset's custom `place:<id>` moment must name a place declared in `sidekick.places` (a parse error). `humanharness check` warns about tips over 300 tokens (`sidekick-tips`) (`docs/architecture/sidekick.md`).
+- Sidekick: a top-level `sidekick` key is a parse error that names `mods.sidekick`, and `mods.sidekick` is checked against Sidekick's schema. `sidekick` can't be an action id or a collection name; every action in `mods.sidekick.actions` must exist; place ids and preset names are unique; a preset's custom `place:<id>` moment must name a place declared in `mods.sidekick.places` (all parse errors). `humanharness check` warns about tips over 300 tokens (`sidekick-tips`) (`docs/architecture/sidekick.md`).
 - Plugins: `plugins.bundled` holds at most 20 plugin ids (`^[a-z0-9][a-z0-9-]{0,63}$`), each once; every id in `plugins.on` is bundled, once; unknown keys are refused (`harnessPluginsSchema`). A bundled plugin's own `plugin.json` is checked when the app loads it, not by `defineHarness`: a broken one shows as an error in Settings › Plugins (`docs/architecture/plugins.md`). `slots`: at most 10, ids unique and not `plugins` or `chips` (`harnessSlotsSchema`); `humanharness plugin check --harness <dir>` reports a plugin's panel or chip naming a slot the harness doesn't have with that kind (`slot-unknown`).
 - Document kinds: a kind's sections are each listed once (compared trimmed, without case). `humanharness check` also warns when the "Document kinds" part would add more than 400 tokens to `AGENTS.md` (`documents-tokens`).
 - Linked folders: at most 8 keys, each `^[a-z][a-z0-9_-]{0,63}$`; a label of 1 to 40 characters with no hidden characters; unknown keys are refused. `linkedFolders` needs `scopes`, and a `write` key needs `permissions.edit: "folder"` (`hatchProblems`, `docs/architecture/hatches.md`).
@@ -222,7 +224,8 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/jobs.ts`: the `jobs` schema (`jobSchema`, `jobProblems`, `jobResultSchema`, `hasJobs`); `recipes.ts`: `steps`, the AI step, `when`, `maxAi`, `onLimit` (`aiStepSchema`, `whenSchema`, `recipeProblems`, `recipeSourceProblems`, `hasRecipes`, `jobUsesAi`).
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
-- `packages/mods/sidekick/src/manifest.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.
+- `packages/mods/sidekick/src/schema.ts`: the `mods.sidekick` schema, with its places and presets.
+- `packages/mods/sidekick/src/manifest.ts`: the marks, moments, purposes and the `sidekick` collection's records.
 - `packages/harness-sdk/src/plugin.ts`: the `plugins` schema (`harnessPluginsSchema`, `pluginsAccepted`), the `slots` schema (`harnessSlotsSchema`, `DEFAULT_SLOTS`, `slotFor`) and `plugin.json`'s.
 - `packages/harness-sdk/src/documents.ts`: `DocumentKind`, `DOCUMENT_KIND_ID`, `checkTemplate` and the document helpers.
 - `packages/harness-sdk/src/review.ts`: `REVIEW_TOOLS`, `validApproveGlob`, `matchGlob` and the review logic.

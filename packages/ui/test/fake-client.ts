@@ -476,7 +476,11 @@ export class FakeClient implements HarnessClient {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-  async restore(sha: string) {
+  /** The History mod's main (`restore`, `restoreTask`), as `ctx.call` reaches it: main asks first, then goes back. */
+  async historyModCall(name: "restore" | "restoreTask", payload: unknown) {
+    return name === "restore" ? this.restorePoint(payload as string) : this.restoreTaskById((payload as { id: string }).id);
+  }
+  private async restorePoint(sha: string) {
     if (!(await this.askGoBack({ kind: "point", sha }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
@@ -487,7 +491,7 @@ export class FakeClient implements HarnessClient {
     if (this.historyError) throw this.historyError;
     return this.historyGroups;
   }
-  async restoreTask(taskId: string) {
+  private async restoreTaskById(taskId: string) {
     if (!(await this.askGoBack({ kind: "task", taskId }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;

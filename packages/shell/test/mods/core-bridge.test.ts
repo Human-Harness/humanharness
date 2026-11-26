@@ -41,6 +41,7 @@ function parts() {
     dataTables: rec("dataTables", ["books"]),
     setup: rec("setup", Promise.resolve({ engineId: "codex", base: "/base" })),
     task: rec("task", Promise.resolve({ id: "t1", scope: "main", phase: "plan" })),
+    tasks: { contextRecord: rec("contextRecord", Promise.resolve(null)), addContext: (id, file) => (calls.push(["addContext", id, file]), { accepted: Promise.resolve({ ok: true }), done: Promise.resolve() }) },
     hasNotice: rec("hasNotice", Promise.resolve(true)),
     engine: (id) => (calls.push(["engine", id]), engine(id)),
     command: (e) => (calls.push(["command", e.id]), Promise.resolve({ command: ["codex"], env: { A: "1" } })),

@@ -111,6 +111,10 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       const phase = await d.tasks.openPhase();
       return { ...t, ...(phase ? { phase } : {}) };
     },
+    tasks: {
+      contextRecord: (id) => d.tasks.contextRecord(id) as never,
+      addContext: (id, file) => d.tasks.addContext(id, file),
+    },
     hasNotice,
     engine: getEngine,
     command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),

@@ -1,6 +1,6 @@
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import type { TaskRef, Tier } from "@humanharness/mod-sdk";
-import type { CoreApp, CoreDailyInput, CorePhase } from "@humanharness/mod-sdk/core";
+import type { CoreApp, CoreContextRecord, CoreDailyInput, CorePhase } from "@humanharness/mod-sdk/core";
 import type { EngineAnswer, EngineSessionOptions } from "@humanharness/runtime";
 
 /** A session as the app opens it (EngineSession, or a fake in tests). */
@@ -22,6 +22,11 @@ export interface CoreAppParts {
   dataTables(): string[];
   setup(): Promise<{ engineId: string; base: string } | null>;
   task(): Promise<(TaskRef & { phase?: string }) | null>;
+  /** The open task's context record and the "Add now" turn (the task manager's own). */
+  tasks: {
+    contextRecord(taskId: string): Promise<CoreContextRecord | null>;
+    addContext(taskId: string, path: string): { accepted: Promise<unknown>; done: Promise<void> };
+  };
   hasNotice(engineId: string): Promise<boolean>;
   engine(engineId: string): EngineDef;
   command(engine: EngineDef): Promise<{ command: string[]; env: Record<string, string> } | null>;
@@ -57,6 +62,12 @@ export function coreAppFor(p: CoreAppParts, id: string): CoreApp {
     },
     setup: () => p.setup(),
     task: () => p.task(),
+    tasks: {
+      contextRecord: (taskId) => p.tasks.contextRecord(taskId),
+      addContext: (taskId, file) => p.tasks.addContext(taskId, file),
+      // The host replaces it with its own hook registration (mods/host.ts), so a restart drops the listeners.
+      onContextChanged: () => () => {},
+    },
     sessions: {
       hasNotice: (engineId) => p.hasNotice(engineId),
       command: (engineId) => p.command(p.engine(engineId)),

@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
 import { DEFAULT_LANGUAGE, type LoadedHarness, hasExpects, hasModes, hasPre, inputBlocks, interviewCollections, resolveInHarness } from "@humanharness/harness-sdk";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
-import type { ConfiguredApp } from "@humanharness/protocol";
+import type { ConfiguredApp, ContextItem } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import type { EnginePreset, HarnessRuntime } from "@humanharness/runtime";
 import {
@@ -245,7 +245,19 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
     },
     // Pins and exclusions for a new task (spec §4); `contextSvc` is built below, before any task can start.
     personContext: (scope) => d.contextSvc().personContext(scope),
-    contextChanged: (id) => void sendContext(id),
+    contextChanged: (id) => {
+      void sendContext(id);
+      void d.modHost()?.contextChanged(id);
+    },
+    // The core mods' `on.firstMessage` sections, in the pins' slot. A getter: undefined while no mod registered it (D0).
+    get modContext() {
+      const mods = d.modHost();
+      if (!mods?.registered("firstMessage")) return undefined;
+      return async (task: { id: string; action?: string; scope: string }) => {
+        const r = await mods.firstMessage(task);
+        return r ? { text: r.text, items: r.items as unknown as ContextItem[], excluded: r.excluded } : null;
+      };
+    },
     // The agent's working folder: the engine's read paths become folder paths (spec §3.2).
     folder: async () => {
       const c = await validConfig();

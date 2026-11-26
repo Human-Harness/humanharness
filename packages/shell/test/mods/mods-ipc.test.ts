@@ -83,18 +83,3 @@ describe("mods IPC", () => {
     expect(deps.removeLocal).toHaveBeenCalledWith("broken");
   });
 });
-
-describe("app channels a core mod handles", () => {
-  it("routes each declared channel's arguments to the host, and says so when no mod is on", async () => {
-    const { registerModChannels } = await import("../../src/main/mods/mods-ipc");
-    const handlers = new Map<string, (...a: unknown[]) => unknown>();
-    const handle = (c: string, fn: (...a: never[]) => unknown) => void handlers.set(c, fn as (...a: unknown[]) => unknown);
-    const channel = vi.fn(async (name: string, args: unknown[]) => [name, args]);
-    let host: { channel: typeof channel } | null = null;
-    registerModChannels(handle as never, ["hh:sidekickState"] as never, () => host as never);
-    expect([...handlers.keys()]).toEqual(["hh:sidekickState"]);
-    await expect(handlers.get("hh:sidekickState")!("a", 1)).rejects.toThrow("No mod handles hh:sidekickState");
-    host = { channel };
-    expect(await handlers.get("hh:sidekickState")!("a", 1)).toEqual(["hh:sidekickState", ["a", 1]]);
-  });
-});

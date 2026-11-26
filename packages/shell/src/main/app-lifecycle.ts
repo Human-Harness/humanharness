@@ -90,7 +90,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
   }
   // The app's parts, built once: core mods get them through `ctx.app` (mods/core-app.ts).
   const core: CoreAppParts = {
-    harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}), ...(harness.sidekick ? { sidekick: harness.sidekick } : {}) },
+    harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}), ...(harness.mods ? { mods: harness.mods } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
     phaseBrief: (action, phase) => readPhaseBrief(action, phase).catch(() => null),
     dataTables: () =>

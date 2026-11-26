@@ -8,6 +8,8 @@ import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, 
 import { useCurrentWindows } from "./UsageMeter";
 import { shownLanguage } from "./language";
 import { Group, Hidden, Row, Rx, SectionHead } from "./guide";
+import { SlotBoundary } from "./layout/BlockBoundary";
+import { useBlocks } from "./layout/registry";
 
 const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
 
@@ -47,14 +49,16 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
   const apart: { key: string; label: string; value: string }[] = [];
   // Material spec §11.
   if (usage?.material !== undefined) apart.push({ key: "material", label: t("usage.row.material"), value: about(usage.material) });
-  // Sidekick spec §8.
-  if (usage?.sidekick !== undefined) apart.push({ key: "sidekick", label: t("usage.row.sidekick"), value: about(usage.sidekick) });
   // Parallel spec §10.
   if (usage?.jobs !== undefined) apart.push({ key: "jobs", label: t("usage.row.jobs"), value: about(usage.jobs) });
   // Subagent plan D4.
   if (usage?.subagents !== undefined) apart.push({ key: "subagents", label: t("usage.row.subagents"), value: about(usage.subagents) });
   // OpenCode spec §4: real money, as the engine reported it (only once a turn reported a cost; 0 is a real US$ 0.00).
   const spent = usage?.spentUsd !== undefined && engine ? usage.spentUsd : undefined;
+  /** Mods' lines (`ctx.row("usage", …)`), after the core's: those with something to draw. */
+  const modRows = useBlocks()
+    .slot("row")
+    .filter((r) => r.place === "usage" && (r.shown?.({ client, state, usage }) ?? true));
 
   return (
     <div>
@@ -74,7 +78,7 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       <Group title={t("usage.actionsTitle")} data-setting="usage.actions">
         {usage ? <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} /> : null}
       </Group>
-      {(apart.length > 0 || spent !== undefined) && (
+      {(apart.length > 0 || spent !== undefined || modRows.length > 0) && (
         <Group title={t("usage.apartTitle")}>
           {apart.map((a) => (
             <Row key={a.key} label={a.label} aria-label={a.label}>
@@ -93,6 +97,11 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
               </Rx.Text>
             </Row>
           )}
+          {modRows.map(({ mod, Component }, i) => (
+            <SlotBoundary key={`${mod}-${i}`} mod={mod} client={client}>
+              <Component client={client} state={state} usage={usage} />
+            </SlotBoundary>
+          ))}
         </Group>
       )}
       {usage?.scopes && state.scopes && <ScopeUsage client={client} tokens={usage.scopes} plural={state.scopes.plural} />}

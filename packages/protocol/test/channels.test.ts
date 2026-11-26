@@ -59,3 +59,26 @@ describe("IPC channel table (replaceable parts §5.3)", () => {
     expect([...main, ...preload].filter((c) => !table.has(c))).toEqual([]);
   });
 });
+
+describe("Sidekick's names (minimal-core 1b)", () => {
+  /** The core's side of the window/main contract: the protocol, the preload and the window's client. */
+  const core = [...sources(path.join(packages, "protocol/src")), ...sources(path.join(packages, "shell/src/preload")), path.join(packages, "ui/src/client.ts")];
+
+  /** The old prefix, built from pieces so `git grep` for it finds nothing in the repo. */
+  const OLD = `hh:${"sidekick"}`;
+
+  it("are no channel of the core's: the mod's calls and its state go on its own names (mods.sidekick.*)", () => {
+    expect([...table].filter((c) => c.startsWith(OLD))).toEqual([]);
+    expect([...main, ...preload].filter((c) => c.startsWith(OLD))).toEqual([]);
+  });
+
+  it("are declared in no file of the protocol, the preload or the client", () => {
+    const declared = new RegExp(`"${OLD}[A-Za-z]*"|\\bSidekick[A-Z][A-Za-z]*\\b|^\\s+sidekick\\s*:\\s*\\{`, "gm");
+    const offenders = core.flatMap((file) => {
+      const text = code(file);
+      const found = [...text.matchAll(declared)].map((m) => m[0].trim());
+      return found.map((name) => `${path.relative(packages, file)}: ${name}`);
+    });
+    expect(offenders).toEqual([]);
+  });
+});

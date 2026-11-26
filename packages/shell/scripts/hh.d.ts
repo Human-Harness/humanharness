@@ -301,6 +301,63 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       call?(name: string, payload?: unknown): Promise<unknown>;
       /** Hears the mod's own main's `ctx.push(name, value)`; returns the way to stop. Stops by itself when the mod goes off. */
       on?(name: string, fn: (value: unknown) => void): Disposer;
+      /**
+       * A tab in Settings, right after Models; its id is `name` (search opens it), its button says `label`. The component
+       * gets `{ openTab(id), client, state }`, the app's client and state. `o.shown(state)` says when the tab shows
+       * (default: always); `o.useLabel({ client, state })`, a hook called while Settings is open, gives a name that changes
+       * (default `label`). Like every slot below, it renders behind the block boundary: a part that throws shows
+       * "This part of the app failed" with Turn off.
+       */
+      settingsTab?(name: string, component: unknown, o: {
+          label: string;
+          shown?(state: unknown): boolean;
+          useLabel?(app: {
+              client: unknown;
+              state: unknown;
+          }): string;
+      }): Disposer;
+      /**
+       * A row after the core's: in Settings › Models' task rows (the component gets `{ taskRow({ key, label, description }) }`,
+       * which draws a level picker the core's way for `models.tasks[key]`), or Settings › Usage's lines apart from the tasks
+       * (it gets `{ usage }`, the usage summary or null). Both get `{ client, state }`; `o.shown(props)`, given the same
+       * props, says when the row shows (default: always).
+       */
+      row?(place: RowPlace, component: unknown, o?: {
+          shown?(props: {
+              client: unknown;
+              state: unknown;
+              usage?: unknown;
+          }): boolean;
+      }): Disposer;
+      /** A piece in the task bar, after the core's; the component gets `{ task }`, the open task's id or null. */
+      taskBar?(component: unknown): Disposer;
+      /**
+       * A right overlay of the open task: `button` goes in the task bar (it gets `{ expanded, controls, onOpen, buttonRef }`),
+       * `panel` in the overlay (it gets `{ close }`). One overlay open at a time, folded on a task switch; none in a narrow
+       * window or in slim mode.
+       */
+      taskOverlay?(o: {
+          name: string;
+          button: unknown;
+          panel: unknown;
+      }): Disposer;
+      /** Reviews the composer's sends (Enter reviews first, ⌥⏎ forces a review, ⌘⏎ sends at once) and the answer form's. */
+      composer?(reviewer: ComposerReviewer): Disposer;
+  }
+  /** Where a mod's `row` goes. */
+  type RowPlace = "models" | "usage";
+  /** What a review of a send says: send it as it is, or hold it (the mod shows why; the draft stays). */
+  type ReviewVerdict = "send" | "hold";
+  interface ComposerReviewer {
+      /** Spans of the draft to underline, `[start, end)`. */
+      marks?(draft: string): readonly (readonly [number, number])[];
+      /** `signal` aborts when the person sends at once or the form goes; `answer`: the text is an answer form's free text. */
+      review(text: string, signal: AbortSignal, o: {
+          force: boolean;
+          answer: boolean;
+      }): Promise<ReviewVerdict>;
+      /** The longest wait the countdown shows, in seconds, or "always" (default 6). */
+      wait?: number | "always";
   }
   export interface ModDefinition<C = undefined> {
       id: string;
@@ -308,6 +365,7 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       main?(ctx: MainCtx<C>): void | Promise<void>;
       ui?(ctx: UiCtx): void;
   }
+  export {};
 }
 
 declare module "@humanharness/ui/_internal/src/BackupNotice" {
@@ -912,6 +970,7 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
 
 declare module "@humanharness/ui/_internal/src/layout/registry" {
   import { type ComponentType, type ReactNode } from "react";
+  import type { AppState, HarnessClient, UsageSummary } from "@humanharness/ui/_internal/src/client";
   import type { AppValue } from "@humanharness/ui/_internal/src/layout/app";
   /** What a mod's block gets: the `props` the layout gives it and the app (minimal-core spec §5.2). */
   export interface BlockProps {
@@ -919,17 +978,124 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       app: AppValue;
   }
   export type BlockComponent = ComponentType<BlockProps>;
-  /** The blocks mods registered, by mod id and block name. */
+  /** What every Settings part of a mod gets: the app's client and state. */
+  export interface SettingsAppProps {
+      client: HarnessClient;
+      state: AppState;
+  }
+  /** A mod's Settings tab: `openTab` goes to another tab (by its id). */
+  export interface SettingsTabProps extends SettingsAppProps {
+      openTab(id: string): void;
+  }
+  /**
+   * A mod's Settings tab, besides its component: `label` is its button's name; `shown` says whether this state shows it
+   * (default: always); `useLabel`, a hook the sheet calls while it is open, gives a name that changes (default `label`).
+   */
+  export interface SettingsTabOptions {
+      label: string;
+      shown?(state: AppState): boolean;
+      useLabel?(app: SettingsAppProps): string;
+  }
+  /** A task row the Models tab draws the core's way: a level picker for the task `key` (its `models.tasks` entry). */
+  export interface ModelsTaskRow {
+      key: string;
+      label: string;
+      description?: string;
+  }
+  /** A mod's row in Settings › Models: `taskRow` draws a task row like the core's own. */
+  export interface ModelsRowProps extends SettingsAppProps {
+      taskRow(row: ModelsTaskRow): ReactNode;
+  }
+  /** A mod's line in Settings › Usage: the usage the tab read (null until it is read). */
+  export interface UsageRowProps extends SettingsAppProps {
+      usage: UsageSummary | null;
+  }
+  /** What a mod's row gets: the app's client and state, and its place's own (`taskRow` in Models, `usage` in Usage). */
+  export type RowProps = SettingsAppProps & Partial<Pick<ModelsRowProps, "taskRow"> & Pick<UsageRowProps, "usage">>;
+  /** A mod's row, besides its component: `shown` says whether it has something to draw (default: always). */
+  export interface RowOptions {
+      shown?(props: RowProps): boolean;
+  }
+  /** Where a mod's `row` goes: Settings › Models' task rows, or Settings › Usage's lines apart from the tasks. */
+  export type RowPlace = "models" | "usage";
+  /** A mod's piece in the task bar: the open task's id, or null. */
+  export interface TaskBarProps {
+      task: string | null;
+  }
+  /** The button that opens a mod's right overlay, in the task bar. */
+  export interface OverlayButtonProps {
+      expanded: boolean;
+      /** The overlay's element id (for `aria-controls`). */
+      controls: string;
+      onOpen(): void;
+      /** Put on the button: a close gives it focus back. */
+      buttonRef(el: HTMLElement | null): void;
+  }
+  /** A mod's right overlay's content. */
+  export interface OverlayPanelProps {
+      close(): void;
+  }
+  /** What a mod's review of a send says: send it as it is, or hold it (the mod shows why; the draft stays). */
+  export type ReviewVerdict = "send" | "hold";
+  /**
+   * A mod's reviewer for the composer and the answer form: Enter reviews first (with the countdown and Send now), ⌥⏎
+   * forces a review, ⌘⏎ sends at once. `signal` aborts when the person sends at once or the form goes.
+   */
+  export interface ComposerReviewer {
+      /** Spans of the draft to underline, `[start, end)`. */
+      marks?(draft: string): readonly (readonly [number, number])[];
+      review(text: string, signal: AbortSignal, o: {
+          force: boolean;
+          answer: boolean;
+      }): Promise<ReviewVerdict>;
+      /** The longest wait for a review, in seconds, or "always" (default 6). */
+      wait?: number | "always";
+  }
+  /** What each slot holds, by kind; each entry names the mod that registered it. */
+  export interface Slots {
+      settingsTab: {
+          mod: string;
+          name: string;
+          Component: ComponentType<SettingsTabProps>;
+      } & SettingsTabOptions;
+      row: {
+          mod: string;
+          place: RowPlace;
+          Component: ComponentType<RowProps>;
+      } & RowOptions;
+      taskBar: {
+          mod: string;
+          Component: ComponentType<TaskBarProps>;
+      };
+      taskOverlay: {
+          mod: string;
+          name: string;
+          Button: ComponentType<OverlayButtonProps>;
+          Panel: ComponentType<OverlayPanelProps>;
+      };
+      composer: {
+          mod: string;
+          reviewer: ComposerReviewer;
+      };
+  }
+  export type SlotKind = keyof Slots;
+  /** The blocks mods registered, by mod id and block name, and the parts they put in the core's slots. */
   export interface BlockRegistry {
       /** Registers `Component` as `modId`'s block `name`; the disposer takes it away again (only if it is still that one). */
       register(modId: string, name: string, Component: BlockComponent): () => void;
       get(modId: string, name: string): BlockComponent | undefined;
+      /** Puts `entry` in the slot `kind`, after the ones there; the disposer takes it away again. */
+      add<K extends SlotKind>(kind: K, entry: Slots[K]): () => void;
+      /** What the slot `kind` holds, in the order it was put there. */
+      slot<K extends SlotKind>(kind: K): readonly Slots[K][];
       /** Calls `listener` on each change; returns the unsubscribe. */
       subscribe(listener: () => void): () => void;
       /** A number that changes on each change (for `useSyncExternalStore`). */
       version(): number;
   }
   export function createBlockRegistry(): BlockRegistry;
+  /** The app's own registry: the one the screen uses unless a `ModBlocksProvider` gives another. */
+  export const appRegistry: BlockRegistry;
   /** Registers a block in the app's registry; returns the disposer. */
   export const registerBlock: (modId: string, name: string, Component: BlockComponent) => (() => void);
   /** The block `modId` registered as `name` in the app's registry. */

@@ -39,8 +39,6 @@
   "hh:materialOpen",
   "hh:materialRemove",
   "hh:materialRetry",
-  "hh:modCall",
-  "hh:modPush",
   "hh:modSet",
   "hh:mods",
   "hh:modsChanged",

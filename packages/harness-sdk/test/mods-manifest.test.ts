@@ -29,3 +29,24 @@ describe("manifest mods", () => {
     expect(() => defineHarness({ ...baseManifest(), mods: { "Bad!": {} } })).toThrow();
   });
 });
+
+describe("manifest mods.sidekick (Sidekick's config)", () => {
+  const withSidekick = (sidekick: Record<string, unknown>) => ({ ...baseManifest(), mods: { sidekick } });
+  it("keeps the config as given", () => {
+    expect(defineHarness(withSidekick({ default: "on" })).mods).toEqual({ sidekick: { default: "on" } });
+  });
+  it("refuses a top-level sidekick key, naming mods.sidekick", () => {
+    for (const sidekick of [{}, { default: "on" }, false]) {
+      expect(() => defineHarness({ ...baseManifest(), sidekick } as never)).toThrow(/mods\.sidekick/);
+    }
+  });
+  it("checks the config against Sidekick's schema, under mods.sidekick", () => {
+    expect(() => defineHarness(withSidekick({ checks: { maxWords: 3 } }))).toThrow(/maxWords/);
+    expect(() => defineHarness(withSidekick({ actions: { nope: "auto" } }))).toThrow(/is not an action of this harness/);
+    try {
+      defineHarness(withSidekick({ actions: { nope: "auto" } }));
+    } catch (err) {
+      expect((err as { issues: { path: unknown[] }[] }).issues.map((i) => i.path)).toEqual([["mods", "sidekick", "actions", "nope"]]);
+    }
+  });
+});

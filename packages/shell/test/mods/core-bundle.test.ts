@@ -27,7 +27,7 @@ describe("core mods' main in the built app", () => {
       "README.md": "# Pinger\n",
       "package.json": JSON.stringify({ name: "@humanharness/mod-pinger", dependencies: { "@humanharness/mod-sdk": "workspace:*" } }),
       "src/main.ts":
-        "import path from 'node:path';\nimport { defineMod } from '@humanharness/mod-sdk';\nimport { word } from './word';\nexport default defineMod({ id: 'pinger', main(ctx) { ctx.ipc('hh:ping', () => word + path.sep); } });\n",
+        "import path from 'node:path';\nimport { defineMod } from '@humanharness/mod-sdk';\nimport { word } from './word';\nexport default defineMod({ id: 'pinger', main(ctx) { ctx.ipc('ping',() => word + path.sep); } });\n",
       "src/word.ts": "export const word = 'pong';\n",
     });
     const dest = path.join(tmp, "out", "core-mods");
@@ -45,8 +45,7 @@ describe("core mods' main in the built app", () => {
     const json = JSON.parse(await fs.readFile(path.join(dest, "pinger", "mod.json"), "utf8"));
     await h.start([{ json: { requires: [], history: false, ...json }, dir: path.join(dest, "pinger"), origin: "core", shipped: "core", config: undefined }]);
     expect(h.view()[0], JSON.stringify(h.view()[0])).toMatchObject({ id: "pinger", on: true });
-    expect(h.appChannels()).toEqual(["hh:ping"]);
-    expect(await h.channel("hh:ping", [])).toBe(`pong${path.sep}`);
+    expect(await h.call("pinger", "ping", undefined)).toBe(`pong${path.sep}`);
   });
 
   it("a core mod with no main is only copied; a refused import fails the build", async () => {
@@ -66,7 +65,7 @@ describe("the core does not import a core mod", () => {
   const repo = path.resolve(import.meta.dirname, "../../..");
   const PACKAGES = ["shell", "protocol", "runtime", "workspace", "harness-sdk", "ui"];
   /** The one exception: the window draws Home from its static ui import (minimal-core 0b1). */
-  const ALLOWED = new Set(["shell/src/renderer/main.tsx → @humanharness/mod-home"]);
+  const ALLOWED = new Set(["shell/src/renderer/main.tsx → @humanharness/mod-home", "shell/src/renderer/main.tsx → @humanharness/mod-sidekick"]);
   const IMPORT = /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["'](@humanharness\/mod-[a-z0-9-]+)/g;
 
   async function sources(dir: string): Promise<string[]> {

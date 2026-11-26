@@ -8,7 +8,8 @@ import { sidekickCollection } from "./collection";
 import type { SidekickDeps, SidekickLike } from "./controller";
 import { appendSidekickEvent, readSidekickEvents } from "./events";
 import { readImportFiles } from "./import";
-import { SIDEKICK_COLLECTION, type SidekickManifest } from "./manifest";
+import { SIDEKICK_COLLECTION } from "./manifest";
+import type { SidekickManifest } from "./schema";
 import { SidekickStore } from "./store";
 import { readSidekickUsage } from "./usage";
 
@@ -58,7 +59,8 @@ export function sidekickDeps(ctx: CoreMainCtx, manifest: SidekickManifest): Side
         ...(r.limits ? { limits: r.limits } : {}),
       }),
     dailyInput: (base, day) => app.dailyInput(base, day),
-    changed: (state) => ctx.push("hh:sidekick", state),
+    // The ui hears it on `mods.sidekick.state`: the mod's own name, never an app channel.
+    changed: (state) => ctx.push("state", state),
     events: { read: readSidekickEvents, append: appendSidekickEvent },
     // Import (sidekick spec §2a.6): a file in an engine's settings folder (under home or moved by env) is refused, links resolved, before any read.
     importFiles: (paths, signal) => readImportFiles(paths, { home: os.homedir(), env: process.env }, undefined, signal),

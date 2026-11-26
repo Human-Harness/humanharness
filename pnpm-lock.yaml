@@ -484,9 +484,15 @@ importers:
       '@humanharness/runtime':
         specifier: workspace:*
         version: link:../../runtime
+      '@humanharness/ui':
+        specifier: workspace:*
+        version: link:../../ui
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../../workspace
+      react-i18next:
+        specifier: ^17.0.16
+        version: 17.0.16(i18next@26.4.3(typescript@7.0.2))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -494,6 +500,30 @@ importers:
       '@humanharness/fake-agent':
         specifier: workspace:*
         version: link:../../fake-agent
+      '@humanharness/i18n':
+        specifier: workspace:*
+        version: link:../../i18n
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      happy-dom:
+        specifier: ^20.14.6
+        version: 20.14.6
+      i18next:
+        specifier: ^26.4.3
+        version: 26.4.3(typescript@7.0.2)
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
 
   packages/policies:
     dependencies:
@@ -585,6 +615,9 @@ importers:
       '@humanharness/mod-sdk':
         specifier: workspace:*
         version: link:../mod-sdk
+      '@humanharness/mod-sidekick':
+        specifier: workspace:*
+        version: link:../mods/sidekick
       '@humanharness/policies':
         specifier: workspace:*
         version: link:../policies

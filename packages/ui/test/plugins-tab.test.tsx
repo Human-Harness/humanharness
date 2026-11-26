@@ -79,11 +79,10 @@ describe("Settings › Plugins", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("adds Plugins after Sidekick, rescans once, and shows the empty state with Add from folder", async () => {
+  it("adds Plugins after Mods, rescans once, and shows the empty state with Add from folder", async () => {
     const c = client();
-    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
     await draw(c, "general");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Sidekick", "Mods", "Plugins", "Usage"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Mods", "Plugins", "Usage"]);
     expect(c.pluginCalls).toEqual([]);
     fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(await screen.findByText("No plugins yet.")).toBeTruthy();

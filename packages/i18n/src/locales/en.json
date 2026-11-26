@@ -303,6 +303,14 @@
     "notNow": "Not now"
   },
   "chat": {
+    "review": "Review",
+    "reviewing": "Reviewing…",
+    "reviewCountdown": "Sends anyway in {{seconds}} s",
+    "reviewWaiting": "Waiting for the review",
+    "reviewWaitingFor": "Waiting for {{name}}",
+    "sendNowKey": "{{key}}⏎ sends now",
+    "sendNow": "Send now",
+    "harnessSide": "Harness",
     "placeholder": "Write a message…",
     "send": "Send",
     "enterToSend": "⏎ to send",

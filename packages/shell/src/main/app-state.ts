@@ -158,8 +158,8 @@ export function createAppState(d: AppStateDeps): () => Promise<AppState> {
       ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
       // Only a harness with settings gets its tab (harness-settings D0).
       ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
-      // Sidekick shows only for a harness that declares it (a `sidekick` key, `{}` allowed); the window draws it only with this.
-      ...(harness.sidekick ? { sidekick: { id: "sidekick", name: "Sidekick", mark: "coach" } } : {}),
+      // Sidekick shows only for a harness that declares it (`mods.sidekick`, `{}` allowed); the window draws it only with this.
+      ...(harness.mods?.sidekick ? { sidekick: { id: "sidekick", name: "Sidekick", mark: "coach" } } : {}),
       // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
       ...(hasModes(harness)
         ? {

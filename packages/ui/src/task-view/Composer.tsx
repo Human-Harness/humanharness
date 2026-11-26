@@ -1,32 +1,35 @@
 import { type RefObject, useId } from "react";
 import { useTranslation } from "react-i18next";
-import { FlaggedText } from "../sidekick/FlaggedText";
+import { FlaggedText } from "./FlaggedText";
 
 export interface ComposerProps {
   draft: string;
   onDraft: (text: string) => void;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   placeholder: string;
-  /** Enter: send (a review first when Sidekick is on); `force` is ⌥⏎, a review even without flags (sidekick spec §4.1). */
+  /** Enter: send (a review first when a reviewer reviews); `force` is ⌥⏎, a review even without marks. */
   onEnter: (text: string, force: boolean) => void;
-  /** ⌘⏎ / Ctrl⏎ with Sidekick: send at once, cancelling a running review. */
+  /** ⌘⏎ / Ctrl⏎ with a reviewer: send at once, cancelling a running review. */
   onSendNow: (text: string) => void;
   /** Review: a review asked by hand. */
   onReview: (text: string) => void;
   /**
-   * The harness has Sidekick: the field sits over its underline backdrop with the card's spans. Wrapped from the first
-   * render (not once the state loads) so the field is never remounted under the person's cursor.
+   * A reviewer is there (a mod's `ctx.composer`): the field sits over the underline backdrop with these spans, and ⌘⏎
+   * sends at once. Wrapped from the first render (not once the reviewer's state loads) so the field is never remounted
+   * under the person's cursor.
    */
-  sidekick?: { spans: readonly [number, number][] } | undefined;
+  marks?: readonly (readonly [number, number])[] | undefined;
   /** Review offered (`idle`), or one running (`reviewing`: the field waits, read-only). Absent: no Review button. */
   review?: "idle" | "reviewing" | undefined;
 }
 
 /**
- * The one-field composer (DESIGN.md §10.7): the field with its hint inside, and Review when Sidekick reviews before
+ * The one-field composer (DESIGN.md §10.7): the field with its hint inside, and Review when a reviewer reviews before
  * sending. No Send button: Enter sends, Shift+Enter adds a line. Stop lives on the working line, not here.
  */
-export function Composer({ draft, onDraft, inputRef, placeholder, onEnter, onSendNow, onReview, sidekick, review }: ComposerProps) {
+export function Composer({ draft, onDraft, inputRef, placeholder, onEnter, onSendNow, onReview, marks, review }: ComposerProps) {
+  /** The spans underlined, when a reviewer reviews before sending. */
+  const spans = marks as readonly [number, number][] | undefined;
   const { t } = useTranslation();
   const hintId = useId();
   const textarea = (
@@ -42,7 +45,7 @@ export function Composer({ draft, onDraft, inputRef, placeholder, onEnter, onSen
         if (e.key !== "Enter" || e.shiftKey) return;
         if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         e.preventDefault();
-        if (sidekick && (e.metaKey || e.ctrlKey)) onSendNow(draft);
+        if (spans && (e.metaKey || e.ctrlKey)) onSendNow(draft);
         else onEnter(draft, e.altKey);
       }}
     />
@@ -56,8 +59,8 @@ export function Composer({ draft, onDraft, inputRef, placeholder, onEnter, onSen
       }}
     >
       <div className="hh-composer-field">
-        {sidekick ? (
-          <FlaggedText text={draft} spans={sidekick.spans}>
+        {spans ? (
+          <FlaggedText text={draft} spans={spans}>
             {textarea}
           </FlaggedText>
         ) : (
@@ -69,11 +72,11 @@ export function Composer({ draft, onDraft, inputRef, placeholder, onEnter, onSen
       </div>
       {review === "reviewing" ? (
         <button type="button" disabled>
-          {t("sidekick.composer.reviewing")}
+          {t("chat.reviewing")}
         </button>
       ) : review === "idle" ? (
         <button type="button" onClick={() => onReview(draft)}>
-          {t("sidekick.composer.review")}
+          {t("chat.review")}
         </button>
       ) : null}
     </form>

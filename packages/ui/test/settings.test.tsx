@@ -8,7 +8,6 @@ import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { ownName, systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
-import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
 
@@ -60,28 +59,6 @@ describe("SettingsSheet", () => {
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Mods", "Usage"]);
     fireEvent.click(screen.getByRole("tab", { name: "Models" }));
     expect(screen.getByRole("region", { name: "Tasks" })).toBeTruthy();
-  });
-
-  it("adds the Sidekick tab after Models only with state.sidekick (D0 without)", async () => {
-    const client = new FakeClient(ready);
-    client.state.models = {
-      recommended: { questions: "standard", sidekick: "light" },
-      defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
-      offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] } },
-      pinnedTokens: 3000,
-    };
-    const first = await renderIn("en", <Sheet client={client} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Mods", "Usage"]);
-    first.unmount();
-    client.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "coach" };
-    client.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, on: false }, status: "off" };
-    await renderIn("en", <Sheet client={client} />, { theme: true });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Sidekick", "Mods", "Usage"]);
-    fireEvent.click(screen.getByRole("tab", { name: "Sidekick" }));
-    expect(await screen.findByRole("switch", { name: "Sidekick" })).toBeTruthy();
-    // Change in Models switches the sheet's tab.
-    fireEvent.click(screen.getByRole("button", { name: "Change in Models" }));
-    expect(screen.getByRole("tab", { name: "Models" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("keeps Tab inside the sheet", async () => {

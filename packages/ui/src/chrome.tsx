@@ -25,7 +25,7 @@ export interface Crumb {
  * there. `title` is the bar before the breadcrumb: a heading shown only when there are no crumbs, kept until every
  * screen passes crumbs. `slot`: an element the chat draws its bar into (task view one column). While a task is open
  * (`slotted`) the bar takes the crumbs' place and the spacer, and the test tag moves after the trailing pieces;
- * otherwise the slot sits after the spacer and holds only the chat's chips and Sidekick toggle.
+ * otherwise the slot sits after the spacer and holds only the chat's chips and the mods' pieces.
  */
 export function TopBar({
   crumbs = [],
@@ -104,17 +104,6 @@ export function AppFooter({ folder, mock }: { folder?: string | undefined; mock?
       )}
       {mock && <MockBadge />}
     </footer>
-  );
-}
-
-/** The task header's Sidekick pill (sidekick spec §7, UI refresh spec §5.1): a state dot, green when on. */
-export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <button type="button" className="hh-sk-toggle hh-pill" data-on={on} aria-label={label} onClick={onToggle}>
-      <span className="hh-dot" aria-hidden="true" />
-      {t("sidekick.toggle")}
-    </button>
   );
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESERVED_COLLECTIONS, dataCollections, defineHarness } from "@humanharness/harness-sdk";
+import { type Harness, RESERVED_COLLECTIONS, dataCollections, defineHarness } from "@humanharness/harness-sdk";
 import {
   DEFAULT_SIDEKICK,
   SIDEKICK_MARKS,
@@ -9,13 +9,11 @@ import {
   SIDEKICK_MUTED_MAX,
   SIDEKICK_SETTINGS_ID,
   purposeMoments,
-  sidekickMinWords,
-  sidekickMode,
   sidekickSettings,
-  sidekickTips,
   speaksAt,
 } from "../src/manifest";
 import { sidekickCollection } from "../src/collection";
+import { sidekickMinWords, sidekickMode, sidekickSchema, sidekickTips } from "../src/schema";
 
 const minimal = {
   id: "notes",
@@ -29,44 +27,47 @@ const minimal = {
   author: "Me",
 };
 const action = { label: "Draft", prompt: "./agent/tasks/draft.md", cost: "light" as const };
+/** `mods.sidekick` as Sidekick reads it: the harness keeps it raw, the mod's schema parses it. */
+const configOf = (h: Harness) => (h.mods?.sidekick === undefined ? undefined : sidekickSchema.parse(h.mods.sidekick));
 
 describe("manifest sidekick", () => {
-  it("D0: a manifest without sidekick parses as before (no sidekick key)", () => {
+  it("D0: a manifest without mods.sidekick has no Sidekick config", () => {
     const h = defineHarness({ ...minimal });
-    expect(Object.hasOwn(h, "sidekick")).toBe(false);
-    expect(sidekickMode(h.sidekick, "anything")).toBe("auto");
-    expect(sidekickTips(h.sidekick)).toBeUndefined();
-    expect(sidekickMinWords(h.sidekick)).toBe(SIDEKICK_MIN_WORDS);
+    expect(h.mods).toBeUndefined();
+    expect(configOf(h)).toBeUndefined();
+    expect(sidekickMode(configOf(h), "anything")).toBe("auto");
+    expect(sidekickTips(configOf(h))).toBeUndefined();
+    expect(sidekickMinWords(configOf(h))).toBe(SIDEKICK_MIN_WORDS);
   });
 
   it("parses default, tips, actions and checks", () => {
     const h = defineHarness({
       ...minimal,
       actions: { draft: action, export: action },
-      sidekick: { default: "on", tips: "Claims need a source.", actions: { draft: "always", export: "off" }, checks: { minWords: 4 } },
+      mods: { sidekick: { default: "on", tips: "Claims need a source.", actions: { draft: "always", export: "off" }, checks: { minWords: 4 } } },
     });
-    expect(h.sidekick?.default).toBe("on");
-    expect(sidekickMode(h.sidekick, "draft")).toBe("always");
-    expect(sidekickMode(h.sidekick, "export")).toBe("off");
-    expect(sidekickMode(h.sidekick, undefined)).toBe("auto");
-    expect(sidekickTips(h.sidekick)).toBe("Claims need a source.");
-    expect(sidekickMinWords(h.sidekick)).toBe(4);
+    expect(configOf(h)?.default).toBe("on");
+    expect(sidekickMode(configOf(h), "draft")).toBe("always");
+    expect(sidekickMode(configOf(h), "export")).toBe("off");
+    expect(sidekickMode(configOf(h), undefined)).toBe("auto");
+    expect(sidekickTips(configOf(h))).toBe("Claims need a source.");
+    expect(sidekickMinWords(configOf(h))).toBe(4);
   });
 
   it("default is off when omitted", () => {
-    expect(defineHarness({ ...minimal, sidekick: {} }).sidekick?.default).toBe("off");
+    expect(configOf(defineHarness({ ...minimal, mods: { sidekick: {} } }))?.default).toBe("off");
   });
 
   it("per-purpose tips: prompt-coach's for the prompt coach", () => {
-    const h = defineHarness({ ...minimal, sidekick: { tips: { "prompt-coach": "Short prompts.", mentor: "Be kind." } } });
-    expect(sidekickTips(h.sidekick)).toBe("Short prompts.");
-    expect(sidekickTips(h.sidekick, "mentor")).toBe("Be kind.");
+    const h = defineHarness({ ...minimal, mods: { sidekick: { tips: { "prompt-coach": "Short prompts.", mentor: "Be kind." } } } });
+    expect(sidekickTips(configOf(h))).toBe("Short prompts.");
+    expect(sidekickTips(configOf(h), "mentor")).toBe("Be kind.");
   });
 
   it("refuses an unknown action, an unknown check and an unknown purpose", () => {
-    expect(() => defineHarness({ ...minimal, sidekick: { actions: { nope: "auto" } } })).toThrow(/nope/);
-    expect(() => defineHarness({ ...minimal, sidekick: { checks: { maxWords: 3 } } as never })).toThrow();
-    expect(() => defineHarness({ ...minimal, sidekick: { tips: { wizard: "x" } } as never })).toThrow();
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { actions: { nope: "auto" } } } })).toThrow(/nope/);
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { checks: { maxWords: 3 } } } as never })).toThrow();
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { tips: { wizard: "x" } } } as never })).toThrow();
   });
 
   it("reserves the action id and the collection", () => {
@@ -109,29 +110,29 @@ describe("several sidekicks (spec §2a)", () => {
   const schema = () => sidekickCollection().schema;
 
   it("D0: a block without places and presets parses as before", () => {
-    const h = defineHarness({ ...minimal, sidekick: { default: "on" } });
-    expect(h.sidekick).toEqual({ default: "on" });
+    const h = defineHarness({ ...minimal, mods: { sidekick: { default: "on" } } });
+    expect(configOf(h)).toEqual({ default: "on" });
   });
 
   it("places: action-id pattern, unique", () => {
-    expect(defineHarness({ ...minimal, sidekick: { places: [{ id: "terminal", label: "Terminal", description: "Agent output." }] } }).sidekick?.places).toHaveLength(1);
-    expect(() => defineHarness({ ...minimal, sidekick: { places: [{ id: "Bad", label: "x", description: "y" }] } })).toThrow();
-    expect(() => defineHarness({ ...minimal, sidekick: { places: [{ id: "t", label: "a", description: "b" }, { id: "t", label: "c", description: "d" }] } })).toThrow(/unique/);
+    expect(configOf(defineHarness({ ...minimal, mods: { sidekick: { places: [{ id: "terminal", label: "Terminal", description: "Agent output." }] } } }))?.places).toHaveLength(1);
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { places: [{ id: "Bad", label: "x", description: "y" }] } } })).toThrow();
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { places: [{ id: "t", label: "a", description: "b" }, { id: "t", label: "c", description: "d" }] } } })).toThrow(/unique/);
   });
 
   it("presets: known purposes, custom with text and known moments, personality within 1,500", () => {
     const ok = { name: "Guard", mark: "guardian" as const, personality: "Calm.", purposes: [{ id: "process-guard" as const }, { id: "custom" as const, text: "Watch the terminal.", moments: ["place:terminal"] }] };
-    const h = defineHarness({ ...minimal, sidekick: { places: [{ id: "terminal", label: "Terminal", description: "x" }], presets: [ok] } });
-    expect(h.sidekick?.presets?.[0].name).toBe("Guard");
-    expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, purposes: [{ id: "wizard" }] }] } as never })).toThrow();
-    expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, purposes: [{ id: "custom", text: "x", moments: ["place:nope"] }] }] } })).toThrow(/place/);
-    expect(() => defineHarness({ ...minimal, sidekick: { presets: [{ ...ok, personality: "x".repeat(1501) }] } })).toThrow();
+    const h = defineHarness({ ...minimal, mods: { sidekick: { places: [{ id: "terminal", label: "Terminal", description: "x" }], presets: [ok] } } });
+    expect(configOf(h)?.presets?.[0].name).toBe("Guard");
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { presets: [{ ...ok, purposes: [{ id: "wizard" }] }] } } as never })).toThrow();
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { presets: [{ ...ok, purposes: [{ id: "custom", text: "x", moments: ["place:nope"] }] }] } } })).toThrow(/place/);
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { presets: [{ ...ok, personality: "x".repeat(1501) }] } } })).toThrow();
   });
 
   it("presets: names unique (adopting one finds it by name)", () => {
     const p = { name: "Guard", mark: "focus" as const, personality: "", purposes: [{ id: "focus" as const }] };
-    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, mark: "coach" as const }] } })).toThrow(/unique/);
-    expect(defineHarness({ ...minimal, sidekick: { presets: [p, { ...p, name: "Guard 2" }] } }).sidekick?.presets).toHaveLength(2);
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { presets: [p, { ...p, mark: "coach" as const }] } } })).toThrow(/unique/);
+    expect(configOf(defineHarness({ ...minimal, mods: { sidekick: { presets: [p, { ...p, name: "Guard 2" }] } } }))?.presets).toHaveLength(2);
   });
 
   it("purpose moments and speaksAt", () => {
@@ -179,7 +180,7 @@ describe("sidekick marks are icon names (style guide §4, row 44)", () => {
   });
   it("a preset's mark must be an icon name", () => {
     const p = { name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "focus" as const }] };
-    expect(() => defineHarness({ ...minimal, sidekick: { presets: [p] } } as never)).toThrow();
+    expect(() => defineHarness({ ...minimal, mods: { sidekick: { presets: [p] } } } as never)).toThrow();
   });
   it("the default sidekick's mark is coach", () => {
     expect(DEFAULT_SIDEKICK.mark).toBe("coach");

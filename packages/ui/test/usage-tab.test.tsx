@@ -383,20 +383,6 @@ describe("UsageTab: OpenCode", () => {
   });
 });
 
-describe("Sidekick's line (sidekick spec §8)", () => {
-  it("shows Sidekick's tokens once it has run, and nothing without (D0)", async () => {
-    const client = claude();
-    client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour", sidekick: 2440 };
-    const first = await renderIn("en", <Sheet client={client} />);
-    await waitFor(() => expect(apart("Sidekick")).toBe("about 2,440 tokens"));
-    first.unmount();
-    client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
-    await renderIn("en", <Sheet client={client} />);
-    await screen.findByRole("tab", { name: "Usage" });
-    expect(apart("Sidekick")).toBeNull();
-  });
-});
-
 describe("Subagents' line (subagent slice 1, D4)", () => {
   it("shows the subagents' tokens apart once they have run, and nothing without (D0)", async () => {
     const client = claude();
@@ -417,7 +403,6 @@ describe("Background jobs' line (parallel spec §10)", () => {
     client.usage = { limits: [], estimates: {}, tokens: { questions: 1100 }, primary: "five_hour", sidekick: 2440, jobs: 4880 };
     const first = await renderIn("en", <Sheet client={client} />);
     await waitFor(() => expect(apart("Background jobs")).toBe("about 4,880 tokens"));
-    expect(apart("Sidekick")).toBe("about 2,440 tokens");
     first.unmount();
     client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
     await renderIn("en", <Sheet client={client} />);

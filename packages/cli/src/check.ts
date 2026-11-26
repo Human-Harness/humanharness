@@ -7,6 +7,7 @@ import {
   type LoadedHarness,
   SETTINGS_TOKENS_WARN,
   SIDEKICK_TIPS_TOKENS_WARN,
+  sidekickSchema,
   aiStepOf,
   blockToolName,
   hasRecipes,
@@ -693,7 +694,7 @@ function documentKindsFindings(h: LoadedHarness): Finding[] {
  * SIDEKICK_TIPS_TOKENS_WARN tokens. Unknown action ids and `checks` keys are manifest schema errors, reported as `schema`.
  */
 function sidekickFindings(h: LoadedHarness): Finding[] {
-  const tips = h.sidekick?.tips;
+  const tips = sidekickSchema.safeParse(h.mods?.sidekick).data?.tips;
   if (tips === undefined) return [];
   const texts = typeof tips === "string" ? [["", tips] as const] : Object.entries(tips).map(([purpose, text]) => [` (${purpose})`, text ?? ""] as const);
   return texts.flatMap(([which, text]) => {

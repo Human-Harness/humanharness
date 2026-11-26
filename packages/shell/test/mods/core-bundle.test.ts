@@ -27,7 +27,7 @@ describe("core mods' main in the built app", () => {
       "README.md": "# Pinger\n",
       "package.json": JSON.stringify({ name: "@humanharness/mod-pinger", dependencies: { "@humanharness/mod-sdk": "workspace:*" } }),
       "src/main.ts":
-        "import path from 'node:path';\nimport { defineMod } from '@humanharness/mod-sdk';\nimport { word } from './word';\nexport default defineMod({ id: 'pinger', main(ctx) { ctx.ipc('hh:ping', () => word + path.sep); } });\n",
+        "import path from 'node:path';\nimport { defineMod } from '@humanharness/mod-sdk';\nimport { word } from './word';\nexport default defineMod({ id: 'pinger', main(ctx) { ctx.ipc('ping',() => word + path.sep); } });\n",
       "src/word.ts": "export const word = 'pong';\n",
     });
     const dest = path.join(tmp, "out", "core-mods");
@@ -45,8 +45,7 @@ describe("core mods' main in the built app", () => {
     const json = JSON.parse(await fs.readFile(path.join(dest, "pinger", "mod.json"), "utf8"));
     await h.start([{ json: { requires: [], history: false, ...json }, dir: path.join(dest, "pinger"), origin: "core", shipped: "core", config: undefined }]);
     expect(h.view()[0], JSON.stringify(h.view()[0])).toMatchObject({ id: "pinger", on: true });
-    expect(h.appChannels()).toEqual(["hh:ping"]);
-    expect(await h.channel("hh:ping", [])).toBe(`pong${path.sep}`);
+    expect(await h.call("pinger", "ping", undefined)).toBe(`pong${path.sep}`);
   });
 
   it("a core mod with no main is only copied; a refused import fails the build", async () => {

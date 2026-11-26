@@ -83,22 +83,6 @@ import type {
   SetupStep,
   SetupStepResult,
   SetupStepsState,
-  SidekickApproveCheck,
-  SidekickDraftDef,
-  SidekickImportInput,
-  SidekickImportResult,
-  SidekickInScope,
-  SidekickInfo,
-  SidekickOriginal,
-  SidekickPlaceAnswer,
-  SidekickPreset,
-  SidekickLearned,
-  SidekickOutcome,
-  SidekickReview,
-  SidekickSetResult,
-  SidekickSettingsPatch,
-  SidekickState,
-  SidekickView,
   SearchAnswer,
   SearchClient,
   SearchFilters,
@@ -117,6 +101,8 @@ import type {
   TimelineEntry,
   UsageSummary,
 } from "../src/client";
+// prettier-ignore
+import type { SidekickApproveCheck, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickInfo, SidekickOriginal, SidekickPlaceAnswer, SidekickPreset, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettingsPatch, SidekickState, SidekickView } from "../../mods/sidekick/src/types";
 import { type Mock, vi } from "vitest";
 import { hearsDataChange } from "../src/client";
 import { anchorForSelection, answerQuestion, nextCommentId, summarizeReview } from "@humanharness/harness-sdk/review";
@@ -1136,42 +1122,42 @@ export class FakeClient implements HarnessClient {
       };
     },
   };
-  /** What sidekick.get answers: null (off, as an older main) unless a test sets it. */
+  /** sidekick.get answers; null: off. */
   sidekickState: SidekickState | null = null;
-  /** What sidekick.review answers, in order; then `send`. */
+  /** sidekick.review answers, in order; then `send`. */
   sidekickReviews: SidekickReview[] = [];
-  /** What sidekick.learned answers; forget, forgetAll and editLearned change it. */
+  /** sidekick.learned answers; forget, forgetAll and editLearned change it. */
   sidekickLearned: SidekickLearned[] = [];
-  /** When set, forget, forgetAll and editLearned reject with this message. */
+  /** When set, forget, forgetAll and editLearned reject. */
   sidekickLearnedFails: string | null = null;
-  /** What sidekick.beforeApprove answers; null: `approve`. */
+  /** sidekick.beforeApprove answers; null: `approve`. */
   sidekickApprove: SidekickApproveCheck | null = null;
-  /** What sidekick.ask answers; null: `{ ok: false }`. */
+  /** sidekick.ask answers; null: `{ ok: false }`. */
   sidekickPlace: SidekickPlaceAnswer | null = null;
-  /** What sidekick.presets answers; adoptPreset marks one adopted. */
+  /** sidekick.presets answers. */
   sidekickPresets: SidekickPreset[] = [];
-  /** What sidekick.importDraft answers; null: `{ ok: false, reason: "failed" }`. */
+  /** sidekick.importDraft answers; null: failed. */
   sidekickImport: SidekickImportResult | null = null;
-  /** The file names sidekick.pickFiles answers (with token FAKE_PICK_TOKEN); [] answers null (cancelled). */
+  /** sidekick.pickFiles' names (token FAKE_PICK_TOKEN); []: null. */
   sidekickPicked: string[] = [];
-  /** What sidekick.checkOriginal answers. */
+  /** sidekick.checkOriginal answers. */
   sidekickOriginal: SidekickOriginal = "none";
-  /** What sidekick.list answers (the implicit default by default); saveSidekick, remove and reorder change it. */
+  /** sidekick.list answers; saveSidekick, remove and reorder change it. */
   sidekickList: SidekickView[] = [{ id: "sidekick", name: "Sidekick", mark: "coach", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }];
-  /** When set, sidekick.saveSidekick rejects with this message. */
+  /** When set, sidekick.saveSidekick rejects. */
   sidekickSaveFails: string | null = null;
-  /** What sidekick.scope answers (any scope); setScope changes it. */
+  /** sidekick.scope answers; setScope changes it. */
   sidekickScope: SidekickInScope[] = [];
-  /** How many times sidekick.scope was read. */
+  /** sidekick.scope reads. */
   sidekickScopeReads = 0;
-  /** When set, sidekick.setScope answers `{ ok: false, message }`. */
+  /** When set, sidekick.setScope fails with it. */
   sidekickScopeFails: string | null = null;
-  /** When set, sidekick.setScope waits for it before answering. */
+  /** When set, sidekick.setScope waits for it. */
   sidekickScopeGate: Promise<void> | null = null;
-  /** What the sidekick namespace was asked, in order (reads are not recorded). */
+  /** What the sidekick fake was asked, in order (no reads). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
-  /** The main process sent a new Sidekick state. */
+  /** Main sent a new Sidekick state. */
   emitSidekick(s: SidekickState) {
     this.sidekickState = s;
     for (const l of this.sidekickListeners) l(s);
@@ -1271,10 +1257,6 @@ export class FakeClient implements HarnessClient {
       this.sidekickScope = this.sidekickScope.map((k) => (k.id === sidekick ? { id: k.id, name: k.name, mark: k.mark, ...v } : k));
       return { ok: true };
     },
-    onChange: (l: (s: SidekickState) => void) => {
-      this.sidekickListeners.add(l);
-      return () => void this.sidekickListeners.delete(l);
-    },
   };
   /** Settings › Mods: a no-op stub with no mods. */
   mods = {
@@ -1285,8 +1267,16 @@ export class FakeClient implements HarnessClient {
     removeLocal: async (_id: string): Promise<ModsView> => ({ mods: [], problems: [] }),
     onChanged: (_fn: (v: ModsView) => void) => () => {},
     onReloaded: (_fn: (e: { id: string; version: number }) => void) => () => {},
-    call: (id: string): Promise<unknown> => Promise.reject(new Error(`No mod "${id}"`)),
-    on: () => () => {},
+    // mods.sidekick.<name>(args[]) reaches the fake above.
+    call: (id: string, name: string, args?: unknown): Promise<unknown> => {
+      const fn = id === "sidekick" && Object.hasOwn(this.sidekick, name) ? (this.sidekick as never)[name] : null;
+      return fn ? (fn as (...a: unknown[]) => Promise<unknown>)(...(args as unknown[])) : Promise.reject(new Error(`No mod "${id}" channel "${name}"`));
+    },
+    on: (id: string, name: string, fn: (s: SidekickState) => void) => {
+      if (id !== "sidekick" || name !== "state") return () => {};
+      this.sidekickListeners.add(fn);
+      return () => void this.sidekickListeners.delete(fn);
+    },
   };
   /** What setupSteps.get answers; submit, complete and skip change it. */
   setupState: SetupStepsState = { steps: {}, blocking: [] };

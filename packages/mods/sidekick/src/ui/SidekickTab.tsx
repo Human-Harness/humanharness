@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, ScopeView, SidekickSettings, SidekickSettingsPatch } from "@humanharness/ui";
+import type { HarnessClient, ScopeView } from "@humanharness/ui";
+import type { SidekickSettings, SidekickSettingsPatch } from "../types";
 import { Group, Hidden, Row, Rx, SectionHead } from "@humanharness/ui";
 import { shownLanguage } from "@humanharness/ui";
 import { LearnedList } from "./LearnedList";
@@ -8,6 +9,7 @@ import { PresetOffer } from "./PresetOffer";
 import { ScopeSidekicks } from "./ScopeSidekicks";
 import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
+import { sidekickApi } from "./api";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
@@ -83,7 +85,7 @@ export function SidekickTab({
   const nameOf = (id: string) => state.sidekicks?.find((k) => k.id === id)?.name ?? (id === state.info.id ? state.info.name : id);
   const save = (patch: SidekickSettingsPatch) => {
     setFailed(null);
-    client.sidekick.set(patch).then(
+    sidekickApi(client).set(patch).then(
       (r) => {
         if (!r.ok) setFailed(r.message);
       },
@@ -180,7 +182,7 @@ export function SidekickTab({
                   variant="ghost"
                   color="gray"
                   size="1"
-                  onClick={() => void client.sidekick.unmute(sidekick, kind).catch((err: unknown) => setFailed(err instanceof Error ? err.message : String(err)))}
+                  onClick={() => void sidekickApi(client).unmute(sidekick, kind).catch((err: unknown) => setFailed(err instanceof Error ? err.message : String(err)))}
                 >
                   {t("sidekick.settings.unmute", { kind: kindLabel(kind) })}
                 </Rx.Button>

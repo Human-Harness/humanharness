@@ -17,8 +17,6 @@ export const STRIKES = 3;
 
 type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
-/** An app channel a core mod may handle (`ctx` ipc with an `hh:…` name). */
-export const APP_CHANNEL = /^hh:[A-Za-z][A-Za-z0-9]{0,63}$/;
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 /** Milliseconds from `now` to the next local midnight. */
@@ -234,12 +232,8 @@ export class ModHost {
       config,
       on: Object.fromEntries(HOOKS.map((n) => [n, add(n)])) as unknown as MainCtx<unknown>["on"],
       ipc: (name, handler) => {
-        // An app channel (Sidekick's `hh:sidekick…`) is a core mod's only, and one mod's at a time.
-        if (name.startsWith("hh:")) {
-          if (r.mod.shipped !== "core") throw new Error(`Only a core mod may handle the app channel ${name}`);
-          if (!APP_CHANNEL.test(name)) throw new Error(`Not an app channel: ${name}`);
-          if (this.appChannel(name)) throw new Error(`Another mod already handles ${name}`);
-        }
+        // A mod's own name (`mods.<id>.<name>`): never an app channel's, not even a core mod's (minimal-core 1b).
+        if (typeof name !== "string" || !name || name.startsWith("hh:")) throw new Error(`Not a mod's own channel: ${String(name)}`);
         r.channels.set(name, handler);
         const off = () => void r.channels.delete(name);
         r.disposers.push(off);
@@ -378,26 +372,6 @@ export class ModHost {
     return false;
   }
 
-  /** The mod whose handler takes app channel `name`, if one is on. */
-  private appChannel(name: string): Running | undefined {
-    for (const r of this.mods.values()) if (r.on && r.channels.has(name)) return r;
-    return undefined;
-  }
-
-  /**
-   * A window call on app channel `name`, with its arguments, to the core mod that handles it. Unlike a mod's own
-   * channel, it may take as long as it needs and a throw reaches the window as is: neither counts as a strike.
-   */
-  async channel(name: string, args: unknown[]): Promise<unknown> {
-    const r = this.appChannel(name);
-    if (!r) throw new Error(`No mod handles ${name}`);
-    return r.channels.get(name)!(args);
-  }
-
-  /** The app channels the mods that are on handle. */
-  appChannels(): string[] {
-    return [...this.mods.values()].filter((r) => r.on).flatMap((r) => [...r.channels.keys()].filter((n) => n.startsWith("hh:")));
-  }
   turnStart(task: TaskRef): Promise<void> {
     return this.each("turnStart", task);
   }
@@ -457,7 +431,8 @@ export class ModHost {
 
   /**
    * A mod's ui calling its own main by name (`hh:modCall`): guarded and counted as a hook, rejecting with a
-   * clear reason. An app channel's name (`hh:…`) is never one of a mod's own.
+   * clear reason. An app channel's name (`hh:…`) is never one of a mod's own. A core mod's call (Sidekick's review
+   * waits for a model turn) may take as long as it needs and a throw reaches the window as is: neither is a strike.
    */
   async call(id: string, name: string, payload: unknown): Promise<unknown> {
     const r = this.mods.get(id);
@@ -465,6 +440,7 @@ export class ModHost {
     if (!r.on) throw new Error(`Mod "${id}" is off`);
     const handler = name.startsWith("hh:") ? undefined : r.channels.get(name);
     if (!handler) throw new Error(`Mod "${id}" has no channel "${name}"`);
+    if (r.mod.shipped === "core") return handler(payload);
     const res = await guarded(() => handler(payload), this.hookMs);
     await this.count(r, res.ok, res.ok ? undefined : res.reason);
     if (!res.ok) throw new Error(res.reason);

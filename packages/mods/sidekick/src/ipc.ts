@@ -1,7 +1,6 @@
 import { sidekickRecordSchema } from "@humanharness/harness-sdk";
 import { isScopeId } from "@humanharness/workspace";
-import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/protocol";
-import type { InvokeChannel } from "@humanharness/protocol/channels";
+import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "./types";
 import type { SidekickController } from "./controller";
 import { SIDEKICK_MAX, type SidekickInput, type SidekickScope } from "./store";
 import { IMPORT_MAX_BYTES } from "./import";
@@ -35,7 +34,10 @@ function importInput(v: unknown): SidekickImportInput | null {
   return null;
 }
 
-type Handle = (channel: InvokeChannel, fn: (...args: never[]) => unknown) => void;
+/** The mod's own channel names (`mods.sidekick.<name>`): the same names as the ui's `sidekickApi` (ui/api.ts). */
+export const SIDEKICK_CHANNELS = ["get", "set", "review", "cancelReview", "resolve", "mute", "unmute", "saveDecision", "learned", "forget", "forgetAll", "editLearned", "beforeApprove", "cancelApprove", "ask", "presets", "adoptPreset", "pickFiles", "importDraft", "checkOriginal", "saveSidekick", "list", "remove", "reorder", "scope", "setScope"] as const;
+export type SidekickChannel = (typeof SIDEKICK_CHANNELS)[number];
+type Handle = (channel: SidekickChannel, fn: (...args: never[]) => unknown) => void;
 type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick" | "list" | "removeSidekick" | "reorder" | "scopeSidekicks" | "setScope">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
@@ -89,52 +91,52 @@ function learnedInput(v: unknown): { text: string; level: "you" | "harness" }[] 
   return out;
 }
 
-/** Sidekick's channels (sidekick spec §7). A malformed request never reaches the controller; a bad review sends as typed. */
+/** Sidekick's channels (sidekick spec §7), on the mod's own names. A malformed request never reaches the controller; a bad review sends as typed. */
 export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void {
-  handle("hh:sidekickGet", async (): Promise<SidekickState | null> => (await ctl()?.state()) ?? null);
-  handle("hh:sidekickSet", async (patch: unknown): Promise<SidekickSetResult> => {
+  handle("get", async (): Promise<SidekickState | null> => (await ctl()?.state()) ?? null);
+  handle("set", async (patch: unknown): Promise<SidekickSetResult> => {
     const c = ctl();
     if (!c) return { ok: false, message: "Sidekick is not available" };
     if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return { ok: false, message: "A Sidekick change must be an object" };
     return c.set(patch as never);
   });
-  handle("hh:sidekickReview", async (req: unknown): Promise<SidekickReview> => {
+  handle("review", async (req: unknown): Promise<SidekickReview> => {
     const c = ctl();
     if (!c || typeof req !== "object" || req === null) return { kind: "send" };
     const { text, force, attached, block } = req as { text?: unknown; force?: unknown; attached?: unknown; block?: unknown };
     if (typeof text !== "string" || !text.trim() || text.length > MAX_PROMPT) return { kind: "send" };
     return c.review({ text, ...(force === true ? { force: true } : {}), ...(attached === true ? { attached: true } : {}), ...(block === true ? { block: true } : {}) });
   });
-  handle("hh:sidekickCancel", () => ctl()?.cancel());
-  handle("hh:sidekickResolve", async (id: unknown, outcome: unknown) => {
+  handle("cancelReview", () => ctl()?.cancel());
+  handle("resolve", async (id: unknown, outcome: unknown) => {
     if (typeof id !== "string" || !OUTCOMES.includes(outcome as SidekickOutcome)) return;
     await ctl()?.resolve(id, outcome as SidekickOutcome);
   });
-  handle("hh:sidekickMute", async (id: unknown) => {
+  handle("mute", async (id: unknown) => {
     if (!isId(id)) return;
     await ctl()?.mute(id);
   });
-  handle("hh:sidekickUnmute", async (sidekick: unknown, kind: unknown) => {
+  handle("unmute", async (sidekick: unknown, kind: unknown) => {
     if (!isId(sidekick) || !isId(kind)) return;
     await ctl()?.unmute(sidekick, kind);
   });
-  handle("hh:sidekickSaveDecision", async (id: unknown): Promise<{ ok: boolean; message?: string }> => {
+  handle("saveDecision", async (id: unknown): Promise<{ ok: boolean; message?: string }> => {
     const c = ctl();
     if (!c) return { ok: false, message: "Sidekick is not available" };
     if (!isId(id)) return { ok: false, message: "Not a Sidekick card" };
     return c.saveDecision(id);
   });
   // What Sidekick learned (spec §6.4): written as the person; a malformed request never reaches the controller.
-  handle("hh:sidekickLearned", async (): Promise<SidekickLearned[]> => (await ctl()?.learned()) ?? []);
-  handle("hh:sidekickForget", async (id: unknown) => {
+  handle("learned", async (): Promise<SidekickLearned[]> => (await ctl()?.learned()) ?? []);
+  handle("forget", async (id: unknown) => {
     if (!isId(id)) return;
     await ctl()?.forget(id);
   });
-  handle("hh:sidekickForgetAll", async () => {
+  handle("forgetAll", async () => {
     await ctl()?.forgetAll();
   });
   // Before approve (spec §2a.2): a malformed document never reaches the controller, and approval goes ahead.
-  handle("hh:sidekickBeforeApprove", async (doc: unknown): Promise<SidekickApproveCheck> => {
+  handle("beforeApprove", async (doc: unknown): Promise<SidekickApproveCheck> => {
     const c = ctl();
     if (!c || typeof doc !== "object" || doc === null) return APPROVE;
     const { title, text } = doc as { title?: unknown; text?: unknown };
@@ -142,36 +144,36 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     if (typeof text !== "string" || !text.trim() || text.length > MAX_DOC) return APPROVE;
     return c.beforeApprove({ title, text }).catch(() => APPROVE);
   });
-  handle("hh:sidekickApproveCancel", () => ctl()?.cancelApprove());
+  handle("cancelApprove", () => ctl()?.cancelApprove());
   // A harness place (spec §2a.5): the harness UI's input is bounded here; anything malformed never reaches the controller.
-  handle("hh:sidekickAsk", async (place: unknown, content: unknown): Promise<SidekickPlaceAnswer> => {
+  handle("ask", async (place: unknown, content: unknown): Promise<SidekickPlaceAnswer> => {
     const c = ctl();
     if (!c || typeof place !== "string" || !PLACE.test(place)) return NO_ANSWER;
     if (typeof content !== "string" || !content.trim() || content.length > SIDEKICK_PLACE_INPUT_MAX) return NO_ANSWER;
     return c.ask(place, content).catch(() => NO_ANSWER);
   });
   // Presets (spec §2a.7): listed even with Sidekick off; adopting writes as the person.
-  handle("hh:sidekickPresets", async (): Promise<SidekickPreset[]> => (await ctl()?.presets().catch(() => [])) ?? []);
-  handle("hh:sidekickAdoptPreset", async (name: unknown) => {
+  handle("presets", async (): Promise<SidekickPreset[]> => (await ctl()?.presets().catch(() => [])) ?? []);
+  handle("adoptPreset", async (name: unknown) => {
     if (typeof name !== "string" || !name || name.length > MAX_PRESET_NAME) return;
     await ctl()?.adoptPreset(name);
   });
   // Import (spec §2a.6): the picker's paths stay in main behind a token; files are refused and read in main, never by the renderer.
-  handle("hh:sidekickPickFiles", async (): Promise<SidekickPick | null> => (await ctl()?.pickFiles().catch(() => null)) ?? null);
-  handle("hh:sidekickImportDraft", async (input: unknown): Promise<SidekickImportResult> => {
+  handle("pickFiles", async (): Promise<SidekickPick | null> => (await ctl()?.pickFiles().catch(() => null)) ?? null);
+  handle("importDraft", async (input: unknown): Promise<SidekickImportResult> => {
     const c = ctl();
     const req = importInput(input);
     if (!c || !req) return IMPORT_FAILED;
     return c.importDraft(req).catch(() => IMPORT_FAILED);
   });
   // By the sidekick's id: the paths checked are the stored ones, never the renderer's.
-  handle("hh:sidekickCheckOriginal", async (id: unknown): Promise<SidekickOriginal> => {
+  handle("checkOriginal", async (id: unknown): Promise<SidekickOriginal> => {
     const c = ctl();
     if (!c || !isId(id)) return "none";
     return c.checkSidekick(id).catch(() => "none" as const);
   });
   // The import preview's Save (spec §2a.6), as the person: a malformed sidekick or learned list never reaches the controller.
-  handle("hh:sidekickSave", async (def: unknown, learned: unknown): Promise<SidekickInfo> => {
+  handle("saveSidekick", async (def: unknown, learned: unknown): Promise<SidekickInfo> => {
     const c = ctl();
     if (!c) throw new Error("Sidekick is not available");
     const d = sidekickInput(def);
@@ -181,8 +183,8 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     return c.saveSidekick(d, l);
   });
   // Settings › Sidekicks (spec §8): the list, removing one and the order, as the person.
-  handle("hh:sidekickList", async (): Promise<SidekickView[]> => (await ctl()?.list().catch(() => [])) ?? []);
-  handle("hh:sidekickRemove", async (id: unknown): Promise<{ ok: boolean; message?: string }> => {
+  handle("list", async (): Promise<SidekickView[]> => (await ctl()?.list().catch(() => [])) ?? []);
+  handle("remove", async (id: unknown): Promise<{ ok: boolean; message?: string }> => {
     const c = ctl();
     if (!c) return { ok: false, message: "Sidekick is not available" };
     if (!isId(id)) return { ok: false, message: "Not a sidekick" };
@@ -192,16 +194,16 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
       (err: unknown) => ({ ok: false, message: err instanceof Error ? err.message : String(err) }),
     );
   });
-  handle("hh:sidekickReorder", async (ids: unknown) => {
+  handle("reorder", async (ids: unknown) => {
     if (!Array.isArray(ids) || ids.length === 0 || ids.length > SIDEKICK_MAX || !ids.every(isId)) return;
     await ctl()?.reorder(ids);
   });
   // Sidekicks in a scope (spec §2a.4), as the person: a malformed request never reaches the controller.
-  handle("hh:sidekickScope", async (scope: unknown): Promise<SidekickInScope[]> => {
+  handle("scope", async (scope: unknown): Promise<SidekickInScope[]> => {
     if (!isScopeId(scope)) return [];
     return (await ctl()?.scopeSidekicks(scope).catch(() => [])) ?? [];
   });
-  handle("hh:sidekickSetScope", async (scope: unknown, sidekick: unknown, v: unknown): Promise<{ ok: boolean; message?: string }> => {
+  handle("setScope", async (scope: unknown, sidekick: unknown, v: unknown): Promise<{ ok: boolean; message?: string }> => {
     const c = ctl();
     if (!c) return { ok: false, message: "Sidekick is not available" };
     const input = isScopeId(scope) && isId(sidekick) ? scopeInput(scope, sidekick, v) : null;
@@ -212,7 +214,7 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
       (err: unknown) => ({ ok: false, message: err instanceof Error ? err.message : String(err) }),
     );
   });
-  handle("hh:sidekickEditLearned", async (changes: unknown) => {
+  handle("editLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;
     await ctl()?.editLearned(changes.map(({ id, text }) => ({ id, text: text.trim() })));
   });

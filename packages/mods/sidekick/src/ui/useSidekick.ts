@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import type { HarnessClient, SidekickState } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickState } from "../types";
+import { sidekickApi } from "./api";
 
 /**
  * Sidekick's state, live; null while loading, when disabled (no `state.sidekick`, slim mode) or when main has none.
@@ -15,11 +17,11 @@ export function useSidekick(client: HarnessClient, enabled: boolean, refresh = 0
     }
     let live = true;
     let pushed = false;
-    const off = client.sidekick.onChange((s) => {
+    const off = sidekickApi(client).onChange((s) => {
       pushed = true;
       if (live) setState(s);
     });
-    client.sidekick.get().then(
+    sidekickApi(client).get().then(
       (s) => {
         if (live && !pushed) setState((now) => s ?? now);
       },

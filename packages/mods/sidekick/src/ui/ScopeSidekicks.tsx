@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickInScope } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickInScope } from "../types";
 import { Group, Row, Rx } from "@humanharness/ui";
 import { SidekickMark, markIcon } from "./mark";
+import { sidekickApi } from "./api";
 
 /** The longest purpose text (the SDK's SIDEKICK_PURPOSE_TEXT_MAX; the UI imports only types). */
 const PURPOSE_MAX = 600;
@@ -26,13 +28,13 @@ export function ScopeSidekicks({ client, scope, scopeNoun }: { client: HarnessCl
     let seq = 0;
     const load = () => {
       const mine = ++seq;
-      client.sidekick.scope(scope.id).then(
+      sidekickApi(client).scope(scope.id).then(
         (list) => live && mine === seq && setRows(list),
         () => undefined,
       );
     };
     load();
-    const off = client.sidekick.onChange(load);
+    const off = sidekickApi(client).onChange(load);
     return () => {
       live = false;
       off();
@@ -103,7 +105,7 @@ function ScopeRow({
   typed.current = text;
   const write = (v: Value) => {
     const purposeText = v.text.trim();
-    return client.sidekick.setScope(scope, row.id, { on: v.on, ...(purposeText ? { purposeText } : {}), ...(row.places ? { places: row.places } : {}) });
+    return sidekickApi(client).setScope(scope, row.id, { on: v.on, ...(purposeText ? { purposeText } : {}), ...(row.places ? { places: row.places } : {}) });
   };
   useEffect(() => {
     live.current = true;

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickLearned } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickLearned } from "../types";
 import { Group, Row, Rx } from "@humanharness/ui";
+import { sidekickApi } from "./api";
 
 type Level = SidekickLearned["level"];
 
@@ -43,7 +45,7 @@ export function LearnedList({ client }: { client: HarnessClient }) {
 
   useEffect(() => {
     let live = true;
-    client.sidekick.learned().then(
+    sidekickApi(client).learned().then(
       (list) => live && setItems(list),
       () => live && setItems([]),
     );
@@ -67,7 +69,7 @@ export function LearnedList({ client }: { client: HarnessClient }) {
       .filter(({ id, text }) => text && items.find((i) => i.id === id)?.text !== text);
     back.current = "edit";
     setEditing(null);
-    if (changes.length) run(() => client.sidekick.editLearned(changes));
+    if (changes.length) run(() => sidekickApi(client).editLearned(changes));
   };
 
   // The first input on screen: the "About you" list comes first.
@@ -128,7 +130,7 @@ export function LearnedList({ client }: { client: HarnessClient }) {
                 </>
               }
             >
-              <Rx.Button variant="ghost" color="gray" size="1" aria-describedby={`${ids}-${i.id}`} onClick={() => run(() => client.sidekick.forget(i.id))}>
+              <Rx.Button variant="ghost" color="gray" size="1" aria-describedby={`${ids}-${i.id}`} onClick={() => run(() => sidekickApi(client).forget(i.id))}>
                 {t("sidekick.learned.forget")}
               </Rx.Button>
             </Row>
@@ -181,7 +183,7 @@ export function LearnedList({ client }: { client: HarnessClient }) {
               aria-describedby={confirmTextId}
               onClick={() => {
                 setConfirm(false);
-                run(() => client.sidekick.forgetAll());
+                run(() => sidekickApi(client).forgetAll());
               }}
             >
               {t("sidekick.learned.confirmAll")}

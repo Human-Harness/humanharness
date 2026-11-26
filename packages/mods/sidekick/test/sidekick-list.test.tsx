@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SidekickView } from "@humanharness/ui";
+import type { SidekickView } from "../src/types";
 import { SettingsPage } from "../../../ui/src/SettingsPage";
 import { SidekickList } from "../src/ui/SidekickList";
 import { SidekickTab } from "../src/ui/SidekickTab";

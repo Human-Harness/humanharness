@@ -1,8 +1,10 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickDraftDef, SidekickPurposeView, SidekickView } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickDraftDef, SidekickPurposeView, SidekickView } from "../types";
 import { ICON_NAMES, Icon, Row, Rx } from "@humanharness/ui";
 import { markIcon } from "./mark";
+import { sidekickApi } from "./api";
 
 /** The core's purposes (spec §2a.2), in the order the editor lists them; `custom` comes after. */
 const CORE = ["prompt-coach", "focus", "process-guard", "mentor", "daily-summary"] as const;
@@ -89,7 +91,7 @@ export function SidekickEditor({
       ...(tier !== "default" ? { tier } : {}),
     };
     try {
-      await client.sidekick.saveSidekick(def);
+      await sidekickApi(client).saveSidekick(def);
     } catch (err) {
       saving.current = false;
       setFailed(err instanceof Error ? err.message : String(err));

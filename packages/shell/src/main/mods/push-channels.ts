@@ -19,7 +19,6 @@ const ALL: Record<Bare, boolean> = {
   scopes: true,
   dataChange: true,
   settings: true,
-  sidekick: true,
   modsChanged: true,
   layoutChanged: true,
   modReloaded: true,

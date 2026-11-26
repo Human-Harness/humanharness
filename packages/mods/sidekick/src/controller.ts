@@ -14,7 +14,7 @@ import {
   sidekickTips,
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState, SidekickView } from "@humanharness/protocol";
+import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState, SidekickView } from "./types";
 import { APP_SCOPE, MAIN_SCOPE } from "@humanharness/workspace";
 import { SIDEKICK_FLAG_KINDS, type SidekickFlagKind, localCheck } from "./checks";
 import { sidekickBrief } from "./brief";

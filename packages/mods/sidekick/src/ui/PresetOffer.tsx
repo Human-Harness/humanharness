@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickPreset } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickPreset } from "../types";
 import { Rx } from "@humanharness/ui";
 import { SidekickMark, markIcon } from "./mark";
+import { sidekickApi } from "./api";
 
 /** Clients whose harness has no presets: its manifest can't change while the app runs, so it isn't asked again. */
 const noPresets = new WeakSet<HarnessClient>();
@@ -27,7 +29,7 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
   useEffect(() => {
     if (noPresets.has(client)) return;
     let live = true;
-    client.sidekick.presets().then(
+    sidekickApi(client).presets().then(
       (p) => {
         if (p.length === 0) noPresets.add(client);
         if (live) setPresets(p);
@@ -62,8 +64,8 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
     setBusy(true);
     setFailed(null);
     try {
-      await client.sidekick.adoptPreset(name);
-      const next = await client.sidekick.presets();
+      await sidekickApi(client).adoptPreset(name);
+      const next = await sidekickApi(client).presets();
       refocus.current = true;
       setPresets(next);
     } catch {
@@ -79,7 +81,7 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
     running.current = true;
     setBusy(true);
     setFailed(null);
-    const ok = await client.sidekick.set({ presetsOffered: true }).then(
+    const ok = await sidekickApi(client).set({ presetsOffered: true }).then(
       (r) => r.ok,
       () => false,
     );
@@ -144,5 +146,5 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
 export function FirstOpenOffer({ client, offered }: { client: HarnessClient; offered: boolean }) {
   const [show, setShow] = useState(!offered);
   if (!show) return null;
-  return <PresetOffer client={client} onShown={() => void client.sidekick.set({ presetsOffered: true }).catch(() => undefined)} onDone={() => setShow(false)} />;
+  return <PresetOffer client={client} onShown={() => void sidekickApi(client).set({ presetsOffered: true }).catch(() => undefined)} onDone={() => setShow(false)} />;
 }

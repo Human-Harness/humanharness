@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import type { SidekickAnswer } from "@humanharness/runtime";
 import type { SidekickRecord } from "@humanharness/harness-sdk";
-import type { SidekickState } from "@humanharness/protocol";
+import type { SidekickState } from "../src/types";
 import type { SidekickEvent } from "../src/events";
 import { createHash, createHmac } from "node:crypto";
 import { SidekickController, type SidekickDeps } from "../src/controller";

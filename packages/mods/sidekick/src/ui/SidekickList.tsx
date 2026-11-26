@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickPurposeView, SidekickView } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickPurposeView, SidekickView } from "../types";
 import { Group, Icon, Row, Rx } from "@humanharness/ui";
 import { ImportSidekick } from "./ImportSidekick";
 import { SidekickMark, markIcon } from "./mark";
 import { SidekickEditor } from "./SidekickEditor";
+import { sidekickApi } from "./api";
 
 /** Where focus goes once a view closes or the list changes under it. */
 type Back = { kind: "new" } | { kind: "import" } | { kind: "head" } | { kind: "edit" | "more"; id: string };
@@ -52,7 +54,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
       setReadFailed(true);
       setList((now) => now ?? []);
     };
-    client.sidekick.list().then((l) => {
+    sidekickApi(client).list().then((l) => {
       if (n !== reads.current) return;
       if (l.length === 0) return fail();
       setReadFailed(false);
@@ -60,7 +62,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
     }, fail);
   }, [client, loads]);
   // A preset adopted, an import saved elsewhere: main pushes its state, and the list is read again.
-  useEffect(() => client.sidekick.onChange(() => reload()), [client, reload]);
+  useEffect(() => sidekickApi(client).onChange(() => reload()), [client, reload]);
 
   // Focus: into the confirmation when it opens; back to the opener (or the moved row's More) when a view closes.
   useEffect(() => {
@@ -110,13 +112,13 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
       const next = list.map((k) => k.id);
       [next[at], next[to]] = [next[to]!, next[at]!];
       back.current = { kind: "more", id };
-      await client.sidekick.reorder(next);
+      await sidekickApi(client).reorder(next);
     });
   const remove = (id: string) =>
     run(async () => {
       setConfirm(null);
       back.current = { kind: "head" };
-      const r = await client.sidekick.remove(id);
+      const r = await sidekickApi(client).remove(id);
       if (!r.ok) {
         back.current = { kind: "more", id };
         throw new Error(r.message ?? "");

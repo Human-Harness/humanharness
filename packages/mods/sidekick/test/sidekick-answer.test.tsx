@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { render } from "./sidekick-app";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../../../ui/src";
-import type { InputSpec, SidekickCard, SidekickReview } from "../../../ui/src/client";
+import type { InputSpec } from "../../../ui/src/client";
+import type { SidekickCard, SidekickReview } from "../src/types";
 import { pruneDrafts } from "../../../ui/src/InputForm";
 import { FakeClient } from "../../../ui/test/fake-client";
 import { SK_ON } from "./sidekick-fixtures";

@@ -27,10 +27,27 @@ describe("ModHost: a mod's own calls and pushes", () => {
     h.registerForTest("pinger", "Pinger", (ctx) => void ctx.ipc("ping", () => { throw new Error("bad ping"); }));
     await expect(h.call("pinger", "ping", 1)).rejects.toThrow("bad ping");
   });
-  it("an app channel is never a mod's own call", async () => {
+  it("an app channel is never a mod's own call, nor a name any mod handles, a core one included (minimal-core 1b)", async () => {
     const h = new ModHost(deps());
-    h.registerForTest("core1", "Core", (ctx) => void ctx.ipc("hh:coreThing", () => 1), { core: true });
+    let ctx!: CoreMainCtx<unknown>;
+    h.registerForTest("core1", "Core", (c) => void (ctx = c as CoreMainCtx<unknown>), { core: true });
+    expect(() => ctx.ipc("hh:coreThing", () => 1)).toThrow("Not a mod's own channel");
     await expect(h.call("core1", "hh:coreThing", [])).rejects.toThrow("has no channel");
+  });
+  it("a core mod's call takes as long as it needs, and its throw reaches the window as is, never a strike", async () => {
+    const h = new ModHost(deps({ hookMs: 20 }));
+    h.registerForTest(
+      "core1",
+      "Core",
+      (ctx) => {
+        ctx.ipc("slow", () => new Promise((r) => setTimeout(() => r("done"), 60)));
+        ctx.ipc("bad", () => Promise.reject(new Error("bad review")));
+      },
+      { core: true },
+    );
+    expect(await h.call("core1", "slow", [])).toBe("done");
+    for (let i = 0; i < 4; i++) await expect(h.call("core1", "bad", [])).rejects.toThrow("bad review");
+    expect(h.view().find((m) => m.id === "core1")).toMatchObject({ on: true });
   });
   it("any mod pushes on its own names, while it is on", async () => {
     const modPush = vi.fn();
@@ -92,7 +109,7 @@ describe("hh:modCall", () => {
     await expect(invoke("Bad!", "ping", 1)).rejects.toThrow();
     await expect(invoke("pinger", 3, 1)).rejects.toThrow();
     await expect(invoke("pinger", "", 1)).rejects.toThrow();
-    await expect(invoke("pinger", "hh:sidekickList", 1)).rejects.toThrow();
+    await expect(invoke("pinger", "hh:ping", 1)).rejects.toThrow();
     expect(call).not.toHaveBeenCalled();
   });
 });

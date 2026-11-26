@@ -1,5 +1,5 @@
-// Sidekick's main side as a core mod (minimal-core 1a): the controller behind the 26 app channels (`hh:sidekick…`)
-// and the `hh:sidekick` push, driven by the mod hooks. On only for a harness with a `sidekick` key.
+// Sidekick's main side as a core mod (minimal-core 1a): the controller behind the mod's 26 own channels
+// (`mods.sidekick.<name>`) and its `state` sends to its ui, driven by the mod hooks. On only for a harness with a `sidekick` key.
 import { defineMod } from "@humanharness/mod-sdk";
 import type { CoreMainCtx } from "@humanharness/mod-sdk/core";
 import { SidekickController } from "./controller";
@@ -18,9 +18,9 @@ export default defineMod({
     // Sidekick runs only for a harness that declares it: without the key there is no controller.
     if (!key) return;
     const ctl = new SidekickController(sidekickDeps(ctx, sidekickSchema.parse(key) as SidekickManifest));
-    // The window's calls keep their channel names; the host hands a core mod their arguments as an array.
-    registerSidekickIpc((channel, fn) => void ctx.ipc(channel, (args) => fn(...((Array.isArray(args) ? args : [args]) as never[]))), () => ctl);
-    // The window still reviews a send itself (hh:sidekickReview) until the UI moves: holding here too would review twice.
+    // The mod's ui sends each call's arguments as an array (ui/api.ts); anything else is a call with none.
+    registerSidekickIpc((channel, fn) => void ctx.ipc(channel, (args) => fn(...((Array.isArray(args) ? args : []) as never[]))), () => ctl);
+    // The mod's ui reviews a send itself (its composer reviewer calls `review`): holding here too would review twice.
     ctx.on.beforeSend(() => ({ kind: "pass" }));
     ctx.on.turnStart(() => ctl.turnStarting());
     // A mod's turn end is a person's turn (`run`) unless the app says otherwise.

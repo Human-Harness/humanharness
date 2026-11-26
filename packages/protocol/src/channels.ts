@@ -35,7 +35,6 @@ import type {
   SettingsState,
   SetupOutput,
   SetupStepsState,
-  SidekickState,
   TaskTurnNotice,
   TaskView,
   TasksState,
@@ -48,7 +47,6 @@ type Documents = H["documents"];
 type Files = H["files"];
 type Scopes = H["scopes"];
 type Settings = H["settings"];
-type Sidekick = H["sidekick"];
 type Mods = H["mods"];
 type Plugins = H["plugins"];
 type Attention = H["attention"];
@@ -132,32 +130,6 @@ export interface Invoke {
   "hh:settingsGet": Settings["get"];
   "hh:settingsSet": Settings["set"];
   "hh:settingsReset": Settings["reset"];
-  "hh:sidekickGet": Sidekick["get"];
-  "hh:sidekickSet": Sidekick["set"];
-  "hh:sidekickReview": Sidekick["review"];
-  "hh:sidekickCancel": Sidekick["cancelReview"];
-  "hh:sidekickResolve": Sidekick["resolve"];
-  "hh:sidekickMute": Sidekick["mute"];
-  "hh:sidekickUnmute": Sidekick["unmute"];
-  "hh:sidekickSaveDecision": Sidekick["saveDecision"];
-  "hh:sidekickLearned": Sidekick["learned"];
-  "hh:sidekickForget": Sidekick["forget"];
-  "hh:sidekickForgetAll": Sidekick["forgetAll"];
-  "hh:sidekickEditLearned": Sidekick["editLearned"];
-  "hh:sidekickBeforeApprove": Sidekick["beforeApprove"];
-  "hh:sidekickApproveCancel": Sidekick["cancelApprove"];
-  "hh:sidekickAsk": Sidekick["ask"];
-  "hh:sidekickPresets": Sidekick["presets"];
-  "hh:sidekickAdoptPreset": Sidekick["adoptPreset"];
-  "hh:sidekickPickFiles": Sidekick["pickFiles"];
-  "hh:sidekickImportDraft": Sidekick["importDraft"];
-  "hh:sidekickCheckOriginal": Sidekick["checkOriginal"];
-  "hh:sidekickSave": Sidekick["saveSidekick"];
-  "hh:sidekickList": Sidekick["list"];
-  "hh:sidekickRemove": Sidekick["remove"];
-  "hh:sidekickReorder": Sidekick["reorder"];
-  "hh:sidekickScope": Sidekick["scope"];
-  "hh:sidekickSetScope": Sidekick["setScope"];
   "hh:layout": NonNullable<H["layout"]>;
   "hh:layoutPick": NonNullable<H["layoutPick"]>;
   "hh:homeHistory": NonNullable<H["homeHistory"]>;
@@ -267,7 +239,6 @@ export interface Push {
   "hh:scopes": ScopesView;
   "hh:dataChange": DataChangeView;
   "hh:settings": SettingsState;
-  "hh:sidekick": SidekickState;
   "hh:modsChanged": ModsView;
   "hh:layoutChanged": LayoutView;
   "hh:modReloaded": ModReloaded;

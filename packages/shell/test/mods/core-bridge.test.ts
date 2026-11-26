@@ -62,8 +62,8 @@ describe("ctx.push (core mods only)", () => {
   it("a core mod pushes on an existing app channel and the window receives it", async () => {
     const push = vi.fn();
     const h = await host({ push });
-    h.registerForTest("sidekick", "Sidekick", (ctx) => (ctx as CoreMainCtx<unknown>).push("hh:sidekick", { cards: [] }), { core: true });
-    expect(push).toHaveBeenCalledWith("hh:sidekick", { cards: [] });
+    h.registerForTest("sidekick", "Sidekick", (ctx) => (ctx as CoreMainCtx<unknown>).push("hh:tasks", { cards: [] }), { core: true });
+    expect(push).toHaveBeenCalledWith("hh:tasks", { cards: [] });
   });
 
   it("an unknown channel is refused, and nothing reaches the window", async () => {
@@ -77,7 +77,7 @@ describe("ctx.push (core mods only)", () => {
     // hh:modPush carries a mod's id: no core mod names it.
     expect(() => ctx.push("hh:modPush", 1)).toThrow();
     // An invoke channel is not a push channel.
-    expect(() => ctx.push("hh:sidekickReview", 1)).toThrow();
+    expect(() => ctx.push("hh:getTasks", 1)).toThrow();
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -87,14 +87,16 @@ describe("ctx.push (core mods only)", () => {
     let ctx!: CoreMainCtx<unknown>;
     h.registerForTest("sidekick", "Sidekick", (c) => void (ctx = c as CoreMainCtx<unknown>), { core: true });
     await h.set("sidekick", false);
-    ctx.push("hh:sidekick", 1);
+    ctx.push("hh:tasks", 1);
     expect(push).not.toHaveBeenCalled();
   });
 
   it("knows the app's push channels", () => {
-    expect(PUSH_CHANNELS.has("hh:sidekick")).toBe(true);
+    expect(PUSH_CHANNELS.has("hh:tasks")).toBe(true);
     expect(PUSH_CHANNELS.has("hh:modsChanged")).toBe(true);
-    expect(PUSH_CHANNELS.has("hh:sidekickReview")).toBe(false);
+    expect(PUSH_CHANNELS.has("hh:getTasks")).toBe(false);
+    // Sidekick's state goes on the mod's own name (minimal-core 1b), never on an app channel.
+    expect([...PUSH_CHANNELS].filter((c) => c.startsWith(`hh:${"sidekick"}`))).toEqual([]);
   });
 });
 

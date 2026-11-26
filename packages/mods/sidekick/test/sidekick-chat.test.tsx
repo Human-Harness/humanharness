@@ -5,7 +5,8 @@ import { render, renderIn } from "./sidekick-app";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../../../ui/src";
-import type { AppState, SetupStepView, SidekickCard, SidekickReview } from "../../../ui/src/client";
+import type { AppState, SetupStepView } from "../../../ui/src/client";
+import type { SidekickCard, SidekickReview } from "../src/types";
 import { SetupFlow } from "../../../ui/src/SetupFlow";
 import { FakeClient } from "../../../ui/test/fake-client";
 

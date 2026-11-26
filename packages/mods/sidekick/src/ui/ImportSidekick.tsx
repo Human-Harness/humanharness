@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import type { SidekickDraftDef, SidekickImportInput, SidekickImportResult, SidekickPurposeView } from "../types";
 import { Rx } from "@humanharness/ui";
 import { SidekickMark, markIcon } from "./mark";
+import { sidekickApi } from "./api";
 
 /** A stored sidekick imported from files: its id and the fields a new draft doesn't carry (Save replaces every field). */
 export interface ImportedSidekick {
@@ -47,7 +49,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
   useEffect(() => {
     if (!original) return;
     let live = true;
-    client.sidekick.checkOriginal(original.id).then(
+    sidekickApi(client).checkOriginal(original.id).then(
       (r) => live && setChanged(r === "changed"),
       () => live && setChanged(false),
     );
@@ -77,7 +79,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
     try {
       const req = await input();
       if (!req) return;
-      const r = await client.sidekick.importDraft(req).catch((): SidekickImportResult => ({ ok: false, reason: "failed" }));
+      const r = await sidekickApi(client).importDraft(req).catch((): SidekickImportResult => ({ ok: false, reason: "failed" }));
       if (n === runs.current) setResult(r);
     } catch {
       if (n === runs.current) setResult({ ok: false, reason: "failed" });
@@ -88,7 +90,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
 
   const choose = () =>
     run("choose", async () => {
-      const pick = await client.sidekick.pickFiles();
+      const pick = await sidekickApi(client).pickFiles();
       return pick ? { kind: "files", token: pick.token } : null;
     });
   // Main reads the stored sidekick's own files again: the renderer names only the sidekick.
@@ -107,7 +109,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
     setSaveFailed(false);
     const keep = original ? { id: original.id, ...(original.tier ? { tier: original.tier } : {}), ...(original.preset !== undefined ? { preset: original.preset } : {}), ...(original.defaultOn !== undefined ? { defaultOn: original.defaultOn } : {}) } : {};
     try {
-      await client.sidekick.saveSidekick({ ...keep, ...d.draft }, d.learned);
+      await sidekickApi(client).saveSidekick({ ...keep, ...d.draft }, d.learned);
     } catch {
       setSaveFailed(true);
       return;

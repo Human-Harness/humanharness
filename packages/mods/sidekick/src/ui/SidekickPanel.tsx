@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Icon, Segmented, type SidekickCard, type SidekickHeadsUp, type SidekickInfo, type SidekickState, Tag, shownLanguage } from "@humanharness/ui";
+import { Button, Icon, Segmented, Tag, shownLanguage } from "@humanharness/ui";
+import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickState } from "../types";
 import { SidekickMark, markIcon } from "./mark";
 import { wordDiff } from "./word-diff";
 

@@ -1,35 +1,37 @@
 import { describe, expect, it } from "vitest";
 import type { CoreMainCtx } from "@humanharness/mod-sdk/core";
 import mod from "../src/main";
+import { SIDEKICK_CHANNELS } from "../src/ipc";
+import { SIDEKICK_CALLS } from "../src/ui/api";
 
-/** Sidekick's 26 app channels (protocol/channels), under their old names. */
+/** Sidekick's 26 own channels (`mods.sidekick.<name>`), the names its ui calls. */
 const CHANNELS = [
-  "hh:sidekickGet",
-  "hh:sidekickSet",
-  "hh:sidekickReview",
-  "hh:sidekickCancel",
-  "hh:sidekickResolve",
-  "hh:sidekickMute",
-  "hh:sidekickUnmute",
-  "hh:sidekickSaveDecision",
-  "hh:sidekickLearned",
-  "hh:sidekickForget",
-  "hh:sidekickForgetAll",
-  "hh:sidekickEditLearned",
-  "hh:sidekickBeforeApprove",
-  "hh:sidekickApproveCancel",
-  "hh:sidekickAsk",
-  "hh:sidekickPresets",
-  "hh:sidekickAdoptPreset",
-  "hh:sidekickPickFiles",
-  "hh:sidekickImportDraft",
-  "hh:sidekickCheckOriginal",
-  "hh:sidekickSave",
-  "hh:sidekickList",
-  "hh:sidekickRemove",
-  "hh:sidekickReorder",
-  "hh:sidekickScope",
-  "hh:sidekickSetScope",
+  "get",
+  "set",
+  "review",
+  "cancelReview",
+  "resolve",
+  "mute",
+  "unmute",
+  "saveDecision",
+  "learned",
+  "forget",
+  "forgetAll",
+  "editLearned",
+  "beforeApprove",
+  "cancelApprove",
+  "ask",
+  "presets",
+  "adoptPreset",
+  "pickFiles",
+  "importDraft",
+  "checkOriginal",
+  "saveSidekick",
+  "list",
+  "remove",
+  "reorder",
+  "scope",
+  "setScope",
 ];
 
 /** A core mod's ctx that records what the mod registers and pushes; the app is not set up. */
@@ -69,20 +71,26 @@ describe("the Sidekick core mod", () => {
     expect(f.hooks.size).toBe(0);
   });
 
-  it("registers the 26 app channels under their old names, and its hooks", async () => {
+  it("registers its 26 own channels (never an app channel), and its hooks", async () => {
     const f = fakeCtx({});
     await mod.main!(f.ctx as never);
     expect([...f.channels.keys()].sort()).toEqual([...CHANNELS].sort());
+    expect([...f.channels.keys()].filter((n) => n.startsWith("hh:"))).toEqual([]);
+    // Main's names and the ui's calls are the same 26.
+    expect([...SIDEKICK_CHANNELS].sort()).toEqual([...CHANNELS].sort());
+    expect([...SIDEKICK_CALLS].sort()).toEqual([...CHANNELS].sort());
     expect([...f.hooks.keys()].sort()).toEqual(["beforeSend", "betweenTasks", "close", "daily", "phaseMoved", "refresh", "taskClose", "taskOpen", "turnEnd", "turnStart"]);
   });
 
-  it("answers a channel with the window's arguments, and pushes its state on hh:sidekick", async () => {
+  it("answers mods.sidekick.<name> with the ui's arguments array, and sends its state on mods.sidekick.state", async () => {
     const f = fakeCtx({});
     await mod.main!(f.ctx as never);
-    expect(await f.channels.get("hh:sidekickSet")!(["not an object"])).toEqual({ ok: false, message: "A Sidekick change must be an object" });
+    expect(await f.channels.get("set")!(["not an object"])).toEqual({ ok: false, message: "A Sidekick change must be an object" });
+    // Anything but an array is a call with no arguments.
+    expect(await f.channels.get("set")!("not an array")).toEqual({ ok: false, message: "A Sidekick change must be an object" });
     await f.hooks.get("taskOpen")!({ id: "t1", scope: "main" });
     await new Promise((r) => setTimeout(r, 50));
-    expect(f.pushes.map((p) => p.channel)).toContain("hh:sidekick");
+    expect(f.pushes.map((p) => p.channel)).toContain("state");
     await f.hooks.get("close")!();
   });
 
@@ -91,7 +99,7 @@ describe("the Sidekick core mod", () => {
     await mod.main!(f.ctx as never);
     await f.hooks.get("refresh")!();
     await new Promise((r) => setTimeout(r, 50));
-    expect(f.pushes.map((p) => p.channel)).toContain("hh:sidekick");
+    expect(f.pushes.map((p) => p.channel)).toContain("state");
     await f.hooks.get("close")!();
   });
 });

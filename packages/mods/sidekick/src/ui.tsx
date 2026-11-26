@@ -1,23 +1,13 @@
 import { defineMod } from "@humanharness/mod-sdk";
-import {
-  type AnswerHold,
-  type CoreUiCtx,
-  type OverlayButtonProps,
-  type OverlayPanelProps,
-  type SidekickCard,
-  type SidekickReview,
-  type SidekickState,
-  type TaskReviewer,
-  type TaskViewValue,
-  useApp,
-  useTaskView,
-} from "@humanharness/ui";
+import { type AnswerHold, type CoreUiCtx, type OverlayButtonProps, type OverlayPanelProps, type TaskReviewer, type TaskViewValue, useApp, useTaskView } from "@humanharness/ui";
+import type { SidekickCard, SidekickReview, SidekickState } from "./types";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { FirstOpenOffer } from "./ui/PresetOffer";
 import { settingsParts } from "./ui/settings";
 import { SidekickButton, SidekickPanel, waitingCards } from "./ui/SidekickPanel";
 import { useSidekick } from "./ui/useSidekick";
+import { sidekickApi } from "./ui/api";
 
 /** The overlay's name: named after the mod, so its element is `hh-overlay-sidekick`. */
 const NAME = "sidekick";
@@ -83,7 +73,7 @@ function actions(store: Store) {
     if (outcome !== "edited" && card.id === shared.sk?.card?.id && keep.length > 0) {
       store.set({ later: [...keep, ...shared.later.filter((q) => !keep.some((k) => k.key === q.key))] });
     }
-    void tv().client.sidekick.resolve(card.id, outcome).catch(quiet);
+    void sidekickApi(tv().client).resolve(card.id, outcome).catch(quiet);
   };
   /** The form a block card holds, while that card is the live one. */
   const heldBy = (card: SidekickCard): AnswerHold | null => {
@@ -97,11 +87,11 @@ function actions(store: Store) {
     const { client } = tv();
     store.composerSeq++;
     // Send now stops the review in main.
-    signal.addEventListener("abort", () => void client.sidekick.cancelReview().catch(quiet), { once: true });
+    signal.addEventListener("abort", () => void sidekickApi(client).cancelReview().catch(quiet), { once: true });
     // Material in the open scope goes with the prompt: the missing-context flag stays quiet.
     const attached = await tv().attached();
     if (signal.aborted) return "send";
-    const r: SidekickReview = await client.sidekick
+    const r: SidekickReview = await sidekickApi(client)
       .review({ text, ...(force ? { force: true } : {}), ...(attached ? { attached: true } : {}) })
       .catch(() => ({ kind: "error" }) as const);
     if (signal.aborted) return "send";
@@ -132,16 +122,16 @@ function actions(store: Store) {
         const run = store.answerRun;
         store.answerRun = null;
         store.answerSeq++;
-        if (run && run.composerSeq === store.composerSeq) void client.sidekick.cancelReview().catch(quiet);
+        if (run && run.composerSeq === store.composerSeq) void sidekickApi(client).cancelReview().catch(quiet);
       },
       { once: true },
     );
-    const r: SidekickReview = await client.sidekick.review({ text, block: true }).catch(() => ({ kind: "error" }) as const);
+    const r: SidekickReview = await sidekickApi(client).review({ text, block: true }).catch(() => ({ kind: "error" }) as const);
     if (store.answerRun?.seq === seq) store.answerRun = null;
     // Stopped by Send now (the form already sent), or replaced by a composer review in main: a card that came anyway
     // is about an answer that went, and leaves as sent anyway.
     if (seq !== store.answerSeq || composerSeq !== store.composerSeq || r.kind !== "card") {
-      if (r.kind === "card") void client.sidekick.resolve(r.card.id, "sent-anyway").catch(quiet);
+      if (r.kind === "card") void sidekickApi(client).resolve(r.card.id, "sent-anyway").catch(quiet);
       return "send";
     }
     store.answerCard = r.card.id;
@@ -157,7 +147,7 @@ function actions(store: Store) {
     return () => {
       if (store.answerHold?.cardId !== cardId) return;
       store.answerHold = null;
-      void tv().client.sidekick.resolve(cardId, "dismissed").catch(quiet);
+      void sidekickApi(tv().client).resolve(cardId, "dismissed").catch(quiet);
     };
   };
   return { tv, showCards, resolveCard, heldBy, reviewComposer, reviewAnswer, holdAnswer };
@@ -256,7 +246,7 @@ function TaskBarPiece({ ctx, store, act }: { ctx: CoreUiCtx; store: Store; act: 
       aria-label={t(on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
       onClick={() => {
         const next = !on;
-        void tv.client.sidekick.set(next ? { on: next, introSeen: true } : { on: next }).catch(quiet);
+        void sidekickApi(tv.client).set(next ? { on: next, introSeen: true } : { on: next }).catch(quiet);
         if (next && !tv.narrow) tv.overlay.show(name);
         else if (tv.overlay.open === name) tv.overlay.hide();
       }}
@@ -292,12 +282,12 @@ function OverlayPanel({ close, store, act }: OverlayPanelProps & { store: Store;
       sendKey={tv.sendKey}
       onCollapse={close}
       offer={<FirstOpenOffer client={client} offered={sk.settings.presetsOffered} />}
-      onMute={(id) => void client.sidekick.mute(id).catch(quiet)}
-      onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(quiet)}
-      onSaveDecision={(id) => client.sidekick.saveDecision(id)}
+      onMute={(id) => void sidekickApi(client).mute(id).catch(quiet)}
+      onDismiss={(id, outcome) => void sidekickApi(client).resolve(id, outcome).catch(quiet)}
+      onSaveDecision={(id) => sidekickApi(client).saveDecision(id)}
       // The heads-up leaves as used only when the closing turn really started.
       onFinishTask={(id) => {
-        if (tv.finishTask()) void client.sidekick.resolve(id, "used").catch(quiet);
+        if (tv.finishTask()) void sidekickApi(client).resolve(id, "used").catch(quiet);
       }}
       queued={[...liveQueued(shared), ...shared.later]}
       onDropQueued={(key) => {
@@ -305,9 +295,9 @@ function OverlayPanel({ close, store, act }: OverlayPanelProps & { store: Store;
         store.set({ later: now.later.filter((q) => q.key !== key), droppedLive: [...now.droppedLive, key] });
       }}
       onTier={() => app.nav.open({ kind: "command", command: "open-settings", arg: "sidekick" })}
-      onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(quiet)}
+      onTurnOn={() => void sidekickApi(client).set({ on: true, introSeen: true }).catch(quiet)}
       onNotNow={() => {
-        void client.sidekick.set({ introSeen: true }).catch(quiet);
+        void sidekickApi(client).set({ introSeen: true }).catch(quiet);
         close();
       }}
       // A suggestion goes through `send`, never a review: it is never reviewed again.
@@ -362,7 +352,7 @@ function OverlayPanel({ close, store, act }: OverlayPanelProps & { store: Store;
 
 /**
  * Sidekick's UI (minimal-core step 1b): its Settings tab, Models row and Usage line, the toggle in the task bar, the
- * overlay with its cards, and the composer's review. It calls main through the core's `client.sidekick` channels.
+ * overlay with its cards, and the composer's review. It calls main through the core's `sidekickApi(client)` channels.
  */
 export default defineMod({
   id: "sidekick",

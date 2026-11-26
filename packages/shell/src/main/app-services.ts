@@ -341,8 +341,8 @@ export function createAppServices(d: AppServicesDeps) {
     sendToWindow("hh:fileCommits", paths);
     // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
     d.engineIpc()?.committed(paths);
-    // Search (D0): a no-op until the palette first opened; then the commit's paths are read again.
-    searchSvc.committed(paths);
+    // Search (D0): the commit's paths go out as `restored`; the search service (and a core mod) read them again.
+    events.restored(paths);
   });
   const announceCommits = (history: History) => commitAnnouncements.watch(history);
 

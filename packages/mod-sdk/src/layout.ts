@@ -17,17 +17,21 @@ export const blockContentSchema = z.union([
 ]);
 export type BlockContent = z.output<typeof blockContentSchema>;
 
+/** What an overlay block shows: always a mod's block (the core's task view is not an overlay). */
+const overlayContentSchema = z.strictObject({ mod: z.string().regex(MOD_ID), block: z.string().min(1).max(60), props: z.record(z.string(), z.unknown()).optional() });
+type OverlayContent = z.output<typeof overlayContentSchema>;
+
 const common = { id: nodeId.optional(), size: size.optional(), min: px.optional(), max: px.optional(), hidden: z.boolean().optional() };
 
 export type LayoutNode =
   | { type: "row" | "column"; id?: string; size?: { px: number } | { weight: number }; min?: number; max?: number; hidden?: boolean; children: LayoutNode[] }
-  | { type: "stack"; id?: string; size?: { px: number } | { weight: number }; min?: number; max?: number; hidden?: boolean; header?: BlockContent; children: LayoutNode[] }
+  | { type: "stack"; id?: string; size?: { px: number } | { weight: number }; min?: number; max?: number; hidden?: boolean; header?: BlockContent; overlay?: OverlayContent[]; children: LayoutNode[] }
   | { type: "block"; id?: string; size?: { px: number } | { weight: number }; min?: number; max?: number; hidden?: boolean; content: BlockContent };
 
 const nodeSchema: z.ZodType<LayoutNode> = z.lazy(() =>
   z.discriminatedUnion("type", [
     z.strictObject({ type: z.enum(["row", "column"]), ...common, children: z.array(nodeSchema) }),
-    z.strictObject({ type: z.literal("stack"), ...common, header: blockContentSchema.optional(), children: z.array(nodeSchema) }),
+    z.strictObject({ type: z.literal("stack"), ...common, header: blockContentSchema.optional(), overlay: z.array(overlayContentSchema).optional(), children: z.array(nodeSchema) }),
     z.strictObject({ type: z.literal("block"), ...common, content: blockContentSchema }),
   ]),
 ) as z.ZodType<LayoutNode>;
@@ -39,14 +43,15 @@ const walk = (n: LayoutNode, f: (n: LayoutNode, depth: number) => void, depth = 
   if (n.type !== "block") for (const c of n.children) walk(c, f, depth + 1);
 };
 
-/** A layout file: one tree of nodes whose root is a stack (spec §5.2). Each whole-layout rule has its own message. */
+/** A layout file: one tree of nodes whose root is a stack (spec §5.2); the root may also have an `overlay`, a list of mod blocks drawn above the whole screen, outside the tree. Overlay blocks count toward the node limit. Each whole-layout rule has its own message. */
 export const layoutSchema = nodeSchema.superRefine((root, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: "custom", message });
   if (root.type !== "stack") return fail("The root must be a stack");
   const ids = new Map<string, number>();
-  let nodes = 0;
+  let nodes = root.type === "stack" ? (root.overlay?.length ?? 0) : 0;
   let depth = 0;
   walk(root, (n, d) => {
+    if (n.type === "stack" && d > 1 && n.overlay) fail("Only the root may have an overlay");
     nodes += 1;
     depth = Math.max(depth, d);
     if (n.id) ids.set(n.id, (ids.get(n.id) ?? 0) + 1);

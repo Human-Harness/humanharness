@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { FolderMove } from "../BackupNotice";
-import type { AppState, EngineStatus, HarnessClient, LimitWindow, SetupStepsState } from "../client";
+import type { AppState, ChatSearchContext, EngineStatus, HarnessClient, LimitWindow, SetupStepsState } from "../client";
 import type { LanguageControl } from "../language-control";
 import type { SearchIntent } from "../search/intent";
 
@@ -18,6 +18,12 @@ export interface AppValue {
   steps: SetupStepsState | null;
   move: FolderMove;
   language: LanguageControl | undefined;
+  /** The scope open in the window, or null. */
+  openScope: string | null;
+  /** The chat's state, read when asked; null when no chat is on screen. */
+  chatContext(): ChatSearchContext | null;
+  /** Shows a short notice at the foot of the window (it clears itself). */
+  notice(text: string): void;
   /** The ways out of the screen a block may take. */
   nav: {
     start(): void;

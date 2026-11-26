@@ -49,4 +49,20 @@ describe("layoutSchema", () => {
     expect(layoutSchema.safeParse(stack(home, { ...task, extra: 1 })).success).toBe(false);
     expect(layoutSchema.safeParse({ type: "stack", extra: 1, children: [home, task] }).success).toBe(false);
   });
+  it("takes an overlay of block contents on the root", () => {
+    const l = { ...stack(home, task), overlay: [{ mod: "x", block: "palette", props: { a: 1 } }] };
+    expect(messages(l)).toEqual([]);
+    expect(messages(stack(home, task))).toEqual([]);
+  });
+  it("counts overlay blocks toward the node limit", () => {
+    const kids = Array.from({ length: 61 }, (_, i) => ({ type: "block", id: `b${i}`, content: { mod: "a", block: "b" } }));
+    const base = stack(home, task, ...kids);
+    expect(messages(base)).toEqual([]);
+    expect(messages({ ...base, overlay: [{ mod: "a", block: "o" }] })).toContain("The layout has 65 nodes: at most 64");
+  });
+  it("refuses an overlay that is not on the root, a core task block in it, and a bad block", () => {
+    expect(messages(stack({ type: "stack", id: "home", overlay: [{ mod: "a", block: "b" }], children: [] }, task)).join()).toMatch(/overlay/);
+    expect(messages({ ...stack(home, task), overlay: [{ core: "task" }] }).length).toBeGreaterThan(0);
+    expect(messages({ ...stack(home, task), overlay: [{ mod: "A", block: "b" }] }).length).toBeGreaterThan(0);
+  });
 });

@@ -1,11 +1,11 @@
 // Sidekick's main side as a core mod (minimal-core 1a): the controller behind the mod's 26 own channels
-// (`mods.sidekick.<name>`) and its `state` sends to its ui, driven by the mod hooks. On only for a harness with a `sidekick` key.
+// (`mods.sidekick.<name>`) and its `state` sends to its ui, driven by the mod hooks. On only for a harness with `mods.sidekick`.
 import { defineMod } from "@humanharness/mod-sdk";
 import type { CoreMainCtx } from "@humanharness/mod-sdk/core";
 import { SidekickController } from "./controller";
 import { sidekickDeps } from "./deps";
 import { registerSidekickIpc } from "./ipc";
-import { type SidekickManifest, sidekickSchema } from "./manifest";
+import { type SidekickManifest, sidekickSchema } from "./schema";
 
 /** Runs `work` without holding the hook (the host's limit is 5 s; a model turn takes longer); errors are logged. */
 const detached = (ctx: CoreMainCtx, work: () => Promise<unknown>) => void work().catch((err: unknown) => ctx.log("Sidekick", err));
@@ -15,7 +15,7 @@ export default defineMod({
   main(base) {
     const ctx = base as unknown as CoreMainCtx;
     const key = ctx.app?.harness.sidekick;
-    // Sidekick runs only for a harness that declares it: without the key there is no controller.
+    // Sidekick runs only for a harness that declares it: without `mods.sidekick` there is no controller.
     if (!key) return;
     const ctl = new SidekickController(sidekickDeps(ctx, sidekickSchema.parse(key) as SidekickManifest));
     // The mod's ui sends each call's arguments as an array (ui/api.ts); anything else is a call with none.

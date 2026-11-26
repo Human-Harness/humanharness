@@ -15,8 +15,8 @@ export interface CoreSessionLike {
  * Engine-typed; `coreAppFor` gives a mod the same by engine id.
  */
 export interface CoreAppParts {
-  /** `sidekick`: the harness's raw `sidekick` key (Sidekick's config). */
-  harness: { name: string; tagline?: string; sidekick?: unknown };
+  /** `mods`: the manifest's raw mod configs; Sidekick reads `mods.sidekick`. */
+  harness: { name: string; tagline?: string; mods?: Readonly<Record<string, unknown>> };
   phases(action: string | undefined): readonly CorePhase[];
   phaseBrief(action: string, phase: string): Promise<string | null>;
   dataTables(): string[];
@@ -48,7 +48,7 @@ export function coreAppFor(p: CoreAppParts, id: string): CoreApp {
     harness: {
       name: p.harness.name,
       ...(p.harness.tagline !== undefined ? { tagline: p.harness.tagline } : {}),
-      ...(p.harness.sidekick !== undefined ? { sidekick: p.harness.sidekick } : {}),
+      ...(p.harness.mods?.sidekick !== undefined ? { sidekick: p.harness.mods.sidekick } : {}),
       phases: (action) => p.phases(action),
       phaseBrief: (action, phase) => p.phaseBrief(action, phase),
       dataTables: () => p.dataTables(),

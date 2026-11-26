@@ -742,9 +742,9 @@ describe("check: setup steps (setup-steps spec §6)", () => {
 
 describe("check: sidekick (sidekick spec §3)", () => {
   const AFTER = '  questions: { tier: "light" },';
-  const withSidekick = (block: string) => (d: string) => replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  sidekick: ${block},`);
+  const withSidekick = (block: string) => (d: string) => replaceIn(d, "harness.config.ts", "mods: { example: {} },", `mods: { example: {}, sidekick: ${block} },`);
   const rules = (r: CheckResult) =>
-    r.findings.filter((f) => f.rule === "sidekick-tips" || f.message.startsWith("sidekick.")).map((f) => `${f.severity}:${f.rule}`);
+    r.findings.filter((f) => f.rule === "sidekick-tips" || f.message.startsWith("mods.sidekick")).map((f) => `${f.severity}:${f.rule}`);
 
   it("short tips and known actions: no finding", async () => {
     const r = await checkHarness(await fixture(withSidekick('{ default: "off", tips: "Claims need a source." }')));
@@ -755,6 +755,11 @@ describe("check: sidekick (sidekick spec §3)", () => {
   it("an unknown action is a schema error, reported once", async () => {
     const r = await checkHarness(await fixture(withSidekick('{ actions: { nope: "auto" } }')));
     expect(rules(r)).toEqual(["error:schema"]);
+  });
+
+  it("a top-level sidekick key is a schema error naming mods.sidekick", async () => {
+    const r = await checkHarness(await fixture((d) => replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  sidekick: {},`)));
+    expect(errors(r).map((f) => f.message)).toEqual([expect.stringContaining("mods.sidekick")]);
   });
 
   it("sidekick-tips: warns over 300 tokens, per purpose too", async () => {

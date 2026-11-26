@@ -223,7 +223,7 @@ const documentsSchema = z.object({
     .refine((k) => Object.keys(k).length <= MAX_DOCUMENT_KINDS, { message: `At most ${MAX_DOCUMENT_KINDS} document kinds` }),
 });
 
-const manifestSchema = z.object({
+const manifestFields = z.object({
   id: z.string().regex(HARNESS_ID),
   name: text,
   core: z.string().min(1),
@@ -258,8 +258,6 @@ const manifestSchema = z.object({
   profiles: profilesSchema.optional(),
   /** The person's own files, cut into small fragments the agent fetches on demand (material spec). Absent: none (D0). */
   material: materialSchema.optional(),
-  /** The prompt coach's hints and per-action review modes (sidekick spec §3). Absent: available, default off (D0). */
-  sidekick: sidekickSchema.optional(),
   /** Mods this harness turns on, each with its config for the mod's own schema (minimal-core spec §4.1). Absent: none (D0). */
   mods: z.record(z.string().regex(MANIFEST_MOD_ID, "A mod id is lowercase letters, digits and -"), z.record(z.string(), z.unknown())).optional(),
   /** Plugins the harness ships and whether the person may add their own (plugins spec §3.4). Absent: none (D0). */
@@ -346,8 +344,15 @@ const manifestSchema = z.object({
   if (Object.hasOwn(m.actions, SIDEKICK_PROCESS)) {
     ctx.addIssue({ code: "custom", path: ["actions", SIDEKICK_PROCESS], message: `"${SIDEKICK_PROCESS}" is reserved for Sidekick: use another action id` });
   }
-  for (const id of Object.keys(m.sidekick?.actions ?? {})) {
-    if (!Object.hasOwn(m.actions, id)) ctx.addIssue({ code: "custom", path: ["sidekick", "actions", id], message: `"${id}" is not an action of this harness` });
+  // Sidekick's config is checked with its mod's schema; every action it names is the harness's.
+  if (m.mods && Object.hasOwn(m.mods, "sidekick")) {
+    const config = sidekickSchema.safeParse(m.mods.sidekick);
+    if (!config.success) {
+      for (const i of config.error.issues) ctx.addIssue({ code: "custom", path: ["mods", "sidekick", ...i.path], message: i.message });
+    }
+    for (const id of Object.keys(config.data?.actions ?? {})) {
+      if (!Object.hasOwn(m.actions, id)) ctx.addIssue({ code: "custom", path: ["mods", "sidekick", "actions", id], message: `"${id}" is not an action of this harness` });
+    }
   }
   for (const [id, a] of Object.entries(m.actions)) {
     if (a.scope !== undefined && !m.scopes) {
@@ -574,8 +579,16 @@ const manifestSchema = z.object({
   for (const p of hatchProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
 });
 
-export type Harness = z.output<typeof manifestSchema>;
-export type HarnessInput = z.input<typeof manifestSchema>;
+/** Refuses the old top-level `sidekick` key by name: `z.object` would drop it and Sidekick would silently be gone. */
+const manifestSchema = z.preprocess((value, ctx) => {
+  if (typeof value === "object" && value !== null && (value as { sidekick?: unknown }).sidekick !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["sidekick"], message: "Sidekick's config is a mod's: move the top-level `sidekick` key to `mods.sidekick`" });
+  }
+  return value;
+}, manifestFields);
+
+export type Harness = z.output<typeof manifestFields>;
+export type HarnessInput = z.input<typeof manifestFields>;
 export type Permissions = Harness["permissions"];
 export type HarnessReference = Harness["folder"]["references"][number];
 

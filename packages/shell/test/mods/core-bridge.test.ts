@@ -35,7 +35,7 @@ function parts() {
     close: vi.fn(async () => {}),
   };
   const p: CoreAppParts = {
-    harness: { name: "Demo", tagline: "Tag", sidekick: { purposes: ["x"] } },
+    harness: { name: "Demo", tagline: "Tag", mods: { sidekick: { purposes: ["x"] }, other: { a: 1 } } },
     phases: rec("phases", [{ id: "plan", label: "Plan", brief: "plan.md" }]),
     phaseBrief: rec("phaseBrief", Promise.resolve("Plan carefully")),
     dataTables: rec("dataTables", ["books"]),
@@ -108,7 +108,7 @@ describe("ctx.app (core mods only)", () => {
     h.registerForTest("sidekick", "Sidekick", (c) => void (ctx = c as CoreMainCtx<unknown>), { core: true });
     const app = ctx.app;
 
-    // Harness: name, phases, a phase's brief, the raw sidekick key, the data tables.
+    // Harness: name, phases, a phase's brief, the raw mods.sidekick config, the data tables.
     expect(app.harness.name).toBe("Demo");
     expect(app.harness.tagline).toBe("Tag");
     expect(app.harness.sidekick).toEqual({ purposes: ["x"] });

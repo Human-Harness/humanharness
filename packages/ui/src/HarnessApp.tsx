@@ -11,7 +11,7 @@ import { type AppState, type ChatSearchContext, type EngineStatus, type HarnessC
 import { useFolderMove } from "./BackupNotice";
 import { BackendCard } from "./hatches/BackendCard";
 import { type AppValue, AppProvider } from "./layout/app";
-import { LayoutView } from "./layout/LayoutView";
+import { LayoutOverlay, LayoutView } from "./layout/LayoutView";
 import { useBlocks } from "./layout/registry";
 import { AttentionInbox } from "./plugins/AttentionInbox";
 import { useAttention } from "./plugins/usePlugins";
@@ -467,6 +467,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     steps,
     move,
     language: client.language ? language : undefined,
+    openScope,
+    chatContext: () => (screen === "work" ? (searchContextRef.current?.() ?? null) : null),
+    notice: setSearchNotice,
     nav: {
       start: () => setScreen("work"),
       setup: (step) => openSetup(step ? { step } : {}),
@@ -705,6 +708,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       )}
       {/* Safe mode (minimal-core 0b2): outside the screen, so it shows over Settings too. */}
       <SafeNotice client={client} />
+      {/* The layout's overlay (minimal-core step 3): outside the screen, so a mod's block shows over Settings too. */}
+      <AppProvider value={app}>
+        <LayoutOverlay layout={layout} />
+      </AppProvider>
       {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
       <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />
     </I18nextProvider>

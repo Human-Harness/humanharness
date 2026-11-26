@@ -110,11 +110,13 @@ A layout file is one tree of nodes (`layoutSchema` in `packages/mod-sdk/src/layo
 - `stack`: `children` plus an optional `header` (block content).
 - `block`: `content`, either `{ "mod": "<id>", "block": "<name>", "props"?: {...} }` or `{ "core": "task" }`, the core's task view.
 
+The root stack may also have `overlay`, a list of `{ "mod", "block", "props"? }` (never `{ "core": "task" }`): blocks drawn above the whole screen, outside the tree and outside `.hh-screen`, so they show over Home, the task view and Settings. They have no size or position, count toward the 64-node limit, and only the root may have them. An overlay block of an off or missing mod draws nothing, not even the "is off" notice. A block's `app` also carries `openScope`, `chatContext()` and `notice(text)`. This is not `ctx.taskOverlay`, the task's right overlay. `LayoutOverlay` (`packages/ui/src/layout/LayoutView.tsx`) draws it; `HarnessApp` mounts it.
+
 Every node may have `id` (lowercase letters, digits and `-`, at most 40), `size` (`{ "px": n }` or `{ "weight": n }`), `min`, `max` and `hidden`. The whole-layout rules, each with its own message:
 
 1. The root must be a `stack`.
 2. Ids are unique.
-3. At most 8 levels deep (the root is level 1) and at most 64 nodes.
+3. At most 8 levels deep (the root is level 1) and at most 64 nodes (overlay blocks count). Only the root may have an `overlay`.
 4. The root has a child with id `home` and a child with id `work`.
 5. Exactly one `{ "core": "task" }` block in the layout, and it is inside the `work` child.
 

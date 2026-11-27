@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { ChatEntry } from "../src/client";
 import { DocumentCards } from "../src/DocumentCards";
+import { withDocuments } from "./documents-mod";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -26,7 +27,7 @@ async function chatWith(entries: ChatEntry[], docs: Record<string, string> = {})
   client.chat = entries;
   Object.assign(client.docTexts, docs);
   const exists = vi.spyOn(client, "documentsExist");
-  await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
+  await renderIn("en", withDocuments(<ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />));
   return { client, exists };
 }
 
@@ -166,7 +167,7 @@ describe("document cards (§5.1)", () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     client.chat = [answer()];
     client.docTexts["x.md"] = "# X";
-    await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} slim={{ action: "interview" }} />);
+    await renderIn("en", withDocuments(<ChatView client={client} state={client.state} components={{}} stateBlocks={[]} slim={{ action: "interview" }} />));
     act(() => client.openDocument("x.md"));
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByRole("complementary", { name: "Document" })).toBeNull();
@@ -221,7 +222,7 @@ describe("review chips (review spec §6.1)", () => {
     client.chat = [answer([card])];
     client.docTexts[card.path] = "## Scope\n\nBy size.\n";
     client.state.review = true;
-    await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
+    await renderIn("en", withDocuments(<ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />));
     await vi.waitFor(() => expect(client.reviewCalls.filter((c) => c.op === "summaries")).toHaveLength(1));
     expect(client.reviewCalls[0].args).toEqual([[card.path]]);
     await act(async () => void (await client.documents.comment(card.path, { selected: "By size.", heading: "scope", text: "x" })));

@@ -2,19 +2,36 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useL
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
 import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
-import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView, TimelineEntry } from "./client";
-import { ApprovedDiff } from "./ApprovedDiff";
-import { Tag } from "./chrome";
-import { DocumentContext, type DocumentHost } from "./documents-context";
-import { EntryDiff } from "./EntryDiff";
-import { FileTimeline } from "./FileTimeline";
-import { FocusMarkers } from "./FocusMarkers";
-import { Markdown, documentOutline } from "./markdown";
-import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
-import { ReviewColumn } from "./ReviewColumn";
-import { formatSize } from "./sizes";
-import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
-import { Button } from "./guide/Button";
+// The review and timeline parts come from the core until they move into this mod too.
+import {
+  ApprovedDiff,
+  type ApproveOptions,
+  type BarDraft,
+  Button,
+  DocumentContext,
+  type DocumentHost,
+  type DocumentRead,
+  EntryDiff,
+  FileTimeline,
+  FocusMarkers,
+  type HarnessClient,
+  Markdown,
+  type MarkSpec,
+  NO_BAR_DRAFT,
+  type ReaderPrefs,
+  ReviewBar,
+  ReviewColumn,
+  type ReviewResult,
+  type ReviewSendResult,
+  type ReviewView,
+  Tag,
+  type TimelineEntry,
+  clearMarks,
+  documentOutline,
+  drawMarks,
+  findMarks,
+  formatSize,
+} from "@humanharness/ui";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
 export interface ReaderTarget {

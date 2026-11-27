@@ -4,6 +4,7 @@ import { type BlockComponent, ModBlocksProvider, createBlockRegistry } from "@hu
 import { renderIn as uiRenderIn } from "../../../ui/test/render";
 import mod from "../src/ui";
 import { historyViewRegistry } from "../../../ui/test/history-view";
+import { documentsRegistry } from "../../../ui/test/documents-mod";
 import { usageRegistry } from "../../../ui/test/usage-mod";
 import { contextPanelRegistry } from "../../../ui/test/context-panel-mod";
 import { searchRegistry } from "../../../ui/test/search-mod";
@@ -16,6 +17,7 @@ historyViewRegistry(registry);
 usageRegistry(registry);
 contextPanelRegistry(registry);
 searchRegistry(registry);
+documentsRegistry(registry);
 
 const withHome = ({ children }: { children: ReactNode }) => createElement(ModBlocksProvider, { registry, children });
 

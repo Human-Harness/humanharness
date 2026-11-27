@@ -1261,8 +1261,6 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
   export type SlotKind = keyof Slots;
   /** The blocks mods registered, by mod id and block name, and the parts they put in the core's slots. */
   export interface BlockRegistry {
-      /** With no `opener` registered, the chat opens files itself (its own reader). */
-      readonly coreOpener: boolean;
       /** Registers `Component` as `modId`'s block `name`; the disposer takes it away again (only if it is still that one). */
       register(modId: string, name: string, Component: BlockComponent): () => void;
       get(modId: string, name: string): BlockComponent | undefined;
@@ -1275,9 +1273,7 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       /** A number that changes on each change (for `useSyncExternalStore`). */
       version(): number;
   }
-  export function createBlockRegistry({ coreOpener }?: {
-      coreOpener?: boolean;
-  }): BlockRegistry;
+  export function createBlockRegistry(): BlockRegistry;
   /** The app's own registry: the one the screen uses unless a `ModBlocksProvider` gives another. */
   export const appRegistry: BlockRegistry;
   /** Registers a block in the app's registry; returns the disposer. */

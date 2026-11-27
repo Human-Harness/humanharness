@@ -7,7 +7,7 @@ Spec: `docs/superpowers/specs/2026-11-05-minimal-core-and-mods-design.md` ("§" 
 A mod is a folder with a `mod.json` and a built main part that exports `defineMod({...})`. It changes the app's behaviour through hooks and services, and it runs in the main process with the app's own permissions: there is no sandbox. A mod comes from one of three origins:
 
 - **core**: shipped with the app (`core-mods.ts`; `home` in 0b1, step 1 adds `sidekick`). Off unless its default switch says so, a harness declares it or the person turns it on; `home` and `usage` (Settings › Usage, UI only) are on by default.
-  - `search` (`packages/mods/search`, main side): the index, its worker and the two search calls, on by default; its palette still lives in `packages/ui` until the next step.
+  - `search` (`packages/mods/search`, main side): the index, its worker and the two search calls, on by default; its ⌘K palette is the `search/palette` overlay block the default layout places.
 - **harness**: declared in the harness manifest's `mods` map (`mods.<id>` is the mod's config). The code is a core mod of that id if there is one, else `<harnessModsDir>/<id>`. On by default.
 - **local**: a folder the person added in Settings › Mods. Off until the person confirms it.
 

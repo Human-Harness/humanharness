@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createI18n } from "@humanharness/i18n";
-import type { SearchAnswer, SearchHitView } from "../src/client";
-import { questionText } from "../src/search/ask";
-import { chipsOf, rowsOf, sectionsOf, step } from "../src/search/model";
+import type { SearchAnswer, SearchHitView } from "../../../ui/src/client";
+import { questionText } from "../src/ask";
+import { chipsOf, rowsOf, sectionsOf, step } from "../src/model";
 
 const hit = (id: string, hint: SearchHitView["hint"]): SearchHitView => ({ id, kind: "file", title: [{ text: id }], context: [], hint, target: { kind: "timeline", path: id } });
 const ok = (o: Partial<Extract<SearchAnswer, { ok: true }>>): SearchAnswer => ({ ok: true, query: "q", groups: [], counts: { task: 0, note: 0, file: 0 }, recent: [], partial: false, status: { state: "ready", done: 0, total: 0 }, allScopes: false, ...o });

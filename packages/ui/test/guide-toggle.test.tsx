@@ -227,7 +227,7 @@ describe("answers C1, C3, C4, C5", () => {
     expect(css).not.toMatch(/\.hh-toggle-row[^{]*\{[^}]*(?:justify-content:\s*flex-start|width:\s*auto)/);
     const src = (f: string) => readFileSync(join(import.meta.dirname, "../src", f), "utf8");
     // Settings › General, Jobs and Sidekick moved to Radix (stage 2): their switches are Radix Switches in settings Rows.
-    for (const f of ["InputForm.tsx", "search/SearchPalette.tsx"]) {
+    for (const f of ["InputForm.tsx", "../../mods/search/src/SearchPalette.tsx"]) {
       expect(src(f), f).toMatch(/<Toggle[^>]*>\s*[\s\S]*?<\/Toggle>/);
     }
   });

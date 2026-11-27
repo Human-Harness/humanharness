@@ -1,5 +1,6 @@
 {
   "type": "stack",
+  "overlay": [{ "mod": "search", "block": "palette" }],
   "children": [
     { "type": "block", "id": "home", "content": { "mod": "home", "block": "home" } },
     { "type": "block", "id": "work", "content": { "core": "task" } }

@@ -1,8 +1,7 @@
 # Search
 
 Global search: the index of the folder's files, chats, tasks, actions and searchable data, and the two calls the palette
-makes (`hh:search`, `hh:searchOpen`). The full design is in `docs/architecture/search.md`; the palette (⌘K) is still in
-`packages/ui` and moves here in the next step.
+makes (`hh:search`, `hh:searchOpen`). The full design is in `docs/architecture/search.md`.
 
 Search is a core mod: it ships with the app and is on by default. This is its main side:
 
@@ -14,3 +13,10 @@ Search is a core mod: it ships with the app and is on by default. This is its ma
 - The two calls are answered under their existing app channel names (`ctx.handle`), and the index's status goes out on
   `hh:searchStatus`. With the mod off the calls answer a refusal (`not-ready`).
 - `packages/search` stays the index library; this mod depends on it.
+
+Its ui side is the palette (⌘K), the block `search/palette`, which the default layout places in the root's `overlay`
+(so it shows over Home, the task view and Settings). `SearchHost` listens for ⌘K and `client.search.open()`, `SearchPalette`
+is the dialog, `model.ts` and `ask.ts` shape its rows, and `local.ts` makes the Settings and Actions rows from the window's
+state and block registry. It reads the app through the block's `app` (client, state, `openScope`, `chatContext()`,
+`nav.open`). The intent, focus-setting and Settings tab list it uses stay in `packages/ui`. A layout without the overlay
+entry, or with the mod off, has no palette and no ⌘K.

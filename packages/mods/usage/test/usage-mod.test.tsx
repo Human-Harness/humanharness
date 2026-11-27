@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { createI18n } from "@humanharness/i18n";
 import { type BlockRegistry, createBlockRegistry } from "../../../ui/src/layout/registry";
-import { commandRows, settingRows } from "../../../ui/src/search/local";
+import { commandRows, settingRows } from "../../search/src/local";
 import { tabLabel, visibleTabs } from "../../../ui/src/settings-tabs";
 import { FakeClient } from "../../../ui/test/fake-client";
 import { usageRegistry } from "../../../ui/test/usage-mod";

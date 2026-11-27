@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import type { SearchHitView } from "../client";
+import type { SearchHitView } from "@humanharness/ui";
 
 export const MAX_HINTS = 3;
 

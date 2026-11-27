@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { render } from "./home-block";
+import { render } from "../../home/test/home-block";
 import { afterEach, describe, expect, it } from "vitest";
 import { createI18n } from "@humanharness/i18n";
 import { HarnessApp } from "../../../ui/src";
 import type { SearchHitView } from "../../../ui/src/client";
-import { commandRows, settingRows } from "../../../ui/src/search/local";
+import { commandRows, settingRows } from "../src/local";
 import { FakeClient } from "../../../ui/test/fake-client";
 import { usageRegistry } from "../../../ui/test/usage-mod";
 

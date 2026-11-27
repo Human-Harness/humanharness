@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SearchAnswer, SearchHitView } from "../src/client";
-import { type LocalRows, chipsOf, sectionsOf } from "../src/search/model";
-import { SearchPalette } from "../src/search/SearchPalette";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import type { SearchAnswer, SearchHitView } from "../../../ui/src/client";
+import { type LocalRows, chipsOf, sectionsOf } from "../src/model";
+import { SearchPalette } from "../src/SearchPalette";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { render } from "./home-block";
+import { render } from "../../home/test/home-block";
 import { useLayoutEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../../../ui/src";
-import { SearchHost } from "../../../ui/src/search/SearchHost";
+import { SearchHost } from "../src/SearchHost";
 import type { SearchAnswer, SearchHitView } from "../../../ui/src/client";
 import { FakeClient } from "../../../ui/test/fake-client";
 

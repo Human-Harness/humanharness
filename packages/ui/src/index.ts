@@ -1,4 +1,5 @@
 import { Group, IconButton, Row, SecondaryPage, SectionHead } from "./guide";
+import { Toggle } from "./guide/Toggle";
 export * from "./client";
 export * from "./state";
 export * from "./usage";
@@ -48,6 +49,9 @@ export { IconButton, SecondaryPage };
 // A core mod's Settings tab builds with Settings' own pieces: imported, then exported, so hh-dts (which publishes only
 // `export … from "./guide…"`) keeps them core-only.
 export { Group, Row, SectionHead };
+// The ⌘K palette (a core mod) builds with the guide's switch and the Settings tab list its rows are read from.
+export { Toggle };
+export { searchable, tabLabel, visibleTabs } from "./settings-tabs";
 export { ownName, shownLanguage, systemLanguage } from "./language";
 export { ProfileSwitcher } from "./ProfileSwitcher";
 export { useCurrentWindows } from "./UsageMeter";

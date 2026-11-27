@@ -58,6 +58,7 @@ import {
   saveAnswerRecords,
   sharedConfigDir,
   usageRecord,
+  withModAgent,
 } from "@humanharness/shell/tasks";
 import { pinnedContext } from "@humanharness/mod-context-panel/pins";
 import {
@@ -79,6 +80,7 @@ import {
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { promptAnswer } from "./input-prompt";
 import { MANIFEST } from "./paths";
+import { type CoreModSources, startRunMods } from "./run-mods";
 import { clashMessage, matchClashes } from "./mock-match";
 import { stripExchange } from "./plugin-record";
 import { Recorder, briefMatch, writeToolRecordings } from "./record";
@@ -120,6 +122,8 @@ export interface RunOptions {
   readiness?: { deps: CommandDeps; shared: SharedConfigStore };
   /** Tests: the tools' fetch, runner, key prompt, host check and resolver (default: the live ones, as `tool run`). */
   toolDeps?: ToolRunDeps;
+  /** Tests: the core mods to resolve, instead of the core's own. */
+  coreMods?: CoreModSources;
 }
 
 /** A source of Ctrl-C presses; `on` returns the function that removes the listener. */
@@ -350,6 +354,12 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     return t ? { id: t.id, scope: t.scope } : null;
   };
 
+  const warn = (text: string) => void out.write(`Warning: ${text}\n`);
+  const mods = await startRunMods({ harness, folder, warn, ...(o.coreMods ? { coreMods: o.coreMods } : {}) });
+  // The writing guide, and the review tools (review spec §4) as the app's ReviewService.agent runs them: one set of
+  // locks for the run, keyed on the canonical path by `runReviewRequest`. Tools only when the agent may edit (D0).
+  const coreAgent = reviewAgent(harness, (request) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request));
+
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
     createRuntime({
@@ -363,9 +373,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
       data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
-      // The writing guide, and the review tools (review spec §4) as the app's ReviewService.agent runs them: one set of
-      // locks for the run, keyed on the canonical path by `runReviewRequest`. Tools only when the agent may edit (D0).
-      ...reviewAgent(harness, (request) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request)),
+      // Then the mods' sections and tools, as in the app.
+      ...withModAgent(coreAgent, harness, () => mods),
       // The harness's settings, as the app writes them (harness-settings spec §5). Absent without settings (D0).
       ...(harness.settings ? { instructionSettings: () => instructionSettings(harness.settings!) } : {}),
       // The core `tools` server, as the app passes it: only with tools on and a tool the agent may call (D0).

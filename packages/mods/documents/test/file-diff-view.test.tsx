@@ -3,10 +3,10 @@ import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { Profiler } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FileDiffResult, LineChange } from "../src/client";
-import { FileDiff, aroundChanges, sideRows } from "../src/FileDiff";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import type { FileDiffResult, LineChange } from "../../../ui/src/client";
+import { FileDiff, aroundChanges, sideRows } from "../src/ui/FileDiff";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 type Report = (entries: { contentRect: { width: number } }[]) => void;
 /** A ResizeObserver whose reports the test sends; `first` is the width it reports on observe (none: no report). */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileDiff, type HarnessClient } from "@humanharness/ui";
+import type { HarnessClient } from "@humanharness/ui";
+import { FileDiff } from "./FileDiff";
 
 /**
  * "See what changed" (review spec §5.4, file-timeline spec §9): the last approved version against the file now, drawn

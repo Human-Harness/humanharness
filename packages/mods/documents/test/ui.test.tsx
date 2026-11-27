@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import fs from "node:fs";
+import path from "node:path";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
@@ -126,5 +128,29 @@ describe("the documents mod's ui", () => {
     const core = Object.keys(await import("../../../ui/src"));
     for (const name of ["ReviewBar", "NO_BAR_DRAFT", "ReviewColumn", "FocusMarkers", "ApprovedDiff", "findMarks", "drawMarks", "clearMarks"])
       expect(core).not.toContain(name);
+  });
+
+  it("the timeline and the diff are the mod's: the core's ui no longer exports them", async () => {
+    const core = Object.keys(await import("../../../ui/src"));
+    for (const name of ["FileTimeline", "FileTimelineSplit", "EntryDiff", "FileDiff", "aroundChanges", "sideRows"]) expect(core).not.toContain(name);
+  });
+
+  it("no core package imports the timeline or the diff", () => {
+    const packages = path.resolve(import.meta.dirname, "../../..");
+    const moved = /^(FileTimeline|FileTimelineSplit|EntryDiff|FileDiff|FileTimelineProps|FileDiffProps|DiffLayout)$/;
+    const found: string[] = [];
+    let scanned = 0;
+    for (const name of ["shell", "protocol", "runtime", "workspace", "harness-sdk", "ui"]) {
+      const src = path.join(packages, name, "src");
+      for (const rel of fs.readdirSync(src, { recursive: true, encoding: "utf8" }).filter((f) => /\.tsx?$/.test(f))) {
+        scanned++;
+        for (const m of fs.readFileSync(path.join(src, rel), "utf8").matchAll(/\b(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+          const names = (m[1] ?? "").split(",").map((n) => n.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0] ?? "");
+          if (names.some((n) => moved.test(n)) || moved.test(path.basename(m[2] ?? ""))) found.push(`${name}/src/${rel} → ${m[2]}`);
+        }
+      }
+    }
+    expect(scanned).toBeGreaterThan(100);
+    expect(found).toEqual([]);
   });
 });

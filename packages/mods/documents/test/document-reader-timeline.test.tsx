@@ -2,17 +2,17 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TimelineEntry } from "../src/client";
-import { DocumentReader } from "../../mods/documents/src/ui/DocumentReader";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import type { TimelineEntry } from "../../../ui/src/client";
+import { DocumentReader } from "../src/ui/DocumentReader";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 
 /** Every text box the reader looked for review marks in. */
 const marksFound = vi.hoisted(() => ({ boxes: [] as HTMLElement[] }));
-vi.mock("../../mods/documents/src/ui/review-marks", async (original) => {
-  const m = await original<typeof import("../../mods/documents/src/ui/review-marks")>();
+vi.mock("../src/ui/review-marks", async (original) => {
+  const m = await original<typeof import("../src/ui/review-marks")>();
   return {
     ...m,
     findMarks: (box: HTMLElement, marks: Parameters<typeof m.findMarks>[1]) => {

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { type FileTarget, FileTimelineSplit, type HarnessClient, type PanelProps, type ReaderPrefs } from "@humanharness/ui";
+import { type FileTarget, type HarnessClient, type PanelProps, type ReaderPrefs } from "@humanharness/ui";
 import { defineMod } from "@humanharness/mod-sdk";
 import { DocumentReader } from "./ui/DocumentReader";
+import { FileTimelineSplit } from "./ui/FileTimelineSplit";
 
 /** The target the opener hands the panel, with the open's own number. */
 type Opened = FileTarget & { nonce: number };

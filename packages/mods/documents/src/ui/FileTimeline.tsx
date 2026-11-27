@@ -1,9 +1,7 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { authorName, type FileTimelineResult, type HarnessClient, type TimelineEntry, timeAgo } from "./client";
-import { entryLabel } from "./history-labels";
-import { Rx } from "./guide";
+import { authorName, entryLabel, type FileTimelineResult, type HarnessClient, Rx, type TimelineEntry, timeAgo } from "@humanharness/ui";
 
 // Shared with main's native go-back confirmation, so both say who and when the same way.
 export { authorName, timeAgo };

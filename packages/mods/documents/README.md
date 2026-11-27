@@ -38,7 +38,9 @@ Documents is a core mod: it ships with the app and is on by default.
   may edit the folder. In the app a tool call goes through `ReviewService`, so both sides share its locks.
 - `src/ui.tsx`: registers the file opener and its panel. `src/ui/` holds the reader and the pieces of a review: the
   comment column, the bar, focus mode's margin markers, the marks on the text and the changes since the approval. Focus
-  mode quiets the chat through `UiCtx.taskView.quiet`. The timeline pieces still come from `@humanharness/ui`.
+  mode quiets the chat through `UiCtx.taskView.quiet`. It also holds a file's timeline and diffs: the reader's "File
+  history", the split view the panel shows for a file the reader can't open (or a deleted `.md`), and the line and
+  markdown diffs.
 - With the mod off, the app answers each channel as its caller already handles it (`mods/app-channels.ts` in the shell):
   `not-ready` for a read, null for an image or a watch, false for every path; `not-ready` for each review channel,
   except `hh:reviewSummaries`, which answers null for every path; `not-ready` for `hh:fileTimeline`, `hh:fileDiff` and

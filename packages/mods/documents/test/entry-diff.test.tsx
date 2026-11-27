@@ -2,11 +2,11 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatView } from "../src/ChatView";
-import type { TimelineEntry } from "../src/client";
-import { EntryDiff } from "../src/EntryDiff";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { ChatView } from "../../../ui/src/ChatView";
+import type { TimelineEntry } from "../../../ui/src/client";
+import { EntryDiff } from "../src/ui/EntryDiff";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

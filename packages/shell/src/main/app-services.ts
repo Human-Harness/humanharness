@@ -8,7 +8,6 @@ import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanhar
 import { APP_SCOPE, type History, MAIN_SCOPE, loadReview, notesPrefix, readNotes } from "@humanharness/workspace";
 import type { DataStore, ScopeStore } from "@humanharness/workspace";
 import type { ConfigStore } from "./config";
-import { ContextService } from "./context";
 import { dataWriteQueue, harnessUiDataRequests, personDataRequests } from "./data-requests";
 import { workerDiff } from "./diff-runner";
 import type { EngineIpc } from "./engine-config/engine-ipc";
@@ -217,43 +216,6 @@ export function createAppServices(d: AppServicesDeps) {
     diff: workerDiff({ entry: path.join(d.here, "diff-worker.js") }),
   });
 
-  /** The context panel (context-panel spec): the person's pins and exclusions and the open task's record. */
-  const contextSvc = new ContextService({
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    scoped,
-    scopeExists: (id) => activeScope(id),
-    budget: async () => pinnedBudget(cleanModels((await d.config().load()).models), d.harness().context),
-    record: (id) => d.tasks().contextRecord(id),
-    openTask: async () => (await d.tasks().runningTask())?.id ?? null,
-    noteTitles: async (scope) => {
-      const c = await validConfig();
-      if (!c) return new Map<string, string>();
-      const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
-      return new Map(notes.map((n) => [n.path, n.title]));
-    },
-    history: () => currentHistory(),
-    trailer: () => d.tasks().trailerNow(),
-    blocked: () => (d.quitting() ? "The app is closing" : turnBlocked()),
-    add: (taskId, file) => {
-      const { accepted, done } = d.tasks().addContext(taskId, file);
-      // Closing ends the operation before it runs: not a failure worth a log line.
-      done.catch((err: unknown) => {
-        if (!d.quitting()) console.error("The Add now turn failed", err);
-      });
-      return accepted;
-    },
-    pickFile: async (base) => {
-      const window = d.window();
-      if (!window || window.isDestroyed()) return null;
-      const result = await dialog.showOpenDialog(window, { defaultPath: base, properties: ["openFile"] });
-      return result.canceled ? null : (result.filePaths[0] ?? null);
-    },
-    changed: (task) => void sendContext(task),
-  });
-
   /** What search finds among the tasks, built when the palette opens (search spec §4.2): actions, the open task, past tasks. */
   async function searchMemory(): Promise<SearchDoc[]> {
     const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
@@ -330,12 +292,6 @@ export function createAppServices(d: AppServicesDeps) {
   events.on.baseGone((base) => searchSvc.discard(base));
   events.on.closing(() => searchSvc.flush());
 
-  /** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
-  async function sendContext(task: string): Promise<void> {
-    const got = await contextSvc.get(task).catch(() => null);
-    if (got?.ok) sendToWindow("hh:context", { task, context: got.context });
-  }
-
   /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
   const commitAnnouncements = commitAnnouncer((paths) => {
     sendToWindow("hh:fileCommits", paths);
@@ -358,10 +314,8 @@ export function createAppServices(d: AppServicesDeps) {
     harnessUiData,
     reviews,
     fileTimelines,
-    contextSvc,
     searchSvc,
     events,
-    sendContext,
     commitAnnouncements,
     announceCommits,
   };

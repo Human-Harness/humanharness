@@ -158,11 +158,7 @@ export interface TaskDeps {
   instructionsSize?(): Promise<number | null>;
   /** Pins and exclusions for a new task in `scope` (context-panel spec §4). Absent: none (D0). */
   personContext?(scope: string): Promise<PersonContext>;
-  /**
-   * What the core mods' `on.firstMessage` hooks add to the first or resume message, in the pins' slot (the host joins
-   * their sections and cuts each to its budget). Absent, or null: nothing (D0). The core's own pins stay behind
-   * `personContext`, the internal contributor of the same slot.
-   */
+  /** What the mods' `on.firstMessage` hooks add, in the pins' slot. Absent or null: nothing (D0). */
   modContext?(task: { id: string; action?: string; scope: string }): Promise<ModContext | null>;
   /** The open task's context record changed (its start, reads or compaction): the panel refreshes. */
   contextChanged?(taskId: string): void;
@@ -332,7 +328,6 @@ export class ScopeRequired extends Error {
   }
 }
 
-/** What the mods add to a first message: a section, its items, and the notes the indexes leave out. */
 export interface ModContext {
   text: string;
   items: ContextItem[];
@@ -1097,15 +1092,11 @@ export class TaskManager {
             return null;
           })
         : null;
-    // The mods' section and exclusions (`on.firstMessage`): asked whenever the pins' or the indexes' part is in the plan.
     const mod =
       this.d.modContext && extra.task && (has("notes") || has("app-notes") || has("pins"))
-        ? await this.d.modContext({ id: extra.task.id, ...(action !== undefined ? { action } : {}), scope }).catch((err: unknown) => {
-            console.error("Could not load the mods' first-message sections for the task", err);
-            return null;
-          })
+        ? await this.d.modContext({ id: extra.task.id, action, scope }).catch((err: unknown) => (console.error("mods' context", err), null))
         : null;
-    const excluded = mod && mod.excluded.size > 0 ? new Set([...(person?.excluded ?? []), ...mod.excluded]) : person?.excluded;
+    const excluded = mod?.excluded.size ? new Set([...(person?.excluded ?? []), ...mod.excluded]) : person?.excluded;
     // Both indexes leave the excluded notes out (context-panel spec §4.3); nothing excluded: the options as before (D0).
     // Built as a job run's first message builds them (notes-index.ts).
     const notes =
@@ -1167,7 +1158,7 @@ export class TaskManager {
             items.push(...person.items);
           }
           if (mod?.text) parts.push(mod.text);
-          if (mod) items.push(...mod.items);
+          items.push(...(mod?.items ?? []));
           break;
         case "material": {
           if (!this.d.materialContext) break;

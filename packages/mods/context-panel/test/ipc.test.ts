@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { CONTEXT_CHANNELS, contextHandlers } from "../src/main/context-ipc";
-import type { ContextService } from "../src/main/context";
+import { CONTEXT_CHANNELS, contextHandlers } from "../src/ipc";
+import type { ContextService } from "../src/service";
 
 describe("hh:context* handlers (context-panel spec §5.2)", () => {
   it("pass their arguments through and answer the service's data", async () => {

@@ -29,7 +29,7 @@ import { buildJobsHost, buildSingleJobs } from "./jobs/jobs-wiring";
 import { buildMaterial, buildMaterialJobs } from "./material-wiring";
 import { buildTaskAttention, keepNotification } from "./task-attention";
 import { buildTranslation } from "./translation";
-import { cleanModels } from "./models";
+import { cleanModels, pinnedBudget } from "./models";
 import { createToolsHost, slotTaskOf } from "./tools/tools-host";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { devDockIcon } from "./dock-icon";
@@ -114,6 +114,25 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     tasks: {
       contextRecord: (id) => d.tasks.contextRecord(id) as never,
       addContext: (id, file) => d.tasks.addContext(id, file),
+    },
+    context: {
+      scoped,
+      scopeExists: (id) => activeScope(id),
+      budget: async () => pinnedBudget(cleanModels((await d.config.load()).models), harness.context),
+      noteTitles: async (scope) => {
+        const c = await validConfig();
+        if (!c) return new Map<string, string>();
+        const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
+        return new Map(notes.map((n) => [n.path, n.title]));
+      },
+      history: () => currentHistory(),
+      trailer: () => d.tasks.trailerNow(),
+      blocked: () => (d.quitting ? "The app is closing" : turnBlocked()),
+      pickFile: async (base) => {
+        if (!d.window || d.window.isDestroyed()) return null;
+        const result = await dialog.showOpenDialog(d.window, { defaultPath: base, properties: ["openFile"] });
+        return result.canceled ? null : (result.filePaths[0] ?? null);
+      },
     },
     hasNotice,
     engine: getEngine,

@@ -106,6 +106,28 @@ export interface CoreApp {
     /** `fn(taskId)` runs when that task's record changed (its start, reads or compaction), while the mod is on. */
     onContextChanged(fn: (taskId: string) => void | Promise<void>): Disposer;
   };
+  /**
+   * What the context panel's mod needs of the app beyond the task's record: the folder's scopes, the pinned-text
+   * budget, note titles, the history, the file dialog and whether the app lets writes run now.
+   */
+  readonly context: {
+    /** Whether the harness has scopes. */
+    scoped(): boolean;
+    /** A registered, open scope (or `main` without scopes). */
+    scopeExists(id: string): Promise<boolean>;
+    /** Tokens of pinned text a new task gets whole: the person's, else the manifest's `context.pinnedTokens`, else the core's. */
+    budget(): Promise<number>;
+    /** Note path → title, for the notes of `scope` that are there. */
+    noteTitles(scope: string): Promise<Map<string, string>>;
+    /** The folder's local history; null when it has none. A commit takes the trailer of `trailer()`. */
+    history(): Promise<{ save(message: string, trailer?: unknown): Promise<unknown> } | null>;
+    /** The open task's history trailer, to tag a commit with. */
+    trailer(): Promise<unknown>;
+    /** Why writes can't run now (a restore, a move, an engine change, the app closing), or null. */
+    blocked(): string | null;
+    /** The system dialog at `base`: the absolute file picked, or null. */
+    pickFile(base: string): Promise<string | null>;
+  };
   readonly sessions: {
     /** Whether the person accepted the engine's notice. */
     hasNotice(engineId: string): Promise<boolean>;
@@ -152,6 +174,12 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
    */
   push(channel: `hh:${string}`, value: unknown): void;
   readonly app: CoreApp;
+  /**
+   * Answers the window's calls on app channel `channel` (`hh:…`, one the app lists for core mods; one mod's at a time),
+   * while the mod is on. The handler gets the call's arguments; a throw reaches the window as is. With the mod off
+   * the app answers the call itself, with a refusal.
+   */
+  handle(channel: `hh:${string}`, fn: (...args: unknown[]) => unknown): Disposer;
   /** `MainCtx.on`, with the hook only a core mod has. */
   readonly on: MainCtx<C>["on"] & {
     /**

@@ -1,26 +1,28 @@
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
 import type { ContextItem } from "@humanharness/protocol";
+import { addablePath, approxTokens, isBinary, locate, readCapped, readPrefix, stillSafe } from "@humanharness/workspace";
 import {
   PIN_INLINE_MAX_BYTES,
   type Pin,
   type PinFacts,
   type PinLayout,
-  isBinary,
   loadContext,
   pinBlock,
   pinTitleLine,
   pinnedSection,
   pinsLayout,
-  readCapped,
-  readPrefix,
   titleOf,
-} from "@humanharness/workspace";
-import { approxTokens } from "./context-record";
-import { locate } from "./documents";
-import { stillSafe } from "./open-path";
-import { addablePath } from "./task-prompts";
-import type { PersonContext } from "./task-manager";
+} from "./store";
+
+/** The person's pins and exclusions for a new task (context-panel spec §4): what the first message gets from them. */
+export interface PersonContext {
+  /** The pinned section ("" for none) and one item per pin it names. */
+  pinned: string;
+  items: ContextItem[];
+  /** Note paths left out of both notes indexes. */
+  excluded: ReadonlySet<string>;
+}
 
 /** Bytes looked at for a NUL (the file timeline's rule) and for a title. */
 const SNIFF_BYTES = 8 * 1024;

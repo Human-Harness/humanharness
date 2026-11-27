@@ -3,11 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  CONTEXT_PREFIX,
   PIN_INLINE_MAX_BYTES,
   PINS_MAX,
   cleanContext,
-  contextFile,
   fenceFor,
   loadContext,
   pinBlock,
@@ -16,7 +14,8 @@ import {
   pinsLayout,
   saveContext,
   titleOf,
-} from "../src";
+} from "../src/store";
+import { CONTEXT_PREFIX, contextFile } from "@humanharness/workspace";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-ctx-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ContextItem, ContextRead } from "@humanharness/protocol";
-import { PINS_MAX, loadContext, saveContext } from "@humanharness/workspace";
-import { ContextService, type ContextDeps, shown } from "../src/main/context";
+import { ContextService, type ContextDeps, shown } from "../src/service";
+import { PINS_MAX, loadContext, saveContext } from "../src/store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-ctxs-"));
 const AT = "2026-10-28T10:00:00.000Z";

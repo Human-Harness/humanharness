@@ -53,12 +53,12 @@ import {
   memoise,
   nearestTier,
   pinnedBudget,
-  pinnedContext,
   resolveReferences,
   saveAnswerRecords,
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
+import { pinnedContext } from "@humanharness/mod-context-panel/pins";
 import {
   APP_SCOPE,
   DataError,

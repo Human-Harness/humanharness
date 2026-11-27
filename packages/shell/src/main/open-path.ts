@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { canOpenFile } from "@humanharness/protocol";
+import { stillSafe } from "@humanharness/workspace";
 
 /**
  * The real path of `rel` inside one of `roots` (tried in order): a regular file, symlinks resolved, that
@@ -40,19 +41,7 @@ export function revealableFile(rel: unknown, roots: string[]): Promise<string | 
   return fileInside(rel, roots, () => true);
 }
 
-/**
- * Whether `target` (from openableFile or revealableFile) is still a regular file, not a link, with no link
- * on its way (its real path is itself), inside one of `roots`: it or a folder above it may have been
- * swapped since it was checked.
- */
-export async function stillSafe(target: string, roots: string[]): Promise<boolean> {
-  const stat = await fs.lstat(target).catch(() => null);
-  if (!stat || stat.isSymbolicLink() || !stat.isFile()) return false;
-  const real = await fs.realpath(target).catch(() => null);
-  if (real !== target) return false;
-  const realRoots = await Promise.all(roots.map((r) => fs.realpath(r).catch(() => null)));
-  return realRoots.some((r) => r !== null && real.startsWith(r + path.sep));
-}
+export { stillSafe };
 
 /** Hands `target` to `open` (shell.openPath) only if it is still safe. `open` answers "" on success. */
 export async function openIfStillSafe(target: string, roots: string[], open: (p: string) => Promise<string>): Promise<boolean> {

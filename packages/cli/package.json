@@ -11,6 +11,7 @@
     "@humanharness/fake-agent": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
+    "@humanharness/mod-context-panel": "workspace:*",
     "@humanharness/mod-sdk": "workspace:*",
     "@humanharness/policies": "workspace:*",
     "@humanharness/protocol": "workspace:*",

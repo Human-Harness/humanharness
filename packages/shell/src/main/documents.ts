@@ -2,8 +2,7 @@ import nodeFs, { promises as fs } from "node:fs";
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
 import type { DocumentRead } from "@humanharness/protocol";
-import { type CappedRead, readCapped } from "@humanharness/workspace";
-import { stillSafe } from "./open-path";
+import { type CappedRead, type Located, locate, readCapped, stillSafe } from "@humanharness/workspace";
 
 /** Over this the reader refuses a document (Open questions Q6). */
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
@@ -13,31 +12,8 @@ const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "imag
 /** `.md` and `.markdown` (the SDK's `isMarkdownPath` takes only `.md`). */
 const MARKDOWN = /\.(md|markdown)$/i;
 
-export type Located = { ok: true; file: string; root: string } | { ok: false; reason: "outside" | "missing" };
-
-/**
- * Where `rel` is, tried in each root in order (the person's folder first, then the reference folders): a regular file
- * whose real path is inside the same root. A path that is inside a root but not there is "missing"; a path that leaves
- * every root, or a link that points out, is "outside".
- */
-export async function locate(rel: unknown, roots: string[]): Promise<Located> {
-  if (refusedShape(rel)) return { ok: false, reason: "outside" };
-  const relPath = rel as string;
-  let inside = false;
-  for (const root of roots) {
-    const realRoot = await fs.realpath(root).catch(() => null);
-    if (!realRoot) continue;
-    const candidate = path.resolve(realRoot, relPath);
-    if (!candidate.startsWith(realRoot + path.sep)) continue;
-    inside = true;
-    const real = await fs.realpath(candidate).catch(() => null);
-    if (!real) continue;
-    if (!real.startsWith(realRoot + path.sep)) return { ok: false, reason: "outside" };
-    const stat = await fs.stat(real).catch(() => null);
-    if (stat?.isFile()) return { ok: true, file: real, root: realRoot };
-  }
-  return { ok: false, reason: inside ? "missing" : "outside" };
-}
+export type { Located };
+export { locate };
 
 /** The bytes of `file` (from `locate`), read by the workspace's `readCapped` while it stays inside a root. */
 const readCappedIn = (file: string, roots: string[], max: number): Promise<CappedRead> => readCapped(file, max, () => stillSafe(file, roots));

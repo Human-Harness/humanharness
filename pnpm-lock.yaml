@@ -242,6 +242,9 @@ importers:
       '@humanharness/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@humanharness/mod-context-panel':
+        specifier: workspace:*
+        version: link:../mods/context-panel
       '@humanharness/mod-sdk':
         specifier: workspace:*
         version: link:../mod-sdk
@@ -426,6 +429,21 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  packages/mods/context-panel:
+    dependencies:
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../../harness-sdk
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../../mod-sdk
+      '@humanharness/protocol':
+        specifier: workspace:*
+        version: link:../../protocol
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../../workspace
 
   packages/mods/history-view:
     dependencies:

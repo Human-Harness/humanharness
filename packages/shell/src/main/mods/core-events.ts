@@ -1,7 +1,7 @@
 import type { ModHost } from "./host";
 
 type Off = () => void;
-type HostEvents = Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone">>;
+type HostEvents = Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone" | "historyCommit" | "folderChanged">>;
 
 /** What the app's call sites say happened; the core mods (via the host) and the core's own services hear it. */
 export interface CoreEvents {
@@ -11,6 +11,10 @@ export interface CoreEvents {
   restored(paths: readonly string[] | null): void;
   /** `base` is gone for good: a folder move left it, or a profile was forgotten. Resolves when the listeners are done. */
   baseGone(base: string): Promise<void>;
+  /** The history saved a commit touching `paths` (base-relative; null: it doesn't say which). Core mods only. */
+  historyCommit(paths: readonly string[] | null): void;
+  /** The base folder moved, changed or switched with the profile: said as the reader's watches close. Core mods only. */
+  folderChanged(): void;
   /** Before quit: the core's own services settle. (A core mod hears the host's `close` hook as it stops.) */
   closing(): Promise<void>;
   /** The core's own services subscribe here (a core mod uses `ctx.on` instead). */
@@ -68,6 +72,12 @@ export function createCoreEvents(d: { host(): HostEvents | null }): CoreEvents {
     },
     async baseGone(base) {
       await Promise.all([settle([...lists.baseGone].map((fn) => () => fn(base)), "baseGone"), hostCall((h) => h.baseGone?.(base))]);
+    },
+    historyCommit(paths) {
+      void hostCall((h) => h.historyCommit?.(paths));
+    },
+    folderChanged() {
+      void hostCall((h) => h.folderChanged?.());
     },
     closing: () => settle(lists.closing, "closing"),
     on: { dataChanged: sub(lists.dataChanged), restored: sub(lists.restored), baseGone: sub(lists.baseGone), closing: sub(lists.closing) },

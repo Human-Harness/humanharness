@@ -24,6 +24,7 @@ import type { Profiles } from "./profiles";
 import type { ResolvedReference } from "./references";
 import { RestoreGuard } from "./restore-guard";
 import { ReviewService } from "./reviews";
+import { actionLabelOf } from "./mods/core-documents";
 import { createCoreEvents } from "./mods/core-events";
 import type { ModHost } from "./mods/host";
 import { revealIfStillSafe } from "./open-path";
@@ -67,7 +68,7 @@ export interface AppServicesDeps {
   /** The mods' own stores (`ctx.stores`): whether a mod has one named `name`, and that store in `base`. Absent: none. */
   modStores?: { has(name: string): boolean; storeFor(base: string, name: string): DataStore | undefined };
   /** The mod host, told after a restore (core mods' `onRefresh`). Absent or null: no mods (D0). */
-  modHost?(): (Pick<ModHost, "refresh"> & Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone">>) | null;
+  modHost?(): (Pick<ModHost, "refresh"> & Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone" | "historyCommit" | "folderChanged">>) | null;
   scopeStoreFor(base: string): ScopeStore;
   scopesView(): Promise<ScopesView>;
   currentHistory(): Promise<History | null>;
@@ -204,7 +205,7 @@ export function createAppServices(d: AppServicesDeps) {
       return c ? baseOf(c) : null;
     },
     history: () => currentHistory(),
-    actionLabel: (id) => (id === null ? "A question" : Object.hasOwn(d.harness().actions, id) ? d.harness().actions[id].label : id),
+    actionLabel: (id) => actionLabelOf(d.harness().actions, id),
     approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
     busy: () => d.quitting() || d.tasks().isBusy() || turnBlocked() !== null,
     restore: (run) => restoreWith(run),
@@ -267,6 +268,8 @@ export function createAppServices(d: AppServicesDeps) {
     d.engineIpc()?.committed(paths);
     // Search (D0): the commit's paths go out as `restored`; the search service (and a core mod) read them again.
     events.restored(paths);
+    // And as the commit it is: `restored` also fires on a restore.
+    events.historyCommit(paths);
   });
   const announceCommits = (history: History) => commitAnnouncements.watch(history);
 

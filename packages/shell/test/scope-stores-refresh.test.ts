@@ -11,7 +11,7 @@ function deps(o: Partial<ScopeStoresDeps> = {}): ScopeStoresDeps {
     baseOf: (c) => c.folder,
     scoped: () => false,
     sendToWindow: () => {},
-    events: () => ({ dataChanged: () => {} }),
+    events: () => ({ dataChanged: () => {}, folderChanged: () => {} }),
     settingsCtl: () => null,
     profilesCtl: () => null,
     setupCtl: () => null,
@@ -36,6 +36,13 @@ describe("a profile switch arrives", () => {
     const refresh = vi.fn(async () => {});
     await createScopeStores(deps({ modHost: () => ({ refresh }) })).arrivedInProfile();
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the folder changed as the reader's watches are closed", async () => {
+    const order: string[] = [];
+    const events = () => ({ dataChanged: () => {}, folderChanged: () => void order.push("folderChanged") });
+    await createScopeStores(deps({ events, documentSessions: { closeAll: () => void order.push("closeAll") } })).arrivedInProfile();
+    expect(order).toEqual(["closeAll", "folderChanged"]);
   });
 
   it("without a mod host, nothing (D0)", async () => {

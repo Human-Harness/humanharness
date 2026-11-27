@@ -65,6 +65,11 @@ export async function createWindow(d: WindowDeps) {
   d.window = win;
   // Read now: once closed, the window's webContents can no longer be asked.
   const contentsId = win.webContents.id;
+  /** What was held for this window's page goes: the reader's watches, and whatever a core mod keyed by it. */
+  const dropPageWatches = () => {
+    documentSessions.closeOwner(contentsId);
+    void d.modHost?.windowClosed(contentsId);
+  };
   // hh-mod (0b2): the built ui of an on, non-core mod, on the window's session; once per session.
   const modProtocol = win.webContents.session.protocol;
   if (!modProtocol.isProtocolHandled(MOD_SCHEME.scheme)) {
@@ -74,7 +79,7 @@ export async function createWindow(d: WindowDeps) {
   }
   win.on("closed", () => {
     if (d.window === win) d.window = null;
-    documentSessions.closeOwner(contentsId);
+    dropPageWatches();
   });
   // The agent may have edited attention.json (no listener fires for it): the inbox is read again when the window comes back.
   const plugins = d.pluginsCtl;
@@ -90,7 +95,7 @@ export async function createWindow(d: WindowDeps) {
     });
   }
   // A reload starts a new page with no watches of its own: the old page's go.
-  win.webContents.on("did-navigate", () => documentSessions.closeOwner(contentsId));
+  win.webContents.on("did-navigate", dropPageWatches);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };

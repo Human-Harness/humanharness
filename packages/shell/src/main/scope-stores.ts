@@ -20,7 +20,7 @@ export interface ScopeStoresDeps {
   baseOf(c: { folder: string; profile?: string }): string;
   scoped(): boolean;
   sendToWindow(channel: PushChannel, value: unknown): void;
-  events(): Pick<CoreEvents, "dataChanged">;
+  events(): Pick<CoreEvents, "dataChanged" | "folderChanged">;
   settingsCtl(): SettingsController | null;
   profilesCtl(): Profiles | null;
   setupCtl(): SetupSteps | null;
@@ -140,6 +140,7 @@ export function createScopeStores(d: ScopeStoresDeps) {
     await d.backendLeaveBase();
     // Another profile is another folder: the reader's watches were checked against the old one.
     d.documentSessions.closeAll();
+    d.events().folderChanged();
     await d.interruptTasks();
     d.settingsCtl()?.forget();
     await d.settingsCtl()?.changed();

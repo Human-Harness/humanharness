@@ -40,10 +40,6 @@ export interface AppServicesDeps {
     | "finish"
     | "chatScope"
     | "trailerNow"
-    | "runningTask"
-    | "whenSettled"
-    | "reviewRound"
-    | "documentApproved"
     | "contextRecord"
     | "addContext"
     | "view"
@@ -73,7 +69,7 @@ export interface AppServicesDeps {
   workReferences(c: ConfiguredApp, base: string): Promise<ResolvedReference[]>;
 }
 
-/** The services behind the IPC handlers: holds, restores, profile switches, data requests, timelines, context, search. */
+/** The services behind the IPC handlers: holds, restores, profile switches, data requests, context, search. */
 export function createAppServices(d: AppServicesDeps) {
   const {
     validConfig,

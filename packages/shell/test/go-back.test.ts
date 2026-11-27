@@ -1,7 +1,7 @@
 import { createI18n } from "@humanharness/i18n";
 import type { FileRestorePrompt, HistoryTaskView } from "@humanharness/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { CANCELLED, GO_BACK_CHANNELS, type GoBackAsk, type GoBackDeps, askNatively, dialogSafe, goBackHandlers, goBackText } from "../src/main/go-back";
+import { CANCELLED, GO_BACK_CHANNELS, type GoBackAsk, type GoBackDeps, type GoBackFile, askNatively, createGoBacks, dialogSafe, goBackHandlers, goBackText } from "../src/main/go-back";
 
 const SHA = (c: string) => c.repeat(40);
 const NOW = Date.parse("2026-10-28T12:00:00.000Z");
@@ -158,13 +158,18 @@ describe("goBackHandlers (every go-back asks first)", () => {
       groups: async () => groups,
       restorePoint: async (sha) => void done.push(`point ${sha}`),
       restoreTask: async (id) => void done.push(`task ${id}`),
-      file: {
-        restorePrompt: async (file) => (file === "busy.md" ? { ok: false, reason: "busy" } : { ok: true, prompt }),
-        restore: async (file, commit) => (done.push(`file ${file} ${commit}`), { ok: true }),
-      },
       ...o,
     };
-    return { h: goBackHandlers(d), asks, done };
+    const service: GoBackFile = {
+      restorePrompt: async (file) => (file === "busy.md" ? { ok: false, reason: "busy" } : { ok: true, prompt }),
+      restore: async (file, commit) => (done.push(`file ${file} ${commit}`), { ok: true }),
+    };
+    return { h: withFile(d, service), asks, done };
+  }
+  /** The two handlers and a core mod's file go-back with `service`, all under one dialog lock. */
+  function withFile(d: GoBackDeps<string>, service: GoBackFile) {
+    const { handlers, file } = createGoBacks(d);
+    return { ...handlers, fileRestore: (sender: string, name: unknown, commit: unknown) => file(sender, name, commit, service) };
   }
 
   it("restore: a valid commit id that no listed point has asks nothing", async () => {
@@ -203,7 +208,7 @@ describe("goBackHandlers (every go-back asks first)", () => {
     const first = h["restoreTask"]("win", "t2");
     await new Promise((r) => setTimeout(r, 0));
     expect(await h["restore"]("win", SHA("1"))).toEqual(CANCELLED);
-    expect(await h["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual(CANCELLED);
+    expect(await h.fileRestore("win", "specs/a.md", SHA("b"))).toEqual(CANCELLED);
     expect(opened).toHaveLength(1);
     answer(true);
     expect(await first).toEqual({ ok: true });
@@ -216,8 +221,9 @@ describe("goBackHandlers (every go-back asks first)", () => {
     expect(opened).toHaveLength(2);
   });
 
-  it("covers the three go-backs", () => {
-    expect(Object.keys(deps(true).h).sort()).toEqual([...GO_BACK_CHANNELS].sort());
+  it("covers the folder and task go-backs", () => {
+    const d: GoBackDeps<string> = { confirm: async () => false, blocked: () => false, groups: async () => [], restorePoint: async () => undefined, restoreTask: async () => undefined };
+    expect(Object.keys(goBackHandlers(d)).sort()).toEqual([...GO_BACK_CHANNELS].sort());
   });
 
   it("restore: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
@@ -254,13 +260,13 @@ describe("goBackHandlers (every go-back asks first)", () => {
     expect(yes.done).toEqual(["task t2", "task t9"]);
   });
 
-  it("hh:fileRestore: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
+  it("a file: confirmed goes back; cancelled answers cancelled and changes nothing", async () => {
     const yes = deps(true);
-    expect(await yes.h["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual({ ok: true });
+    expect(await yes.h.fileRestore("win", "specs/a.md", SHA("b"))).toEqual({ ok: true });
     expect(yes.done).toEqual([`file specs/a.md ${SHA("b")}`]);
     expect(yes.asks).toEqual([{ sender: "win", ask: { kind: "file", prompt } }]);
     const no = deps(false);
-    expect(await no.h["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual(CANCELLED);
+    expect(await no.h.fileRestore("win", "specs/a.md", SHA("b"))).toEqual(CANCELLED);
     expect(no.done).toEqual([]);
   });
 
@@ -271,21 +277,23 @@ describe("goBackHandlers (every go-back asks first)", () => {
     await expect(h["restoreTask"]("win", "x".repeat(201))).rejects.toThrow("Invalid task");
     // The group outside any task has no "before" to go back to.
     await expect(h["restoreTask"]("win", "missing")).rejects.toThrow("Nothing to go back to");
-    expect(await h["hh:fileRestore"]("win", "busy.md", SHA("b"))).toEqual({ ok: false, reason: "busy" });
+    expect(await h.fileRestore("win", "busy.md", SHA("b"))).toEqual({ ok: false, reason: "busy" });
     expect(asks).toEqual([]);
     expect(done).toEqual([]);
   });
 
   it("a file go-back that throws, or a confirm that fails, answers failed as data", async () => {
     const { h } = deps(true);
-    const broken = goBackHandlers<string>({
-      ...{ blocked: () => false, groups: async () => [], restorePoint: async () => undefined, restoreTask: async () => undefined },
-      confirm: async () => {
-        throw new Error("gone");
+    const broken = withFile(
+      {
+        ...{ blocked: () => false, groups: async () => [], restorePoint: async () => undefined, restoreTask: async () => undefined },
+        confirm: async () => {
+          throw new Error("gone");
+        },
       },
-      file: { restorePrompt: async () => ({ ok: true, prompt }), restore: async () => ({ ok: true }) },
-    });
-    expect(await broken["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual({ ok: false, reason: "failed" });
-    expect(await h["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual({ ok: true });
+      { restorePrompt: async () => ({ ok: true, prompt }), restore: async () => ({ ok: true }) },
+    );
+    expect(await broken.fileRestore("win", "specs/a.md", SHA("b"))).toEqual({ ok: false, reason: "failed" });
+    expect(await h.fileRestore("win", "specs/a.md", SHA("b"))).toEqual({ ok: true });
   });
 });

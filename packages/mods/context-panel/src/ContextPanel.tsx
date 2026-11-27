@@ -1,9 +1,13 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { ContextApi } from "@humanharness/protocol";
 import { type ContextItem, type ContextRead, type ContextRefusal, type ContextResult, type HarnessClient, type NoteView, type TaskContext, Button, Icon, IconButton, shownLanguage } from "@humanharness/ui";
 
 export interface ContextPanelProps {
+  /** The app's client: the panel reads the scopes from it. */
   client: HarnessClient;
+  /** The panel's own calls (the mod's ipc). */
+  context: ContextApi;
   taskId: string;
   /** The context in use and the task's cap (the meter's numbers), shown on top. */
   usage?: { used: number; cap: number };
@@ -30,7 +34,7 @@ const preparedName = (id: string): string | null => {
  * What the agent takes into account in a task (context-panel spec §5.1): what the app loaded at the start, what the
  * agent used since, the pinned files and the excluded notes, with "Add…", "Pin", "Exclude", "Remove", "Include again".
  */
-export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClose, readOnly = false }: ContextPanelProps) {
+export function ContextPanel({ client, context, taskId, usage, notes = [], onOpen, onClose, readOnly = false }: ContextPanelProps) {
   const { t, i18n } = useTranslation();
   const startId = useId();
   const duringId = useId();
@@ -91,7 +95,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
     setWaiting(false);
     setNotice(null);
     let live = true;
-    client.context.get(taskId).then(
+    context.get(taskId).then(
       (r) => {
         if (!live) return;
         if (r.ok) {
@@ -101,14 +105,14 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
       },
       () => live && setFailed("failed"),
     );
-    const off = client.context.onChange(taskId, (c) => {
+    const off = context.onChange(taskId, (c) => {
       if (live) setCtx(c);
     });
     return () => {
       live = false;
       off();
     };
-  }, [client, taskId]);
+  }, [context, taskId]);
 
   const scoped = ctx?.scoped === true;
   const scope = ctx?.scope;
@@ -127,7 +131,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
   }, [client, scoped, scope]);
 
   const refresh = (id: string) =>
-    client.context.get(id).then(
+    context.get(id).then(
       (r) => {
         if (r.ok && current(id)) setCtx(r.context);
       },
@@ -194,7 +198,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
       {r.count > 1 && <span className="hh-ctxp-size">{t("context.times", { count: r.count })}</span>}
       {r.compacted && <span className="hh-caption">{t("context.faint")}</span>}
       {!readOnly && r.path && (
-        <button type="button" aria-label={t("context.pinName", { name: r.path })} onClick={() => void run(() => client.context.pin(ctx.scope, r.path!))}>
+        <button type="button" aria-label={t("context.pinName", { name: r.path })} onClick={() => void run(() => context.pin(ctx.scope, r.path!))}>
           {t("context.pin")}
         </button>
       )}
@@ -228,7 +232,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                 onClick={async () => {
                   const id = taskId;
                   closeMenu();
-                  const r = await client.context.pick().catch(() => ({ ok: false as const, reason: "failed" as const }));
+                  const r = await context.pick().catch(() => ({ ok: false as const, reason: "failed" as const }));
                   if (!current(id)) return;
                   if (r.ok) setPicked(r.path);
                   else if (r.reason !== "cancelled") setNotice(t(`context.refused.${r.reason}`));
@@ -260,17 +264,17 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                 onClick={async () => {
                   const id = taskId;
                   setWaiting(true);
-                  await run(() => client.context.add(id, picked), settled);
+                  await run(() => context.add(id, picked), settled);
                   if (current(id)) setWaiting(false);
                 }}
               >
                 {t("context.forTask")}
               </button>
-              <button type="button" disabled={waiting} onClick={() => void run(() => client.context.pin(ctx.scope, picked), settled)}>
+              <button type="button" disabled={waiting} onClick={() => void run(() => context.pin(ctx.scope, picked), settled)}>
                 {pinLabel}
               </button>
               {scoped && ctx.scope !== "_app" && (
-                <button type="button" disabled={waiting} onClick={() => void run(() => client.context.pin("_app", picked), settled)}>
+                <button type="button" disabled={waiting} onClick={() => void run(() => context.pin("_app", picked), settled)}>
                   {t("context.pinApp")}
                 </button>
               )}
@@ -310,7 +314,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                           <button
                             type="button"
                             aria-label={t("context.excludeName", { name: n.title })}
-                            onClick={() => void run(() => client.context.exclude(i.kind === "app-notes-index" ? "_app" : ctx.scope, n.path), focusOn(startHead))}
+                            onClick={() => void run(() => context.exclude(i.kind === "app-notes-index" ? "_app" : ctx.scope, n.path), focusOn(startHead))}
                           >
                             {t("context.exclude")}
                           </button>
@@ -349,7 +353,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
                   {/* A title-only pin costs one line, not the file: its size would read as what the task gets. */}
                   {p.state === "full" && <span className="hh-ctxp-size">{t("context.approx", { tokens: fmt(p.tokens) })}</span>}
                   {!readOnly && (
-                    <button type="button" aria-label={t("context.removeName", { name: p.path })} onClick={() => void run(() => client.context.unpin(p.scope, p.path), focusOn(pinnedHead))}>
+                    <button type="button" aria-label={t("context.removeName", { name: p.path })} onClick={() => void run(() => context.unpin(p.scope, p.path), focusOn(pinnedHead))}>
                       {t("context.remove")}
                     </button>
                   )}
@@ -368,7 +372,7 @@ export function ContextPanel({ client, taskId, usage, notes = [], onOpen, onClos
               <li key={`${e.scope}:${e.note}`} className="hh-ctxp-row">
                 {e.title ? open(e.note, e.title) : <span className="hh-ctxp-gone">{fileName(e.note)}</span>}
                 {!readOnly && (
-                  <button type="button" aria-label={t("context.includeName", { name: e.title ?? fileName(e.note) })} onClick={() => void run(() => client.context.include(e.scope, e.note), focusOn(ctx.excluded.length > 1 ? excludedHead : addRef))}>
+                  <button type="button" aria-label={t("context.includeName", { name: e.title ?? fileName(e.note) })} onClick={() => void run(() => context.include(e.scope, e.note), focusOn(ctx.excluded.length > 1 ? excludedHead : addRef))}>
                     {t("context.include")}
                   </button>
                 )}

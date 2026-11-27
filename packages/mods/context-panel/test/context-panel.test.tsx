@@ -40,7 +40,7 @@ async function show(props: Partial<Parameters<typeof ContextPanel>[0]> = {}, ctx
   const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
   client.contexts.t1 = ctx;
   const onOpen = vi.fn();
-  await renderIn("en", <ContextPanel client={client} taskId="t1" usage={{ used: 40_000, cap: 200_000 }} onOpen={onOpen} onClose={() => {}} {...props} />);
+  await renderIn("en", <ContextPanel client={client} context={client.context} taskId="t1" usage={{ used: 40_000, cap: 200_000 }} onOpen={onOpen} onClose={() => {}} {...props} />);
   const panel = await screen.findByRole("region", { name: "What the AI takes into account" });
   await within(panel).findByRole("heading", { name: "At the start" });
   return { client, panel, onOpen };
@@ -172,10 +172,10 @@ describe("ContextPanel (context-panel spec §5.1)", () => {
     client.contexts.t1 = CTX;
     client.contexts.t2 = { ...CTX, task: "t2", reads: [{ kind: "read", label: "src/two.ts", path: "src/two.ts", firstAt: AT, count: 1 }] };
     client.pickAnswer = { ok: true, path: "docs/conv.md" };
-    const { rerender, i18n } = await renderIn("en", <ContextPanel client={client} taskId="t1" />);
+    const { rerender, i18n } = await renderIn("en", <ContextPanel client={client} context={client.context} taskId="t1" />);
     const wrap = (id: string) => (
       <I18nextProvider i18n={i18n}>
-        <ContextPanel client={client} taskId={id} />
+        <ContextPanel client={client} context={client.context} taskId={id} />
       </I18nextProvider>
     );
     await screen.findByText("src/app.ts");
@@ -202,11 +202,11 @@ describe("ContextPanel (context-panel spec §5.1)", () => {
       await gate;
       return { ok: false, reason: "binary" };
     };
-    const { rerender, i18n } = await renderIn("en", <ContextPanel client={client} taskId="t1" />);
+    const { rerender, i18n } = await renderIn("en", <ContextPanel client={client} context={client.context} taskId="t1" />);
     fireEvent.click(await screen.findByRole("button", { name: "Pin src/app.ts" }));
     rerender(
       <I18nextProvider i18n={i18n}>
-        <ContextPanel client={client} taskId="t2" />
+        <ContextPanel client={client} context={client.context} taskId="t2" />
       </I18nextProvider>,
     );
     await screen.findByText("src/two.ts");
@@ -245,7 +245,7 @@ describe("ContextPanel (context-panel spec §5.1)", () => {
 
   it("says when there is no open task", async () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
-    await renderIn("en", <ContextPanel client={client} taskId="t9" />);
+    await renderIn("en", <ContextPanel client={client} context={client.context} taskId="t9" />);
     expect(await screen.findByText("No task is open.")).toBeTruthy();
   });
 });

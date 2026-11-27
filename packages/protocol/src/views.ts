@@ -457,6 +457,23 @@ export type ContextGetResult = { ok: true; context: TaskContext } | { ok: false;
 export type ContextPick = { ok: true; path: string } | { ok: false; reason: "cancelled" | ContextRefusal };
 
 /**
+ * What the context panel calls (context-panel spec §5.2): the mod's own ipc, no longer a `client` member. Every answer
+ * is data.
+ */
+export interface ContextApi {
+  get(taskId: string): Promise<ContextGetResult>;
+  onChange(taskId: string, listener: (context: TaskContext) => void): () => void;
+  /** §4.1: the open task reads `path` now. */
+  add(taskId: string, path: string): Promise<ContextResult>;
+  /** The system file dialog at the folder; the path comes back checked like a pin's. */
+  pick(): Promise<ContextPick>;
+  pin(scope: string, path: string): Promise<ContextResult>;
+  unpin(scope: string, path: string): Promise<ContextResult>;
+  exclude(scope: string, notePath: string): Promise<ContextResult>;
+  include(scope: string, notePath: string): Promise<ContextResult>;
+}
+
+/**
  * How a phase pick went (spec §4.2): a change turn runs ("turn"), only the state changed ("quiet"), it already was the
  * phase ("same"), or the close phase's Finish closes the task ("closing"). Refusals: no task waits ("no-task"), or the
  * action has no such phase ("unknown").

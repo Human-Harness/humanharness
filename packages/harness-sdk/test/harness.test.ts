@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CORE_BLOCKS, DEFAULT_LANGUAGE, canonicalLanguage, languageName, HARNESS_ID, TIERS, actionScope, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema, z as sdkZ } from "../src";
+import { CORE_BLOCKS, DEFAULT_LANGUAGE, canonicalLanguage, languageName, HARNESS_ID, TIERS, actionScope, allBlocks, blockToolName, choicesSchema, contextPanelConfig, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema, z as sdkZ } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -338,17 +338,23 @@ describe("manifest texts", () => {
   });
 });
 
-describe("context.pinnedTokens (context-panel spec §4.2)", () => {
+describe("mods.context-panel.pinnedTokens (context-panel spec §4.2)", () => {
+  const withKey = (cfg: unknown) => defineHarness({ ...minimal, mods: { "context-panel": cfg as Record<string, unknown> } });
   it("suggests the pinned budget; absent, there is no key (D0)", () => {
-    expect(defineHarness({ ...minimal, context: { pinnedTokens: 6000 } }).context).toEqual({ pinnedTokens: 6000 });
-    expect(defineHarness({ ...minimal, context: {} }).context).toEqual({ pinnedTokens: 3000 });
-    expect(defineHarness(minimal).context).toBeUndefined();
+    expect(withKey({ pinnedTokens: 6000 }).mods?.["context-panel"]).toEqual({ pinnedTokens: 6000 });
+    expect(contextPanelConfig(withKey({ pinnedTokens: 6000 }))).toEqual({ pinnedTokens: 6000 });
+    expect(contextPanelConfig(withKey({}))).toEqual({ pinnedTokens: 3000 });
+    expect(contextPanelConfig(defineHarness(minimal))).toBeUndefined();
   });
 
   it("refuses a budget that is not a whole number from 0 to 50,000", () => {
-    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: -1 } })).toThrow();
-    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: 60_000 } })).toThrow();
-    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: 1.5 } })).toThrow();
+    expect(() => withKey({ pinnedTokens: -1 })).toThrow();
+    expect(() => withKey({ pinnedTokens: 60_000 })).toThrow();
+    expect(() => withKey({ pinnedTokens: 1.5 })).toThrow();
+  });
+
+  it("refuses the old top-level `context` key by name", () => {
+    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: 6000 } } as never)).toThrow(/mods\.context-panel/);
   });
 });
 

@@ -3,7 +3,7 @@ import { BrowserWindow, Notification, app, dialog, ipcMain, nativeImage, nativeT
 import { CORE_MODS } from "./mods/core-mods";
 import type { CoreAppParts } from "./mods/core-app";
 import { ConfigStore, historyDir } from "./config";
-import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, hasEnginePresets, hasJobs, hasSecrets, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, hasEnginePresets, hasJobs, hasSecrets, contextPanelConfig, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
 import { MOD_SCHEME } from "./mods/mod-scheme";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
@@ -118,7 +118,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     context: {
       scoped,
       scopeExists: (id) => activeScope(id),
-      budget: async () => pinnedBudget(cleanModels((await d.config.load()).models), harness.context),
+      budget: async () => pinnedBudget(cleanModels((await d.config.load()).models), contextPanelConfig(harness)),
       noteTitles: async (scope) => {
         const c = await validConfig();
         if (!c) return new Map<string, string>();

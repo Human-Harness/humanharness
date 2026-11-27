@@ -1,13 +1,10 @@
-import type { InvokeChannel } from "@humanharness/protocol/channels";
+import type { ContextCall } from "./api";
 import type { ContextService } from "./service";
-
-export const CONTEXT_CHANNELS = ["hh:contextGet", "hh:contextAdd", "hh:contextPick", "hh:contextPin", "hh:contextUnpin", "hh:contextExclude", "hh:contextInclude"] as const satisfies readonly InvokeChannel[];
-export type ContextChannel = (typeof CONTEXT_CHANNELS)[number];
 
 const failed = { ok: false as const, reason: "failed" as const };
 
-/** The `hh:context*` handlers (context-panel spec §5.2). Every answer is data; a throw is a bug, logged, answered `failed`. */
-export function contextHandlers(svc: ContextService): Record<ContextChannel, (...args: unknown[]) => Promise<unknown>> {
+/** The seven ipc handlers, by call name (context-panel spec §5.2). Every answer is data; a throw is a bug, logged, answered `failed`. */
+export function contextHandlers(svc: ContextService): Record<ContextCall, (...args: unknown[]) => Promise<unknown>> {
   const call = (fn: () => unknown): Promise<unknown> =>
     Promise.resolve()
       .then(fn)
@@ -16,12 +13,12 @@ export function contextHandlers(svc: ContextService): Record<ContextChannel, (..
         return failed;
       });
   return {
-    "hh:contextGet": (task) => call(() => svc.get(task)),
-    "hh:contextAdd": (task, file) => call(() => svc.add(task, file)),
-    "hh:contextPick": () => call(() => svc.pick()),
-    "hh:contextPin": (scope, file) => call(() => svc.pin(scope, file)),
-    "hh:contextUnpin": (scope, file) => call(() => svc.unpin(scope, file)),
-    "hh:contextExclude": (scope, note) => call(() => svc.exclude(scope, note)),
-    "hh:contextInclude": (scope, note) => call(() => svc.include(scope, note)),
+    "get": (task) => call(() => svc.get(task)),
+    "add": (task, file) => call(() => svc.add(task, file)),
+    "pick": () => call(() => svc.pick()),
+    "pin": (scope, file) => call(() => svc.pin(scope, file)),
+    "unpin": (scope, file) => call(() => svc.unpin(scope, file)),
+    "exclude": (scope, note) => call(() => svc.exclude(scope, note)),
+    "include": (scope, note) => call(() => svc.include(scope, note)),
   };
 }

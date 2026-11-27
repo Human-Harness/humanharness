@@ -2,10 +2,11 @@ import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { ModHost } from "./host";
 
 /**
- * The app channels a core mod answers (`ctx.handle`): the context panel's seven, under the names the window calls.
- * Sidekick's 26 left for the mod's own channels in 1b; the others follow in their own steps.
+ * The app channels a core mod answers (`ctx.handle`). Sidekick's 26 left for the mod's own channels in 1b and the
+ * context panel's seven in context-cleanup: none now. Search's two come here under their existing names (search-main)
+ * and leave again for mod ipc (search-cleanup).
  */
-export const MOD_APP_CHANNELS = ["hh:contextGet", "hh:contextAdd", "hh:contextPick", "hh:contextPin", "hh:contextUnpin", "hh:contextExclude", "hh:contextInclude"] as const satisfies readonly InvokeChannel[];
+export const MOD_APP_CHANNELS = [] as const satisfies readonly InvokeChannel[];
 
 /** What a call answers while the mod that handles it is off: a refusal the window already knows ("not-ready"). */
 const OFF = { ok: false, reason: "not-ready" } as const;

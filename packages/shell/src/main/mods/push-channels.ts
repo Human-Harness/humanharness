@@ -37,7 +37,6 @@ const ALL: Record<Bare, boolean> = {
   setupSteps: true,
   profiles: true,
   materialStatus: true,
-  context: true,
   searchStatus: true,
   textSize: true,
   language: true,

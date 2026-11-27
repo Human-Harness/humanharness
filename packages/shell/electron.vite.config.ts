@@ -18,6 +18,7 @@ const workspacePackages = [
   "@humanharness/i18n",
   "@humanharness/material",
   "@humanharness/mod-context-panel",
+  "@humanharness/mod-documents",
   "@humanharness/mod-history-view",
   "@humanharness/mod-home",
   "@humanharness/mod-search",

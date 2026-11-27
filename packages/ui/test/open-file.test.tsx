@@ -6,6 +6,7 @@ import type { ChatEntry, HistoryTaskView, ModsView } from "../src/client";
 import type { SearchIntent } from "../src/search/intent";
 import { type UiCtx, startModLoader } from "../src/layout/mod-loader";
 import { type BlockRegistry, type FileTarget, ModBlocksProvider, createBlockRegistry } from "../src/layout/registry";
+import { documentsRegistry } from "./documents-mod";
 import { FakeClient } from "./fake-client";
 import { historyViewRegistry } from "./history-view";
 import { renderIn } from "./render";
@@ -100,8 +101,8 @@ describe("ctx.openFile", () => {
     expect(reader()).toBeNull();
   });
 
-  it("a mod that goes off takes its handler away: the core reader opens again", async () => {
-    const registry = createBlockRegistry();
+  it("a mod that goes off takes its handler away: the documents reader opens again", async () => {
+    const registry = documentsRegistry();
     const seen: FileTarget[] = [];
     const loader = await load(registry, (ctx) => void ctx.openFile((t) => seen.push(t)));
     const { client } = await chat(registry);
@@ -169,7 +170,7 @@ describe("ctx.openFile", () => {
   });
 
   it("with no handler, .md links are plain text, cards do nothing and nothing opens", async () => {
-    const registry = historyViewRegistry(createBlockRegistry({ coreOpener: false }));
+    const registry = historyViewRegistry();
     const { client, search } = await chat(registry);
     expect(screen.queryByRole("link", { name: "the plan" })).toBeNull();
     expect(document.querySelector(".hh-md-doclink")).toBeNull();

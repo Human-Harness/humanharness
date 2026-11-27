@@ -1,6 +1,5 @@
 import { type RefObject, createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { HarnessClient } from "./client";
-import type { ReaderTarget } from "./DocumentReader";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { SlotBoundary } from "./layout/BlockBoundary";
 import type { BlockRegistry, FileTarget, PanelProps, Slots } from "./layout/registry";
@@ -29,22 +28,21 @@ export function SidePanel({ entry, onError, ...app }: Omit<PanelProps, "props"> 
 interface Options {
   client: HarnessClient;
   registry: BlockRegistry;
-  /** Slim (the setup screen) shows no reader: nothing opens one there. */
+  /** Slim (the setup screen) shows no reader's slot: nothing opens a file there. */
   slim: boolean;
   /** The harness's agent may edit the folder (review spec D0). */
   review: boolean;
   t: (key: string, opts?: Record<string, unknown>) => string;
   composer: RefObject<HTMLElement | null>;
-  /** What else takes the reader's slot: the file's timeline and the context panel. */
-  setTimelineFile(path: string | null): void;
+  /** What else takes the reader's slot: the context panel. */
   setContextOpen(open: boolean): void;
   /** Says what quiet mode held back, on leaving it. */
   onSummary(line: string): void;
 }
 
 /**
- * The task view's side of the reader's slot: how a file opens (a mod's `openFile` handler, else the core's reader and
- * timeline), the core reader's state, a mod's panel, and the quiet mode (focus mode, review spec §6.2).
+ * The task view's side of the reader's slot: how a file opens (a mod's `openFile` handler: the core opens none), a mod's
+ * panel, and the quiet mode (focus mode, review spec §6.2).
  */
 export function useReaderSlot(options: Options) {
   const { client, registry, review } = options;
@@ -52,14 +50,14 @@ export function useReaderSlot(options: Options) {
   const now = useRef(options);
   now.current = options;
 
-  /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
-  const [reader, setReader] = useState<ReaderTarget | null>(null);
   const [readerFull, setReaderFull] = useState(false);
-  /** Every open gets a new nonce: the same document at the same anchor opened again goes there again. */
-  const readerOpens = useRef(0);
   /** What had focus when the slot opened from the chat (a card, a link): it gets focus back when the slot closes. */
   const opener = useRef<HTMLElement | null>(null);
   const panel = registry.slot("openPanel").at(-1);
+  /** The panel that shows a file's history alone (`historyOnly`), once opened. */
+  const history = useRef<Slots["openPanel"]>(undefined);
+  /** The slot held a panel at the last look: when it empties, the focus goes back. */
+  const wasFilled = useRef(false);
   /** The mod whose panel threw: the failed part stands in the slot, until the slot lets go of it. */
   const [failedMod, setFailedMod] = useState<string | undefined>(undefined);
   const failed = panel !== undefined && panel.mod === failedMod;
@@ -100,41 +98,25 @@ export function useReaderSlot(options: Options) {
     if (active instanceof HTMLElement && active !== document.body && !active.closest(".hh-reader")) opener.current = active;
   };
 
-  const showReader = useCallback(
-    (target: FileTarget) => {
-      if (now.current.slim) return;
-      keepOpener();
-      closePanels(registry);
-      // A file's timeline panel would cover the reader; the context panel holds its slot.
-      now.current.setTimelineFile(null);
-      now.current.setContextOpen(false);
-      setReader({ ...target, nonce: ++readerOpens.current });
-    },
-    [registry],
-  );
-
-  /** True when something opens files: a mod's handler, or the core's reader. */
-  const canOpen = () => registry.coreOpener || registry.slot("opener").length > 0;
+  /** True when something opens files: a mod's handler. */
+  const canOpen = () => registry.slot("opener").length > 0;
 
   /** Every way a file opens goes through here. */
   const open = useCallback(
     (target: FileTarget) => {
       const handler = registry.slot("opener").at(-1);
-      if (handler) {
-        if (now.current.slim) return;
-        keepOpener();
-        try {
-          handler.open(target);
-        } catch (err) {
-          console.error(`Mod ${handler.mod}: its openFile handler threw`, err);
-        }
-      } else if (!registry.coreOpener) return;
-      else if (target.historyOnly) {
-        closePanels(registry);
-        now.current.setTimelineFile(target.path);
-      } else showReader(target);
+      if (!handler || now.current.slim) return;
+      // A file's history alone gives the focus to the composer when it closes, not back to what opened it.
+      if (target.historyOnly) opener.current = null;
+      else keepOpener();
+      try {
+        handler.open(target);
+        history.current = target.historyOnly ? registry.slot("openPanel").at(-1) : undefined;
+      } catch (err) {
+        console.error(`Mod ${handler.mod}: its openFile handler threw`, err);
+      }
     },
-    [registry, showReader],
+    [registry],
   );
 
   const setFocusMode = useCallback(
@@ -158,8 +140,16 @@ export function useReaderSlot(options: Options) {
     [client, review, open, setFocusMode],
   );
 
+  /** Another page takes a file's history away: the focus stays where it is. */
+  const dropHistory = useCallback(() => {
+    const shown = history.current;
+    history.current = undefined;
+    if (!shown || !registry.slot("openPanel").includes(shown)) return;
+    wasFilled.current = false;
+    shown.close();
+  }, [registry]);
+
   const close = useCallback(() => {
-    setReader(null);
     setReaderFull(false);
     closePanels(registry);
     endQuiet(registry);
@@ -180,16 +170,13 @@ export function useReaderSlot(options: Options) {
     // Another panel, or none, mounts afresh.
     setFailedMod((mod) => (mod === panelMod ? mod : undefined));
     if (panelMod === undefined) return;
-    setReader(null);
     setReaderFull(false);
-    now.current.setTimelineFile(null);
     now.current.setContextOpen(false);
   }, [panelMod]);
 
   // Focus goes back once the slot has closed (and the chat shows again, out of full screen): to the card or link
   // that opened it, else the composer.
-  const filled = reader !== null || panel !== undefined;
-  const wasFilled = useRef(false);
+  const filled = panel !== undefined;
   useEffect(() => {
     if (wasFilled.current && !filled) {
       setReaderFull(false);
@@ -200,14 +187,8 @@ export function useReaderSlot(options: Options) {
       else options.composer.current?.focus();
     }
     // A view remounted by key renders before the old one closes its panel: that one never filled this view's slot.
-    wasFilled.current = reader !== null || (panel !== undefined && registry.slot("openPanel").includes(panel));
+    wasFilled.current = panel !== undefined && registry.slot("openPanel").includes(panel);
   }, [filled]);
 
-  // A link followed in focus mode: the harness's view hears which document is read now.
-  const readerPath = reader?.path;
-  useEffect(() => {
-    if (isQuiet() && readerPath) client.focus.set({ on: true, path: readerPath });
-  }, [client, readerPath]);
-
-  return { reader, readerFull, setReaderFull, panel, panelFailed, filled, quiet, hold, canOpen, open, close, setFocusMode };
+  return { readerFull, setReaderFull, panel, panelFailed, filled, quiet, hold, canOpen, open, close, dropHistory };
 }

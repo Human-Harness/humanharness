@@ -63,3 +63,13 @@ export { SlotBoundary } from "./layout/BlockBoundary";
 export { useBlocks } from "./layout/registry";
 export { useTasks } from "./parallel/useTasks";
 export type { SearchIntent } from "./search/intent";
+// The reader (the documents mod) builds with the review and timeline parts until they move into the mod too.
+export { ApprovedDiff } from "./ApprovedDiff";
+export { EntryDiff } from "./EntryDiff";
+export { FileTimelineSplit } from "./FileTimelineSplit";
+export { FocusMarkers } from "./FocusMarkers";
+export { documentOutline } from "./markdown";
+export { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
+export { ReviewColumn } from "./ReviewColumn";
+export { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
+export { formatSize } from "./sizes";

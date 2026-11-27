@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TimelineEntry } from "../src/client";
-import { DocumentReader } from "../src/DocumentReader";
+import { DocumentReader } from "../../mods/documents/src/ui/DocumentReader";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 

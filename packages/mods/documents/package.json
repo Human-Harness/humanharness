@@ -4,18 +4,31 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/main.ts", "./ui": "./src/ui.ts" },
+  "exports": { ".": "./src/main.ts", "./ui": "./src/ui.tsx" },
   "scripts": { "typecheck": "tsc -p tsconfig.json" },
   "dependencies": {
     "@humanharness/blocks": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/mod-sdk": "workspace:*",
     "@humanharness/protocol": "workspace:*",
+    "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
     "diff": "^9.0.0",
+    "react-i18next": "^17.0.16",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5"
   },
-  "devDependencies": { "@types/mdast": "^4.0.4" }
+  "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "devDependencies": {
+    "@humanharness/i18n": "workspace:*",
+    "@testing-library/react": "^16.3.3",
+    "@types/mdast": "^4.0.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.6",
+    "i18next": "^26.4.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
 }

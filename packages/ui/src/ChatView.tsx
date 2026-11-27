@@ -20,7 +20,6 @@ import {
   type ModeChoice,
   type ModeSwitch,
   type NoteView,
-  type ReaderPrefs,
   type RespondResult,
   type ReviewSummary,
   type SearchCommandId,
@@ -33,10 +32,8 @@ import {
   partsOf,
 } from "./client";
 import { DocumentContext, type DocumentHost } from "./documents-context";
-import { DocumentReader } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { ToolCallLines } from "./tools/ToolCallLine";
-import { FileTimelineSplit } from "./FileTimelineSplit";
 import { FlowSide } from "./FlowSide";
 import { SidePanel, useReaderSlot } from "./open-file";
 import { SlotBoundary } from "./layout/BlockBoundary";
@@ -237,8 +234,6 @@ export function ChatView({
   const [showHistory, setShowHistory] = useState(false);
   /** The past task search asked the History panel to open at (search spec §3). */
   const [historyTask, setHistoryTask] = useState<string | undefined>(undefined);
-  /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
-  const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [notesPage, setNotesPage] = useState<{ open?: string; task?: boolean } | null>(null);
   /** The context panel is open (context-panel spec §5.1); it shares the reader's slot. */
   const [contextWanted, setContextOpen] = useState(false);
@@ -248,7 +243,6 @@ export function ChatView({
   const contextOpen = contextWanted && ContextBlock !== undefined;
   /** The meter that opened the context panel: it gets focus back when the panel closes. */
   const contextOpener = useRef<HTMLElement | null>(null);
-  const [readerPrefs, setReaderPrefs] = useState<ReaderPrefs>(state.config.reader ?? {});
   /** Card paths that are no longer there (struck through). */
   const [missingDocs, setMissingDocs] = useState<ReadonlySet<string>>(() => new Set());
   /** Bumped to check the cards' documents again (the window got focus, the reader found one missing). */
@@ -302,7 +296,7 @@ export function ChatView({
   const preflightOpener = useRef<HTMLElement | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  /** The reader's slot: how files open, the core reader, a mod's panel and focus (quiet) mode. */
+  /** The reader's slot: how files open, a mod's panel and focus (quiet) mode. */
   const side = useReaderSlot({
     client,
     registry: blocks,
@@ -310,7 +304,6 @@ export function ChatView({
     review: state.review === true,
     t,
     composer: inputRef,
-    setTimelineFile,
     setContextOpen,
     onSummary: (line) => {
       dispatch({ type: "notice", text: line, at: new Date().toISOString() });
@@ -318,7 +311,7 @@ export function ChatView({
       setAnnouncement(line);
     },
   });
-  const { reader, close: closeReader } = side;
+  const { close: closeReader } = side;
   /** Bumped after a restore: mods' pieces read their state again, beside the state main pushes then. */
   const [refresh, setRefresh] = useState(0);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
@@ -965,8 +958,8 @@ export function ChatView({
         // Focus on the composer, with whatever the person had typed still there (an unsent draft is kept, never
         // cleared): the question is theirs to write and send.
         if (tasks.current) return false;
+        side.dropHistory();
         closeReader();
-        setTimelineFile(null);
         setShowHistory(false);
         setNotesPage(null);
         setContextOpen(false);
@@ -974,18 +967,18 @@ export function ChatView({
         return true;
       case "open-history":
         if (slim) return false;
+        side.dropHistory();
         closeReader();
         setContextOpen(false);
         setNotesPage(null);
-        setTimelineFile(null);
         setHistoryTask(undefined);
         setShowHistory(true);
         return true;
       case "open-notes":
         if (slim) return false;
+        side.dropHistory();
         closeReader();
         setContextOpen(false);
-        setTimelineFile(null);
         setShowHistory(false);
         setNotesPage({});
         return true;
@@ -1024,10 +1017,10 @@ export function ChatView({
         return true;
       case "history":
         if (slim) return false;
+        side.dropHistory();
         closeReader();
         setContextOpen(false);
         setNotesPage(null);
-        setTimelineFile(null);
         setHistoryTask(intent.task);
         setShowHistory(true);
         return true;
@@ -1299,19 +1292,12 @@ export function ChatView({
     open: side.canOpen() ? (card: DocumentCard) => side.open({ path: card.path, agent: engineName(entry.engine) }) : undefined,
     ...(canReview && reviewSummaries ? { reviews: reviewSummaries } : {}),
   });
-  const saveReaderPrefs = useCallback(
-    (p: ReaderPrefs) => {
-      setReaderPrefs(p);
-      client.saveConfig({ reader: p }).catch(() => undefined);
-    },
-    [client],
-  );
-  /** One side panel at a time: the reader, the timeline, the History and notes panels close. */
+  /** One side panel at a time: the reader's slot, the History and notes panels close. */
   const openContext = () => {
     const active = document.activeElement;
     contextOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    side.dropHistory();
     closeReader();
-    setTimelineFile(null);
     setShowHistory(false);
     setNotesPage(null);
     setContextOpen(true);
@@ -1431,9 +1417,9 @@ export function ChatView({
   useEffect(() => {
     if (notesRequest === notesSeen.current || slim) return;
     notesSeen.current = notesRequest;
+    side.dropHistory();
     closeReader();
     setContextOpen(false);
-    setTimelineFile(null);
     setShowHistory(false);
     setNotesPage({});
   }, [notesRequest]);
@@ -1518,7 +1504,7 @@ export function ChatView({
     if (!taskPage || taskPage.n === taskPageSeen.current || slim) return;
     taskPageSeen.current = taskPage.n;
     setContextOpen(false);
-    setTimelineFile(null);
+    side.dropHistory();
     setNotesPage(taskPage.page === "notes" ? { task: true } : null);
     setShowHistory(taskPage.page === "history");
   }, [taskPage]);
@@ -1552,7 +1538,7 @@ export function ChatView({
       onStart={startTopic}
       onOpenNote={(slug) => {
         setShowHistory(false);
-        setTimelineFile(null);
+        side.dropHistory();
         setContextOpen(false);
         setNotesPage({ open: slug });
       }}
@@ -1622,7 +1608,7 @@ export function ChatView({
             bar.el,
           )}
         <div
-          className={`hh-body${(side.filled || contextOpen || timelineFile !== null) && !slim ? " hh-with-reader" : ""}${side.filled && side.readerFull && !slim ? " hh-reader-full" : ""}${side.quiet && side.filled && !slim ? " hh-focus" : ""}`}
+          className={`hh-body${(side.filled || contextOpen) && !slim ? " hh-with-reader" : ""}${side.filled && side.readerFull && !slim ? " hh-reader-full" : ""}${side.quiet && side.filled && !slim ? " hh-focus" : ""}`}
         >
           {overlay.open === "path" && hasLeft && (
             <Overlay side="left" id={PATH_ID} name={leftName} closeLabel={t("reader.close")} onClose={overlay.close} autoFocus={overlay.focusIn}>
@@ -1927,24 +1913,6 @@ export function ChatView({
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
           </Main>
           <ModOverlays parts={mods} overlay={overlay} client={client} closeLabel={t("reader.close")} />
-          {reader && !slim && (
-            <DocumentReader
-              client={client}
-              target={reader}
-              kinds={documentKinds}
-              prefs={readerPrefs}
-              onPrefs={saveReaderPrefs}
-              full={side.readerFull}
-              onFull={side.setReaderFull}
-              onClose={closeReader}
-              onOpen={openDoc}
-              onMissing={recheckDocs}
-              review={state.review === true}
-              busy={Boolean(chat.live) || closing || checkpoint}
-              focus={side.quiet}
-              onFocus={(on) => side.setFocusMode(on, reader.path)}
-            />
-          )}
           {side.panel && !slim && (
             <SidePanel
               entry={side.panel}
@@ -1973,21 +1941,6 @@ export function ChatView({
                 }}
               />
             </SlotBoundary>
-          )}
-          {timelineFile !== null && !slim && (
-            <FileTimelineSplit
-              client={client}
-              path={timelineFile}
-              busy={Boolean(chat.live) || closing || checkpoint}
-              onClose={() => {
-                setTimelineFile(null);
-                // Focus lost with the split view goes to the composer, not the page.
-                requestAnimationFrame(() => {
-                  const active = document.activeElement;
-                  if (!active || active === document.body) document.querySelector<HTMLElement>(".hh-composer textarea")?.focus();
-                });
-              }}
-            />
           )}
         </div>
         <div className="hh-sr-only" aria-live="polite">

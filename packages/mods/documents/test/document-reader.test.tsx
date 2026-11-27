@@ -2,10 +2,10 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DocumentRead, ReviewView } from "../src/client";
-import { DocumentReader, cutToBytes } from "../src/DocumentReader";
-import { FakeClient, fakeBlob } from "./fake-client";
-import { renderIn } from "./render";
+import type { DocumentRead, ReviewView } from "../../../ui/src/client";
+import { DocumentReader, cutToBytes } from "../src/ui/DocumentReader";
+import { FakeClient, fakeBlob } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

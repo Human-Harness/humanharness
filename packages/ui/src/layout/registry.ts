@@ -158,8 +158,6 @@ export type SlotKind = keyof Slots;
 
 /** The blocks mods registered, by mod id and block name, and the parts they put in the core's slots. */
 export interface BlockRegistry {
-  /** With no `opener` registered, the chat opens files itself (its own reader). */
-  readonly coreOpener: boolean;
   /** Registers `Component` as `modId`'s block `name`; the disposer takes it away again (only if it is still that one). */
   register(modId: string, name: string, Component: BlockComponent): () => void;
   get(modId: string, name: string): BlockComponent | undefined;
@@ -173,7 +171,7 @@ export interface BlockRegistry {
   version(): number;
 }
 
-export function createBlockRegistry({ coreOpener = true }: { coreOpener?: boolean } = {}): BlockRegistry {
+export function createBlockRegistry(): BlockRegistry {
   const blocks = new Map<string, BlockComponent>();
   const slots: { [K in SlotKind]: Slots[K][] } = { settingsTab: [], row: [], taskBar: [], taskOverlay: [], composer: [], taskPage: [], opener: [], openPanel: [], quiet: [] };
   const listeners = new Set<() => void>();
@@ -184,7 +182,6 @@ export function createBlockRegistry({ coreOpener = true }: { coreOpener?: boolea
     for (const l of listeners) l();
   };
   return {
-    coreOpener,
     register(modId, name, Component) {
       const k = key(modId, name);
       blocks.set(k, Component);

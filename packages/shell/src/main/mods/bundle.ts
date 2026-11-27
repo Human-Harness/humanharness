@@ -42,11 +42,7 @@ export async function buildCoreMods(srcRoot: string, dest: string, ids: readonly
     for (const [entry, out] of entries) {
       try {
         const r = await bundleMod({
-          dir: src,
-          entry,
-          part: "main",
-          core: true,
-          worker: out === WORKER_FILE,
+          dir: src, entry, part: "main", core: true, worker: out === WORKER_FILE,
           outFile: path.join(dest, id, out),
           resolveShared: () => {
             throw new Error("a core mod reads its shared imports from the app");

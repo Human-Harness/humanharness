@@ -27,10 +27,7 @@ export interface BundleOptions {
    * `globalThis.__hhMainModules`, which the app fills before it loads any mod.
    */
   core?: boolean;
-  /**
-   * A core mod's worker thread entry: a worker has none of the app's globals, so its shared imports are bundled in
-   * like any other package (only with `core`).
-   */
+  /** A core mod's worker thread entry: it has none of the app's globals, so its shared imports are bundled in (with `core`). */
   worker?: boolean;
 }
 

@@ -11,8 +11,8 @@ afterEach(cleanup);
 
 /** Every text box the reader looked for review marks in. */
 const marksFound = vi.hoisted(() => ({ boxes: [] as HTMLElement[] }));
-vi.mock("../src/review-marks", async (original) => {
-  const m = await original<typeof import("../src/review-marks")>();
+vi.mock("../../mods/documents/src/ui/review-marks", async (original) => {
+  const m = await original<typeof import("../../mods/documents/src/ui/review-marks")>();
   return {
     ...m,
     findMarks: (box: HTMLElement, marks: Parameters<typeof m.findMarks>[1]) => {

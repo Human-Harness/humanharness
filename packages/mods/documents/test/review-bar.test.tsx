@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ReviewResult, ReviewSummary } from "../src/client";
-import { ReviewBar } from "../src/ReviewBar";
-import { renderIn } from "./render";
+import type { ReviewResult, ReviewSummary } from "../../../ui/src/client";
+import { ReviewBar } from "../src/ui/ReviewBar";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 const S = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({ status: "draft", questions: 0, blocking: 0, unsent: 0, comments: 0, ...over });

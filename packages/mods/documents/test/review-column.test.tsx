@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Review } from "../src/client";
-import { ReviewColumn } from "../src/ReviewColumn";
-import { renderIn } from "./render";
+import type { Review } from "../../../ui/src/client";
+import { ReviewColumn } from "../src/ui/ReviewColumn";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 const TEXT = "## Scope\n\nFilter by size.\n\n```mermaid\ngraph TD; A-->B\n```\n";

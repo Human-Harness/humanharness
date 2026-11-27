@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ReviewComment } from "./client";
+import type { ReviewComment } from "@humanharness/ui";
 
 /**
  * Margin dots beside the marks in focus mode (§6.2): the column is hidden; a dot opens its card. They are placed

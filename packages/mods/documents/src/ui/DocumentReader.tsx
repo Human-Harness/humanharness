@@ -2,36 +2,31 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useL
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
 import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
-// The review and timeline parts come from the core until they move into this mod too.
+// The timeline parts come from the core until they move into this mod too.
 import {
-  ApprovedDiff,
   type ApproveOptions,
-  type BarDraft,
   Button,
   DocumentContext,
   type DocumentHost,
   type DocumentRead,
   EntryDiff,
   FileTimeline,
-  FocusMarkers,
   type HarnessClient,
   Markdown,
-  type MarkSpec,
-  NO_BAR_DRAFT,
   type ReaderPrefs,
-  ReviewBar,
-  ReviewColumn,
   type ReviewResult,
   type ReviewSendResult,
   type ReviewView,
   Tag,
   type TimelineEntry,
-  clearMarks,
   documentOutline,
-  drawMarks,
-  findMarks,
   formatSize,
 } from "@humanharness/ui";
+import { ApprovedDiff } from "./ApprovedDiff";
+import { FocusMarkers } from "./FocusMarkers";
+import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
+import { ReviewColumn } from "./ReviewColumn";
+import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
 export interface ReaderTarget {

@@ -2,9 +2,9 @@
 import { act, cleanup, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ReviewComment } from "../src/client";
-import { FocusMarkers } from "../src/FocusMarkers";
-import { renderIn } from "./render";
+import type { ReviewComment } from "../../../ui/src/client";
+import { FocusMarkers } from "../src/ui/FocusMarkers";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 const c: ReviewComment = { id: "c1", author: "agent", kind: "comment", anchor: { quote: "Filter", heading: null, occurrence: 0 }, text: "Name it.", state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" };

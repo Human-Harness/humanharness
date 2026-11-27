@@ -7,6 +7,7 @@ import { defineMod } from "@humanharness/mod-sdk";
 import type { CoreMainCtx } from "@humanharness/mod-sdk/core";
 import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import type { DataStore } from "@humanharness/workspace";
+import { SEARCH_CALLS, SEARCH_STATUS } from "./api";
 import { type PluginSearch, searchData, searchableCollection } from "./data-sources";
 import { searchHandlers } from "./ipc";
 import { workerBuild } from "./runner";
@@ -42,7 +43,7 @@ export function searchService(ctx: CoreMainCtx): SearchService {
     references: () => s.references(),
     memory: () => memory(ctx),
     extraDenied: () => s.extraDenied(),
-    status: (st) => ctx.push("hh:searchStatus", st),
+    status: (st) => ctx.push(SEARCH_STATUS, st),
     runner: workerBuild(entry ? { entry } : {}),
     reveal: (file, roots) => s.reveal(file, roots),
     data: searchData({
@@ -64,9 +65,9 @@ export default defineMod({
     const ctx = base as unknown as CoreMainCtx;
     if (!ctx.app) return;
     const svc = searchService(ctx);
-    // The window's two calls, under their app channel names.
+    // The palette's two calls as the mod's own ipc: its ui calls them by name, with its arguments as an array.
     const handlers = searchHandlers(svc);
-    for (const name of Object.keys(handlers) as (keyof typeof handlers)[]) ctx.handle(name, (...args) => handlers[name](...args));
+    for (const name of SEARCH_CALLS) void ctx.ipc(name, (args) => handlers[name](...(Array.isArray(args) ? args : [])));
     // The core's events: a write to a searchable collection (a plugin's data or on/off state always counts), a restore
     // (null: the whole folder), a base that is gone, and the app closing.
     ctx.on.dataChanged(({ collection }) => {

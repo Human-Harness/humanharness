@@ -9,28 +9,27 @@ async function host() {
   return h;
 }
 
-// The context panel's seven left the app channels for its own mod ipc (context-cleanup); search's two are here until search-cleanup.
+// The context panel's seven and search's two left the app channels for their mods' own ipc (context-cleanup, search-cleanup).
 describe("app channels a core mod answers", () => {
-  it("lists search's two, registers them, and refuses them while the search mod is off", async () => {
+  it("lists no channel: nothing registers", async () => {
     const h = await host();
     const handle = vi.fn();
-    expect(MOD_APP_CHANNELS).toEqual(["hh:search", "hh:searchOpen"]);
+    expect(MOD_APP_CHANNELS).toEqual([]);
     registerModAppChannels(handle, () => h);
-    expect(handle.mock.calls.map((c) => c[0])).toEqual(["hh:search", "hh:searchOpen"]);
-    expect(await (handle.mock.calls[0][1] as (...a: unknown[]) => unknown)("x", {})).toEqual({ ok: false, reason: "not-ready" });
+    expect(handle).not.toHaveBeenCalled();
   });
 
-  it("refuses a channel that is not listed, so the context channels are not reachable through `handle`", async () => {
+  it("refuses a channel that is not listed, so the former search channels are not reachable through `handle`", async () => {
     const h = await host();
     let thrown: unknown;
     h.registerForTest("a", "A", (c) => {
       try {
-        (c as CoreMainCtx<unknown>).handle("hh:contextGet", () => 1);
+        (c as CoreMainCtx<unknown>).handle("hh:search", () => 1);
       } catch (err) {
         thrown = err;
       }
     }, { core: true });
     expect(String(thrown)).toMatch(/Not an app channel a core mod answers/);
-    expect(h.handles("hh:contextGet")).toBe(false);
+    expect(h.handles("hh:search")).toBe(false);
   });
 });

@@ -276,8 +276,8 @@ const client: HarnessClient = {
     cite: (scope, id) => invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe("hh:materialStatus", listener),
   },
-  // Global search (search spec §9): every answer is data; main builds nothing until the first query (D8).
-  search: searchClient(looseInvoke, subscribe),
+  // Global search: the window-only half (open, records); the palette's calls are the search mod's ipc.
+  search: searchClient(),
   onTextSize: (listener) => subscribe("hh:textSize", listener),
   // Language on demand (language spec): every answer is data, a rejected invoke included.
   language: languageClient(looseInvoke, subscribe),

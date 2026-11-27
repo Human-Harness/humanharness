@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppState, type ChatSearchContext, type HarnessClient, type ScopeView, type SearchHitView, type SearchIntent, isConfigured, useBlocks } from "@humanharness/ui";
+import type { SearchApi } from "./api";
 import { commandRows, settingRows } from "./local";
 import { SearchPalette, isMod } from "./SearchPalette";
 
@@ -10,12 +11,15 @@ import { SearchPalette, isMod } from "./SearchPalette";
  */
 export function SearchHost({
   client,
+  api,
   state,
   openScope,
   onIntent,
   chatContext,
 }: {
   client: HarnessClient;
+  /** The mod's calls to its main. */
+  api: SearchApi;
   state: AppState;
   openScope: string | null;
   onIntent: (intent: SearchIntent) => void;
@@ -94,7 +98,7 @@ export function SearchHost({
   };
   const pick = (hit: SearchHitView) => {
     // The window's own rows (Settings, Actions) aren't in main's index and never reach it (§6).
-    if (hit.kind !== "setting" && hit.kind !== "command") void client.search.opened(hit);
+    if (hit.kind !== "setting" && hit.kind !== "command") void api.opened(hit);
     // Settings keeps what had focus before search, to give it back when it closes (as after the gear).
     const back = opener.current;
     leave();
@@ -105,6 +109,7 @@ export function SearchHost({
     <SearchPalette
       key={open.n}
       client={client}
+      api={api}
       initialQuery={open.query}
       where={where}
       {...(state.scopes ? { scopesPlural: state.scopes.plural } : {})}

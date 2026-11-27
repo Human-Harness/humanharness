@@ -38,7 +38,7 @@ function fakeCtx() {
   const ctx = {
     id: "search",
     push: vi.fn(),
-    handle: (name: string, fn: (...a: unknown[]) => unknown) => (handled.set(name, fn), () => {}),
+    ipc: (name: string, fn: (args: unknown) => unknown) => (handled.set(name, fn), () => {}),
     on: { dataChanged: hook("dataChanged"), restored: hook("restored"), baseGone: hook("baseGone"), close: hook("close") },
     app: { setup: async () => ({ engineId: "e", base: tmp }), context: { scoped: () => false }, search },
   };
@@ -46,12 +46,12 @@ function fakeCtx() {
 }
 
 describe("the search core mod's main", () => {
-  it("answers hh:search and hh:searchOpen under their existing names, as data", async () => {
+  it("answers query and opened as its own ipc (args as an array), as data", async () => {
     const t = fakeCtx();
     await mod.main?.(t.ctx as never);
-    expect([...t.handled.keys()].sort()).toEqual(["hh:search", "hh:searchOpen"]);
+    expect([...t.handled.keys()].sort()).toEqual(["opened", "query"]);
     // Nothing is built until the window asks (D0, D8); an open for a hit that does not exist is data, not a throw.
-    expect(await t.handled.get("hh:searchOpen")?.({})).toEqual(expect.objectContaining({ ok: false }));
+    expect(await t.handled.get("opened")?.([{}])).toEqual(expect.objectContaining({ ok: false }));
   });
 
   it("hears dataChanged, restored, baseGone and close", async () => {

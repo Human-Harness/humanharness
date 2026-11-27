@@ -10,7 +10,7 @@ import type { Event, ToolCallView } from "@humanharness/engines";
 import type { DataQuery, DataQueryResult } from "@humanharness/workspace";
 import type { AnswerPick, ReviewSummary } from "@humanharness/harness-sdk/review";
 import type { GeneratedStrings } from "@humanharness/i18n";
-import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, HomeChange, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SearchAnswer, SearchFilters, SearchHitView, SearchStatus, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UsageSummary } from "./views";
+import type { AppConfig, AppState, ApproveOptions, ApprovedText, AttentionTarget, AttentionView, BackendState, ChatLoad, CommentInput, ConnectionResult, ConnectionsView, DataChangeView, DataDiffView, DataOptions, DocumentRead, EngineApproveResult, EngineConfigView, EngineStatus, FileDiffResult, FileRestoreResult, FileTimelineResult, FocusState, FolderPick, HistoryTaskView, JobSummary, LanguageChoose, LanguageStart, LanguageState, LinkRefusalView, LinkedHistoryView, LinkedView, MaterialAddResult, MaterialChoice, MaterialResult, MaterialView, ModeChoice, ModeResult, ModeSwitch, LayoutView, HomeChange, ModReloaded, ModReview, ModsView, MoveResult, PanelAnswer, PanelCall, PhaseResult, PluginDataChange, PluginDetail, PluginPick, PluginResult, PluginSurfaceView, PluginTestResult, PluginWorkHours, PluginsView, ProfileResult, ProfilesState, ReviewResult, ReviewSendResult, ReviewView, RunningSetup, ScopeView, ScopesView, SendOptions, SettingsResult, SettingsState, SetupOutput, SetupResult, SetupStep, SetupStepResult, SetupStepsState, TaskTurnNotice, TaskView, TasksState, TestResult, TextSize, ToolCallResult, ToolsInfo, UsageSummary } from "./views";
 
 /** `client.jobs`: a harness's background jobs (spec §9.1). Only with `state.jobs`: otherwise main refuses every call (D0). */
 export interface JobsClient {
@@ -20,14 +20,8 @@ export interface JobsClient {
   onChange(listener: (jobs: JobSummary[]) => void): () => void;
 }
 
-/** `client.search` (search spec §9). Every answer is data; nothing here ever reaches the engine (§8.3). */
+/** `client.search`: the window-only half of search (the palette's own calls are the `search` mod's ipc, spec §9). */
 export interface SearchClient {
-  /** The results for `query`; an empty query answers the recents. The first call builds the index (D8). */
-  query(query: string, filters?: SearchFilters): Promise<SearchAnswer>;
-  /** The person opened `hit`: main remembers it among the recents, and shows a reference folder's file in Finder. */
-  opened(hit: SearchHitView): Promise<{ ok: boolean }>;
-  /** The index's progress while it builds ("Indexing… N of M"). */
-  onStatus(listener: (status: SearchStatus) => void): () => void;
   /** Opens the palette, with `query` typed in (the top bar's button, a harness view). */
   open(query?: string): void;
   /** Every `open`, whoever called it: the window's palette listens. */

@@ -12,7 +12,8 @@
     "@humanharness/protocol": "workspace:*",
     "@humanharness/ui": "workspace:*",
     "@humanharness/workspace": "workspace:*",
-    "react-i18next": "^17.0.16"
+    "react-i18next": "^17.0.16",
+    "zod": "^4.6.5"
   },
   "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
   "devDependencies": {

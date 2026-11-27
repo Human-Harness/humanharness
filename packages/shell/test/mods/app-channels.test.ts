@@ -9,22 +9,27 @@ async function host() {
   return h;
 }
 
+// The context panel's seven left the app channels for its own mod ipc (context-cleanup); search's two come in search-main.
 describe("app channels a core mod answers", () => {
-  it("reaches the mod's handler with the call's arguments", async () => {
-    const h = await host();
-    h.registerForTest("a", "A", (c) => (c as CoreMainCtx<unknown>).handle("hh:contextGet", (...args) => ({ got: args })), { core: true });
-    expect(h.handles("hh:contextGet")).toBe(true);
-    expect(await h.channel("hh:contextGet", ["t1"])).toEqual({ got: ["t1"] });
-  });
-
-  it("answers a refusal as data while no mod is on, and a mod's own ipc never reaches an app channel", async () => {
+  it("lists none while no core mod answers an app channel, and registers none", async () => {
     const h = await host();
     const handle = vi.fn();
+    expect(MOD_APP_CHANNELS).toEqual([]);
     registerModAppChannels(handle, () => h);
-    expect(handle).toHaveBeenCalledTimes(MOD_APP_CHANNELS.length);
-    const fn = handle.mock.calls[0]![1] as (...a: unknown[]) => unknown;
-    expect(fn("t1")).toEqual({ ok: false, reason: "not-ready" });
-    h.registerForTest("a", "A", (c) => (c as CoreMainCtx<unknown>).handle("hh:contextGet", () => 1), { core: true });
-    expect(await h.ipc("a", "hh:contextGet", null)).toEqual({ ok: false, reason: "no such channel" });
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it("refuses a channel that is not listed, so the context channels are not reachable through `handle`", async () => {
+    const h = await host();
+    let thrown: unknown;
+    h.registerForTest("a", "A", (c) => {
+      try {
+        (c as CoreMainCtx<unknown>).handle("hh:contextGet", () => 1);
+      } catch (err) {
+        thrown = err;
+      }
+    }, { core: true });
+    expect(String(thrown)).toMatch(/Not an app channel a core mod answers/);
+    expect(h.handles("hh:contextGet")).toBe(false);
   });
 });

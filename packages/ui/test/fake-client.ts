@@ -16,6 +16,7 @@ import type {
   ToolCallView,
   ToolsInfo,
   ConnectionsView,
+  ContextApi,
   ContextPick,
   ContextResult,
   DataChangeView,
@@ -142,6 +143,10 @@ export interface FakeBackend extends BackendClient {
   call: Mock<BackendClient["call"]>;
   restart: Mock<BackendClient["restart"]>;
 }
+
+/** The client built last: the test stand-in for the mod ipc a core mod's ui reaches its main by (see `context-panel-mod.tsx`). */
+let newest: FakeClient | null = null;
+export const newestFakeClient = (): FakeClient | null => newest;
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -407,6 +412,7 @@ export class FakeClient implements HarnessClient {
   private setupListeners = new Set<(o: SetupOutput) => void>();
 
   constructor(config: AppConfig = {}) {
+    newest = this;
     this.state = {
       harness: {
         id: "demo",
@@ -862,15 +868,18 @@ export class FakeClient implements HarnessClient {
   contextAnswer: ContextResult = { ok: true };
   contextGate: Promise<void> | null = null;
   pickAnswer: ContextPick = { ok: false, reason: "cancelled" };
+  /** The mod ipc's `changed` push, as the context panel mod hears it (`contextApi` over `ctx.on`). */
+  contextPushes = new Set<(m: unknown) => void>();
   private contextListeners = new Set<{ task: string; listener: (c: TaskContext) => void }>();
 
   /** As main's `hh:context`: the task's panel gets `c`. */
   emitContext(task: string, c: TaskContext): void {
     this.contexts[task] = c;
+    for (const l of [...this.contextPushes]) l({ task, context: c });
     for (const l of [...this.contextListeners]) if (l.task === task) l.listener(c);
   }
 
-  context: HarnessClient["context"] = {
+  context: ContextApi = {
     get: async (taskId) => (Object.hasOwn(this.contexts, taskId) ? { ok: true, context: this.contexts[taskId] } : { ok: false, reason: "no-task" }),
     onChange: (task, listener) => {
       const entry = { task, listener };

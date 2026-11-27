@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { type EngineDef, type ModelProfile, type ModelSpec, defaultTier } from "@humanharness/engines";
-import { type LoadedHarness, TIERS, type Tier, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, TIERS, contextPanelConfig, type Tier, resolveInHarness } from "@humanharness/harness-sdk";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
 import type { AppConfig, ModelsView } from "@humanharness/protocol";
 import { DEFAULT_PINNED_TOKENS } from "@humanharness/workspace";
@@ -102,7 +102,7 @@ export function createAppViews(d: AppViewsDeps) {
         engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
       ),
       offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
-      pinnedTokens: harness.context?.pinnedTokens ?? DEFAULT_PINNED_TOKENS,
+      pinnedTokens: contextPanelConfig(harness)?.pinnedTokens ?? DEFAULT_PINNED_TOKENS,
     };
   }
 

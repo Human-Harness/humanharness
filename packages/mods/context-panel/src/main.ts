@@ -3,7 +3,8 @@
 import { defineMod } from "@humanharness/mod-sdk";
 import type { CoreContextItem, CoreMainCtx } from "@humanharness/mod-sdk/core";
 import type { HistoryTrailer } from "@humanharness/workspace";
-import { CONTEXT_CHANNELS, contextHandlers } from "./ipc";
+import { CONTEXT_CALLS, CONTEXT_CHANGED } from "./api";
+import { contextHandlers } from "./ipc";
 import { type ContextDeps, type ContextRecord, ContextService } from "./service";
 
 /** The service's deps, from the app's parts: the folder, the scopes, the history and the dialog are the core's. */
@@ -33,10 +34,10 @@ export function contextDeps(ctx: CoreMainCtx, changed: (taskId: string) => void)
   };
 }
 
-/** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
+/** The task's panel refreshes (the `changed` push); a task that is no longer open sends nothing. */
 async function send(ctx: CoreMainCtx, svc: ContextService, task: string): Promise<void> {
   const got = await svc.get(task).catch(() => null);
-  if (got?.ok) ctx.push("hh:context", { task, context: got.context });
+  if (got?.ok) ctx.push(CONTEXT_CHANGED, { task, context: got.context });
 }
 
 export default defineMod({
@@ -45,9 +46,9 @@ export default defineMod({
     const ctx = base as unknown as CoreMainCtx;
     if (!ctx.app) return;
     const svc = new ContextService(contextDeps(ctx, (task) => void send(ctx, svc, task)));
-    // The window's seven calls, under the names it already uses.
+    // The panel's seven calls as the mod's own ipc: its ui calls them by name, with its arguments as an array.
     const handlers = contextHandlers(svc);
-    for (const channel of CONTEXT_CHANNELS) ctx.handle(channel, handlers[channel]);
+    for (const name of CONTEXT_CALLS) void ctx.ipc(name, (args) => handlers[name](...(Array.isArray(args) ? args : [])));
     // A task's record changed (its start, reads or compaction): its panel refreshes.
     ctx.app.tasks.onContextChanged((task) => send(ctx, svc, task));
     // The pins' slot in a first or resume message: the pinned section, one item per pin, the notes left out.

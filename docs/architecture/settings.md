@@ -49,9 +49,9 @@ In a harness with profiles (`docs/architecture/profiles.md`) the settings are pe
 
 ## Pinned files budget
 
-Settings › Models › Tasks ends with "Pinned files budget" (`PinnedBudget` in `packages/ui/src/ModelsTab.tsx`): how many tokens of the files the person pins (`docs/architecture/context.md`) every new task gets whole; the rest go in as their title. It is app-wide, stored in `config.json` → `models.pinnedTokens` (`cleanModels` keeps a valid value; 0 is a real value).
+Settings › Models › Tasks ends with "Pinned files budget" (`PinnedBudget` in `packages/ui/src/ModelsTab.tsx`): how many tokens of the files the person pins (`packages/mods/context-panel/README.md`) every new task gets whole; the rest go in as their title. It is app-wide, stored in `config.json` → `models.pinnedTokens` (`cleanModels` keeps a valid value; 0 is a real value).
 
-- The options are 1,000 / 3,000 / 6,000 / 12,000 tokens (`PINNED_OPTIONS` in `packages/engines/src/models.ts`), plus the harness's suggestion and the saved value when they are other values. The harness's suggestion (`ModelsView.pinnedTokens`: the manifest's `context.pinnedTokens`, else 3,000) is marked "(suggested)".
+- The options are 1,000 / 3,000 / 6,000 / 12,000 tokens (`PINNED_OPTIONS` in `packages/engines/src/models.ts`), plus the harness's suggestion and the saved value when they are other values. The harness's suggestion (`ModelsView.pinnedTokens`: the manifest's `mods["context-panel"].pinnedTokens`, else 3,000) is marked "(suggested)".
 - Picking the suggestion drops the key, so the person's choice follows the harness again. The save updates only that key of `models` (`hh:saveConfig` replaces the whole object).
 - A new task uses `pinnedBudget`: the person's value, else the manifest's, else 3,000. The budget hint under the select is linked to it with `aria-describedby`.
 

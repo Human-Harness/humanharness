@@ -17,6 +17,7 @@ import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles"
 import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
+import { contextPanelSchema } from "./context-panel";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
 import { STEP_OUTPUT_TOOL, aiStepOf, recipeProblems } from "./recipes";
 import { preProblems, preSchema, preTokensSchema, expectsSchema } from "./steps";
@@ -40,6 +41,7 @@ export * from "./setup";
 export * from "./profiles";
 export * from "./material";
 export * from "./sidekick";
+export * from "./context-panel";
 export * from "./plugin";
 export * from "./plugin-permissions";
 export * from "./plugin-actions";
@@ -282,12 +284,6 @@ const manifestFields = z.object({
   enginePresets: z.literal(true).optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
-  /**
-   * How much pinned text a new task gets whole, suggested to the person (context-panel spec §4.2). Absent: the core's
-   * 3,000 (D0). The literals 3000 and 50_000 must stay in step with DEFAULT_PINNED_TOKENS (workspace context.ts) and
-   * PINNED_MAX (engines models.ts): this package can't import them (a cycle).
-   */
-  context: z.object({ pinnedTokens: z.number().int().min(0).max(50_000).default(3000) }).optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -352,6 +348,13 @@ const manifestFields = z.object({
     }
     for (const id of Object.keys(config.data?.actions ?? {})) {
       if (!Object.hasOwn(m.actions, id)) ctx.addIssue({ code: "custom", path: ["mods", "sidekick", "actions", id], message: `"${id}" is not an action of this harness` });
+    }
+  }
+  // The context panel's config is checked with its mod's schema.
+  if (m.mods && Object.hasOwn(m.mods, "context-panel")) {
+    const config = contextPanelSchema.safeParse(m.mods["context-panel"]);
+    if (!config.success) {
+      for (const i of config.error.issues) ctx.addIssue({ code: "custom", path: ["mods", "context-panel", ...i.path], message: i.message });
     }
   }
   for (const [id, a] of Object.entries(m.actions)) {
@@ -579,10 +582,15 @@ const manifestFields = z.object({
   for (const p of hatchProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
 });
 
-/** Refuses the old top-level `sidekick` key by name: `z.object` would drop it and Sidekick would silently be gone. */
+/** Refuses the old top-level `sidekick` and `context` keys by name: `z.object` would drop them and the config would silently be gone. */
 const manifestSchema = z.preprocess((value, ctx) => {
-  if (typeof value === "object" && value !== null && (value as { sidekick?: unknown }).sidekick !== undefined) {
-    ctx.addIssue({ code: "custom", path: ["sidekick"], message: "Sidekick's config is a mod's: move the top-level `sidekick` key to `mods.sidekick`" });
+  if (typeof value === "object" && value !== null) {
+    if ((value as { sidekick?: unknown }).sidekick !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["sidekick"], message: "Sidekick's config is a mod's: move the top-level `sidekick` key to `mods.sidekick`" });
+    }
+    if ((value as { context?: unknown }).context !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["context"], message: "The context panel's config is a mod's: move the top-level `context` key to `mods.context-panel`" });
+    }
   }
   return value;
 }, manifestFields);

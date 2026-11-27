@@ -3,7 +3,6 @@ import type { InvokeArgs, InvokeChannel } from "@humanharness/protocol/channels"
 import type { FocusState, HarnessClient, ModeSwitch } from "@humanharness/protocol";
 import { hearsDataChange } from "@humanharness/protocol/data-change";
 import { backendClient } from "./backend";
-import { askContext, contextListener } from "./context";
 import { documentWatcher } from "./document-watch";
 import { fileCommitListeners } from "./file-commits";
 import { askFile, restoreFlow } from "./file-restore";
@@ -21,7 +20,7 @@ const focusOpeners = new Set<(path: string) => void>();
 /** Focus mode as the chat set it last, and who listens. */
 let focusState: FocusState = { on: false };
 const focusListeners = new Set<(state: FocusState) => void>();
-/** `invoke` as the helpers their tests drive with a fake take it (`./context`'s `Invoke`): a table channel, any arguments. */
+/** `invoke` as the helpers their tests drive with a fake take it: a table channel, any arguments. */
 const looseInvoke = (channel: InvokeChannel, ...args: unknown[]): Promise<unknown> => invoke(channel, ...(args as InvokeArgs<InvokeChannel>));
 
 /** `hh:data`'s answer is its op's (`Invoke["hh:data"]`): `T` is the answer the calling `data` method promises. */
@@ -276,17 +275,6 @@ const client: HarnessClient = {
     open: (scope, id) => invoke("hh:materialOpen", scope, id),
     cite: (scope, id) => invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe("hh:materialStatus", listener),
-  },
-  // The context panel (context-panel spec §5.2): every answer is data, a rejected invoke included.
-  context: {
-    get: (taskId) => askContext(looseInvoke, "hh:contextGet", taskId),
-    onChange: (taskId, listener) => subscribe("hh:context", contextListener(taskId, listener)),
-    add: (taskId, file) => askContext(looseInvoke, "hh:contextAdd", taskId, file),
-    pick: () => askContext(looseInvoke, "hh:contextPick"),
-    pin: (scope, file) => askContext(looseInvoke, "hh:contextPin", scope, file),
-    unpin: (scope, file) => askContext(looseInvoke, "hh:contextUnpin", scope, file),
-    exclude: (scope, note) => askContext(looseInvoke, "hh:contextExclude", scope, note),
-    include: (scope, note) => askContext(looseInvoke, "hh:contextInclude", scope, note),
   },
   // Global search (search spec §9): every answer is data; main builds nothing until the first query (D8).
   search: searchClient(looseInvoke, subscribe),

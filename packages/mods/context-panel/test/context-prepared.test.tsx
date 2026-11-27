@@ -28,7 +28,7 @@ async function show(ctx: TaskContext = CTX) {
   const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
   client.contexts.t1 = ctx;
   const onOpen = vi.fn();
-  await renderIn("en", <ContextPanel client={client} taskId="t1" usage={{ used: 40_000, cap: 200_000 }} onOpen={onOpen} onClose={() => {}} />);
+  await renderIn("en", <ContextPanel client={client} context={client.context} taskId="t1" usage={{ used: 40_000, cap: 200_000 }} onOpen={onOpen} onClose={() => {}} />);
   const panel = await screen.findByRole("region", { name: "What the AI takes into account" });
   await within(panel).findByRole("heading", { name: "At the start" });
   return within(panel).getByRole("region", { name: "At the start" });

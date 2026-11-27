@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool read_review: Too big: expected string to have <=50000 characters at path"
+    }
+  ],
+  "isError": true
+}

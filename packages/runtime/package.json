@@ -12,6 +12,7 @@
     "@humanharness/workspace": "workspace:*"
   },
   "devDependencies": {
-    "@humanharness/fake-agent": "workspace:*"
+    "@humanharness/fake-agent": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.1"
   }
 }

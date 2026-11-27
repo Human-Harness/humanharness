@@ -3,10 +3,13 @@ import { useTranslation } from "react-i18next";
 import { Rx } from "../guide";
 
 /** A mod's block that crashed: "This part of the app failed", the mod's name and Turn off (minimal-core spec §5.1). */
-export class BlockBoundary extends Component<{ name: string; onTurnOff: () => void; children: ReactNode }, { failed: boolean }> {
+export class BlockBoundary extends Component<{ name: string; onTurnOff: () => void; onError?: () => void; children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  override componentDidCatch() {
+    this.props.onError?.();
   }
   override render() {
     return this.state.failed ? <FailedBlock name={this.props.name} onTurnOff={this.props.onTurnOff} /> : this.props.children;
@@ -34,9 +37,19 @@ function FailedBlock({ name, onTurnOff }: { name: string; onTurnOff: () => void 
  * A mod's part in one of the core's slots (a Settings tab, a row, a task bar piece, an overlay): behind the same
  * boundary as a block, whose Turn off turns the mod off.
  */
-export function SlotBoundary({ mod, client, children }: { mod: string; client: { mods: { set(id: string, on: boolean): Promise<unknown> } }; children: ReactNode }) {
+export function SlotBoundary({
+  mod,
+  client,
+  onError,
+  children,
+}: {
+  mod: string;
+  client: { mods: { set(id: string, on: boolean): Promise<unknown> } };
+  onError?: () => void;
+  children: ReactNode;
+}) {
   return (
-    <BlockBoundary name={mod} onTurnOff={() => void client.mods.set(mod, false).catch(() => undefined)}>
+    <BlockBoundary name={mod} onTurnOff={() => void client.mods.set(mod, false).catch(() => undefined)} onError={onError}>
       {children}
     </BlockBoundary>
   );

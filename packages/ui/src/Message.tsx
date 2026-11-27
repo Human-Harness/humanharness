@@ -156,7 +156,7 @@ export function Message({
   /** The answer is arriving: how much of it shows (see usePacedAnswer). */
   reveal?: Reveal;
   /** The chat's handling of document cards (document-reader spec §5.1); absent: cards are not drawn. */
-  documents?: { missing: ReadonlySet<string>; open(card: DocumentCard): void; reviews?: ReadonlyMap<string, ReviewSummary | null> };
+  documents?: { missing: ReadonlySet<string>; open?(card: DocumentCard): void; reviews?: ReadonlyMap<string, ReviewSummary | null> };
 }) {
   const { t } = useTranslation();
   // A line the app added (another task changed the same files, parallel spec §5.3; a new session, PT-S4): a system

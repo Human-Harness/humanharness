@@ -27,6 +27,11 @@ export interface BundleOptions {
    * `globalThis.__hhMainModules`, which the app fills before it loads any mod.
    */
   core?: boolean;
+  /**
+   * A core mod's worker thread entry: a worker has none of the app's globals, so its shared imports are bundled in
+   * like any other package (only with `core`).
+   */
+  worker?: boolean;
 }
 
 const refused = (spec: string) => `${spec} can't be imported by a mod; use react, @humanharness/ui, @humanharness/mod-sdk, zod or a file in the mod's folder`;
@@ -62,6 +67,7 @@ function guard(o: BundleOptions, dir: string): Plugin {
       b.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === "entry-point") return undefined;
         const spec = args.path;
+        if (SHARED_IMPORTS.has(spec) && o.core && o.worker) return undefined;
         if (SHARED_IMPORTS.has(spec)) {
           return o.part === "main" && !o.core ? { path: pathToFileURL(o.resolveShared(spec)).href, external: true } : { path: spec, namespace: SHIM };
         }

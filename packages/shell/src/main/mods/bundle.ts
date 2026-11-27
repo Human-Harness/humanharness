@@ -24,7 +24,7 @@ async function workerSource(src: string): Promise<string | null> {
  * `CORE_MODS[id].dir` points at runtime, and bundles its main part (when `mod.json` names one) into `<dest>/<id>/<main>`
  * under the core mods' import allowlist (mods-1a). A mod with a `src/worker.ts` also gets `<dest>/<id>/worker.js`: the
  * file its main starts in a worker thread, built under the same allowlist (a worker can't read the app's shared
- * imports, so it uses node builtins and bundled packages only). An entry that does not build fails the app's build.
+ * imports, so they are bundled into it). An entry that does not build fails the app's build.
  */
 export async function buildCoreMods(srcRoot: string, dest: string, ids: readonly string[]): Promise<void> {
   await fs.rm(dest, { recursive: true, force: true });
@@ -46,6 +46,7 @@ export async function buildCoreMods(srcRoot: string, dest: string, ids: readonly
           entry,
           part: "main",
           core: true,
+          worker: out === WORKER_FILE,
           outFile: path.join(dest, id, out),
           resolveShared: () => {
             throw new Error("a core mod reads its shared imports from the app");

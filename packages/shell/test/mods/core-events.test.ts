@@ -169,6 +169,19 @@ describe("a core mod's worker entry and its imports", () => {
     for (const f of ["main.js", "worker.js"]) expect((await fs.stat(path.join(dest, "finder", f))).size).toBeGreaterThan(0);
     expect(await fs.readFile(path.join(dest, "finder", "main.js"), "utf8")).not.toMatch(/from\s+["']@humanharness\/search/);
 
+    // A worker thread has none of the app's shared globals: what it imports through them (zod here, also through
+    // @humanharness/search) is bundled in, so the file loads on its own.
+    await fixture("zodder", {
+      "mod.json": json("zodder"),
+      "package.json": pkg("@humanharness/mod-sdk", "@humanharness/search"),
+      "src/main.ts": "export default {};\n",
+      "src/worker.ts": "import { z } from 'zod';\nimport { actionDocs } from '@humanharness/search';\nvoid actionDocs;\nexport const ok = z.string().parse('ok');\n",
+    });
+    await buildCoreMods(path.join(tmp, "mods"), dest, ["zodder"]);
+    expect(Reflect.get(globalThis, "__hhMainModules")).toBeUndefined();
+    const loaded = (await import(path.join(dest, "zodder", "worker.js"))) as { ok: string };
+    expect(loaded.ok).toBe("ok");
+
     await fixture("nodecl", { ...files(["@humanharness/mod-sdk"]), "mod.json": json("nodecl") });
     await expect(buildCoreMods(path.join(tmp, "mods"), dest, ["nodecl"])).rejects.toThrow(/@humanharness\/search can't be imported by a core mod/);
   });

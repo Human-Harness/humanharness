@@ -32,6 +32,7 @@ export { DocumentContext, type DocumentHost } from "./documents-context";
 export { type AppValue, useApp } from "./layout/app";
 // The window runs the ui part of each on, non-core mod (minimal-core 0b2).
 export { type ModLoader, type ModLoaderOptions, type UiCtx as CoreUiCtx, startModLoader } from "./layout/mod-loader";
+export type { FileTarget, PanelProps } from "./layout/registry";
 // A core mod's task-view pieces (minimal-core step 1b): the open task view they act on, and what a reviewer may add.
 export { type TaskViewValue, useTaskView } from "./task-view/context";
 export type { TaskReviewer } from "./task-view/review";

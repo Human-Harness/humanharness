@@ -107,6 +107,38 @@ export interface TaskPageOptions {
   title: string;
 }
 
+/**
+ * A file the task view opens: a `.md` link, a card, a History link, `client.openDocument` and the rest. `agent` names
+ * who wrote it (a card), `timeline` asks for the document with its history shown, `historyOnly` for the history alone
+ * (a file that is not a `.md`, or was deleted).
+ */
+export interface FileTarget {
+  path: string;
+  anchor?: string;
+  agent?: string;
+  timeline?: boolean;
+  historyOnly?: boolean;
+}
+/** What a mod's panel in the reader's slot gets: what it was opened with, and the task view's side of the slot. */
+export interface PanelProps {
+  /** What `open(props)` was last given. */
+  props: unknown;
+  client: HarnessClient;
+  state: AppState;
+  /** A turn runs, or the task is saving its note. */
+  busy: boolean;
+  /** The panel takes the whole body. */
+  full: boolean;
+  onFull(full: boolean): void;
+  onClose(): void;
+  /** Opens a file the way the chat does. */
+  openFile(target: FileTarget): void;
+  /** A file the chat has a card for is gone: the chat checks its cards again. */
+  onMissing(): void;
+  /** The task view is quiet (`taskView.quiet`). */
+  quiet: boolean;
+}
+
 /** What each slot holds, by kind; each entry names the mod that registered it. */
 export interface Slots {
   settingsTab: { mod: string; name: string; Component: ComponentType<SettingsTabProps> } & SettingsTabOptions;
@@ -115,11 +147,19 @@ export interface Slots {
   taskOverlay: { mod: string; name: string; Button: ComponentType<OverlayButtonProps>; Panel: ComponentType<OverlayPanelProps> };
   composer: { mod: string; reviewer: ComposerReviewer };
   taskPage: { mod: string; name: string; rail: TaskPageOptions["rail"]; title: string; Page: ComponentType<TaskPageProps> };
+  /** What opens files; the last one counts. */
+  opener: { mod: string; open(target: FileTarget): void };
+  /** The panel open in the reader's slot (one at a time). */
+  openPanel: { mod: string; Component: ComponentType<PanelProps>; props: unknown; close(): void };
+  /** Holds the task view quiet while it is there. */
+  quiet: { mod: string; end(): void };
 }
 export type SlotKind = keyof Slots;
 
 /** The blocks mods registered, by mod id and block name, and the parts they put in the core's slots. */
 export interface BlockRegistry {
+  /** With no `opener` registered, the chat opens files itself (its own reader). */
+  readonly coreOpener: boolean;
   /** Registers `Component` as `modId`'s block `name`; the disposer takes it away again (only if it is still that one). */
   register(modId: string, name: string, Component: BlockComponent): () => void;
   get(modId: string, name: string): BlockComponent | undefined;
@@ -133,9 +173,9 @@ export interface BlockRegistry {
   version(): number;
 }
 
-export function createBlockRegistry(): BlockRegistry {
+export function createBlockRegistry({ coreOpener = true }: { coreOpener?: boolean } = {}): BlockRegistry {
   const blocks = new Map<string, BlockComponent>();
-  const slots: { [K in SlotKind]: Slots[K][] } = { settingsTab: [], row: [], taskBar: [], taskOverlay: [], composer: [], taskPage: [] };
+  const slots: { [K in SlotKind]: Slots[K][] } = { settingsTab: [], row: [], taskBar: [], taskOverlay: [], composer: [], taskPage: [], opener: [], openPanel: [], quiet: [] };
   const listeners = new Set<() => void>();
   let version = 0;
   const key = (modId: string, name: string) => `${modId}/${name}`;
@@ -144,6 +184,7 @@ export function createBlockRegistry(): BlockRegistry {
     for (const l of listeners) l();
   };
   return {
+    coreOpener,
     register(modId, name, Component) {
       const k = key(modId, name);
       blocks.set(k, Component);

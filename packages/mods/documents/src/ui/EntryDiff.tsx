@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { FileRestoreResult, HarnessClient, TimelineEntry } from "./client";
+import { type FileRestoreResult, type HarnessClient, Icon, Rx, type TimelineEntry } from "@humanharness/ui";
 import { FileDiff } from "./FileDiff";
-import { Icon, Rx } from "./guide";
 
 /** One entry's diff (file-timeline spec §4.1, §6.1): what changed here or against now, and going back to it. */
 export function EntryDiff({

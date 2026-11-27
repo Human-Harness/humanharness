@@ -1,9 +1,6 @@
 import { type ReactNode, type RefObject, createElement, memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DiffPart, FileDiffResult, HarnessClient, LineChange, MdDiffBlock } from "./client";
-import { HIGHLIGHT_MAX_LINES, highlightCode } from "./highlight";
-import { Markdown } from "./markdown";
-import { formatSize } from "./sizes";
+import { type DiffPart, type FileDiffResult, formatSize, type HarnessClient, HIGHLIGHT_MAX_LINES, highlightCode, type LineChange, Markdown, type MdDiffBlock } from "@humanharness/ui";
 
 /** Unchanged lines kept on each side of a change. */
 const CONTEXT = 3;

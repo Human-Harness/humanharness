@@ -1,9 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, TimelineEntry } from "./client";
+import { type HarnessClient, Icon, Rx, type TimelineEntry } from "@humanharness/ui";
 import { EntryDiff } from "./EntryDiff";
 import { FileTimeline } from "./FileTimeline";
-import { Icon, Rx } from "./guide";
 
 /**
  * A file's timeline outside the reader (file-timeline spec §6.2), as a split view (DESIGN.md template 2, stage 4b1):

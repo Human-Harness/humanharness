@@ -20,8 +20,6 @@ export { type LanguageControl, useLanguage } from "./language-control";
 export { LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
 export { PluginSlot } from "./plugins/PluginSlot";
-export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
-export { FileDiff, type FileDiffProps, type DiffLayout } from "./FileDiff";
 export type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";
 export type { StartViewCopy } from "./StartView";
@@ -63,8 +61,7 @@ export { SlotBoundary } from "./layout/BlockBoundary";
 export { useBlocks } from "./layout/registry";
 export { useTasks } from "./parallel/useTasks";
 export type { SearchIntent } from "./search/intent";
-// The reader (the documents mod) builds with the timeline parts until they move into the mod too.
-export { EntryDiff } from "./EntryDiff";
-export { FileTimelineSplit } from "./FileTimelineSplit";
+// The reader, the timeline and the diffs (the documents mod) build with these.
+export { HIGHLIGHT_MAX_LINES, highlightCode } from "./highlight";
 export { documentOutline } from "./markdown";
 export { formatSize } from "./sizes";

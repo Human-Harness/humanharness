@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TimelineEntry } from "../src/client";
-import { authorName, clock, FileTimeline, timeAgo } from "../src/FileTimeline";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import type { TimelineEntry } from "../../../ui/src/client";
+import { authorName, clock, FileTimeline, timeAgo } from "../src/ui/FileTimeline";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

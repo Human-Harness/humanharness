@@ -2,15 +2,12 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useL
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
 import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
-// The timeline parts come from the core until they move into this mod too.
 import {
   type ApproveOptions,
   Button,
   DocumentContext,
   type DocumentHost,
   type DocumentRead,
-  EntryDiff,
-  FileTimeline,
   type HarnessClient,
   Markdown,
   type ReaderPrefs,
@@ -23,6 +20,8 @@ import {
   formatSize,
 } from "@humanharness/ui";
 import { ApprovedDiff } from "./ApprovedDiff";
+import { EntryDiff } from "./EntryDiff";
+import { FileTimeline } from "./FileTimeline";
 import { FocusMarkers } from "./FocusMarkers";
 import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
 import { ReviewColumn } from "./ReviewColumn";

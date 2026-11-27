@@ -2,13 +2,13 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatView } from "../src/ChatView";
-import type { HistoryTaskView, TimelineEntry } from "../src/client";
-import { FileTimelineSplit } from "../src/FileTimelineSplit";
-import { documentsRegistry, withDocuments } from "./documents-mod";
-import { FakeClient } from "./fake-client";
-import { historyViewRegistry } from "./history-view";
-import { renderIn as renderBase } from "./render";
+import { ChatView } from "../../../ui/src/ChatView";
+import type { HistoryTaskView, TimelineEntry } from "../../../ui/src/client";
+import { FileTimelineSplit } from "../src/ui/FileTimelineSplit";
+import { documentsRegistry, withDocuments } from "../../../ui/test/documents-mod";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { historyViewRegistry } from "../../../ui/test/history-view";
+import { renderIn as renderBase } from "../../../ui/test/render";
 
 let openHistory = () => {};
 /** The chat as the shell hosts it: the rail's History is a `taskPage` pick. */

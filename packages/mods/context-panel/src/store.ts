@@ -2,15 +2,13 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
-import { NOTES_PREFIX, contextFile } from "./layout";
+import { NOTES_PREFIX, contextFile, fenceFor } from "@humanharness/workspace";
 
 /** Most pins and exclusions one scope keeps (a bound on a hand-edited file; `full` past it). */
 export const PINS_MAX = 50;
 export const EXCLUDED_MAX = 200;
 /** Over this a pinned file never enters whole (spec §6). */
 export const PIN_INLINE_MAX_BYTES = 1024 * 1024;
-/** The budget when neither the person nor the manifest set one (spec §4.2). */
-export const DEFAULT_PINNED_TOKENS = 3000;
 /** How far into a file its title is looked for. */
 const TITLE_SCAN = 2048;
 const TITLE_MAX = 120;
@@ -137,19 +135,6 @@ export function pinsLayout(pins: readonly PinFacts[], budget: number): PinLayout
   });
 }
 
-/** A fence one backtick longer than the longest backtick run in `text` (at least three). A loop, never a regex. */
-export function fenceFor(text: string): string {
-  let longest = 0;
-  let run = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) === 96) {
-      run++;
-      if (run > longest) longest = run;
-    } else run = 0;
-  }
-  return "`".repeat(Math.max(3, longest + 1));
-}
-
 /** The first `# ` heading in the first 2 KB, else the file's name (spec §4.2 "title and path"). */
 export function titleOf(text: string, file: string): string {
   const head = text.slice(0, TITLE_SCAN);
@@ -186,3 +171,5 @@ export function pinnedSection(blocks: readonly string[], titles: readonly string
   if (titles.length > 0) parts.push("", "### Also pinned", ...titles, "", "Open these with your read tool when you need them.");
   return parts.join("\n");
 }
+
+export { fenceFor };

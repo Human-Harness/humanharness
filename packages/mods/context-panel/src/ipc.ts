@@ -1,5 +1,5 @@
 import type { InvokeChannel } from "@humanharness/protocol/channels";
-import type { ContextService } from "./context";
+import type { ContextService } from "./service";
 
 export const CONTEXT_CHANNELS = ["hh:contextGet", "hh:contextAdd", "hh:contextPick", "hh:contextPin", "hh:contextUnpin", "hh:contextExclude", "hh:contextInclude"] as const satisfies readonly InvokeChannel[];
 export type ContextChannel = (typeof CONTEXT_CHANNELS)[number];

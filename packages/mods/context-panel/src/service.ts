@@ -1,24 +1,29 @@
 import { promises as fs } from "node:fs";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
 import type { ContextGetResult, ContextPick, ContextRefusal, ContextResult, ExcludedView, TaskContext } from "@humanharness/protocol";
+import type { ContextItem, ContextRead } from "@humanharness/protocol";
 import {
   APP_SCOPE,
   CONTEXT_CHANGE_PREFIX,
-  type ContextFile,
-  EXCLUDED_MAX,
   type HistoryTrailer,
   MAIN_SCOPE,
-  PINS_MAX,
+  addablePath,
+  folderPath,
   isScopeId,
-  loadContext,
   notesPrefix,
-  saveContext,
+  refusedChar,
 } from "@humanharness/workspace";
-import { checkPinPath, pinnedContext, pinsOf } from "./context-pins";
-import { folderPath } from "./context-record";
-import type { CurrentTask } from "./task-store";
-import type { PersonContext } from "./task-manager";
-import { addablePath, refusedChar } from "./task-prompts";
+import { checkPinPath, type PersonContext, pinnedContext, pinsOf } from "./pins";
+import { type ContextFile, EXCLUDED_MAX, PINS_MAX, loadContext, saveContext } from "./store";
+
+/** The open task's record, as the panel reads it (the task manager's own, `tasks.json`'s). */
+export interface ContextRecord {
+  id: string;
+  scope: string;
+  start?: ContextItem[];
+  startTokens?: number;
+  reads?: ContextRead[];
+}
 
 export interface ContextDeps {
   /** The agent's working folder (the active profile's); null when the app isn't set up. */
@@ -29,7 +34,7 @@ export interface ContextDeps {
   /** Tokens of pinned text a new task gets whole (`pinnedBudget`). */
   budget(): Promise<number>;
   /** The open task's record (`TaskManager.contextRecord`). */
-  record(taskId: string): Promise<(Pick<CurrentTask, "id" | "start" | "startTokens" | "reads"> & { scope: string }) | null>;
+  record(taskId: string): Promise<ContextRecord | null>;
   /** The open task's id, to refresh its panel after a pin changes. */
   openTask(): Promise<string | null>;
   /** Note path → title, for the excluded notes still there. */
@@ -126,7 +131,7 @@ export class ContextService {
     return { ok: true, context };
   }
 
-  /** What a new task in `scope` gets from the person (the task manager's `personContext`). */
+  /** What a new task in `scope` gets from the person (the `firstMessage` section). */
   async personContext(scope: string): Promise<PersonContext> {
     const base = await this.d.base();
     if (!base) return { pinned: "", items: [], excluded: new Set() };

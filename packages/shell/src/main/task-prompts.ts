@@ -1,4 +1,5 @@
 import { type Language, languageName } from "@humanharness/harness-sdk";
+import { addablePath, refusedChar } from "@humanharness/workspace";
 
 /** The first message of a free-question task (a question that isn't one of the harness's actions). */
 export const QUESTION_PROMPT = [
@@ -77,24 +78,7 @@ export const CONTEXT_ADD_PROMPT = "The person wants you to take `{{path}}` into 
 /** The prompt for `file` (a folder-relative path the shell already checked with `addablePath`). */
 export const contextAddPrompt = (file: string): string => CONTEXT_ADD_PROMPT.replace("{{path}}", () => file);
 
-/** Characters that are not seen but change how a line reads: bidi embeddings, overrides and isolates, zero widths. */
-const hiddenChar = (code: number): boolean =>
-  (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) || (code >= 0x200b && code <= 0x200d) || code === 0xfeff;
-
-/**
- * A path that can sit inside the prompt's backticks: no backtick, no control character (C0, DEL, C1), no line or
- * paragraph separator, no bidi control or zero-width character (the person would not see what the agent reads), at
- * most 1,000 characters.
- */
-export function addablePath(file: string): boolean {
-  if (file.length === 0 || file.length > 1000) return false;
-  for (let i = 0; i < file.length; i++) if (refusedChar(file.charCodeAt(i))) return false;
-  return true;
-}
-
-/** A character `addablePath` refuses: a backtick, a control character (C0, DEL, C1), a line or paragraph separator, a hidden one. */
-export const refusedChar = (code: number): boolean =>
-  code === 96 || code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || hiddenChar(code);
+export { addablePath, refusedChar };
 
 /** Said after a free question that tasks.json kept cut (it was longer than QUESTION_MAX). */
 export const QUESTION_CUT = "(The question was longer; it was cut here.)";

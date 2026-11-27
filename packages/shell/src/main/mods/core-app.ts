@@ -27,6 +27,8 @@ export interface CoreAppParts {
     contextRecord(taskId: string): Promise<CoreContextRecord | null>;
     addContext(taskId: string, path: string): { accepted: Promise<unknown>; done: Promise<void> };
   };
+  /** The context panel's needs (`ctx.app.context`). */
+  context: CoreApp["context"];
   hasNotice(engineId: string): Promise<boolean>;
   engine(engineId: string): EngineDef;
   command(engine: EngineDef): Promise<{ command: string[]; env: Record<string, string> } | null>;
@@ -68,6 +70,7 @@ export function coreAppFor(p: CoreAppParts, id: string): CoreApp {
       // The host replaces it with its own hook registration (mods/host.ts), so a restart drops the listeners.
       onContextChanged: () => () => {},
     },
+    context: p.context,
     sessions: {
       hasNotice: (engineId) => p.hasNotice(engineId),
       command: (engineId) => p.command(p.engine(engineId)),

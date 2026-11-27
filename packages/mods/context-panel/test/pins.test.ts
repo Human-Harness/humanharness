@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { PIN_INLINE_MAX_BYTES, saveContext } from "@humanharness/workspace";
-import { checkPinPath, pinShapeOk, pinnedContext, pinnedText, pinsOf } from "../src/main/context-pins";
+import { checkPinPath, pinShapeOk, pinnedContext, pinnedText, pinsOf } from "../src/pins";
+import { PIN_INLINE_MAX_BYTES, saveContext } from "../src/store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-pins-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

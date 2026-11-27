@@ -1,0 +1,15 @@
+{
+  "name": "@humanharness/mod-context-panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/main.ts", "./pins": "./src/pins.ts" },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/mod-sdk": "workspace:*",
+    "@humanharness/protocol": "workspace:*",
+    "@humanharness/workspace": "workspace:*"
+  }
+}

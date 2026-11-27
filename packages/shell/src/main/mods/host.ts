@@ -7,6 +7,7 @@ import type { PushChannel } from "@humanharness/protocol/channels";
 import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
+import { MOD_APP_CHANNELS } from "./app-channels";
 import { isPushChannel } from "./push-channels";
 import type { ResolvedMod } from "./resolve";
 
@@ -207,13 +208,22 @@ export class ModHost {
   }
 
   /** What only a core mod's ctx has: `app` and `onRefresh` (its `push` also takes an app push channel, `pusher`). */
-  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh">> & { coreOn?: Record<string, unknown> } {
+  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh" | "handle">> & { coreOn?: Record<string, unknown> } {
     if (r.mod.shipped !== "core") return {};
     const base = this.d.coreApp?.(r.mod.json.id);
     // The context-changed listeners live in the host (a restart builds a new one): the mod's registration is a hook.
     const app = base ? { ...base, tasks: { ...base.tasks, onContextChanged: add("contextChanged") as unknown as CoreApp["tasks"]["onContextChanged"] } } : undefined;
+    const handle: CoreMainCtx<unknown>["handle"] = (name, fn) => {
+      if (!(MOD_APP_CHANNELS as readonly string[]).includes(name)) throw new Error(`Not an app channel a core mod answers: ${String(name)}`);
+      if (this.appChannel(name)) throw new Error(`Another mod already handles ${name}`);
+      r.channels.set(name, (args) => fn(...(Array.isArray(args) ? args : [])));
+      const off = () => void r.channels.delete(name);
+      r.disposers.push(off);
+      return off;
+    };
     return {
       ...(app ? { app } : {}),
+      handle,
       onRefresh: add("refresh") as CoreMainCtx<unknown>["onRefresh"],
       coreOn: { firstMessage: add("firstMessage"), dataChanged: add("dataChanged"), restored: add("restored"), baseGone: add("baseGone") },
     };
@@ -376,6 +386,27 @@ export class ModHost {
     return false;
   }
 
+  /** The mod that is on and answers app channel `name`, if any. */
+  private appChannel(name: string): Running | undefined {
+    for (const r of this.mods.values()) if (r.on && r.channels.has(name)) return r;
+    return undefined;
+  }
+
+  /** Whether a core mod that is on answers app channel `name`. */
+  handles(name: string): boolean {
+    return this.appChannel(name) !== undefined;
+  }
+
+  /**
+   * A window call on app channel `name`, with its arguments, to the core mod that answers it. Unlike a mod's own
+   * channel, it may take as long as it needs and a throw reaches the window as is: neither counts as a strike.
+   */
+  async channel(name: string, args: unknown[]): Promise<unknown> {
+    const r = this.appChannel(name);
+    if (!r) throw new Error(`No mod handles ${name}`);
+    return r.channels.get(name)!(args);
+  }
+
   turnStart(task: TaskRef): Promise<void> {
     return this.each("turnStart", task);
   }
@@ -463,7 +494,8 @@ export class ModHost {
 
   async ipc(id: string, name: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
     const r = this.mods.get(id);
-    const handler = r?.on ? r.channels.get(name) : undefined;
+    // An app channel's name (`hh:…`) is never one of a mod's own.
+    const handler = r?.on && !name.startsWith("hh:") ? r.channels.get(name) : undefined;
     if (!r || !handler) return { ok: false, reason: "no such channel" };
     const res = await guarded(() => handler(payload), this.hookMs);
     await this.count(r, res.ok, res.ok ? undefined : res.reason);

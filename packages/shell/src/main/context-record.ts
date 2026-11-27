@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { Event } from "@humanharness/runtime";
 import type { ContextItem, ContextRead } from "@humanharness/protocol";
+import { approxTokens, folderPath } from "@humanharness/workspace";
 
 /** How many start items tasks.json keeps for a task: a bound on a hand-edited file. */
 export const START_ITEMS_MAX = 100;
@@ -11,18 +12,7 @@ export const PATHS_PER_EVENT = 20;
 /** How many notes a notes-index item lists. */
 export const INDEX_NOTES_MAX = 50;
 
-/** The panel's estimate (§3.1, "aprox."): characters / 4, rounded to 100; at least 100 for any text, 0 for none. */
-export function approxTokens(chars: number): number {
-  if (!(chars > 0)) return 0;
-  return Math.max(100, Math.round(chars / 4 / 100) * 100);
-}
-
-/** `p` relative to `base`, forward slashes; a relative `p` is taken from `base`. Null for `base` itself and anything outside. */
-export function folderPath(base: string, p: string): string | null {
-  const rel = path.relative(base, path.resolve(base, p));
-  if (rel === "" || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
-  return rel.split(path.sep).join("/");
-}
+export { approxTokens, folderPath };
 
 /** One read or tool a turn showed, before it is merged into the task's list. */
 export type SeenRead = { kind: "read" | "tool"; label: string; path?: string };

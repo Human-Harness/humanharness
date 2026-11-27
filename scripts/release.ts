@@ -28,7 +28,7 @@ function greater(a: number[], b: number[]): boolean {
 export function release(version: string | undefined, deps: ReleaseDeps): string {
   const next = version ? parts(version) : null;
   if (!version || !next) throw new Error(`"${version ?? ""}" is not a version: use major.minor.patch, e.g. 0.3.0.`);
-  if (deps.branch() !== "master") throw new Error(`Release from master, not ${deps.branch()}.`);
+  if (deps.branch() !== "main") throw new Error(`Release from main, not ${deps.branch()}.`);
   if (!deps.isClean()) throw new Error("The working tree has changes: commit or discard them first.");
   const current = deps.readVersion();
   const cur = parts(current);
@@ -36,7 +36,7 @@ export function release(version: string | undefined, deps: ReleaseDeps): string 
   deps.writeVersion(version);
   deps.commit(`chore(release): v${version}`);
   deps.tag(`v${version}`);
-  return `Release v${version} is ready locally. Publish it with:\n  git ${"pu"}${"sh"} origin master v${version}`;
+  return `Release v${version} is ready locally. Publish it with:\n  git ${"pu"}${"sh"} origin main v${version}`;
 }
 
 function realDeps(): ReleaseDeps {

@@ -6,21 +6,21 @@ A harness is published when its manifest has `release: true`. A tag `v*` builds,
 
 ## Release procedure
 
-1. Be on `master`, up to date, with a clean tree.
-2. Run `pnpm release 0.3.0`. It refuses a version that is not `major.minor.patch`, is not greater than the current one, a dirty tree, or any branch other than `master`. Otherwise it writes the version in the root `package.json`, commits `chore(release): v0.3.0`, tags `v0.3.0` and prints the command that publishes both. It never publishes anything itself.
-3. Run the printed command: `git push origin master v0.3.0`.
+1. Be on `main`, up to date, with a clean tree.
+2. Run `pnpm release 0.3.0`. It refuses a version that is not `major.minor.patch`, is not greater than the current one, a dirty tree, or any branch other than `main`. Otherwise it writes the version in the root `package.json`, commits `chore(release): v0.3.0`, tags `v0.3.0` and prints the command that publishes both. It never publishes anything itself.
+3. Run the printed command: `git push origin main v0.3.0`.
 4. The `Release` workflow (`.github/workflows/release.yml`) runs, in the protected `release` environment:
    - **prepare**: fails unless the tag equals the root `version`; lists the harnesses with `release: true` (and fails if there are none); creates the GitHub release as a **draft**.
    - **build**: one macOS job per harness. It runs `humanharness package --harness harnesses/<id> --publish`, which signs, notarizes and uploads the `.dmg`, the `.zip` and `<id>-mac.yml` to the draft.
    - **publish**: only if every build passed, publishes the draft. From then on `releases/latest/download/<id>-mac.yml` serves the new version.
 5. Before announcing, do the [manual checks](#manual-checks).
 
-Every PR to `master` also runs `ci.yml`: typecheck, unit tests, the e2e mock suite and an unsigned `package` of the demo, so a broken packaging step shows up before a release.
+Every PR to `main` also runs `ci.yml`: typecheck, unit tests, the e2e mock suite and an unsigned `package` of the demo, so a broken packaging step shows up before a release.
 
 ### When a job fails
 
 - A flaky or external failure (network, notarization queue): in the Actions run, "Re-run failed jobs". The draft stays unpublished until every build passes.
-- The code must change: delete the draft release and the tag (`git tag -d v0.3.0`, and remove it from the remote), fix on `master`, then release the next version (`pnpm release 0.3.1`).
+- The code must change: delete the draft release and the tag (`git tag -d v0.3.0`, and remove it from the remote), fix on `main`, then release the next version (`pnpm release 0.3.1`).
 - The tag and the root version differ (`prepare` fails, no draft was created): delete the tag, fix, release again.
 
 ### A bad version

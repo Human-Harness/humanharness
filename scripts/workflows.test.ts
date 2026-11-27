@@ -13,8 +13,8 @@ const load = (name: string) => yaml.load(fs.readFileSync(path.join(root, ".githu
 describe("ci.yml", () => {
   const ci = load("ci.yml");
   const runs = (job: string) => ci.jobs[job].steps.map((s: any) => s.run).filter(Boolean);
-  it("runs on pull requests to master, on macOS, one run per PR", () => {
-    expect(ci.on.pull_request.branches).toEqual(["master"]);
+  it("runs on pull requests to main, on macOS, one run per PR", () => {
+    expect(ci.on.pull_request.branches).toEqual(["main"]);
     for (const j of ["typecheck", "test", "package"]) expect(ci.jobs[j]["runs-on"]).toBe("macos-latest");
     expect(ci.concurrency.group).toContain("github.event.pull_request.number");
   });
